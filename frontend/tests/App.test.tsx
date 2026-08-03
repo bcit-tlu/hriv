@@ -1,7 +1,30 @@
 import { createRef, useEffect, type ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import App from '../src/App'
+import {
+  createGroup,
+  createProgram,
+  deleteGroup,
+  deleteProgram,
+  fetchUsers,
+  fetchVersions,
+  updateGroup,
+  updateProgram,
+} from '../src/api'
+
+vi.mock('../src/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/api')>()),
+  fetchUsers: vi.fn().mockResolvedValue([]),
+  fetchVersions: vi.fn().mockResolvedValue({ backend: '1.0.0', backup: '1.0.0' }),
+  fetchFrontendVersion: vi.fn().mockResolvedValue({ frontend: '1.0.0' }),
+  createProgram: vi.fn().mockResolvedValue({}),
+  updateProgram: vi.fn().mockResolvedValue({}),
+  deleteProgram: vi.fn().mockResolvedValue(undefined),
+  createGroup: vi.fn().mockResolvedValue({}),
+  updateGroup: vi.fn().mockResolvedValue({}),
+  deleteGroup: vi.fn().mockResolvedValue(undefined),
+}))
 
 const mockImage = {
   id: 101,
@@ -247,7 +270,43 @@ const categoryActionsMock = {
 }
 
 vi.mock('../src/components/AppShell', () => ({
-  default: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  default: ({
+    children,
+    onTabChange,
+    onHomeClick,
+    onSearchOpen,
+    onOpenPrograms,
+    onOpenGroups,
+  }: {
+    children: ReactNode
+    onTabChange: (v: string) => void
+    onHomeClick: () => void
+    onSearchOpen: () => void
+    onOpenPrograms: () => void
+    onOpenGroups: () => void
+  }) => (
+    <div>
+      <button type="button" onClick={() => onTabChange('admin')}>
+        Shell tab admin
+      </button>
+      <button type="button" onClick={() => onTabChange('browse')}>
+        Shell tab browse
+      </button>
+      <button type="button" onClick={onHomeClick}>
+        Shell home
+      </button>
+      <button type="button" onClick={onSearchOpen}>
+        Shell search
+      </button>
+      <button type="button" onClick={onOpenPrograms}>
+        Shell programs
+      </button>
+      <button type="button" onClick={onOpenGroups}>
+        Shell groups
+      </button>
+      {children}
+    </div>
+  ),
 }))
 
 vi.mock('../src/components/SortableTileGrid', () => ({
@@ -256,13 +315,36 @@ vi.mock('../src/components/SortableTileGrid', () => ({
     currentCategories,
     onImageClick,
     onCategoryClick,
+    onFilesDrop,
+    onReorderComplete,
+    onReorderError,
   }: {
     currentImages: (typeof mockImage)[]
     currentCategories: typeof mockCategories
     onImageClick: (img: typeof mockImage) => void
     onCategoryClick: (category: (typeof mockCategories)[number]) => void
+    onFilesDrop: (files: File[]) => void
+    onReorderComplete: () => Promise<void>
+    onReorderError: (err: unknown) => void
   }) => (
     <>
+      <button
+        type="button"
+        onClick={() =>
+          onFilesDrop([
+            new File([''], 'slide.png', { type: 'image/png' }),
+            new File([''], 'notes.txt', { type: 'text/plain' }),
+          ])
+        }
+      >
+        Drop files on grid
+      </button>
+      <button type="button" onClick={() => void onReorderComplete()}>
+        Grid reorder complete
+      </button>
+      <button type="button" onClick={() => onReorderError(new Error('boom'))}>
+        Grid reorder error
+      </button>
       {currentImages.map((image, index) => (
         <button key={image.id} type="button" onClick={() => onImageClick(image)}>
           {index === 0 ? 'Open image' : `Open image ${image.id}`}
@@ -292,8 +374,58 @@ vi.mock('../src/components/PeoplePage', () => ({ default: () => null }))
 vi.mock('../src/components/ManagePage', () => ({ default: () => null }))
 vi.mock('../src/components/LoginScreen', () => ({ default: () => null }))
 vi.mock('../src/components/EditImageModal', () => ({ default: () => null }))
-vi.mock('../src/components/ProgramManagementModal', () => ({ default: () => null }))
-vi.mock('../src/components/GroupManagementModal', () => ({ default: () => null }))
+vi.mock('../src/components/ProgramManagementModal', () => ({
+  default: ({
+    open,
+    onAdd,
+    onEdit,
+    onDelete,
+  }: {
+    open: boolean
+    onAdd: (name: string, oidcGroup: string | null) => Promise<void>
+    onEdit: (id: number, name: string, oidcGroup: string | null) => Promise<void>
+    onDelete: (id: number) => Promise<void>
+  }) =>
+    open ? (
+      <div>
+        <button type="button" onClick={() => void onAdd('New Program', null)}>
+          Modal add program
+        </button>
+        <button type="button" onClick={() => void onEdit(1, 'Renamed Program', 'oidc-grp')}>
+          Modal edit program
+        </button>
+        <button type="button" onClick={() => void onDelete(1)}>
+          Modal delete program
+        </button>
+      </div>
+    ) : null,
+}))
+vi.mock('../src/components/GroupManagementModal', () => ({
+  default: ({
+    open,
+    onAdd,
+    onEdit,
+    onDelete,
+  }: {
+    open: boolean
+    onAdd: (name: string, description: string | null) => Promise<void>
+    onEdit: (id: number, name: string, description: string | null) => Promise<void>
+    onDelete: (id: number) => Promise<void>
+  }) =>
+    open ? (
+      <div>
+        <button type="button" onClick={() => void onAdd('New Group', null)}>
+          Modal add group
+        </button>
+        <button type="button" onClick={() => void onEdit(10, 'Renamed Group', 'desc')}>
+          Modal edit group
+        </button>
+        <button type="button" onClick={() => void onDelete(10)}>
+          Modal delete group
+        </button>
+      </div>
+    ) : null,
+}))
 vi.mock('../src/components/ReportIssueModal', () => ({ default: () => null }))
 vi.mock('../src/observability', () => ({
   emitEvent: (...args: unknown[]) => emitEventMock(...args),
@@ -654,5 +786,270 @@ describe('App breadcrumbs', () => {
 
     await screen.findByRole('progressbar')
     expect(announcementModalMock.loadAnnouncement).not.toHaveBeenCalled()
+  })
+})
+
+describe('App shell interactions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    currentImagesMock = [mockImage]
+    mockInitialPath = []
+    authState = {
+      currentUser: mockCurrentUser,
+      loading: false,
+      login: vi.fn(),
+      logout: vi.fn(),
+      canManageUsers: false,
+      canEditContent: true,
+    }
+  })
+
+  it('reloads browse data when switching tabs back to browse and on home click', () => {
+    render(<App />)
+
+    const baseCategories = browseDataFns.loadCategories.mock.calls.length
+    const baseImages = browseDataFns.loadUncategorizedImages.mock.calls.length
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab admin' }))
+    expect(browseDataFns.loadCategories).toHaveBeenCalledTimes(baseCategories)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab browse' }))
+    expect(browseDataFns.loadCategories).toHaveBeenCalledTimes(baseCategories + 1)
+    expect(browseDataFns.loadUncategorizedImages).toHaveBeenCalledTimes(baseImages + 1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shell home' }))
+    expect(browseDataFns.loadCategories).toHaveBeenCalledTimes(baseCategories + 2)
+    expect(browseDataFns.loadUncategorizedImages).toHaveBeenCalledTimes(baseImages + 2)
+    expect(shareableImageStateMock.clearImage).toHaveBeenCalled()
+  })
+
+  it('loads users for search when the search modal opens', async () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shell search' }))
+    await waitFor(() => expect(fetchUsers).toHaveBeenCalledTimes(1))
+  })
+
+  it('falls back to an empty user list when the search user fetch fails', async () => {
+    vi.mocked(fetchUsers).mockRejectedValueOnce(new Error('nope'))
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shell search' }))
+    await waitFor(() => expect(fetchUsers).toHaveBeenCalledTimes(1))
+  })
+
+  it('fetches deployed component versions for admins', async () => {
+    authState = { ...authState, canManageUsers: true }
+    render(<App />)
+
+    await waitFor(() => expect(fetchVersions).toHaveBeenCalledTimes(1))
+  })
+
+  it('tolerates version fetch failures', async () => {
+    authState = { ...authState, canManageUsers: true }
+    vi.mocked(fetchVersions).mockRejectedValueOnce(new Error('down'))
+    render(<App />)
+
+    await waitFor(() => expect(fetchVersions).toHaveBeenCalledTimes(1))
+    expect(screen.getByRole('button', { name: 'Shell home' })).toBeInTheDocument()
+  })
+})
+
+describe('App program and group management', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    currentImagesMock = [mockImage]
+    mockInitialPath = []
+    authState = {
+      currentUser: mockCurrentUser,
+      loading: false,
+      login: vi.fn(),
+      logout: vi.fn(),
+      canManageUsers: false,
+      canEditContent: true,
+    }
+  })
+
+  it('creates, edits, and deletes programs and reloads the program list', async () => {
+    render(<App />)
+    const basePrograms = browseDataFns.loadPrograms.mock.calls.length
+    fireEvent.click(screen.getByRole('button', { name: 'Shell programs' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Modal add program' }))
+    await waitFor(() =>
+      expect(createProgram).toHaveBeenCalledWith({ name: 'New Program', oidc_group: null }),
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Modal edit program' }))
+    await waitFor(() =>
+      expect(updateProgram).toHaveBeenCalledWith(1, {
+        name: 'Renamed Program',
+        oidc_group: 'oidc-grp',
+      }),
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Modal delete program' }))
+    await waitFor(() => expect(deleteProgram).toHaveBeenCalledWith(1))
+
+    await waitFor(() => expect(browseDataFns.loadPrograms).toHaveBeenCalledTimes(basePrograms + 3))
+  })
+
+  it('shows an error snackbar when adding a program fails', async () => {
+    vi.mocked(createProgram).mockRejectedValueOnce(new Error('duplicate'))
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Shell programs' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Modal add program' }))
+    expect(await screen.findByText('Failed to add program.')).toBeInTheDocument()
+  })
+
+  it('creates, edits, and deletes groups and reloads the group list', async () => {
+    render(<App />)
+    const baseGroups = browseDataFns.loadGroups.mock.calls.length
+    fireEvent.click(screen.getByRole('button', { name: 'Shell groups' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Modal add group' }))
+    await waitFor(() =>
+      expect(createGroup).toHaveBeenCalledWith({ name: 'New Group', description: null }),
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Modal edit group' }))
+    await waitFor(() =>
+      expect(updateGroup).toHaveBeenCalledWith(10, { name: 'Renamed Group', description: 'desc' }),
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Modal delete group' }))
+    await waitFor(() => expect(deleteGroup).toHaveBeenCalledWith(10))
+
+    await waitFor(() => expect(browseDataFns.loadGroups).toHaveBeenCalledTimes(baseGroups + 3))
+  })
+})
+
+describe('App grid file drops and reorder feedback', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    currentImagesMock = [mockImage]
+    mockInitialPath = []
+    authState = {
+      currentUser: mockCurrentUser,
+      loading: false,
+      login: vi.fn(),
+      logout: vi.fn(),
+      canManageUsers: false,
+      canEditContent: true,
+    }
+    browseDataFns.refreshCategories.mockResolvedValue([])
+    browseDataFns.refreshUncategorizedImages.mockResolvedValue([])
+  })
+
+  it('warns about unsupported files dropped on the grid', async () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Drop files on grid' }))
+    expect(
+      await screen.findByText('1 file not supported (accepted: images, .zip)'),
+    ).toBeInTheDocument()
+  })
+
+  it('warns when the category refresh after reorder fails', async () => {
+    browseDataFns.refreshCategories.mockRejectedValueOnce(new Error('offline'))
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Grid reorder complete' }))
+    expect(
+      await screen.findByText('Could not refresh categories after reorder.'),
+    ).toBeInTheDocument()
+  })
+
+  it('warns when the image refresh after reorder fails', async () => {
+    browseDataFns.refreshUncategorizedImages.mockRejectedValueOnce(new Error('offline'))
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Grid reorder complete' }))
+    expect(await screen.findByText('Could not refresh images after reorder.')).toBeInTheDocument()
+  })
+
+  it('surfaces reorder errors in an error snackbar', async () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Grid reorder error' }))
+    expect(await screen.findByText('Failed to reorder tiles.')).toBeInTheDocument()
+  })
+
+  it('tracks native file drags over the window', () => {
+    render(<App />)
+
+    const makeDragEvent = (type: string) => {
+      const event = new Event(type, { bubbles: true, cancelable: true })
+      Object.defineProperty(event, 'dataTransfer', { value: { types: ['Files'] } })
+      return event
+    }
+    fireEvent(window, makeDragEvent('dragenter'))
+    fireEvent(window, makeDragEvent('dragover'))
+    fireEvent(window, makeDragEvent('dragleave'))
+    fireEvent(window, makeDragEvent('dragenter'))
+    fireEvent(window, makeDragEvent('drop'))
+
+    expect(screen.getByRole('button', { name: 'Drop files on grid' })).toBeInTheDocument()
+  })
+})
+
+describe('App breadcrumb navigation links', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    currentImagesMock = [mockImage]
+    mockImage.categoryId = 3
+    authState = {
+      currentUser: mockCurrentUser,
+      loading: false,
+      login: vi.fn(),
+      logout: vi.fn(),
+      canManageUsers: false,
+      canEditContent: true,
+    }
+    mockInitialPath = mockDeepPath
+  })
+
+  it('navigates to an ancestor depth from a category breadcrumb link', async () => {
+    render(<App />)
+
+    const categoryBreadcrumb = await screen.findByLabelText('category breadcrumb')
+    fireEvent.click(within(categoryBreadcrumb).getByText('Head Pathologies'))
+
+    await waitFor(() =>
+      expect(
+        within(screen.getByLabelText('category breadcrumb')).queryByText(
+          'Intracranial Hemorrhages ICH 1',
+        ),
+      ).not.toBeInTheDocument(),
+    )
+  })
+
+  it('returns to the root from the category breadcrumb Home link', async () => {
+    render(<App />)
+
+    const categoryBreadcrumb = await screen.findByLabelText('category breadcrumb')
+    fireEvent.click(within(categoryBreadcrumb).getByText('Home'))
+
+    await waitFor(() => expect(screen.queryByText('Head Pathologies')).not.toBeInTheDocument())
+  })
+
+  it('clears the image when navigating from an image breadcrumb category link', async () => {
+    render(<App />)
+    await screen.findByText('Intracranial Hemorrhages ICH 1')
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+
+    const imageBreadcrumb = screen.getByLabelText('image breadcrumb')
+    fireEvent.click(within(imageBreadcrumb).getByText('Intracranial Hemorrhages ICH 1'))
+    expect(shareableImageStateMock.clearImage).toHaveBeenCalled()
+  })
+
+  it('clears the image when navigating from the image breadcrumb Home link', async () => {
+    render(<App />)
+    await screen.findByText('Intracranial Hemorrhages ICH 1')
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+
+    fireEvent.click(within(screen.getByLabelText('image breadcrumb')).getByText('Home'))
+    expect(shareableImageStateMock.clearImage).toHaveBeenCalled()
   })
 })
