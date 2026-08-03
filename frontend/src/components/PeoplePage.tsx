@@ -46,6 +46,7 @@ import {
   matchesTextFilter,
   removeFilterTerm,
 } from '../tableFilterUtils'
+import { useRowsPerPagePreference } from '../useRowsPerPagePreference'
 import { useTableColumnPreferences } from '../useTableColumnPreferences'
 import {
   getStoredIntSet,
@@ -198,8 +199,8 @@ export default function PeoplePage({
     [visibleColumns],
   )
 
-  // Pagination state
-  const [rowsPerPage, setRowsPerPage] = useState(25)
+  // Pagination state (rows-per-page persists per user via localStorage)
+  const [rowsPerPage, setRowsPerPage] = useRowsPerPagePreference('people')
   const [currentPage, setCurrentPage] = useState(0)
 
   // Modal state

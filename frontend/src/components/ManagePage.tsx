@@ -51,6 +51,7 @@ import { formatFileSize } from '../formatUtils'
 import { getVisibilityColors } from '../theme'
 import { getInheritedRestrictionSx } from '../restrictionStyles'
 import { getCategoryHiddenStateFromPath } from '../treeUtils'
+import { useRowsPerPagePreference } from '../useRowsPerPagePreference'
 import { useTableColumnPreferences } from '../useTableColumnPreferences'
 import { useColorMode } from '../useColorMode'
 import BulkEditImagesModal from './BulkEditImagesModal'
@@ -421,8 +422,8 @@ export default function ManagePage({
     [visibleColumns],
   )
 
-  // Pagination state
-  const [rowsPerPage, setRowsPerPage] = useState(25)
+  // Pagination state (rows-per-page persists per user via localStorage)
+  const [rowsPerPage, setRowsPerPage] = useRowsPerPagePreference('manage-images')
   const [currentPage, setCurrentPage] = useState(0)
 
   // Apply initial program filter from external navigation (e.g. search)

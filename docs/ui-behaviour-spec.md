@@ -285,6 +285,11 @@ committed on Save) in the edit modals.
   users can change page or rows-per-page without scrolling to the end of a long
   list. Both controls are bound to the same page / rows-per-page state, so a
   change made in one is reflected in the other.
+- The rows-per-page selection persists per user between logins using
+  localStorage (`useRowsPerPagePreference`), in the same style as table column
+  visibility and filter preferences, so navigating away to an image and back
+  keeps the chosen page size. The People page table persists its rows-per-page
+  the same way.
 - **Auto-refresh:** `ManagePage` reloads (`loadImages`) whenever the
   `imagesVersion` prop changes. **Given** a bulk import job completes, **When**
   the app bumps `imagesVersion`, **Then** the table re-fetches so newly imported
