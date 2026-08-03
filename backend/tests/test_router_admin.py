@@ -458,6 +458,7 @@ async def test_start_file_restore_creates_task(tmp_path) -> None:
     assert params == {
         "snapshot_name": request.snapshot_name,
         "member_path": request.member_path,
+        "manifest_entry": {"size": 3, "sha256": "abc"},
     }
 
 

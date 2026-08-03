@@ -1228,16 +1228,20 @@ async def start_file_restore(
             detail=f"{request.member_path} is not present in snapshot {request.snapshot_name}",
         )
 
+    request_payload: dict[str, object] = {
+        "snapshot_name": request.snapshot_name,
+        "member_path": request.member_path,
+    }
+    manifest_entry = files[request.member_path]
+    if isinstance(manifest_entry, dict):
+        # Cache the validated entry so the background runner does not need
+        # to fetch the manifest a second time.
+        request_payload["manifest_entry"] = manifest_entry
+
     tasks_dir = _ensure_tasks_dir()
     input_path = os.path.join(tasks_dir, f"restore-{uuid.uuid4().hex}.json")
     with open(input_path, "w", encoding="utf-8") as f:
-        json.dump(
-            {
-                "snapshot_name": request.snapshot_name,
-                "member_path": request.member_path,
-            },
-            f,
-        )
+        json.dump(request_payload, f)
 
     try:
         task = await _create_task(db, "file_restore", user, input_path=input_path)
