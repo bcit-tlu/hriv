@@ -608,8 +608,9 @@ describe('ManageCategoriesDialog — edit save', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => expect(onEditCategory).toHaveBeenCalledTimes(1))
-    expect(onEditCategory.mock.calls[0][0]).toBe(2)
-    expect(onEditCategory.mock.calls[0][1]).toBe('Renamed Child')
+    // Child has no restrictions of its own (inherited ids are display-only);
+    // no groups configured and status unchanged, so those args are undefined
+    expect(onEditCategory).toHaveBeenCalledWith(2, 'Renamed Child', [], undefined, undefined)
   })
 })
 
@@ -733,6 +734,36 @@ describe('ManageCategoriesDialog — drag-and-drop reorder', () => {
     expect(items.find((i) => i.id === 3)).toMatchObject({ parent_id: 2 })
   })
 
+  it('inserts a dragged category between two rows on a mid-list drop', async () => {
+    const onReorderCategories = vi.fn().mockResolvedValue(undefined)
+    render(
+      <ManageCategoriesDialog
+        open
+        onClose={vi.fn()}
+        categories={rootCategories()}
+        onAddCategory={vi.fn()}
+        onDeleteCategory={vi.fn()}
+        onReorderCategories={onReorderCategories}
+        programs={programs}
+      />,
+    )
+    const { list } = mockListGeometry()
+
+    dragRow('Gamma')
+    // Between Alpha (mid 20) and Beta (mid 60): insert after Alpha
+    fireDragOverAt(list, 5, 40)
+    fireEvent.drop(list, { dataTransfer: makeDataTransfer() })
+
+    await waitFor(() => expect(onReorderCategories).toHaveBeenCalledTimes(1))
+    const items = onReorderCategories.mock.calls[0][0] as Array<{
+      id: number
+      parent_id: number | null
+      sort_order: number
+    }>
+    expect(items.find((i) => i.id === 3)).toMatchObject({ parent_id: null, sort_order: 1 })
+    expect(items.find((i) => i.id === 2)).toMatchObject({ parent_id: null, sort_order: 2 })
+  })
+
   it('refreshes via onReorderComplete and skips image reorder when category reorder fails', async () => {
     const onReorderCategories = vi.fn().mockRejectedValue(new Error('conflict'))
     const onReorderImages = vi.fn()
@@ -786,7 +817,8 @@ describe('ManageCategoriesDialog — drag-and-drop reorder', () => {
     fireEvent.drop(list, { dataTransfer: makeDataTransfer() })
 
     await waitFor(() => expect(onReorderImages).toHaveBeenCalledTimes(1))
-    expect(onReorderImages.mock.calls[0][0]).toEqual([{ id: 100, sort_order: expect.any(Number) }])
+    // The image keeps interleave slot 0; the three categories fill slots 1..3
+    expect(onReorderImages.mock.calls[0][0]).toEqual([{ id: 100, sort_order: 0 }])
     await waitFor(() => expect(onReorderComplete).toHaveBeenCalledTimes(1))
   })
 
