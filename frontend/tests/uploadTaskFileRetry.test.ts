@@ -73,18 +73,33 @@ class FakeXHR {
 type FetchScript = { status: number; body: unknown }
 const statusScripts: FetchScript[] = []
 const finalizeScripts: FetchScript[] = []
+const unscriptedFetches: string[] = []
+
+// Minimal Response-shaped stub (avoids relying on the global Response
+// constructor under jsdom; matches the fields request() reads).
+function fetchResponse(status: number, body: unknown) {
+  const text = JSON.stringify(body)
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: '',
+    headers: { get: () => null },
+    text: () => Promise.resolve(text),
+    json: () => Promise.resolve(body),
+  } as unknown as Response
+}
 
 const mockFetch = vi.fn((url: string, init?: RequestInit) => {
   const method = init?.method ?? 'GET'
   const queue = method === 'POST' ? finalizeScripts : statusScripts
   const script = queue.shift()
-  if (!script) throw new Error(`No scripted response for ${method} ${url}`)
-  return Promise.resolve(
-    new Response(JSON.stringify(script.body), {
-      status: script.status,
-      headers: { 'Content-Type': 'application/json' },
-    }),
-  )
+  if (!script) {
+    // A thrown error here would be wrapped into a retryable ApiTransportError
+    // by request(); record the drift and fail deterministically instead.
+    unscriptedFetches.push(`${method} ${url}`)
+    return Promise.resolve(fetchResponse(418, { detail: 'No scripted response' }))
+  }
+  return Promise.resolve(fetchResponse(script.status, script.body))
 })
 
 function makeLargeFile(size: number): File {
@@ -101,6 +116,7 @@ beforeEach(() => {
   sentOffsets.length = 0
   statusScripts.length = 0
   finalizeScripts.length = 0
+  unscriptedFetches.length = 0
   mockFetch.mockClear()
   vi.stubGlobal('XMLHttpRequest', FakeXHR)
   vi.stubGlobal('fetch', mockFetch)
@@ -110,9 +126,17 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
+  expect(unscriptedFetches).toEqual([])
 })
 
-/** Run the upload while flushing fake backoff timers until it settles. */
+/**
+ * Run the upload while flushing fake backoff timers until it settles.
+ *
+ * Chunk callbacks fire via real queueMicrotask (Vitest's default fakeTimers
+ * toFake list does not include it), so each advanceTimersByTimeAsync pump
+ * also drains pending microtasks. A bounded pump budget keeps a
+ * never-settling upload failing fast instead of spinning until testTimeout.
+ */
 async function settle<T>(promise: Promise<T>): Promise<T> {
   let settled = false
   const guarded = promise.finally(() => {
@@ -120,7 +144,8 @@ async function settle<T>(promise: Promise<T>): Promise<T> {
   })
   // Prevent unhandled rejection warnings while we pump timers.
   guarded.catch(() => {})
-  while (!settled) {
+  for (let pumps = 0; !settled; pumps += 1) {
+    if (pumps > 100) throw new Error('Upload promise did not settle within the pump budget')
     await vi.advanceTimersByTimeAsync(1000)
   }
   return guarded
