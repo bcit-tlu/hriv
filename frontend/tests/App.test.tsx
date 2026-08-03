@@ -14,17 +14,21 @@ import {
   updateProgram,
 } from '../src/api'
 
+const apiMocks = vi.hoisted(() => ({
+  fetchUsers: vi.fn(),
+  fetchVersions: vi.fn(),
+  fetchFrontendVersion: vi.fn(),
+  createProgram: vi.fn(),
+  updateProgram: vi.fn(),
+  deleteProgram: vi.fn(),
+  createGroup: vi.fn(),
+  updateGroup: vi.fn(),
+  deleteGroup: vi.fn(),
+}))
+
 vi.mock('../src/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/api')>()),
-  fetchUsers: vi.fn().mockResolvedValue([]),
-  fetchVersions: vi.fn().mockResolvedValue({ backend: '1.0.0', backup: '1.0.0' }),
-  fetchFrontendVersion: vi.fn().mockResolvedValue({ frontend: '1.0.0' }),
-  createProgram: vi.fn().mockResolvedValue({}),
-  updateProgram: vi.fn().mockResolvedValue({}),
-  deleteProgram: vi.fn().mockResolvedValue(undefined),
-  createGroup: vi.fn().mockResolvedValue({}),
-  updateGroup: vi.fn().mockResolvedValue({}),
-  deleteGroup: vi.fn().mockResolvedValue(undefined),
+  ...apiMocks,
 }))
 
 const mockImage = {
@@ -133,7 +137,20 @@ let mockInitialPath: MockCategory[] = []
 
 /** Restore every shared mutable fixture; call from each suite's beforeEach. */
 function resetFixtures() {
-  vi.clearAllMocks()
+  // resetAllMocks drops implementations and unconsumed *Once queue entries
+  // left by earlier suites, so defaults must be re-established below.
+  vi.resetAllMocks()
+  apiMocks.fetchUsers.mockResolvedValue([])
+  apiMocks.fetchVersions.mockResolvedValue({ backend: '1.0.0', backup: '1.0.0' })
+  apiMocks.fetchFrontendVersion.mockResolvedValue({ frontend: '1.0.0' })
+  apiMocks.createProgram.mockResolvedValue({})
+  apiMocks.updateProgram.mockResolvedValue({})
+  apiMocks.deleteProgram.mockResolvedValue(undefined)
+  apiMocks.createGroup.mockResolvedValue({})
+  apiMocks.updateGroup.mockResolvedValue({})
+  apiMocks.deleteGroup.mockResolvedValue(undefined)
+  browseDataFns.refreshCategories.mockResolvedValue([])
+  browseDataFns.refreshUncategorizedImages.mockResolvedValue([])
   mockImage.active = true
   mockImage.categoryId = 1
   mockImage.note = null
@@ -485,14 +502,19 @@ vi.mock('../src/components/SearchModal', () => ({
   default: ({
     open,
     users,
+    onClose,
     onSelectImage,
   }: {
     open: boolean
     users: unknown[]
+    onClose: () => void
     onSelectImage: (image: typeof mockSecondImage, categoryPath: typeof mockCategories) => void
   }) => (
     <>
       {open && <div>search users: {users.length}</div>}
+      <button type="button" onClick={onClose}>
+        Close search
+      </button>
       <button type="button" onClick={() => onSelectImage(mockSecondImage, mockCategories)}>
         Select second image from search
       </button>
@@ -847,11 +869,19 @@ describe('App shell interactions', () => {
   })
 
   it('falls back to an empty user list when the search user fetch fails', async () => {
-    vi.mocked(fetchUsers).mockRejectedValueOnce(new Error('nope'))
+    // Seed a non-empty list first so the empty state is attributable to the
+    // rejection fallback rather than the initial render state.
+    vi.mocked(fetchUsers).mockResolvedValueOnce([
+      { ...mockCurrentUser, id: 2, name: 'Student', role: 'student' },
+    ])
     render(<App />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Shell search' }))
-    await waitFor(() => expect(fetchUsers).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText('search users: 1')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close search' }))
+    vi.mocked(fetchUsers).mockRejectedValueOnce(new Error('nope'))
+    fireEvent.click(screen.getByRole('button', { name: 'Shell search' }))
     expect(await screen.findByText('search users: 0')).toBeInTheDocument()
   })
 
@@ -863,13 +893,22 @@ describe('App shell interactions', () => {
   })
 
   it('clears versions when the version fetches fail', async () => {
+    // Seed successful versions first so the null state is attributable to
+    // the catch handlers rather than the initial render state.
     authState = { ...authState, canManageUsers: true }
-    vi.mocked(fetchVersions).mockRejectedValueOnce(new Error('down'))
-    vi.mocked(fetchFrontendVersion).mockRejectedValueOnce(new Error('down'))
-    render(<App />)
+    const { rerender } = render(<App />)
+    expect(await screen.findByText('versions: 1.0.0/1.0.0')).toBeInTheDocument()
 
-    await waitFor(() => expect(fetchVersions).toHaveBeenCalledTimes(1))
+    authState = { ...authState, canManageUsers: false }
+    rerender(<App />)
     expect(await screen.findByText('versions: null/null')).toBeInTheDocument()
+
+    vi.mocked(fetchVersions).mockRejectedValue(new Error('down'))
+    vi.mocked(fetchFrontendVersion).mockRejectedValue(new Error('down'))
+    authState = { ...authState, canManageUsers: true }
+    rerender(<App />)
+    await waitFor(() => expect(fetchVersions).toHaveBeenCalledTimes(2))
+    expect(screen.getByText('versions: null/null')).toBeInTheDocument()
   })
 })
 
@@ -943,11 +982,7 @@ describe('App program and group management', () => {
 })
 
 describe('App grid file drops and reorder feedback', () => {
-  beforeEach(() => {
-    resetFixtures()
-    browseDataFns.refreshCategories.mockResolvedValue([])
-    browseDataFns.refreshUncategorizedImages.mockResolvedValue([])
-  })
+  beforeEach(resetFixtures)
 
   it('warns about unsupported files dropped on the grid', async () => {
     render(<App />)
