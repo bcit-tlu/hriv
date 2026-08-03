@@ -53,7 +53,6 @@ export default function BulkGroupModal({
   }
 
   const handleClose = () => {
-    if (saving) return
     setGroupIds([])
     onClose()
   }
@@ -95,9 +94,7 @@ export default function BulkGroupModal({
         </FormControl>
       </DialogContent>
       <DialogActions>
-        <Button onClick={handleClose} disabled={saving}>
-          Cancel
-        </Button>
+        <Button onClick={handleClose}>Cancel</Button>
         <Button
           onClick={handleSave}
           variant="contained"

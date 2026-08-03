@@ -45,13 +45,14 @@ export default function BulkEditModal({
     try {
       await onSave(programIds)
       setProgramIds([])
+    } catch {
+      return
     } finally {
       setSaving(false)
     }
   }
 
   const handleClose = () => {
-    if (saving) return
     setProgramIds([])
     onClose()
   }
@@ -93,9 +94,7 @@ export default function BulkEditModal({
         </FormControl>
       </DialogContent>
       <DialogActions>
-        <Button onClick={handleClose} disabled={saving}>
-          Cancel
-        </Button>
+        <Button onClick={handleClose}>Cancel</Button>
         <Button
           onClick={handleSave}
           variant="contained"

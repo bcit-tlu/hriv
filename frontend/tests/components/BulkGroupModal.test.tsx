@@ -107,7 +107,8 @@ describe('BulkGroupModal', () => {
 
     const savingButton = screen.getByRole('button', { name: /Adding/ })
     expect(savingButton).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled()
+    // Cancel stays enabled so a hung request can never trap the user
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled()
 
     // Further clicks while in flight do not trigger another save
     fireEvent.click(savingButton)
