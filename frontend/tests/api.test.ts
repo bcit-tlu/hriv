@@ -565,6 +565,30 @@ describe('request helper (via wrapper functions)', () => {
       expect(userMessage(err, 'fallback')).toBe('fallback')
     }
   })
+
+  it('never surfaces "null" for a null detail', async () => {
+    const body = JSON.stringify({ detail: null })
+    mockFetch.mockReturnValueOnce(
+      Promise.resolve({
+        ok: false,
+        status: 400,
+        statusText: 'Bad Request',
+        headers: { get: () => null },
+        json: () => Promise.resolve({ detail: null }),
+        text: () => Promise.resolve(body),
+      }),
+    )
+
+    try {
+      await createGroup({ name: 'New Group' })
+      expect.unreachable('createGroup should have thrown')
+    } catch (e) {
+      expect(e).toBeInstanceOf(ApiError)
+      const err = e as ApiError
+      expect(err.detail).toBe('')
+      expect(userMessage(err, 'fallback')).toBe('fallback')
+    }
+  })
 })
 
 // ── Status ───────────────────────────────────────────────────────────────
