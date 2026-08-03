@@ -20,6 +20,8 @@ from app.database import settings
 from app.models import AdminTask
 
 from app.admin_ops import (
+    FILES_EXPORT_FORMAT_VERSION,
+    FILES_EXPORT_MANIFEST_NAME,
     TaskCancelled,
     _create_tar_file,
     _ensure_import_staging_same_device,
@@ -46,6 +48,7 @@ from app.admin_ops import (
     _validate_retained_files_import_archive_path,
     _swap_imported_entries,
     _queue_rebuild_tiles_after_import,
+    build_files_export_manifest,
 )
 
 
@@ -172,6 +175,150 @@ def test_extract_and_restore_rolls_back_on_entry_failure(tmp_path, monkeypatch) 
     assert not (source_dir / "new.tiff").exists()
     assert (tiles_dir / "tile1.jpeg").read_text() == "tile"
     assert (tasks_dir / "keep.json").read_text() == "keep"
+
+
+def _make_manifest_archive(tmp_path, manifest) -> str:
+    """Build a filesystem-import archive with *manifest* at the root."""
+    payload_dir = tmp_path / "payload"
+    payload_source = payload_dir / "source_images"
+    payload_source.mkdir(parents=True, exist_ok=True)
+    (payload_source / "new.tiff").write_text("new")
+    archive = str(tmp_path / "manifest-test.tar.gz")
+    with tarfile.open(archive, "w:gz") as tar:
+        if manifest is not None:
+            data = (
+                manifest
+                if isinstance(manifest, bytes)
+                else json.dumps(manifest).encode("utf-8")
+            )
+            info = tarfile.TarInfo(FILES_EXPORT_MANIFEST_NAME)
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+        tar.add(str(payload_dir), arcname="data")
+    return archive
+
+
+def _restore_dirs(tmp_path):
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(exist_ok=True)
+    tiles_dir = data_dir / "tiles"
+    tiles_dir.mkdir(exist_ok=True)
+    source_dir = data_dir / "source_images"
+    source_dir.mkdir(exist_ok=True)
+    return data_dir, tiles_dir, source_dir
+
+
+def test_extract_and_restore_accepts_current_manifest(tmp_path) -> None:
+    data_dir, tiles_dir, source_dir = _restore_dirs(tmp_path)
+    archive = _make_manifest_archive(tmp_path, build_files_export_manifest())
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        result = _extract_and_restore(
+            archive, tmpdir, str(data_dir), str(tiles_dir), str(source_dir),
+        )
+
+    assert result["manifest_format_version"] == FILES_EXPORT_FORMAT_VERSION
+    assert (source_dir / "new.tiff").read_text() == "new"
+    # The manifest must never be swapped into the data directory.
+    assert not (data_dir / FILES_EXPORT_MANIFEST_NAME).exists()
+
+
+def test_extract_and_restore_legacy_archive_without_manifest(tmp_path) -> None:
+    data_dir, tiles_dir, source_dir = _restore_dirs(tmp_path)
+    archive = _make_manifest_archive(tmp_path, None)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        result = _extract_and_restore(
+            archive, tmpdir, str(data_dir), str(tiles_dir), str(source_dir),
+        )
+
+    assert result["manifest_format_version"] == 0
+    assert (source_dir / "new.tiff").read_text() == "new"
+
+
+def test_extract_and_restore_rejects_unsupported_format_version(tmp_path) -> None:
+    data_dir, tiles_dir, source_dir = _restore_dirs(tmp_path)
+    manifest = build_files_export_manifest()
+    manifest["format_version"] = 999
+    archive = _make_manifest_archive(tmp_path, manifest)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with pytest.raises(ValueError, match="format version 999 is not supported"):
+            _extract_and_restore(
+                archive, tmpdir, str(data_dir), str(tiles_dir), str(source_dir),
+            )
+
+    # Nothing was swapped into the data directory.
+    assert not (source_dir / "new.tiff").exists()
+
+
+def test_extract_and_restore_rejects_wrong_export_type(tmp_path) -> None:
+    data_dir, tiles_dir, source_dir = _restore_dirs(tmp_path)
+    manifest = build_files_export_manifest()
+    manifest["export_type"] = "database"
+    archive = _make_manifest_archive(tmp_path, manifest)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with pytest.raises(ValueError, match="export_type 'database'"):
+            _extract_and_restore(
+                archive, tmpdir, str(data_dir), str(tiles_dir), str(source_dir),
+            )
+
+
+def test_extract_and_restore_rejects_invalid_manifest_json(tmp_path) -> None:
+    data_dir, tiles_dir, source_dir = _restore_dirs(tmp_path)
+    archive = _make_manifest_archive(tmp_path, b"{not json")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with pytest.raises(ValueError, match="not valid JSON"):
+            _extract_and_restore(
+                archive, tmpdir, str(data_dir), str(tiles_dir), str(source_dir),
+            )
+
+
+def test_extract_and_restore_rejects_non_integer_format_version(tmp_path) -> None:
+    data_dir, tiles_dir, source_dir = _restore_dirs(tmp_path)
+    manifest = build_files_export_manifest()
+    manifest["format_version"] = "one"
+    archive = _make_manifest_archive(tmp_path, manifest)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with pytest.raises(ValueError, match="missing or invalid format_version"):
+            _extract_and_restore(
+                archive, tmpdir, str(data_dir), str(tiles_dir), str(source_dir),
+            )
+
+
+def test_create_tar_file_embeds_manifest(tmp_path) -> None:
+    data_dir, tiles_dir, tasks_dir = _make_source_only_tree(tmp_path)
+    dest = str(tmp_path / "manifest.tar.gz")
+
+    with (
+        patch("app.admin_ops._TASKS_DIR", str(tasks_dir)),
+        patch("app.admin_ops.settings") as mock_settings,
+        patch("app.admin_ops.shutil.which", return_value=None),
+    ):
+        mock_settings.tiles_dir = str(tiles_dir)
+        _create_tar_file(str(data_dir), dest)
+
+    with tarfile.open(dest, "r:gz") as tar:
+        names = tar.getnames()
+        assert names[0] == FILES_EXPORT_MANIFEST_NAME
+        member = tar.extractfile(FILES_EXPORT_MANIFEST_NAME)
+        assert member is not None
+        manifest = json.loads(member.read().decode("utf-8"))
+
+    assert manifest["format_version"] == FILES_EXPORT_FORMAT_VERSION
+    assert manifest["export_type"] == "filesystem"
+    assert "hriv_version" in manifest
+    assert "created_at" in manifest
+
+
+def test_build_files_export_manifest_uses_app_version_env(monkeypatch) -> None:
+    monkeypatch.setenv("APP_VERSION", "1.2.3")
+    assert build_files_export_manifest()["hriv_version"] == "1.2.3"
+    monkeypatch.delenv("APP_VERSION")
+    assert build_files_export_manifest()["hriv_version"] == "unknown"
 
 
 def test_extract_and_restore_empty_archive(tmp_path) -> None:

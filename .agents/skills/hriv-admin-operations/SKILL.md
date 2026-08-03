@@ -41,7 +41,14 @@ Use this skill for administrator-facing operations and long-running task flows.
   `delete_files_import_archive` path so active archives are never removed.
   The active policy is exposed at
   `GET /admin/tasks/files-import/archive-retention` and surfaced in the admin
-  UI beside the cumulative-usage summary. The import also uses a
+  UI beside the cumulative-usage summary.
+  Filesystem exports embed a JSON manifest (`hriv-manifest.json`,
+  `format_version`/`hriv_version`/`export_type`/`created_at`) at the archive
+  root; imports validate it before swapping entries into `/data` and reject
+  unsupported format versions with a clear error, while manifest-less legacy
+  archives (e.g. previously retained ones) still import as format v0 with a
+  warning. See `docs/admin-import-export.md#archive-manifest-and-format-versioning`.
+  The import also uses a
   coarse compressed-size preflight plus a runtime free-space floor so highly
   compressible archives still fail before the swap if the staging volume runs
   low. Because entries are moved with `os.rename`, `IMPORT_STAGING_DIR` must be
