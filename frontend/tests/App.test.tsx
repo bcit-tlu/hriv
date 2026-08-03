@@ -7,6 +7,7 @@ import {
   createProgram,
   deleteGroup,
   deleteProgram,
+  fetchFrontendVersion,
   fetchUsers,
   fetchVersions,
   updateGroup,
@@ -312,6 +313,8 @@ vi.mock('../src/components/AppShell', () => ({
     onSearchOpen,
     onOpenPrograms,
     onOpenGroups,
+    frontendVersion,
+    backendVersion,
   }: {
     children: ReactNode
     onTabChange: (v: string) => void
@@ -319,8 +322,13 @@ vi.mock('../src/components/AppShell', () => ({
     onSearchOpen: () => void
     onOpenPrograms: () => void
     onOpenGroups: () => void
+    frontendVersion: string | null
+    backendVersion: string | null
   }) => (
     <div>
+      <div>
+        versions: {String(frontendVersion)}/{String(backendVersion)}
+      </div>
       <button type="button" onClick={() => onTabChange('admin')}>
         Shell tab admin
       </button>
@@ -475,13 +483,20 @@ vi.mock('../src/observability', () => ({
 }))
 vi.mock('../src/components/SearchModal', () => ({
   default: ({
+    open,
+    users,
     onSelectImage,
   }: {
+    open: boolean
+    users: unknown[]
     onSelectImage: (image: typeof mockSecondImage, categoryPath: typeof mockCategories) => void
   }) => (
-    <button type="button" onClick={() => onSelectImage(mockSecondImage, mockCategories)}>
-      Select second image from search
-    </button>
+    <>
+      {open && <div>search users: {users.length}</div>}
+      <button type="button" onClick={() => onSelectImage(mockSecondImage, mockCategories)}>
+        Select second image from search
+      </button>
+    </>
   ),
 }))
 vi.mock('../src/components/UploadImageModal', () => ({ default: () => null }))
@@ -822,10 +837,13 @@ describe('App shell interactions', () => {
   })
 
   it('loads users for search when the search modal opens', async () => {
+    vi.mocked(fetchUsers).mockResolvedValueOnce([
+      { ...mockCurrentUser, id: 2, name: 'Student', role: 'student' },
+    ])
     render(<App />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Shell search' }))
-    await waitFor(() => expect(fetchUsers).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText('search users: 1')).toBeInTheDocument()
   })
 
   it('falls back to an empty user list when the search user fetch fails', async () => {
@@ -834,22 +852,24 @@ describe('App shell interactions', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Shell search' }))
     await waitFor(() => expect(fetchUsers).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText('search users: 0')).toBeInTheDocument()
   })
 
   it('fetches deployed component versions for admins', async () => {
     authState = { ...authState, canManageUsers: true }
     render(<App />)
 
-    await waitFor(() => expect(fetchVersions).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText('versions: 1.0.0/1.0.0')).toBeInTheDocument()
   })
 
-  it('tolerates version fetch failures', async () => {
+  it('clears versions when the version fetches fail', async () => {
     authState = { ...authState, canManageUsers: true }
     vi.mocked(fetchVersions).mockRejectedValueOnce(new Error('down'))
+    vi.mocked(fetchFrontendVersion).mockRejectedValueOnce(new Error('down'))
     render(<App />)
 
     await waitFor(() => expect(fetchVersions).toHaveBeenCalledTimes(1))
-    expect(screen.getByRole('button', { name: 'Shell home' })).toBeInTheDocument()
+    expect(await screen.findByText('versions: null/null')).toBeInTheDocument()
   })
 })
 
@@ -979,7 +999,10 @@ describe('App grid file drops and reorder feedback', () => {
 
     // Nested dragenter/dragleave pairs must not deactivate until the counter hits 0
     fireEvent(window, makeDragEvent('dragenter'))
-    fireEvent(window, makeDragEvent('dragover'))
+    // dragover/drop must be prevented so the browser doesn't navigate to the file
+    const dragOverEvent = makeDragEvent('dragover')
+    fireEvent(window, dragOverEvent)
+    expect(dragOverEvent.defaultPrevented).toBe(true)
     fireEvent(window, makeDragEvent('dragleave'))
     expect(screen.getByText('File drag active')).toBeInTheDocument()
 
@@ -989,24 +1012,17 @@ describe('App grid file drops and reorder feedback', () => {
     // Drop resets the counter and clears the state on the next animation frame
     fireEvent(window, makeDragEvent('dragenter'))
     expect(screen.getByText('File drag active')).toBeInTheDocument()
-    fireEvent(window, makeDragEvent('drop'))
+    const dropEvent = makeDragEvent('drop')
+    fireEvent(window, dropEvent)
+    expect(dropEvent.defaultPrevented).toBe(true)
     await waitFor(() => expect(screen.queryByText('File drag active')).not.toBeInTheDocument())
   })
 })
 
 describe('App breadcrumb navigation links', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
-    currentImagesMock = [mockImage]
+    resetFixtures()
     mockImage.categoryId = 3
-    authState = {
-      currentUser: mockCurrentUser,
-      loading: false,
-      login: vi.fn(),
-      logout: vi.fn(),
-      canManageUsers: false,
-      canEditContent: true,
-    }
     mockInitialPath = mockDeepPath
   })
 
