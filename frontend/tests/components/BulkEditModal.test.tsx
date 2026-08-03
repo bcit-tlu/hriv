@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import BulkEditModal from '../../src/components/BulkEditModal'
 import type { Program } from '../../src/types'
@@ -82,5 +82,39 @@ describe('BulkEditModal', () => {
 
     await user.click(screen.getByRole('button', { name: /cancel/i }))
     expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  it('disables actions and shows saving state while onSave is in flight', async () => {
+    const user = userEvent.setup()
+    let resolveSave: () => void = () => {}
+    const onSave = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSave = resolve
+        }),
+    )
+    render(
+      <BulkEditModal
+        open
+        onClose={vi.fn()}
+        onSave={onSave}
+        programs={programs}
+        selectedCount={2}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    const savingButton = screen.getByRole('button', { name: /Saving/ })
+    expect(savingButton).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled()
+
+    // Further clicks while in flight do not trigger another save
+    fireEvent.click(savingButton)
+    expect(onSave).toHaveBeenCalledTimes(1)
+
+    resolveSave()
+    expect(await screen.findByRole('button', { name: 'Save' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled()
   })
 })

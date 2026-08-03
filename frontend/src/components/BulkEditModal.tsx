@@ -2,6 +2,7 @@ import { useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
+import CircularProgress from '@mui/material/CircularProgress'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
@@ -18,7 +19,7 @@ import type { Program } from '../types'
 interface BulkEditModalProps {
   open: boolean
   onClose: () => void
-  onSave: (programIds: number[]) => void
+  onSave: (programIds: number[]) => void | Promise<void>
   programs: Program[]
   selectedCount: number
 }
@@ -31,18 +32,26 @@ export default function BulkEditModal({
   selectedCount,
 }: BulkEditModalProps) {
   const [programIds, setProgramIds] = useState<number[]>([])
+  const [saving, setSaving] = useState(false)
 
   const handleProgramChange = (e: SelectChangeEvent<number[]>) => {
     const val = e.target.value
     setProgramIds(typeof val === 'string' ? [] : val)
   }
 
-  const handleSave = () => {
-    onSave(programIds)
-    setProgramIds([])
+  const handleSave = async () => {
+    if (saving) return
+    setSaving(true)
+    try {
+      await onSave(programIds)
+      setProgramIds([])
+    } finally {
+      setSaving(false)
+    }
   }
 
   const handleClose = () => {
+    if (saving) return
     setProgramIds([])
     onClose()
   }
@@ -84,9 +93,16 @@ export default function BulkEditModal({
         </FormControl>
       </DialogContent>
       <DialogActions>
-        <Button onClick={handleClose}>Cancel</Button>
-        <Button onClick={handleSave} variant="contained">
-          Save
+        <Button onClick={handleClose} disabled={saving}>
+          Cancel
+        </Button>
+        <Button
+          onClick={handleSave}
+          variant="contained"
+          disabled={saving}
+          startIcon={saving ? <CircularProgress size={16} /> : undefined}
+        >
+          {saving ? 'Saving…' : 'Save'}
         </Button>
       </DialogActions>
     </Dialog>

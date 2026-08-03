@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import BulkGroupModal from '../../src/components/BulkGroupModal'
 import type { Group } from '../../src/types'
@@ -85,5 +85,36 @@ describe('BulkGroupModal', () => {
     expect(onSave).toHaveBeenCalledWith([8])
     // After save the internal state resets — button should be disabled again
     expect(screen.getByRole('button', { name: 'Add to Groups' })).toBeDisabled()
+  })
+
+  it('disables actions and shows saving state while onSave is in flight', async () => {
+    const user = userEvent.setup()
+    let resolveSave: () => void = () => {}
+    const onSave = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSave = resolve
+        }),
+    )
+    render(
+      <BulkGroupModal open onClose={vi.fn()} onSave={onSave} groups={groups} selectedCount={1} />,
+    )
+
+    await user.click(screen.getByRole('combobox'))
+    await user.click(screen.getByRole('option', { name: 'Lab A2' }))
+    await user.keyboard('{Escape}')
+    await user.click(screen.getByRole('button', { name: 'Add to Groups' }))
+
+    const savingButton = screen.getByRole('button', { name: /Adding/ })
+    expect(savingButton).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled()
+
+    // Further clicks while in flight do not trigger another save
+    fireEvent.click(savingButton)
+    expect(onSave).toHaveBeenCalledTimes(1)
+
+    resolveSave()
+    expect(await screen.findByRole('button', { name: 'Add to Groups' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled()
   })
 })

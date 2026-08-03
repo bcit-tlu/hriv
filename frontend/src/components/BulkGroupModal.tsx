@@ -2,6 +2,7 @@ import { useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
+import CircularProgress from '@mui/material/CircularProgress'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
@@ -31,6 +32,7 @@ export default function BulkGroupModal({
   selectedCount,
 }: BulkGroupModalProps) {
   const [groupIds, setGroupIds] = useState<number[]>([])
+  const [saving, setSaving] = useState(false)
 
   const handleGroupChange = (e: SelectChangeEvent<number[]>) => {
     const val = e.target.value
@@ -38,15 +40,20 @@ export default function BulkGroupModal({
   }
 
   const handleSave = async () => {
+    if (saving) return
+    setSaving(true)
     try {
       await onSave(groupIds)
       setGroupIds([])
     } catch {
       return
+    } finally {
+      setSaving(false)
     }
   }
 
   const handleClose = () => {
+    if (saving) return
     setGroupIds([])
     onClose()
   }
@@ -88,9 +95,16 @@ export default function BulkGroupModal({
         </FormControl>
       </DialogContent>
       <DialogActions>
-        <Button onClick={handleClose}>Cancel</Button>
-        <Button onClick={handleSave} variant="contained" disabled={groupIds.length === 0}>
-          Add to Groups
+        <Button onClick={handleClose} disabled={saving}>
+          Cancel
+        </Button>
+        <Button
+          onClick={handleSave}
+          variant="contained"
+          disabled={groupIds.length === 0 || saving}
+          startIcon={saving ? <CircularProgress size={16} /> : undefined}
+        >
+          {saving ? 'Adding…' : 'Add to Groups'}
         </Button>
       </DialogActions>
     </Dialog>
