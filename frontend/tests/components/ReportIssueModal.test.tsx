@@ -227,7 +227,7 @@ describe('ReportIssueModal', () => {
       expect(screen.getByText(/Your feedback was received successfully/)).toBeInTheDocument()
     })
 
-    await user.click(screen.getByRole('button', { name: /close/i }))
+    await user.click(screen.getByRole('button', { name: /cancel/i }))
     expect(onClose).toHaveBeenCalledOnce()
 
     await act(async () => {

@@ -157,7 +157,7 @@ export default function ReportIssueModal({ open, onClose, page }: ReportIssueMod
       </DialogContent>
       <DialogActions>
         <Button onClick={handleClose} disabled={submitting}>
-          {success ? 'Close' : 'Cancel'}
+          {trackingUrl ? 'Close' : 'Cancel'}
         </Button>
         <Button
           onClick={handleSubmit}
