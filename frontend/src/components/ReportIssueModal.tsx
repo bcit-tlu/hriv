@@ -20,6 +20,16 @@ interface ReportIssueModalProps {
 
 export const AUTO_CLOSE_DELAY_MS = 2000
 
+function safeTrackingUrl(raw: string | null): string | null {
+  if (!raw) return null
+  try {
+    const url = new URL(raw)
+    return url.protocol === 'https:' || url.protocol === 'http:' ? raw : null
+  } catch {
+    return null
+  }
+}
+
 export default function ReportIssueModal({ open, onClose, page }: ReportIssueModalProps) {
   const [description, setDescription] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -91,9 +101,10 @@ export default function ReportIssueModal({ open, onClose, page }: ReportIssueMod
       })
       setSuccess('Your feedback was received successfully. Thanks!')
       setDescription('')
-      if (result.tracking_url) {
+      const safeUrl = safeTrackingUrl(result.tracking_url)
+      if (safeUrl) {
         // Keep the dialog open so the user can follow the tracking link.
-        setTrackingUrl(result.tracking_url)
+        setTrackingUrl(safeUrl)
       } else {
         // Auto-close after a short delay
         timerRef.current = setTimeout(() => {

@@ -126,6 +126,31 @@ describe('ReportIssueModal', () => {
     expect(onClose).toHaveBeenCalledOnce()
   })
 
+  it('ignores non-http(s) tracking URLs and falls back to the auto-close flow', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const onClose = vi.fn()
+    vi.mocked(reportIssue).mockResolvedValue({
+      destination: 'github',
+      tracking_url: 'javascript:alert(1)',
+      issue_url: null,
+    })
+    render(<ReportIssueModal open onClose={onClose} page="browse" />)
+
+    const textfield = screen.getByRole('textbox')
+    await user.type(textfield, 'Button is broken')
+    await user.click(screen.getByRole('button', { name: /submit/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/Your feedback was received successfully/)).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('link', { name: /track your report/i })).not.toBeInTheDocument()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(AUTO_CLOSE_DELAY_MS + 500)
+    })
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+
   it('does not auto-close when a tracking link is shown', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     const onClose = vi.fn()
