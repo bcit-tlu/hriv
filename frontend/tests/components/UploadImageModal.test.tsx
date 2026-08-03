@@ -194,5 +194,6 @@ describe('UploadImageModal', () => {
       expect(onUploaded).toHaveBeenCalledTimes(1)
     })
     expect(uploadSourceImage).toHaveBeenCalledTimes(1)
+    vi.mocked(uploadSourceImage).mockReset()
   })
 })
