@@ -107,9 +107,13 @@ describe('EditCategoryDialog', () => {
     })
   })
 
-  it('shows error on 409 conflict', async () => {
+  it('shows the backend detail on 409 duplicate-name conflict', async () => {
     const user = userEvent.setup()
-    const onSave = vi.fn().mockRejectedValue(new ApiError(409, 'Conflict'))
+    const onSave = vi
+      .fn()
+      .mockRejectedValue(
+        new ApiError(409, 'A category with this name already exists at this level'),
+      )
 
     renderDialog({ onSave })
 
@@ -121,6 +125,24 @@ describe('EditCategoryDialog', () => {
     await waitFor(() => {
       expect(
         screen.getByText('A category with this name already exists at this level'),
+      ).toBeInTheDocument()
+    })
+  })
+
+  it('shows the generic conflict message for 409s without usable detail', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn().mockRejectedValue(new ApiError(409, ''))
+
+    renderDialog({ onSave })
+
+    const input = screen.getByDisplayValue('Architecture')
+    await user.clear(input)
+    await user.type(input, 'Duplicate')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('This item was modified by another user. Please refresh and try again.'),
       ).toBeInTheDocument()
     })
   })

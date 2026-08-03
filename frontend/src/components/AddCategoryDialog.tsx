@@ -3,7 +3,7 @@ import Alert from '@mui/material/Alert'
 import Autocomplete, { createFilterOptions } from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
 import Chip from '@mui/material/Chip'
-import { ApiError, userMessage } from '../api'
+import { userMessage } from '../api'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
@@ -154,11 +154,7 @@ export default function AddCategoryDialog({
       setSelectedGroupIds(new Set())
       onClose()
     } catch (err) {
-      if (err instanceof ApiError && err.status === 409) {
-        setError('A category with this name already exists at this level')
-      } else {
-        setError(userMessage(err, 'Failed to add category.'))
-      }
+      setError(userMessage(err, 'Failed to add category.'))
     } finally {
       setSaving(false)
     }
