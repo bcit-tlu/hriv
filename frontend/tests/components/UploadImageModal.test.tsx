@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 vi.mock('../../src/api', async (importOriginal) => {
@@ -324,11 +324,9 @@ describe('UploadImageModal', () => {
   })
 
   it('closes quietly when a bulk upload is cancelled via Cancel', async () => {
-    let rejectUpload: (err: unknown) => void = () => {}
-    vi.mocked(bulkImportImages).mockImplementation(
+    vi.mocked(bulkImportImages).mockImplementationOnce(
       (_files, _cat, _c, _n, _a, _p, signal?: AbortSignal) =>
         new Promise((_resolve, reject) => {
-          rejectUpload = reject
           signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
         }) as never,
     )
@@ -361,12 +359,11 @@ describe('UploadImageModal', () => {
       expect(onUploadFailed).toHaveBeenCalledWith(expect.any(Number), 'Upload cancelled'),
     )
     expect(onClose).toHaveBeenCalledTimes(1)
-    expect(rejectUpload).toBeDefined()
   })
 
   it('reports upload progress with formatted byte counts', async () => {
     let emitProgress: (fraction: number) => void = () => {}
-    vi.mocked(uploadSourceImage).mockImplementation(
+    vi.mocked(uploadSourceImage).mockImplementationOnce(
       (_file, _name, _cat, _c, _n, _a, onProgress?: (fraction: number) => void) => {
         emitProgress = onProgress ?? emitProgress
         return new Promise(() => {}) as never
@@ -394,7 +391,7 @@ describe('UploadImageModal', () => {
     await user.click(screen.getByRole('button', { name: 'Add' }))
     await waitFor(() => expect(uploadSourceImage).toHaveBeenCalledTimes(1))
 
-    emitProgress(0.5)
+    act(() => emitProgress(0.5))
     expect(await screen.findByText(/Uploading: 50%/)).toBeInTheDocument()
     expect(onUploadProgress).toHaveBeenCalledWith(expect.any(Number), 0.5)
   })
