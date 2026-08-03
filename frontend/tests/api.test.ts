@@ -76,6 +76,8 @@ import {
   startRebuildTiles,
   getUploadStatus,
   finalizeUpload,
+  type FilesImportArchive,
+  type ExportArchive,
   fetchPrograms,
   createProgram,
   updateProgram,
@@ -1605,11 +1607,24 @@ describe('Admin archive API', () => {
   })
   afterEach(() => setToken(null))
 
-  const ARCHIVE = {
-    task_id: 9,
-    filename: 'import.tar.gz',
+  const ARCHIVE: FilesImportArchive = {
+    archive_task_id: 9,
+    original_filename: 'import.tar.gz',
     size_bytes: 1024,
     created_at: '2026-01-01T00:00:00Z',
+    last_status: 'completed',
+  }
+
+  const EXPORT_ARCHIVE: ExportArchive = {
+    task_id: 5,
+    task_type: 'files_export',
+    artifact_role: 'result',
+    filename: 'export.tar.gz',
+    size_bytes: 2048,
+    status: 'completed',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:01:00Z',
+    purgeable: true,
   }
 
   it('fetchFilesImportArchives sends GET to the archives listing', async () => {
@@ -1637,7 +1652,7 @@ describe('Admin archive API', () => {
   })
 
   it('listExportArchives sends GET to /admin/tasks/backup-archives', async () => {
-    const resp = { archives: [], total_size_bytes: 0 }
+    const resp = { archives: [EXPORT_ARCHIVE], total_size_bytes: 2048 }
     mockFetch.mockReturnValueOnce(jsonResponse(resp))
     const result = await listExportArchives()
     expect(mockFetch.mock.calls[0][0]).toBe('/api/admin/tasks/backup-archives')
