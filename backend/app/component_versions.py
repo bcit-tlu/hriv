@@ -53,7 +53,12 @@ def _resolve_commit_sha(*candidates: str | None) -> str:
 
 
 def get_app_version() -> str:
-    """Return the deployed application version, or ``unknown``."""
+    """Return the deployed application version, or ``unknown``.
+
+    Reads the same ``APP_VERSION`` variable as :func:`get_backend_version`
+    but defaults to ``unknown`` (external payloads: archive manifests,
+    feedback reports) rather than ``dev`` (component-version display).
+    """
     return _coerce(os.environ.get("APP_VERSION"), "unknown")
 
 
