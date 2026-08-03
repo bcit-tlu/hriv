@@ -595,12 +595,8 @@ export default function PeoplePage({
       )
       const failedGroupIds = groupIds.filter((_, i) => results[i]?.status === 'rejected')
 
-      // Refresh failures must not suppress the partial-failure reporting below
-      try {
-        await loadData()
-      } catch (err) {
-        console.error('Failed to refresh people after bulk add to groups', err)
-      }
+      // loadData swallows its own errors, so the reporting below always runs
+      await loadData()
 
       if (failedGroupIds.length > 0) {
         const distinctReasons = [
@@ -615,10 +611,18 @@ export default function PeoplePage({
               ),
           ),
         ]
+        const MAX_REASONS_SHOWN = 3
+        const shownReasons = distinctReasons.slice(0, MAX_REASONS_SHOWN)
+        const hiddenCount = distinctReasons.length - shownReasons.length
+        const reasonsText =
+          shownReasons.join(' ') +
+          (hiddenCount > 0
+            ? ` (and ${hiddenCount} more distinct ${hiddenCount === 1 ? 'error' : 'errors'})`
+            : '')
         const groupWord = groupIds.length === 1 ? 'group' : 'groups'
         const selectionWord = selected.size === 1 ? 'person' : 'people'
         setErrorSnack(
-          `Failed to add ${selectionWord} to ${failedGroupIds.length} of ${groupIds.length} ${groupWord}. ${distinctReasons.join(' ')}`,
+          `Failed to add ${selectionWord} to ${failedGroupIds.length} of ${groupIds.length} ${groupWord}. ${reasonsText}`,
         )
         return failedGroupIds
       }
