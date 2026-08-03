@@ -130,6 +130,41 @@ const mockDeepPath: MockCategory[] = [
 
 let mockInitialPath: MockCategory[] = []
 
+/** Restore every shared mutable fixture; call from each suite's beforeEach. */
+function resetFixtures() {
+  vi.clearAllMocks()
+  mockImage.active = true
+  mockImage.categoryId = 1
+  mockImage.note = null
+  mockSecondImage.active = true
+  mockSecondImage.categoryId = 1
+  mockSecondImage.note = null
+  currentImagesMock = [mockImage]
+  authState = {
+    currentUser: mockCurrentUser,
+    loading: false,
+    login: vi.fn(),
+    logout: vi.fn(),
+    canManageUsers: false,
+    canEditContent: true,
+  }
+  mockInitialPath = []
+  mockCategories.splice(0, mockCategories.length, {
+    id: 1,
+    label: 'Slides',
+    parentId: null,
+    children: [],
+    images: [],
+    programIds: [1],
+    groupIds: [10],
+    status: 'active',
+    sortOrder: 0,
+    version: 1,
+    cardImageId: null,
+    metadataExtra: null,
+  })
+}
+
 const browseDataFns = {
   setGroups: vi.fn(),
   loadCategories: vi.fn(),
@@ -318,6 +353,7 @@ vi.mock('../src/components/SortableTileGrid', () => ({
     onFilesDrop,
     onReorderComplete,
     onReorderError,
+    fileDragActive,
   }: {
     currentImages: (typeof mockImage)[]
     currentCategories: typeof mockCategories
@@ -326,8 +362,10 @@ vi.mock('../src/components/SortableTileGrid', () => ({
     onFilesDrop: (files: File[]) => void
     onReorderComplete: () => Promise<void>
     onReorderError: (err: unknown) => void
+    fileDragActive: boolean
   }) => (
     <>
+      {fileDragActive && <div>File drag active</div>}
       <button
         type="button"
         onClick={() =>
@@ -414,13 +452,17 @@ vi.mock('../src/components/GroupManagementModal', () => ({
   }) =>
     open ? (
       <div>
-        <button type="button" onClick={() => void onAdd('New Group', null)}>
+        {/* Group handlers rethrow (the real modal surfaces the error); swallow here */}
+        <button type="button" onClick={() => void onAdd('New Group', null).catch(() => {})}>
           Modal add group
         </button>
-        <button type="button" onClick={() => void onEdit(10, 'Renamed Group', 'desc')}>
+        <button
+          type="button"
+          onClick={() => void onEdit(10, 'Renamed Group', 'desc').catch(() => {})}
+        >
           Modal edit group
         </button>
-        <button type="button" onClick={() => void onDelete(10)}>
+        <button type="button" onClick={() => void onDelete(10).catch(() => {})}>
           Modal delete group
         </button>
       </div>
@@ -521,39 +563,7 @@ vi.mock('../src/useCategoryActions', () => ({
 }))
 
 describe('App breadcrumbs', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockImage.active = true
-    mockImage.categoryId = 1
-    mockImage.note = null
-    mockSecondImage.active = true
-    mockSecondImage.categoryId = 1
-    mockSecondImage.note = null
-    currentImagesMock = [mockImage]
-    authState = {
-      currentUser: mockCurrentUser,
-      loading: false,
-      login: vi.fn(),
-      logout: vi.fn(),
-      canManageUsers: false,
-      canEditContent: true,
-    }
-    mockInitialPath = []
-    mockCategories.splice(0, mockCategories.length, {
-      id: 1,
-      label: 'Slides',
-      parentId: null,
-      children: [],
-      images: [],
-      programIds: [1],
-      groupIds: [10],
-      status: 'active',
-      sortOrder: 0,
-      version: 1,
-      cardImageId: null,
-      metadataExtra: null,
-    })
-  })
+  beforeEach(resetFixtures)
 
   it('renders program and group chips in both browse and image breadcrumb rows', () => {
     render(<App />)
@@ -790,19 +800,7 @@ describe('App breadcrumbs', () => {
 })
 
 describe('App shell interactions', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    currentImagesMock = [mockImage]
-    mockInitialPath = []
-    authState = {
-      currentUser: mockCurrentUser,
-      loading: false,
-      login: vi.fn(),
-      logout: vi.fn(),
-      canManageUsers: false,
-      canEditContent: true,
-    }
-  })
+  beforeEach(resetFixtures)
 
   it('reloads browse data when switching tabs back to browse and on home click', () => {
     render(<App />)
@@ -856,19 +854,7 @@ describe('App shell interactions', () => {
 })
 
 describe('App program and group management', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    currentImagesMock = [mockImage]
-    mockInitialPath = []
-    authState = {
-      currentUser: mockCurrentUser,
-      loading: false,
-      login: vi.fn(),
-      logout: vi.fn(),
-      canManageUsers: false,
-      canEditContent: true,
-    }
-  })
+  beforeEach(resetFixtures)
 
   it('creates, edits, and deletes programs and reloads the program list', async () => {
     render(<App />)
@@ -923,21 +909,22 @@ describe('App program and group management', () => {
 
     await waitFor(() => expect(browseDataFns.loadGroups).toHaveBeenCalledTimes(baseGroups + 3))
   })
+
+  it('rethrows group creation failures to the modal without reloading groups', async () => {
+    vi.mocked(createGroup).mockRejectedValueOnce(new Error('taken'))
+    render(<App />)
+    const baseGroups = browseDataFns.loadGroups.mock.calls.length
+    fireEvent.click(screen.getByRole('button', { name: 'Shell groups' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Modal add group' }))
+    await waitFor(() => expect(createGroup).toHaveBeenCalledTimes(1))
+    expect(browseDataFns.loadGroups).toHaveBeenCalledTimes(baseGroups)
+  })
 })
 
 describe('App grid file drops and reorder feedback', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
-    currentImagesMock = [mockImage]
-    mockInitialPath = []
-    authState = {
-      currentUser: mockCurrentUser,
-      loading: false,
-      login: vi.fn(),
-      logout: vi.fn(),
-      canManageUsers: false,
-      canEditContent: true,
-    }
+    resetFixtures()
     browseDataFns.refreshCategories.mockResolvedValue([])
     browseDataFns.refreshUncategorizedImages.mockResolvedValue([])
   })
@@ -976,7 +963,7 @@ describe('App grid file drops and reorder feedback', () => {
     expect(await screen.findByText('Failed to reorder tiles.')).toBeInTheDocument()
   })
 
-  it('tracks native file drags over the window', () => {
+  it('toggles the file-drag state as native files drag over and leave the window', async () => {
     render(<App />)
 
     const makeDragEvent = (type: string) => {
@@ -984,13 +971,26 @@ describe('App grid file drops and reorder feedback', () => {
       Object.defineProperty(event, 'dataTransfer', { value: { types: ['Files'] } })
       return event
     }
+
+    expect(screen.queryByText('File drag active')).not.toBeInTheDocument()
+
+    fireEvent(window, makeDragEvent('dragenter'))
+    expect(screen.getByText('File drag active')).toBeInTheDocument()
+
+    // Nested dragenter/dragleave pairs must not deactivate until the counter hits 0
     fireEvent(window, makeDragEvent('dragenter'))
     fireEvent(window, makeDragEvent('dragover'))
     fireEvent(window, makeDragEvent('dragleave'))
-    fireEvent(window, makeDragEvent('dragenter'))
-    fireEvent(window, makeDragEvent('drop'))
+    expect(screen.getByText('File drag active')).toBeInTheDocument()
 
-    expect(screen.getByRole('button', { name: 'Drop files on grid' })).toBeInTheDocument()
+    fireEvent(window, makeDragEvent('dragleave'))
+    expect(screen.queryByText('File drag active')).not.toBeInTheDocument()
+
+    // Drop resets the counter and clears the state on the next animation frame
+    fireEvent(window, makeDragEvent('dragenter'))
+    expect(screen.getByText('File drag active')).toBeInTheDocument()
+    fireEvent(window, makeDragEvent('drop'))
+    await waitFor(() => expect(screen.queryByText('File drag active')).not.toBeInTheDocument())
   })
 })
 
