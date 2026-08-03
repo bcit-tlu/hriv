@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import BulkEditModal from '../../src/components/BulkEditModal'
 import type { Program } from '../../src/types'
@@ -114,7 +114,9 @@ describe('BulkEditModal', () => {
     fireEvent.click(savingButton)
     expect(onSave).toHaveBeenCalledTimes(1)
 
-    resolveSave()
+    await act(async () => {
+      resolveSave()
+    })
     expect(await screen.findByRole('button', { name: 'Save' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled()
   })

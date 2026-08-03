@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
@@ -39,20 +39,30 @@ export default function BulkGroupModal({
     setGroupIds(typeof val === 'string' ? [] : val)
   }
 
+  // Identifies the latest save so a stale in-flight completion (after the
+  // dialog was dismissed and reopened) cannot clobber newer state.
+  const saveTokenRef = useRef(0)
+
   const handleSave = async () => {
     if (saving) return
+    const token = ++saveTokenRef.current
     setSaving(true)
     try {
       await onSave(groupIds)
-      setGroupIds([])
+      if (saveTokenRef.current === token) {
+        setGroupIds([])
+      }
     } catch {
       return
     } finally {
-      setSaving(false)
+      if (saveTokenRef.current === token) {
+        setSaving(false)
+      }
     }
   }
 
   const handleClose = () => {
+    saveTokenRef.current++
     setSaving(false)
     setGroupIds([])
     onClose()
@@ -100,7 +110,7 @@ export default function BulkGroupModal({
           onClick={handleSave}
           variant="contained"
           disabled={groupIds.length === 0 || saving}
-          startIcon={saving ? <CircularProgress size={16} /> : undefined}
+          startIcon={saving ? <CircularProgress size={16} aria-hidden /> : undefined}
         >
           {saving ? 'Adding…' : 'Add to Groups'}
         </Button>
