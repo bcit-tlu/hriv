@@ -593,9 +593,14 @@ export default function PeoplePage({
       const results = await Promise.allSettled(
         groupIds.map((groupId) => addGroupMembersBulk(groupId, Array.from(selected))),
       )
-      await loadData()
-
       const failedGroupIds = groupIds.filter((_, i) => results[i]?.status === 'rejected')
+
+      // Refresh failures must not suppress the partial-failure reporting below
+      try {
+        await loadData()
+      } catch (err) {
+        console.error('Failed to refresh people after bulk add to groups', err)
+      }
 
       if (failedGroupIds.length > 0) {
         const distinctReasons = [
