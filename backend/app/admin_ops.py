@@ -122,23 +122,35 @@ def _validate_files_import_manifest(staging_root: Path) -> int:
     data directory.
     """
     manifest_path = staging_root / FILES_EXPORT_MANIFEST_NAME
-    if not manifest_path.is_file():
+    if not manifest_path.exists() and not manifest_path.is_symlink():
         logger.warning(
             "Filesystem import archive has no manifest; treating as legacy format",
             extra={"event": "admin_task.files_import_legacy_archive"},
         )
         return 0
-    try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
+    if manifest_path.is_symlink() or not manifest_path.is_file():
         raise ValueError(
-            f"Archive manifest ({FILES_EXPORT_MANIFEST_NAME}) is not valid JSON: {exc}"
+            f"Archive manifest ({FILES_EXPORT_MANIFEST_NAME}) must be a "
+            "regular file"
+        )
+    try:
+        raw = manifest_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ValueError(
+            f"Could not read archive manifest ({FILES_EXPORT_MANIFEST_NAME}) "
+            f"from the staging directory: {exc}"
         ) from exc
     finally:
         try:
             manifest_path.unlink()
         except OSError:
             logger.debug("Failed to remove staged manifest", exc_info=True)
+    try:
+        manifest = json.loads(raw)
+    except ValueError as exc:
+        raise ValueError(
+            f"Archive manifest ({FILES_EXPORT_MANIFEST_NAME}) is not valid JSON: {exc}"
+        ) from exc
     if not isinstance(manifest, dict):
         raise ValueError(
             f"Archive manifest ({FILES_EXPORT_MANIFEST_NAME}) must be a JSON object"

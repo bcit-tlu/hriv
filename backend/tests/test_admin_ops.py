@@ -292,6 +292,30 @@ def test_extract_and_restore_rejects_invalid_manifest_json(tmp_path) -> None:
             )
 
 
+def test_extract_and_restore_rejects_directory_named_like_manifest(tmp_path) -> None:
+    data_dir, tiles_dir, source_dir = _restore_dirs(tmp_path)
+    payload_dir = tmp_path / "payload"
+    payload_source = payload_dir / "source_images"
+    payload_source.mkdir(parents=True)
+    (payload_source / "new.tiff").write_text("new")
+    fake_manifest_dir = tmp_path / FILES_EXPORT_MANIFEST_NAME
+    fake_manifest_dir.mkdir()
+    (fake_manifest_dir / "sneaky.txt").write_text("sneaky")
+    archive = str(tmp_path / "dir-manifest.tar.gz")
+    with tarfile.open(archive, "w:gz") as tar:
+        tar.add(str(fake_manifest_dir), arcname=FILES_EXPORT_MANIFEST_NAME)
+        tar.add(str(payload_dir), arcname="data")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with pytest.raises(ValueError, match="must be a regular file"):
+            _extract_and_restore(
+                archive, tmpdir, str(data_dir), str(tiles_dir), str(source_dir),
+            )
+
+    assert not (data_dir / FILES_EXPORT_MANIFEST_NAME).exists()
+    assert not (source_dir / "new.tiff").exists()
+
+
 def test_extract_and_restore_rejects_non_integer_format_version(tmp_path) -> None:
     data_dir, tiles_dir, source_dir = _restore_dirs(tmp_path)
     manifest = build_files_export_manifest()
