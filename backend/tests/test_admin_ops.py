@@ -3055,8 +3055,8 @@ async def test_run_with_cancel_poll_grace_timeout_raises_task_cancelled() -> Non
             grace_timeout_log="grace timeout",
             shutdown_grace=0.05,
         )
-    with pytest.raises(asyncio.CancelledError):
-        await worker_task
+    await asyncio.wait([worker_task])
+    assert worker_task.cancelled()
 
 
 async def test_run_with_cancel_poll_poller_error_reraised() -> None:
@@ -3119,5 +3119,5 @@ async def test_run_with_cancel_poll_poller_error_grace_timeout() -> None:
             grace_timeout_log="grace timeout",
             shutdown_grace=0.05,
         )
-    with pytest.raises(asyncio.CancelledError):
-        await worker_task
+    await asyncio.wait([worker_task])
+    assert worker_task.cancelled()
