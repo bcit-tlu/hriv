@@ -41,7 +41,7 @@ const programs: Program[] = [
 ]
 
 describe('UploadImageModal', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => vi.resetAllMocks())
 
   it('renders title and upload area when open', () => {
     render(
