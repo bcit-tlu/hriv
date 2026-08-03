@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
@@ -42,6 +42,9 @@ const programs: Program[] = [
 
 describe('UploadImageModal', () => {
   beforeEach(() => vi.clearAllMocks())
+  afterEach(() => {
+    vi.mocked(uploadSourceImage).mockReset()
+  })
 
   it('renders title and upload area when open', () => {
     render(
@@ -194,6 +197,5 @@ describe('UploadImageModal', () => {
       expect(onUploaded).toHaveBeenCalledTimes(1)
     })
     expect(uploadSourceImage).toHaveBeenCalledTimes(1)
-    vi.mocked(uploadSourceImage).mockReset()
   })
 })

@@ -246,6 +246,14 @@ export default function UploadImageModal({
     if (isSubmittingRef.current) return
     isSubmittingRef.current = true
 
+    try {
+      await doUpload()
+    } finally {
+      isSubmittingRef.current = false
+    }
+  }
+
+  const doUpload = async () => {
     if (bulk) {
       // Bulk import workflow — category is optional (images go to root if unset)
       setUploading(true)
@@ -292,7 +300,6 @@ export default function UploadImageModal({
           onUploadFailed?.(uploadId, msg)
         }
       } finally {
-        isSubmittingRef.current = false
         setUploading(false)
         setUploadProgress(null)
         uploadIdRef.current = null
@@ -346,7 +353,6 @@ export default function UploadImageModal({
           onUploadFailed?.(uploadId, msg)
         }
       } finally {
-        isSubmittingRef.current = false
         setUploading(false)
         setUploadProgress(null)
         uploadIdRef.current = null
