@@ -29,10 +29,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..backup_access import (
     BackupRestoreNotConfiguredError,
     BackupSnapshotManifestError,
+    BackupSnapshotMemberError,
     BackupSnapshotNotFoundError,
     get_last_success_marker,
     get_snapshot_manifest,
     list_snapshots as list_snapshot_blobs,
+    normalize_restore_path,
 )
 from ..admin_ops import (
     _ensure_tasks_dir,
@@ -1213,6 +1215,11 @@ async def start_file_restore(
 ):
     """Restore one file from a snapshot via the admin task queue."""
     try:
+        member_path = normalize_restore_path(request.member_path)
+    except BackupSnapshotMemberError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
         manifest = await asyncio.to_thread(get_snapshot_manifest, request.snapshot_name)
     except BackupRestoreNotConfiguredError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1222,17 +1229,17 @@ async def start_file_restore(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     files = manifest.get("files")
-    if not isinstance(files, dict) or request.member_path not in files:
+    if not isinstance(files, dict) or member_path not in files:
         raise HTTPException(
             status_code=400,
-            detail=f"{request.member_path} is not present in snapshot {request.snapshot_name}",
+            detail=f"{member_path} is not present in snapshot {request.snapshot_name}",
         )
 
     request_payload: dict[str, object] = {
         "snapshot_name": request.snapshot_name,
-        "member_path": request.member_path,
+        "member_path": member_path,
     }
-    manifest_entry = files[request.member_path]
+    manifest_entry = files[member_path]
     if isinstance(manifest_entry, dict):
         # Cache the validated entry so the background runner does not need
         # to fetch the manifest a second time.
