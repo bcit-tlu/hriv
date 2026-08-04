@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import FooterBar from '../../src/components/FooterBar'
 import * as useColorModeModule from '../../src/useColorMode'
 import type { ColorModeContextValue } from '../../src/colorModeContext'
+import { contentMaxWidth } from '../../src/theme'
 
 const RELEASES_HREF = 'https://github.com/bcit-tlu/hriv/releases'
 const REPO_HREF = 'https://github.com/bcit-tlu/hriv'
@@ -41,6 +42,21 @@ describe('FooterBar', () => {
       screen.queryByRole('link', { name: 'Teaching and Learning Unit' }),
     ).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'MPL-2.0' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the bar full-bleed but caps its inner row to the content width', () => {
+    render(<FooterBar canManageUsers={false} />)
+
+    const footer = document.querySelector('footer')
+    expect(footer).not.toBeNull()
+    // The bar itself carries the background/border and is not width-capped…
+    expect(footer).not.toHaveStyle({ maxWidth: `${contentMaxWidth}px` })
+    // …while the row inside lines up with the page content column.
+    expect(footer?.firstElementChild).toHaveStyle({
+      maxWidth: `${contentMaxWidth}px`,
+      marginLeft: 'auto',
+      marginRight: 'auto',
+    })
   })
 
   it('invokes onReportIssue when Report issue is clicked', async () => {

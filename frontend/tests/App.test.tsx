@@ -2,6 +2,7 @@ import { createRef, useEffect, type ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import App from '../src/App'
+import { contentMaxWidth } from '../src/theme'
 
 const mockImage = {
   id: 101,
@@ -402,6 +403,19 @@ describe('App breadcrumbs', () => {
       version: 1,
       cardImageId: null,
       metadataExtra: null,
+    })
+  })
+
+  it('caps the main content width so it does not sprawl on ultra-wide monitors', () => {
+    render(<App />)
+
+    // The breadcrumb sits inside the main content Container.
+    const container = screen.getByLabelText('category breadcrumb').closest('.MuiContainer-root')
+    expect(container).not.toBeNull()
+    expect(container).toHaveStyle({
+      maxWidth: `${contentMaxWidth}px`,
+      marginLeft: 'auto',
+      marginRight: 'auto',
     })
   })
 

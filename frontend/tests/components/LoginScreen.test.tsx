@@ -270,16 +270,41 @@ describe('LoginScreen', () => {
   // ─── Desktop specifics ────────────────────────────────────────────
 
   describe('desktop layout', () => {
-    it('shows the BCIT heading and no mobile back arrow', async () => {
+    // Desktop now follows the mobile design language: same HRIV brand header,
+    // "Local Account" heading, external labels and back arrow — no BCIT
+    // logo/heading, and no floating-label standard fields.
+    it('uses the shared HRIV brand header, not the old BCIT heading', () => {
+      renderScreen()
+
+      expect(screen.getByText('HRIV')).toBeInTheDocument()
+      expect(
+        screen.queryByText(/High Resolution Image Viewer \(HRIV\) Login/i),
+      ).not.toBeInTheDocument()
+    })
+
+    it('offers the same back arrow and external labels as mobile', async () => {
       const user = userEvent.setup()
       renderScreen()
 
-      expect(screen.getByText(/High Resolution Image Viewer \(HRIV\) Login/i)).toBeInTheDocument()
+      await openLocalForm(user)
+
+      expect(screen.getByText('Local Account')).toBeInTheDocument()
+      expect(screen.getByText('Username *')).toBeInTheDocument()
+      expect(screen.getByText('Password *')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: BACK_LABEL })).toBeInTheDocument()
+      // The link back to the landing remains alongside the arrow.
+      expect(screen.getByText('Sign in with BCIT')).toBeInTheDocument()
+    })
+
+    it('returns to the landing via the back arrow', async () => {
+      const user = userEvent.setup()
+      renderScreen()
 
       await openLocalForm(user)
-      // Desktop relies on the "Sign in with BCIT" link instead of an arrow.
-      expect(screen.queryByRole('button', { name: BACK_LABEL })).not.toBeInTheDocument()
-      expect(screen.getByText('Sign in with BCIT')).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: BACK_LABEL }))
+
+      expect(screen.getByRole('button', { name: /use a local user/i })).toBeInTheDocument()
+      expect(screen.queryByText('Local Account')).not.toBeInTheDocument()
     })
   })
 

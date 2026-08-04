@@ -1,5 +1,6 @@
 import { Box, Link, Typography } from '@mui/material'
 import { useColorMode } from '../useColorMode'
+import { cappedRowSx } from '../theme'
 
 const RELEASES_HREF = 'https://github.com/bcit-tlu/hriv/releases'
 const REPO_HREF = 'https://github.com/bcit-tlu/hriv'
@@ -81,47 +82,54 @@ export default function FooterBar({
     <Box
       component="footer"
       sx={{
-        py: 1,
-        px: 2,
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
         bgcolor: mode === 'dark' ? 'background.paper' : 'background.default',
         borderTop: 1,
         borderColor: 'divider',
         flex: '0 0 auto',
       }}
     >
-      <Typography variant="caption" color="text.secondary">
-        <Link
-          href={REPO_HREF}
-          target="_blank"
-          rel="noopener noreferrer"
-          color="text.secondary"
-          underline="hover"
-        >
-          High Resolution Image Viewer
-        </Link>
-        {canManageUsers && (
-          <AdminVersions
-            frontendVersion={frontendVersion}
-            backendVersion={backendVersion}
-            backupVersion={backupVersion}
-          />
+      {/* Inner row is capped so the text lines up with the content column
+          instead of hugging the screen edges on wide monitors. */}
+      <Box
+        sx={{
+          ...cappedRowSx,
+          py: 1,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}
+      >
+        <Typography variant="caption" color="text.secondary">
+          <Link
+            href={REPO_HREF}
+            target="_blank"
+            rel="noopener noreferrer"
+            color="text.secondary"
+            underline="hover"
+          >
+            High Resolution Image Viewer
+          </Link>
+          {canManageUsers && (
+            <AdminVersions
+              frontendVersion={frontendVersion}
+              backendVersion={backendVersion}
+              backupVersion={backupVersion}
+            />
+          )}
+        </Typography>
+        {onReportIssue && (
+          <Link
+            component="button"
+            variant="caption"
+            color="text.secondary"
+            underline="hover"
+            onClick={onReportIssue}
+            sx={{ cursor: 'pointer' }}
+          >
+            Report issue
+          </Link>
         )}
-      </Typography>
-      {onReportIssue && (
-        <Link
-          component="button"
-          variant="caption"
-          color="text.secondary"
-          underline="hover"
-          onClick={onReportIssue}
-          sx={{ cursor: 'pointer' }}
-        >
-          Report issue
-        </Link>
-      )}
+      </Box>
     </Box>
   )
 }

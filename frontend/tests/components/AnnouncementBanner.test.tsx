@@ -42,12 +42,26 @@ describe('AnnouncementBanner', () => {
     expect(screen.queryByRole('button', { name: 'Dismiss' })).not.toBeInTheDocument()
   })
 
-  it('does not render dismiss link for login variant', () => {
+  // The login screen follows the mobile design language at every width, so the
+  // login variant renders the compact "What's New" strip (with its own dismiss
+  // control) rather than the desktop filled Alert.
+  it('renders the compact strip for the login variant even on desktop', () => {
     const onDismiss = vi.fn()
     renderWithTheme(
       <AnnouncementBanner message="Login msg" variant="login" onDismiss={onDismiss} />,
     )
-    expect(screen.queryByRole('button', { name: 'Dismiss' })).not.toBeInTheDocument()
+    expect(screen.getByText("What's New")).toBeInTheDocument()
+    expect(screen.getByText('Login msg')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the filled Alert for the app variant on desktop', () => {
+    renderWithTheme(<AnnouncementBanner message="App msg" variant="app" />)
+    expect(screen.getByText('App msg')).toBeInTheDocument()
+    // The compact strip's "What's New" label is mobile/login only.
+    expect(screen.queryByText("What's New")).not.toBeInTheDocument()
   })
 
   it('renders in dark mode without errors', () => {

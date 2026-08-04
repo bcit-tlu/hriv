@@ -156,22 +156,12 @@ export default function AnnouncementBanner({
 
   if (!message) return null
 
-  // Mobile: compact "What's New" strip for both app and login contexts. The
-  // login screen pins it to the top of the viewport, so it spans the full
-  // width rather than being constrained to the form column.
-  if (isMobile) {
+  // The compact "What's New" strip is used on mobile everywhere, and on the
+  // login screen at every width — that page follows the mobile design language,
+  // so a filled Alert there would look out of place. The caller owns the
+  // surrounding width/placement.
+  if (isMobile || variant === 'login') {
     return <MobileAnnouncement message={message} onDismiss={onDismiss} />
-  }
-
-  // Desktop: unchanged MUI Alert.
-  if (variant === 'login') {
-    return (
-      <Box sx={{ width: '100%', maxWidth: 400, mb: 3 }}>
-        <Alert severity="info" variant="filled">
-          {message}
-        </Alert>
-      </Box>
-    )
   }
 
   return (

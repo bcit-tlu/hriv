@@ -212,3 +212,27 @@ export const appBarAvatarSx = {
 
 /** Responsive gap between the app-bar's right-hand controls. */
 export const appBarClusterGap = { xs: 0.25, sm: 0.5, md: 1 } as const
+
+/** Widest the page content is allowed to grow, in px.
+ *
+ *  Without a cap, tile grids and tables stretch edge-to-edge on ultra-wide
+ *  monitors, leaving very long scan lines and stranding content far from the
+ *  app bar's controls. */
+export const contentMaxWidth = 1600
+
+/** Horizontal gutters for the capped page rows. */
+export const contentGutterPx = { xs: 2, sm: 3, lg: '72px', xl: '120px' } as const
+
+/** Spread into any full-bleed row (app bar, announcement, main content, footer)
+ *  whose *contents* should line up with the capped content column.
+ *
+ *  The surrounding bar keeps its full-width background; only the inner row is
+ *  constrained. Sharing one definition is deliberate — if the cap or the
+ *  gutters drift apart between the app bar and the content, the logo and tabs
+ *  visibly fail to line up with the breadcrumb and tiles below them. */
+export const cappedRowSx = {
+  width: '100%',
+  maxWidth: contentMaxWidth,
+  mx: 'auto',
+  px: contentGutterPx,
+} as const

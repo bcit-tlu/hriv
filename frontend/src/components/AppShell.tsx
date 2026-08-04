@@ -62,6 +62,7 @@ import {
   appBarAvatarSx,
   appBarClusterGap,
   appBarIconButtonSx,
+  cappedRowSx,
   getGroupChipColors,
   getSurfaceVariant,
 } from '../theme'
@@ -307,9 +308,10 @@ export default function AppShell(props: AppShellProps) {
         minHeight: '100vh',
       }}
     >
-      {/* App bar */}
+      {/* App bar — the bar itself stays full-bleed; its contents are capped so
+          the logo and tabs line up with the content column below. */}
       <AppBar position="static" elevation={1}>
-        <Toolbar>
+        <Toolbar sx={cappedRowSx}>
           <Box
             sx={{
               display: 'flex',
@@ -626,7 +628,7 @@ export default function AppShell(props: AppShellProps) {
                 onDismiss={onDismissAnnouncement ? () => setAnnCollapsed(true) : undefined}
               />
             ) : (
-              <Container maxWidth={false} sx={{ px: { xs: 2, sm: 3, lg: '72px', xl: '120px' } }}>
+              <Container maxWidth={false} sx={cappedRowSx}>
                 <AnnouncementBanner
                   message={announcement}
                   onDismiss={onDismissAnnouncement ? () => setAnnCollapsed(true) : undefined}

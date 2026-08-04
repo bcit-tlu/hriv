@@ -90,7 +90,7 @@ import { useColorMode } from './useColorMode'
 import { useBrowseData } from './useBrowseData'
 import { splitDirectAncestorGroupIds, splitDirectAncestorProgramIds } from './categoryUtils'
 import { getInheritedRestrictionSx } from './restrictionStyles'
-import { getSurfaceVariant, getVisibilityColors } from './theme'
+import { cappedRowSx, getSurfaceVariant, getVisibilityColors } from './theme'
 import { useNavigationHistory, buildNavHistoryState } from './useNavigationHistory'
 import { useShareableImageState } from './useShareableImageState'
 import { useCanvasAnnotations } from './useCanvasAnnotations'
@@ -1137,7 +1137,7 @@ export default function App() {
           bgcolor: page === 'people' || page === 'admin' ? getSurfaceVariant(mode) : undefined,
         }}
       >
-        <Container maxWidth={false} sx={{ px: { xs: 2, sm: 3, lg: '72px', xl: '120px' } }}>
+        <Container maxWidth={false} sx={cappedRowSx}>
           {page === 'admin' && canManageUsers ? (
             <AdminPage onChangelogEntriesChanged={bumpChangelogVersion} />
           ) : page === 'people' && canManageUsers ? (

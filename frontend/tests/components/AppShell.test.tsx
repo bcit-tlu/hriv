@@ -4,6 +4,7 @@ import AppShell from '../../src/components/AppShell'
 import type { AppShellProps } from '../../src/components/AppShell'
 import { createRef } from 'react'
 import useMediaQuery from '@mui/material/useMediaQuery'
+import { contentMaxWidth } from '../../src/theme'
 
 vi.mock('@mui/material/useMediaQuery', () => ({ default: vi.fn(() => false) }))
 const mockUseMediaQuery = vi.mocked(useMediaQuery)
@@ -173,6 +174,34 @@ describe('AppShell', () => {
       const message = screen.getByText('Maintenance tonight')
       expect(message.closest('.MuiContainer-root')).not.toBeNull()
       expect(screen.getByTestId('announcement-row')).toHaveStyle({ paddingTop: '20px' })
+    })
+
+    it('caps the app bar contents to the same width as the content column', () => {
+      mockUseMediaQuery.mockReturnValue(false)
+      render(<AppShell {...makeProps()} />)
+
+      // The bar keeps its full-bleed background…
+      const appBar = document.querySelector('.MuiAppBar-root')
+      expect(appBar).not.toHaveStyle({ maxWidth: `${contentMaxWidth}px` })
+      // …while the toolbar inside is capped, so the logo and tabs line up with
+      // the breadcrumb and tiles below rather than hugging the screen edges.
+      expect(document.querySelector('.MuiToolbar-root')).toHaveStyle({
+        maxWidth: `${contentMaxWidth}px`,
+        marginLeft: 'auto',
+        marginRight: 'auto',
+      })
+    })
+
+    it('caps the row width so it stays aligned with the capped content below', () => {
+      mockUseMediaQuery.mockReturnValue(false)
+      render(<AppShell {...makeProps({ announcement: 'Maintenance tonight' })} />)
+
+      const container = screen.getByText('Maintenance tonight').closest('.MuiContainer-root')
+      expect(container).toHaveStyle({
+        maxWidth: `${contentMaxWidth}px`,
+        marginLeft: 'auto',
+        marginRight: 'auto',
+      })
     })
   })
 
