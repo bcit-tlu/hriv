@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -29,13 +29,30 @@ function MobileAnnouncement({ message, onDismiss }: { message: string; onDismiss
   const { mode } = useColorMode()
   const c = getAnnounceColors(mode)
   const [expanded, setExpanded] = useState(false)
+  const [overflowing, setOverflowing] = useState(false)
+  const textRef = useRef<HTMLParagraphElement | null>(null)
+
+  // Only offer more/less when the message actually gets clamped — a short
+  // announcement has nothing more to reveal. Measured while collapsed (once
+  // expanded the element always fits, so the last known value is kept) and
+  // re-measured on resize, since the clamp depends on the available width.
+  useEffect(() => {
+    if (expanded) return
+    const el = textRef.current
+    if (!el) return
+    const measure = () => setOverflowing(el.scrollHeight > el.clientHeight + 1)
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [message, expanded])
+
+  const showToggle = overflowing || expanded
 
   return (
     <Box
       sx={{
         bgcolor: c.bg,
         border: `1px solid ${c.border}`,
-        borderLeft: `3px solid ${c.icon}`,
         px: '14px',
         py: '8px',
         display: 'flex',
@@ -61,6 +78,7 @@ function MobileAnnouncement({ message, onDismiss }: { message: string; onDismiss
         </Typography>
         <Typography
           component="p"
+          ref={textRef}
           sx={{
             m: 0,
             fontSize: 12,
@@ -78,39 +96,41 @@ function MobileAnnouncement({ message, onDismiss }: { message: string; onDismiss
         >
           {message}
         </Typography>
-        <Box
-          component="button"
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          aria-expanded={expanded}
-          sx={{
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            color: c.btn,
-            fontSize: 11,
-            fontWeight: 500,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '2px',
-            mt: '1px',
-            p: 0,
-            opacity: 0.8,
-            fontFamily: 'inherit',
-          }}
-        >
-          {expanded ? (
-            <>
-              <ExpandLessIcon sx={{ fontSize: 14 }} />
-              less
-            </>
-          ) : (
-            <>
-              <ExpandMoreIcon sx={{ fontSize: 14 }} />
-              more
-            </>
-          )}
-        </Box>
+        {showToggle && (
+          <Box
+            component="button"
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
+            sx={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: c.btn,
+              fontSize: 11,
+              fontWeight: 500,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '2px',
+              mt: '1px',
+              p: 0,
+              opacity: 0.8,
+              fontFamily: 'inherit',
+            }}
+          >
+            {expanded ? (
+              <>
+                <ExpandLessIcon sx={{ fontSize: 14 }} />
+                less
+              </>
+            ) : (
+              <>
+                <ExpandMoreIcon sx={{ fontSize: 14 }} />
+                more
+              </>
+            )}
+          </Box>
+        )}
       </Box>
       {onDismiss && (
         <IconButton
@@ -136,15 +156,10 @@ export default function AnnouncementBanner({
 
   if (!message) return null
 
-  // Mobile: compact "What's New" strip for both app and login contexts.
+  // Mobile: compact "What's New" strip for both app and login contexts. The
+  // login screen pins it to the top of the viewport, so it spans the full
+  // width rather than being constrained to the form column.
   if (isMobile) {
-    if (variant === 'login') {
-      return (
-        <Box sx={{ width: '100%', maxWidth: 400, mb: 3 }}>
-          <MobileAnnouncement message={message} onDismiss={onDismiss} />
-        </Box>
-      )
-    }
     return <MobileAnnouncement message={message} onDismiss={onDismiss} />
   }
 

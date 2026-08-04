@@ -146,6 +146,36 @@ describe('AppShell', () => {
     })
   })
 
+  // The announcement strip must sit flush against the app bar and span the
+  // full width on mobile — no padding around the message section.
+  describe('announcement layout', () => {
+    afterEach(() => {
+      mockUseMediaQuery.mockReset()
+      mockUseMediaQuery.mockReturnValue(false)
+    })
+
+    it('renders the strip edge-to-edge with no padding on mobile', () => {
+      mockUseMediaQuery.mockReturnValue(true)
+      render(<AppShell {...makeProps({ announcement: 'Maintenance tonight' })} />)
+
+      const message = screen.getByText('Maintenance tonight')
+      // Not wrapped in the inset Container…
+      expect(message.closest('.MuiContainer-root')).toBeNull()
+      // …and nothing padding it away from the app bar. (jsdom reports unset
+      // properties as empty, so assert the desktop inset is absent.)
+      expect(screen.getByTestId('announcement-row')).not.toHaveStyle({ paddingTop: '20px' })
+    })
+
+    it('keeps the inset container row on desktop', () => {
+      mockUseMediaQuery.mockReturnValue(false)
+      render(<AppShell {...makeProps({ announcement: 'Maintenance tonight' })} />)
+
+      const message = screen.getByText('Maintenance tonight')
+      expect(message.closest('.MuiContainer-root')).not.toBeNull()
+      expect(screen.getByTestId('announcement-row')).toHaveStyle({ paddingTop: '20px' })
+    })
+  })
+
   describe('tabs', () => {
     it('renders Home tab always', () => {
       render(

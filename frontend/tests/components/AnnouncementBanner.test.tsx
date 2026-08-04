@@ -65,6 +65,7 @@ describe('AnnouncementBanner', () => {
       mockUseMediaQuery.mockReturnValue(true)
     })
     afterEach(() => {
+      vi.restoreAllMocks()
       mockUseMediaQuery.mockReset()
       mockUseMediaQuery.mockReturnValue(false)
     })
@@ -78,11 +79,37 @@ describe('AnnouncementBanner', () => {
       expect(onDismiss).toHaveBeenCalledTimes(1)
     })
 
+    // jsdom has no layout engine, so the clamp overflow has to be simulated:
+    // scrollHeight > clientHeight is what marks the body as truncated.
+    function stubOverflow(overflowing: boolean) {
+      vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(overflowing ? 40 : 20)
+      vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(20)
+    }
+
     it('toggles the body between clamped (more) and expanded (less)', () => {
+      stubOverflow(true)
       renderWithTheme(<AnnouncementBanner message="Long announcement body" />)
       expect(screen.getByText('more')).toBeInTheDocument()
       fireEvent.click(screen.getByText('more'))
       expect(screen.getByText('less')).toBeInTheDocument()
+    })
+
+    it('keeps the less toggle available once expanded', () => {
+      stubOverflow(true)
+      renderWithTheme(<AnnouncementBanner message="Long announcement body" />)
+      fireEvent.click(screen.getByText('more'))
+      // Expanded text always fits, so the toggle must not vanish mid-read.
+      expect(screen.getByText('less')).toBeInTheDocument()
+      fireEvent.click(screen.getByText('less'))
+      expect(screen.getByText('more')).toBeInTheDocument()
+    })
+
+    it('omits the more toggle when the message is short enough to fit', () => {
+      stubOverflow(false)
+      renderWithTheme(<AnnouncementBanner message="Short" />)
+      expect(screen.getByText('Short')).toBeInTheDocument()
+      expect(screen.queryByText('more')).not.toBeInTheDocument()
+      expect(screen.queryByText('less')).not.toBeInTheDocument()
     })
 
     it('renders the strip for the login variant too', () => {

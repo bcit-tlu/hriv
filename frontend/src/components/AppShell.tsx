@@ -146,6 +146,7 @@ export default function AppShell(props: AppShellProps) {
   // narrow to show them inline. Guarded by tab count so a single-tab
   // (student) layout keeps its inline Home tab instead of a lone hamburger.
   const isCompactViewport = useMediaQuery(theme.breakpoints.down('md'))
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
   const navTabCount = 1 + (canEditContent ? 2 : 0) + (canManageUsers ? 2 : 0)
   const collapseNav = isCompactViewport && navTabCount > 1
   // Reset the breakpoint-specific menus on a viewport transition so a resize
@@ -609,18 +610,29 @@ export default function AppShell(props: AppShellProps) {
       {/* Announcement banner */}
       {announcement && (
         <Collapse in={!annCollapsed} onExited={onDismissAnnouncement}>
+          {/* Mobile renders the strip edge-to-edge and flush against the app
+              bar — no padding around it, matching the login screen. Desktop
+              keeps the inset, container-aligned row. */}
           <Box
+            data-testid="announcement-row"
             sx={{
               bgcolor: contentBg,
-              pt: 2.5,
+              ...(isMobile ? null : { pt: 2.5 }),
             }}
           >
-            <Container maxWidth={false} sx={{ px: { xs: 2, sm: 3, lg: '72px', xl: '120px' } }}>
+            {isMobile ? (
               <AnnouncementBanner
                 message={announcement}
                 onDismiss={onDismissAnnouncement ? () => setAnnCollapsed(true) : undefined}
               />
-            </Container>
+            ) : (
+              <Container maxWidth={false} sx={{ px: { xs: 2, sm: 3, lg: '72px', xl: '120px' } }}>
+                <AnnouncementBanner
+                  message={announcement}
+                  onDismiss={onDismissAnnouncement ? () => setAnnCollapsed(true) : undefined}
+                />
+              </Container>
+            )}
           </Box>
         </Collapse>
       )}
