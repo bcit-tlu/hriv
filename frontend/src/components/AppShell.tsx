@@ -193,6 +193,11 @@ export default function AppShell(props: AppShellProps) {
     return 'Theme: Auto'
   }, [themePreference])
 
+  // Home navigation shared by the brand lockup, the Home tab and the collapsed
+  // menu's Home item: switch to browse, or — when already there — reset to the
+  // category root and refresh.
+  const goHome = () => (page === 'browse' ? onHomeClick() : onTabChange('browse'))
+
   // Collapsed-nav menu, built as ordered sections. Empty sections are dropped
   // and dividers are only inserted *between* non-empty sections, so the menu
   // stays correct for any role combination (no leading/trailing/double
@@ -220,13 +225,7 @@ export default function AppShell(props: AppShellProps) {
     const sections: ReactNode[][] = []
 
     const pages: ReactNode[] = [
-      makeItem(
-        'browse',
-        'Home',
-        <HomeIcon fontSize="small" />,
-        () => (page === 'browse' ? onHomeClick() : onTabChange('browse')),
-        page === 'browse',
-      ),
+      makeItem('browse', 'Home', <HomeIcon fontSize="small" />, goHome, page === 'browse'),
     ]
     if (canEditContent) {
       pages.push(
@@ -334,9 +333,34 @@ export default function AppShell(props: AppShellProps) {
                 </IconButton>
               </Tooltip>
             )}
-            <Box component="img" src="/favicon.svg" alt="HRIV" sx={{ height: 32, width: 32 }} />
-            <Typography variant="h6" component="h1">
-              HRIV
+            {/* Brand mark doubles as the home link, matching the design (and
+                the near-universal convention). The button lives *inside* the
+                h1 so the page keeps its heading while the whole lockup — logo
+                and wordmark — is clickable. The logo's alt is empty because
+                the adjacent text already names it. */}
+            <Typography variant="h6" component="h1" sx={{ display: 'flex', m: 0 }}>
+              <Tooltip title="Home">
+                <Box
+                  component="button"
+                  type="button"
+                  onClick={goHome}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 0.75,
+                    background: 'none',
+                    border: 'none',
+                    p: 0,
+                    cursor: 'pointer',
+                    color: 'inherit',
+                    font: 'inherit',
+                    letterSpacing: 'inherit',
+                  }}
+                >
+                  <Box component="img" src="/favicon.svg" alt="" sx={{ height: 32, width: 32 }} />
+                  HRIV
+                </Box>
+              </Tooltip>
             </Typography>
           </Box>
           {collapseNav ? (

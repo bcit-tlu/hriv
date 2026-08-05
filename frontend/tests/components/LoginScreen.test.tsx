@@ -23,6 +23,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import LoginScreen from '../../src/components/LoginScreen'
+import { contentMaxWidth } from '../../src/theme'
 
 // The mobile layout is gated on useMediaQuery(down('sm')). Default to false so
 // the suite exercises the desktop layout; the mobile block flips it.
@@ -407,6 +408,15 @@ describe('LoginScreen', () => {
 
       await user.click(screen.getByRole('button', { name: BACK_LABEL }))
       expect(screen.getByText('Persistent notice')).toBeInTheDocument()
+    })
+
+    it('lets the footer span the full width rather than aligning to a content cap', () => {
+      renderScreen()
+      // The login screen has no capped content column, so the footer text
+      // should reach both edges instead of being inset.
+      const inner = document.querySelector('footer')?.firstElementChild
+      expect(inner).toHaveStyle({ width: '100%' })
+      expect(inner).not.toHaveStyle({ maxWidth: `${contentMaxWidth}px` })
     })
 
     it('has no back arrow on the landing — there is nowhere to go back to', () => {

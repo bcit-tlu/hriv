@@ -167,7 +167,7 @@ export default function LoginScreen({
                 message doesn't span the full column. Mobile renders it
                 full-bleed above this whole section instead. */}
             {!isMobile && announcement && (
-              <Box sx={{ width: '72%', maxWidth: 560, mx: 'auto', pt: 2 }}>
+              <Box sx={{ width: '84%', mx: 'auto', pt: 1.5 }}>
                 <AnnouncementBanner
                   message={announcement}
                   variant="login"
@@ -216,9 +216,7 @@ export default function LoginScreen({
           </Box>
 
           {/* Form area — top-anchored on mobile (the design flows from the
-              top); vertically centred beside the splash on desktop, with extra
-              bottom padding so the block settles a little above the midpoint
-              rather than sitting low on tall screens. */}
+              top); vertically centred beside the splash on desktop. */}
           <Box
             sx={{
               flex: 1,
@@ -227,10 +225,19 @@ export default function LoginScreen({
               justifyContent: 'center',
               px: { xs: 3, sm: 6, md: 8 },
               pt: { xs: 3.5, md: 0 },
-              pb: { md: 24 },
             }}
           >
-            <Box sx={{ width: '100%', maxWidth: 400 }}>
+            {/* The desktop nudge is a transform rather than padding so it lifts
+                the block off dead centre without adding any layout height —
+                padding here would push the page past the viewport and
+                introduce a scrollbar on shorter windows. */}
+            <Box
+              sx={{
+                width: '100%',
+                maxWidth: 400,
+                transform: { md: 'translateY(-24px)' },
+              }}
+            >
               {/* Brand header — the design's centred "H" mark, shared by both
                 layouts and scaled up on desktop. */}
               <Box
@@ -239,13 +246,13 @@ export default function LoginScreen({
                   flexDirection: 'column',
                   alignItems: 'center',
                   gap: 2,
-                  mb: 3.5,
+                  mb: 3,
                 }}
               >
                 <Box
                   sx={{
-                    width: { xs: 64, md: 76 },
-                    height: { xs: 64, md: 76 },
+                    width: { xs: 64, md: 68 },
+                    height: { xs: 64, md: 68 },
                     borderRadius: '50%',
                     bgcolor: '#C0392B',
                     color: '#fff',
@@ -328,7 +335,7 @@ export default function LoginScreen({
                     display: 'flex',
                     flexDirection: 'column',
                     gap: { xs: 2.5, md: 3 },
-                    mt: { xs: 2.5, md: 3 },
+                    mt: { xs: 2.5, md: 2 },
                   }}
                 >
                   {/* "Local Account" heading, per the design. */}
@@ -486,7 +493,7 @@ export default function LoginScreen({
           }}
         />
       </Box>
-      <FooterBar canManageUsers={false} />
+      <FooterBar canManageUsers={false} fullWidth />
     </Box>
   )
 }

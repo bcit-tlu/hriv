@@ -1,6 +1,6 @@
 import { Box, Link, Typography } from '@mui/material'
 import { useColorMode } from '../useColorMode'
-import { cappedRowSx } from '../theme'
+import { cappedRowSx, contentGutterPx } from '../theme'
 
 const RELEASES_HREF = 'https://github.com/bcit-tlu/hriv/releases'
 const REPO_HREF = 'https://github.com/bcit-tlu/hriv'
@@ -67,6 +67,10 @@ export interface FooterBarProps {
   backendVersion?: string
   backupVersion?: string
   onReportIssue?: () => void
+  /** Let the footer text span the full viewport instead of aligning with the
+   *  capped content column. Used on the login screen, which has no capped
+   *  content to line up with. */
+  fullWidth?: boolean
 }
 
 export default function FooterBar({
@@ -75,6 +79,7 @@ export default function FooterBar({
   backendVersion,
   backupVersion,
   onReportIssue,
+  fullWidth = false,
 }: FooterBarProps) {
   const { mode } = useColorMode()
 
@@ -89,10 +94,11 @@ export default function FooterBar({
       }}
     >
       {/* Inner row is capped so the text lines up with the content column
-          instead of hugging the screen edges on wide monitors. */}
+          instead of hugging the screen edges on wide monitors — unless the
+          caller opts out (login screen, which has no capped content). */}
       <Box
         sx={{
-          ...cappedRowSx,
+          ...(fullWidth ? { width: '100%', px: contentGutterPx } : cappedRowSx),
           py: 1,
           display: 'flex',
           justifyContent: 'space-between',

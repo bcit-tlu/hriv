@@ -53,6 +53,21 @@ describe('AppShell', () => {
       expect(screen.getByRole('heading', { name: 'HRIV' })).toBeInTheDocument()
     })
 
+    it('keeps the brand lockup inside the page heading while making it a button', () => {
+      render(<AppShell {...makeProps()} />)
+
+      const heading = screen.getByRole('heading', { name: 'HRIV' })
+      // The tooltip names the control "Home", which reads better than the
+      // brand alone for screen-reader users.
+      const brandButton = screen.getByRole('button', { name: 'Home' })
+      // Both the mark and the wordmark live in one control, and it stays within
+      // the h1 so the page keeps its heading.
+      expect(heading).toContainElement(brandButton)
+      expect(brandButton.querySelector('img')).not.toBeNull()
+      // The logo is decorative — the adjacent wordmark already names the button.
+      expect(brandButton.querySelector('img')).toHaveAttribute('alt', '')
+    })
+
     it('renders children', () => {
       render(<AppShell {...makeProps()} />)
       expect(screen.getByTestId('main-content')).toBeInTheDocument()
@@ -254,6 +269,24 @@ describe('AppShell', () => {
       render(<AppShell {...props} />)
       fireEvent.click(screen.getByRole('tab', { name: 'Home' }))
       expect(props.onHomeClick).not.toHaveBeenCalled()
+    })
+
+    // The brand lockup is a home link, and must behave exactly like the Home
+    // tab: navigate to browse, or reset to the root when already there.
+    it('navigates to browse when the brand lockup is clicked from another page', () => {
+      const props = makeProps({ page: 'manage' })
+      render(<AppShell {...props} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Home' }))
+      expect(props.onTabChange).toHaveBeenCalledWith('browse')
+      expect(props.onHomeClick).not.toHaveBeenCalled()
+    })
+
+    it('resets to the category root when the brand lockup is clicked on browse', () => {
+      const props = makeProps({ page: 'browse' })
+      render(<AppShell {...props} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Home' }))
+      expect(props.onHomeClick).toHaveBeenCalledTimes(1)
+      expect(props.onTabChange).not.toHaveBeenCalled()
     })
 
     it("calls onTabChange with 'manage' when Images tab is clicked", () => {

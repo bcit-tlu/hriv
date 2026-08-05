@@ -59,6 +59,16 @@ describe('FooterBar', () => {
     })
   })
 
+  it('spans the full viewport when fullWidth is set (login screen)', () => {
+    render(<FooterBar canManageUsers={false} fullWidth />)
+
+    // No cap and no auto centring — the login screen has no capped content
+    // column for the footer to line up with.
+    const inner = document.querySelector('footer')?.firstElementChild
+    expect(inner).not.toHaveStyle({ maxWidth: `${contentMaxWidth}px` })
+    expect(inner).toHaveStyle({ width: '100%' })
+  })
+
   it('invokes onReportIssue when Report issue is clicked', async () => {
     const onReportIssue = vi.fn()
     const user = userEvent.setup()
