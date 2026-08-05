@@ -1,8 +1,14 @@
 import { createRef, useEffect, type ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
+import useMediaQuery from '@mui/material/useMediaQuery'
 import App from '../src/App'
 import { contentMaxWidth } from '../src/theme'
+
+// Default to desktop so the existing expectations are unchanged; the mobile
+// block below opts in.
+vi.mock('@mui/material/useMediaQuery', () => ({ default: vi.fn(() => false) }))
+const mockUseMediaQuery = vi.mocked(useMediaQuery)
 
 const mockImage = {
   id: 101,
@@ -433,6 +439,21 @@ describe('App breadcrumbs', () => {
     expect(imageBreadcrumb).not.toBeNull()
     expect(within(imageBreadcrumb as HTMLElement).getByText('Pathology')).toBeInTheDocument()
     expect(within(imageBreadcrumb as HTMLElement).getByText('Lab A2')).toBeInTheDocument()
+  })
+
+  it('drops the breadcrumb restriction chips on mobile, matching the design', () => {
+    mockUseMediaQuery.mockReturnValue(true)
+    try {
+      render(<App />)
+
+      const categoryBreadcrumb = screen.getByLabelText('category breadcrumb').closest('div')
+      expect(categoryBreadcrumb).not.toBeNull()
+      // Path still renders, chips do not — they would crowd the narrow row.
+      expect(within(categoryBreadcrumb as HTMLElement).queryByText('Pathology')).toBeNull()
+      expect(within(categoryBreadcrumb as HTMLElement).queryByText('Lab A2')).toBeNull()
+    } finally {
+      mockUseMediaQuery.mockReturnValue(false)
+    }
   })
 
   it('desaturates program and group chips in the image breadcrumb when the image is inactive', () => {

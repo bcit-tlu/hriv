@@ -89,21 +89,27 @@ describe('AppShell', () => {
       expect(screen.getByText('Maintenance tonight')).toBeInTheDocument()
     })
 
-    it('keeps the full announcement row on the people/admin surface background', () => {
-      render(
-        <AppShell
-          {...makeProps({
-            page: 'people',
-            announcement: 'Maintenance tonight',
-          })}
-        />,
-      )
+    // The announcement is a site-wide notice, so it sits above the app bar on
+    // every page rather than inside the page surface below it.
+    it('renders the announcement above the app bar', () => {
+      render(<AppShell {...makeProps({ announcement: 'Maintenance tonight' })} />)
 
-      expect(
-        screen.getByText('Maintenance tonight').closest('.MuiContainer-root')?.parentElement,
-      ).toHaveStyle({
-        backgroundColor: '#DAC7B5',
-      })
+      const row = screen.getByTestId('announcement-row')
+      const appBar = document.querySelector('.MuiAppBar-root')
+      expect(appBar).not.toBeNull()
+      // eslint-disable-next-line no-bitwise -- DOM order check
+      const appBarFollowsRow =
+        row.compareDocumentPosition(appBar!) & Node.DOCUMENT_POSITION_FOLLOWING
+      expect(appBarFollowsRow).toBeTruthy()
+    })
+
+    it('stays above the app bar on the people/admin pages too', () => {
+      render(<AppShell {...makeProps({ page: 'people', announcement: 'Maintenance tonight' })} />)
+
+      const row = screen.getByTestId('announcement-row')
+      const appBar = document.querySelector('.MuiAppBar-root')
+      // eslint-disable-next-line no-bitwise -- DOM order check
+      expect(row.compareDocumentPosition(appBar!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     })
 
     it('renders dismiss link on announcement banner when callback provided', async () => {
@@ -170,25 +176,20 @@ describe('AppShell', () => {
       mockUseMediaQuery.mockReturnValue(false)
     })
 
-    it('renders the strip edge-to-edge with no padding on mobile', () => {
+    it('renders the strip edge-to-edge on mobile', () => {
       mockUseMediaQuery.mockReturnValue(true)
       render(<AppShell {...makeProps({ announcement: 'Maintenance tonight' })} />)
 
-      const message = screen.getByText('Maintenance tonight')
-      // Not wrapped in the inset Container…
-      expect(message.closest('.MuiContainer-root')).toBeNull()
-      // …and nothing padding it away from the app bar. (jsdom reports unset
-      // properties as empty, so assert the desktop inset is absent.)
-      expect(screen.getByTestId('announcement-row')).not.toHaveStyle({ paddingTop: '20px' })
+      // Not wrapped in the inset Container — it spans the viewport.
+      expect(screen.getByText('Maintenance tonight').closest('.MuiContainer-root')).toBeNull()
     })
 
-    it('keeps the inset container row on desktop', () => {
+    it('keeps the capped container row on desktop', () => {
       mockUseMediaQuery.mockReturnValue(false)
       render(<AppShell {...makeProps({ announcement: 'Maintenance tonight' })} />)
 
-      const message = screen.getByText('Maintenance tonight')
-      expect(message.closest('.MuiContainer-root')).not.toBeNull()
-      expect(screen.getByTestId('announcement-row')).toHaveStyle({ paddingTop: '20px' })
+      // Capped so the text starts at the same x as the logo/tabs below it.
+      expect(screen.getByText('Maintenance tonight').closest('.MuiContainer-root')).not.toBeNull()
     })
 
     it('caps the app bar contents to the same width as the content column', () => {
@@ -269,6 +270,68 @@ describe('AppShell', () => {
       render(<AppShell {...props} />)
       fireEvent.click(screen.getByRole('tab', { name: 'Home' }))
       expect(props.onHomeClick).not.toHaveBeenCalled()
+    })
+
+    // Inside a category / image the design swaps the brand lockup for a back
+    // arrow on mobile.
+    describe('mobile back arrow', () => {
+      beforeEach(() => {
+        mockUseMediaQuery.mockReturnValue(true)
+      })
+      afterEach(() => {
+        mockUseMediaQuery.mockReset()
+        mockUseMediaQuery.mockReturnValue(false)
+      })
+
+      // Students keep the inline single tab, leaving the start slot free.
+      const studentProps = (overrides: Partial<AppShellProps> = {}) =>
+        makeProps({ canEditContent: false, canManageUsers: false, ...overrides })
+
+      it('replaces the brand lockup with a back arrow when a level up exists', () => {
+        render(<AppShell {...studentProps({ canGoBack: true, onBack: vi.fn() })} />)
+
+        expect(screen.getByRole('button', { name: 'Go back' })).toBeInTheDocument()
+        expect(screen.queryByRole('heading', { name: 'HRIV' })).not.toBeInTheDocument()
+      })
+
+      it('calls onBack when the arrow is clicked', () => {
+        const onBack = vi.fn()
+        render(<AppShell {...studentProps({ canGoBack: true, onBack })} />)
+
+        fireEvent.click(screen.getByRole('button', { name: 'Go back' }))
+        expect(onBack).toHaveBeenCalledTimes(1)
+      })
+
+      it('keeps the brand lockup at the category root', () => {
+        render(<AppShell {...studentProps({ canGoBack: false, onBack: vi.fn() })} />)
+
+        expect(screen.queryByRole('button', { name: 'Go back' })).not.toBeInTheDocument()
+        expect(screen.getByRole('heading', { name: 'HRIV' })).toBeInTheDocument()
+      })
+
+      it('defers to the hamburger when the nav is collapsed', () => {
+        // Admin on a compact viewport: the start slot already has the menu.
+        render(<AppShell {...makeProps({ canGoBack: true, onBack: vi.fn() })} />)
+
+        expect(screen.queryByRole('button', { name: 'Go back' })).not.toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Open navigation menu' })).toBeInTheDocument()
+      })
+    })
+
+    it('never shows the back arrow on desktop', () => {
+      mockUseMediaQuery.mockReturnValue(false)
+      render(
+        <AppShell
+          {...makeProps({
+            canEditContent: false,
+            canManageUsers: false,
+            canGoBack: true,
+            onBack: vi.fn(),
+          })}
+        />,
+      )
+      expect(screen.queryByRole('button', { name: 'Go back' })).not.toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'HRIV' })).toBeInTheDocument()
     })
 
     // The brand lockup is a home link, and must behave exactly like the Home

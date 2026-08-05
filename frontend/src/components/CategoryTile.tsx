@@ -201,6 +201,15 @@ export default function CategoryTile({
           outlineOffset: 3,
           transform: dragOver ? 'scale(1.03)' : 'scale(1)',
           opacity: inheritedHidden ? 0.5 : 1,
+          // Mobile follows the design's flat FolderCard: a hairline border and
+          // 8px radius instead of an elevated surface.
+          ...(isMobile &&
+            !dragOver && {
+              boxShadow: 'none',
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: 2,
+            }),
         }}
       >
         {/* Drag-over overlay indicating drop target */}
@@ -250,12 +259,12 @@ export default function CategoryTile({
               component="img"
               image={cardImage.thumb}
               alt={category.label}
-              sx={{ height: { xs: 96, sm: 140 }, objectFit: 'cover', objectPosition: 'center' }}
+              sx={{ height: { xs: 88, sm: 140 }, objectFit: 'cover', objectPosition: 'center' }}
             />
           ) : (
             <Box
               sx={{
-                height: { xs: 96, sm: 140 },
+                height: { xs: 88, sm: 140 },
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -263,19 +272,40 @@ export default function CategoryTile({
                 color: 'white',
               }}
             >
-              <FolderIcon sx={{ fontSize: { xs: 36, sm: 64 }, opacity: 0.85 }} />
+              {/* Design uses a thin outline folder on mobile; desktop keeps
+                  the filled glyph. */}
+              {isMobile ? (
+                <FolderOutlinedIcon sx={{ fontSize: 32, opacity: 0.9 }} />
+              ) : (
+                <FolderIcon sx={{ fontSize: 64, opacity: 0.85 }} />
+              )}
             </Box>
           )}
-          <CardContent sx={{ p: { xs: 1.25, sm: 2 }, '&:last-child': { pb: { xs: 1.25, sm: 2 } } }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <FolderOutlinedIcon fontSize="small" color="primary" sx={{ flexShrink: 0 }} />
+          <CardContent
+            sx={{
+              p: { xs: '8px 10px', sm: 2 },
+              '&:last-child': { pb: { xs: '8px', sm: 2 } },
+            }}
+          >
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: isMobile ? 'flex-start' : 'center',
+                gap: isMobile ? '5px' : 0.5,
+              }}
+            >
+              <FolderOutlinedIcon
+                fontSize="small"
+                color="primary"
+                sx={{ flexShrink: 0, ...(isMobile && { fontSize: 12, mt: '2px' }) }}
+              />
               <Typography
                 variant="h6"
                 noWrap={!isMobile}
                 sx={{
                   color: category.status === 'hidden' ? visColors.inactive : 'primary.main',
                   ...(isMobile && {
-                    fontSize: 14,
+                    fontSize: 12,
                     fontWeight: 600,
                     lineHeight: 1.3,
                     display: '-webkit-box',
@@ -318,7 +348,7 @@ export default function CategoryTile({
             <Typography
               variant="body2"
               color="text.secondary"
-              sx={{ fontSize: { xs: 12, sm: 'inherit' } }}
+              sx={{ fontSize: isMobile ? 11 : 'inherit' }}
             >
               {detailText}
             </Typography>

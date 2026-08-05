@@ -510,5 +510,32 @@ describe('CategoryTile', () => {
       // …but the program chip is omitted in the compact folder-card layout.
       expect(screen.queryByText('Pathology')).not.toBeInTheDocument()
     })
+
+    // These values come straight from the design's FolderCard + tokens, so a
+    // later tweak to the desktop card can't silently drift the mobile scale.
+    it('uses the design font scale for the name and meta line', () => {
+      render(
+        <CategoryTile
+          category={makeCategory({ label: 'Hematology' })}
+          onClick={vi.fn()}
+          programs={[]}
+        />,
+      )
+
+      expect(screen.getByText('Hematology')).toHaveStyle({ fontSize: '12px' })
+      expect(screen.getByText('Empty')).toHaveStyle({ fontSize: '11px' })
+    })
+
+    it('renders a flat card rather than an elevated one', () => {
+      const { container } = render(
+        <CategoryTile
+          category={makeCategory({ label: 'Hematology' })}
+          onClick={vi.fn()}
+          programs={[]}
+        />,
+      )
+
+      expect(container.querySelector('.MuiCard-root')).toHaveStyle({ boxShadow: 'none' })
+    })
   })
 })

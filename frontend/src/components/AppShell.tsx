@@ -38,6 +38,7 @@ import ListSubheader from '@mui/material/ListSubheader'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import { useTheme } from '@mui/material/styles'
 import MenuIcon from '@mui/icons-material/Menu'
+import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import SearchIcon from '@mui/icons-material/Search'
 import CloseIcon from '@mui/icons-material/Close'
 import HomeIcon from '@mui/icons-material/Home'
@@ -64,7 +65,6 @@ import {
   appBarIconButtonSx,
   cappedRowSx,
   getGroupChipColors,
-  getSurfaceVariant,
 } from '../theme'
 
 export type Page = 'browse' | 'manage' | 'people' | 'admin'
@@ -73,6 +73,11 @@ export interface AppShellProps {
   page: Page
   onTabChange: (page: Page) => void
   onHomeClick: () => void
+  /** Whether there's a level to go back up to (inside a category, or viewing an
+   *  image). Drives the mobile back arrow. */
+  canGoBack?: boolean
+  /** Navigate one level up. Mobile only. */
+  onBack?: () => void
   canEditContent: boolean
   canManageUsers: boolean
   currentUser: {
@@ -115,6 +120,8 @@ export default function AppShell(props: AppShellProps) {
     page,
     onTabChange,
     onHomeClick,
+    canGoBack = false,
+    onBack,
     canEditContent,
     canManageUsers,
     currentUser,
@@ -179,7 +186,6 @@ export default function AppShell(props: AppShellProps) {
     if (announcement) setAnnCollapsed(false)
   }
   const showViewAnnLink = annEnabled && !announcement
-  const contentBg = page === 'people' || page === 'admin' ? getSurfaceVariant(mode) : undefined
   const groupColors = getGroupChipColors(mode)
   const { preference: themePreference, toggleMode } = useColorMode()
   const themeIcon = useMemo(() => {
@@ -197,6 +203,11 @@ export default function AppShell(props: AppShellProps) {
   // menu's Home item: switch to browse, or — when already there — reset to the
   // category root and refresh.
   const goHome = () => (page === 'browse' ? onHomeClick() : onTabChange('browse'))
+
+  // Inside a category (or an image) the design swaps the brand lockup for a
+  // back arrow on mobile. Only in the inline-tab layout — the collapsed-nav
+  // layout already owns the start slot with its hamburger.
+  const showBack = isMobile && !collapseNav && canGoBack && Boolean(onBack)
 
   // Collapsed-nav menu, built as ordered sections. Empty sections are dropped
   // and dividers are only inserted *between* non-empty sections, so the menu
@@ -307,6 +318,30 @@ export default function AppShell(props: AppShellProps) {
         minHeight: '100vh',
       }}
     >
+      {/* Announcement banner — sits above the app bar so it reads as a
+          site-wide notice, on every page and at every width (per the design).
+          Mobile spans edge-to-edge; desktop keeps the capped row so the text
+          starts at the same x as the logo and tabs directly beneath it. */}
+      {announcement && (
+        <Collapse in={!annCollapsed} onExited={onDismissAnnouncement}>
+          <Box data-testid="announcement-row">
+            {isMobile ? (
+              <AnnouncementBanner
+                message={announcement}
+                onDismiss={onDismissAnnouncement ? () => setAnnCollapsed(true) : undefined}
+              />
+            ) : (
+              <Container maxWidth={false} sx={cappedRowSx}>
+                <AnnouncementBanner
+                  message={announcement}
+                  onDismiss={onDismissAnnouncement ? () => setAnnCollapsed(true) : undefined}
+                />
+              </Container>
+            )}
+          </Box>
+        </Collapse>
+      )}
+
       {/* App bar — the bar itself stays full-bleed; its contents are capped so
           the logo and tabs line up with the content column below. */}
       <AppBar position="static" elevation={1}>
@@ -333,35 +368,50 @@ export default function AppShell(props: AppShellProps) {
                 </IconButton>
               </Tooltip>
             )}
-            {/* Brand mark doubles as the home link, matching the design (and
-                the near-universal convention). The button lives *inside* the
-                h1 so the page keeps its heading while the whole lockup — logo
-                and wordmark — is clickable. The logo's alt is empty because
-                the adjacent text already names it. */}
-            <Typography variant="h6" component="h1" sx={{ display: 'flex', m: 0 }}>
-              <Tooltip title="Home">
-                <Box
-                  component="button"
-                  type="button"
-                  onClick={goHome}
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 0.75,
-                    background: 'none',
-                    border: 'none',
-                    p: 0,
-                    cursor: 'pointer',
-                    color: 'inherit',
-                    font: 'inherit',
-                    letterSpacing: 'inherit',
-                  }}
+            {showBack ? (
+              /* Inside a category / image the design replaces the brand lockup
+                 with a back arrow, keeping the narrow bar uncluttered. */
+              <Tooltip title="Back">
+                <IconButton
+                  edge="start"
+                  onClick={onBack}
+                  sx={{ color: 'inherit', ...appBarIconButtonSx }}
+                  aria-label="Go back"
                 >
-                  <Box component="img" src="/favicon.svg" alt="" sx={{ height: 32, width: 32 }} />
-                  HRIV
-                </Box>
+                  <ArrowBackIcon />
+                </IconButton>
               </Tooltip>
-            </Typography>
+            ) : (
+              /* Brand mark doubles as the home link, matching the design (and
+                 the near-universal convention). The button lives *inside* the
+                 h1 so the page keeps its heading while the whole lockup — logo
+                 and wordmark — is clickable. The logo's alt is empty because
+                 the adjacent text already names it. */
+              <Typography variant="h6" component="h1" sx={{ display: 'flex', m: 0 }}>
+                <Tooltip title="Home">
+                  <Box
+                    component="button"
+                    type="button"
+                    onClick={goHome}
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 0.75,
+                      background: 'none',
+                      border: 'none',
+                      p: 0,
+                      cursor: 'pointer',
+                      color: 'inherit',
+                      font: 'inherit',
+                      letterSpacing: 'inherit',
+                    }}
+                  >
+                    <Box component="img" src="/favicon.svg" alt="" sx={{ height: 32, width: 32 }} />
+                    HRIV
+                  </Box>
+                </Tooltip>
+              </Typography>
+            )}
           </Box>
           {collapseNav ? (
             <Box sx={{ flexGrow: 1 }} />
@@ -632,36 +682,6 @@ export default function AppShell(props: AppShellProps) {
           </Box>
         </Toolbar>
       </AppBar>
-
-      {/* Announcement banner */}
-      {announcement && (
-        <Collapse in={!annCollapsed} onExited={onDismissAnnouncement}>
-          {/* Mobile renders the strip edge-to-edge and flush against the app
-              bar — no padding around it, matching the login screen. Desktop
-              keeps the inset, container-aligned row. */}
-          <Box
-            data-testid="announcement-row"
-            sx={{
-              bgcolor: contentBg,
-              ...(isMobile ? null : { pt: 2.5 }),
-            }}
-          >
-            {isMobile ? (
-              <AnnouncementBanner
-                message={announcement}
-                onDismiss={onDismissAnnouncement ? () => setAnnCollapsed(true) : undefined}
-              />
-            ) : (
-              <Container maxWidth={false} sx={cappedRowSx}>
-                <AnnouncementBanner
-                  message={announcement}
-                  onDismiss={onDismissAnnouncement ? () => setAnnCollapsed(true) : undefined}
-                />
-              </Container>
-            )}
-          </Box>
-        </Collapse>
-      )}
 
       {/* Read-only announcement dialog (for dismissed announcements) */}
       <Dialog open={viewAnnOpen} onClose={() => setViewAnnOpen(false)} maxWidth="sm" fullWidth>

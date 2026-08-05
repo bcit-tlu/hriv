@@ -65,7 +65,7 @@ function SortableTile({ id, index, disabled, children }: SortableTileProps) {
         opacity: isDragSource ? 0.4 : 1,
         position: 'relative',
         // Two-column folder grid on mobile; fixed 300px tiles on desktop.
-        width: { xs: 'calc(50% - 4px)', sm: 300 },
+        width: { xs: 'calc(50% - 5px)', sm: 300 },
         maxWidth: '100%',
         cursor: disabled ? undefined : isDragSource ? 'grabbing' : 'grab',
       }}
@@ -473,7 +473,7 @@ export default function SortableTileGrid({
       <Box
         role="region"
         aria-label="Sortable tile grid"
-        sx={{ display: 'flex', flexWrap: 'wrap', gap: { xs: 1, sm: 2 } }}
+        sx={{ display: 'flex', flexWrap: 'wrap', gap: { xs: '10px', sm: 2 } }}
         onDragOver={onGridDragOver}
         onDrop={onGridDrop}
       >

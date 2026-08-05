@@ -35,7 +35,19 @@ export default function ImageTile({
   return (
     <Card
       elevation={2}
-      sx={{ width: '100%', maxWidth: 300, position: 'relative', opacity: categoryHidden ? 0.5 : 1 }}
+      sx={{
+        width: '100%',
+        maxWidth: 300,
+        position: 'relative',
+        opacity: categoryHidden ? 0.5 : 1,
+        // Mobile matches the design's flat card (hairline border, 8px radius).
+        ...(isMobile && {
+          boxShadow: 'none',
+          border: '1px solid',
+          borderColor: 'divider',
+          borderRadius: 2,
+        }),
+      }}
     >
       <CardActionArea
         onClick={() => onClick(image)}
@@ -51,15 +63,15 @@ export default function ImageTile({
           component="img"
           image={image.thumb}
           alt={image.name}
-          sx={{ height: { xs: 96, sm: 160 }, objectFit: 'cover', objectPosition: 'center' }}
+          sx={{ height: { xs: 88, sm: 160 }, objectFit: 'cover', objectPosition: 'center' }}
         />
         <CardContent
           sx={{
             display: 'flex',
             flexDirection: 'column',
             flexGrow: 1,
-            p: { xs: 1.25, sm: 2 },
-            '&:last-child': { pb: { xs: 1.25, sm: 2 } },
+            p: { xs: '8px 10px', sm: 2 },
+            '&:last-child': { pb: { xs: '8px', sm: 2 } },
           }}
         >
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -69,7 +81,7 @@ export default function ImageTile({
               sx={{
                 ...(!image.active && { color: visColors.inactive }),
                 ...(isMobile && {
-                  fontSize: 14,
+                  fontSize: 12,
                   fontWeight: 600,
                   lineHeight: 1.3,
                   display: '-webkit-box',
@@ -109,7 +121,12 @@ export default function ImageTile({
             )}
           </Box>
           {image.copyright && (
-            <Typography variant="body2" color="text.secondary" noWrap sx={{ mt: 1 }}>
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              noWrap
+              sx={{ mt: isMobile ? 0.25 : 1, fontSize: isMobile ? 11 : 'inherit' }}
+            >
               &copy; {image.copyright}
             </Typography>
           )}

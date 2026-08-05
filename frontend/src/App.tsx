@@ -291,6 +291,10 @@ export default function App() {
     kind: 'program' | 'group',
     stateSx?: Record<string, unknown>,
   ) => {
+    // The design's mobile breadcrumb row is just the path — restriction chips
+    // would wrap and crowd it at that width, so they stay on desktop (matching
+    // the tiles, which also drop their chips on mobile).
+    if (isMobile) return null
     if (items.length === 0) return null
 
     const MAX_INLINE = 2
@@ -892,16 +896,19 @@ export default function App() {
   const categorySkippedCategoryLabels = categoryBreadcrumb.hiddenCategories
     .map((cat) => cat.label)
     .join(' / ')
+  // Mobile uses the design's compact breadcrumb scale; desktop is unchanged.
   const breadcrumbItemTextSx = {
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
     maxWidth: { xs: 120, sm: 180, md: 260 },
+    fontSize: { xs: 12, sm: 'inherit' },
   }
   const breadcrumbCurrentTextSx = {
     ...breadcrumbItemTextSx,
     maxWidth: { xs: 140, sm: 220, md: 360 },
   }
+  const breadcrumbHomeIconSx = { fontSize: { xs: 15, sm: 20 } }
 
   const handleImageClick = useCallback(
     (img: ImageItem) => {
@@ -1054,6 +1061,29 @@ export default function App() {
     pushNavState('browse')
   }, [clearImage, pushNavState, loadCategories, loadUncategorizedImages])
 
+  // Mobile app-bar back arrow. A level up exists while browsing inside a
+  // category or viewing an image; from an image we return to its category
+  // listing, otherwise we pop one category level. Mirrors the breadcrumb links
+  // so browser history stays consistent.
+  const canGoBack = page === 'browse' && (selectedImage != null || path.length > 0)
+  const handleBack = useCallback(() => {
+    if (selectedImage != null) {
+      clearImage()
+      pushNavState(
+        'browse',
+        pathRef.current.map((c) => c.id),
+      )
+      return
+    }
+    const depth = pathRef.current.length - 1
+    if (depth < 0) return
+    navigateToDepth(depth)
+    pushNavState(
+      'browse',
+      pathRef.current.slice(0, depth).map((c) => c.id),
+    )
+  }, [selectedImage, clearImage, pushNavState])
+
   // Show loading spinner while users are loading
   if (usersLoading) {
     return (
@@ -1089,6 +1119,8 @@ export default function App() {
       page={page}
       onTabChange={handleTabChange}
       onHomeClick={handleHomeClick}
+      canGoBack={canGoBack}
+      onBack={handleBack}
       canEditContent={canEditContent}
       canManageUsers={canManageUsers}
       currentUser={currentUser}
@@ -1249,6 +1281,12 @@ export default function App() {
                       },
                       '& .MuiBreadcrumbs-separator': {
                         flexShrink: 0,
+                        fontSize: { xs: 12, sm: 'inherit' },
+                        mx: { xs: 0.5, sm: 1 },
+                      },
+                      // Compact scale on mobile, per the design.
+                      '& .MuiLink-root, & .MuiTypography-root': {
+                        fontSize: { xs: 12, sm: 'inherit' },
                       },
                     }}
                   >
@@ -1270,7 +1308,7 @@ export default function App() {
                         flexShrink: 0,
                       }}
                     >
-                      <HomeIcon fontSize="small" />
+                      <HomeIcon fontSize="small" sx={breadcrumbHomeIconSx} />
                       Home
                     </Link>
                     {imageBreadcrumb.hiddenCategories.length > 0 && (
@@ -1680,6 +1718,12 @@ export default function App() {
                       },
                       '& .MuiBreadcrumbs-separator': {
                         flexShrink: 0,
+                        fontSize: { xs: 12, sm: 'inherit' },
+                        mx: { xs: 0.5, sm: 1 },
+                      },
+                      // Compact scale on mobile, per the design.
+                      '& .MuiLink-root, & .MuiTypography-root': {
+                        fontSize: { xs: 12, sm: 'inherit' },
                       },
                     }}
                   >
@@ -1700,7 +1744,7 @@ export default function App() {
                         flexShrink: 0,
                       }}
                     >
-                      <HomeIcon fontSize="small" />
+                      <HomeIcon fontSize="small" sx={breadcrumbHomeIconSx} />
                       Home
                     </Link>
                     {categoryBreadcrumb.hiddenCategories.length > 0 && (
