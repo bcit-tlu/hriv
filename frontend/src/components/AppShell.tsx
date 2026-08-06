@@ -587,16 +587,15 @@ export default function AppShell(props: AppShellProps) {
             >
               <Card sx={{ minWidth: 240 }}>
                 <CardContent sx={{ '&:last-child': { pb: 1 } }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                  <Typography sx={{ fontWeight: 600, fontSize: 17, lineHeight: 1.35 }}>
                     {currentUser.name}
                   </Typography>
-                  <Typography variant="body2" color="text.secondary">
+                  <Typography color="text.secondary" sx={{ fontSize: 15, mt: 0.25 }}>
                     {currentUser.email}
                   </Typography>
                   <Typography
-                    variant="body2"
                     color="text.secondary"
-                    sx={{ textTransform: 'capitalize' }}
+                    sx={{ fontSize: 15, textTransform: 'capitalize' }}
                   >
                     {currentUser.role}
                   </Typography>
@@ -637,19 +636,33 @@ export default function AppShell(props: AppShellProps) {
                     </Box>
                   )}
                   <Divider sx={{ mt: 1.5, mx: -2 }} />
-                  <MenuList sx={{ mx: -2, py: 0 }}>
+                  {/* MenuItem styles `.MuiListItemIcon-root` with a descendant
+                      selector (min-width: 36px), which outranks an `sx` on the
+                      icon itself — so the collapse has to happen from here.
+                      The label's own `ml` then sets the icon-to-text gap. */}
+                  <MenuList sx={{ mx: -2, py: 0, '& .MuiListItemIcon-root': { minWidth: 0 } }}>
                     {collapseNav && (
                       <MenuItem sx={{ py: 1.25 }} onClick={() => toggleMode()}>
-                        <ListItemIcon sx={{ minWidth: 0, mr: 1.25 }}>{themeIcon}</ListItemIcon>
-                        <ListItemText>{themeLabel}</ListItemText>
+                        <ListItemIcon sx={{ minWidth: 0, mr: 0 }}>{themeIcon}</ListItemIcon>
+                        <ListItemText
+                          slotProps={{ primary: { fontSize: 15 } }}
+                          sx={{ my: 0, ml: 1 }}
+                        >
+                          {themeLabel}
+                        </ListItemText>
                       </MenuItem>
                     )}
                     {canManageUsers && (
                       <MenuItem sx={{ py: 1.25 }} onClick={() => openEditProfile()}>
-                        <ListItemIcon sx={{ minWidth: 0, mr: 1.25 }}>
+                        <ListItemIcon sx={{ minWidth: 0, mr: 0 }}>
                           <ManageAccountsIcon fontSize="small" />
                         </ListItemIcon>
-                        <ListItemText>Update</ListItemText>
+                        <ListItemText
+                          slotProps={{ primary: { fontSize: 15 } }}
+                          sx={{ my: 0, ml: 1 }}
+                        >
+                          Update
+                        </ListItemText>
                       </MenuItem>
                     )}
                     {showViewAnnLink && (
@@ -660,23 +673,34 @@ export default function AppShell(props: AppShellProps) {
                           setViewAnnOpen(true)
                         }}
                       >
-                        <ListItemIcon sx={{ minWidth: 0, mr: 1.25 }}>
+                        <ListItemIcon sx={{ minWidth: 0, mr: 0 }}>
                           <CampaignIcon fontSize="small" />
                         </ListItemIcon>
-                        <ListItemText>View Announcement</ListItemText>
+                        <ListItemText
+                          slotProps={{ primary: { fontSize: 15 } }}
+                          sx={{ my: 0, ml: 1 }}
+                        >
+                          View Announcement
+                        </ListItemText>
                       </MenuItem>
                     )}
                     <MenuItem
-                      sx={{ py: 1.25, color: 'primary.main' }}
+                      sx={{ py: 1.25 }}
                       onClick={() => {
                         setProfileOpen(false)
                         logout()
                       }}
                     >
-                      <ListItemIcon sx={{ minWidth: 0, mr: 1.25, color: 'primary.main' }}>
+                      {/* Neutral rather than the salmon accent, matching the
+                          rest of the chrome. `gap` sets the icon-to-label
+                          spacing; ListItemText also carries its own default
+                          margin, which is what left the icon stranded. */}
+                      <ListItemIcon sx={{ minWidth: 0, mr: 0, color: 'text.secondary' }}>
                         <LogoutIcon fontSize="small" />
                       </ListItemIcon>
-                      <ListItemText>Logout</ListItemText>
+                      <ListItemText slotProps={{ primary: { fontSize: 15 } }} sx={{ my: 0, ml: 1 }}>
+                        Logout
+                      </ListItemText>
                     </MenuItem>
                   </MenuList>
                 </CardContent>

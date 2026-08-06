@@ -556,6 +556,47 @@ describe('AppShell', () => {
       expect(screen.queryByText('Capstone')).not.toBeInTheDocument()
     })
 
+    // The popover reads as one block: the identity lines share a scale, the
+    // logout row is neutral rather than accent-red, and the icon sits next to
+    // its label (MenuItem's descendant selector otherwise forces a 36px gutter).
+    it('sizes the identity lines consistently and keeps logout neutral', () => {
+      render(
+        <AppShell
+          {...makeProps({
+            profileOpen: true,
+            currentUser: {
+              name: 'Mira Patel',
+              email: 'student@example.ca',
+              role: 'student',
+              program_names: [],
+              group_names: [],
+            },
+          })}
+        />,
+      )
+
+      expect(screen.getByText('Mira Patel')).toHaveStyle({ fontSize: '17px' })
+      expect(screen.getByText('student@example.ca')).toHaveStyle({ fontSize: '15px' })
+      expect(screen.getByText('student')).toHaveStyle({ fontSize: '15px' })
+
+      // Logout is no longer tinted with the primary (salmon) accent.
+      const logoutItem = screen.getByText('Logout').closest('li')
+      expect(logoutItem).not.toHaveStyle({ color: 'rgb(213, 136, 129)' })
+    })
+
+    // NOTE: the icon gutter collapse itself isn't asserted here — it comes from
+    // an emotion descendant selector (MenuItem's `min-width: 36px`), and jsdom
+    // doesn't resolve those into computed values, so any assertion would test
+    // the environment rather than the styling. Verified in a real browser
+    // instead: the icon wrapper drops 36px -> 20px and the gap 24px -> 8px.
+    it('renders the logout row with its icon and label together', () => {
+      render(<AppShell {...makeProps({ profileOpen: true })} />)
+
+      const logoutItem = screen.getByText('Logout').closest('li')
+      expect(logoutItem?.querySelector('.MuiListItemIcon-root')).not.toBeNull()
+      expect(logoutItem?.querySelector('[data-testid="LogoutIcon"]')).not.toBeNull()
+    })
+
     it('shows Update link when canManageUsers', () => {
       render(<AppShell {...makeProps({ profileOpen: true, canManageUsers: true })} />)
       expect(screen.getByText('Update')).toBeInTheDocument()

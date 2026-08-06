@@ -912,10 +912,23 @@ export default function App() {
     maxWidth: { xs: 120, sm: 180, md: 260 },
     fontSize: { xs: 12, sm: 'inherit' },
   }
-  const breadcrumbCurrentTextSx = {
-    ...breadcrumbItemTextSx,
-    maxWidth: { xs: 140, sm: 220, md: 360 },
-  }
+  // The deepest crumb is the one users most need to read, so on mobile it takes
+  // whatever width is left rather than a fixed 140px cap, and wraps onto further
+  // lines instead of being clipped — the folder name stays fully readable. The
+  // ancestors above it still collapse behind the "..." as before.
+  const breadcrumbCurrentTextSx = isMobile
+    ? {
+        fontSize: 12,
+        flex: '1 1 auto',
+        minWidth: 0,
+        maxWidth: 'none',
+        whiteSpace: 'normal',
+        overflowWrap: 'anywhere',
+      }
+    : {
+        ...breadcrumbItemTextSx,
+        maxWidth: { sm: 220, md: 360 },
+      }
   const breadcrumbHomeIconSx = { fontSize: { xs: 15, sm: 20 } }
 
   const handleImageClick = useCallback(
@@ -1303,12 +1316,30 @@ export default function App() {
                       minWidth: 0,
                       maxWidth: '100%',
                       '& .MuiBreadcrumbs-ol': {
-                        flexWrap: 'nowrap',
+                        // Mobile allows a wrap so an over-long final crumb can
+                        // drop to its own full-width line instead of being
+                        // squeezed; desktop keeps everything on one line.
+                        flexWrap: isMobile ? 'wrap' : 'nowrap',
+                        alignItems: isMobile ? 'flex-start' : 'center',
+                        ...(isMobile && { rowGap: 0.25 }),
                       },
                       '& .MuiBreadcrumbs-li': {
                         display: 'flex',
                         alignItems: 'center',
                         minWidth: 0,
+                      },
+                      // Ancestors keep their natural width (already capped and
+                      // ellipsised) so they stay readable rather than being
+                      // crushed by a long leaf name.
+                      ...(isMobile && {
+                        '& .MuiBreadcrumbs-li:not(:last-of-type)': { flexShrink: 0 },
+                      }),
+                      // The final crumb takes the leftover width, and its
+                      // min-width means it moves to the next line — where it
+                      // gets the full row — whenever little space is left.
+                      '& .MuiBreadcrumbs-li:last-of-type': {
+                        flex: isMobile ? '1 1 auto' : 'initial',
+                        minWidth: isMobile ? '55%' : 0,
                       },
                       '& .MuiBreadcrumbs-separator': {
                         flexShrink: 0,
@@ -1768,12 +1799,30 @@ export default function App() {
                       minWidth: 0,
                       maxWidth: '100%',
                       '& .MuiBreadcrumbs-ol': {
-                        flexWrap: 'nowrap',
+                        // Mobile allows a wrap so an over-long final crumb can
+                        // drop to its own full-width line instead of being
+                        // squeezed; desktop keeps everything on one line.
+                        flexWrap: isMobile ? 'wrap' : 'nowrap',
+                        alignItems: isMobile ? 'flex-start' : 'center',
+                        ...(isMobile && { rowGap: 0.25 }),
                       },
                       '& .MuiBreadcrumbs-li': {
                         display: 'flex',
                         alignItems: 'center',
                         minWidth: 0,
+                      },
+                      // Ancestors keep their natural width (already capped and
+                      // ellipsised) so they stay readable rather than being
+                      // crushed by a long leaf name.
+                      ...(isMobile && {
+                        '& .MuiBreadcrumbs-li:not(:last-of-type)': { flexShrink: 0 },
+                      }),
+                      // The final crumb takes the leftover width, and its
+                      // min-width means it moves to the next line — where it
+                      // gets the full row — whenever little space is left.
+                      '& .MuiBreadcrumbs-li:last-of-type': {
+                        flex: isMobile ? '1 1 auto' : 'initial',
+                        minWidth: isMobile ? '55%' : 0,
                       },
                       '& .MuiBreadcrumbs-separator': {
                         flexShrink: 0,
