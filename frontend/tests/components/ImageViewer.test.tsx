@@ -9,6 +9,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import useMediaQuery from '@mui/material/useMediaQuery'
 
 vi.mock('@mui/material/useMediaQuery', () => ({ default: vi.fn(() => false) }))
@@ -174,6 +175,27 @@ describe('ImageViewer OpenSeadragon options', () => {
     it('never lets the hint intercept the gesture it describes', () => {
       render(<ImageViewer tileSources="/tiles.dzi" />)
       expect(screen.getByText(HINT).parentElement).toHaveStyle({ pointerEvents: 'none' })
+    })
+
+    // The pill animates between states via a horizontal Collapse, which keeps
+    // the tools mounted. MUI marks the closed wrapper `visibility: hidden`, so
+    // they stay out of the tab order rather than becoming invisible tab stops.
+    it('animates the tool group and keeps it collapsed-but-mounted', async () => {
+      const user = userEvent.setup()
+      render(<ImageViewer tileSources="/tiles.dzi" />)
+
+      const collapse = document.querySelector('.MuiCollapse-root')
+      expect(collapse).not.toBeNull()
+      // Starts expanded.
+      expect(collapse).not.toHaveClass('MuiCollapse-hidden')
+
+      await user.click(screen.getByRole('button', { name: 'Hide tools' }))
+
+      await waitFor(() => {
+        expect(document.querySelector('.MuiCollapse-root')).toHaveClass('MuiCollapse-hidden')
+      })
+      // The toggle itself remains, now offering to re-open.
+      expect(screen.getByRole('button', { name: 'Show tools' })).toBeInTheDocument()
     })
 
     it('hides the native control cluster in favour of the custom pill', () => {

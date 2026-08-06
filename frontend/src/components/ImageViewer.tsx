@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import OpenSeadragon from 'openseadragon'
 import Box from '@mui/material/Box'
+import Collapse from '@mui/material/Collapse'
 import Fade from '@mui/material/Fade'
 import Typography from '@mui/material/Typography'
 import IconButton from '@mui/material/IconButton'
@@ -98,6 +99,14 @@ export default function ImageViewer({
   // "Use two fingers" hint, shown when a single finger lands on the image.
   const [showGestureHint, setShowGestureHint] = useState(false)
   const hintTimerRef = useRef<number | null>(null)
+  // The pill is centred when expanded and tucked bottom-left when collapsed.
+  // `justify-content` can't be transitioned, so the pill stays flex-centred and
+  // slides on a transform — which animates, and runs alongside the width
+  // change so the two read as a single motion.
+  const pillRowRef = useRef<HTMLDivElement>(null)
+  const pillRef = useRef<HTMLDivElement>(null)
+  const pillToggleRef = useRef<HTMLButtonElement>(null)
+  const [pillCollapsedShift, setPillCollapsedShift] = useState(0)
   const [canvasEditMode, setCanvasEditMode] = useState(false)
   const [viewerInstance, setViewerInstance] = useState<OpenSeadragon.Viewer | null>(null)
   const canvasEditModeRef = useRef(false)
@@ -763,6 +772,34 @@ export default function ImageViewer({
     }
   }, [isMobile])
 
+  // Distance the pill must travel from centred to flush-left. Derived from the
+  // *collapsed* width (toggle + padding + border) rather than the live width,
+  // so the value stays stable while the Collapse animation is mid-flight.
+  useEffect(() => {
+    if (!isMobile) return
+    const row = pillRowRef.current
+    const pill = pillRef.current
+    const toggle = pillToggleRef.current
+    if (!row || !pill || !toggle) return
+
+    const measure = () => {
+      const styles = getComputedStyle(pill)
+      const collapsedWidth =
+        toggle.offsetWidth +
+        parseFloat(styles.paddingLeft) +
+        parseFloat(styles.paddingRight) +
+        parseFloat(styles.borderLeftWidth) +
+        parseFloat(styles.borderRightWidth)
+      setPillCollapsedShift(-Math.max(0, (row.clientWidth - collapsedWidth) / 2))
+    }
+    measure()
+
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(measure)
+    observer.observe(row)
+    return () => observer.disconnect()
+  }, [isMobile, viewerInstance])
+
   // Handle canvas edit mode toggle from the CanvasOverlay (e.g. "Done" button)
   const handleCanvasEditModeChange = useCallback(
     (mode: boolean) => {
@@ -885,12 +922,14 @@ export default function ImageViewer({
       {/* Mobile in-image toolbar pill — replaces the native OSD controls. */}
       {isMobile && viewerInstance && (
         <Box
+          ref={pillRowRef}
           sx={{
             position: 'absolute',
             bottom: 12,
             left: 0,
             right: 0,
             display: 'flex',
+            // Centred by flexbox; the collapsed state slides left via transform.
             justifyContent: 'center',
             px: 1.5,
             pointerEvents: 'none',
@@ -898,6 +937,7 @@ export default function ImageViewer({
           }}
         >
           <Box
+            ref={pillRef}
             sx={{
               display: 'flex',
               alignItems: 'center',
@@ -909,10 +949,19 @@ export default function ImageViewer({
               border: '1px solid rgba(255,255,255,0.12)',
               backdropFilter: 'blur(6px)',
               pointerEvents: 'auto',
+              // Slides between centred (expanded) and flush-left (collapsed) on
+              // the same curve and duration as the width Collapse, so the two
+              // changes read as one movement.
+              transform: pillExpanded ? 'none' : `translateX(${pillCollapsedShift}px)`,
+              transition: theme.transitions.create('transform', {
+                duration: 240,
+                easing: theme.transitions.easing.easeInOut,
+              }),
             }}
           >
             <Tooltip title={pillExpanded ? 'Hide tools' : 'Show tools'}>
               <IconButton
+                ref={pillToggleRef}
                 size="small"
                 aria-label={pillExpanded ? 'Hide tools' : 'Show tools'}
                 onClick={() => setPillExpanded((v) => !v)}
@@ -921,8 +970,16 @@ export default function ImageViewer({
                 <TuneIcon fontSize="small" />
               </IconButton>
             </Tooltip>
-            {pillExpanded && (
-              <>
+            {/* Horizontal Collapse animates the group's width. MUI also applies
+                `visibility: hidden` once fully closed, so the hidden tools stay
+                out of the tab order. */}
+            <Collapse
+              orientation="horizontal"
+              in={pillExpanded}
+              timeout={240}
+              sx={{ '& .MuiCollapse-wrapperInner': { display: 'flex', alignItems: 'center' } }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, pl: 0.5 }}>
                 <Box
                   sx={{
                     width: '1px',
@@ -995,8 +1052,8 @@ export default function ImageViewer({
                     <RotateRightIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
-              </>
-            )}
+              </Box>
+            </Collapse>
           </Box>
         </Box>
       )}
