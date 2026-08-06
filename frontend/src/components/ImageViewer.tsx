@@ -1,6 +1,8 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import OpenSeadragon from 'openseadragon'
 import Box from '@mui/material/Box'
+import Fade from '@mui/material/Fade'
+import Typography from '@mui/material/Typography'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
 import useMediaQuery from '@mui/material/useMediaQuery'
@@ -93,6 +95,9 @@ export default function ImageViewer({
   // selection / clear logic the desktop toolbar buttons use.
   const toggleSelectionRef = useRef<(() => void) | null>(null)
   const clearOverlaysRef = useRef<(() => void) | null>(null)
+  // "Use two fingers" hint, shown when a single finger lands on the image.
+  const [showGestureHint, setShowGestureHint] = useState(false)
+  const hintTimerRef = useRef<number | null>(null)
   const [canvasEditMode, setCanvasEditMode] = useState(false)
   const [viewerInstance, setViewerInstance] = useState<OpenSeadragon.Viewer | null>(null)
   const canvasEditModeRef = useRef(false)
@@ -274,7 +279,13 @@ export default function ImageViewer({
       gestureSettingsMouse: { scrollToZoom: true },
       // Rotation controls
       showRotationControl: true,
-      gestureSettingsTouch: { pinchRotate: true },
+      // Cooperative gestures on mobile (the pattern embedded maps use): a
+      // single finger is left to the browser so the page keeps scrolling, and
+      // only two fingers drive the viewer. Pinch still pans *and* zooms, so
+      // nothing is lost. Desktop is unchanged.
+      gestureSettingsTouch: isMobile
+        ? { pinchRotate: true, dragToPan: false, flickEnabled: false, pinchToZoom: true }
+        : { pinchRotate: true },
       // Position controls at bottom-left
       navigationControlAnchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
       // Mobile hides the native cluster in favour of the custom React pill.
@@ -709,6 +720,49 @@ export default function ImageViewer({
     updateLockUiRef.current?.()
   }, [overlaysLocked])
 
+  // Surface the cooperative-gesture hint when a lone finger touches the image.
+  // Listeners sit on the OSD container (capture, passive) so they see the touch
+  // without interfering with it, and so taps on the toolbar pill — a sibling —
+  // never trigger the hint.
+  useEffect(() => {
+    if (!isMobile) return
+    const el = containerRef.current
+    if (!el) return
+
+    const clearTimer = () => {
+      if (hintTimerRef.current !== null) {
+        window.clearTimeout(hintTimerRef.current)
+        hintTimerRef.current = null
+      }
+    }
+    const hideAfter = (ms: number) => {
+      clearTimer()
+      hintTimerRef.current = window.setTimeout(() => setShowGestureHint(false), ms)
+    }
+    const handleTouchStart = (e: TouchEvent) => {
+      // The mini-map is its own drag target — leave it alone.
+      if ((e.target as HTMLElement | null)?.closest?.('.navigator')) return
+      if (e.touches.length >= 2) {
+        clearTimer()
+        setShowGestureHint(false)
+        return
+      }
+      setShowGestureHint(true)
+      hideAfter(2000)
+    }
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length === 0) hideAfter(700)
+    }
+
+    el.addEventListener('touchstart', handleTouchStart, { passive: true, capture: true })
+    el.addEventListener('touchend', handleTouchEnd, { passive: true, capture: true })
+    return () => {
+      clearTimer()
+      el.removeEventListener('touchstart', handleTouchStart, { capture: true })
+      el.removeEventListener('touchend', handleTouchEnd, { capture: true })
+    }
+  }, [isMobile])
+
   // Handle canvas edit mode toggle from the CanvasOverlay (e.g. "Done" button)
   const handleCanvasEditModeChange = useCallback(
     (mode: boolean) => {
@@ -765,10 +819,20 @@ export default function ImageViewer({
         // is centred), so the surround can't be removed — but matching the page
         // makes it blend instead of reading as a grey frame.
         bgcolor: isMobile ? 'background.default' : 'grey.900',
+        // OSD sets `touch-action: none` inline on its container and canvas,
+        // which is what swallows the page scroll. Hand vertical panning back to
+        // the browser on mobile; `!important` is required to beat the inline
+        // style. Multi-touch still reaches OSD, so pinch/rotate keep working.
+        ...(isMobile && {
+          '& .openseadragon-container, & .openseadragon-canvas': {
+            touchAction: 'pan-y !important',
+          },
+        }),
       }}
     >
       <Box
         ref={containerRef}
+        data-testid="osd-container"
         sx={{
           width: '100%',
           height: '100%',
@@ -784,6 +848,38 @@ export default function ImageViewer({
           onEditModeChange={handleCanvasEditModeChange}
           onFlushAnnotations={onFlushCanvasAnnotations}
         />
+      )}
+
+      {/* Cooperative-gesture hint — mirrors the affordance embedded maps use. */}
+      {isMobile && (
+        <Fade in={showGestureHint} timeout={{ enter: 120, exit: 400 }}>
+          <Box
+            sx={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              // Never intercept the gesture it is describing.
+              pointerEvents: 'none',
+              bgcolor: 'rgba(0,0,0,0.45)',
+              zIndex: 25,
+              px: 3,
+            }}
+          >
+            <Typography
+              sx={{
+                color: '#fff',
+                fontSize: 14,
+                fontWeight: 500,
+                textAlign: 'center',
+                lineHeight: 1.5,
+              }}
+            >
+              Use two fingers to move and zoom the image
+            </Typography>
+          </Box>
+        </Fade>
       )}
 
       {/* Mobile in-image toolbar pill — replaces the native OSD controls. */}

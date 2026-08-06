@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import useMediaQuery from '@mui/material/useMediaQuery'
 
 vi.mock('@mui/material/useMediaQuery', () => ({ default: vi.fn(() => false) }))
@@ -86,6 +86,18 @@ function lastOptions() {
   return osdOptions[osdOptions.length - 1]
 }
 
+const HINT = 'Use two fingers to move and zoom the image'
+
+/**
+ * jsdom implements neither `Touch` nor `TouchEvent`, so build a plain Event and
+ * attach the only property the handler reads.
+ */
+function fireTouch(el: Element, type: 'touchstart' | 'touchend', fingers: number) {
+  const event = new Event(type, { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'touches', { value: Array.from({ length: fingers }, () => ({})) })
+  fireEvent(el, event)
+}
+
 describe('ImageViewer OpenSeadragon options', () => {
   beforeEach(() => {
     osdOptions.length = 0
@@ -118,6 +130,52 @@ describe('ImageViewer OpenSeadragon options', () => {
       expect(lastOptions().navigatorAutoFade).toBe(false)
     })
 
+    // Cooperative gestures: a lone finger belongs to the page, not the viewer,
+    // so an accidental touch while scrolling doesn't trap the user.
+    it('leaves single-finger drag to the browser so the page keeps scrolling', () => {
+      render(<ImageViewer tileSources="/tiles.dzi" />)
+
+      const touch = lastOptions().gestureSettingsTouch as Record<string, unknown>
+      expect(touch.dragToPan).toBe(false)
+      expect(touch.flickEnabled).toBe(false)
+      // Two-finger interaction must still work — pinch pans as well as zooms.
+      expect(touch.pinchToZoom).toBe(true)
+      expect(touch.pinchRotate).toBe(true)
+    })
+
+    it('shows the two-finger hint when a lone finger lands on the image', () => {
+      render(<ImageViewer tileSources="/tiles.dzi" />)
+      const hint = screen.getByText(HINT)
+
+      // Hidden until touched.
+      expect(hint.parentElement).toHaveStyle({ visibility: 'hidden' })
+
+      fireTouch(screen.getByTestId('osd-container'), 'touchstart', 1)
+
+      expect(hint.parentElement).not.toHaveStyle({ visibility: 'hidden' })
+    })
+
+    it('dismisses the hint as soon as a second finger arrives', async () => {
+      render(<ImageViewer tileSources="/tiles.dzi" />)
+      const container = screen.getByTestId('osd-container')
+      const hint = screen.getByText(HINT)
+
+      fireTouch(container, 'touchstart', 1)
+      expect(hint.parentElement).not.toHaveStyle({ visibility: 'hidden' })
+
+      // Two fingers means the user is deliberately driving the viewer. The
+      // overlay fades rather than snapping, so wait out the exit transition.
+      fireTouch(container, 'touchstart', 2)
+      await waitFor(() => {
+        expect(hint.parentElement).toHaveStyle({ visibility: 'hidden' })
+      })
+    })
+
+    it('never lets the hint intercept the gesture it describes', () => {
+      render(<ImageViewer tileSources="/tiles.dzi" />)
+      expect(screen.getByText(HINT).parentElement).toHaveStyle({ pointerEvents: 'none' })
+    })
+
     it('hides the native control cluster in favour of the custom pill', () => {
       render(<ImageViewer tileSources="/tiles.dzi" />)
 
@@ -136,6 +194,22 @@ describe('ImageViewer OpenSeadragon options', () => {
       expect(opts.navigatorWidth).toBeUndefined()
       expect(opts.navigatorAutoFade).toBe(true)
       expect(opts.showNavigationControl).toBe(true)
+    })
+
+    it('renders no two-finger hint at all', () => {
+      mockUseMediaQuery.mockReturnValue(false)
+      render(<ImageViewer tileSources="/tiles.dzi" />)
+
+      expect(screen.queryByText(HINT)).not.toBeInTheDocument()
+    })
+
+    it('keeps single-finger drag panning the image (no cooperative gestures)', () => {
+      mockUseMediaQuery.mockReturnValue(false)
+      render(<ImageViewer tileSources="/tiles.dzi" />)
+
+      const touch = lastOptions().gestureSettingsTouch as Record<string, unknown>
+      // Unset means OpenSeadragon's default of true — desktop is untouched.
+      expect(touch.dragToPan).toBeUndefined()
     })
   })
 })
