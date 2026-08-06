@@ -1,6 +1,17 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import OpenSeadragon from 'openseadragon'
 import Box from '@mui/material/Box'
+import IconButton from '@mui/material/IconButton'
+import Tooltip from '@mui/material/Tooltip'
+import useMediaQuery from '@mui/material/useMediaQuery'
+import { useTheme } from '@mui/material/styles'
+import TuneIcon from '@mui/icons-material/Tune'
+import ZoomInIcon from '@mui/icons-material/ZoomIn'
+import ZoomOutIcon from '@mui/icons-material/ZoomOut'
+import CenterFocusStrongIcon from '@mui/icons-material/CenterFocusStrong'
+import RotateRightIcon from '@mui/icons-material/RotateRight'
+import CropSquareIcon from '@mui/icons-material/CropSquare'
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import CanvasOverlay from './CanvasOverlay'
 import type { CanvasAnnotation } from './CanvasOverlay'
 import {
@@ -68,8 +79,20 @@ export default function ImageViewer({
   onFlushCanvasAnnotations,
   onCanvasEditModeChange,
 }: ImageViewerProps) {
+  const theme = useTheme()
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
   const containerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<OpenSeadragon.Viewer | null>(null)
+  // Mobile in-image toolbar pill. OpenSeadragon's own control cluster is
+  // suppressed on phones (showNavigationControl below) and replaced by the
+  // React pill rendered at the bottom of this component, per the design.
+  const [pillExpanded, setPillExpanded] = useState(true)
+  const [selectionActive, setSelectionActive] = useState(false)
+  const [overlayCount, setOverlayCount] = useState(0)
+  // Imperative handles into the OSD effect so the pill can drive the same
+  // selection / clear logic the desktop toolbar buttons use.
+  const toggleSelectionRef = useRef<(() => void) | null>(null)
+  const clearOverlaysRef = useRef<(() => void) | null>(null)
   const [canvasEditMode, setCanvasEditMode] = useState(false)
   const [viewerInstance, setViewerInstance] = useState<OpenSeadragon.Viewer | null>(null)
   const canvasEditModeRef = useRef(false)
@@ -240,14 +263,22 @@ export default function ImageViewer({
       visibilityRatio: 1,
       constrainDuringPan: true,
       showNavigator: true,
-      navigatorPosition: 'BOTTOM_RIGHT',
-      navigatorSizeRatio: 0.15,
+      // Design places the mini-map top-left on mobile. A ratio would shrink it
+      // on small phones, so mobile gets an explicit size that stays a usable
+      // drag target on any screen.
+      navigatorPosition: isMobile ? 'TOP_LEFT' : 'BOTTOM_RIGHT',
+      ...(isMobile ? { navigatorWidth: 92, navigatorHeight: 70 } : { navigatorSizeRatio: 0.15 }),
+      // The navigator fades out when the pointer leaves, and a touch screen has
+      // no hover — it would sit invisible on a phone, so keep it pinned there.
+      navigatorAutoFade: !isMobile,
       gestureSettingsMouse: { scrollToZoom: true },
       // Rotation controls
       showRotationControl: true,
       gestureSettingsTouch: { pinchRotate: true },
       // Position controls at bottom-left
       navigationControlAnchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
+      // Mobile hides the native cluster in favour of the custom React pill.
+      showNavigationControl: !isMobile,
     })
 
     const viewer = viewerRef.current
@@ -302,28 +333,31 @@ export default function ImageViewer({
     const prefix = '/openseadragon-svg-icons/'
 
     // --- Clear overlays toolbar button ---
+    // Shared by the desktop OSD button and the mobile pill (clearOverlaysRef).
+    const runClear = () => {
+      if (overlaysLockedRef.current) return
+      for (const el of overlaysRef.current) {
+        viewer.removeOverlay(el)
+      }
+      overlaysRef.current = []
+      for (const pair of labelPairs) {
+        pair.widthLabel.remove()
+        pair.heightLabel.remove()
+      }
+      labelPairs.length = 0
+      emitOverlays()
+      updateClearButtonState()
+      updateLockIcon()
+      onClearOverlaysRef.current?.()
+    }
+    clearOverlaysRef.current = runClear
     const clearButton = new OpenSeadragon.Button({
       tooltip: 'Clear all selection rectangles',
       srcRest: prefix + 'clear_rest.svg',
       srcGroup: prefix + 'clear_grouphover.svg',
       srcHover: prefix + 'clear_hover.svg',
       srcDown: prefix + 'clear_pressed.svg',
-      onClick: () => {
-        if (overlaysLockedRef.current) return
-        for (const el of overlaysRef.current) {
-          viewer.removeOverlay(el)
-        }
-        overlaysRef.current = []
-        for (const pair of labelPairs) {
-          pair.widthLabel.remove()
-          pair.heightLabel.remove()
-        }
-        labelPairs.length = 0
-        emitOverlays()
-        updateClearButtonState()
-        updateLockIcon()
-        onClearOverlaysRef.current?.()
-      },
+      onClick: runClear,
     })
     const clearWrapper = document.createElement('div')
     clearWrapper.style.display = 'inline-block'
@@ -342,26 +376,36 @@ export default function ImageViewer({
         : empty
           ? 'No selection rectangles to clear'
           : 'Clear all selection rectangles'
+      // Keep the mobile pill's clear button in sync with the overlay count.
+      setOverlayCount(overlaysRef.current.length)
     }
 
     // --- Selection rectangle toolbar button ---
+    // Shared by the desktop OSD button, the mobile pill (toggleSelectionRef) and
+    // the drag-release handler, so the button outline and the pill's highlight
+    // can never drift apart.
+    const setSelectionMode = (on: boolean) => {
+      selectionModeRef.current = on
+      viewer.setMouseNavEnabled(!on)
+      selectionButton.element.style.outline = on ? '2px solid red' : 'none'
+      selectionButton.element.style.outlineOffset = on ? '-2px' : ''
+      setSelectionActive(on)
+    }
     const selectionButton = new OpenSeadragon.Button({
       tooltip: 'Draw selection rectangle',
       srcRest: prefix + 'selection_rest.svg',
       srcGroup: prefix + 'selection_grouphover.svg',
       srcHover: prefix + 'selection_hover.svg',
       srcDown: prefix + 'selection_pressed.svg',
-      onClick: () => {
-        selectionModeRef.current = !selectionModeRef.current
-        viewer.setMouseNavEnabled(!selectionModeRef.current)
-        selectionButton.element.style.outline = selectionModeRef.current ? '2px solid red' : 'none'
-        selectionButton.element.style.outlineOffset = selectionModeRef.current ? '-2px' : ''
-      },
+      onClick: () => setSelectionMode(!selectionModeRef.current),
     })
     selectionButton.element.style.lineHeight = '0'
-    viewer.addControl(selectionButton.element, {
-      anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
-    })
+    toggleSelectionRef.current = () => setSelectionMode(!selectionModeRef.current)
+    if (!isMobile) {
+      viewer.addControl(selectionButton.element, {
+        anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
+      })
+    }
 
     // --- Mouse tracker for drawing selection rectangles ---
     let currentRect: OpenSeadragon.Rect | null = null
@@ -438,10 +482,7 @@ export default function ImageViewer({
         }
         dragRef.current = null
         currentRect = null
-        selectionModeRef.current = false
-        viewer.setMouseNavEnabled(true)
-        selectionButton.element.style.outline = 'none'
-        selectionButton.element.style.outlineOffset = ''
+        setSelectionMode(false)
       },
     })
 
@@ -494,7 +535,7 @@ export default function ImageViewer({
         lockButton.element.title = titleText
       }
     }
-    if (canEditContentRef.current) {
+    if (canEditContentRef.current && !isMobile) {
       lockButton = new OpenSeadragon.Button({
         tooltip: 'Lock selection rectangles',
         srcRest: prefix + 'lock_open_rest.svg',
@@ -529,12 +570,14 @@ export default function ImageViewer({
 
     // Add clear button to toolbar (created above, before selection tracker)
     updateClearButtonState()
-    viewer.addControl(clearWrapper, {
-      anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
-    })
+    if (!isMobile) {
+      viewer.addControl(clearWrapper, {
+        anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
+      })
+    }
 
     // --- Canvas edit mode toolbar button (visible to admin/instructor) ---
-    if (canEditContentRef.current) {
+    if (canEditContentRef.current && !isMobile) {
       const canvasEditButton = new OpenSeadragon.Button({
         tooltip: 'Canvas annotations (add shapes, text, links)',
         srcRest: prefix + 'canvas_edit_rest.svg',
@@ -652,7 +695,14 @@ export default function ImageViewer({
       viewer.destroy()
       viewerRef.current = null
     }
-  }, [tileSources, initialViewport, initialOverlays, emitViewport, updateMeasurementLabels])
+  }, [
+    tileSources,
+    initialViewport,
+    initialOverlays,
+    emitViewport,
+    updateMeasurementLabels,
+    isMobile,
+  ])
 
   // Reactively update lock/clear button UI when overlaysLocked prop changes
   useEffect(() => {
@@ -671,6 +721,38 @@ export default function ImageViewer({
     [onCanvasEditModeChange],
   )
 
+  // --- Mobile toolbar pill actions (thin wrappers over the viewport API) ---
+  const pillZoomBy = (factor: number) => {
+    const vp = viewerInstance?.viewport
+    if (!vp) return
+    vp.zoomBy(factor)
+    vp.applyConstraints()
+  }
+  // goHome also resets rotation to 0 via the viewer's 'home' handler.
+  const pillFit = () => viewerInstance?.viewport?.goHome()
+  const pillRotate = () => {
+    const vp = viewerInstance?.viewport
+    if (!vp) return
+    vp.setRotation((vp.getRotation() + 90) % 360)
+  }
+
+  // Active state is a brighter neutral rather than the salmon accent, which
+  // clashed with the otherwise grey viewer chrome. Contrast still makes the
+  // toggled tool obvious.
+  const pillBtnSx = (active = false) => ({
+    width: 34,
+    height: 34,
+    color: active ? '#fff' : 'rgba(255,255,255,0.85)',
+    bgcolor: active ? 'rgba(255,255,255,0.26)' : 'rgba(255,255,255,0.06)',
+    border: '1px solid',
+    borderColor: active ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.16)',
+    '&:hover': { bgcolor: active ? 'rgba(255,255,255,0.34)' : 'rgba(255,255,255,0.18)' },
+    '&.Mui-disabled': {
+      color: 'rgba(255,255,255,0.3)',
+      borderColor: 'rgba(255,255,255,0.08)',
+    },
+  })
+
   return (
     <Box
       sx={{
@@ -679,7 +761,10 @@ export default function ImageViewer({
         height,
         borderRadius: 2,
         overflow: 'hidden',
-        bgcolor: 'grey.900',
+        // OpenSeadragon always letterboxes (the canvas fills the box, the image
+        // is centred), so the surround can't be removed — but matching the page
+        // makes it blend instead of reading as a grey frame.
+        bgcolor: isMobile ? 'background.default' : 'grey.900',
       }}
     >
       <Box
@@ -699,6 +784,125 @@ export default function ImageViewer({
           onEditModeChange={handleCanvasEditModeChange}
           onFlushAnnotations={onFlushCanvasAnnotations}
         />
+      )}
+
+      {/* Mobile in-image toolbar pill — replaces the native OSD controls. */}
+      {isMobile && viewerInstance && (
+        <Box
+          sx={{
+            position: 'absolute',
+            bottom: 12,
+            left: 0,
+            right: 0,
+            display: 'flex',
+            justifyContent: 'center',
+            px: 1.5,
+            pointerEvents: 'none',
+            zIndex: 30,
+          }}
+        >
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.5,
+              p: '6px 10px',
+              borderRadius: 999,
+              maxWidth: '100%',
+              bgcolor: 'rgba(14,14,14,0.82)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              backdropFilter: 'blur(6px)',
+              pointerEvents: 'auto',
+            }}
+          >
+            <Tooltip title={pillExpanded ? 'Hide tools' : 'Show tools'}>
+              <IconButton
+                size="small"
+                aria-label={pillExpanded ? 'Hide tools' : 'Show tools'}
+                onClick={() => setPillExpanded((v) => !v)}
+                sx={pillBtnSx(pillExpanded)}
+              >
+                <TuneIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            {pillExpanded && (
+              <>
+                <Box
+                  sx={{
+                    width: '1px',
+                    height: 20,
+                    bgcolor: 'rgba(255,255,255,0.18)',
+                    mx: 0.25,
+                    flexShrink: 0,
+                  }}
+                />
+                <Tooltip title="Zoom out">
+                  <IconButton
+                    size="small"
+                    aria-label="Zoom out"
+                    onClick={() => pillZoomBy(1 / 1.4)}
+                    sx={pillBtnSx()}
+                  >
+                    <ZoomOutIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Zoom in">
+                  <IconButton
+                    size="small"
+                    aria-label="Zoom in"
+                    onClick={() => pillZoomBy(1.4)}
+                    sx={pillBtnSx()}
+                  >
+                    <ZoomInIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Fit to screen">
+                  <IconButton
+                    size="small"
+                    aria-label="Fit to screen"
+                    onClick={pillFit}
+                    sx={pillBtnSx()}
+                  >
+                    <CenterFocusStrongIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title={selectionActive ? 'Cancel measurement' : 'Draw measurement'}>
+                  <IconButton
+                    size="small"
+                    aria-label="Draw measurement rectangle"
+                    onClick={() => toggleSelectionRef.current?.()}
+                    sx={pillBtnSx(selectionActive)}
+                  >
+                    <CropSquareIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Clear measurements">
+                  <span>
+                    <IconButton
+                      size="small"
+                      aria-label="Clear measurements"
+                      disabled={overlayCount === 0}
+                      onClick={() => clearOverlaysRef.current?.()}
+                      sx={pillBtnSx()}
+                    >
+                      <DeleteOutlineIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+                <Tooltip title="Rotate 90°">
+                  <IconButton
+                    size="small"
+                    aria-label="Rotate 90 degrees"
+                    onClick={pillRotate}
+                    sx={pillBtnSx()}
+                  >
+                    <RotateRightIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </>
+            )}
+          </Box>
+        </Box>
       )}
     </Box>
   )

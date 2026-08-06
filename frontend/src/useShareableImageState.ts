@@ -236,8 +236,12 @@ export function useShareableImageState(
   // state/memos without URL side-effects can opt out.
   useEffect(() => {
     if (!enableUrlSync) return
-    // Don't overwrite URL while a shared-link image is still pending resolution
+    // Don't overwrite the URL while a link is still pending resolution — on a
+    // reload this effect runs before the categories have loaded, when `path` is
+    // still empty, and would otherwise strip the very params we're about to
+    // restore from (leaving the user at the root).
     if (pendingImageId.current !== null) return
+    if (pendingCatIds.current !== null) return
     const params = new URLSearchParams()
     if (page !== 'browse') {
       params.set('page', page)

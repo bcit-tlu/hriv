@@ -245,6 +245,41 @@ describe('useShareableImageState', () => {
     })
   })
 
+  describe('restoring the view on reload', () => {
+    it('restores the category path once categories finish loading', () => {
+      // A real reload mounts with categories still in flight, so the restore
+      // has to survive until they arrive.
+      window.history.replaceState(null, '', '/?cat=1,2')
+      const setPath = vi.fn()
+      const child = makeCategory({ id: 2, label: 'Child' })
+      const root = makeCategory({ id: 1, label: 'Root', children: [child] })
+
+      const { rerender } = renderHook(
+        (props: { categories: ReturnType<typeof makeCategory>[]; categoriesLoading: boolean }) =>
+          useShareableImageState(
+            makeDeps({ setPath, categories: props.categories, ...props }),
+          ),
+        { initialProps: { categories: [], categoriesLoading: true } },
+      )
+
+      expect(setPath).not.toHaveBeenCalled()
+
+      rerender({ categories: [root], categoriesLoading: false })
+
+      expect(setPath).toHaveBeenCalledWith([root, child])
+    })
+
+    it('keeps the cat param in the URL while the path is still pending', () => {
+      // The URL-sync effect must not strip ?cat= before the path resolves, or a
+      // reload lands the user back at the root.
+      window.history.replaceState(null, '', '/?cat=1,2')
+
+      renderHook(() => useShareableImageState(makeDeps({ categoriesLoading: true })))
+
+      expect(new URLSearchParams(window.location.search).get('cat')).toBe('1,2')
+    })
+  })
+
   describe('pending image resolution', () => {
     it('resolves image from uncategorized when categories load', () => {
       window.history.replaceState(null, '', '/?image=5')

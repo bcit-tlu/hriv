@@ -22,7 +22,7 @@ import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import useMediaQuery from '@mui/material/useMediaQuery'
-import { useTheme } from '@mui/material/styles'
+import { alpha, useTheme, type Theme } from '@mui/material/styles'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
 import MenuBookIcon from '@mui/icons-material/MenuBook'
 import NotesIcon from '@mui/icons-material/Notes'
@@ -33,6 +33,7 @@ import Visibility from '@mui/icons-material/Visibility'
 import EditIcon from '@mui/icons-material/Edit'
 import HomeIcon from '@mui/icons-material/Home'
 import LinkIcon from '@mui/icons-material/Link'
+import ShareIcon from '@mui/icons-material/Share'
 import ImageViewer from './components/ImageViewer'
 import SortableTileGrid from './components/SortableTileGrid'
 import NoteDisplay from './components/NoteDisplay'
@@ -105,8 +106,10 @@ const COLLAPSED_BREADCRUMB_CATEGORY_DEPTH = 2
 function getCollapsedCategoryBreadcrumb(
   path: Category[],
   visibleCategoryCount: number,
+  /** Collapse once the path exceeds this many categories. */
+  collapseAfter: number = COLLAPSED_BREADCRUMB_CATEGORY_DEPTH,
 ): { hiddenCategories: Category[]; visibleCategories: Category[] } {
-  if (path.length <= COLLAPSED_BREADCRUMB_CATEGORY_DEPTH) {
+  if (path.length <= collapseAfter) {
     return { hiddenCategories: [], visibleCategories: path }
   }
 
@@ -888,7 +891,12 @@ export default function App() {
     imageEditOpen,
     browseEditImage,
   })
-  const imageBreadcrumb = useMemo(() => getCollapsedCategoryBreadcrumb(path, 1), [path])
+  // Mobile collapses as soon as the trail exceeds three crumbs (Home + one
+  // category + the image), matching the design's "Home › … › Parent › Image".
+  const imageBreadcrumb = useMemo(
+    () => getCollapsedCategoryBreadcrumb(path, 1, isMobile ? 1 : undefined),
+    [path, isMobile],
+  )
   const categoryBreadcrumb = useMemo(() => getCollapsedCategoryBreadcrumb(path, 2), [path])
   const imageSkippedCategoryLabels = imageBreadcrumb.hiddenCategories
     .map((cat) => cat.label)
@@ -1165,7 +1173,8 @@ export default function App() {
         component="main"
         sx={{
           flexGrow: 1,
-          py: 3,
+          // Mobile sits the content closer under the app bar, per the design.
+          py: { xs: 2, sm: 3 },
           bgcolor: page === 'people' || page === 'admin' ? getSurfaceVariant(mode) : undefined,
         }}
       >
@@ -1243,14 +1252,17 @@ export default function App() {
           ) : selectedImage ? (
             /* ---- Viewer mode ---- */
             <>
-              {/* Breadcrumbs + action buttons */}
+              {/* Breadcrumbs + action buttons. Mobile follows the design: the
+                  breadcrumb takes its own row and the actions (Share View etc.)
+                  drop to a right-aligned row beneath it. */}
               <Box
                 sx={{
                   display: 'flex',
-                  alignItems: 'center',
+                  flexDirection: isMobile ? 'column' : 'row',
+                  alignItems: isMobile ? 'stretch' : 'center',
                   justifyContent: 'space-between',
-                  flexWrap: 'wrap',
-                  mb: 2,
+                  flexWrap: isMobile ? 'nowrap' : 'wrap',
+                  mb: isMobile ? 1 : 2,
                   gap: 1,
                 }}
               >
@@ -1260,9 +1272,28 @@ export default function App() {
                     alignItems: 'center',
                     flexWrap: 'wrap',
                     gap: 1,
-                    flex: '1 1 240px',
+                    // In the stacked (column) layout a `1 1 240px` basis would
+                    // become a 240px-tall box, so only use it in the row layout.
+                    flex: isMobile ? '0 0 auto' : '1 1 240px',
                     minWidth: 0,
-                    maxWidth: '100%',
+                    // `maxWidth: 100%` would clamp the box to the parent's
+                    // content width, leaving the negative right margin nowhere
+                    // to expand into (a visible gap at the right end of the
+                    // rule), so mobile opts out of the clamp.
+                    maxWidth: isMobile ? 'none' : '100%',
+                    // Design separates the path from the actions with a hairline
+                    // rule spanning the full width; the negative margin cancels
+                    // the page gutter while the text keeps its padding.
+                    ...(isMobile && {
+                      mx: -2,
+                      px: 2,
+                      pb: 1,
+                      borderBottom: '1px solid',
+                      // alpha() *replaces* the channel rather than scaling it, so this is an
+                      // absolute value — lighter than the theme's 0.12 divider so the
+                      // rule reads as a hairline.
+                      borderColor: (t: Theme) => alpha(t.palette.divider, 0.07),
+                    }),
                   }}
                 >
                   <MuiBreadcrumbs
@@ -1312,8 +1343,10 @@ export default function App() {
                       Home
                     </Link>
                     {imageBreadcrumb.hiddenCategories.length > 0 && (
-                      <Tooltip title={imageSkippedCategoryLabels}>
+                      <Tooltip title={imageSkippedCategoryLabels} enterTouchDelay={0}>
                         <Typography
+                          role="button"
+                          tabIndex={0}
                           aria-label={`Skipped categories: ${imageSkippedCategoryLabels}`}
                           variant="body2"
                           color="text.secondary"
@@ -1367,9 +1400,12 @@ export default function App() {
                 <Box
                   sx={{
                     display: 'flex',
-                    gap: 2,
+                    flexWrap: 'wrap',
+                    gap: isMobile ? 1 : 2,
                     flexShrink: 0,
                     alignItems: 'center',
+                    // Right-aligned beneath the breadcrumb on mobile.
+                    alignSelf: isMobile ? 'flex-end' : 'auto',
                   }}
                 >
                   {canEditContent &&
@@ -1438,9 +1474,25 @@ export default function App() {
                   <Tooltip title="Copy shareable link to clipboard">
                     <Button
                       variant="outlined"
-                      startIcon={<LinkIcon />}
+                      startIcon={isMobile ? <ShareIcon /> : <LinkIcon />}
                       onClick={copyShareLink}
-                      sx={inactiveViewerActionSx}
+                      sx={{
+                        ...inactiveViewerActionSx,
+                        // Design's compact, neutral-toned action: hairline
+                        // border, small uppercase label, share glyph.
+                        ...(isMobile && {
+                          color: 'text.secondary',
+                          borderColor: 'divider',
+                          fontSize: 11,
+                          fontWeight: 500,
+                          letterSpacing: '0.04em',
+                          py: '5px',
+                          px: '12px',
+                          '& .MuiButton-startIcon': { mr: 0.75 },
+                          '& .MuiSvgIcon-root': { fontSize: 14 },
+                          '&:hover': { borderColor: 'text.disabled' },
+                        }),
+                      }}
                     >
                       Share View
                     </Button>
@@ -1448,7 +1500,14 @@ export default function App() {
                 </Box>
               </Box>
 
-              <Paper elevation={3} sx={{ borderRadius: 2, overflow: 'hidden' }}>
+              <Paper
+                elevation={isMobile ? 0 : 3}
+                sx={{
+                  borderRadius: 2,
+                  overflow: 'hidden',
+                  ...(isMobile && { bgcolor: 'transparent' }),
+                }}
+              >
                 <ImageViewer
                   tileSources={selectedImage.tileSources}
                   initialViewport={initialViewport}

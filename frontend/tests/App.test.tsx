@@ -518,6 +518,47 @@ describe('App breadcrumbs', () => {
     ).toBeInTheDocument()
   })
 
+  it('collapses the image breadcrumb one level sooner on mobile', async () => {
+    // Home + 2 categories + the image is already 4 crumbs, which the design
+    // collapses on a phone (desktop keeps both categories visible).
+    mockUseMediaQuery.mockReturnValue(true)
+    mockInitialPath = mockDeepPath.slice(0, 2)
+    mockImage.categoryId = 2
+
+    try {
+      render(<App />)
+      await screen.findByText('Head Pathologies')
+      fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+
+      const imageBreadcrumb = screen.getByLabelText('image breadcrumb')
+      expect(within(imageBreadcrumb).getByText('...')).toBeInTheDocument()
+      // The parent category and the image remain; the ancestor is folded away
+      // but still reachable through the ellipsis's label.
+      expect(within(imageBreadcrumb).queryByText('Human Anatomy')).not.toBeInTheDocument()
+      expect(within(imageBreadcrumb).getByText('Head Pathologies')).toBeInTheDocument()
+      expect(within(imageBreadcrumb).getByText('Specimen Image')).toBeInTheDocument()
+      expect(
+        within(imageBreadcrumb).getByLabelText('Skipped categories: Human Anatomy'),
+      ).toBeInTheDocument()
+    } finally {
+      mockUseMediaQuery.mockReturnValue(false)
+    }
+  })
+
+  it('keeps both categories in the image breadcrumb on desktop', async () => {
+    mockInitialPath = mockDeepPath.slice(0, 2)
+    mockImage.categoryId = 2
+
+    render(<App />)
+    await screen.findByText('Head Pathologies')
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+
+    const imageBreadcrumb = screen.getByLabelText('image breadcrumb')
+    expect(within(imageBreadcrumb).queryByText('...')).not.toBeInTheDocument()
+    expect(within(imageBreadcrumb).getByText('Human Anatomy')).toBeInTheDocument()
+    expect(within(imageBreadcrumb).getByText('Head Pathologies')).toBeInTheDocument()
+  })
+
   it('reduces opacity for image-view controls when category hidden state is inherited', () => {
     mockCategories.splice(0, mockCategories.length, {
       id: 1,

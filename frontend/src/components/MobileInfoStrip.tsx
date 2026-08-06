@@ -37,8 +37,11 @@ export default function MobileInfoStrip({
         bgcolor: 'background.paper',
         borderTop: 1,
         borderColor: 'divider',
+        // Neutral rather than the salmon accent: in dark mode the accent read
+        // as a clashing red against the otherwise grey chrome. The uppercase
+        // weighted label still marks the section.
         borderLeft: 3,
-        borderLeftColor: 'primary.main',
+        borderLeftColor: 'divider',
       }}
     >
       <Box
@@ -61,13 +64,13 @@ export default function MobileInfoStrip({
           fontFamily: 'inherit',
         }}
       >
-        <Box sx={{ display: 'flex', color: 'primary.main', flexShrink: 0 }}>{icon}</Box>
+        <Box sx={{ display: 'flex', color: 'text.secondary', flexShrink: 0 }}>{icon}</Box>
         <Typography
           component="span"
           sx={{
             fontSize: 11,
             fontWeight: 600,
-            color: 'primary.main',
+            color: 'text.secondary',
             letterSpacing: '0.04em',
             textTransform: 'uppercase',
             flexShrink: 0,

@@ -510,7 +510,29 @@ describe('AppShell', () => {
       expect(screen.getByText('Math')).toBeInTheDocument()
     })
 
-    it("shows the caller's group chips in the profile popover", () => {
+    // Program/group pills are access-control detail: staff see their own,
+    // students don't.
+    it('shows staff their own program and group chips', () => {
+      render(
+        <AppShell
+          {...makeProps({
+            profileOpen: true,
+            currentUser: {
+              name: 'Ingrid Structor',
+              email: 'ingrid@example.com',
+              role: 'instructor',
+              program_names: ['Pathology'],
+              group_names: ['Field Studies', 'Capstone'],
+            },
+          })}
+        />,
+      )
+      expect(screen.getByText('Pathology')).toBeInTheDocument()
+      expect(screen.getByText('Field Studies')).toBeInTheDocument()
+      expect(screen.getByText('Capstone')).toBeInTheDocument()
+    })
+
+    it("hides a student's own program and group chips", () => {
       render(
         <AppShell
           {...makeProps({
@@ -519,14 +541,19 @@ describe('AppShell', () => {
               name: 'Stu Dent',
               email: 'stu@example.com',
               role: 'student',
-              program_names: [],
+              program_names: ['Digital Design'],
               group_names: ['Field Studies', 'Capstone'],
             },
           })}
         />,
       )
-      expect(screen.getByText('Field Studies')).toBeInTheDocument()
-      expect(screen.getByText('Capstone')).toBeInTheDocument()
+      // Identity still shows…
+      expect(screen.getByText('stu@example.com')).toBeInTheDocument()
+      expect(screen.getByText('student')).toBeInTheDocument()
+      // …but not the access-control pills.
+      expect(screen.queryByText('Digital Design')).not.toBeInTheDocument()
+      expect(screen.queryByText('Field Studies')).not.toBeInTheDocument()
+      expect(screen.queryByText('Capstone')).not.toBeInTheDocument()
     })
 
     it('shows Update link when canManageUsers', () => {

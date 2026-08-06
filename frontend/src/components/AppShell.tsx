@@ -186,6 +186,9 @@ export default function AppShell(props: AppShellProps) {
     if (announcement) setAnnCollapsed(false)
   }
   const showViewAnnLink = annEnabled && !announcement
+  // Program/group pills describe access control, which is staff-facing detail.
+  // Students don't see their own; admins and instructors still do.
+  const showOwnRestrictionChips = currentUser.role !== 'student'
   const groupColors = getGroupChipColors(mode)
   const { preference: themePreference, toggleMode } = useColorMode()
   const themeIcon = useMemo(() => {
@@ -597,7 +600,7 @@ export default function AppShell(props: AppShellProps) {
                   >
                     {currentUser.role}
                   </Typography>
-                  {currentUser.program_names.length > 0 && (
+                  {showOwnRestrictionChips && currentUser.program_names.length > 0 && (
                     <Box
                       sx={{
                         display: 'flex',
@@ -611,7 +614,7 @@ export default function AppShell(props: AppShellProps) {
                       ))}
                     </Box>
                   )}
-                  {currentUser.group_names.length > 0 && (
+                  {showOwnRestrictionChips && currentUser.group_names.length > 0 && (
                     <Box
                       sx={{
                         display: 'flex',
