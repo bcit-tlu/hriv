@@ -209,9 +209,16 @@ export default function App() {
 
   const muiTheme = useTheme()
   const isMobile = useMediaQuery(muiTheme.breakpoints.down('sm'))
-  const viewerInstruction =
-    'Scroll or tap to zoom, and drag to pan. Buttons in the bottom left corner control the view. ' +
-    'On touch-devices, pinch-turn to rotate. The mini-map in the bottom-right corner shows your current viewport.'
+  // The gestures, control placement and mini-map corner all differ between the
+  // desktop (mouse + OSD button cluster, mini-map bottom-right) and mobile
+  // (cooperative two-finger gestures + custom toolbar pill, mini-map top-left)
+  // viewers, so the on-screen instruction is written per view.
+  const viewerInstruction = isMobile
+    ? 'Use two fingers to zoom, pan and rotate — a single finger scrolls the page. ' +
+      'Tap the toolbar in the bottom-left corner for more controls. ' +
+      'The mini-map in the top-left corner shows your current viewport.'
+    : 'Scroll or tap to zoom, and drag to pan. Buttons in the bottom left corner control the view. ' +
+      'On touch-devices, pinch-turn to rotate. The mini-map in the bottom-right corner shows your current viewport.'
 
   const selectedImageCategoryHidden = useMemo(
     () => getCategoryHiddenStateInTree(categories, selectedImage?.categoryId),
@@ -904,24 +911,25 @@ export default function App() {
   const categorySkippedCategoryLabels = categoryBreadcrumb.hiddenCategories
     .map((cat) => cat.label)
     .join(' / ')
-  // Mobile uses the design's compact breadcrumb scale; desktop is unchanged.
+  // Ancestor crumbs — capped + ellipsised. On mobile the whole path flows as
+  // inline text (see breadcrumbsSx), so each ancestor becomes an inline-block so
+  // its ellipsis/max-width still apply within that flow.
   const breadcrumbItemTextSx = {
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
     maxWidth: { xs: 120, sm: 180, md: 260 },
     fontSize: { xs: 14, sm: 'inherit' },
+    ...(isMobile && { display: 'inline-block', verticalAlign: 'middle' }),
   }
-  // The deepest crumb is the one users most need to read, so on mobile it takes
-  // whatever width is left rather than a fixed 140px cap, and wraps onto further
-  // lines instead of being clipped — the folder name stays fully readable. The
-  // ancestors above it still collapse behind the "..." as before.
+  // The deepest crumb is the one users most need to read. On mobile it flows as
+  // inline text: it fills the rest of the current line and only then wraps onto
+  // the next, rather than the whole crumb jumping to a fresh line and leaving a
+  // half-empty row. Long unbroken names still break mid-word.
   const breadcrumbCurrentTextSx = isMobile
     ? {
         fontSize: 14,
-        flex: '1 1 auto',
-        minWidth: 0,
-        maxWidth: 'none',
+        display: 'inline',
         whiteSpace: 'normal',
         overflowWrap: 'anywhere',
       }
@@ -930,6 +938,39 @@ export default function App() {
         maxWidth: { sm: 220, md: 360 },
       }
   const breadcrumbHomeIconSx = { fontSize: { xs: 18, sm: 20 } }
+  // Home crumb (icon + label). Inline-flex on mobile so it sits in the inline
+  // text flow with the icon vertically centred; flex on desktop.
+  const breadcrumbHomeLinkSx = {
+    display: isMobile ? 'inline-flex' : 'flex',
+    alignItems: 'center',
+    gap: 0.5,
+    cursor: 'pointer',
+    flexShrink: 0,
+    ...(isMobile && { verticalAlign: 'middle' }),
+  }
+  // Shared MuiBreadcrumbs sx (image + category breadcrumbs). Mobile renders the
+  // list as a block of inline items so the path wraps like text — filling the
+  // width before breaking; desktop keeps a single no-wrap row.
+  const breadcrumbsSx = {
+    flex: '1 1 auto',
+    minWidth: 0,
+    maxWidth: '100%',
+    '& .MuiBreadcrumbs-ol': isMobile
+      ? { display: 'block', lineHeight: 1.7 }
+      : { flexWrap: 'nowrap', alignItems: 'center' },
+    '& .MuiBreadcrumbs-li': {
+      display: isMobile ? 'inline' : 'flex',
+      alignItems: 'center',
+      minWidth: 0,
+    },
+    '& .MuiBreadcrumbs-separator': {
+      ...(isMobile ? { display: 'inline', mx: 0.5 } : { flexShrink: 0, mx: 1 }),
+      fontSize: { xs: 14, sm: 'inherit' },
+    },
+    '& .MuiLink-root, & .MuiTypography-root': {
+      fontSize: { xs: 14, sm: 'inherit' },
+    },
+  }
 
   const handleImageClick = useCallback(
     (img: ImageItem) => {
@@ -1309,49 +1350,7 @@ export default function App() {
                     }),
                   }}
                 >
-                  <MuiBreadcrumbs
-                    aria-label="image breadcrumb"
-                    sx={{
-                      flex: '1 1 auto',
-                      minWidth: 0,
-                      maxWidth: '100%',
-                      '& .MuiBreadcrumbs-ol': {
-                        // Mobile allows a wrap so an over-long final crumb can
-                        // drop to its own full-width line instead of being
-                        // squeezed; desktop keeps everything on one line.
-                        flexWrap: isMobile ? 'wrap' : 'nowrap',
-                        alignItems: isMobile ? 'flex-start' : 'center',
-                        ...(isMobile && { rowGap: 0.25 }),
-                      },
-                      '& .MuiBreadcrumbs-li': {
-                        display: 'flex',
-                        alignItems: 'center',
-                        minWidth: 0,
-                      },
-                      // Ancestors keep their natural width (already capped and
-                      // ellipsised) so they stay readable rather than being
-                      // crushed by a long leaf name.
-                      ...(isMobile && {
-                        '& .MuiBreadcrumbs-li:not(:last-of-type)': { flexShrink: 0 },
-                      }),
-                      // The final crumb takes the leftover width, and its
-                      // min-width means it moves to the next line — where it
-                      // gets the full row — whenever little space is left.
-                      '& .MuiBreadcrumbs-li:last-of-type': {
-                        flex: isMobile ? '1 1 auto' : 'initial',
-                        minWidth: isMobile ? '55%' : 0,
-                      },
-                      '& .MuiBreadcrumbs-separator': {
-                        flexShrink: 0,
-                        fontSize: { xs: 14, sm: 'inherit' },
-                        mx: { xs: 0.5, sm: 1 },
-                      },
-                      // Compact scale on mobile, per the design.
-                      '& .MuiLink-root, & .MuiTypography-root': {
-                        fontSize: { xs: 14, sm: 'inherit' },
-                      },
-                    }}
-                  >
+                  <MuiBreadcrumbs aria-label="image breadcrumb" sx={breadcrumbsSx}>
                     <Link
                       component="button"
                       variant="body2"
@@ -1362,13 +1361,7 @@ export default function App() {
                         navigateToDepth(0)
                         pushNavState('browse')
                       }}
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 0.5,
-                        cursor: 'pointer',
-                        flexShrink: 0,
-                      }}
+                      sx={breadcrumbHomeLinkSx}
                     >
                       <HomeIcon fontSize="small" sx={breadcrumbHomeIconSx} />
                       Home
@@ -1384,6 +1377,7 @@ export default function App() {
                           sx={{
                             cursor: 'help',
                             flexShrink: 0,
+                            ...(isMobile && { display: 'inline' }),
                           }}
                         >
                           ...
@@ -1792,49 +1786,7 @@ export default function App() {
                     maxWidth: '100%',
                   }}
                 >
-                  <MuiBreadcrumbs
-                    aria-label="category breadcrumb"
-                    sx={{
-                      flex: '1 1 auto',
-                      minWidth: 0,
-                      maxWidth: '100%',
-                      '& .MuiBreadcrumbs-ol': {
-                        // Mobile allows a wrap so an over-long final crumb can
-                        // drop to its own full-width line instead of being
-                        // squeezed; desktop keeps everything on one line.
-                        flexWrap: isMobile ? 'wrap' : 'nowrap',
-                        alignItems: isMobile ? 'flex-start' : 'center',
-                        ...(isMobile && { rowGap: 0.25 }),
-                      },
-                      '& .MuiBreadcrumbs-li': {
-                        display: 'flex',
-                        alignItems: 'center',
-                        minWidth: 0,
-                      },
-                      // Ancestors keep their natural width (already capped and
-                      // ellipsised) so they stay readable rather than being
-                      // crushed by a long leaf name.
-                      ...(isMobile && {
-                        '& .MuiBreadcrumbs-li:not(:last-of-type)': { flexShrink: 0 },
-                      }),
-                      // The final crumb takes the leftover width, and its
-                      // min-width means it moves to the next line — where it
-                      // gets the full row — whenever little space is left.
-                      '& .MuiBreadcrumbs-li:last-of-type': {
-                        flex: isMobile ? '1 1 auto' : 'initial',
-                        minWidth: isMobile ? '55%' : 0,
-                      },
-                      '& .MuiBreadcrumbs-separator': {
-                        flexShrink: 0,
-                        fontSize: { xs: 14, sm: 'inherit' },
-                        mx: { xs: 0.5, sm: 1 },
-                      },
-                      // Compact scale on mobile, per the design.
-                      '& .MuiLink-root, & .MuiTypography-root': {
-                        fontSize: { xs: 14, sm: 'inherit' },
-                      },
-                    }}
-                  >
+                  <MuiBreadcrumbs aria-label="category breadcrumb" sx={breadcrumbsSx}>
                     <Link
                       component="button"
                       variant="body2"
@@ -1844,13 +1796,7 @@ export default function App() {
                         navigateToDepth(0)
                         pushNavState('browse')
                       }}
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 0.5,
-                        cursor: 'pointer',
-                        flexShrink: 0,
-                      }}
+                      sx={breadcrumbHomeLinkSx}
                     >
                       <HomeIcon fontSize="small" sx={breadcrumbHomeIconSx} />
                       Home
@@ -1864,6 +1810,7 @@ export default function App() {
                           sx={{
                             cursor: 'help',
                             flexShrink: 0,
+                            ...(isMobile && { display: 'inline' }),
                           }}
                         >
                           ...
@@ -1877,10 +1824,13 @@ export default function App() {
                         <Box
                           key={cat.id}
                           sx={{
-                            display: 'flex',
+                            // Inline-flex on mobile so each crumb (label + edit
+                            // button) flows inline within the block list.
+                            display: isMobile ? 'inline-flex' : 'flex',
                             alignItems: 'center',
                             gap: 0.25,
                             minWidth: 0,
+                            ...(isMobile && { verticalAlign: 'middle' }),
                           }}
                         >
                           {isLast ? (

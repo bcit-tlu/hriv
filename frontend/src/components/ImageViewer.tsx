@@ -13,8 +13,6 @@ import ZoomInIcon from '@mui/icons-material/ZoomIn'
 import ZoomOutIcon from '@mui/icons-material/ZoomOut'
 import CenterFocusStrongIcon from '@mui/icons-material/CenterFocusStrong'
 import RotateRightIcon from '@mui/icons-material/RotateRight'
-import CropSquareIcon from '@mui/icons-material/CropSquare'
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import CanvasOverlay from './CanvasOverlay'
 import type { CanvasAnnotation } from './CanvasOverlay'
 import {
@@ -90,12 +88,6 @@ export default function ImageViewer({
   // suppressed on phones (showNavigationControl below) and replaced by the
   // React pill rendered at the bottom of this component, per the design.
   const [pillExpanded, setPillExpanded] = useState(true)
-  const [selectionActive, setSelectionActive] = useState(false)
-  const [overlayCount, setOverlayCount] = useState(0)
-  // Imperative handles into the OSD effect so the pill can drive the same
-  // selection / clear logic the desktop toolbar buttons use.
-  const toggleSelectionRef = useRef<(() => void) | null>(null)
-  const clearOverlaysRef = useRef<(() => void) | null>(null)
   // "Use two fingers" hint, shown when a single finger lands on the image.
   const [showGestureHint, setShowGestureHint] = useState(false)
   const hintTimerRef = useRef<number | null>(null)
@@ -276,6 +268,13 @@ export default function ImageViewer({
       maxZoomPixelRatio: 4,
       visibilityRatio: 1,
       constrainDuringPan: true,
+      // Force the canvas (2d) drawer on mobile. OSD 6 prefers the WebGL drawer,
+      // but the navigator (mini-map) is a second viewer with its own WebGL
+      // context; on many mobile GPUs that second context fails to init, so the
+      // main image renders while the mini-map stays blank. The canvas drawer has
+      // no such per-viewer context limit and renders the mini-map reliably.
+      // (OSD itself already uses canvas on iOS.) Desktop keeps the default.
+      ...(isMobile ? { drawer: 'canvas' as const } : {}),
       showNavigator: true,
       // Design places the mini-map top-left on mobile. A ratio would shrink it
       // on small phones, so mobile gets an explicit size that stays a usable
@@ -292,8 +291,11 @@ export default function ImageViewer({
       // single finger is left to the browser so the page keeps scrolling, and
       // only two fingers drive the viewer. Pinch still pans *and* zooms, so
       // nothing is lost. Desktop is unchanged.
+      // Native pinchRotate is OFF on mobile — it rotated on the tiniest twist
+      // during a zoom. A dead-zoned rotation is re-implemented on 'canvas-pinch'
+      // below so rotating stays possible but deliberate.
       gestureSettingsTouch: isMobile
-        ? { pinchRotate: true, dragToPan: false, flickEnabled: false, pinchToZoom: true }
+        ? { pinchRotate: false, dragToPan: false, flickEnabled: false, pinchToZoom: true }
         : { pinchRotate: true },
       // Position controls at bottom-left
       navigationControlAnchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
@@ -352,8 +354,7 @@ export default function ImageViewer({
     // --- Toolbar buttons ---
     const prefix = '/openseadragon-svg-icons/'
 
-    // --- Clear overlays toolbar button ---
-    // Shared by the desktop OSD button and the mobile pill (clearOverlaysRef).
+    // --- Clear overlays toolbar button (desktop OSD toolbar) ---
     const runClear = () => {
       if (overlaysLockedRef.current) return
       for (const el of overlaysRef.current) {
@@ -370,7 +371,6 @@ export default function ImageViewer({
       updateLockIcon()
       onClearOverlaysRef.current?.()
     }
-    clearOverlaysRef.current = runClear
     const clearButton = new OpenSeadragon.Button({
       tooltip: 'Clear all selection rectangles',
       srcRest: prefix + 'clear_rest.svg',
@@ -396,20 +396,17 @@ export default function ImageViewer({
         : empty
           ? 'No selection rectangles to clear'
           : 'Clear all selection rectangles'
-      // Keep the mobile pill's clear button in sync with the overlay count.
-      setOverlayCount(overlaysRef.current.length)
     }
 
-    // --- Selection rectangle toolbar button ---
-    // Shared by the desktop OSD button, the mobile pill (toggleSelectionRef) and
-    // the drag-release handler, so the button outline and the pill's highlight
-    // can never drift apart.
+    // --- Selection rectangle toolbar button (desktop OSD toolbar) ---
+    // Shared by the desktop OSD button and the drag-release handler so the
+    // button outline stays in sync. Measurement drawing is desktop-only; the
+    // mobile pill deliberately omits it.
     const setSelectionMode = (on: boolean) => {
       selectionModeRef.current = on
       viewer.setMouseNavEnabled(!on)
       selectionButton.element.style.outline = on ? '2px solid red' : 'none'
       selectionButton.element.style.outlineOffset = on ? '-2px' : ''
-      setSelectionActive(on)
     }
     const selectionButton = new OpenSeadragon.Button({
       tooltip: 'Draw selection rectangle',
@@ -420,7 +417,6 @@ export default function ImageViewer({
       onClick: () => setSelectionMode(!selectionModeRef.current),
     })
     selectionButton.element.style.lineHeight = '0'
-    toggleSelectionRef.current = () => setSelectionMode(!selectionModeRef.current)
     if (!isMobile) {
       viewer.addControl(selectionButton.element, {
         anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
@@ -703,6 +699,47 @@ export default function ImageViewer({
     // Report viewport changes after animations finish
     viewer.addHandler('animation-finish', emitViewport)
 
+    // --- Mobile pinch-rotate with a dead-zone ------------------------------
+    // Native pinchRotate is disabled on mobile (gestureSettingsTouch). Rotation
+    // is re-implemented here so it only engages once the two-finger twist passes
+    // a threshold, then tracks the fingers 1:1 — a casual pinch-zoom no longer
+    // rotates the image, but a deliberate twist still does.
+    if (isMobile) {
+      const ROTATE_ENGAGE_DEG = 12
+      let rotateEngaged = false
+      let twistAccumDeg = 0
+      viewer.addHandler('canvas-pinch', (event) => {
+        const vp = viewer.viewport
+        const gp = event.gesturePoints
+        if (!vp || !gp || gp.length < 2) return
+        const a1 = Math.atan2(
+          gp[0].currentPos.y - gp[1].currentPos.y,
+          gp[0].currentPos.x - gp[1].currentPos.x,
+        )
+        const a2 = Math.atan2(
+          gp[0].lastPos.y - gp[1].lastPos.y,
+          gp[0].lastPos.x - gp[1].lastPos.x,
+        )
+        let deltaDeg = ((a1 - a2) * 180) / Math.PI
+        // Normalise so a ±360 wrap-around between samples doesn't spike.
+        if (deltaDeg > 180) deltaDeg -= 360
+        else if (deltaDeg < -180) deltaDeg += 360
+        twistAccumDeg += deltaDeg
+        if (!rotateEngaged) {
+          if (Math.abs(twistAccumDeg) < ROTATE_ENGAGE_DEG) return
+          rotateEngaged = true
+        }
+        const pivot = vp.pointFromPixel(event.center, true)
+        vp.rotateTo(vp.getRotation(true) + deltaDeg, pivot, true)
+      })
+      // A pinch ends when a finger lifts; reset so the next gesture starts fresh
+      // (and must clear the dead-zone again).
+      viewer.addHandler('canvas-release', () => {
+        rotateEngaged = false
+        twistAccumDeg = 0
+      })
+    }
+
     return () => {
       selectionModeRef.current = false
       dragRef.current = null
@@ -790,7 +827,13 @@ export default function ImageViewer({
         parseFloat(styles.paddingRight) +
         parseFloat(styles.borderLeftWidth) +
         parseFloat(styles.borderRightWidth)
-      setPillCollapsedShift(-Math.max(0, (row.clientWidth - collapsedWidth) / 2))
+      // Use the row's *content* width (clientWidth minus its own horizontal
+      // padding), otherwise the shift overshoots by the gutter and the collapsed
+      // pill is clipped against the viewer's left edge (overflow: hidden).
+      const rowStyles = getComputedStyle(row)
+      const rowContentWidth =
+        row.clientWidth - parseFloat(rowStyles.paddingLeft) - parseFloat(rowStyles.paddingRight)
+      setPillCollapsedShift(-Math.max(0, (rowContentWidth - collapsedWidth) / 2))
     }
     measure()
 
@@ -1018,29 +1061,6 @@ export default function ImageViewer({
                   >
                     <CenterFocusStrongIcon fontSize="small" />
                   </IconButton>
-                </Tooltip>
-                <Tooltip title={selectionActive ? 'Cancel measurement' : 'Draw measurement'}>
-                  <IconButton
-                    size="small"
-                    aria-label="Draw measurement rectangle"
-                    onClick={() => toggleSelectionRef.current?.()}
-                    sx={pillBtnSx(selectionActive)}
-                  >
-                    <CropSquareIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-                <Tooltip title="Clear measurements">
-                  <span>
-                    <IconButton
-                      size="small"
-                      aria-label="Clear measurements"
-                      disabled={overlayCount === 0}
-                      onClick={() => clearOverlaysRef.current?.()}
-                      sx={pillBtnSx()}
-                    >
-                      <DeleteOutlineIcon fontSize="small" />
-                    </IconButton>
-                  </span>
                 </Tooltip>
                 <Tooltip title="Rotate 90°">
                   <IconButton

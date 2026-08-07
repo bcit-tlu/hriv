@@ -141,7 +141,18 @@ describe('ImageViewer OpenSeadragon options', () => {
       expect(touch.flickEnabled).toBe(false)
       // Two-finger interaction must still work — pinch pans as well as zooms.
       expect(touch.pinchToZoom).toBe(true)
-      expect(touch.pinchRotate).toBe(true)
+      // Native pinch-rotate is off; a dead-zoned rotation is re-implemented on
+      // the 'canvas-pinch' event so a casual zoom doesn't twist the image.
+      expect(touch.pinchRotate).toBe(false)
+    })
+
+    // The mini-map is a second viewer with its own WebGL context; on mobile GPUs
+    // that context often fails to init, leaving the map blank. The canvas drawer
+    // has no such per-viewer limit, so mobile pins it explicitly.
+    it('forces the canvas drawer so the mini-map renders reliably', () => {
+      render(<ImageViewer tileSources="/tiles.dzi" />)
+
+      expect(lastOptions().drawer).toBe('canvas')
     })
 
     it('shows the two-finger hint when a lone finger lands on the image', () => {
@@ -216,6 +227,8 @@ describe('ImageViewer OpenSeadragon options', () => {
       expect(opts.navigatorWidth).toBeUndefined()
       expect(opts.navigatorAutoFade).toBe(true)
       expect(opts.showNavigationControl).toBe(true)
+      // Desktop keeps OSD's default drawer (WebGL-first) — only mobile pins canvas.
+      expect(opts.drawer).toBeUndefined()
     })
 
     it('renders no two-finger hint at all', () => {
