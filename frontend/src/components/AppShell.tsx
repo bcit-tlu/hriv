@@ -353,8 +353,8 @@ export default function AppShell(props: AppShellProps) {
             sx={{
               display: 'flex',
               alignItems: 'center',
-              gap: 0.75,
-              mr: 2,
+              gap: { xs: 0.5, sm: 0.75 },
+              mr: { xs: 1, sm: 2 },
             }}
           >
             {collapseNav && (
@@ -399,7 +399,7 @@ export default function AppShell(props: AppShellProps) {
                     sx={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: 0.75,
+                      gap: { xs: 0.5, sm: 0.75 },
                       background: 'none',
                       border: 'none',
                       p: 0,
@@ -407,9 +407,15 @@ export default function AppShell(props: AppShellProps) {
                       color: 'inherit',
                       font: 'inherit',
                       letterSpacing: 'inherit',
+                      fontSize: { xs: '1.05rem', sm: 'inherit' },
                     }}
                   >
-                    <Box component="img" src="/favicon.svg" alt="" sx={{ height: 32, width: 32 }} />
+                    <Box
+                      component="img"
+                      src="/favicon.svg"
+                      alt=""
+                      sx={{ height: { xs: 28, sm: 32 }, width: { xs: 28, sm: 32 } }}
+                    />
                     HRIV
                   </Box>
                 </Tooltip>
@@ -430,7 +436,14 @@ export default function AppShell(props: AppShellProps) {
               TabIndicatorProps={{
                 style: { backgroundColor: 'white' },
               }}
-              sx={{ flexGrow: 1 }}
+              sx={{
+                flexGrow: 1,
+                '& .MuiTab-root': {
+                  fontSize: { xs: 13, sm: 14 },
+                  minWidth: { xs: 'auto', sm: 90 },
+                  px: { xs: 1.25, sm: 2 },
+                },
+              }}
             >
               <Tab
                 label="Home"
@@ -554,7 +567,7 @@ export default function AppShell(props: AppShellProps) {
             <IconButton
               ref={avatarRef}
               onClick={() => setProfileOpen(true)}
-              sx={{ p: 0, minWidth: 40, minHeight: 40 }}
+              sx={{ p: 0, minWidth: { xs: 36, sm: 40 }, minHeight: { xs: 36, sm: 40 } }}
             >
               <Avatar
                 sx={{

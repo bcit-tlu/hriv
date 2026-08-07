@@ -910,7 +910,7 @@ export default function App() {
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
     maxWidth: { xs: 120, sm: 180, md: 260 },
-    fontSize: { xs: 12, sm: 'inherit' },
+    fontSize: { xs: 14, sm: 'inherit' },
   }
   // The deepest crumb is the one users most need to read, so on mobile it takes
   // whatever width is left rather than a fixed 140px cap, and wraps onto further
@@ -918,7 +918,7 @@ export default function App() {
   // ancestors above it still collapse behind the "..." as before.
   const breadcrumbCurrentTextSx = isMobile
     ? {
-        fontSize: 12,
+        fontSize: 14,
         flex: '1 1 auto',
         minWidth: 0,
         maxWidth: 'none',
@@ -929,7 +929,7 @@ export default function App() {
         ...breadcrumbItemTextSx,
         maxWidth: { sm: 220, md: 360 },
       }
-  const breadcrumbHomeIconSx = { fontSize: { xs: 15, sm: 20 } }
+  const breadcrumbHomeIconSx = { fontSize: { xs: 18, sm: 20 } }
 
   const handleImageClick = useCallback(
     (img: ImageItem) => {
@@ -1343,12 +1343,12 @@ export default function App() {
                       },
                       '& .MuiBreadcrumbs-separator': {
                         flexShrink: 0,
-                        fontSize: { xs: 12, sm: 'inherit' },
+                        fontSize: { xs: 14, sm: 'inherit' },
                         mx: { xs: 0.5, sm: 1 },
                       },
                       // Compact scale on mobile, per the design.
                       '& .MuiLink-root, & .MuiTypography-root': {
-                        fontSize: { xs: 12, sm: 'inherit' },
+                        fontSize: { xs: 14, sm: 'inherit' },
                       },
                     }}
                   >
@@ -1826,12 +1826,12 @@ export default function App() {
                       },
                       '& .MuiBreadcrumbs-separator': {
                         flexShrink: 0,
-                        fontSize: { xs: 12, sm: 'inherit' },
+                        fontSize: { xs: 14, sm: 'inherit' },
                         mx: { xs: 0.5, sm: 1 },
                       },
                       // Compact scale on mobile, per the design.
                       '& .MuiLink-root, & .MuiTypography-root': {
-                        fontSize: { xs: 12, sm: 'inherit' },
+                        fontSize: { xs: 14, sm: 'inherit' },
                       },
                     }}
                   >

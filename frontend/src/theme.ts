@@ -197,16 +197,16 @@ export function getAnnounceColors(mode: 'light' | 'dark'): {
  *  Spread into each button's `sx`. A uniform 40px box keeps adjacent icons
  *  evenly and tightly spaced; the glyph is a touch larger on mobile. */
 export const appBarIconButtonSx = {
-  p: 0.5,
-  minWidth: 40,
-  minHeight: 40,
-  '& .MuiSvgIcon-root': { fontSize: { xs: 26, sm: 24, md: 24 } },
+  p: { xs: 0.25, sm: 0.5 },
+  minWidth: { xs: 36, sm: 40 },
+  minHeight: { xs: 36, sm: 40 },
+  '& .MuiSvgIcon-root': { fontSize: { xs: 22, sm: 24, md: 24 } },
 } as const
 
 /** Responsive avatar dimensions matching {@link appBarIconButtonSx}. */
 export const appBarAvatarSx = {
-  width: { xs: 30, sm: 32, md: 34 },
-  height: { xs: 30, sm: 32, md: 34 },
+  width: { xs: 28, sm: 32, md: 34 },
+  height: { xs: 28, sm: 32, md: 34 },
   fontSize: { xs: 13, sm: 13, md: 14 },
 } as const
 
