@@ -214,6 +214,23 @@ describe('ImageViewer OpenSeadragon options', () => {
 
       expect(lastOptions().showNavigationControl).toBe(false)
     })
+
+    // The pill offers view controls only. Drawing measurement rectangles by hand
+    // is fiddly on a touch screen and conflicts with the two-finger gestures, so
+    // it's deliberately desktop-only (its OSD button is added only when
+    // !isMobile). Guards against the measurement tools creeping back onto mobile.
+    it('offers zoom / fit / rotate on the pill but not the measurement tools', () => {
+      render(<ImageViewer tileSources="/tiles.dzi" />)
+
+      // Kept — the everyday view controls.
+      expect(screen.getByRole('button', { name: 'Zoom in' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Zoom out' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Fit to screen' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Rotate 90 degrees' })).toBeInTheDocument()
+      // Removed on mobile — measurement drawing is desktop-only.
+      expect(screen.queryByRole('button', { name: 'Draw measurement rectangle' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Clear measurements' })).toBeNull()
+    })
   })
 
   describe('desktop', () => {
