@@ -81,7 +81,7 @@ export default function ImageTile({
               sx={{
                 ...(!image.active && { color: visColors.inactive }),
                 ...(isMobile && {
-                  fontSize: 12,
+                  fontSize: 14,
                   fontWeight: 600,
                   lineHeight: 1.3,
                   display: '-webkit-box',
@@ -125,7 +125,7 @@ export default function ImageTile({
               variant="body2"
               color="text.secondary"
               noWrap
-              sx={{ mt: isMobile ? 0.25 : 1, fontSize: isMobile ? 11 : 'inherit' }}
+              sx={{ mt: isMobile ? 0.25 : 1, fontSize: isMobile ? 13 : 'inherit' }}
             >
               &copy; {image.copyright}
             </Typography>

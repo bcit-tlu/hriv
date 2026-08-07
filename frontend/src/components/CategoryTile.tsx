@@ -108,6 +108,13 @@ export default function CategoryTile({
   }
   const detailText = detailParts.length > 0 ? detailParts.join(' \u00b7 ') : 'Empty'
 
+  // A long folder name wraps onto more lines on the narrow mobile card. Step the
+  // font down a notch as the label grows so a very long name stays compact and
+  // fully readable instead of ballooning the card height. Desktop is unaffected
+  // (single-line, ellipsised).
+  const mobileLabelFontSize =
+    category.label.length > 40 ? 12 : category.label.length > 22 ? 13 : 14
+
   const programChips = category.programIds
     .map((pid) => programs.find((p) => p.id === pid))
     .filter((p): p is Program => p != null)
@@ -275,7 +282,7 @@ export default function CategoryTile({
               {/* Design uses a thin outline folder on mobile; desktop keeps
                   the filled glyph. */}
               {isMobile ? (
-                <FolderOutlinedIcon sx={{ fontSize: 32, opacity: 0.9 }} />
+                <FolderOutlinedIcon sx={{ fontSize: 52, opacity: 0.9 }} />
               ) : (
                 <FolderIcon sx={{ fontSize: 64, opacity: 0.85 }} />
               )}
@@ -297,7 +304,7 @@ export default function CategoryTile({
               <FolderOutlinedIcon
                 fontSize="small"
                 color="primary"
-                sx={{ flexShrink: 0, ...(isMobile && { fontSize: 12, mt: '2px' }) }}
+                sx={{ flexShrink: 0, ...(isMobile && { fontSize: 16, mt: '1px' }) }}
               />
               <Typography
                 variant="h6"
@@ -305,14 +312,15 @@ export default function CategoryTile({
                 sx={{
                   color: category.status === 'hidden' ? visColors.inactive : 'primary.main',
                   ...(isMobile && {
-                    fontSize: 12,
+                    fontSize: mobileLabelFontSize,
                     fontWeight: 600,
                     lineHeight: 1.3,
-                    display: '-webkit-box',
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: 'vertical',
-                    overflow: 'hidden',
+                    // Wrap the full name onto as many lines as it needs rather
+                    // than clamping/ellipsising it — nothing gets cut off. Long
+                    // unbroken tokens break mid-word so they can't overflow the
+                    // card width.
                     whiteSpace: 'normal',
+                    overflowWrap: 'anywhere',
                   }),
                 }}
               >
@@ -348,7 +356,7 @@ export default function CategoryTile({
             <Typography
               variant="body2"
               color="text.secondary"
-              sx={{ fontSize: isMobile ? 11 : 'inherit' }}
+              sx={{ fontSize: isMobile ? 13 : 'inherit' }}
             >
               {detailText}
             </Typography>

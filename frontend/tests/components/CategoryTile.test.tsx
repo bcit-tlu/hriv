@@ -522,8 +522,35 @@ describe('CategoryTile', () => {
         />,
       )
 
-      expect(screen.getByText('Hematology')).toHaveStyle({ fontSize: '12px' })
-      expect(screen.getByText('Empty')).toHaveStyle({ fontSize: '11px' })
+      expect(screen.getByText('Hematology')).toHaveStyle({ fontSize: '14px' })
+      expect(screen.getByText('Empty')).toHaveStyle({ fontSize: '13px' })
+    })
+
+    // A long folder name wraps onto more lines, so the font steps down a notch
+    // (>22 chars) and another (>40 chars) to keep the card compact. The name is
+    // never clamped/ellipsised — it wraps in full, breaking long tokens mid-word.
+    it('steps the name font down as the label grows, and wraps it in full', () => {
+      const { rerender } = render(
+        <CategoryTile
+          category={makeCategory({ label: 'Romanesque Architecture' })} // 23 chars
+          onClick={vi.fn()}
+          programs={[]}
+        />,
+      )
+      const midName = screen.getByText('Romanesque Architecture')
+      expect(midName).toHaveStyle({ fontSize: '13px' })
+      // Full name is present (not truncated) and set to wrap rather than clamp.
+      expect(midName).toHaveStyle({ whiteSpace: 'normal', overflowWrap: 'anywhere' })
+
+      const longLabel = 'Nineteenth-Century Ecclesiastical Stonework' // 44 chars
+      rerender(
+        <CategoryTile
+          category={makeCategory({ label: longLabel })}
+          onClick={vi.fn()}
+          programs={[]}
+        />,
+      )
+      expect(screen.getByText(longLabel)).toHaveStyle({ fontSize: '12px' })
     })
 
     it('renders a flat card rather than an elevated one', () => {
