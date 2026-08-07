@@ -699,13 +699,18 @@ export default function ImageViewer({
     // Report viewport changes after animations finish
     viewer.addHandler('animation-finish', emitViewport)
 
-    // --- Mobile pinch-rotate with a dead-zone ------------------------------
+    // --- Mobile pinch-rotate with a dead-zone + damping --------------------
     // Native pinchRotate is disabled on mobile (gestureSettingsTouch). Rotation
-    // is re-implemented here so it only engages once the two-finger twist passes
-    // a threshold, then tracks the fingers 1:1 — a casual pinch-zoom no longer
-    // rotates the image, but a deliberate twist still does.
+    // is re-implemented here so it (a) only engages once the two-finger twist
+    // passes a generous threshold — a casual pinch-zoom stays rotation-free —
+    // and (b) turns at a fraction of finger speed once engaged, so it never
+    // whips around. A deliberate twist still rotates, just calmly.
     if (isMobile) {
-      const ROTATE_ENGAGE_DEG = 12
+      // Must twist ~30° before rotation kicks in (accidental twist while zooming
+      // is well under this); then apply only 40% of the finger delta so the
+      // image turns slowly and predictably.
+      const ROTATE_ENGAGE_DEG = 30
+      const ROTATE_GAIN = 0.4
       let rotateEngaged = false
       let twistAccumDeg = 0
       viewer.addHandler('canvas-pinch', (event) => {
@@ -730,7 +735,7 @@ export default function ImageViewer({
           rotateEngaged = true
         }
         const pivot = vp.pointFromPixel(event.center, true)
-        vp.rotateTo(vp.getRotation(true) + deltaDeg, pivot, true)
+        vp.rotateTo(vp.getRotation(true) + deltaDeg * ROTATE_GAIN, pivot, true)
       })
       // A pinch ends when a finger lifts; reset so the next gesture starts fresh
       // (and must clear the dead-zone again).
@@ -988,7 +993,9 @@ export default function ImageViewer({
               p: '6px 10px',
               borderRadius: 999,
               maxWidth: '100%',
-              bgcolor: 'rgba(14,14,14,0.82)',
+              // Semi-transparent so the image stays visible through the pill;
+              // the blur below keeps the icons legible over busy content.
+              bgcolor: 'rgba(14,14,14,0.5)',
               border: '1px solid rgba(255,255,255,0.12)',
               backdropFilter: 'blur(6px)',
               pointerEvents: 'auto',

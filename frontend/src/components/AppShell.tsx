@@ -212,6 +212,16 @@ export default function AppShell(props: AppShellProps) {
   // layout already owns the start slot with its hamburger.
   const showBack = isMobile && !collapseNav && canGoBack && Boolean(onBack)
 
+  // Profile popover action rows are tighter on mobile: less vertical padding per
+  // row (so View Announcement / Logout sit closer) and a smaller gap above and
+  // below the block. Desktop keeps the roomier spacing.
+  const profileItemPy = isMobile ? 0.5 : 1.25
+  // MUI MenuItem has a 48px min-height that otherwise dominates the row and keeps
+  // the items far apart regardless of padding; shrink it on mobile.
+  const profileItemMinH = isMobile ? 36 : undefined
+  const profileMenuMt = isMobile ? 0.75 : 1.5
+  const profileMenuPb = isMobile ? 0.5 : 1
+
   // Collapsed-nav menu, built as ordered sections. Empty sections are dropped
   // and dividers are only inserted *between* non-empty sections, so the menu
   // stays correct for any role combination (no leading/trailing/double
@@ -599,7 +609,7 @@ export default function AppShell(props: AppShellProps) {
               }}
             >
               <Card sx={{ minWidth: 240 }}>
-                <CardContent sx={{ '&:last-child': { pb: 1 } }}>
+                <CardContent sx={{ '&:last-child': { pb: profileMenuPb } }}>
                   <Typography sx={{ fontWeight: 600, fontSize: 17, lineHeight: 1.35 }}>
                     {currentUser.name}
                   </Typography>
@@ -648,14 +658,14 @@ export default function AppShell(props: AppShellProps) {
                       ))}
                     </Box>
                   )}
-                  <Divider sx={{ mt: 1.5, mx: -2 }} />
+                  <Divider sx={{ mt: profileMenuMt, mx: -2 }} />
                   {/* MenuItem styles `.MuiListItemIcon-root` with a descendant
                       selector (min-width: 36px), which outranks an `sx` on the
                       icon itself — so the collapse has to happen from here.
                       The label's own `ml` then sets the icon-to-text gap. */}
                   <MenuList sx={{ mx: -2, py: 0, '& .MuiListItemIcon-root': { minWidth: 0 } }}>
                     {collapseNav && (
-                      <MenuItem sx={{ py: 1.25 }} onClick={() => toggleMode()}>
+                      <MenuItem sx={{ py: profileItemPy, minHeight: profileItemMinH }} onClick={() => toggleMode()}>
                         <ListItemIcon sx={{ minWidth: 0, mr: 0 }}>{themeIcon}</ListItemIcon>
                         <ListItemText
                           slotProps={{ primary: { fontSize: 15 } }}
@@ -666,7 +676,7 @@ export default function AppShell(props: AppShellProps) {
                       </MenuItem>
                     )}
                     {canManageUsers && (
-                      <MenuItem sx={{ py: 1.25 }} onClick={() => openEditProfile()}>
+                      <MenuItem sx={{ py: profileItemPy, minHeight: profileItemMinH }} onClick={() => openEditProfile()}>
                         <ListItemIcon sx={{ minWidth: 0, mr: 0 }}>
                           <ManageAccountsIcon fontSize="small" />
                         </ListItemIcon>
@@ -680,7 +690,7 @@ export default function AppShell(props: AppShellProps) {
                     )}
                     {showViewAnnLink && (
                       <MenuItem
-                        sx={{ py: 1.25 }}
+                        sx={{ py: profileItemPy, minHeight: profileItemMinH }}
                         onClick={() => {
                           setProfileOpen(false)
                           setViewAnnOpen(true)
@@ -698,7 +708,7 @@ export default function AppShell(props: AppShellProps) {
                       </MenuItem>
                     )}
                     <MenuItem
-                      sx={{ py: 1.25 }}
+                      sx={{ py: profileItemPy, minHeight: profileItemMinH }}
                       onClick={() => {
                         setProfileOpen(false)
                         logout()
