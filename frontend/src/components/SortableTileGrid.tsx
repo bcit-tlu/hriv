@@ -333,7 +333,7 @@ export default function SortableTileGrid({
   )
 
   const handleDragEnd = useCallback(
-    async (event: DragEndEvent) => {
+    (event: DragEndEvent) => {
       setActiveItem(null)
 
       const { operation } = event
