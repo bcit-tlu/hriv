@@ -9,10 +9,21 @@ import {
   deleteUser as apiDeleteUser,
   setToken,
   getToken,
-  clearUserStorage,
+  clearUserStorage as apiClearUserStorage,
 } from './api'
 import type { ApiUser } from './api'
 import { emitEventNow } from './observability'
+import { tileOrderingCoordinator } from './tileOrdering'
+
+/**
+ * Clear HRIV-scoped storage AND in-memory per-user state (the tile-ordering
+ * coordinator caches display orders, revisions, and unsaved-change flags)
+ * so nothing leaks to the next user on a shared browser.
+ */
+function clearUserStorage(): void {
+  apiClearUserStorage()
+  tileOrderingCoordinator.reset()
+}
 
 // Capture the URL fragment immediately at module-load time.  In React,
 // children’s effects fire before their parents’ effects.  App (a child of

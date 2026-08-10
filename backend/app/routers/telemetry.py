@@ -36,6 +36,8 @@ from ..auth_events import is_synthetic_user
 from ..database import get_db
 from ..models import Category, Image, User
 from ..rate_limit import check_telemetry_rate_limit
+from ..reorder_metrics import REORDER_CLIENT_STATES, record_client_reorder_operation
+from ..reorder_telemetry import sanitize_reorder_operation_id
 from ..synthetic_result import (
     StaleSyntheticResultError,
     StoredSyntheticJourneyState,
@@ -74,12 +76,16 @@ _ALLOWED_EVENTS = frozenset({
     "image.view.ended",
     "image.view.failed",
     "navigation.page_changed",
+    "reorder.operation",
     "ui.toolbar_action",
 })
 
 # Hard limits to prevent accidental or malicious payload abuse. These are
 # per-request guards; per-user rate limiting is enforced separately below via
 # the shared Redis rate limiter.
+# NOTE: the frontend batches flushes to this cap
+# (frontend/src/observability.ts MAX_EVENTS_PER_REQUEST); keep them in sync
+# or larger client batches will be rejected wholesale with a 422.
 _MAX_EVENTS_PER_REQUEST = 10
 _MAX_ATTRIBUTE_LENGTH = 1000
 
@@ -102,6 +108,10 @@ _FILE_TYPES = frozenset({
     "jpg", "jpeg", "png", "gif", "webp", "tif", "tiff", "svs", "zip",
     "mixed", "other",
 })
+# Client-side reorder lifecycle states; kept in lockstep with
+# ``frontend/src/reorderDiagnostics.ts`` and ``app.reorder_metrics``.
+_REORDER_STATES = REORDER_CLIENT_STATES
+_REORDER_ITEM_TYPES = frozenset({"category", "image", "mixed", "other"})
 _ERROR_CODES = frozenset({
     "api_http_4xx",
     "api_http_5xx",
@@ -165,6 +175,20 @@ class TelemetryEvent(BaseModel):
     image_id: int | None = None
     category_id: int | None = None
     from_category_id: int | None = None
+
+    # Reorder operation diagnostics (``reorder.operation`` events). Only the
+    # bounded ``state`` ever feeds a metric label; everything else stays in
+    # structured logs and traces.
+    operation_id: str | None = Field(None, max_length=64)
+    state: str | None = Field(None, max_length=32)
+    item_type: str | None = Field(None, max_length=16)
+    item_id: int | None = None
+    from_index: int | None = None
+    to_index: int | None = None
+    category_count: int | None = None
+    image_count: int | None = None
+    queue_depth: int | None = None
+    local_revision: int | None = None
 
     # Bounded client-environment buckets.
     browser_family: str | None = Field(None, max_length=32)
@@ -318,6 +342,40 @@ async def ingest_telemetry_events(
             from_category_label = category_labels.get(event.from_category_id)
             if from_category_label is not None:
                 extra["category.from_label"] = from_category_label
+        if event.event == "reorder.operation":
+            if event.state is None:
+                # Distinguish "client sent no state" from "client sent an
+                # unrecognized state" (the ``other`` bucket) and keep absent
+                # states out of the metric entirely.
+                extra["reorder.state"] = "missing"
+            else:
+                state = _bounded(event.state, _REORDER_STATES) or "other"
+                extra["reorder.state"] = state
+                # Synthetic-monitor traffic is excluded from the client
+                # lifecycle counter so dashboards reflect real users only;
+                # structured logs keep ``event.synthetic`` for both.
+                if not server_synthetic:
+                    record_client_reorder_operation(state)
+            operation_id = sanitize_reorder_operation_id(event.operation_id)
+            if operation_id is not None:
+                extra["reorder.operation_id"] = operation_id
+            item_type = _bounded(event.item_type, _REORDER_ITEM_TYPES)
+            if item_type is not None:
+                extra["reorder.item_type"] = item_type
+            if event.item_id is not None:
+                extra["reorder.item_id"] = event.item_id
+            if event.from_index is not None:
+                extra["reorder.from_index"] = event.from_index
+            if event.to_index is not None:
+                extra["reorder.to_index"] = event.to_index
+            if event.category_count is not None:
+                extra["reorder.category_count"] = event.category_count
+            if event.image_count is not None:
+                extra["reorder.image_count"] = event.image_count
+            if event.queue_depth is not None:
+                extra["reorder.queue_depth"] = event.queue_depth
+            if event.local_revision is not None:
+                extra["reorder.local_revision"] = event.local_revision
         if event.request_id:
             extra["request.id"] = event.request_id
         if event.trace_id:
