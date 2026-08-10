@@ -977,9 +977,12 @@ export default function App() {
   }, [dialogOpen, manageAttentionScope])
 
   // Once the dialog is closed and every tracked scope has settled, stop
-  // tracking: the snackbar above must not re-fire for later conflicts the
-  // dialog didn't cause (e.g. a Browse reorder of the same scope), and a
-  // reopened dialog should start without a stale save-state readout.
+  // tracking, so the snackbar above stops firing for later conflicts the
+  // dialog didn't cause (e.g. a Browse reorder of the same scope) and a
+  // reopened dialog starts without a stale save-state readout. While a
+  // tracked scope is still unsettled, a Browse-caused failure of that same
+  // scope can still trip the snackbar — accepted, since the scope also
+  // carries the dialog's unsaved intent at that point.
   useEffect(() => {
     if (dialogOpen || manageReorderScopes === null) return
     let cancelled = false

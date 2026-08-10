@@ -501,7 +501,7 @@ export default function ManageCategoriesDialog({
       // notification if the follow-up order save conflicts/fails, so they
       // need their refresh here (releaseCleanScopes keeps any newer
       // coordinator state safe from the re-fetched data).
-      if (moves.length > 0 || scopes.length === 0) await onReorderComplete?.()
+      if (moves.length > 0) await onReorderComplete?.()
     },
     [
       dragId,
@@ -568,21 +568,23 @@ export default function ManageCategoriesDialog({
   return (
     <>
       <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-        {/* Keep DialogTitle a direct sibling of DialogContent so MUI's
-            `.MuiDialogTitle-root + .MuiDialogContent-root` padding rule
-            still applies. */}
-        <DialogTitle
+        {/* The save-state indicator (a live region with buttons) must not
+            live inside DialogTitle's <h2>, so it sits in a flex row beside
+            it. That breaks MUI's `.MuiDialogTitle-root +
+            .MuiDialogContent-root` padding-top reset, re-applied below. */}
+        <Box
           sx={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: 1,
+            pr: 3,
           }}
         >
-          Manage Categories
+          <DialogTitle>Manage Categories</DialogTitle>
           {reorderStatus}
-        </DialogTitle>
-        <DialogContent>
+        </Box>
+        <DialogContent sx={{ pt: 0 }}>
           <List
             dense
             disablePadding
