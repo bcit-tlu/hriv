@@ -1049,6 +1049,15 @@ export default function App() {
     }
   }, [refreshCategories, refreshUncategorizedImages])
 
+  // Adopting the server's order can stem from membership drift (a 400
+  // conflict): reload the browse data too so tiles added or removed
+  // elsewhere appear alongside the adopted order.
+  const acceptServerOrder = tileOrdering.acceptServerOrder
+  const handleAcceptServerOrder = useCallback(() => {
+    acceptServerOrder()
+    void handleReorderComplete()
+  }, [acceptServerOrder, handleReorderComplete])
+
   const handleReorderError = useCallback((err: unknown) => {
     setErrorSnack(userMessage(err, 'Failed to reorder tiles.'))
   }, [])
@@ -1820,7 +1829,7 @@ export default function App() {
                   <ReorderStatusIndicator
                     status={tileOrdering.status}
                     onRetry={tileOrdering.retry}
-                    onAcceptServerOrder={tileOrdering.acceptServerOrder}
+                    onAcceptServerOrder={handleAcceptServerOrder}
                   />
                 </Box>
               )}
