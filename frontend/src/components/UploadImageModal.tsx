@@ -237,10 +237,23 @@ export default function UploadImageModal({
 
   const uploadIdRef = useRef<number | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  // Synchronous in-flight guard: `uploading` state only updates on the next
+  // render, so rapid double Enter/click could otherwise submit twice.
+  const isSubmittingRef = useRef(false)
 
   const handleUpload = async () => {
     if (files.length === 0) return
+    if (isSubmittingRef.current) return
+    isSubmittingRef.current = true
 
+    try {
+      await doUpload()
+    } finally {
+      isSubmittingRef.current = false
+    }
+  }
+
+  const doUpload = async () => {
     if (bulk) {
       // Bulk import workflow — category is optional (images go to root if unset)
       setUploading(true)
