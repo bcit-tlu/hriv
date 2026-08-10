@@ -118,8 +118,9 @@ and `state`); operation IDs and category IDs never appear as metric labels.
    so the same operation usually also emits a terminal `committed` / `failed`
    afterwards — `abandoned` marks the UX gap, not the network outcome. An
    `abandoned` with no terminal event means a full page unload cut the
-   operation off entirely. An `ignored` event is a drop the current UI
-   silently discarded (the defect tracked by epic #975).
+   operation off entirely. An `ignored` event is a drop the legacy
+   (pre-#998) UI silently discarded (the defect tracked by epic #975);
+   the current UI never emits it.
 
 ## Local verification
 
