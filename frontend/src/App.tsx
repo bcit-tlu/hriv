@@ -2010,6 +2010,7 @@ export default function App() {
         reorderStatus={
           manageAttentionScope !== undefined ? (
             <ReorderStatusIndicator
+              ariaLabel="Manage Categories reorder save state"
               status={manageTileOrdering.status}
               serverOrderAvailable={manageTileOrdering.serverOrderAvailable}
               onRetry={manageTileOrdering.retry}
