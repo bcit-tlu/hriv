@@ -90,7 +90,7 @@ def test_reorder_metrics_render_and_coerce_labels() -> None:
     # Unknown entity/outcome are coerced to bounded values, never emitted raw.
     assert "not-an-entity" not in text
     assert "not-an-outcome" not in text
-    assert 'hriv_reorder_requests_total{entity="category",outcome="failure"}' in text
+    assert 'hriv_reorder_requests_total{entity="other",outcome="failure"}' in text
     assert 'hriv_reorder_client_operations_total{state="ignored"}' in text
     assert 'hriv_reorder_client_operations_total{state="other"}' in text
     assert "definitely-not-a-state" not in text

@@ -65,7 +65,7 @@ Allowed for aggregate metrics:
 - `status_class`
 - `outcome`
 - `operation`
-- `entity` (reorder metrics: `category` / `image` / `tile`)
+- `entity` (reorder metrics: `tile`; `category` / `image` are historical, and unknown values are coerced to `other`)
 - `state` (reorder client-operation lifecycle states; bounded, coerced server-side)
 - `job_type`
 - `backup_type`

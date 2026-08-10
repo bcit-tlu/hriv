@@ -77,7 +77,7 @@ def observe_reorder_request(
 ) -> None:
     """Record one server-side reorder request observation."""
     if entity not in REORDER_ENTITIES:
-        entity = "category"
+        entity = "other"
     if outcome not in REORDER_OUTCOMES:
         outcome = "failure"
     _request_duration.labels(entity=entity).observe(duration_seconds)
