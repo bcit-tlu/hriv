@@ -257,6 +257,21 @@ describe('uploadTaskFile chunked retry and backoff', () => {
     })
   })
 
+  it('falls back to a status fetch when a 409 body lacks bytes_received', async () => {
+    const file = makeLargeFile(2 * CHUNK)
+    statusScripts.push({ status: 200, body: { bytes_received: 0, status: 'uploading' } })
+    chunkScripts.push({ kind: 'http', status: 409, body: '{"detail":"conflict"}' })
+    // Malformed 409 body forces an extra getUploadStatus round-trip.
+    statusScripts.push({ status: 200, body: { bytes_received: CHUNK, status: 'uploading' } })
+    chunkScripts.push({ kind: 'ok', bytes_received: 2 * CHUNK })
+    finalizeScripts.push({ status: 200, body: TASK_FIXTURE })
+
+    const task = await settle(uploadTaskFile(42, file))
+
+    expect(task).toEqual(TASK_FIXTURE)
+    expect(sentOffsets).toEqual(['0', String(CHUNK)])
+  })
+
   it('resyncs and re-finalizes once when finalize reports a size mismatch', async () => {
     const file = makeLargeFile(2 * CHUNK)
     statusScripts.push({ status: 200, body: { bytes_received: 0, status: 'uploading' } })
