@@ -88,6 +88,10 @@ function scopeKey(scope: ScopeId): string {
   return scope === null ? 'root' : String(scope)
 }
 
+function scopeFromKey(key: string): ScopeId {
+  return key === 'root' ? null : Number(key)
+}
+
 function sameOrder(a: TileOrderItemRef[], b: TileOrderItemRef[]): boolean {
   return a.length === b.length && a.every((ref, i) => ref.type === b[i].type && ref.id === b[i].id)
 }
@@ -167,11 +171,17 @@ export class TileOrderingCoordinator {
   }
 
   /**
-   * Drop cached order state for every clean scope so freshly fetched
-   * authoritative data wins (order changes made elsewhere — another
-   * client or another surface — become visible on the next refresh).
-   * Scopes holding local intent (pending, in-flight, conflict, or a
-   * retryable failure) are left untouched.
+   * Drop cached order state — including the revision (CAS token) — for
+   * every clean scope so freshly fetched authoritative data wins (order
+   * changes made elsewhere — another client or another surface — become
+   * visible on the next refresh). The revision must not be kept: other
+   * operations bump a scope's revision server-side without going through
+   * the coordinator (entity PATCHes that move a tile between scopes,
+   * Manage Categories reorders), so a cached token could produce a false
+   * "order changed elsewhere" conflict on the next drag. The next save
+   * re-seeds the revision with a GET. Scopes holding local intent
+   * (pending, in-flight, conflict, or a retryable failure) are left
+   * untouched.
    */
   releaseCleanScopes(marker?: number): void {
     let changed = false
@@ -274,6 +284,9 @@ export class TileOrderingCoordinator {
         status: 'dirty-while-saving',
         pending: order,
         displayOrder: order,
+        // A retained conflict-era server order no longer corresponds to this
+        // newest intent; drop it so "Use server order" can't adopt stale data.
+        conflictOrder: null,
       })
       return
     }
@@ -283,6 +296,7 @@ export class TileOrderingCoordinator {
       status: 'dirty',
       pending: order,
       displayOrder: order,
+      conflictOrder: null,
       error: null,
     })
     void this.flush(scope)
@@ -297,6 +311,28 @@ export class TileOrderingCoordinator {
   }
 
   /**
+   * True when a scope other than `scope` holds a failed save. Only the
+   * browsed scope renders a save-state indicator, so failures elsewhere
+   * (e.g. a category the user has navigated away from) need a cross-scope
+   * affordance — otherwise the order is never saved and the unload guard
+   * stays armed with nothing the user can act on.
+   */
+  hasFailedScopesOutside(scope: ScopeId): boolean {
+    const exclude = scopeKey(scope)
+    for (const [key, state] of this.scopes) {
+      if (key !== exclude && state.status === 'error') return true
+    }
+    return false
+  }
+
+  /** Retry every scope whose last save failed (see `hasFailedScopesOutside`). */
+  retryFailedScopes(): void {
+    for (const [key, state] of [...this.scopes]) {
+      if (state.status === 'error') this.retry(scopeFromKey(key))
+    }
+  }
+
+  /**
    * Resolve a conflict by adopting the server's authoritative order.
    * Local intent is replaced — the caller surfaces this as "Order changed
    * elsewhere" and the user explicitly accepts the refresh.
@@ -308,6 +344,10 @@ export class TileOrderingCoordinator {
     // user can still fall back to the server's order when the retry errors.
     if (state.status !== 'conflict' && !(state.status === 'error' && state.conflictOrder !== null))
       return
+    // The queued snapshot is discarded here, so its correlation ID and drag
+    // detail must not be inherited by the next (unrelated) operation.
+    this.pendingOperationIds.delete(scopeKey(scope))
+    this.dragContexts.delete(scopeKey(scope))
     this.setScope(scope, {
       ...state,
       status: 'saved',

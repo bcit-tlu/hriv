@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TileOrderingCoordinator } from '../src/tileOrdering'
 import { ApiError, type TileOrderItemRef, type TileOrderResponse } from '../src/api'
@@ -62,6 +62,10 @@ describe('TileOrderingCoordinator', () => {
     unsubscribe?.()
     unsubscribe = subscribeReorderDiagnostics((event) => events.push(event))
     mockedGet.mockResolvedValue(response(1, refs(1, 2, 3)))
+  })
+
+  afterEach(() => {
+    unsubscribe?.()
   })
 
   it('persists a reported order and applies the authoritative response', async () => {
@@ -209,6 +213,27 @@ describe('TileOrderingCoordinator', () => {
     state = coordinator.getScope(null)
     expect(state.status).toBe('saved')
     expect(state.revision).toBe(2)
+  })
+
+  it('surfaces and retries a failed save from outside its scope', async () => {
+    mockedPut.mockRejectedValueOnce(new ApiError(500, 'boom'))
+    mockedPut.mockResolvedValueOnce(response(2, refs(2, 1, 3)))
+
+    coordinator.reportOrder(7, refs(2, 1, 3))
+    await flushMicrotasks()
+    expect(coordinator.getScope(7).status).toBe('error')
+
+    // The failure is visible from any other scope (e.g. after navigating away)…
+    expect(coordinator.hasFailedScopesOutside(null)).toBe(true)
+    expect(coordinator.hasFailedScopesOutside(7)).toBe(false)
+
+    // …and retryFailedScopes recovers it without visiting the scope again.
+    coordinator.retryFailedScopes()
+    await flushMicrotasks()
+    const state = coordinator.getScope(7)
+    expect(state.status).toBe('saved')
+    expect(state.revision).toBe(2)
+    expect(coordinator.hasFailedScopesOutside(null)).toBe(false)
   })
 
   it('a failure does not roll back newer local changes', async () => {
@@ -416,7 +441,8 @@ describe('TileOrderingCoordinator', () => {
     expect(coordinator.getScope(7).status).toBe('saving')
 
     coordinator.releaseCleanScopes()
-    // Clean scope: cached order/revision dropped so fresh data wins.
+    // Clean scope: all cached state dropped (including the CAS revision,
+    // which other operations can invalidate server-side) so fresh data wins.
     expect(coordinator.getScope(null).displayOrder).toBeNull()
     expect(coordinator.getScope(null).revision).toBeNull()
     // In-flight scope: untouched.
@@ -492,6 +518,27 @@ describe('TileOrderingCoordinator', () => {
     // A later refresh whose marker postdates the save releases it normally.
     coordinator.releaseCleanScopes(coordinator.marker())
     expect(coordinator.getScope(null).displayOrder).toBeNull()
+  })
+
+  it('a released scope re-seeds its revision so external bumps never cause a false conflict', async () => {
+    mockedPut.mockResolvedValueOnce(response(2, refs(2, 1)))
+    coordinator.reportOrder(null, refs(2, 1))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('saved')
+
+    coordinator.releaseCleanScopes(coordinator.marker())
+    expect(coordinator.getScope(null).displayOrder).toBeNull()
+    expect(coordinator.getScope(null).revision).toBeNull()
+
+    // Simulate an external revision bump (e.g. a tile moved into this scope
+    // via an entity PATCH): the next save must re-seed via GET and submit
+    // against the server's current revision instead of a stale token.
+    mockedGet.mockResolvedValueOnce(response(5, refs(2, 1)))
+    mockedPut.mockResolvedValueOnce(response(6, refs(1, 2)))
+    coordinator.reportOrder(null, refs(1, 2))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('saved')
+    expect(mockedPut).toHaveBeenLastCalledWith(null, 5, refs(1, 2), expect.any(String))
   })
 
   it('queues drops that land during revision seeding', async () => {
