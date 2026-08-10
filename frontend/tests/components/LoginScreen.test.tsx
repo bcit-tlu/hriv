@@ -3,8 +3,8 @@
  *
  * Covers:
  * 1. OIDC-disabled: local credential form renders directly (no toggle)
- * 2. OIDC-enabled default view: only OIDC button + "Use a local user" link
- * 3. Toggle: clicking "Use a local user" reveals the local form
+ * 2. OIDC-enabled default view: only OIDC button + "Log in with a guest account" link
+ * 3. Toggle: clicking "Log in with a guest account" reveals the local form
  * 4. Toggle back: clicking "Sign in with BCIT" returns to OIDC view
  * 5. Local form submission calls onLogin with email & password
  * 6. Login error displays an alert
@@ -113,7 +113,7 @@ describe('LoginScreen', () => {
     it('does not show the OIDC button or toggle links', async () => {
       await renderOidcDisabled()
       expect(screen.queryByRole('button', { name: /Sign in with BCIT/i })).not.toBeInTheDocument()
-      expect(screen.queryByText('Use a local user')).not.toBeInTheDocument()
+      expect(screen.queryByText('Log in with a guest account')).not.toBeInTheDocument()
     })
 
     it('does not show "Sign in with ..." link in the local form', async () => {
@@ -130,9 +130,9 @@ describe('LoginScreen', () => {
       expect(screen.getByRole('button', { name: /Sign in with BCIT/i })).toBeInTheDocument()
     })
 
-    it('shows the "Use a local user" link', async () => {
+    it('shows the "Log in with a guest account" link', async () => {
       await renderOidcEnabled()
-      expect(screen.getByText('Use a local user')).toBeInTheDocument()
+      expect(screen.getByText('Log in with a guest account')).toBeInTheDocument()
     })
 
     it('does not show the local credential form', async () => {
@@ -145,11 +145,11 @@ describe('LoginScreen', () => {
   // ─── Toggle behaviour ─────────────────────────────────────────────
 
   describe('toggle between OIDC and local form', () => {
-    it('clicking "Use a local user" reveals the local form', async () => {
+    it('clicking "Log in with a guest account" reveals the local form', async () => {
       const user = userEvent.setup()
       await renderOidcEnabled()
 
-      await user.click(screen.getByText('Use a local user'))
+      await user.click(screen.getByText('Log in with a guest account'))
 
       expect(getUsernameField()).toBeInTheDocument()
       expect(getPasswordField()).toBeInTheDocument()
@@ -160,7 +160,7 @@ describe('LoginScreen', () => {
       const user = userEvent.setup()
       await renderOidcEnabled()
 
-      await user.click(screen.getByText('Use a local user'))
+      await user.click(screen.getByText('Log in with a guest account'))
 
       expect(screen.getByText('Sign in with BCIT')).toBeInTheDocument()
     })
@@ -170,7 +170,7 @@ describe('LoginScreen', () => {
       await renderOidcEnabled()
 
       // Toggle to local form
-      await user.click(screen.getByText('Use a local user'))
+      await user.click(screen.getByText('Log in with a guest account'))
       expect(getUsernameField()).toBeInTheDocument()
 
       // Toggle back to OIDC view
