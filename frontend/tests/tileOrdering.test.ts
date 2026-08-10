@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TileOrderingCoordinator } from '../src/tileOrdering'
 import { ApiError, type TileOrderItemRef, type TileOrderResponse } from '../src/api'
@@ -62,6 +62,10 @@ describe('TileOrderingCoordinator', () => {
     unsubscribe?.()
     unsubscribe = subscribeReorderDiagnostics((event) => events.push(event))
     mockedGet.mockResolvedValue(response(1, refs(1, 2, 3)))
+  })
+
+  afterEach(() => {
+    unsubscribe?.()
   })
 
   it('persists a reported order and applies the authoritative response', async () => {
@@ -352,9 +356,10 @@ describe('TileOrderingCoordinator', () => {
     expect(coordinator.getScope(7).status).toBe('saving')
 
     coordinator.releaseCleanScopes()
-    // Clean scope: cached order/revision dropped so fresh data wins.
+    // Clean scope: cached order dropped so fresh data wins, but the CAS
+    // revision is kept so the next save needs no seeding GET.
     expect(coordinator.getScope(null).displayOrder).toBeNull()
-    expect(coordinator.getScope(null).revision).toBeNull()
+    expect(coordinator.getScope(null).revision).toBe(2)
     // In-flight scope: untouched.
     expect(coordinator.getScope(7).status).toBe('saving')
     expect(coordinator.getScope(7).displayOrder).toEqual(refs(4, 3))
@@ -428,6 +433,25 @@ describe('TileOrderingCoordinator', () => {
     // A later refresh whose marker postdates the save releases it normally.
     coordinator.releaseCleanScopes(coordinator.marker())
     expect(coordinator.getScope(null).displayOrder).toBeNull()
+  })
+
+  it('a scope saved and then refreshed keeps its revision so the next save needs no seeding GET', async () => {
+    mockedPut.mockResolvedValueOnce(response(2, refs(2, 1)))
+    coordinator.reportOrder(null, refs(2, 1))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('saved')
+
+    coordinator.releaseCleanScopes(coordinator.marker())
+    expect(coordinator.getScope(null).displayOrder).toBeNull()
+    expect(coordinator.getScope(null).revision).toBe(2)
+
+    const seedingGetsBefore = mockedGet.mock.calls.length
+    mockedPut.mockResolvedValueOnce(response(3, refs(1, 2)))
+    coordinator.reportOrder(null, refs(1, 2))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('saved')
+    expect(mockedGet.mock.calls.length).toBe(seedingGetsBefore)
+    expect(mockedPut).toHaveBeenLastCalledWith(null, 2, refs(1, 2), expect.any(String))
   })
 
   it('queues drops that land during revision seeding', async () => {

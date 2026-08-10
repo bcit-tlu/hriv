@@ -155,8 +155,9 @@ the newest is submitted after the active request settles — never one request
 per drop.
 
 On success the coordinator stores the returned revision and applies the
-authoritative order directly (no category-tree refresh); if newer local
-changes accumulated it immediately saves again and does not show "saved". On
+authoritative order directly; the app then refreshes shared category/image
+data (via `onCommitted`) so other surfaces see the saved order. If newer
+local changes accumulated it immediately saves again and does not show "saved". On
 failure the newest local intent is retained and retryable. On 409 the
 authoritative order from the conflict body is offered to the user ("Order
 changed elsewhere" → Refresh); a 400 membership rejection is treated the
