@@ -340,9 +340,19 @@ async def ingest_telemetry_events(
             if from_category_label is not None:
                 extra["category.from_label"] = from_category_label
         if event.event == "reorder.operation":
-            state = _bounded(event.state, _REORDER_STATES) or "other"
-            extra["reorder.state"] = state
-            record_client_reorder_operation(state)
+            if event.state is None:
+                # Distinguish "client sent no state" from "client sent an
+                # unrecognized state" (the ``other`` bucket) and keep absent
+                # states out of the metric entirely.
+                extra["reorder.state"] = "missing"
+            else:
+                state = _bounded(event.state, _REORDER_STATES) or "other"
+                extra["reorder.state"] = state
+                # Synthetic-monitor traffic is excluded from the client
+                # lifecycle counter so dashboards reflect real users only;
+                # structured logs keep ``event.synthetic`` for both.
+                if not server_synthetic:
+                    record_client_reorder_operation(state)
             operation_id = sanitize_reorder_operation_id(event.operation_id)
             if operation_id is not None:
                 extra["reorder.operation_id"] = operation_id

@@ -49,7 +49,16 @@ share this bounded vocabulary:
 `queued`, `coalesced`, `conflicted`, and `stale_discarded` are defined now so
 dashboards and later sub-issues (#978–#980) can emit them without another
 contract change; the current UI emits `ignored`, `submitted`, `committed`,
-`failed`, and `abandoned`.
+`failed`, and `abandoned`. Both reorder surfaces are instrumented: the Browse
+grid (`SortableTileGrid`, full lifecycle) and the Manage Categories dialog
+(`useCategoryActions` inline reorders, `submitted`/`committed`/`failed`).
+
+Server-side, an event that omits `state` entirely is logged with
+`reorder.state: "missing"` and skipped by the client-operations counter, so
+the `other` bucket only ever means "unrecognized state" (vocabulary drift).
+Synthetic-monitor traffic is also excluded from
+`hriv_reorder_client_operations_total`; structured logs keep
+`event.synthetic` for both real and synthetic events.
 
 ## Diagnostic event fields
 

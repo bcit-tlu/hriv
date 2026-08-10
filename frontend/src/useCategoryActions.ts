@@ -10,6 +10,11 @@ import {
 } from './api'
 import { computeMoveRestrictionChange } from './categoryUtils'
 import { emitEvent } from './observability'
+import {
+  emitReorderDiagnostic,
+  newReorderOperationId,
+  reorderErrorCode,
+} from './reorderDiagnostics'
 import type { MoveRestrictionChange } from './categoryUtils'
 import { findImageInTree, findCategoryPath } from './treeUtils'
 import type { Category, ImageItem } from './types'
@@ -245,9 +250,36 @@ export function useCategoryActions({
         sort_order: number
       }>,
     ) => {
+      const operationId = newReorderOperationId()
+      const startedAt = performance.now()
+      emitReorderDiagnostic({
+        operationId,
+        state: 'submitted',
+        itemType: 'category',
+        categoryCount: items.length,
+        imageCount: 0,
+        queueDepth: 0,
+      })
       try {
-        await apiReorderCategories(items)
+        await apiReorderCategories(items, operationId)
+        emitReorderDiagnostic({
+          operationId,
+          state: 'committed',
+          itemType: 'category',
+          categoryCount: items.length,
+          imageCount: 0,
+          durationMs: performance.now() - startedAt,
+        })
       } catch (err) {
+        emitReorderDiagnostic({
+          operationId,
+          state: 'failed',
+          itemType: 'category',
+          categoryCount: items.length,
+          imageCount: 0,
+          durationMs: performance.now() - startedAt,
+          errorCode: reorderErrorCode(err),
+        })
         console.error('Failed to reorder categories', err)
         setErrorSnack(userMessage(err, 'Failed to reorder categories.'))
         throw err
@@ -258,9 +290,36 @@ export function useCategoryActions({
 
   const reorderImagesInline = useCallback(
     async (items: Array<{ id: number; sort_order: number }>) => {
+      const operationId = newReorderOperationId()
+      const startedAt = performance.now()
+      emitReorderDiagnostic({
+        operationId,
+        state: 'submitted',
+        itemType: 'image',
+        categoryCount: 0,
+        imageCount: items.length,
+        queueDepth: 0,
+      })
       try {
-        await apiReorderImages(items)
+        await apiReorderImages(items, operationId)
+        emitReorderDiagnostic({
+          operationId,
+          state: 'committed',
+          itemType: 'image',
+          categoryCount: 0,
+          imageCount: items.length,
+          durationMs: performance.now() - startedAt,
+        })
       } catch (err) {
+        emitReorderDiagnostic({
+          operationId,
+          state: 'failed',
+          itemType: 'image',
+          categoryCount: 0,
+          imageCount: items.length,
+          durationMs: performance.now() - startedAt,
+          errorCode: reorderErrorCode(err),
+        })
         console.error('Failed to reorder images', err)
         setErrorSnack(userMessage(err, 'Failed to reorder images.'))
         throw err

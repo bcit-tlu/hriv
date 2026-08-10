@@ -311,3 +311,66 @@ async def test_ingest_reorder_operation_bounds_untrusted_fields(
     assert getattr(record, "reorder.state") == "other"
     assert getattr(record, "reorder.item_type") == "other"
     assert "reorder.operation_id" not in record.__dict__
+
+
+async def test_ingest_reorder_operation_missing_state_skips_counter(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Absent states log as ``missing`` and never feed the metric."""
+    caplog.set_level("INFO", logger="app.routers.telemetry")
+    batch = TelemetryBatch(
+        events=[TelemetryEvent(event="reorder.operation", operation_id=OPERATION_ID)]
+    )
+    user = SimpleNamespace(id=7, role="instructor", metadata_={})
+
+    with (
+        _allow_rate_limit(),
+        patch("app.routers.telemetry.record_client_reorder_operation") as counter,
+    ):
+        await ingest_telemetry_events(
+            batch=batch,
+            request=_make_request(),
+            user=user,
+            db=_make_db(),
+            x_session_id="tab-1",
+        )
+
+    counter.assert_not_called()
+    records = [r for r in caplog.records if r.message == "frontend telemetry event"]
+    assert len(records) == 1
+    assert getattr(records[0], "reorder.state") == "missing"
+
+
+async def test_ingest_reorder_operation_synthetic_user_skips_counter(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Synthetic-monitor events stay in logs but out of the client counter."""
+    caplog.set_level("INFO", logger="app.routers.telemetry")
+    batch = TelemetryBatch(
+        events=[
+            TelemetryEvent(
+                event="reorder.operation",
+                operation_id=OPERATION_ID,
+                state="committed",
+            )
+        ]
+    )
+    user = SimpleNamespace(id=7, role="instructor", metadata_={"synthetic": True})
+
+    with (
+        _allow_rate_limit(),
+        patch("app.routers.telemetry.record_client_reorder_operation") as counter,
+    ):
+        await ingest_telemetry_events(
+            batch=batch,
+            request=_make_request(),
+            user=user,
+            db=_make_db(),
+            x_session_id="tab-1",
+        )
+
+    counter.assert_not_called()
+    records = [r for r in caplog.records if r.message == "frontend telemetry event"]
+    assert len(records) == 1
+    assert getattr(records[0], "reorder.state") == "committed"
+    assert getattr(records[0], "event.synthetic") is True

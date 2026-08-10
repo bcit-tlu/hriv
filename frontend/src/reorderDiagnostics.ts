@@ -13,6 +13,7 @@
  * that unrecognized states are coerced to server-side.
  */
 
+import { ApiError } from './api'
 import { emitEvent } from './observability'
 import type { TelemetryErrorCode } from './observability'
 
@@ -68,6 +69,17 @@ export interface ReorderDiagnosticEvent {
 type ReorderDiagnosticListener = (event: ReorderDiagnosticEvent) => void
 
 const listeners = new Set<ReorderDiagnosticListener>()
+
+/**
+ * Map a persistence failure to the bounded telemetry error vocabulary; raw
+ * exception text stays in the console, never in ingested telemetry.
+ */
+export function reorderErrorCode(err: unknown): TelemetryErrorCode {
+  if (err instanceof ApiError) {
+    return err.status >= 500 ? 'api_http_5xx' : 'api_http_4xx'
+  }
+  return 'api_network_error'
+}
 
 /** Generate a new correlation ID for one ordering operation. */
 export function newReorderOperationId(): string {
