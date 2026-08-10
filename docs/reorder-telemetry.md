@@ -147,7 +147,11 @@ IDs never appear as metric labels.
 3. **Open the trace.** In Tempo, search
    `{ span.reorder.operation_id = "<id>" }` to find the `tile.reorder`
    spans with their database child spans.
-4. **Interpret the outcome.** `abandoned` means the grid unmounted
+4. **Interpret the outcome.** `abandoned` appears only in historical
+   (pre-#998) data — the coordinator is a module-level singleton that
+   survives unmount, so current operations always end in a terminal
+   `committed` / `failed` / `conflicted`. In that historical data,
+   `abandoned` means the grid unmounted
    (navigation) while the save was active, so the outcome was unobservable to
    the user. For in-app (SPA) navigation the in-flight request keeps running,
    so the same operation usually also emits a terminal `committed` / `failed`
