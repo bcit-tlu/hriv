@@ -15,6 +15,10 @@ export interface ReorderStatusIndicatorProps {
   onRetry: () => void
   onAcceptServerOrder: () => void
   onReapplyLocalOrder: () => void
+  /** A scope other than the browsed one holds a failed save. */
+  otherScopesFailed?: boolean
+  /** Retry the failed saves of every scope, including ones not browsed. */
+  onRetryFailedScopes?: () => void
 }
 
 /**
@@ -28,8 +32,27 @@ export default function ReorderStatusIndicator({
   onRetry,
   onAcceptServerOrder,
   onReapplyLocalOrder,
+  otherScopesFailed = false,
+  onRetryFailedScopes,
 }: ReorderStatusIndicatorProps) {
-  if (status === 'idle') return null
+  // A failure in a category the user has navigated away from is otherwise
+  // invisible and unrecoverable, while still arming the unload guard.
+  if (status === 'idle') {
+    if (!otherScopesFailed) return null
+    return (
+      <Box
+        role="status"
+        aria-label="Reorder save state"
+        sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, minHeight: 28 }}
+      >
+        <ErrorOutlineIcon color="error" sx={{ fontSize: 16 }} />
+        <Typography variant="caption">Could not save order in another category</Typography>
+        <Button size="small" onClick={onRetryFailedScopes}>
+          Retry
+        </Button>
+      </Box>
+    )
+  }
 
   const content = (() => {
     switch (status) {
