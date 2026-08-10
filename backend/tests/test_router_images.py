@@ -814,10 +814,21 @@ async def test_replace_image_applies_metadata_updates(
     background_tasks = MagicMock()
     file = _make_upload_file(filename="updated.png", content_type="image/png")
 
+    # The revision lock must be taken while the session is still clean
+    # (revision-then-rows lock order, docs/tile-ordering.md): no image
+    # field may have been assigned before bump_scopes runs.
+    state_at_bump: dict[str, object] = {}
+
+    async def record_state(_db: object, _scopes: object) -> None:
+        state_at_bump["name"] = img.name
+        state_at_bump["category_id"] = img.category_id
+
     with patch.dict("sys.modules", {
         "app.processing": MagicMock(process_replace_image=MagicMock()),
         "app.worker": MagicMock(enqueue_replace_image=mock_enqueue),
-    }), patch("app.routers.images.bump_scopes", new=AsyncMock()) as bump:
+    }), patch(
+        "app.routers.images.bump_scopes", new=AsyncMock(side_effect=record_state)
+    ) as bump:
         result = await replace_image(
             image_id=1,
             file=file,
@@ -845,6 +856,8 @@ async def test_replace_image_applies_metadata_updates(
     # Category changed 7 -> None: both scopes' revisions must be bumped.
     bump.assert_awaited_once()
     assert bump.await_args.args[1] == {7, 0}
+    # Lock taken before any row mutation (clean session at bump time).
+    assert state_at_bump == {"name": "old-name", "category_id": 7}
 
 
 @patch("os.path.getsize", return_value=1024)

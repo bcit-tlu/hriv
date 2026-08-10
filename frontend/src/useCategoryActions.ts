@@ -271,6 +271,14 @@ export function useCategoryActions({
         // is stale and would make the reportOrder below falsely 409.
         if (oldParentId !== undefined) {
           tileOrderingCoordinator.invalidateRevision(oldParentId)
+        } else {
+          // Unknown source scope (stale tree): the PATCH still bumped it
+          // server-side, so invalidate every scope we are about to report —
+          // over-invalidating only costs a re-seeding GET, while a missed
+          // scope would 409 with a token the client knows is stale.
+          for (const { scope } of scopes) {
+            tileOrderingCoordinator.invalidateRevision(scope)
+          }
         }
         tileOrderingCoordinator.invalidateRevision(move.newParentId)
       }
