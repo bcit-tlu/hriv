@@ -1,6 +1,7 @@
 import type { Category, ImageItem } from '../types'
 import type { TileOrderItemRef } from '../api'
 import type { FlatCategoryOption } from './categoryOptionUtils'
+import type { ReorderDragContext } from '../tileOrdering'
 
 export type FlatOption = FlatCategoryOption
 
@@ -14,6 +15,13 @@ export interface ParentMove {
 export interface ScopeOrder {
   scope: number | null
   order: TileOrderItemRef[]
+  /**
+   * Detail of the drag that produced this scope's order, for lifecycle
+   * telemetry (docs/reorder-telemetry.md). Present on scopes the dragged
+   * category belongs to; an index of -1 marks the side of a cross-parent
+   * move where the category is absent (left the scope / not yet a member).
+   */
+  dragContext?: ReorderDragContext
 }
 
 /** Categories whose parent differs between the old and the dropped list. */
@@ -129,6 +137,7 @@ export function interleavedTileOrders(
   oldCatList: FlatOption[],
   imagesByParent: Map<string, ImageItem[]>,
   displayOrderFor?: (parentId: number | null) => TileOrderItemRef[] | null,
+  draggedCategoryId?: number,
 ): ScopeOrder[] {
   // Group categories by parent (preserving list order)
   const groupByParent = (list: FlatOption[]) => {
@@ -236,7 +245,22 @@ export function interleavedTileOrders(
     }
 
     if (newOrder.length === 0 || sameRefs(template, newOrder)) continue
-    scopes.push({ scope: parentId, order: newOrder })
+    const scopeOrder: ScopeOrder = { scope: parentId, order: newOrder }
+    if (draggedCategoryId !== undefined) {
+      const isDragged = (ref: TileOrderItemRef) =>
+        ref.type === 'category' && ref.id === draggedCategoryId
+      const fromIndex = template.findIndex(isDragged)
+      const toIndex = newOrder.findIndex(isDragged)
+      if (fromIndex !== -1 || toIndex !== -1) {
+        scopeOrder.dragContext = {
+          itemType: 'category',
+          itemId: draggedCategoryId,
+          fromIndex,
+          toIndex,
+        }
+      }
+    }
+    scopes.push(scopeOrder)
   }
 
   return scopes

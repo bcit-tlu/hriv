@@ -177,6 +177,53 @@ describe('interleavedTileOrders', () => {
     ])
   })
 
+  it('annotates the dragged category with a drag context for telemetry', () => {
+    const oldCats = [
+      makeFlatOption({ id: 1, parentId: null }),
+      makeFlatOption({ id: 2, parentId: null }),
+    ]
+    const newCats = [
+      makeFlatOption({ id: 2, parentId: null }),
+      makeFlatOption({ id: 1, parentId: null }),
+    ]
+    const scopes = interleavedTileOrders(newCats, oldCats, new Map(), undefined, 2)
+    expect(scopes[0].dragContext).toEqual({
+      itemType: 'category',
+      itemId: 2,
+      fromIndex: 1,
+      toIndex: 0,
+    })
+  })
+
+  it('marks the absent side of a cross-parent move with index -1', () => {
+    const oldCats = [
+      makeFlatOption({ id: 1, parentId: null }),
+      makeFlatOption({ id: 2, parentId: null }),
+    ]
+    const newCats = [
+      makeFlatOption({ id: 1, parentId: null }),
+      makeFlatOption({ id: 2, parentId: 1 }),
+    ]
+    const imagesByParent = new Map([['null', [makeImage({ id: 10, sortOrder: 1 })]]])
+    const scopes = interleavedTileOrders(newCats, oldCats, imagesByParent, undefined, 2)
+
+    const root = scopes.find((s) => s.scope === null)!
+    expect(root.dragContext).toEqual({
+      itemType: 'category',
+      itemId: 2,
+      fromIndex: 2,
+      toIndex: -1,
+    })
+
+    const dest = scopes.find((s) => s.scope === 1)!
+    expect(dest.dragContext).toEqual({
+      itemType: 'category',
+      itemId: 2,
+      fromIndex: -1,
+      toIndex: 0,
+    })
+  })
+
   it('omits unchanged sibling scopes', () => {
     const oldCats = [
       makeFlatOption({ id: 1, parentId: null }),
