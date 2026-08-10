@@ -247,6 +247,13 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
     categoriesRefreshAbortRef.current?.abort()
     const ac = new AbortController()
     categoriesRefreshAbortRef.current = ac
+    // Take ownership of the visible loading flag: aborting a visible load
+    // must not let it report "loaded" while this refresh is still fetching —
+    // the aborted load committed no data, so consumers (empty state,
+    // deep-link restore) would briefly see loaded-and-empty. The claimed
+    // generation makes the aborted load skip its cleanup; the flag is
+    // cleared here when the refresh settles instead.
+    const visibleGen = ++visibleCategoriesLoadGen.current
     // Force bypass the browser HTTP cache so we always get the
     // freshly-committed sort_order values after a reorder.  Without
     // this the browser may serve a stale 304-backed response whose
@@ -279,10 +286,11 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
     })()
     const record = { gen, promise: run, settled: false }
     categoriesRefreshRef.current = record
-    run.then(
-      () => (record.settled = true),
-      () => (record.settled = true),
-    )
+    const settle = () => {
+      record.settled = true
+      if (visibleGen === visibleCategoriesLoadGen.current) setCategoriesLoading(false)
+    }
+    run.then(settle, settle)
     return run
   }, [])
 
