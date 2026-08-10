@@ -33,14 +33,11 @@ beforeEach(() => {
   resetCategoryTreeExpansionPreferencesForTests()
 })
 
-afterEach(() => {
-  vi.restoreAllMocks()
-})
-
 // The dialog reads per-scope display orders from the module-singleton
 // coordinator during render; reset it so no test's leftover scope state
 // can make another test's rendered sibling order order-dependent.
 afterEach(() => {
+  vi.restoreAllMocks()
   tileOrderingCoordinator.reset()
 })
 
