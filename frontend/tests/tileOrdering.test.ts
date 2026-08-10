@@ -104,6 +104,15 @@ describe('TileOrderingCoordinator', () => {
     expect(state.displayOrder).toEqual(refs(3, 2, 1))
     expect(mockedPut).toHaveBeenCalledTimes(2)
     expect(mockedPut).toHaveBeenLastCalledWith(null, 2, refs(3, 2, 1), expect.any(String))
+
+    // The queued snapshot's operation ID carries through to its submission
+    // and terminal event, so the lifecycle correlates end to end.
+    const queuedId = events.find((e) => e.state === 'queued')?.operationId
+    const submittedIds = events.filter((e) => e.state === 'submitted').map((e) => e.operationId)
+    const committedIds = events.filter((e) => e.state === 'committed').map((e) => e.operationId)
+    expect(queuedId).toBeDefined()
+    expect(submittedIds).toContain(queuedId)
+    expect(committedIds).toContain(queuedId)
   })
 
   it('coalesces many rapid changes to the newest snapshot', async () => {
