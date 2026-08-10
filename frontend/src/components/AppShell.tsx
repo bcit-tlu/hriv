@@ -59,6 +59,7 @@ import FooterBar from './FooterBar'
 import AnnouncementBanner from './AnnouncementBanner'
 import type { Role } from '../types'
 import { useColorMode } from '../useColorMode'
+import { useIsMobile } from '../useIsMobile'
 import {
   appBarAvatarSx,
   appBarClusterGap,
@@ -154,7 +155,7 @@ export default function AppShell(props: AppShellProps) {
   // narrow to show them inline. Guarded by tab count so a single-tab
   // (student) layout keeps its inline Home tab instead of a lone hamburger.
   const isCompactViewport = useMediaQuery(theme.breakpoints.down('md'))
-  const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
+  const isMobile = useIsMobile()
   const navTabCount = 1 + (canEditContent ? 2 : 0) + (canManageUsers ? 2 : 0)
   const collapseNav = isCompactViewport && navTabCount > 1
   // Reset the breakpoint-specific menus on a viewport transition so a resize

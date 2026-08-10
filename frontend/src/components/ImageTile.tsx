@@ -6,13 +6,12 @@ import CardContent from '@mui/material/CardContent'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import useMediaQuery from '@mui/material/useMediaQuery'
-import { useTheme } from '@mui/material/styles'
 import EditIcon from '@mui/icons-material/Edit'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import type { ImageItem } from '../types'
 import { useColorMode } from '../useColorMode'
 import { getVisibilityColors } from '../theme'
+import { useIsMobile } from '../useIsMobile'
 
 interface ImageTileProps {
   image: ImageItem
@@ -30,8 +29,7 @@ export default function ImageTile({
 }: ImageTileProps) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
-  const muiTheme = useTheme()
-  const isMobile = useMediaQuery(muiTheme.breakpoints.down('sm'))
+  const isMobile = useIsMobile()
   return (
     <Card
       elevation={2}

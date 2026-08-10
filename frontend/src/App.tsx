@@ -21,8 +21,8 @@ import Snackbar from '@mui/material/Snackbar'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
-import useMediaQuery from '@mui/material/useMediaQuery'
-import { alpha, useTheme, type Theme } from '@mui/material/styles'
+import { alpha, type Theme } from '@mui/material/styles'
+import { useIsMobile } from './useIsMobile'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
 import MenuBookIcon from '@mui/icons-material/MenuBook'
 import NotesIcon from '@mui/icons-material/Notes'
@@ -207,8 +207,7 @@ export default function App() {
     currentCategories,
   } = useBrowseData({ path, currentUser })
 
-  const muiTheme = useTheme()
-  const isMobile = useMediaQuery(muiTheme.breakpoints.down('sm'))
+  const isMobile = useIsMobile()
   // The gestures, control placement and mini-map corner all differ between the
   // desktop (mouse + OSD button cluster, mini-map bottom-right) and mobile
   // (cooperative two-finger gestures + custom toolbar pill, mini-map top-left)

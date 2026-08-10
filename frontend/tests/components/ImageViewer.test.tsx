@@ -188,25 +188,27 @@ describe('ImageViewer OpenSeadragon options', () => {
       expect(screen.getByText(HINT).parentElement).toHaveStyle({ pointerEvents: 'none' })
     })
 
-    // The pill animates between states via a horizontal Collapse, which keeps
-    // the tools mounted. MUI marks the closed wrapper `visibility: hidden`, so
-    // they stay out of the tab order rather than becoming invisible tab stops.
-    it('animates the tool group and keeps it collapsed-but-mounted', async () => {
+    // The pill starts collapsed (just the toggle) so it stays out of the image,
+    // and expands on tap. It animates via a horizontal Collapse that keeps the
+    // tools mounted, so they're present in the DOM even while hidden.
+    it('starts collapsed and expands on tap', async () => {
       const user = userEvent.setup()
       render(<ImageViewer tileSources="/tiles.dzi" />)
 
-      const collapse = document.querySelector('.MuiCollapse-root')
-      expect(collapse).not.toBeNull()
-      // Starts expanded.
-      expect(collapse).not.toHaveClass('MuiCollapse-hidden')
+      // Starts collapsed: the toggle offers to open, and the group is hidden…
+      expect(screen.getByRole('button', { name: 'Show tools' })).toBeInTheDocument()
+      expect(document.querySelector('.MuiCollapse-root')).toHaveClass('MuiCollapse-hidden')
+      // …but the tools are still mounted (hidden via `visibility`, so they're
+      // absent from the a11y tree — query the DOM directly rather than by role).
+      expect(document.querySelector('[aria-label="Zoom in"]')).not.toBeNull()
 
-      await user.click(screen.getByRole('button', { name: 'Hide tools' }))
+      await user.click(screen.getByRole('button', { name: 'Show tools' }))
 
       await waitFor(() => {
-        expect(document.querySelector('.MuiCollapse-root')).toHaveClass('MuiCollapse-hidden')
+        expect(document.querySelector('.MuiCollapse-root')).not.toHaveClass('MuiCollapse-hidden')
       })
-      // The toggle itself remains, now offering to re-open.
-      expect(screen.getByRole('button', { name: 'Show tools' })).toBeInTheDocument()
+      // The toggle now offers to close again.
+      expect(screen.getByRole('button', { name: 'Hide tools' })).toBeInTheDocument()
     })
 
     it('hides the native control cluster in favour of the custom pill', () => {
@@ -219,8 +221,13 @@ describe('ImageViewer OpenSeadragon options', () => {
     // is fiddly on a touch screen and conflicts with the two-finger gestures, so
     // it's deliberately desktop-only (its OSD button is added only when
     // !isMobile). Guards against the measurement tools creeping back onto mobile.
-    it('offers zoom / fit / rotate on the pill but not the measurement tools', () => {
+    it('offers zoom / fit / rotate on the pill but not the measurement tools', async () => {
+      const user = userEvent.setup()
       render(<ImageViewer tileSources="/tiles.dzi" />)
+
+      // Expand the pill first — it starts collapsed, which hides the tools from
+      // the a11y tree via `visibility: hidden`.
+      await user.click(screen.getByRole('button', { name: 'Show tools' }))
 
       // Kept — the everyday view controls.
       expect(screen.getByRole('button', { name: 'Zoom in' })).toBeInTheDocument()

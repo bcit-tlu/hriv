@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
-import { alpha, useTheme } from '@mui/material/styles'
-import useMediaQuery from '@mui/material/useMediaQuery'
+import { alpha } from '@mui/material/styles'
 import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
 import CardContent from '@mui/material/CardContent'
@@ -19,6 +18,7 @@ import VisibilityOff from '@mui/icons-material/VisibilityOff'
 
 import type { Category, Group, ImageItem, Program } from '../types'
 import { useColorMode } from '../useColorMode'
+import { useIsMobile } from '../useIsMobile'
 import { getVisibilityColors } from '../theme'
 import { getInheritedRestrictionSx } from '../restrictionStyles'
 import CardImagePickerModal from './CardImagePickerModal'
@@ -88,8 +88,7 @@ export default function CategoryTile({
 }: CategoryTileProps) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
-  const muiTheme = useTheme()
-  const isMobile = useMediaQuery(muiTheme.breakpoints.down('sm'))
+  const isMobile = useIsMobile()
   const [pickerOpen, setPickerOpen] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const dragCounter = useRef(0)

@@ -4,8 +4,6 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import Divider from '@mui/material/Divider'
-import useMediaQuery from '@mui/material/useMediaQuery'
-import { useTheme } from '@mui/material/styles'
 import Dialog from '@mui/material/Dialog'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
@@ -21,6 +19,7 @@ import AnnouncementBanner from './AnnouncementBanner'
 import ColorModeToggle from './ColorModeToggle'
 import { getOidcLoginUrl } from '../api'
 import { useAuth } from '../useAuth'
+import { useIsMobile } from '../useIsMobile'
 import FooterBar from './FooterBar'
 
 interface LoginScreenProps {
@@ -61,8 +60,7 @@ export default function LoginScreen({
   const [showLocalForm, setShowLocalForm] = useState(false)
   const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false)
   const { oidcError, clearOidcError } = useAuth()
-  const muiTheme = useTheme()
-  const isMobile = useMediaQuery(muiTheme.breakpoints.down('sm'))
+  const isMobile = useIsMobile()
 
   const oidcErrorMessage = oidcError
     ? (OIDC_ERROR_MESSAGES[oidcError] ?? 'Sign-in failed. Please try again.')

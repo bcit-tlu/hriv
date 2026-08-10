@@ -6,8 +6,8 @@ import Fade from '@mui/material/Fade'
 import Typography from '@mui/material/Typography'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
-import useMediaQuery from '@mui/material/useMediaQuery'
 import { useTheme } from '@mui/material/styles'
+import { useIsMobile } from '../useIsMobile'
 import TuneIcon from '@mui/icons-material/Tune'
 import ZoomInIcon from '@mui/icons-material/ZoomIn'
 import ZoomOutIcon from '@mui/icons-material/ZoomOut'
@@ -81,13 +81,15 @@ export default function ImageViewer({
   onCanvasEditModeChange,
 }: ImageViewerProps) {
   const theme = useTheme()
-  const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
+  const isMobile = useIsMobile()
   const containerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<OpenSeadragon.Viewer | null>(null)
   // Mobile in-image toolbar pill. OpenSeadragon's own control cluster is
   // suppressed on phones (showNavigationControl below) and replaced by the
   // React pill rendered at the bottom of this component, per the design.
-  const [pillExpanded, setPillExpanded] = useState(true)
+  // Starts collapsed (just the toggle) so it stays out of the image until the
+  // user opens it.
+  const [pillExpanded, setPillExpanded] = useState(false)
   // "Use two fingers" hint, shown when a single finger lands on the image.
   const [showGestureHint, setShowGestureHint] = useState(false)
   const hintTimerRef = useRef<number | null>(null)
