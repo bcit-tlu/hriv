@@ -98,8 +98,12 @@ function fetchResponse(status: number, body: unknown) {
 
 const mockFetch = vi.fn((url: string, init?: RequestInit) => {
   const method = init?.method ?? 'GET'
-  const queue = url.endsWith('/upload/finalize') ? finalizeScripts : statusScripts
-  const script = queue.shift()
+  const queue = url.endsWith('/upload/finalize')
+    ? finalizeScripts
+    : url.endsWith('/upload')
+      ? statusScripts
+      : null
+  const script = queue?.shift()
   if (!script) {
     // A thrown error here would be wrapped into a retryable ApiTransportError
     // by request(); record the drift and fail deterministically instead.
