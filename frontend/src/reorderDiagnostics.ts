@@ -109,6 +109,10 @@ export function emitReorderDiagnostic(event: ReorderDiagnosticEvent): void {
     state: event.state,
     item_type: event.itemType,
     category_id: event.scopeCategoryId ?? undefined,
+    // Type-agnostic dragged-tile ID so the moved item stays identifiable even
+    // for `mixed` scopes and category moves; `image_id` is kept additionally
+    // for image moves so the ingestion display-name lookup still resolves.
+    item_id: event.itemId,
     image_id: event.itemType === 'image' ? event.itemId : undefined,
     from_index: event.fromIndex,
     to_index: event.toIndex,

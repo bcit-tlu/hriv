@@ -118,6 +118,7 @@ interface TelemetryEventBase {
   operation_id?: string
   state?: string
   item_type?: 'category' | 'image' | 'mixed'
+  item_id?: number
   from_index?: number
   to_index?: number
   category_count?: number

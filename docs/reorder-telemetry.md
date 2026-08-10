@@ -58,7 +58,10 @@ contract change; the current UI emits `ignored`, `submitted`, `committed`,
 
 - `operation_id`, `state`, `item_type` (`category`/`image`/`mixed`)
 - `category_id` (ordering scope: parent category, absent for the root scope)
-- `image_id` (moved image, for single image moves)
+- `item_id` (the dragged tile's ID, regardless of `item_type` — including
+  `mixed` scopes and category moves)
+- `image_id` (moved image, for single image moves; also drives the ingestion
+  display-name lookup)
 - `from_index`, `to_index` (original and projected indices)
 - `category_count`, `image_count` (items in the persisted scope)
 - `queue_depth` (drops waiting behind the in-flight save)

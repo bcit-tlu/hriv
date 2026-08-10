@@ -179,6 +179,7 @@ class TelemetryEvent(BaseModel):
     operation_id: str | None = Field(None, max_length=64)
     state: str | None = Field(None, max_length=32)
     item_type: str | None = Field(None, max_length=16)
+    item_id: int | None = None
     from_index: int | None = None
     to_index: int | None = None
     category_count: int | None = None
@@ -348,6 +349,8 @@ async def ingest_telemetry_events(
             item_type = _bounded(event.item_type, _REORDER_ITEM_TYPES)
             if item_type is not None:
                 extra["reorder.item_type"] = item_type
+            if event.item_id is not None:
+                extra["reorder.item_id"] = event.item_id
             if event.from_index is not None:
                 extra["reorder.from_index"] = event.from_index
             if event.to_index is not None:
