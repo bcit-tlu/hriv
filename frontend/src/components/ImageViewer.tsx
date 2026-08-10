@@ -1059,7 +1059,9 @@ export default function ImageViewer({
     measure()
 
     if (typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(measure)
+    const observer = new ResizeObserver(() => {
+      measure()
+    })
     observer.observe(row)
     return () => observer.disconnect()
   }, [isMobile, viewerInstance])
