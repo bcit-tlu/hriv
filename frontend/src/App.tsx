@@ -982,7 +982,9 @@ export default function App() {
   // reopened dialog should start without a stale save-state readout.
   useEffect(() => {
     if (dialogOpen || manageReorderScopes === null) return
+    let cancelled = false
     const clearWhenSettled = () => {
+      if (cancelled) return
       const settled = manageReorderScopes.every((scope) => {
         const status = tileOrderingCoordinator.getScope(scope).status
         return status === 'saved' || status === 'idle'
@@ -990,7 +992,11 @@ export default function App() {
       if (settled) setManageReorderScopes(null)
     }
     queueMicrotask(clearWhenSettled)
-    return tileOrderingCoordinator.subscribe(clearWhenSettled)
+    const unsubscribe = tileOrderingCoordinator.subscribe(clearWhenSettled)
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
   }, [dialogOpen, manageReorderScopes, setManageReorderScopes])
 
   const visibleJobs = getVisibleJobs({
