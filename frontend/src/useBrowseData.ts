@@ -199,6 +199,9 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
   }, [])
 
   const refreshCategories = useCallback(async (): Promise<Category[]> => {
+    // Ordering is load-bearing: invalidate the background poll FIRST (its
+    // aborted read has already claimed a generation), THEN claim ours, so
+    // this refresh is guaranteed to hold the newest generation and commit.
     invalidateRef.current?.()
     // Authoritative refresh: claim the newest generation and abort any older
     // read for the same data.

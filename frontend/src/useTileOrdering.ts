@@ -31,6 +31,11 @@ export interface UseTileOrderingResult {
   retry: () => void
   /** Adopt the server's order after a conflict. */
   acceptServerOrder: () => void
+  /**
+   * True while an authoritative server order is retained (a conflict, or a
+   * failed "keep my order" retry), so the UI can offer accepting it.
+   */
+  serverOrderAvailable: boolean
   /** Reapply the newest local intent against the server's current revision. */
   reapplyLocalOrder: () => void
 }
@@ -57,6 +62,7 @@ export function useTileOrdering(scope: ScopeId): UseTileOrderingResult {
   return {
     status: state.status,
     displayOrder: state.displayOrder,
+    serverOrderAvailable: state.conflictOrder !== null,
     reportOrder: useCallback(
       (order: TileOrderItemRef[], generation?: number, dragContext?: ReorderDragContext) =>
         tileOrderingCoordinator.reportOrder(scope, order, generation, dragContext),
