@@ -796,6 +796,49 @@ describe('useBrowseData', () => {
       expect(result.current.categories[0].label).toBe('Silent')
     })
 
+    it('a refresh that aborts a visible load keeps the loading flag until the refresh settles', async () => {
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+      await triggerInitialLoad(result)
+
+      // A visible foreground load is in flight (its request never resolves —
+      // the refresh below aborts it).
+      mockFetchCategoryTree.mockImplementationOnce(
+        (init?: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () =>
+              reject(new DOMException('The operation was aborted.', 'AbortError')),
+            )
+          }),
+      )
+      let visibleDone!: Promise<boolean>
+      act(() => {
+        visibleDone = result.current.loadCategories()
+      })
+      expect(result.current.categoriesLoading).toBe(true)
+
+      // An authoritative refresh aborts the visible load and stays in flight;
+      // the aborted load must NOT clear the loading flag (no data landed yet).
+      let resolveRefresh!: (v: ApiCategoryTree[]) => void
+      mockFetchCategoryTree.mockImplementationOnce(() => new Promise((r) => (resolveRefresh = r)))
+      let refreshDone!: Promise<Category[]>
+      act(() => {
+        refreshDone = result.current.refreshCategories()
+      })
+      await act(async () => {
+        await visibleDone
+      })
+      expect(result.current.categoriesLoading).toBe(true)
+
+      // The refresh settles: data commits and the flag clears.
+      await act(async () => {
+        resolveRefresh([makeApiTree({ id: 3, label: 'Refreshed' })])
+        await refreshDone
+      })
+      expect(result.current.categoriesLoading).toBe(false)
+      expect(result.current.categories[0].label).toBe('Refreshed')
+    })
+
     it('treats an aborted request as control flow, not a user-facing failure', async () => {
       const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
       const deps = makeDeps({ currentUser: makeUser() })
