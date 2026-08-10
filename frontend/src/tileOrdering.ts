@@ -268,9 +268,10 @@ export class TileOrderingCoordinator {
     // server change is never silently overwritten (docs/tile-ordering.md).
     if (state.status === 'conflict') {
       const key = scopeKey(scope)
-      // flush() consumed the scope's operation ID at submission, so the
-      // first drop after a 409 starts a fresh operation and emits `queued`;
-      // later drops during the same unresolved conflict coalesce into it.
+      // With no open queued operation for the scope, a drop mints a fresh
+      // operation and emits `queued`; when one is still open (minted while
+      // the conflicting save was in flight, or by an earlier drop during
+      // this conflict) the drop coalesces into it.
       const existingId = this.pendingOperationIds.get(key)
       const operationId = existingId ?? newReorderOperationId()
       this.pendingOperationIds.set(key, operationId)
