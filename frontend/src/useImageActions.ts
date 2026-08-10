@@ -9,6 +9,19 @@ import type { ApiImage } from './api'
 import type { ImageFormData, ReplaceImageData } from './components/EditImageModal'
 import type { Category, ImageItem } from './types'
 import { findCategoryPath, findImageInTree, updateImageInTree } from './treeUtils'
+import { tileOrderingCoordinator, type ScopeId } from './tileOrdering'
+
+// A category change via the edit modal bumps the tile-order revision of both
+// affected scopes server-side, so any revision the ordering coordinator still
+// caches for them is stale and would make the next reorder falsely 409.
+function invalidateMovedImageScopes(
+  oldCategoryId: ScopeId,
+  newCategoryId: number | null | undefined,
+): void {
+  if (newCategoryId === undefined || newCategoryId === oldCategoryId) return
+  tileOrderingCoordinator.invalidateRevision(oldCategoryId)
+  tileOrderingCoordinator.invalidateRevision(newCategoryId)
+}
 
 export interface UseImageActionsDeps {
   categories: Category[]
@@ -159,6 +172,7 @@ export function useImageActions(deps: UseImageActionsDeps) {
       if (!browseEditImage) return
       try {
         await apiUpdateImage(browseEditImage.id, data)
+        invalidateMovedImageScopes(browseEditImage.categoryId ?? null, data.category_id)
         setBrowseEditImage(null)
         await loadCategories()
         loadUncategorizedImages()
@@ -175,6 +189,7 @@ export function useImageActions(deps: UseImageActionsDeps) {
       if (!selectedImage) return
       try {
         const updated = await apiUpdateImage(selectedImage.id, data)
+        invalidateMovedImageScopes(selectedImage.categoryId ?? null, data.category_id)
         setSelectedImage({
           id: updated.id,
           name: updated.name,
