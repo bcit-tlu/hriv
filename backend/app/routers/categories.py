@@ -419,10 +419,15 @@ async def update_category(
     # Revision locks are taken before any row mutation, matching
     # PUT /api/tile-order's revision-then-rows lock order
     # (docs/tile-ordering.md).
+    # Only an actual value change invalidates: edit dialogs echo the current
+    # parent_id/sort_order back on every save, and bumping on presence alone
+    # would 409 clients whose cached revision is still accurate.
     ordering_fields = body.model_dump(exclude_unset=True)
-    if "sort_order" in ordering_fields or "parent_id" in ordering_fields:
+    sort_changed = "sort_order" in ordering_fields and ordering_fields["sort_order"] != cat.sort_order
+    parent_changed = "parent_id" in ordering_fields and ordering_fields["parent_id"] != cat.parent_id
+    if sort_changed or parent_changed:
         affected = {scope_key_for(cat.parent_id)}
-        if "parent_id" in ordering_fields:
+        if parent_changed:
             affected.add(scope_key_for(ordering_fields["parent_id"]))
         await bump_scopes(db, affected)
 
