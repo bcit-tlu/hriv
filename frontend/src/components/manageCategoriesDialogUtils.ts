@@ -184,13 +184,31 @@ export function interleavedTileOrders(
     if (display && display.length > 0) {
       const rank = new Map<string, number>()
       display.forEach((ref, i) => rank.set(`${ref.type}:${ref.id}`, i))
-      const ranked = oldOrder
-        .filter((ref) => rank.has(`${ref.type}:${ref.id}`))
-        .sort((a, b) => rank.get(`${a.type}:${a.id}`)! - rank.get(`${b.type}:${b.id}`)!)
-      if (ranked.length > 0) {
-        let rankedIdx = 0
+      const known = oldOrder.filter((ref) => rank.has(`${ref.type}:${ref.id}`))
+      if (known.length === oldOrder.length) {
+        // Full coverage: the coordinator's order is authoritative for the
+        // whole scope, including cross-type interleaving changes.
+        template = [...oldOrder].sort(
+          (a, b) => rank.get(`${a.type}:${a.id}`)! - rank.get(`${b.type}:${b.id}`)!,
+        )
+      } else if (known.length > 0) {
+        // Partial coverage (e.g. a cross-parent move's refresh window):
+        // re-rank each type within its own slots so a ranked category can
+        // never land in an image slot. This keeps the category subsequence
+        // identical to what reorderFlatOptions draws, so an untouched
+        // scope never diffs as changed merely because the coordinator's
+        // order is missing a member.
+        const rankedByType: Record<'category' | 'image', TileOrderItemRef[]> = {
+          category: [],
+          image: [],
+        }
+        for (const ref of known) rankedByType[ref.type].push(ref)
+        for (const refs of Object.values(rankedByType)) {
+          refs.sort((a, b) => rank.get(`${a.type}:${a.id}`)! - rank.get(`${b.type}:${b.id}`)!)
+        }
+        const idx: Record<'category' | 'image', number> = { category: 0, image: 0 }
         template = oldOrder.map((ref) =>
-          rank.has(`${ref.type}:${ref.id}`) ? ranked[rankedIdx++] : ref,
+          rank.has(`${ref.type}:${ref.id}`) ? rankedByType[ref.type][idx[ref.type]++] : ref,
         )
       }
     }
