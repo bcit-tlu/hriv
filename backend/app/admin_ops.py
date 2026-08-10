@@ -1181,7 +1181,7 @@ async def run_db_import(task_id: int) -> None:
                 await data_session.execute(
                     text(
                         "INSERT INTO tile_order_revisions (scope_key, revision) "
-                        "SELECT s.scope_key, :rev FROM "
+                        "SELECT s.scope_key, CAST(:rev AS INTEGER) FROM "
                         "(SELECT 0 AS scope_key UNION SELECT id FROM categories) s "
                         "ON CONFLICT (scope_key) DO NOTHING"
                     ),
