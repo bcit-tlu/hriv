@@ -122,9 +122,11 @@ Structured log fields are prefixed `reorder.*` (e.g. `reorder.state`,
 ## Metrics
 
 Rendered into `/api/metrics` by `backend/app/reorder_metrics.py`. Labels are
-bounded (`entity` — `category`, `image`, or `tile` for the atomic
-`PUT /api/tile-order` endpoint (`docs/tile-ordering.md`) — plus `outcome`
-and `state`); operation IDs and category IDs never appear as metric labels.
+bounded (`entity` — `tile` for the atomic `PUT /api/tile-order` endpoint
+(`docs/tile-ordering.md`); `category` and `image` appear only in historical
+series from the removed per-entity endpoints, and unrecognized values are
+coerced to `other` — plus `outcome` and `state`); operation IDs and category
+IDs never appear as metric labels.
 
 | Metric                                  | Type      | Labels              | Meaning                                                             |
 | --------------------------------------- | --------- | ------------------- | ------------------------------------------------------------------- |
