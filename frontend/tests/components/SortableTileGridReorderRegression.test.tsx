@@ -131,10 +131,13 @@ describe('production-scale fixture rendering', () => {
     expect(tileOrdering.reportOrder).toHaveBeenCalledTimes(20)
   })
 
-  it('never discards a drop made while an earlier save may be in flight', async () => {
-    // Historical regression: the legacy fallback path silently dropped a
-    // second accepted drag while the first save was in flight. The
-    // coordinator-only grid reports every accepted drop unconditionally.
+  it('reports every accepted drop unconditionally (no in-flight guard)', async () => {
+    // Historical regression: the legacy fallback path's in-flight guard
+    // silently dropped a second accepted drag while the first save was in
+    // flight. The grid has no persistence await left to defer, so the
+    // contract pinned here is that each drop reaches the coordinator; the
+    // queue/coalesce-while-saving guarantee itself is pinned at the
+    // coordinator boundary in tests/tileOrdering.test.ts.
     const images = [
       makeImage({ id: 1, name: 'A', sortOrder: 0 }),
       makeImage({ id: 2, name: 'B', sortOrder: 1 }),

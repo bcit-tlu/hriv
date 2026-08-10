@@ -19,7 +19,7 @@ import type { TelemetryErrorCode } from './observability'
 
 /** Lifecycle states of one client-side reorder operation. */
 export const REORDER_OPERATION_STATES = [
-  /** A drop was accepted visually but discarded by the in-flight guard. */
+  /** A drop was accepted visually but discarded by the in-flight guard (legacy path, removed in #998; retained for dashboard continuity). */
   'ignored',
   /** A drop was accepted and is waiting behind an in-flight save. */
   'queued',
@@ -35,7 +35,7 @@ export const REORDER_OPERATION_STATES = [
   'failed',
   /** A refresh response was discarded because a newer operation superseded it. */
   'stale_discarded',
-  /** The component unmounted (navigation) while the operation was active. */
+  /** The component unmounted (navigation) while the operation was active (legacy path, removed in #998; the coordinator survives unmounts). */
   'abandoned',
 ] as const
 

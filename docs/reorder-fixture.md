@@ -90,5 +90,8 @@ sequence using the deterministic names.
   enough that per-drop re-render cost matters, which is what makes drops
   during slow persistence realistic to interleave in tests.
 - 20 consecutive awaited reorders on a 21-image scope: ~0.7 s total.
-- The deferred-persistence regressions execute in tens of milliseconds,
-  so the lost-drop window is purely ordering-dependent, not timing-flaky.
+- The deferred-persistence regressions (removed in #998 along with the
+  legacy path they pinned; `createDeferred` was dropped with them) executed
+  in tens of milliseconds, so the lost-drop window was purely
+  ordering-dependent, not timing-flaky. The queue/coalesce guarantee is now
+  pinned at the coordinator boundary in `frontend/tests/tileOrdering.test.ts`.
