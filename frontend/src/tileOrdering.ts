@@ -120,6 +120,39 @@ export class TileOrderingCoordinator {
     return false
   }
 
+  /**
+   * Drop cached order state for every clean scope so freshly fetched
+   * authoritative data wins (order changes made elsewhere — another
+   * client or another surface — become visible on the next refresh).
+   * Scopes holding local intent (pending, in-flight, conflict, or a
+   * retryable failure) are left untouched.
+   */
+  releaseCleanScopes(): void {
+    let changed = false
+    for (const [key, state] of this.scopes) {
+      if (
+        state.pending === null &&
+        state.inFlight === null &&
+        (state.status === 'saved' || state.status === 'idle')
+      ) {
+        this.scopes.delete(key)
+        changed = true
+      }
+    }
+    if (changed) for (const listener of this.listeners) listener()
+  }
+
+  /**
+   * Forget all per-scope state. Called on logout/user switch so cached
+   * orders, revisions, and unsaved-change flags never leak to the next
+   * user on a shared browser.
+   */
+  reset(): void {
+    if (this.scopes.size === 0) return
+    this.scopes.clear()
+    for (const listener of this.listeners) listener()
+  }
+
   /** Claim a new grid generation for a scope (called on grid mount). */
   claimGeneration(scope: ScopeId): number {
     const key = scopeKey(scope)

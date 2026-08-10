@@ -328,4 +328,42 @@ describe('TileOrderingCoordinator', () => {
     await flushMicrotasks()
     expect(coordinator.hasUnsavedChanges()).toBe(false)
   })
+
+  it('releaseCleanScopes drops saved scopes but keeps scopes with local intent', async () => {
+    mockedGet.mockResolvedValue(response(1, refs(1, 2)))
+    mockedPut.mockResolvedValueOnce(response(2, refs(2, 1)))
+    coordinator.reportOrder(null, refs(2, 1))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('saved')
+
+    const pending = deferred<TileOrderResponse>()
+    mockedPut.mockReturnValueOnce(pending.promise)
+    coordinator.reportOrder(7, refs(4, 3))
+    await flushMicrotasks()
+    expect(coordinator.getScope(7).status).toBe('saving')
+
+    coordinator.releaseCleanScopes()
+    // Clean scope: cached order/revision dropped so fresh data wins.
+    expect(coordinator.getScope(null).displayOrder).toBeNull()
+    expect(coordinator.getScope(null).revision).toBeNull()
+    // In-flight scope: untouched.
+    expect(coordinator.getScope(7).status).toBe('saving')
+    expect(coordinator.getScope(7).displayOrder).toEqual(refs(4, 3))
+
+    pending.resolve(response(2, refs(4, 3)))
+    await flushMicrotasks()
+  })
+
+  it('reset clears all scope state on logout/user switch', async () => {
+    mockedGet.mockResolvedValue(response(1, refs(1, 2)))
+    mockedPut.mockRejectedValueOnce(new Error('boom'))
+    coordinator.reportOrder(null, refs(2, 1))
+    await flushMicrotasks()
+    expect(coordinator.hasUnsavedChanges()).toBe(true)
+
+    coordinator.reset()
+    expect(coordinator.hasUnsavedChanges()).toBe(false)
+    expect(coordinator.getScope(null).status).toBe('idle')
+    expect(coordinator.getScope(null).displayOrder).toBeNull()
+  })
 })
