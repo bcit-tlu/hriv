@@ -683,6 +683,22 @@ describe('TileOrderingCoordinator', () => {
     expect(mockedPut).toHaveBeenLastCalledWith(null, 5, refs(1, 2), expect.any(String))
   })
 
+  it('invalidateRevision does not shield a scope from a release whose marker predates it', async () => {
+    mockedPut.mockResolvedValueOnce(response(2, refs(2, 1)))
+    coordinator.reportOrder(null, refs(2, 1))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('saved')
+
+    // A refresh starts (captures the marker), then an entity move invalidates
+    // the scope's revision while the refresh is in flight. Dropping the CAS
+    // token is not a local order write, so the release must still discard
+    // the cached display order in favour of the refreshed data.
+    const marker = coordinator.marker()
+    coordinator.invalidateRevision(null)
+    coordinator.releaseCleanScopes(marker)
+    expect(coordinator.getScope(null).displayOrder).toBeNull()
+  })
+
   it('a released scope re-seeds its revision so external bumps never cause a false conflict', async () => {
     mockedPut.mockResolvedValueOnce(response(2, refs(2, 1)))
     coordinator.reportOrder(null, refs(2, 1))
