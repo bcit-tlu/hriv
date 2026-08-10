@@ -26,16 +26,14 @@ describe('ReorderStatusIndicator', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('shows "Unsaved order" when dirty', () => {
-    renderIndicator('dirty')
-    expect(screen.getByText('Unsaved order')).toBeInTheDocument()
-  })
-
-  it.each(['saving', 'dirty-while-saving'] as const)('shows "Saving order…" when %s', (status) => {
-    renderIndicator(status)
-    expect(screen.getByText('Saving order…')).toBeInTheDocument()
-    expect(screen.getByRole('progressbar')).toBeInTheDocument()
-  })
+  it.each(['dirty', 'saving', 'dirty-while-saving'] as const)(
+    'shows "Saving order…" when %s',
+    (status) => {
+      renderIndicator(status)
+      expect(screen.getByText('Saving order…')).toBeInTheDocument()
+      expect(screen.getByRole('progressbar')).toBeInTheDocument()
+    },
+  )
 
   it('shows "Order saved" when saved', () => {
     renderIndicator('saved')
