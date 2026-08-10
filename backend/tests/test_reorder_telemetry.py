@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -9,6 +10,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.reorder_metrics import (
+    REORDER_ENTITY_LABELS,
     observe_reorder_request,
     record_client_reorder_operation,
     render_reorder_metrics,
@@ -96,6 +98,9 @@ def test_reorder_metrics_render_and_coerce_labels() -> None:
     assert "definitely-not-a-state" not in text
     assert "hriv_reorder_request_duration_seconds" in text
     assert "hriv_reorder_request_items" in text
+    # Every emitted entity label stays within the documented label domain.
+    emitted_entities = set(re.findall(r'entity="([^"]+)"', text))
+    assert emitted_entities <= REORDER_ENTITY_LABELS
 
 
 # ── structured log line ──────────────────────────────────
