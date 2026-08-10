@@ -24,6 +24,7 @@ type ChunkScript =
   | { kind: 'ok'; bytes_received: number; status?: string }
   | { kind: 'http'; status: number; body?: string }
   | { kind: 'network' }
+  | { kind: 'abort' }
 
 const chunkScripts: ChunkScript[] = []
 const sentOffsets: string[] = []
@@ -42,7 +43,9 @@ class FakeXHR {
   getResponseHeader() {
     return null
   }
-  abort() {}
+  abort() {
+    for (const handler of this.listeners.get('abort') ?? []) handler()
+  }
   addEventListener(event: string, handler: () => void) {
     this.listeners.set(event, [...(this.listeners.get(event) ?? []), handler])
   }
@@ -53,6 +56,10 @@ class FakeXHR {
     queueMicrotask(() => {
       if (script.kind === 'network') {
         for (const handler of this.listeners.get('error') ?? []) handler()
+        return
+      }
+      if (script.kind === 'abort') {
+        this.abort()
         return
       }
       if (script.kind === 'http') {
@@ -127,6 +134,11 @@ afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
   expect(unscriptedFetches).toEqual([])
+  // Every scripted response must be consumed; leftovers mean the upload
+  // stopped earlier than the test intended.
+  expect(chunkScripts).toEqual([])
+  expect(statusScripts).toEqual([])
+  expect(finalizeScripts).toEqual([])
 })
 
 /**
@@ -255,6 +267,32 @@ describe('uploadTaskFile chunked retry and backoff', () => {
 
     expect(task).toEqual(TASK_FIXTURE)
     expect(sentOffsets).toEqual(['0', String(CHUNK), String(CHUNK)])
+  })
+
+  it('rejects with AbortError when the transfer aborts mid-chunk', async () => {
+    const file = makeLargeFile(2 * CHUNK)
+    statusScripts.push({ status: 200, body: { bytes_received: 0, status: 'uploading' } })
+    chunkScripts.push({ kind: 'abort' })
+
+    const err = await settle(uploadTaskFile(42, file)).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(DOMException)
+    expect((err as DOMException).name).toBe('AbortError')
+    // No retry after an abort.
+    expect(sentOffsets).toEqual(['0'])
+  })
+
+  it('rejects immediately when the signal is already aborted', async () => {
+    const file = makeLargeFile(2 * CHUNK)
+    const controller = new AbortController()
+    controller.abort()
+
+    const err = await settle(uploadTaskFile(42, file, undefined, controller.signal)).catch(
+      (e: unknown) => e,
+    )
+    expect(err).toBeInstanceOf(DOMException)
+    expect((err as DOMException).name).toBe('AbortError')
+    expect(sentOffsets).toEqual([])
+    expect(mockFetch).not.toHaveBeenCalled()
   })
 
   it('rejects when the initial resync reports a non-uploading task', async () => {
