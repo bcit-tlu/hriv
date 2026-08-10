@@ -65,19 +65,19 @@ the positive coverage now lives in `backend/tests/test_tile_order.py`
 ## Frontend regression scaffolding
 
 `frontend/tests/helpers/reorderFixture.ts` provides the deterministic
-generators plus `createDeferred()` for injecting realistic latency into
-category persistence, image persistence, and background refreshes
-independently.
+scope generators used by the component suites below.
 
-The `it.fails(...)` regression suite
-(`SortableTileGridReorderRegression.test.tsx`) that asserted the legacy
-path's silent-discard, stale-refresh, and partial-persistence bugs was
-removed in #998 along with the legacy fallback path itself. The equivalent
-desired-behaviour coverage now lives in `frontend/tests/tileOrdering.test.ts`
-(coordinator queueing, coalescing, conflict adoption, and the
-20-rapid-reorder scenario) and
-`frontend/tests/components/SortableTileGridCoordinator.test.tsx` (the grid's
-coordinator wiring, including the full 80-category / 600-image scope).
+`frontend/tests/components/SortableTileGridReorderRegression.test.tsx` keeps
+the production-scale positive coverage: rendering the full 80-category /
+600-image fixture scope, 20 consecutive reorders reported to the coordinator
+exactly, and no drop being discarded while an earlier save is in flight. The
+`it.fails(...)` regressions that asserted the legacy fallback path's
+silent-discard, stale-refresh, and partial-persistence bugs were removed in
+#998 along with the fallback itself; the equivalent desired-behaviour
+coverage lives in `frontend/tests/tileOrdering.test.ts` (coordinator
+queueing, coalescing, conflict adoption, and the 20-rapid-reorder scenario)
+and `frontend/tests/components/SortableTileGridCoordinator.test.tsx` (the
+grid's coordinator wiring).
 
 Navigation-away-during-save and reload-and-compare journeys are browser-level
 concerns: seed the fixture with the CLI above and drive them via Playwright
