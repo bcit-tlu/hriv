@@ -150,7 +150,7 @@ describe('useTileOrdering', () => {
     hasUnsaved.mockRestore()
   })
 })
-||||||| parent of 8d3ad87 (fix: address review findings on Manage Categories ordering migration)
+
 // `useMostSevereScope` (issue #982): a cross-parent move in Manage
 // Categories touches two scopes and the single save-state indicator must
 // surface whichever scope most urgently needs attention.
