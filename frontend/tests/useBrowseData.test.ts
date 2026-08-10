@@ -727,6 +727,41 @@ describe('useBrowseData', () => {
       expect(result.current.categories[0].label).toBe('Newest')
     })
 
+    it('a plain load during an in-flight refresh fetches fresh (cache-bypassing) data itself', async () => {
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+      await triggerInitialLoad(result)
+
+      // Start an authoritative refresh that stays in flight (it predates the
+      // mutation below, so its response must not satisfy the later load).
+      let resolveRefresh!: (v: ApiCategoryTree[]) => void
+      mockFetchCategoryTree.mockImplementationOnce(() => new Promise((r) => (resolveRefresh = r)))
+      let refreshDone!: Promise<Category[]>
+      act(() => {
+        refreshDone = result.current.refreshCategories()
+      })
+
+      // A mutation commits, then its callback loads categories: the load
+      // must issue its own cache-bypassing request, not reuse the refresh.
+      let loadInit: RequestInit | { cache?: string } | undefined
+      mockFetchCategoryTree.mockImplementationOnce(async (init?: RequestInit) => {
+        loadInit = init
+        return [makeApiTree({ id: 2, label: 'Post-mutation' })]
+      })
+      await act(async () => {
+        await result.current.loadCategories({ silent: true })
+      })
+      expect((loadInit as { cache?: string } | undefined)?.cache).toBe('reload')
+      expect(result.current.categories[0].label).toBe('Post-mutation')
+
+      // The older refresh settling later cannot overwrite the newer load.
+      await act(async () => {
+        resolveRefresh([makeApiTree({ id: 1, label: 'Pre-mutation' })])
+        await refreshDone
+      })
+      expect(result.current.categories[0].label).toBe('Post-mutation')
+    })
+
     it('a silent read finishing later cannot strand the visible loading spinner', async () => {
       const deps = makeDeps({ currentUser: makeUser() })
       const { result } = renderHook(() => useBrowseData(deps))
