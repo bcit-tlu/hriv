@@ -19,6 +19,7 @@ import type { DragEndEvent, DragStartEvent } from '@dnd-kit/react'
 
 import type { Category, Group, ImageItem, Program } from '../types'
 import type { TileOrderItemRef } from '../api'
+import type { ReorderDragContext } from '../tileOrdering'
 import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
 import { getCategoryHiddenStateFromPath } from '../treeUtils'
 import CategoryTile from './CategoryTile'
@@ -219,7 +220,11 @@ export interface SortableTileGridProps {
    */
   tileOrdering?: {
     displayOrder: TileOrderItemRef[] | null
-    reportOrder: (order: TileOrderItemRef[], generation?: number) => void
+    reportOrder: (
+      order: TileOrderItemRef[],
+      generation?: number,
+      dragContext?: ReorderDragContext,
+    ) => void
     claimGeneration: () => number
   }
 }
@@ -415,6 +420,14 @@ export default function SortableTileGrid({
         tileOrdering.reportOrder(
           reordered.map((item) => ({ type: item.type, id: item.data.id })),
           gridGenerationRef.current ?? undefined,
+          // Drag detail rides along so lifecycle telemetry keeps per-drag
+          // context (which tile moved, from/to index) on this surface.
+          {
+            itemType: sourceId.startsWith('img-') ? 'image' : 'category',
+            itemId: Number(sourceId.slice(4)),
+            fromIndex: ids.indexOf(sourceId),
+            toIndex: reorderedIds.indexOf(sourceId),
+          },
         )
         return
       }

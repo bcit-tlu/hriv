@@ -44,11 +44,13 @@ share this bounded vocabulary:
 | `conflicted`      | Backend rejected the operation due to a revision conflict                        |
 | `failed`          | Persistence failed (fully or partially) and the UI rolled back                   |
 | `stale_discarded` | Refresh response discarded because a newer operation superseded it (future #980) |
-| `abandoned`       | Component unmounted (navigation) while the operation was active                  |
+| `abandoned`       | Component unmounted (navigation) while the operation was active (legacy path)    |
 
 As of #979 the Browse coordinator (`frontend/src/tileOrdering.ts`) emits
 `queued`, `coalesced`, `submitted`, `committed`, `conflicted`, and `failed`;
-`ignored` remains emitted only by the legacy non-coordinator grid path, and
+`ignored` and `abandoned` remain emitted only by the legacy non-coordinator
+grid path (the coordinator survives navigation, so Browse no longer emits
+`abandoned` at all), and
 `stale_discarded` is defined for later sub-issues (#980) so dashboards can
 adopt it without another contract change. Both reorder surfaces are
 instrumented: the Browse grid (via the coordinator, full lifecycle) and the

@@ -453,4 +453,54 @@ describe('TileOrderingCoordinator', () => {
     expect(mockedPut).toHaveBeenCalledTimes(1)
     expect(mockedPut).toHaveBeenCalledWith(null, 1, refs(3, 2, 1), expect.any(String))
   })
+
+  it('attaches the drag context to the submitted diagnostic', async () => {
+    mockedPut.mockResolvedValueOnce(response(2, refs(2, 1, 3)))
+
+    coordinator.reportOrder(null, refs(2, 1, 3), undefined, {
+      itemType: 'image',
+      itemId: 2,
+      fromIndex: 1,
+      toIndex: 0,
+    })
+    await flushMicrotasks()
+
+    const submitted = events.find((e) => e.state === 'submitted')
+    expect(submitted).toMatchObject({
+      itemType: 'image',
+      itemId: 2,
+      fromIndex: 1,
+      toIndex: 0,
+    })
+  })
+
+  it('a stale seeding flush cannot clear a post-reset seeding mark', async () => {
+    const staleSeed = deferred<TileOrderResponse>()
+    mockedGet.mockReturnValueOnce(staleSeed.promise)
+    coordinator.reportOrder(null, refs(2, 1, 3))
+    expect(coordinator.getScope(null).status).toBe('saving')
+
+    coordinator.reset()
+
+    // A new flush starts seeding the same scope after the reset.
+    const freshSeed = deferred<TileOrderResponse>()
+    mockedGet.mockReturnValueOnce(freshSeed.promise)
+    mockedPut.mockResolvedValueOnce(response(2, refs(3, 2, 1)))
+    coordinator.reportOrder(null, refs(2, 1, 3))
+    expect(coordinator.getScope(null).status).toBe('saving')
+
+    // The stale flush settles: it must not clear the new seeding mark, so a
+    // drop landing now still queues instead of starting a second flush loop.
+    staleSeed.resolve(response(9, refs(9)))
+    await flushMicrotasks()
+    coordinator.reportOrder(null, refs(3, 2, 1))
+    expect(coordinator.getScope(null).status).toBe('dirty-while-saving')
+    expect(mockedPut).not.toHaveBeenCalled()
+
+    freshSeed.resolve(response(1, refs(1, 2, 3)))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('saved')
+    expect(mockedPut).toHaveBeenCalledTimes(1)
+    expect(mockedPut).toHaveBeenCalledWith(null, 1, refs(3, 2, 1), expect.any(String))
+  })
 })
