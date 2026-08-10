@@ -215,6 +215,11 @@ there is no second independent ordering implementation:
   consistent across both interfaces after navigation and reload: whichever
   interface wrote last owns the scope revision, and stale writers get an
   explicit 409.
+- Atomicity is per scope: a cross-parent move issues one entity PATCH plus
+  one `PUT /api/tile-order` per affected scope (source and destination),
+  so one scope's write can commit while the other 409s. The conflicted
+  scope surfaces its usual Refresh / Keep-my-order recovery; the committed
+  scope stays committed.
 
 ## Stale-refresh prevention and conflict recovery (#980)
 

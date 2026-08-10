@@ -948,6 +948,24 @@ export default function App() {
   const manageAttentionScope = useMostSevereScope(manageReorderScopes)
   const manageTileOrdering = useTileOrdering(manageAttentionScope ?? null)
 
+  // The Manage dialog's save-state indicator unmounts with the dialog, so a
+  // reorder that fails after the user closed it would otherwise be invisible.
+  // Surface it globally and point the user back at the dialog, where the
+  // Retry / Use server order actions remain available.
+  useEffect(() => {
+    if (dialogOpen || manageAttentionScope === undefined) return
+    const surface = () => {
+      const status = tileOrderingCoordinator.getScope(manageAttentionScope).status
+      if (status === 'conflict') {
+        setErrorSnack('Category order changed elsewhere — reopen Manage Categories to resolve.')
+      } else if (status === 'error') {
+        setErrorSnack('Category order could not be saved — reopen Manage Categories to retry.')
+      }
+    }
+    surface()
+    return tileOrderingCoordinator.subscribe(surface)
+  }, [dialogOpen, manageAttentionScope])
+
   const visibleJobs = getVisibleJobs({
     uploadOpen,
     manageUploadOpen,
@@ -1082,6 +1100,14 @@ export default function App() {
     acceptServerOrder()
     void handleReorderComplete()
   }, [acceptServerOrder, handleReorderComplete])
+
+  // Manage Categories counterpart: adopting the server order there can also
+  // stem from membership drift, so reload the shared browse data too.
+  const manageAcceptServerOrder = manageTileOrdering.acceptServerOrder
+  const handleManageAcceptServerOrder = useCallback(() => {
+    manageAcceptServerOrder()
+    void handleReorderComplete()
+  }, [manageAcceptServerOrder, handleReorderComplete])
 
   const handleReorderError = useCallback((err: unknown) => {
     setErrorSnack(userMessage(err, 'Failed to reorder tiles.'))
@@ -1955,8 +1981,9 @@ export default function App() {
           manageAttentionScope !== undefined ? (
             <ReorderStatusIndicator
               status={manageTileOrdering.status}
+              serverOrderAvailable={manageTileOrdering.serverOrderAvailable}
               onRetry={manageTileOrdering.retry}
-              onAcceptServerOrder={manageTileOrdering.acceptServerOrder}
+              onAcceptServerOrder={handleManageAcceptServerOrder}
               onReapplyLocalOrder={manageTileOrdering.reapplyLocalOrder}
             />
           ) : undefined
