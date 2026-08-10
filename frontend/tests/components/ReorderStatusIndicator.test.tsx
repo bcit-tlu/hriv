@@ -89,6 +89,7 @@ describe('ReorderStatusIndicator', () => {
         status="idle"
         onRetry={vi.fn()}
         onAcceptServerOrder={vi.fn()}
+        onReapplyLocalOrder={vi.fn()}
         otherScopesFailed
         onRetryFailedScopes={onRetryFailedScopes}
       />,
@@ -105,6 +106,7 @@ describe('ReorderStatusIndicator', () => {
         status="error"
         onRetry={vi.fn()}
         onAcceptServerOrder={vi.fn()}
+        onReapplyLocalOrder={vi.fn()}
         otherScopesFailed
         onRetryFailedScopes={onRetryFailedScopes}
       />,
