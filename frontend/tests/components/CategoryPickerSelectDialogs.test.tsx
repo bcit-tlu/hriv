@@ -6,7 +6,7 @@
  * selecting a newly created category, and the EditCategoryDialog save path.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import CategoryPickerSelect from '../../src/components/CategoryPickerSelect'
@@ -15,6 +15,10 @@ import { makeCategory } from '../helpers/fixtures'
 
 beforeEach(() => {
   localStorage.clear()
+  resetCategoryTreeExpansionPreferencesForTests()
+})
+
+afterEach(() => {
   resetCategoryTreeExpansionPreferencesForTests()
 })
 
