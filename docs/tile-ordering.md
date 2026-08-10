@@ -171,6 +171,13 @@ order remains. Stale grid instances are fenced by a per-scope generation
 counter (`claimGeneration`), so callbacks from an unmounted grid cannot
 overwrite a remounted one.
 
+Cached per-scope state is bounded in lifetime: after each authoritative
+background refresh, `releaseCleanScopes` drops the cached display order and
+revision of every scope with no local intent so order changes made elsewhere
+(another client, or another surface) become visible, and `reset` clears all
+coordinator state on logout/user switch so cached orders, revisions, and
+unsaved-change flags never leak to the next user on a shared browser.
+
 The compact save-state readout is `ReorderStatusIndicator`
 (`Unsaved order`, `Saving order…`, `Order saved`, `Order changed elsewhere`,
 `Could not save order — Retry`). Coordinator transitions emit the reorder
