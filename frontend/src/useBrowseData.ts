@@ -103,60 +103,74 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
     uncategorizedRef.current = uncategorizedImages
   }, [uncategorizedImages])
 
-  const loadCategories = useCallback(async (opts?: { silent?: boolean; signal?: AbortSignal }) => {
-    const { silent = false, signal } = opts ?? {}
-    const gen = ++categoriesReadGen.current
-    let effectiveSignal = signal
-    if (!signal) {
-      invalidateRef.current?.()
-      categoriesAbortRef.current?.abort()
-      const ac = new AbortController()
-      categoriesAbortRef.current = ac
-      effectiveSignal = ac.signal
-    }
-    const visibleGen = silent ? 0 : ++visibleCategoriesLoadGen.current
-    try {
-      if (!silent) setCategoriesLoading(true)
-      const tree = await fetchCategoryTree(
-        effectiveSignal ? { signal: effectiveSignal } : undefined,
-      )
-      if (effectiveSignal?.aborted || gen !== categoriesReadGen.current) return
-      setCategories(tree.map(apiTreeToCategory))
-    } catch (err) {
-      if (effectiveSignal?.aborted || isAbortError(err) || gen !== categoriesReadGen.current) return
-      console.error('Failed to load categories', err)
-    } finally {
-      // Only a newer visible load (which will clear the flag itself) may
-      // suppress cleanup — silent reads never own the loading flag.
-      if (!silent && visibleGen === visibleCategoriesLoadGen.current) setCategoriesLoading(false)
-    }
-  }, [])
-
-  const loadUncategorizedImages = useCallback(async (opts?: { signal?: AbortSignal }) => {
-    const { signal } = opts ?? {}
-    const gen = ++uncategorizedReadGen.current
-    let effectiveSignal = signal
-    if (!signal) {
-      uncategorizedAbortRef.current?.abort()
-      const ac = new AbortController()
-      uncategorizedAbortRef.current = ac
-      effectiveSignal = ac.signal
-    }
-    try {
-      const imgs = await fetchUncategorizedImages(
-        effectiveSignal ? { signal: effectiveSignal } : undefined,
-      )
-      if (effectiveSignal?.aborted || gen !== uncategorizedReadGen.current) return
-      setUncategorizedImages(imgs.map(apiImageToItem))
-      uncategorizedLoaded.current = true
-    } catch (err) {
-      if (effectiveSignal?.aborted || isAbortError(err) || gen !== uncategorizedReadGen.current) {
-        return
+  // Loaders resolve `true` only when fresh data was actually applied, so
+  // callers can gate cache invalidation on authoritative data having landed.
+  const loadCategories = useCallback(
+    async (opts?: { silent?: boolean; signal?: AbortSignal }): Promise<boolean> => {
+      const { silent = false, signal } = opts ?? {}
+      const gen = ++categoriesReadGen.current
+      let effectiveSignal = signal
+      if (!signal) {
+        invalidateRef.current?.()
+        categoriesAbortRef.current?.abort()
+        const ac = new AbortController()
+        categoriesAbortRef.current = ac
+        effectiveSignal = ac.signal
       }
-      console.error('Failed to load uncategorized images', err)
-      uncategorizedLoaded.current = true
-    }
-  }, [])
+      const visibleGen = silent ? 0 : ++visibleCategoriesLoadGen.current
+      try {
+        if (!silent) setCategoriesLoading(true)
+        const tree = await fetchCategoryTree(
+          effectiveSignal ? { signal: effectiveSignal } : undefined,
+        )
+        if (effectiveSignal?.aborted || gen !== categoriesReadGen.current) return false
+        setCategories(tree.map(apiTreeToCategory))
+        return true
+      } catch (err) {
+        if (effectiveSignal?.aborted || isAbortError(err) || gen !== categoriesReadGen.current) {
+          return false
+        }
+        console.error('Failed to load categories', err)
+        return false
+      } finally {
+        // Only a newer visible load (which will clear the flag itself) may
+        // suppress cleanup — silent reads never own the loading flag.
+        if (!silent && visibleGen === visibleCategoriesLoadGen.current) setCategoriesLoading(false)
+      }
+    },
+    [],
+  )
+
+  const loadUncategorizedImages = useCallback(
+    async (opts?: { signal?: AbortSignal }): Promise<boolean> => {
+      const { signal } = opts ?? {}
+      const gen = ++uncategorizedReadGen.current
+      let effectiveSignal = signal
+      if (!signal) {
+        uncategorizedAbortRef.current?.abort()
+        const ac = new AbortController()
+        uncategorizedAbortRef.current = ac
+        effectiveSignal = ac.signal
+      }
+      try {
+        const imgs = await fetchUncategorizedImages(
+          effectiveSignal ? { signal: effectiveSignal } : undefined,
+        )
+        if (effectiveSignal?.aborted || gen !== uncategorizedReadGen.current) return false
+        setUncategorizedImages(imgs.map(apiImageToItem))
+        uncategorizedLoaded.current = true
+        return true
+      } catch (err) {
+        if (effectiveSignal?.aborted || isAbortError(err) || gen !== uncategorizedReadGen.current) {
+          return false
+        }
+        console.error('Failed to load uncategorized images', err)
+        uncategorizedLoaded.current = true
+        return false
+      }
+    },
+    [],
+  )
 
   const loadPrograms = useCallback(async () => {
     try {
@@ -260,12 +274,15 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
       // are in flight is newer than the fetched data and must survive the
       // release below.
       const marker = tileOrderingCoordinator.marker()
-      await loadCategories({ silent: true, signal })
-      await loadUncategorizedImages({ signal })
-      // Fresh authoritative data has landed: drop the coordinator's cached
-      // display order for scopes with no local intent so order changes made
-      // elsewhere (another client or surface) become visible.
-      if (!signal.aborted) tileOrderingCoordinator.releaseCleanScopes(marker)
+      const categoriesFresh = await loadCategories({ silent: true, signal })
+      const imagesFresh = await loadUncategorizedImages({ signal })
+      // Only when fresh authoritative data actually landed may the
+      // coordinator's cached display order be dropped for clean scopes —
+      // a failed poll must not make a just-saved order fall back to the
+      // stale pre-save tree.
+      if (!signal.aborted && categoriesFresh && imagesFresh) {
+        tileOrderingCoordinator.releaseCleanScopes(marker)
+      }
     },
     [loadCategories, loadUncategorizedImages],
   )
