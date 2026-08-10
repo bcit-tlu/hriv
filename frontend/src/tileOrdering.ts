@@ -274,7 +274,11 @@ export class TileOrderingCoordinator {
     if (generation !== undefined && !this.isCurrentGeneration(scope, generation)) return
     const state = this.getScope(scope)
     if (state.displayOrder !== null && sameOrder(state.displayOrder, order)) return
+    // A contextless report clears any stored context so a scope can never
+    // attach an earlier operation's drag detail to this submission's
+    // telemetry (e.g. a Manage drop reporting sibling scopes of a drag).
     if (dragContext !== undefined) this.dragContexts.set(scopeKey(scope), dragContext)
+    else this.dragContexts.delete(scopeKey(scope))
 
     // A drop while a conflict is unresolved folds into the retained local
     // intent instead of auto-submitting with the conflict-time revision:
