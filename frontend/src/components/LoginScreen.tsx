@@ -82,7 +82,7 @@ export default function LoginScreen({ onLogin, announcement }: LoginScreenProps)
   }
 
   // When OIDC is enabled and the local form is not toggled, show only the
-  // OIDC button + a "Log in with a guest account" link (Rancher-style).
+  // OIDC button + a "Sign in with a guest account" link (Rancher-style).
   const showOidcDefault = oidcEnabled && !showLocalForm
 
   return (
@@ -177,7 +177,7 @@ export default function LoginScreen({ onLogin, announcement }: LoginScreenProps)
                   underline="hover"
                   onClick={() => setShowLocalForm(true)}
                 >
-                  Log in with a guest account
+                  Sign in with a guest account
                 </Link>
               </Box>
             ) : (
