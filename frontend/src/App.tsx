@@ -1843,15 +1843,18 @@ export default function App() {
                   })()}
               </Box>
 
-              {canEditContent && (
-                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
-                  <ReorderStatusIndicator
-                    status={tileOrdering.status}
-                    onRetry={tileOrdering.retry}
-                    onAcceptServerOrder={handleAcceptServerOrder}
-                  />
-                </Box>
-              )}
+              {canEditContent &&
+                (tileOrdering.status !== 'idle' || tileOrdering.otherScopesFailed) && (
+                  <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
+                    <ReorderStatusIndicator
+                      status={tileOrdering.status}
+                      onRetry={tileOrdering.retry}
+                      onAcceptServerOrder={handleAcceptServerOrder}
+                      otherScopesFailed={tileOrdering.otherScopesFailed}
+                      onRetryFailedScopes={tileOrdering.retryFailedScopes}
+                    />
+                  </Box>
+                )}
 
               {/* Tile grid */}
               <SortableTileGrid

@@ -215,6 +215,27 @@ describe('TileOrderingCoordinator', () => {
     expect(state.revision).toBe(2)
   })
 
+  it('surfaces and retries a failed save from outside its scope', async () => {
+    mockedPut.mockRejectedValueOnce(new ApiError(500, 'boom'))
+    mockedPut.mockResolvedValueOnce(response(2, refs(2, 1, 3)))
+
+    coordinator.reportOrder(7, refs(2, 1, 3))
+    await flushMicrotasks()
+    expect(coordinator.getScope(7).status).toBe('error')
+
+    // The failure is visible from any other scope (e.g. after navigating away)…
+    expect(coordinator.hasFailedScopesOutside(null)).toBe(true)
+    expect(coordinator.hasFailedScopesOutside(7)).toBe(false)
+
+    // …and retryFailedScopes recovers it without visiting the scope again.
+    coordinator.retryFailedScopes()
+    await flushMicrotasks()
+    const state = coordinator.getScope(7)
+    expect(state.status).toBe('saved')
+    expect(state.revision).toBe(2)
+    expect(coordinator.hasFailedScopesOutside(null)).toBe(false)
+  })
+
   it('a failure does not roll back newer local changes', async () => {
     const first = deferred<TileOrderResponse>()
     mockedPut.mockReturnValueOnce(first.promise)
