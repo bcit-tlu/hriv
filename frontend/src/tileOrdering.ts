@@ -167,14 +167,17 @@ export class TileOrderingCoordinator {
   }
 
   /**
-   * Drop the cached display order for every clean scope so freshly fetched
-   * authoritative data wins (order changes made elsewhere — another
-   * client or another surface — become visible on the next refresh).
-   * The scope's revision (CAS token) is kept: a follow-up save can reuse
-   * it without a seeding GET, and a genuinely stale token is safely
-   * rejected by the server's compare-and-set check. Scopes holding local
-   * intent (pending, in-flight, conflict, or a retryable failure) are
-   * left untouched.
+   * Drop cached order state — including the revision (CAS token) — for
+   * every clean scope so freshly fetched authoritative data wins (order
+   * changes made elsewhere — another client or another surface — become
+   * visible on the next refresh). The revision must not be kept: other
+   * operations bump a scope's revision server-side without going through
+   * the coordinator (entity PATCHes that move a tile between scopes,
+   * Manage Categories reorders), so a cached token could produce a false
+   * "order changed elsewhere" conflict on the next drag. The next save
+   * re-seeds the revision with a GET. Scopes holding local intent
+   * (pending, in-flight, conflict, or a retryable failure) are left
+   * untouched.
    */
   releaseCleanScopes(marker?: number): void {
     let changed = false
@@ -187,12 +190,8 @@ export class TileOrderingCoordinator {
         state.inFlight === null &&
         (state.status === 'saved' || state.status === 'idle')
       ) {
-        if (state.revision !== null) {
-          this.scopes.set(key, { ...state, displayOrder: null, conflictOrder: null })
-        } else {
-          this.scopes.delete(key)
-          this.lastWrite.delete(key)
-        }
+        this.scopes.delete(key)
+        this.lastWrite.delete(key)
         changed = true
       }
     }
