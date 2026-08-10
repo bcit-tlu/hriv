@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 
 import {
   DROP_PREFIX,
+  orderTileItems,
   tileId,
   collectDescendantIds,
   findCategory,
@@ -199,5 +200,45 @@ describe('nearHalfMoveCollision (move wins on the near half)', () => {
       const reorder = farHalfReorderCollision(input)
       expect(Boolean(move) !== Boolean(reorder)).toBe(true)
     }
+  })
+
+  describe('orderTileItems', () => {
+    const items = buildTileItems(
+      [makeCategory({ id: 1, sort_order: 0 })],
+      [makeImage({ id: 1, sort_order: 1 }), makeImage({ id: 2, sort_order: 2 })],
+    )
+
+    it('reorders items to match the provided refs exactly', () => {
+      const ordered = orderTileItems(items, [
+        { type: 'image', id: 2 },
+        { type: 'category', id: 1 },
+        { type: 'image', id: 1 },
+      ])
+      expect(ordered.map(tileId)).toEqual(['img-2', 'cat-1', 'img-1'])
+    })
+
+    it('ignores refs with no matching item (deletions/moves out)', () => {
+      const ordered = orderTileItems(items, [
+        { type: 'image', id: 99 },
+        { type: 'image', id: 2 },
+        { type: 'category', id: 7 },
+        { type: 'image', id: 1 },
+        { type: 'category', id: 1 },
+      ])
+      expect(ordered.map(tileId)).toEqual(['img-2', 'img-1', 'cat-1'])
+    })
+
+    it('appends items missing from the order, preserving their relative position', () => {
+      const ordered = orderTileItems(items, [{ type: 'image', id: 2 }])
+      expect(ordered.map(tileId)).toEqual(['img-2', 'cat-1', 'img-1'])
+    })
+
+    it('never drops or duplicates tiles', () => {
+      const ordered = orderTileItems(items, [
+        { type: 'image', id: 1 },
+        { type: 'image', id: 1 },
+      ])
+      expect(ordered.map(tileId).sort()).toEqual(items.map(tileId).sort())
+    })
   })
 })

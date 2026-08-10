@@ -22,8 +22,11 @@ import {
   type TileOrderItemRef,
   type TileOrderResponse,
 } from './api'
-import type { TelemetryErrorCode } from './observability'
-import { emitReorderDiagnostic, newReorderOperationId } from './reorderDiagnostics'
+import {
+  emitReorderDiagnostic,
+  newReorderOperationId,
+  reorderErrorCode,
+} from './reorderDiagnostics'
 
 /** Save-state vocabulary shown to the user (see issue #979). */
 export type TileOrderStatus =
@@ -68,13 +71,6 @@ const INITIAL_SCOPE_STATE: ScopeState = Object.freeze({
   conflictOrder: null,
   error: null,
 })
-
-function reorderErrorCode(err: unknown): TelemetryErrorCode {
-  if (err instanceof ApiError) {
-    return err.status >= 500 ? 'api_http_5xx' : 'api_http_4xx'
-  }
-  return 'api_network_error'
-}
 
 function scopeKey(scope: ScopeId): string {
   return scope === null ? 'root' : String(scope)
