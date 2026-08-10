@@ -395,4 +395,45 @@ describe('UploadImageModal', () => {
     expect(await screen.findByText(/Uploading: 50%/)).toBeInTheDocument()
     expect(onUploadProgress).toHaveBeenCalledWith(expect.any(Number), 0.5)
   })
+
+  it('uploads only once when submitted twice synchronously', async () => {
+    let resolveUpload: (value: { id: number }) => void = () => {}
+    vi.mocked(uploadSourceImage).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveUpload = resolve
+        }) as never,
+    )
+
+    const onUploaded = vi.fn()
+    render(
+      <UploadImageModal
+        open
+        onClose={vi.fn()}
+        onUploaded={onUploaded}
+        categories={categories}
+        programs={programs}
+      />,
+    )
+
+    const fileInput = document.querySelector('input[type="file"]')
+    expect(fileInput).not.toBeNull()
+    const file = new File(['image-data'], 'slide.png', { type: 'image/png' })
+    fireEvent.change(fileInput as HTMLInputElement, { target: { files: [file] } })
+
+    const nameField = await screen.findByLabelText('Name')
+    // Two synchronous Enter presses before React re-renders with
+    // uploading=true — the ref guard must dedupe them.
+    fireEvent.keyDown(nameField, { key: 'Enter' })
+    fireEvent.keyDown(nameField, { key: 'Enter' })
+
+    await waitFor(() => {
+      expect(uploadSourceImage).toHaveBeenCalledTimes(1)
+    })
+    resolveUpload({ id: 123 })
+    await waitFor(() => {
+      expect(onUploaded).toHaveBeenCalledTimes(1)
+    })
+    expect(uploadSourceImage).toHaveBeenCalledTimes(1)
+  })
 })

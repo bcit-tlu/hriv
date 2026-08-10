@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.42.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.41.2...frontend-v0.42.0) (2026-08-10)
+
+
+### Features
+
+* add navigation-safe frontend reorder coordinator and save-state UX ([#995](https://github.com/bcit-tlu/hriv/issues/995)) ([3c1d09a](https://github.com/bcit-tlu/hriv/commit/3c1d09aef6b2c4914186b8a642f51b319892a1ac))
+* add reorder operation correlation, timing, and diagnostic telemetry ([#993](https://github.com/bcit-tlu/hriv/issues/993)) ([ec67619](https://github.com/bcit-tlu/hriv/commit/ec67619ed042e0837dd929e809ec83a5a4452165))
+* migrate Manage Categories to the shared tile-ordering workflow ([#999](https://github.com/bcit-tlu/hriv/issues/999)) ([b95fd59](https://github.com/bcit-tlu/hriv/commit/b95fd5976c60b977bf12b4ebca122fb06be942d9))
+* prevent stale refresh overwrites and add ordering conflict recovery ([#996](https://github.com/bcit-tlu/hriv/issues/996)) ([9a91121](https://github.com/bcit-tlu/hriv/commit/9a911219f36d2f8a92e70566c140671a74f74a84))
+
+
+### Bug Fixes
+
+* correct Fabric text box resizing ([#984](https://github.com/bcit-tlu/hriv/issues/984)) ([e5a4355](https://github.com/bcit-tlu/hriv/commit/e5a4355b5adca9461bd861b9dd82b1617c5b5b1f))
+
+
+### Performance Improvements
+
+* profile and optimize Browse drag-and-drop for large collections ([#997](https://github.com/bcit-tlu/hriv/issues/997)) ([1702953](https://github.com/bcit-tlu/hriv/commit/1702953ef9117f61200e8ee89ae25b1a50bab8e1))
+
 ## [0.41.2](https://github.com/bcit-tlu/hriv/compare/frontend-v0.41.1...frontend-v0.41.2) (2026-07-21)
 
 
