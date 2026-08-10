@@ -366,11 +366,12 @@ export default function SortableTileGrid({
       const targetId = String(target.id)
 
       if (reorderInFlightRef.current) {
-        // Current behavior: a drop during an in-flight save is silently
-        // discarded (epic #975). Record reorder drops so they are observable;
-        // move-into-category drops are outside the reorder lifecycle and
-        // no-op drops (order unchanged, mirroring the idle-path filter) are
-        // not reported as reorder operations.
+        // Legacy (non-coordinator) path only — Browse uses the coordinator,
+        // which queues these drops instead. Here a drop during an in-flight
+        // save is silently discarded; record reorder drops so they are
+        // observable. Move-into-category drops are outside the reorder
+        // lifecycle and no-op drops (order unchanged, mirroring the
+        // idle-path filter) are not reported as reorder operations.
         if (!targetId.startsWith(DROP_PREFIX)) {
           if (computeReorderedIds(items, event).isNoOp) return
           discardedDropsRef.current += 1
@@ -383,7 +384,7 @@ export default function SortableTileGrid({
             categoryCount: currentCategoriesRef.current.length,
             imageCount: visibleImagesRef.current.length,
             // Running count of drops discarded during the current save
-            // (nothing is actually queued until #979 lands).
+            // (this legacy path has no queue).
             queueDepth: discardedDropsRef.current,
           })
         }
