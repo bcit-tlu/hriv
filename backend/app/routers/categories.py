@@ -402,21 +402,22 @@ async def update_category(
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found")
 
-    # An ordering write (a sort_order or parent value that actually changes)
-    # must invalidate the affected scopes' tile-order revisions so a client
-    # holding an older revision gets a 409 instead of silently overwriting
-    # this change. Value comparison (not key presence) keeps no-op metadata
-    # edits from bumping the revision. Revision locks are taken before any
-    # row mutation, matching PUT /api/tile-order's revision-then-rows lock
-    # order (docs/tile-ordering.md).
+    # An ordering write (sort_order or a parent move) must invalidate the
+    # affected scopes' tile-order revisions so a client holding an older
+    # revision gets a 409 instead of silently overwriting this change.
+    # Revision locks are taken before any row mutation, matching
+    # PUT /api/tile-order's revision-then-rows lock order
+    # (docs/tile-ordering.md).
+    # Only an actual value change invalidates: edit dialogs echo the current
+    # parent_id/sort_order back on every save, and bumping on presence alone
+    # would 409 clients whose cached revision is still accurate.
     ordering_fields = body.model_dump(exclude_unset=True)
-    affected: set[int] = set()
-    if ordering_fields.get("sort_order", cat.sort_order) != cat.sort_order:
-        affected.add(scope_key_for(cat.parent_id))
-    if ordering_fields.get("parent_id", cat.parent_id) != cat.parent_id:
-        affected.add(scope_key_for(cat.parent_id))
-        affected.add(scope_key_for(ordering_fields["parent_id"]))
-    if affected:
+    sort_changed = "sort_order" in ordering_fields and ordering_fields["sort_order"] != cat.sort_order
+    parent_changed = "parent_id" in ordering_fields and ordering_fields["parent_id"] != cat.parent_id
+    if sort_changed or parent_changed:
+        affected = {scope_key_for(cat.parent_id)}
+        if parent_changed:
+            affected.add(scope_key_for(ordering_fields["parent_id"]))
         await bump_scopes(db, affected)
 
     # Optimistic concurrency: same CAS pattern as image updates.
