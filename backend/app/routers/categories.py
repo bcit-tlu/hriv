@@ -21,6 +21,7 @@ from ..schemas import (
     CategoryWarning,
     ImageOut,
 )
+from ..tile_order import bump_scopes, scope_key_for
 from ..visibility import compute_excluded_category_ids, get_student_excluded_category_ids, is_category_visible_to_student
 
 

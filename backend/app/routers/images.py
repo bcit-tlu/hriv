@@ -25,6 +25,7 @@ from ..schemas import (
     SourceImageOut,
     normalize_note_value,
 )
+from ..tile_order import bump_scopes, scope_key_for
 from ..tracing import record_exception_if_server_error
 from ..visibility import get_student_excluded_category_ids, is_category_visible_to_student
 
