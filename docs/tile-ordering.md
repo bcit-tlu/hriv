@@ -184,8 +184,11 @@ coordinator state on logout/user switch so cached orders, revisions, and
 unsaved-change flags never leak to the next user on a shared browser.
 
 The compact save-state readout is `ReorderStatusIndicator`
-(`Unsaved order`, `Saving order…`, `Order saved`, `Order changed elsewhere`,
-`Could not save order — Retry`). Coordinator transitions emit the reorder
+(`Saving order…`, `Order saved`, `Order changed elsewhere`,
+`Could not save order — Retry`). The internal `dirty` status is transient —
+`reportOrder` flushes it into `saving` in the same synchronous step — so it
+renders as `Saving order…` rather than a separate unsaved readout.
+Coordinator transitions emit the reorder
 diagnostic events (`queued`, `coalesced`, `submitted`, `committed`,
 `conflicted`, `failed`) from `docs/reorder-telemetry.md`.
 

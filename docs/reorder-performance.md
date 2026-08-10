@@ -32,6 +32,12 @@ cancel/release (so the drag-end cluster is captured) while drag FPS is still
 computed over the movement phase only, so FPS remains comparable with the
 tables below but future long-task totals will be slightly higher.
 
+Because every run Escape-cancels before releasing the pointer, the
+drag-end cluster measured here is the cancel path: the drop-commit cost
+(order diff, coordinator report/persistence, post-save refetch) is never
+exercised by this harness. The conclusions below therefore cover drag
+interactivity only, not save cost.
+
 ## Baseline (before optimization)
 
 | Scope   | Tiles | Drag FPS | Long tasks (count / total / max) | Slowest pointer event | JS heap |
