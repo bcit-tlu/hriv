@@ -560,12 +560,18 @@ export default function ManageCategoriesDialog({
   return (
     <>
       <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-        <DialogTitle
-          sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 1,
+            pr: 3,
+          }}
         >
-          Manage Categories
+          <DialogTitle>Manage Categories</DialogTitle>
           {reorderStatus}
-        </DialogTitle>
+        </Box>
         <DialogContent>
           <List
             dense

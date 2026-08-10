@@ -28,8 +28,9 @@ Every ordering operation gets a client-generated `operation_id`
    persistence request with the operation ID, entity, item count, duration,
    outcome, and the request ID.
 
-The header value is validated server-side (`^[A-Za-z0-9-]{8,64}$`); anything
-else is dropped so arbitrary client text never reaches traces or logs.
+The request-body `operation_id` is validated server-side
+(`^[A-Za-z0-9-]{8,64}$`); anything else is dropped so arbitrary client text
+never reaches traces or logs.
 
 ## Lifecycle states
 
