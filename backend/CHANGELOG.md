@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.42.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.41.2...backend-v0.42.0) (2026-08-10)
+
+
+### Features
+
+* add atomic, revisioned tile-order API with set-based updates ([#994](https://github.com/bcit-tlu/hriv/issues/994)) ([a5f9b96](https://github.com/bcit-tlu/hriv/commit/a5f9b96087560cf5e64a833fcc8eb9eb637b20ee))
+* add reorder operation correlation, timing, and diagnostic telemetry ([#993](https://github.com/bcit-tlu/hriv/issues/993)) ([ec67619](https://github.com/bcit-tlu/hriv/commit/ec67619ed042e0837dd929e809ec83a5a4452165))
+* migrate Manage Categories to the shared tile-ordering workflow ([#999](https://github.com/bcit-tlu/hriv/issues/999)) ([b95fd59](https://github.com/bcit-tlu/hriv/commit/b95fd5976c60b977bf12b4ebca122fb06be942d9))
+
 ## [0.41.2](https://github.com/bcit-tlu/hriv/compare/backend-v0.41.1...backend-v0.41.2) (2026-07-21)
 
 
