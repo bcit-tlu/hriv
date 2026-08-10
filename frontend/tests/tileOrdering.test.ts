@@ -104,6 +104,15 @@ describe('TileOrderingCoordinator', () => {
     expect(state.displayOrder).toEqual(refs(3, 2, 1))
     expect(mockedPut).toHaveBeenCalledTimes(2)
     expect(mockedPut).toHaveBeenLastCalledWith(null, 2, refs(3, 2, 1), expect.any(String))
+
+    // The queued snapshot's operation ID carries through to its submission
+    // and terminal event, so the lifecycle correlates end to end.
+    const queuedId = events.find((e) => e.state === 'queued')?.operationId
+    const submittedIds = events.filter((e) => e.state === 'submitted').map((e) => e.operationId)
+    const committedIds = events.filter((e) => e.state === 'committed').map((e) => e.operationId)
+    expect(queuedId).toBeDefined()
+    expect(submittedIds).toContain(queuedId)
+    expect(committedIds).toContain(queuedId)
   })
 
   it('coalesces many rapid changes to the newest snapshot', async () => {
@@ -348,5 +357,121 @@ describe('TileOrderingCoordinator', () => {
     first.resolve(response(2, refs(2, 1, 3)))
     await flushMicrotasks()
     expect(coordinator.hasUnsavedChanges()).toBe(false)
+  })
+
+  it('releaseCleanScopes drops saved scopes but keeps scopes with local intent', async () => {
+    mockedGet.mockResolvedValue(response(1, refs(1, 2)))
+    mockedPut.mockResolvedValueOnce(response(2, refs(2, 1)))
+    coordinator.reportOrder(null, refs(2, 1))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('saved')
+
+    const pending = deferred<TileOrderResponse>()
+    mockedPut.mockReturnValueOnce(pending.promise)
+    coordinator.reportOrder(7, refs(4, 3))
+    await flushMicrotasks()
+    expect(coordinator.getScope(7).status).toBe('saving')
+
+    coordinator.releaseCleanScopes()
+    // Clean scope: cached order/revision dropped so fresh data wins.
+    expect(coordinator.getScope(null).displayOrder).toBeNull()
+    expect(coordinator.getScope(null).revision).toBeNull()
+    // In-flight scope: untouched.
+    expect(coordinator.getScope(7).status).toBe('saving')
+    expect(coordinator.getScope(7).displayOrder).toEqual(refs(4, 3))
+
+    pending.resolve(response(2, refs(4, 3)))
+    await flushMicrotasks()
+  })
+
+  it('reset clears all scope state on logout/user switch', async () => {
+    mockedGet.mockResolvedValue(response(1, refs(1, 2)))
+    mockedPut.mockRejectedValueOnce(new Error('boom'))
+    coordinator.reportOrder(null, refs(2, 1))
+    await flushMicrotasks()
+    expect(coordinator.hasUnsavedChanges()).toBe(true)
+
+    coordinator.reset()
+    expect(coordinator.hasUnsavedChanges()).toBe(false)
+    expect(coordinator.getScope(null).status).toBe('idle')
+    expect(coordinator.getScope(null).displayOrder).toBeNull()
+  })
+
+  it('a save settling after reset cannot recreate the previous state', async () => {
+    const first = deferred<TileOrderResponse>()
+    mockedPut.mockReturnValueOnce(first.promise)
+
+    coordinator.reportOrder(null, refs(2, 1))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('saving')
+
+    coordinator.reset()
+    first.resolve(response(2, refs(2, 1)))
+    await flushMicrotasks()
+
+    expect(coordinator.getScope(null).status).toBe('idle')
+    expect(coordinator.getScope(null).displayOrder).toBeNull()
+    expect(coordinator.hasUnsavedChanges()).toBe(false)
+  })
+
+  it('a seeding GET settling after reset cannot recreate the previous state', async () => {
+    const seed = deferred<TileOrderResponse>()
+    mockedGet.mockReturnValueOnce(seed.promise)
+
+    coordinator.reportOrder(null, refs(2, 1))
+    expect(coordinator.getScope(null).status).toBe('saving')
+
+    coordinator.reset()
+    seed.resolve(response(1, refs(1, 2)))
+    await flushMicrotasks()
+
+    expect(coordinator.getScope(null).status).toBe('idle')
+    expect(mockedPut).not.toHaveBeenCalled()
+  })
+
+  it('releaseCleanScopes keeps scopes saved after the caller captured its marker', async () => {
+    const save = deferred<TileOrderResponse>()
+    mockedPut.mockReturnValueOnce(save.promise)
+    coordinator.reportOrder(null, refs(2, 1))
+    await flushMicrotasks()
+
+    // A refresh starts (captures the marker) while the save is in flight.
+    const marker = coordinator.marker()
+    save.resolve(response(2, refs(2, 1)))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('saved')
+
+    // Refresh completes with data fetched before the save committed: the
+    // just-saved scope must survive the release.
+    coordinator.releaseCleanScopes(marker)
+    expect(coordinator.getScope(null).displayOrder).toEqual(refs(2, 1))
+
+    // A later refresh whose marker postdates the save releases it normally.
+    coordinator.releaseCleanScopes(coordinator.marker())
+    expect(coordinator.getScope(null).displayOrder).toBeNull()
+  })
+
+  it('queues drops that land during revision seeding', async () => {
+    const seed = deferred<TileOrderResponse>()
+    mockedGet.mockReturnValueOnce(seed.promise)
+    mockedPut.mockResolvedValueOnce(response(2, refs(3, 2, 1)))
+
+    coordinator.reportOrder(null, refs(2, 1, 3))
+    expect(coordinator.getScope(null).status).toBe('saving')
+
+    coordinator.reportOrder(null, refs(3, 2, 1))
+    expect(coordinator.getScope(null).status).toBe('dirty-while-saving')
+    // The original drop is still pending while its revision seeds, so the
+    // second drop coalesces onto it rather than queueing a new operation.
+    expect(events.some((e) => e.state === 'coalesced')).toBe(true)
+
+    seed.resolve(response(1, refs(1, 2, 3)))
+    await flushMicrotasks()
+
+    const state = coordinator.getScope(null)
+    expect(state.status).toBe('saved')
+    expect(state.displayOrder).toEqual(refs(3, 2, 1))
+    expect(mockedPut).toHaveBeenCalledTimes(1)
+    expect(mockedPut).toHaveBeenCalledWith(null, 1, refs(3, 2, 1), expect.any(String))
   })
 })

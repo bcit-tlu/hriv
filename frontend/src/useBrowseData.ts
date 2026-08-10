@@ -256,8 +256,16 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
       // race a reorder that is dirty, saving, conflicted, or awaiting retry.
       // Polling resumes on the next tick once the coordinator is clean.
       if (tileOrderingCoordinator.hasUnsavedChanges()) return
+      // Capture before fetching: a save that commits while these requests
+      // are in flight is newer than the fetched data and must survive the
+      // release below.
+      const marker = tileOrderingCoordinator.marker()
       await loadCategories({ silent: true, signal })
       await loadUncategorizedImages({ signal })
+      // Fresh authoritative data has landed: drop the coordinator's cached
+      // display order for scopes with no local intent so order changes made
+      // elsewhere (another client or surface) become visible.
+      if (!signal.aborted) tileOrderingCoordinator.releaseCleanScopes(marker)
     },
     [loadCategories, loadUncategorizedImages],
   )

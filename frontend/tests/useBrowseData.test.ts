@@ -22,7 +22,11 @@ vi.mock('../src/useBackgroundRefresh', () => ({
 }))
 
 vi.mock('../src/tileOrdering', () => ({
-  tileOrderingCoordinator: { hasUnsavedChanges: vi.fn(() => false) },
+  tileOrderingCoordinator: {
+    hasUnsavedChanges: vi.fn(() => false),
+    marker: vi.fn(() => 0),
+    releaseCleanScopes: vi.fn(),
+  },
 }))
 
 import { useBackgroundRefresh } from '../src/useBackgroundRefresh'
