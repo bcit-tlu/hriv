@@ -65,6 +65,8 @@ Allowed for aggregate metrics:
 - `status_class`
 - `outcome`
 - `operation`
+- `entity` (reorder metrics: `category` / `image` / `tile`)
+- `state` (reorder client-operation lifecycle states; bounded, coerced server-side)
 - `job_type`
 - `backup_type`
 - `restore_type`
@@ -118,6 +120,7 @@ Implemented frontend-ingestion events:
 - `image.view.ended`
 - `image.view.failed`
 - `navigation.page_changed`
+- `reorder.operation`
 - `ui.toolbar_action`
 
 Reserved names for follow-on observability issues:

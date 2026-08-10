@@ -31,7 +31,18 @@ threshold makes them mutually exclusive inside any tile.
 | Gesture                | Trigger zone                                                           | Droppable                                           | Collision detector        | Priority                   | Result                                               |
 | ---------------------- | ---------------------------------------------------------------------- | --------------------------------------------------- | ------------------------- | -------------------------- | ---------------------------------------------------- |
 | **Move into category** | Pointer on the **near half** of a category tile (entry side of centre) | `DroppableCategoryZone`, id `drop-cat-<categoryId>` | `nearHalfMoveCollision`   | `CollisionPriority.High`   | `onDropImageOnCategory` / `onDropCategoryOnCategory` |
-| **Reorder**            | Pointer past a tile's **centre** (far half) along the drag axis        | the sibling tile's `useSortable`                    | `farHalfReorderCollision` | `CollisionPriority.Normal` | `reorderImages` / `reorderCategories` (via `move()`) |
+| **Reorder**            | Pointer past a tile's **centre** (far half) along the drag axis        | the sibling tile's `useSortable`                    | `farHalfReorderCollision` | `CollisionPriority.Normal` | committed via `move()`; persisted per the mode below |
+
+How a reorder persists depends on the grid's mode:
+
+- **Coordinator mode** (Browse — a `tileOrdering` prop is passed): the drop is
+  reported to the shared coordinator (`frontend/src/tileOrdering.ts`), which
+  persists the scope's full order atomically through `PUT /api/tile-order`
+  with compare-and-set revisions. Drops that land while a save is in flight
+  are **queued and coalesced** — never discarded. See
+  `docs/tile-ordering.md` for the save-state lifecycle.
+- **Legacy mode** (no `tileOrdering` prop): the grid calls `reorderImages` /
+  `reorderCategories` directly with per-item sort orders.
 
 The two detectors share one predicate, `isPastTileCenterAlongDrag`, and are
 exact complements inside a tile: for any pointer inside a tile, **exactly one**

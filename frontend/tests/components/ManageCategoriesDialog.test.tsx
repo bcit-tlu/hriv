@@ -22,8 +22,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ManageCategoriesDialog from '../../src/components/ManageCategoriesDialog'
+import type { ParentMove, ScopeOrder } from '../../src/components/manageCategoriesDialogUtils'
 import type { Program } from '../../src/types'
 import { resetCategoryTreeExpansionPreferencesForTests } from '../../src/useCategoryTreeExpansionPreferences'
+import { tileOrderingCoordinator } from '../../src/tileOrdering'
 import { makeCategory, makeImage } from '../helpers/fixtures'
 
 beforeEach(() => {
@@ -33,6 +35,13 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks()
+})
+
+// The dialog reads per-scope display orders from the module-singleton
+// coordinator during render; reset it so no test's leftover scope state
+// can make another test's rendered sibling order order-dependent.
+afterEach(() => {
+  tileOrderingCoordinator.reset()
 })
 
 // ---------------------------------------------------------------------------
@@ -49,7 +58,8 @@ function renderDialog(overrides: Partial<Parameters<typeof ManageCategoriesDialo
   const onDeleteCategory = overrides.onDeleteCategory ?? vi.fn().mockResolvedValue(undefined)
   const onEditCategory = overrides.onEditCategory ?? vi.fn().mockResolvedValue(undefined)
   const onToggleVisibility = overrides.onToggleVisibility ?? undefined
-  const onReorderCategories = overrides.onReorderCategories ?? undefined
+  const onReorderTiles = overrides.onReorderTiles ?? undefined
+  const onReorderComplete = overrides.onReorderComplete ?? undefined
   const onCategoryNavigate = overrides.onCategoryNavigate ?? undefined
   return {
     onClose,
@@ -68,7 +78,8 @@ function renderDialog(overrides: Partial<Parameters<typeof ManageCategoriesDialo
         onDeleteCategory={onDeleteCategory}
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleVisibility}
-        onReorderCategories={onReorderCategories}
+        onReorderTiles={onReorderTiles}
+        onReorderComplete={onReorderComplete}
         programs={overrides.programs ?? programs}
         groups={overrides.groups ?? []}
       />,
@@ -441,16 +452,104 @@ describe('ManageCategoriesDialog — visibility toggle', () => {
 // ---------------------------------------------------------------------------
 
 describe('ManageCategoriesDialog — drag handle', () => {
-  it('renders drag handles when onReorderCategories is provided', () => {
+  it('renders drag handles when onReorderTiles is provided', () => {
     const categories = [makeCategory({ id: 1, label: 'Cat' })]
-    renderDialog({ categories, onReorderCategories: vi.fn() })
+    renderDialog({ categories, onReorderTiles: vi.fn() })
     expect(document.querySelector('svg[data-testid="DragIndicatorIcon"]')).toBeInTheDocument()
   })
 
-  it('does not render drag handles when onReorderCategories is omitted', () => {
+  it('does not render drag handles when onReorderTiles is omitted', () => {
     const categories = [makeCategory({ id: 1, label: 'Cat' })]
     renderDialog({ categories })
     expect(document.querySelector('svg[data-testid="DragIndicatorIcon"]')).not.toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Tests — Drop → onReorderTiles decomposition
+// ---------------------------------------------------------------------------
+
+describe('ManageCategoriesDialog — drop → onReorderTiles', () => {
+  // jsdom reports zero-size rects for every list item, so a dragover at
+  // clientY > 0 always resolves to "insert after the last visible item";
+  // clientX controls the indent depth (24px per level).
+  const dataTransfer = () => ({
+    effectAllowed: '',
+    dropEffect: '',
+    setData: vi.fn(),
+    getData: vi.fn(),
+  })
+
+  // jsdom has no DragEvent constructor, so fireEvent.dragOver would drop the
+  // clientX/clientY init options; build MouseEvents (which carry coordinates)
+  // and attach a dataTransfer stub as an own property instead.
+  function fireDrag(target: Element, type: string, clientX: number, clientY: number) {
+    const evt = new MouseEvent(type, { bubbles: true, cancelable: true, clientX, clientY })
+    Object.assign(evt, { dataTransfer: dataTransfer() })
+    fireEvent(target, evt)
+  }
+
+  function dragToEnd(id: number, clientX: number) {
+    const item = document.querySelector(`[data-category-id="${id}"]`)!
+    const list = item.closest('ul')!
+    fireDrag(item, 'dragstart', 0, 0)
+    fireDrag(list, 'dragover', clientX, 100)
+    fireDrag(list, 'drop', clientX, 100)
+  }
+
+  const categories = () => [
+    makeCategory({ id: 1, label: 'Alpha' }),
+    makeCategory({ id: 2, label: 'Beta' }),
+  ]
+
+  it('pure same-parent reorder reports scopes with no moves and skips onReorderComplete', async () => {
+    const onReorderTiles = vi.fn().mockResolvedValue(undefined)
+    const onReorderComplete = vi.fn().mockResolvedValue(undefined)
+    renderDialog({ categories: categories(), onReorderTiles, onReorderComplete })
+
+    dragToEnd(1, 0)
+
+    await waitFor(() => expect(onReorderTiles).toHaveBeenCalledTimes(1))
+    expect(onReorderTiles).toHaveBeenCalledWith(
+      [],
+      [
+        {
+          scope: null,
+          order: [
+            { type: 'category', id: 2 },
+            { type: 'category', id: 1 },
+          ],
+          dragContext: { itemType: 'category', itemId: 1, fromIndex: 0, toIndex: 1 },
+        },
+      ],
+    )
+    // Pure reorders are persisted by the coordinator, which triggers the
+    // authoritative refresh itself on commit — no dialog-level refresh.
+    expect(onReorderComplete).not.toHaveBeenCalled()
+  })
+
+  it('cross-parent drop reports the parent move and refreshes on success', async () => {
+    const onReorderTiles = vi.fn().mockResolvedValue(undefined)
+    const onReorderComplete = vi.fn().mockResolvedValue(undefined)
+    renderDialog({ categories: categories(), onReorderTiles, onReorderComplete })
+
+    // clientX ≈ one indent level → depth 1, nesting Alpha under Beta.
+    dragToEnd(1, 30)
+
+    await waitFor(() => expect(onReorderTiles).toHaveBeenCalledTimes(1))
+    const [moves] = onReorderTiles.mock.calls[0]
+    expect(moves).toEqual([{ categoryId: 1, newParentId: 2 }])
+    await waitFor(() => expect(onReorderComplete).toHaveBeenCalledTimes(1))
+  })
+
+  it('refreshes authoritative state when onReorderTiles rejects', async () => {
+    const onReorderTiles = vi.fn().mockRejectedValue(new Error('patch failed'))
+    const onReorderComplete = vi.fn().mockResolvedValue(undefined)
+    renderDialog({ categories: categories(), onReorderTiles, onReorderComplete })
+
+    dragToEnd(1, 0)
+
+    await waitFor(() => expect(onReorderComplete).toHaveBeenCalledTimes(1))
   })
 })
 
@@ -674,20 +773,9 @@ describe('ManageCategoriesDialog — drag-and-drop reorder', () => {
   }
 
   it('reorders a root category to the end via drag-and-drop', async () => {
-    const onReorderCategories = vi.fn().mockResolvedValue(undefined)
+    const onReorderTiles = vi.fn().mockResolvedValue(undefined)
     const onReorderComplete = vi.fn()
-    render(
-      <ManageCategoriesDialog
-        open
-        onClose={vi.fn()}
-        categories={rootCategories()}
-        onAddCategory={vi.fn()}
-        onDeleteCategory={vi.fn()}
-        onReorderCategories={onReorderCategories}
-        onReorderComplete={onReorderComplete}
-        programs={programs}
-      />,
-    )
+    renderDialog({ categories: rootCategories(), onReorderTiles, onReorderComplete })
     const { list } = mockListGeometry()
 
     dragRow('Beta')
@@ -695,30 +783,28 @@ describe('ManageCategoriesDialog — drag-and-drop reorder', () => {
     fireDragOverAt(list, 5, 300)
     fireEvent.drop(list, { dataTransfer: makeDataTransfer() })
 
-    await waitFor(() => expect(onReorderCategories).toHaveBeenCalledTimes(1))
-    const items = onReorderCategories.mock.calls[0][0] as Array<{
-      id: number
-      parent_id: number | null
-      sort_order: number
-    }>
-    const beta = items.find((i) => i.id === 2)
-    expect(beta).toMatchObject({ parent_id: null, sort_order: 2 })
-    await waitFor(() => expect(onReorderComplete).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(onReorderTiles).toHaveBeenCalledTimes(1))
+    const [moves, scopes] = onReorderTiles.mock.calls[0] as [ParentMove[], ScopeOrder[]]
+    expect(moves).toEqual([])
+    expect(scopes).toEqual([
+      {
+        scope: null,
+        order: [
+          { type: 'category', id: 1 },
+          { type: 'category', id: 3 },
+          { type: 'category', id: 2 },
+        ],
+        dragContext: { itemType: 'category', itemId: 2, fromIndex: 1, toIndex: 2 },
+      },
+    ])
+    // Pure reorders persist through the coordinator, which owns the
+    // authoritative refresh — no dialog-level refresh.
+    expect(onReorderComplete).not.toHaveBeenCalled()
   })
 
   it('nests a category under a new parent when dropped indented', async () => {
-    const onReorderCategories = vi.fn().mockResolvedValue(undefined)
-    render(
-      <ManageCategoriesDialog
-        open
-        onClose={vi.fn()}
-        categories={rootCategories()}
-        onAddCategory={vi.fn()}
-        onDeleteCategory={vi.fn()}
-        onReorderCategories={onReorderCategories}
-        programs={programs}
-      />,
-    )
+    const onReorderTiles = vi.fn().mockResolvedValue(undefined)
+    renderDialog({ categories: rootCategories(), onReorderTiles })
     const { list } = mockListGeometry()
 
     dragRow('Gamma')
@@ -726,27 +812,14 @@ describe('ManageCategoriesDialog — drag-and-drop reorder', () => {
     fireDragOverAt(list, 30, 300)
     fireEvent.drop(list, { dataTransfer: makeDataTransfer() })
 
-    await waitFor(() => expect(onReorderCategories).toHaveBeenCalledTimes(1))
-    const items = onReorderCategories.mock.calls[0][0] as Array<{
-      id: number
-      parent_id: number | null
-    }>
-    expect(items.find((i) => i.id === 3)).toMatchObject({ parent_id: 2 })
+    await waitFor(() => expect(onReorderTiles).toHaveBeenCalledTimes(1))
+    const [moves] = onReorderTiles.mock.calls[0] as [ParentMove[], ScopeOrder[]]
+    expect(moves).toEqual([{ categoryId: 3, newParentId: 2 }])
   })
 
   it('inserts a dragged category between two rows on a mid-list drop', async () => {
-    const onReorderCategories = vi.fn().mockResolvedValue(undefined)
-    render(
-      <ManageCategoriesDialog
-        open
-        onClose={vi.fn()}
-        categories={rootCategories()}
-        onAddCategory={vi.fn()}
-        onDeleteCategory={vi.fn()}
-        onReorderCategories={onReorderCategories}
-        programs={programs}
-      />,
-    )
+    const onReorderTiles = vi.fn().mockResolvedValue(undefined)
+    renderDialog({ categories: rootCategories(), onReorderTiles })
     const { list } = mockListGeometry()
 
     dragRow('Gamma')
@@ -754,34 +827,31 @@ describe('ManageCategoriesDialog — drag-and-drop reorder', () => {
     fireDragOverAt(list, 5, 40)
     fireEvent.drop(list, { dataTransfer: makeDataTransfer() })
 
-    await waitFor(() => expect(onReorderCategories).toHaveBeenCalledTimes(1))
-    const items = onReorderCategories.mock.calls[0][0] as Array<{
-      id: number
-      parent_id: number | null
-      sort_order: number
-    }>
-    expect(items.find((i) => i.id === 3)).toMatchObject({ parent_id: null, sort_order: 1 })
-    expect(items.find((i) => i.id === 2)).toMatchObject({ parent_id: null, sort_order: 2 })
+    await waitFor(() => expect(onReorderTiles).toHaveBeenCalledTimes(1))
+    const [moves, scopes] = onReorderTiles.mock.calls[0] as [ParentMove[], ScopeOrder[]]
+    expect(moves).toEqual([])
+    expect(scopes[0].order).toEqual([
+      { type: 'category', id: 1 },
+      { type: 'category', id: 3 },
+      { type: 'category', id: 2 },
+    ])
+    expect(scopes[0].dragContext).toEqual({
+      itemType: 'category',
+      itemId: 3,
+      fromIndex: 2,
+      toIndex: 1,
+    })
   })
 
-  it('refreshes via onReorderComplete and skips image reorder when category reorder fails', async () => {
-    const onReorderCategories = vi.fn().mockRejectedValue(new Error('conflict'))
-    const onReorderImages = vi.fn()
+  it('refreshes via onReorderComplete when the reorder fails', async () => {
+    const onReorderTiles = vi.fn().mockRejectedValue(new Error('conflict'))
     const onReorderComplete = vi.fn()
-    render(
-      <ManageCategoriesDialog
-        open
-        onClose={vi.fn()}
-        categories={rootCategories()}
-        uncategorizedImages={[makeImage({ id: 100, sortOrder: 0 })]}
-        onAddCategory={vi.fn()}
-        onDeleteCategory={vi.fn()}
-        onReorderCategories={onReorderCategories}
-        onReorderImages={onReorderImages}
-        onReorderComplete={onReorderComplete}
-        programs={programs}
-      />,
-    )
+    renderDialog({
+      categories: rootCategories(),
+      uncategorizedImages: [makeImage({ id: 100, sortOrder: 0 })],
+      onReorderTiles,
+      onReorderComplete,
+    })
     const { list } = mockListGeometry()
 
     dragRow('Beta')
@@ -789,52 +859,35 @@ describe('ManageCategoriesDialog — drag-and-drop reorder', () => {
     fireEvent.drop(list, { dataTransfer: makeDataTransfer() })
 
     await waitFor(() => expect(onReorderComplete).toHaveBeenCalledTimes(1))
-    expect(onReorderImages).not.toHaveBeenCalled()
   })
 
   it('reorders interleaved images alongside categories on a successful drop', async () => {
-    const onReorderCategories = vi.fn().mockResolvedValue(undefined)
-    const onReorderImages = vi.fn().mockResolvedValue(undefined)
-    const onReorderComplete = vi.fn()
-    render(
-      <ManageCategoriesDialog
-        open
-        onClose={vi.fn()}
-        categories={rootCategories()}
-        uncategorizedImages={[makeImage({ id: 100, sortOrder: 0 })]}
-        onAddCategory={vi.fn()}
-        onDeleteCategory={vi.fn()}
-        onReorderCategories={onReorderCategories}
-        onReorderImages={onReorderImages}
-        onReorderComplete={onReorderComplete}
-        programs={programs}
-      />,
-    )
+    const onReorderTiles = vi.fn().mockResolvedValue(undefined)
+    renderDialog({
+      categories: rootCategories(),
+      uncategorizedImages: [makeImage({ id: 100, sortOrder: 0 })],
+      onReorderTiles,
+    })
     const { list } = mockListGeometry()
 
     dragRow('Beta')
     fireDragOverAt(list, 5, 300)
     fireEvent.drop(list, { dataTransfer: makeDataTransfer() })
 
-    await waitFor(() => expect(onReorderImages).toHaveBeenCalledTimes(1))
-    // The image keeps interleave slot 0; the three categories fill slots 1..3
-    expect(onReorderImages.mock.calls[0][0]).toEqual([{ id: 100, sort_order: 0 }])
-    await waitFor(() => expect(onReorderComplete).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(onReorderTiles).toHaveBeenCalledTimes(1))
+    const [, scopes] = onReorderTiles.mock.calls[0] as [ParentMove[], ScopeOrder[]]
+    // The image keeps interleave slot 0; the categories fill the rest
+    expect(scopes[0].order).toEqual([
+      { type: 'image', id: 100 },
+      { type: 'category', id: 1 },
+      { type: 'category', id: 3 },
+      { type: 'category', id: 2 },
+    ])
   })
 
   it('does nothing when dropped without a computed drop target', async () => {
-    const onReorderCategories = vi.fn().mockResolvedValue(undefined)
-    render(
-      <ManageCategoriesDialog
-        open
-        onClose={vi.fn()}
-        categories={rootCategories()}
-        onAddCategory={vi.fn()}
-        onDeleteCategory={vi.fn()}
-        onReorderCategories={onReorderCategories}
-        programs={programs}
-      />,
-    )
+    const onReorderTiles = vi.fn().mockResolvedValue(undefined)
+    renderDialog({ categories: rootCategories(), onReorderTiles })
     const { list } = mockListGeometry()
 
     const row = dragRow('Beta')
@@ -842,11 +895,11 @@ describe('ManageCategoriesDialog — drag-and-drop reorder', () => {
     fireEvent.drop(list, { dataTransfer: makeDataTransfer() })
     fireEvent.dragEnd(row, { dataTransfer: makeDataTransfer() })
 
-    expect(onReorderCategories).not.toHaveBeenCalled()
+    expect(onReorderTiles).not.toHaveBeenCalled()
   })
 
   it('excludes the dragged subtree when dropping a parent after its sibling', async () => {
-    const onReorderCategories = vi.fn().mockResolvedValue(undefined)
+    const onReorderTiles = vi.fn().mockResolvedValue(undefined)
     const categories = [
       makeCategory({
         id: 1,
@@ -855,32 +908,22 @@ describe('ManageCategoriesDialog — drag-and-drop reorder', () => {
       }),
       makeCategory({ id: 2, label: 'Beta' }),
     ]
-    render(
-      <ManageCategoriesDialog
-        open
-        onClose={vi.fn()}
-        categories={categories}
-        onAddCategory={vi.fn()}
-        onDeleteCategory={vi.fn()}
-        onReorderCategories={onReorderCategories}
-        programs={programs}
-      />,
-    )
+    renderDialog({ categories, onReorderTiles })
     const { list } = mockListGeometry()
 
     dragRow('Alpha')
     fireDragOverAt(list, 5, 300)
     fireEvent.drop(list, { dataTransfer: makeDataTransfer() })
 
-    await waitFor(() => expect(onReorderCategories).toHaveBeenCalledTimes(1))
-    const items = onReorderCategories.mock.calls[0][0] as Array<{
-      id: number
-      parent_id: number | null
-      sort_order: number
-    }>
-    // Alpha moved after Beta at root; AlphaChild stays under Alpha
-    expect(items.find((i) => i.id === 1)).toMatchObject({ parent_id: null, sort_order: 1 })
-    expect(items.find((i) => i.id === 2)).toMatchObject({ parent_id: null, sort_order: 0 })
-    expect(items.find((i) => i.id === 4)).toMatchObject({ parent_id: 1 })
+    await waitFor(() => expect(onReorderTiles).toHaveBeenCalledTimes(1))
+    const [moves, scopes] = onReorderTiles.mock.calls[0] as [ParentMove[], ScopeOrder[]]
+    // Alpha moved after Beta at root; AlphaChild stays under Alpha (no move)
+    expect(moves).toEqual([])
+    expect(scopes[0].scope).toBeNull()
+    expect(scopes[0].order).toEqual([
+      { type: 'category', id: 2 },
+      { type: 'category', id: 1 },
+    ])
+    expect(scopes.some((s) => s.scope === 1)).toBe(false)
   })
 })

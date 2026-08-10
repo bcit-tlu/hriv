@@ -489,19 +489,88 @@ export function deleteCategory(id: number): Promise<void> {
 
 export function reorderCategories(
   items: Array<{ id: number; parent_id: number | null; sort_order: number }>,
+  /** Client-generated correlation ID for end-to-end reorder telemetry. */
+  operationId?: string,
 ): Promise<void> {
+  const headers: Record<string, string> = {}
+  if (operationId !== undefined) {
+    headers['X-Reorder-Operation-Id'] = operationId
+  }
   return request('/categories/reorder', {
     method: 'PUT',
     body: JSON.stringify({ items }),
+    headers,
   })
+}
+
+// ── Tile order (atomic combined ordering; docs/tile-ordering.md) ──
+
+export interface TileOrderItemRef {
+  type: 'category' | 'image'
+  id: number
+}
+
+export interface TileOrderItem extends TileOrderItemRef {
+  sort_order: number
+}
+
+export interface TileOrderResponse {
+  scope: { parent_category_id: number | null }
+  revision: number
+  items: TileOrderItem[]
+}
+
+export function getTileOrder(parentCategoryId: number | null): Promise<TileOrderResponse> {
+  const qs = parentCategoryId != null ? `?parent_category_id=${parentCategoryId}` : ''
+  return request(`/tile-order${qs}`)
+}
+
+export function putTileOrder(
+  parentCategoryId: number | null,
+  expectedRevision: number,
+  items: TileOrderItemRef[],
+  /** Client-generated correlation ID for end-to-end reorder telemetry. */
+  operationId?: string,
+): Promise<TileOrderResponse> {
+  const headers: Record<string, string> = {}
+  if (operationId !== undefined) {
+    headers['X-Reorder-Operation-Id'] = operationId
+  }
+  return request('/tile-order', {
+    method: 'PUT',
+    body: JSON.stringify({
+      scope: { parent_category_id: parentCategoryId },
+      expected_revision: expectedRevision,
+      operation_id: operationId ?? null,
+      items,
+    }),
+    headers,
+  })
+}
+
+/** Extract the authoritative current order from a 409 stale-revision ApiError. */
+export function tileOrderConflictCurrent(err: unknown): TileOrderResponse | null {
+  if (!(err instanceof ApiError) || err.status !== 409) return null
+  // `ApiError.data` is the response body's `detail` object.
+  const detail = err.data as { current?: TileOrderResponse } | undefined
+  return detail?.current ?? null
 }
 
 // ── Images ───────────────────────────────────────────────
 
-export function reorderImages(items: Array<{ id: number; sort_order: number }>): Promise<void> {
+export function reorderImages(
+  items: Array<{ id: number; sort_order: number }>,
+  /** Client-generated correlation ID for end-to-end reorder telemetry. */
+  operationId?: string,
+): Promise<void> {
+  const headers: Record<string, string> = {}
+  if (operationId !== undefined) {
+    headers['X-Reorder-Operation-Id'] = operationId
+  }
   return request('/images/reorder', {
     method: 'PUT',
     body: JSON.stringify({ items }),
+    headers,
   })
 }
 

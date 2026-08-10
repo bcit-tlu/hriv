@@ -1,8 +1,9 @@
 import hashlib
 import json as _json
+import time
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from opentelemetry import trace
 from sqlalchemy import and_, select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +14,13 @@ from ..authz import (
     can_attach_program_to_category,
 )
 from ..database import get_db
+from ..tile_order import bump_scopes, scope_key_for
+from ..reorder_telemetry import (
+    annotate_reorder_span,
+    classify_reorder_exception,
+    record_reorder_result,
+    sanitize_reorder_operation_id,
+)
 from ..tracing import record_exception_if_server_error
 from ..models import Category, Group, Image, Program, User
 from ..schemas import (
@@ -405,6 +413,24 @@ async def update_category(
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found")
 
+    # An ordering write (sort_order or a parent move) must invalidate the
+    # affected scopes' tile-order revisions so a client holding an older
+    # revision gets a 409 instead of silently overwriting this change.
+    # Revision locks are taken before any row mutation, matching
+    # PUT /api/tile-order's revision-then-rows lock order
+    # (docs/tile-ordering.md).
+    # Only an actual value change invalidates: edit dialogs echo the current
+    # parent_id/sort_order back on every save, and bumping on presence alone
+    # would 409 clients whose cached revision is still accurate.
+    ordering_fields = body.model_dump(exclude_unset=True)
+    sort_changed = "sort_order" in ordering_fields and ordering_fields["sort_order"] != cat.sort_order
+    parent_changed = "parent_id" in ordering_fields and ordering_fields["parent_id"] != cat.parent_id
+    if sort_changed or parent_changed:
+        affected = {scope_key_for(cat.parent_id)}
+        if parent_changed:
+            affected.add(scope_key_for(ordering_fields["parent_id"]))
+        await bump_scopes(db, affected)
+
     # Optimistic concurrency: same CAS pattern as image updates.
     if_match = request.headers.get("If-Match")
     if if_match is not None:
@@ -495,10 +521,21 @@ async def reorder_categories(
     body: CategoryReorderRequest,
     _user: Annotated[User, Depends(require_role("admin", "instructor"))],
     db: AsyncSession = Depends(get_db),
+    x_reorder_operation_id: Annotated[
+        str | None, Header(alias="X-Reorder-Operation-Id")
+    ] = None,
 ):
+    operation_id = sanitize_reorder_operation_id(x_reorder_operation_id)
+    started = time.perf_counter()
     with tracer.start_as_current_span("category.reorder") as span:
         try:
             span.set_attribute("category.count", len(body.items))
+            annotate_reorder_span(
+                span,
+                entity="category",
+                operation_id=operation_id,
+                item_count=len(body.items),
+            )
             # Build proposed parent graph and validate for cycles
             parent_map: dict[int, int | None] = {item.id: item.parent_id for item in body.items}
             for item in body.items:
@@ -524,17 +561,46 @@ async def reorder_categories(
                         ancestor = await db.get(Category, current)
                         current = ancestor.parent_id if ancestor else None
 
+            affected_scopes: set[int] = set()
+            cats: list[Category] = []
             for item in body.items:
                 cat = await db.get(Category, item.id)
                 if cat is None:
                     raise HTTPException(status_code=404, detail=f"Category {item.id} not found")
+                affected_scopes.add(scope_key_for(cat.parent_id))
+                affected_scopes.add(scope_key_for(item.parent_id))
+                cats.append(cat)
+            # Invalidate tile-order revisions for every touched scope so
+            # clients of PUT /api/tile-order get a 409 instead of silently
+            # overwriting this write. Revision locks are taken BEFORE the
+            # category rows are mutated, matching PUT /api/tile-order's
+            # revision-then-rows lock order to avoid deadlocks
+            # (docs/tile-ordering.md).
+            await bump_scopes(db, affected_scopes)
+            for cat, item in zip(cats, body.items):
                 cat.parent_id = item.parent_id
                 cat.sort_order = item.sort_order
             await db.commit()
-            return {"status": "ok"}
         except Exception as exc:
             record_exception_if_server_error(span, exc)
+            record_reorder_result(
+                entity="category",
+                operation_id=operation_id,
+                item_count=len(body.items),
+                duration_seconds=time.perf_counter() - started,
+                outcome=classify_reorder_exception(exc),
+            )
             raise
+        # Emitted while the span is still active so the success log carries
+        # trace context, matching the failure path.
+        record_reorder_result(
+            entity="category",
+            operation_id=operation_id,
+            item_count=len(body.items),
+            duration_seconds=time.perf_counter() - started,
+            outcome="success",
+        )
+    return {"status": "ok"}
 
 
 @router.delete("/{category_id}", status_code=204)

@@ -45,6 +45,7 @@ import {
   bulkDeleteImages,
 } from '../api'
 import type { ApiBulkImportJob, ApiImage } from '../api'
+import { invalidateMovedImageScopes, tileOrderingCoordinator } from '../tileOrdering'
 import type { Category, Group, Program } from '../types'
 import { splitDirectAncestorGroupIds, splitDirectAncestorProgramIds } from '../categoryUtils'
 import { formatFileSize } from '../formatUtils'
@@ -876,6 +877,20 @@ export default function ManagePage({
         image_ids: Array.from(selected),
         ...data,
       })
+      // A bulk category move bumps the tile-order revision of every source
+      // scope and the destination server-side, so any revision the ordering
+      // coordinator still caches for them is stale and would make the next
+      // reorder falsely 409.
+      if (data.category_id !== undefined) {
+        const affected = new Set<number | null>()
+        for (const img of images) {
+          if (selected.has(img.id) && (img.category_id ?? null) !== data.category_id) {
+            affected.add(img.category_id ?? null)
+            affected.add(data.category_id)
+          }
+        }
+        for (const scope of affected) tileOrderingCoordinator.invalidateRevision(scope)
+      }
       setBulkEditOpen(false)
       setSelected(new Set())
       await loadImages()
@@ -910,6 +925,7 @@ export default function ManagePage({
     if (!editingImage) return
     try {
       await updateImage(editingImage.id, data)
+      invalidateMovedImageScopes(editingImage.category_id ?? null, data.category_id)
       setEditOpen(false)
       setEditingImage(null)
       await loadImages()
@@ -962,6 +978,7 @@ export default function ManagePage({
     if (!movingImage) return
     try {
       await updateImage(movingImage.id, { category_id: categoryId })
+      invalidateMovedImageScopes(movingImage.category_id ?? null, categoryId)
       setMoveOpen(false)
       setMovingImage(null)
       await loadImages()
@@ -1961,6 +1978,7 @@ export default function ManagePage({
                     formData,
                   )
                   onReplaceImage?.(result.id, file.name, file.size)
+                  invalidateMovedImageScopes(editingImage.category_id ?? null, formData.category_id)
                   setEditOpen(false)
                   setEditingImage(null)
                   await loadImages()

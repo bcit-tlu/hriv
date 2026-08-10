@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -266,6 +266,32 @@ class CategoryReorderItem(BaseModel):
 
 class CategoryReorderRequest(BaseModel):
     items: list[CategoryReorderItem]
+
+
+class TileOrderScope(BaseModel):
+    parent_category_id: int | None = None
+
+
+class TileOrderItemRef(BaseModel):
+    type: Literal["category", "image"]
+    id: int
+
+
+class TileOrderRequest(BaseModel):
+    scope: TileOrderScope
+    expected_revision: int
+    operation_id: str | None = Field(None, max_length=64)
+    items: list[TileOrderItemRef]
+
+
+class TileOrderItemOut(TileOrderItemRef):
+    sort_order: int
+
+
+class TileOrderResponse(BaseModel):
+    scope: TileOrderScope
+    revision: int
+    items: list[TileOrderItemOut]
 
 
 class CategoryOut(CategoryBase):

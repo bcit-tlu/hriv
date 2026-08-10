@@ -3,10 +3,11 @@ import errno
 import json
 import logging
 import os
+import time
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Header, HTTPException, Request, Response, UploadFile
 from opentelemetry import trace
 from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +27,13 @@ from ..schemas import (
     SourceImageOut,
     normalize_note_value,
 )
+from ..reorder_telemetry import (
+    annotate_reorder_span,
+    classify_reorder_exception,
+    record_reorder_result,
+    sanitize_reorder_operation_id,
+)
+from ..tile_order import bump_scopes, scope_key_for
 from ..tracing import record_exception_if_server_error
 from ..visibility import get_student_excluded_category_ids, is_category_visible_to_student
 
@@ -133,6 +141,18 @@ async def bulk_update_images(
             if len(images) != len(set(body.image_ids)):
                 raise HTTPException(status_code=404, detail="One or more images not found")
             update_data = body.model_dump(exclude_unset=True, exclude={"image_ids"})
+            # A bulk category move changes scope membership: invalidate the
+            # tile-order revisions of every source scope and the destination
+            # scope so clients of PUT /api/tile-order get a 409 instead of
+            # silently overwriting. Revision locks are taken before any row
+            # mutation, matching PUT /api/tile-order's revision-then-rows
+            # lock order (docs/tile-ordering.md).
+            if "category_id" in update_data:
+                moved = [img for img in images if img.category_id != update_data["category_id"]]
+                if moved:
+                    affected = {scope_key_for(img.category_id) for img in moved}
+                    affected.add(scope_key_for(update_data["category_id"]))
+                    await bump_scopes(db, affected)
             for img in images:
                 for key, value in update_data.items():
                     setattr(img, key, value)
@@ -161,6 +181,30 @@ async def update_image(
             img = await db.get(Image, image_id)
             if not img:
                 raise HTTPException(status_code=404, detail="Image not found")
+
+            # An ordering write (sort_order or a category move) must
+            # invalidate the affected scopes' tile-order revisions so a
+            # client holding an older revision gets a 409 instead of
+            # silently overwriting this change. Revision locks are taken
+            # before any row mutation, matching PUT /api/tile-order's
+            # revision-then-rows lock order (docs/tile-ordering.md).
+            # Only an actual value change invalidates: edit dialogs echo the
+            # current category_id/sort_order back on every save, and bumping
+            # on presence alone would 409 clients whose cached revision is
+            # still accurate.
+            ordering_fields = body.model_dump(exclude_unset=True)
+            sort_changed = (
+                "sort_order" in ordering_fields and ordering_fields["sort_order"] != img.sort_order
+            )
+            category_changed = (
+                "category_id" in ordering_fields
+                and ordering_fields["category_id"] != img.category_id
+            )
+            if sort_changed or category_changed:
+                affected = {scope_key_for(img.category_id)}
+                if category_changed:
+                    affected.add(scope_key_for(ordering_fields["category_id"]))
+                await bump_scopes(db, affected)
 
             # Optimistic concurrency: if the client sends If-Match, verify the
             # version has not changed since the client last read the resource.
@@ -271,37 +315,32 @@ async def replace_image(
                 v is not None
                 for v in (name, category_id, copyright, note, active, metadata_extra)
             )
+            # Parse and validate all metadata fields up front so 400s fire
+            # before any disk or database work, and so no lock is held
+            # while the client streams the file.
+            parsed_cat: int | None = None
+            parsed_note: str | None = None
+            parsed_metadata: dict | list | None = None
+            span.set_attribute("image.metadata_update", has_metadata)
             if has_metadata:
-                span.set_attribute("image.metadata_update", True)
-                if name is not None:
-                    img.name = name
                 if category_id is not None:
                     try:
                         parsed_cat = int(category_id) if category_id != "" else None
                     except (ValueError, TypeError):
                         raise HTTPException(status_code=400, detail="Invalid category_id")
-                    img.category_id = parsed_cat
-                if copyright is not None:
-                    img.copyright = copyright if copyright != "" else None
                 if note is not None:
                     try:
-                        note = normalize_note_value(note)
+                        parsed_note = normalize_note_value(note)
                     except ValueError:
                         raise HTTPException(
                             status_code=400,
                             detail=f"Note must be {MAX_NOTE_LENGTH} characters or fewer",
                         )
-                    img.note = note
-                if active is not None:
-                    img.active = active.lower() in ("true", "1")
                 if metadata_extra is not None:
                     try:
-                        img.metadata_ = json.loads(metadata_extra) if metadata_extra else None
+                        parsed_metadata = json.loads(metadata_extra) if metadata_extra else None
                     except (json.JSONDecodeError, TypeError):
                         raise HTTPException(status_code=400, detail="Invalid metadata_extra")
-                img.version = img.version + 1
-            else:
-                span.set_attribute("image.metadata_update", False)
 
             os.makedirs(settings.source_images_dir, exist_ok=True)
 
@@ -336,6 +375,36 @@ async def replace_image(
                 raise
 
             file_size = os.path.getsize(stored_path)
+
+            # ── Apply optional metadata updates atomically ──────────
+            # Done after the upload loop so the revision lock below is
+            # held only for the short transaction, never across client
+            # I/O; and before any row mutation so the session is clean
+            # while the lock is taken, preserving the revision-then-rows
+            # lock order (docs/tile-ordering.md).
+            if has_metadata:
+                if category_id is not None and parsed_cat != img.category_id:
+                    # A category move changes scope membership: invalidate
+                    # both scopes' tile-order revisions so clients holding
+                    # older revisions get a 409 instead of silently
+                    # overwriting (same rule as PATCH /images/{id}).
+                    await bump_scopes(
+                        db,
+                        {scope_key_for(img.category_id), scope_key_for(parsed_cat)},
+                    )
+                if category_id is not None:
+                    img.category_id = parsed_cat
+                if name is not None:
+                    img.name = name
+                if copyright is not None:
+                    img.copyright = copyright if copyright != "" else None
+                if note is not None:
+                    img.note = parsed_note
+                if active is not None:
+                    img.active = active.lower() in ("true", "1")
+                if metadata_extra is not None:
+                    img.metadata_ = parsed_metadata
+                img.version = img.version + 1
 
             src = SourceImage(
                 original_filename=file.filename,
@@ -408,20 +477,59 @@ async def reorder_images(
     body: ImageReorderRequest,
     _user: Annotated[User, Depends(require_role("admin", "instructor"))],
     db: AsyncSession = Depends(get_db),
+    x_reorder_operation_id: Annotated[
+        str | None, Header(alias="X-Reorder-Operation-Id")
+    ] = None,
 ):
+    operation_id = sanitize_reorder_operation_id(x_reorder_operation_id)
+    started = time.perf_counter()
     with tracer.start_as_current_span("image.reorder") as span:
         try:
             span.set_attribute("image.count", len(body.items))
+            annotate_reorder_span(
+                span,
+                entity="image",
+                operation_id=operation_id,
+                item_count=len(body.items),
+            )
+            affected_scopes: set[int] = set()
+            imgs: list[Image] = []
             for item in body.items:
                 img = await db.get(Image, item.id)
                 if img is None:
                     raise HTTPException(status_code=404, detail=f"Image {item.id} not found")
+                affected_scopes.add(scope_key_for(img.category_id))
+                imgs.append(img)
+            # Invalidate tile-order revisions for every touched scope so
+            # clients of PUT /api/tile-order get a 409 instead of silently
+            # overwriting this write. Revision locks are taken BEFORE the
+            # image rows are mutated, matching PUT /api/tile-order's
+            # revision-then-rows lock order to avoid deadlocks
+            # (docs/tile-ordering.md).
+            await bump_scopes(db, affected_scopes)
+            for img, item in zip(imgs, body.items):
                 img.sort_order = item.sort_order
             await db.commit()
-            return {"status": "ok"}
         except Exception as exc:
             record_exception_if_server_error(span, exc)
+            record_reorder_result(
+                entity="image",
+                operation_id=operation_id,
+                item_count=len(body.items),
+                duration_seconds=time.perf_counter() - started,
+                outcome=classify_reorder_exception(exc),
+            )
             raise
+        # Emitted while the span is still active so the success log carries
+        # trace context, matching the failure path.
+        record_reorder_result(
+            entity="image",
+            operation_id=operation_id,
+            item_count=len(body.items),
+            duration_seconds=time.perf_counter() - started,
+            outcome="success",
+        )
+    return {"status": "ok"}
 
 
 @router.delete("/{image_id}", status_code=204)
