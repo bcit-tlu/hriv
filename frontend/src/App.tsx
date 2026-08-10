@@ -1038,6 +1038,9 @@ export default function App() {
   }, [])
 
   const handleReorderComplete = useCallback(async () => {
+    // Capture before fetching: a save committing while these requests are in
+    // flight is newer than the fetched data and must survive the release.
+    const marker = tileOrderingCoordinator.marker()
     const [catResult, imgResult] = await Promise.allSettled([
       refreshCategories(),
       refreshUncategorizedImages(),
@@ -1047,6 +1050,12 @@ export default function App() {
     }
     if (imgResult.status === 'rejected') {
       setWarnSnack('Could not refresh images after reorder.')
+    }
+    // Once fresh authoritative data landed, drop the coordinator's cached
+    // order for clean scopes so order changes made elsewhere (e.g. Manage
+    // Categories) become visible immediately instead of on the next poll.
+    if (catResult.status === 'fulfilled' && imgResult.status === 'fulfilled') {
+      tileOrderingCoordinator.releaseCleanScopes(marker)
     }
   }, [refreshCategories, refreshUncategorizedImages])
 
