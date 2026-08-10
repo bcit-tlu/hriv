@@ -897,6 +897,43 @@ async def test_replace_image_unchanged_category_does_not_bump_scopes(
     bump.assert_not_awaited()
 
 
+@patch("os.path.getsize", return_value=1024)
+@patch("os.makedirs")
+@patch("builtins.open", new_callable=MagicMock)
+async def test_replace_image_empty_note_clears_note(
+    mock_open: MagicMock,
+    mock_makedirs: MagicMock,
+    mock_getsize: MagicMock,
+) -> None:
+    """An explicit note="" on replace must erase the stored note."""
+    mock_enqueue = AsyncMock(return_value=True)
+    img = _make_image()
+    img.note = "existing note"
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.add = MagicMock()
+    db.refresh = AsyncMock()
+
+    background_tasks = MagicMock()
+    file = _make_upload_file()
+
+    with patch.dict("sys.modules", {
+        "app.processing": MagicMock(process_replace_image=MagicMock()),
+        "app.worker": MagicMock(enqueue_replace_image=mock_enqueue),
+    }):
+        await replace_image(
+            image_id=1,
+            file=file,
+            background_tasks=background_tasks,
+            _user=_make_user(),
+            db=db,
+            note="",
+        )
+
+    assert img.note is None
+
+
 async def test_replace_image_not_found() -> None:
     db = AsyncMock()
     db.get = AsyncMock(return_value=None)

@@ -311,6 +311,7 @@ async def replace_image(
             # before any disk or database work, and so no lock is held
             # while the client streams the file.
             parsed_cat: int | None = None
+            parsed_note: str | None = None
             parsed_metadata: dict | list | None = None
             span.set_attribute("image.metadata_update", has_metadata)
             if has_metadata:
@@ -321,7 +322,7 @@ async def replace_image(
                         raise HTTPException(status_code=400, detail="Invalid category_id")
                 if note is not None:
                     try:
-                        note = normalize_note_value(note)
+                        parsed_note = normalize_note_value(note)
                     except ValueError:
                         raise HTTPException(
                             status_code=400,
@@ -390,7 +391,7 @@ async def replace_image(
                 if copyright is not None:
                     img.copyright = copyright if copyright != "" else None
                 if note is not None:
-                    img.note = note
+                    img.note = parsed_note
                 if active is not None:
                     img.active = active.lower() in ("true", "1")
                 if metadata_extra is not None:
