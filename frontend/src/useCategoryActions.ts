@@ -249,8 +249,10 @@ export function useCategoryActions({
         parent_id: number | null
         sort_order: number
       }>,
+      /** Correlation ID shared across all persistence calls of one drag. */
+      existingOperationId?: string,
     ) => {
-      const operationId = newReorderOperationId()
+      const operationId = existingOperationId ?? newReorderOperationId()
       const startedAt = performance.now()
       emitReorderDiagnostic({
         operationId,
@@ -289,8 +291,12 @@ export function useCategoryActions({
   )
 
   const reorderImagesInline = useCallback(
-    async (items: Array<{ id: number; sort_order: number }>) => {
-      const operationId = newReorderOperationId()
+    async (
+      items: Array<{ id: number; sort_order: number }>,
+      /** Correlation ID shared across all persistence calls of one drag. */
+      existingOperationId?: string,
+    ) => {
+      const operationId = existingOperationId ?? newReorderOperationId()
       const startedAt = performance.now()
       emitReorderDiagnostic({
         operationId,

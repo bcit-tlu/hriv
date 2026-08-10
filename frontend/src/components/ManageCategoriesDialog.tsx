@@ -23,6 +23,7 @@ import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import Visibility from '@mui/icons-material/Visibility'
 import type { Category, Group, ImageItem, Program } from '../types'
 import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
+import { newReorderOperationId } from '../reorderDiagnostics'
 import { findCategoryPath } from '../treeUtils'
 import { getVisibilityColors } from '../theme'
 import { MAX_DEPTH } from '../types'
@@ -163,8 +164,12 @@ interface ManageCategoriesDialogProps {
   onToggleVisibility?: (categoryId: number) => Promise<void>
   onReorderCategories?: (
     items: Array<{ id: number; parent_id: number | null; sort_order: number }>,
+    operationId?: string,
   ) => Promise<void>
-  onReorderImages?: (items: Array<{ id: number; sort_order: number }>) => Promise<void>
+  onReorderImages?: (
+    items: Array<{ id: number; sort_order: number }>,
+    operationId?: string,
+  ) => Promise<void>
   onReorderComplete?: () => Promise<void> | void
 }
 
@@ -445,15 +450,17 @@ export default function ManageCategoriesDialog({
       setDragId(null)
       setDropTarget(null)
 
+      // One drag = one correlation ID across both persistence calls.
+      const operationId = newReorderOperationId()
       try {
-        await onReorderCategories(catItems)
+        await onReorderCategories(catItems, operationId)
       } catch {
         await onReorderComplete?.()
         return
       }
       if (imgItems.length > 0 && onReorderImages) {
         try {
-          await onReorderImages(imgItems)
+          await onReorderImages(imgItems, operationId)
         } catch {
           /* error already surfaced by the wrapper */
         }

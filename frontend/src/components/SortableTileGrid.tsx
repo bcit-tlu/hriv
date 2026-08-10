@@ -40,6 +40,18 @@ import {
 } from './sortableTileGridUtils'
 import type { TileItem } from './sortableTileGridUtils'
 
+// Shared by the real reorder path and the in-flight discarded-drop
+// accounting so the two order-change checks cannot drift apart.
+function computeReorderedIds(
+  items: TileItem[],
+  event: DragEndEvent,
+): { ids: string[]; reorderedIds: string[]; isNoOp: boolean } {
+  const ids = items.map(tileId)
+  const reorderedIds = move(ids, event)
+  const isNoOp = reorderedIds.length === ids.length && reorderedIds.every((id, i) => id === ids[i])
+  return { ids, reorderedIds, isNoOp }
+}
+
 interface SortableTileProps {
   id: string
   index: number
@@ -321,12 +333,7 @@ export default function SortableTileGrid({
         // no-op drops (order unchanged, mirroring the idle-path filter) are
         // not reported as reorder operations.
         if (!targetId.startsWith(DROP_PREFIX)) {
-          const inFlightIds = items.map(tileId)
-          const inFlightReordered = move(inFlightIds, event)
-          const isNoOp =
-            inFlightReordered.length === inFlightIds.length &&
-            inFlightReordered.every((id, i) => id === inFlightIds[i])
-          if (isNoOp) return
+          if (computeReorderedIds(items, event).isNoOp) return
           discardedDropsRef.current += 1
           emitReorderDiagnostic({
             operationId: newReorderOperationId(),
@@ -358,11 +365,8 @@ export default function SortableTileGrid({
       // The target is the sortable tile the pointer settled on. `move`
       // derives the new order from the source's reflowed sortable index,
       // so the committed order matches the on-screen preview exactly.
-      const ids = items.map(tileId)
-      const reorderedIds = move(ids, event)
-      if (reorderedIds.length === ids.length && reorderedIds.every((id, i) => id === ids[i])) {
-        return
-      }
+      const { ids, reorderedIds, isNoOp } = computeReorderedIds(items, event)
+      if (isNoOp) return
       const itemById = new Map(items.map((item) => [tileId(item), item] as const))
       const reordered = reorderedIds
         .map((id) => itemById.get(id))
