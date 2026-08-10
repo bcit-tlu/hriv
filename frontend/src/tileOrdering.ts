@@ -95,6 +95,12 @@ export class TileOrderingCoordinator {
   private generations = new Map<string, number>()
   /** Scopes whose initial revision is being fetched (dedupes seeding GETs). */
   private seeding = new Set<string>()
+  /**
+   * Operation ID minted when a snapshot is queued behind an in-flight save,
+   * carried through coalescing to the eventual submission so the queued /
+   * coalesced / submitted / terminal events of one operation correlate.
+   */
+  private pendingOperationIds = new Map<string, string>()
 
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener)
@@ -150,6 +156,7 @@ export class TileOrderingCoordinator {
   reset(): void {
     if (this.scopes.size === 0) return
     this.scopes.clear()
+    this.pendingOperationIds.clear()
     for (const listener of this.listeners) listener()
   }
 
@@ -176,16 +183,21 @@ export class TileOrderingCoordinator {
     if (state.displayOrder !== null && sameOrder(state.displayOrder, order)) return
 
     if (state.inFlight !== null) {
+      const key = scopeKey(scope)
       if (state.pending !== null) {
+        const operationId = this.pendingOperationIds.get(key) ?? newReorderOperationId()
+        this.pendingOperationIds.set(key, operationId)
         emitReorderDiagnostic({
-          operationId: newReorderOperationId(),
+          operationId,
           state: 'coalesced',
           scopeCategoryId: scope,
           queueDepth: 1,
         })
       } else {
+        const operationId = newReorderOperationId()
+        this.pendingOperationIds.set(key, operationId)
         emitReorderDiagnostic({
-          operationId: newReorderOperationId(),
+          operationId,
           state: 'queued',
           scopeCategoryId: scope,
           queueDepth: 1,
@@ -282,7 +294,11 @@ export class TileOrderingCoordinator {
         continue
       }
 
-      const operationId = newReorderOperationId()
+      // Reuse the ID minted when this snapshot was queued (if any) so the
+      // queued/coalesced events correlate with submission and completion.
+      const queuedOperationId = this.pendingOperationIds.get(scopeKey(scope))
+      this.pendingOperationIds.delete(scopeKey(scope))
+      const operationId = queuedOperationId ?? newReorderOperationId()
       const startedAt = performance.now()
       this.setScope(scope, {
         ...state,
