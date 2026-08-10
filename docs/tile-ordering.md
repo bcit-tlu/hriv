@@ -153,8 +153,9 @@ the newest is submitted after the active request settles — never one request
 per drop.
 
 On success the coordinator stores the returned revision and applies the
-authoritative order directly (no category-tree refresh); if newer local
-changes accumulated it immediately saves again and does not show "saved". On
+authoritative order directly; the app then refreshes shared category/image
+data (via `onCommitted`) so other surfaces see the saved order. If newer
+local changes accumulated it immediately saves again and does not show "saved". On
 failure the newest local intent is retained and retryable. On 409 the
 authoritative order from the conflict body is offered to the user ("Order
 changed elsewhere" → Refresh); a 400 membership rejection is treated the
@@ -190,7 +191,11 @@ there is no second independent ordering implementation:
   rejection), then the full interleaved category+image order of every
   changed scope is reported to the shared `tileOrderingCoordinator`, which
   persists each scope atomically via `PUT /api/tile-order` with CAS
-  revisions. When the coordinator already holds a newer (pending/unsaved)
+  revisions. Because the parent-move PATCH bumps the tile-order revision of
+  both affected scopes server-side, the coordinator's cached revision for
+  those scopes is invalidated first (`invalidateRevision`) so the follow-up
+  order writes re-seed via GET instead of falsely 409ing against a stale
+  token. When the coordinator already holds a newer (pending/unsaved)
   order for a scope, that order is used as the interleaving template, so a
   category-only reorder never reverts a pending image reorder for the same
   scope; scopes left with no members are skipped.
@@ -208,6 +213,11 @@ there is no second independent ordering implementation:
   consistent across both interfaces after navigation and reload: whichever
   interface wrote last owns the scope revision, and stale writers get an
   explicit 409.
+- Atomicity is per scope: a cross-parent move issues one entity PATCH plus
+  one `PUT /api/tile-order` per affected scope (source and destination),
+  so one scope's write can commit while the other 409s. The conflicted
+  scope surfaces its usual Refresh / Keep-my-order recovery; the committed
+  scope stays committed.
 
 ## Stale-refresh prevention and conflict recovery (#980)
 

@@ -88,6 +88,14 @@ function scopeKey(scope: ScopeId): string {
   return scope === null ? 'root' : String(scope)
 }
 
+function scopeFromKey(key: string): ScopeId {
+  return key === 'root' ? null : Number(key)
+}
+
+function refKey(ref: TileOrderItemRef): string {
+  return `${ref.type}:${ref.id}`
+}
+
 function sameOrder(a: TileOrderItemRef[], b: TileOrderItemRef[]): boolean {
   return a.length === b.length && a.every((ref, i) => ref.type === b[i].type && ref.id === b[i].id)
 }
@@ -167,11 +175,17 @@ export class TileOrderingCoordinator {
   }
 
   /**
-   * Drop cached order state for every clean scope so freshly fetched
-   * authoritative data wins (order changes made elsewhere — another
-   * client or another surface — become visible on the next refresh).
-   * Scopes holding local intent (pending, in-flight, conflict, or a
-   * retryable failure) are left untouched.
+   * Drop cached order state — including the revision (CAS token) — for
+   * every clean scope so freshly fetched authoritative data wins (order
+   * changes made elsewhere — another client or another surface — become
+   * visible on the next refresh). The revision must not be kept: other
+   * operations bump a scope's revision server-side without going through
+   * the coordinator (entity PATCHes that move a tile between scopes,
+   * Manage Categories reorders), so a cached token could produce a false
+   * "order changed elsewhere" conflict on the next drag. The next save
+   * re-seeds the revision with a GET. Scopes holding local intent
+   * (pending, in-flight, conflict, or a retryable failure) are left
+   * untouched.
    */
   releaseCleanScopes(marker?: number): void {
     let changed = false
@@ -190,6 +204,20 @@ export class TileOrderingCoordinator {
       }
     }
     if (changed) for (const listener of this.listeners) listener()
+  }
+
+  /**
+   * Forget a scope's cached revision (CAS token) so the next save re-seeds
+   * it with a GET. Called after an operation outside the coordinator bumps
+   * the scope's server-side revision (e.g. a category parent-move PATCH),
+   * which would otherwise make the coordinator's next PUT falsely 409 as
+   * "order changed elsewhere". Local order intent is left untouched.
+   */
+  invalidateRevision(scope: ScopeId): void {
+    const key = scopeKey(scope)
+    const state = this.scopes.get(key)
+    if (!state || state.revision === null) return
+    this.scopes.set(key, { ...state, revision: null })
   }
 
   /**
@@ -274,6 +302,9 @@ export class TileOrderingCoordinator {
         status: 'dirty-while-saving',
         pending: order,
         displayOrder: order,
+        // A retained conflict-era server order no longer corresponds to this
+        // newest intent; drop it so "Use server order" can't adopt stale data.
+        conflictOrder: null,
       })
       return
     }
@@ -283,6 +314,7 @@ export class TileOrderingCoordinator {
       status: 'dirty',
       pending: order,
       displayOrder: order,
+      conflictOrder: null,
       error: null,
     })
     void this.flush(scope)
@@ -297,6 +329,35 @@ export class TileOrderingCoordinator {
   }
 
   /**
+   * True when a scope other than `scope` needs user attention (a failed
+   * save or an unresolved conflict). Only the browsed scope renders a
+   * save-state indicator, so unresolved states elsewhere (e.g. a category
+   * the user has navigated away from) need a cross-scope affordance —
+   * otherwise the order is never settled and the unload guard stays armed
+   * with nothing the user can act on.
+   */
+  hasFailedScopesOutside(scope: ScopeId): boolean {
+    const exclude = scopeKey(scope)
+    for (const [key, state] of this.scopes) {
+      if (key !== exclude && (state.status === 'error' || state.status === 'conflict')) return true
+    }
+    return false
+  }
+
+  /**
+   * Resolve every scope needing attention (see `hasFailedScopesOutside`):
+   * failed saves are retried; conflicted scopes adopt the server's
+   * authoritative order — the same resolution the browsed-scope conflict
+   * affordance offers.
+   */
+  retryFailedScopes(): void {
+    for (const [key, state] of [...this.scopes]) {
+      if (state.status === 'error') this.retry(scopeFromKey(key))
+      else if (state.status === 'conflict') this.acceptServerOrder(scopeFromKey(key))
+    }
+  }
+
+  /**
    * Resolve a conflict by adopting the server's authoritative order.
    * Local intent is replaced — the caller surfaces this as "Order changed
    * elsewhere" and the user explicitly accepts the refresh.
@@ -308,6 +369,10 @@ export class TileOrderingCoordinator {
     // user can still fall back to the server's order when the retry errors.
     if (state.status !== 'conflict' && !(state.status === 'error' && state.conflictOrder !== null))
       return
+    // The queued snapshot is discarded here, so its correlation ID and drag
+    // detail must not be inherited by the next (unrelated) operation.
+    this.pendingOperationIds.delete(scopeKey(scope))
+    this.dragContexts.delete(scopeKey(scope))
     this.setScope(scope, {
       ...state,
       status: 'saved',
@@ -330,11 +395,27 @@ export class TileOrderingCoordinator {
       this.acceptServerOrder(scope)
       return
     }
+    // A 400-style conflict means scope membership drifted: resubmitting the
+    // pending list verbatim would be rejected again forever. Reconcile it
+    // against the authoritative membership — keep the local relative order
+    // for surviving items, drop departed ones, append newcomers in server
+    // order.
+    let pending = state.pending
+    if (state.conflictOrder !== null) {
+      const authoritative = new Set(state.conflictOrder.map(refKey))
+      const local = new Set(pending.map(refKey))
+      pending = [
+        ...pending.filter((ref) => authoritative.has(refKey(ref))),
+        ...state.conflictOrder.filter((ref) => !local.has(refKey(ref))),
+      ]
+    }
     // The conflict's authoritative order is retained until a commit
     // succeeds, keeping accept-server-order available if the retry fails.
     this.setScope(scope, {
       ...state,
       status: 'dirty',
+      pending,
+      displayOrder: pending,
       error: null,
     })
     void this.flush(scope)

@@ -255,6 +255,7 @@ export function useCategoryActions({
       for (const move of moves) {
         const catPath = findCategoryPath(categories, move.categoryId)
         const version = catPath?.at(-1)?.version
+        const oldParentId = catPath?.at(-2)?.id ?? null
         try {
           await apiUpdateCategory(move.categoryId, { parent_id: move.newParentId }, version)
         } catch (err) {
@@ -262,12 +263,31 @@ export function useCategoryActions({
           setErrorSnack(userMessage(err, 'Failed to move category.'))
           throw err
         }
+        // The parent-move PATCH bumps the tile-order revision of both scopes
+        // server-side, so any revision the coordinator still caches for them
+        // is stale and would make the reportOrder below falsely 409.
+        tileOrderingCoordinator.invalidateRevision(oldParentId)
+        tileOrderingCoordinator.invalidateRevision(move.newParentId)
       }
       for (const { scope, order } of scopes) {
         tileOrderingCoordinator.reportOrder(scope, order)
       }
       if (scopes.length > 0) {
-        setManageReorderScopes(scopes.map((s) => s.scope))
+        // Merge with previously tracked scopes that have not settled yet so
+        // an earlier failed/conflicted save stays reachable from the
+        // indicator; settled scopes are pruned by the clear-when-settled
+        // effect in App.
+        setManageReorderScopes((prev) => {
+          const next = scopes.map((s) => s.scope)
+          const nextKeys = new Set(next)
+          for (const scope of prev ?? []) {
+            const status = tileOrderingCoordinator.getScope(scope).status
+            if (!nextKeys.has(scope) && status !== 'saved' && status !== 'idle') {
+              next.push(scope)
+            }
+          }
+          return next
+        })
       }
     },
     [categories, setErrorSnack],
@@ -513,6 +533,7 @@ export function useCategoryActions({
     toggleCategoryVisibility,
     reorderTilesFromManage,
     manageReorderScopes,
+    setManageReorderScopes,
     handleMoveCategory,
     handleRequestMoveCategory,
     handleDropImageOnCategory,

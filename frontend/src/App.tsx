@@ -916,6 +916,7 @@ export default function App() {
     toggleCategoryVisibility,
     reorderTilesFromManage,
     manageReorderScopes,
+    setManageReorderScopes,
     handleMoveCategory,
     handleRequestMoveCategory,
     handleDropImageOnCategory,
@@ -947,6 +948,50 @@ export default function App() {
   // touches two scopes; surface whichever needs attention most.
   const manageAttentionScope = useMostSevereScope(manageReorderScopes)
   const manageTileOrdering = useTileOrdering(manageAttentionScope ?? null)
+
+  // The Manage dialog's save-state indicator unmounts with the dialog, so a
+  // reorder that fails after the user closed it would otherwise be invisible.
+  // Surface it globally and point the user back at the dialog, where the
+  // Retry / Use server order actions remain available.
+  useEffect(() => {
+    if (dialogOpen || manageAttentionScope === undefined) return
+    // Latch per status transition so a dismissed snackbar is not re-set by
+    // unrelated coordinator notifications while the status is unchanged.
+    let surfacedStatus: string | null = null
+    const surface = () => {
+      const status = tileOrderingCoordinator.getScope(manageAttentionScope).status
+      if (status !== 'conflict' && status !== 'error') {
+        surfacedStatus = null
+        return
+      }
+      if (status === surfacedStatus) return
+      surfacedStatus = status
+      if (status === 'conflict') {
+        setErrorSnack('Category order changed elsewhere — reopen Manage Categories to resolve.')
+      } else {
+        setErrorSnack('Category order could not be saved — reopen Manage Categories to retry.')
+      }
+    }
+    surface()
+    return tileOrderingCoordinator.subscribe(surface)
+  }, [dialogOpen, manageAttentionScope])
+
+  // Once the dialog is closed and every tracked scope has settled, stop
+  // tracking: the snackbar above must not re-fire for later conflicts the
+  // dialog didn't cause (e.g. a Browse reorder of the same scope), and a
+  // reopened dialog should start without a stale save-state readout.
+  useEffect(() => {
+    if (dialogOpen || manageReorderScopes === null) return
+    const clearWhenSettled = () => {
+      const settled = manageReorderScopes.every((scope) => {
+        const status = tileOrderingCoordinator.getScope(scope).status
+        return status === 'saved' || status === 'idle'
+      })
+      if (settled) setManageReorderScopes(null)
+    }
+    queueMicrotask(clearWhenSettled)
+    return tileOrderingCoordinator.subscribe(clearWhenSettled)
+  }, [dialogOpen, manageReorderScopes, setManageReorderScopes])
 
   const visibleJobs = getVisibleJobs({
     uploadOpen,
@@ -1082,6 +1127,14 @@ export default function App() {
     acceptServerOrder()
     void handleReorderComplete()
   }, [acceptServerOrder, handleReorderComplete])
+
+  // Manage Categories counterpart: adopting the server order there can also
+  // stem from membership drift, so reload the shared browse data too.
+  const manageAcceptServerOrder = manageTileOrdering.acceptServerOrder
+  const handleManageAcceptServerOrder = useCallback(() => {
+    manageAcceptServerOrder()
+    void handleReorderComplete()
+  }, [manageAcceptServerOrder, handleReorderComplete])
 
   const navigateToDepth = (depth: number) => {
     setPath((prev) => prev.slice(0, depth))
@@ -1845,17 +1898,20 @@ export default function App() {
                   })()}
               </Box>
 
-              {canEditContent && (
-                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
-                  <ReorderStatusIndicator
-                    status={tileOrdering.status}
-                    serverOrderAvailable={tileOrdering.serverOrderAvailable}
-                    onRetry={tileOrdering.retry}
-                    onAcceptServerOrder={handleAcceptServerOrder}
-                    onReapplyLocalOrder={tileOrdering.reapplyLocalOrder}
-                  />
-                </Box>
-              )}
+              {canEditContent &&
+                (tileOrdering.status !== 'idle' || tileOrdering.otherScopesFailed) && (
+                  <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
+                    <ReorderStatusIndicator
+                      status={tileOrdering.status}
+                      serverOrderAvailable={tileOrdering.serverOrderAvailable}
+                      onRetry={tileOrdering.retry}
+                      onAcceptServerOrder={handleAcceptServerOrder}
+                      onReapplyLocalOrder={tileOrdering.reapplyLocalOrder}
+                      otherScopesFailed={tileOrdering.otherScopesFailed}
+                      onRetryFailedScopes={tileOrdering.retryFailedScopes}
+                    />
+                  </Box>
+                )}
 
               {/* Tile grid */}
               <SortableTileGrid
@@ -1949,8 +2005,9 @@ export default function App() {
           manageAttentionScope !== undefined ? (
             <ReorderStatusIndicator
               status={manageTileOrdering.status}
+              serverOrderAvailable={manageTileOrdering.serverOrderAvailable}
               onRetry={manageTileOrdering.retry}
-              onAcceptServerOrder={manageTileOrdering.acceptServerOrder}
+              onAcceptServerOrder={handleManageAcceptServerOrder}
               onReapplyLocalOrder={manageTileOrdering.reapplyLocalOrder}
             />
           ) : undefined

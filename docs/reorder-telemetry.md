@@ -52,9 +52,16 @@ The coordinator (`frontend/src/tileOrdering.ts`) emits `queued`,
 `coalesced`, `submitted`, `committed`, `conflicted`, and `failed`.
 `ignored` and `abandoned` were emitted only by the legacy
 non-coordinator grid path removed in #998; they and `stale_discarded`
-remain in the vocabulary so historical dashboards keep working. Both
-reorder surfaces route through the coordinator, and every surface emits
-exactly one `submitted` and one terminal event per operation ID.
+remain in the vocabulary so historical dashboards keep working. As of #982
+both reorder surfaces persist through the same coordinator: the Browse grid
+and the Manage Categories dialog both hand their full per-scope order to
+`tileOrderingCoordinator.reportOrder`, so the coordinator owns the entire
+lifecycle for every ordering operation (the dialog no longer emits its own
+`submitted`/`committed`/`failed` events). Each coordinator save is one
+operation ID per scope — a Manage drag that touches two scopes (a
+cross-parent move) produces one lifecycle per affected scope rather than one
+shared ID, and every surface emits exactly one `submitted` and one terminal
+event per operation ID.
 
 Two coordinator edge cases relax that pairing, both tied to revision seeding
 (the one-time `GET /api/tile-order` that fetches a scope's CAS token before
