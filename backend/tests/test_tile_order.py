@@ -516,6 +516,31 @@ async def test_legacy_reorder_endpoints_bump_scope_revision(db_session):
 
 
 @requires_db
+async def test_entity_patch_sort_order_bumps_scope_revision(db_session):
+    """A PATCH that changes sort_order (or moves the entity) must invalidate
+    the affected scopes' tile-order revisions like any other ordering write."""
+    from fastapi import Request
+
+    from app.routers.categories import update_category
+    from app.routers.images import update_image
+    from app.schemas import CategoryUpdate, ImageUpdate
+
+    parent_id, cats, imgs = await _mixed_scope(db_session)
+    before = await get_tile_order(_admin(), parent_id, db_session)
+    request = Request({"type": "http", "headers": []})
+
+    await update_category(
+        cats[0], CategoryUpdate(sort_order=99), request, _admin(), db_session
+    )
+    after_cat = await get_tile_order(_admin(), parent_id, db_session)
+    assert after_cat.revision > before.revision
+
+    await update_image(imgs[0], ImageUpdate(sort_order=99), request, _admin(), db_session)
+    after_img = await get_tile_order(_admin(), parent_id, db_session)
+    assert after_img.revision > after_cat.revision
+
+
+@requires_db
 async def test_nonexistent_parent_scope_returns_404(db_session):
     missing_parent = 999_999_999
     with pytest.raises(HTTPException) as excinfo:
