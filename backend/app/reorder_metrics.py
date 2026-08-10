@@ -26,6 +26,9 @@ from prometheus_client import (
 _registry = CollectorRegistry()
 
 REORDER_ENTITIES = frozenset({"category", "image", "tile"})
+# Full domain of the `entity` metric label: the caller allowlist plus the
+# "other" sentinel that unrecognized entities are coerced to.
+REORDER_ENTITY_LABELS = REORDER_ENTITIES | frozenset({"other"})
 REORDER_OUTCOMES = frozenset({"success", "failure", "conflict", "client_error"})
 
 # The frontend reorder diagnostics vocabulary
