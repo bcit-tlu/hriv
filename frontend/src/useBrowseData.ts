@@ -108,6 +108,9 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
   const loadCategories = useCallback(
     async (opts?: { silent?: boolean; signal?: AbortSignal }): Promise<boolean> => {
       const { silent = false, signal } = opts ?? {}
+      // An already-cancelled read must not claim the newest-read generation,
+      // or it would silently invalidate a live read's commit.
+      if (signal?.aborted) return false
       const gen = ++categoriesReadGen.current
       let effectiveSignal = signal
       if (!signal) {
@@ -144,6 +147,9 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
   const loadUncategorizedImages = useCallback(
     async (opts?: { signal?: AbortSignal }): Promise<boolean> => {
       const { signal } = opts ?? {}
+      // An already-cancelled read must not claim the newest-read generation,
+      // or it would silently invalidate a live read's commit.
+      if (signal?.aborted) return false
       const gen = ++uncategorizedReadGen.current
       let effectiveSignal = signal
       if (!signal) {
@@ -236,6 +242,9 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
   }, [])
 
   const refreshUncategorizedImages = useCallback(async (): Promise<ImageItem[]> => {
+    // Symmetric with refreshCategories: invalidate the background poll FIRST
+    // so its already-claimed generation cannot outrank this refresh.
+    invalidateRef.current?.()
     const gen = ++uncategorizedReadGen.current
     uncategorizedAbortRef.current?.abort()
     const ac = new AbortController()

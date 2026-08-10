@@ -274,6 +274,9 @@ export class TileOrderingCoordinator {
         status: 'dirty-while-saving',
         pending: order,
         displayOrder: order,
+        // A retained conflict-era server order no longer corresponds to this
+        // newest intent; drop it so "Use server order" can't adopt stale data.
+        conflictOrder: null,
       })
       return
     }
@@ -283,6 +286,7 @@ export class TileOrderingCoordinator {
       status: 'dirty',
       pending: order,
       displayOrder: order,
+      conflictOrder: null,
       error: null,
     })
     void this.flush(scope)
