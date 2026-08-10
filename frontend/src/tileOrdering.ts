@@ -211,13 +211,17 @@ export class TileOrderingCoordinator {
    * it with a GET. Called after an operation outside the coordinator bumps
    * the scope's server-side revision (e.g. a category parent-move PATCH),
    * which would otherwise make the coordinator's next PUT falsely 409 as
-   * "order changed elsewhere". Local order intent is left untouched.
+   * "order changed elsewhere". Local order intent is left untouched —
+   * including the write counter: dropping a CAS token is not a local order
+   * write, so it must not shield the scope's cached display order from a
+   * `releaseCleanScopes` whose marker predates the invalidation.
    */
   invalidateRevision(scope: ScopeId): void {
     const key = scopeKey(scope)
     const state = this.scopes.get(key)
     if (!state || state.revision === null) return
-    this.setScope(scope, { ...state, revision: null })
+    this.scopes.set(key, { ...state, revision: null })
+    for (const listener of this.listeners) listener()
   }
 
   /**

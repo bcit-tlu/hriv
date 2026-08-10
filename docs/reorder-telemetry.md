@@ -110,7 +110,10 @@ synthetic reorder volume.
   `mixed` scopes and category moves)
 - `image_id` (moved image, for single image moves; also drives the ingestion
   display-name lookup)
-- `from_index`, `to_index` (original and projected indices)
+- `from_index`, `to_index` (original and projected indices; on a cross-parent
+  Manage Categories move, `-1` marks the side where the dragged category is
+  absent — `to_index: -1` in the source scope it left, `from_index: -1` in the
+  destination scope it joined)
 - `category_count`, `image_count` (items in the persisted scope)
 - `queue_depth` (depth of the coalescing queue behind the in-flight save; at most 1 because newer snapshots replace each other)
 - `local_revision` (the client's ordering revision for the scope)
