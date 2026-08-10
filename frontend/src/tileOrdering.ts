@@ -167,11 +167,14 @@ export class TileOrderingCoordinator {
   }
 
   /**
-   * Drop cached order state for every clean scope so freshly fetched
+   * Drop the cached display order for every clean scope so freshly fetched
    * authoritative data wins (order changes made elsewhere — another
    * client or another surface — become visible on the next refresh).
-   * Scopes holding local intent (pending, in-flight, conflict, or a
-   * retryable failure) are left untouched.
+   * The scope's revision (CAS token) is kept: a follow-up save can reuse
+   * it without a seeding GET, and a genuinely stale token is safely
+   * rejected by the server's compare-and-set check. Scopes holding local
+   * intent (pending, in-flight, conflict, or a retryable failure) are
+   * left untouched.
    */
   releaseCleanScopes(marker?: number): void {
     let changed = false
@@ -184,8 +187,12 @@ export class TileOrderingCoordinator {
         state.inFlight === null &&
         (state.status === 'saved' || state.status === 'idle')
       ) {
-        this.scopes.delete(key)
-        this.lastWrite.delete(key)
+        if (state.revision !== null) {
+          this.scopes.set(key, { ...state, displayOrder: null, conflictOrder: null })
+        } else {
+          this.scopes.delete(key)
+          this.lastWrite.delete(key)
+        }
         changed = true
       }
     }
@@ -312,6 +319,10 @@ export class TileOrderingCoordinator {
     // user can still fall back to the server's order when the retry errors.
     if (state.status !== 'conflict' && !(state.status === 'error' && state.conflictOrder !== null))
       return
+    // The queued snapshot is discarded here, so its correlation ID and drag
+    // detail must not be inherited by the next (unrelated) operation.
+    this.pendingOperationIds.delete(scopeKey(scope))
+    this.dragContexts.delete(scopeKey(scope))
     this.setScope(scope, {
       ...state,
       status: 'saved',
