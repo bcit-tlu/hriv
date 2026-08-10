@@ -84,6 +84,14 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
   const visibleCategoriesLoadGen = useRef(0)
   const categoriesAbortRef = useRef<AbortController | null>(null)
   const uncategorizedAbortRef = useRef<AbortController | null>(null)
+  // Authoritative refreshes hold their own controllers: only a NEWER refresh
+  // may abort an in-flight refresh. Ordinary foreground loads must not — a
+  // refresh's resolved value is used for navigation, so an abort must always
+  // mean "superseded by a newer refresh whose promise we can chain onto",
+  // never "cancelled by an unrelated load" (which would force resolving with
+  // possibly pre-mutation mirror state).
+  const categoriesRefreshAbortRef = useRef<AbortController | null>(null)
+  const uncategorizedRefreshAbortRef = useRef<AbortController | null>(null)
 
   // Mirror the latest committed state so a superseded (aborted) refresh can
   // resolve with the freshest data instead of rejecting.
@@ -213,8 +221,9 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
     // read for the same data.
     const gen = ++categoriesReadGen.current
     categoriesAbortRef.current?.abort()
+    categoriesRefreshAbortRef.current?.abort()
     const ac = new AbortController()
-    categoriesAbortRef.current = ac
+    categoriesRefreshAbortRef.current = ac
     // Force bypass the browser HTTP cache so we always get the
     // freshly-committed sort_order values after a reorder.  Without
     // this the browser may serve a stale 304-backed response whose
@@ -247,8 +256,9 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
     invalidateRef.current?.()
     const gen = ++uncategorizedReadGen.current
     uncategorizedAbortRef.current?.abort()
+    uncategorizedRefreshAbortRef.current?.abort()
     const ac = new AbortController()
-    uncategorizedAbortRef.current = ac
+    uncategorizedRefreshAbortRef.current = ac
     const run = (async (): Promise<ImageItem[]> => {
       try {
         const imgs = await fetchUncategorizedImages({ cache: 'reload', signal: ac.signal })
