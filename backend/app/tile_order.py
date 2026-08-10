@@ -32,6 +32,14 @@ from .models import Category, Image, TileOrderRevision
 # category IDs are serial and start at 1, so 0 can never collide.
 ROOT_SCOPE_KEY = 0
 
+# Revision reported for (and seeded into) a scope that has never been written:
+# ``lock_scope_revision`` inserts new rows at this value and
+# ``GET /api/tile-order`` reports it when no row exists. Restore-time
+# invalidation (``app/admin_ops.py``) materializes every scope at
+# ``INITIAL_SCOPE_REVISION + 1`` so an implicit pre-restore revision can never
+# pass the CAS check — keep the three sites in sync via this constant.
+INITIAL_SCOPE_REVISION = 1
+
 _TYPE_PRIORITY = {"category": 0, "image": 1}
 
 
@@ -147,7 +155,7 @@ async def lock_scope_revision(db: AsyncSession, scope_key: int) -> int:
     """
     await db.execute(
         pg_insert(TileOrderRevision)
-        .values(scope_key=scope_key, revision=1)
+        .values(scope_key=scope_key, revision=INITIAL_SCOPE_REVISION)
         .on_conflict_do_nothing(index_elements=["scope_key"])
     )
     result = await db.execute(

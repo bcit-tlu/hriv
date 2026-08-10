@@ -33,6 +33,7 @@ from .backup_access import (
     restore_snapshot_file,
 )
 from .database import get_async_session, settings
+from .tile_order import INITIAL_SCOPE_REVISION
 from .worker import enqueue_admin_task
 from .models import (
     ACTIVE_TASK_STATUSES,
@@ -1173,16 +1174,18 @@ async def run_db_import(task_id: int) -> None:
                 )
                 # Revision rows are created lazily, so the wholesale bump above
                 # misses scopes that have never been written through
-                # PUT /api/tile-order (clients read the implicit revision 1 for
-                # those). Materialize every restored scope at revision 2 so an
-                # implicit pre-restore revision can never pass the CAS check.
+                # PUT /api/tile-order (clients read the implicit
+                # INITIAL_SCOPE_REVISION for those). Materialize every restored
+                # scope one revision higher so an implicit pre-restore revision
+                # can never pass the CAS check.
                 await data_session.execute(
                     text(
                         "INSERT INTO tile_order_revisions (scope_key, revision) "
-                        "SELECT s.scope_key, 2 FROM "
+                        "SELECT s.scope_key, :rev FROM "
                         "(SELECT 0 AS scope_key UNION SELECT id FROM categories) s "
                         "ON CONFLICT (scope_key) DO NOTHING"
-                    )
+                    ),
+                    {"rev": INITIAL_SCOPE_REVISION + 1},
                 )
 
                 # Import source images
