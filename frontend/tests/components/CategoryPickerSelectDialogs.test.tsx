@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import CategoryPickerSelect from '../../src/components/CategoryPickerSelect'
 import { resetCategoryTreeExpansionPreferencesForTests } from '../../src/useCategoryTreeExpansionPreferences'
@@ -35,11 +35,12 @@ describe('CategoryPickerSelect — add category dialog', () => {
     )
 
     await user.click(screen.getByRole('combobox'))
-    const addButtons = screen
+    const parentOption = screen.getByRole('option', { name: /Parent/ })
+    const addBtn = within(parentOption)
       .getAllByRole('button')
-      .filter((btn) => btn.querySelector('svg[data-testid="AddIcon"]'))
-    // First add button belongs to the root menu item; the parent's is second.
-    await user.click(addButtons[1])
+      .find((btn) => btn.querySelector('svg[data-testid="AddIcon"]'))
+    expect(addBtn).toBeDefined()
+    await user.click(addBtn!)
 
     expect(screen.getByText('New Category in Parent')).toBeInTheDocument()
     await user.type(screen.getByLabelText('Category name'), 'Child cat')
@@ -65,10 +66,12 @@ describe('CategoryPickerSelect — add category dialog', () => {
     )
 
     await user.click(screen.getByRole('combobox'))
-    const addButtons = screen
+    const rootOption = screen.getByRole('option', { name: /None \(root level\)/ })
+    const rootAddBtn = within(rootOption)
       .getAllByRole('button')
-      .filter((btn) => btn.querySelector('svg[data-testid="AddIcon"]'))
-    await user.click(addButtons[0])
+      .find((btn) => btn.querySelector('svg[data-testid="AddIcon"]'))
+    expect(rootAddBtn).toBeDefined()
+    await user.click(rootAddBtn!)
 
     await user.type(screen.getByLabelText('Category name'), 'Top level')
     await user.click(screen.getByRole('button', { name: 'Create' }))
