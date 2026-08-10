@@ -88,6 +88,10 @@ function scopeKey(scope: ScopeId): string {
   return scope === null ? 'root' : String(scope)
 }
 
+function scopeFromKey(key: string): ScopeId {
+  return key === 'root' ? null : Number(key)
+}
+
 function sameOrder(a: TileOrderItemRef[], b: TileOrderItemRef[]): boolean {
   return a.length === b.length && a.every((ref, i) => ref.type === b[i].type && ref.id === b[i].id)
 }
@@ -300,6 +304,28 @@ export class TileOrderingCoordinator {
     if (state.status !== 'error' || state.pending === null || state.inFlight !== null) return
     this.setScope(scope, { ...state, status: 'dirty', error: null })
     void this.flush(scope)
+  }
+
+  /**
+   * True when a scope other than `scope` holds a failed save. Only the
+   * browsed scope renders a save-state indicator, so failures elsewhere
+   * (e.g. a category the user has navigated away from) need a cross-scope
+   * affordance — otherwise the order is never saved and the unload guard
+   * stays armed with nothing the user can act on.
+   */
+  hasFailedScopesOutside(scope: ScopeId): boolean {
+    const exclude = scopeKey(scope)
+    for (const [key, state] of this.scopes) {
+      if (key !== exclude && state.status === 'error') return true
+    }
+    return false
+  }
+
+  /** Retry every scope whose last save failed (see `hasFailedScopesOutside`). */
+  retryFailedScopes(): void {
+    for (const [key, state] of [...this.scopes]) {
+      if (state.status === 'error') this.retry(scopeFromKey(key))
+    }
   }
 
   /**
