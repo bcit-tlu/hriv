@@ -131,12 +131,11 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
       // pre-mutation data); instead it issues its own read, also bypassing
       // the HTTP cache so a stale ETag-backed 304 cannot reinstall
       // pre-refresh data either.
+      // Any unsettled refresh triggers the bypass — intervening reads (a
+      // background poll, a paired load for the other data type) may have
+      // claimed newer generations, so gen equality must not be required.
       const newestRefresh = categoriesRefreshRef.current
-      const bypassHttpCache =
-        !signal &&
-        newestRefresh !== null &&
-        !newestRefresh.settled &&
-        newestRefresh.gen === categoriesReadGen.current
+      const bypassHttpCache = !signal && newestRefresh !== null && !newestRefresh.settled
       const gen = ++categoriesReadGen.current
       let effectiveSignal = signal
       if (!signal) {
@@ -180,11 +179,7 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
       // Bypass the HTTP cache when superseding an in-flight authoritative
       // refresh (see loadCategories).
       const newestRefresh = uncategorizedRefreshRef.current
-      const bypassHttpCache =
-        !signal &&
-        newestRefresh !== null &&
-        !newestRefresh.settled &&
-        newestRefresh.gen === uncategorizedReadGen.current
+      const bypassHttpCache = !signal && newestRefresh !== null && !newestRefresh.settled
       const gen = ++uncategorizedReadGen.current
       let effectiveSignal = signal
       if (!signal) {
