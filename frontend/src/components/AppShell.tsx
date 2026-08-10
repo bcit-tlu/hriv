@@ -401,7 +401,11 @@ export default function AppShell(props: AppShellProps) {
                  and wordmark — is clickable. The logo's alt is empty because
                  the adjacent text already names it. */
               <Typography variant="h6" component="h1" sx={{ display: 'flex', m: 0 }}>
-                <Tooltip title="Home">
+                {/* `describeChild` makes the tooltip a *description*
+                    (aria-describedby) rather than the button's label, so the
+                    button keeps its visible name ("HRIV") and the enclosing h1
+                    announces as "HRIV" instead of "Home". */}
+                <Tooltip title="Home" describeChild>
                   <Box
                     component="button"
                     type="button"
@@ -608,7 +612,7 @@ export default function AppShell(props: AppShellProps) {
                 horizontal: 'right',
               }}
             >
-              <Card sx={{ minWidth: 240 }}>
+              <Card sx={{ minWidth: 240, maxWidth: 280 }}>
                 <CardContent sx={{ '&:last-child': { pb: profileMenuPb } }}>
                   <Typography sx={{ fontWeight: 600, fontSize: 17, lineHeight: 1.35 }}>
                     {currentUser.name}
@@ -665,7 +669,10 @@ export default function AppShell(props: AppShellProps) {
                       The label's own `ml` then sets the icon-to-text gap. */}
                   <MenuList sx={{ mx: -2, py: 0, '& .MuiListItemIcon-root': { minWidth: 0 } }}>
                     {collapseNav && (
-                      <MenuItem sx={{ py: profileItemPy, minHeight: profileItemMinH }} onClick={() => toggleMode()}>
+                      <MenuItem
+                        sx={{ py: profileItemPy, minHeight: profileItemMinH }}
+                        onClick={() => toggleMode()}
+                      >
                         <ListItemIcon sx={{ minWidth: 0, mr: 0 }}>{themeIcon}</ListItemIcon>
                         <ListItemText
                           slotProps={{ primary: { fontSize: 15 } }}
@@ -676,7 +683,10 @@ export default function AppShell(props: AppShellProps) {
                       </MenuItem>
                     )}
                     {canManageUsers && (
-                      <MenuItem sx={{ py: profileItemPy, minHeight: profileItemMinH }} onClick={() => openEditProfile()}>
+                      <MenuItem
+                        sx={{ py: profileItemPy, minHeight: profileItemMinH }}
+                        onClick={() => openEditProfile()}
+                      >
                         <ListItemIcon sx={{ minWidth: 0, mr: 0 }}>
                           <ManageAccountsIcon fontSize="small" />
                         </ListItemIcon>

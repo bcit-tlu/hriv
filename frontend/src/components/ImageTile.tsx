@@ -69,26 +69,37 @@ function ImageTile({ image, onClick, onEditDetails, categoryHidden = false }: Im
             '&:last-child': { pb: isMobile ? '8px' : 2 },
           }}
         >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <Typography
-              variant="h6"
-              noWrap={!isMobile}
-              sx={{
-                ...(!image.active && { color: visColors.inactive }),
-                ...(isMobile && {
-                  fontSize: 14,
-                  fontWeight: 600,
-                  lineHeight: 1.3,
-                  display: '-webkit-box',
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: 'vertical',
-                  overflow: 'hidden',
-                  whiteSpace: 'normal',
-                }),
-              }}
-            >
-              {image.name}
-            </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}>
+            <Tooltip title={image.name}>
+              <Typography
+                variant="h6"
+                sx={{
+                  ...(!image.active && { color: visColors.inactive }),
+                  ...(isMobile
+                    ? {
+                        fontSize: 14,
+                        fontWeight: 600,
+                        lineHeight: 1.3,
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden',
+                        whiteSpace: 'normal',
+                      }
+                    : {
+                        // Desktop: clamp to three lines (the hover tooltip surfaces
+                        // the full name); break long tokens mid-word.
+                        display: '-webkit-box',
+                        WebkitLineClamp: 3,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden',
+                        wordBreak: 'break-word',
+                      }),
+                }}
+              >
+                {image.name}
+              </Typography>
+            </Tooltip>
             {!image.active && (
               <Tooltip title="Visibility: Inactive">
                 <span

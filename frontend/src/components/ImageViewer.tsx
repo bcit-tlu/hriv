@@ -250,107 +250,6 @@ export default function ImageViewer({
   useEffect(() => {
     if (!containerRef.current) return
 
-    viewerRef.current = OpenSeadragon({
-      element: containerRef.current,
-      tileSources,
-      prefixUrl: '/openseadragon-svg-icons/',
-      navImages: {
-        zoomIn: {
-          REST: 'zoomin_rest.svg',
-          GROUP: 'zoomin_grouphover.svg',
-          HOVER: 'zoomin_hover.svg',
-          DOWN: 'zoomin_pressed.svg',
-        },
-        zoomOut: {
-          REST: 'zoomout_rest.svg',
-          GROUP: 'zoomout_grouphover.svg',
-          HOVER: 'zoomout_hover.svg',
-          DOWN: 'zoomout_pressed.svg',
-        },
-        home: {
-          REST: 'home_rest.svg',
-          GROUP: 'home_grouphover.svg',
-          HOVER: 'home_hover.svg',
-          DOWN: 'home_pressed.svg',
-        },
-        fullpage: {
-          REST: 'fullpage_rest.svg',
-          GROUP: 'fullpage_grouphover.svg',
-          HOVER: 'fullpage_hover.svg',
-          DOWN: 'fullpage_pressed.svg',
-        },
-        rotateleft: {
-          REST: 'rotateleft_rest.svg',
-          GROUP: 'rotateleft_grouphover.svg',
-          HOVER: 'rotateleft_hover.svg',
-          DOWN: 'rotateleft_pressed.svg',
-        },
-        rotateright: {
-          REST: 'rotateright_rest.svg',
-          GROUP: 'rotateright_grouphover.svg',
-          HOVER: 'rotateright_hover.svg',
-          DOWN: 'rotateright_pressed.svg',
-        },
-        previous: {
-          REST: 'previous_rest.svg',
-          GROUP: 'previous_grouphover.svg',
-          HOVER: 'previous_hover.svg',
-          DOWN: 'previous_pressed.svg',
-        },
-        next: {
-          REST: 'next_rest.svg',
-          GROUP: 'next_grouphover.svg',
-          HOVER: 'next_hover.svg',
-          DOWN: 'next_pressed.svg',
-        },
-        flip: {
-          REST: 'flip_rest.svg',
-          GROUP: 'flip_grouphover.svg',
-          HOVER: 'flip_hover.svg',
-          DOWN: 'flip_pressed.svg',
-        },
-      },
-      animationTime: 0.4,
-      blendTime: 0.1,
-      minZoomImageRatio: 0.8,
-      maxZoomPixelRatio: 4,
-      visibilityRatio: 1,
-      constrainDuringPan: true,
-      // Force the canvas (2d) drawer on mobile. OSD 6 prefers the WebGL drawer,
-      // but the navigator (mini-map) is a second viewer with its own WebGL
-      // context; on many mobile GPUs that second context fails to init, so the
-      // main image renders while the mini-map stays blank. The canvas drawer has
-      // no such per-viewer context limit and renders the mini-map reliably.
-      // (OSD itself already uses canvas on iOS.) Desktop keeps the default.
-      ...(isMobile ? { drawer: 'canvas' as const } : {}),
-      showNavigator: true,
-      // Design places the mini-map top-left on mobile. A ratio would shrink it
-      // on small phones, so mobile gets an explicit size that stays a usable
-      // drag target on any screen.
-      navigatorPosition: isMobile ? 'TOP_LEFT' : 'BOTTOM_RIGHT',
-      ...(isMobile ? { navigatorWidth: 92, navigatorHeight: 70 } : { navigatorSizeRatio: 0.15 }),
-      // The navigator fades out when the pointer leaves, and a touch screen has
-      // no hover — it would sit invisible on a phone, so keep it pinned there.
-      navigatorAutoFade: !isMobile,
-      gestureSettingsMouse: { scrollToZoom: true },
-      // Rotation controls
-      showRotationControl: true,
-      // Cooperative gestures on mobile (the pattern embedded maps use): a
-      // single finger is left to the browser so the page keeps scrolling, and
-      // only two fingers drive the viewer. Pinch still pans *and* zooms, so
-      // nothing is lost. Desktop is unchanged.
-      // Native pinchRotate is OFF on mobile — it rotated on the tiniest twist
-      // during a zoom. A dead-zoned rotation is re-implemented on 'canvas-pinch'
-      // below so rotating stays possible but deliberate.
-      gestureSettingsTouch: isMobile
-        ? { pinchRotate: false, dragToPan: false, flickEnabled: false, pinchToZoom: true }
-        : { pinchRotate: true },
-      // Position controls at bottom-left
-      navigationControlAnchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
-      // Mobile hides the native cluster in favour of the custom React pill.
-      showNavigationControl: !isMobile,
-    })
-
     try {
       viewerRef.current = OpenSeadragon({
         element: containerRef.current,
@@ -418,15 +317,31 @@ export default function ImageViewer({
         maxZoomPixelRatio: 4,
         visibilityRatio: 1,
         constrainDuringPan: true,
+        // Force the canvas (2d) drawer on mobile. OSD 6 prefers the WebGL drawer,
+        // but the navigator (mini-map) is a second viewer with its own WebGL
+        // context; on many mobile GPUs that second context fails to init, so the
+        // main image renders while the mini-map stays blank. The canvas drawer has
+        // no such per-viewer context limit and renders the mini-map reliably.
+        // (OSD itself already uses canvas on iOS.) Desktop keeps the default.
+        ...(isMobile ? { drawer: 'canvas' as const } : {}),
         showNavigator: true,
-        navigatorPosition: 'BOTTOM_RIGHT',
-        navigatorSizeRatio: 0.15,
+        // Design places the mini-map top-left on mobile; an explicit size keeps
+        // it a usable drag target on small phones.
+        navigatorPosition: isMobile ? 'TOP_LEFT' : 'BOTTOM_RIGHT',
+        ...(isMobile ? { navigatorWidth: 92, navigatorHeight: 70 } : { navigatorSizeRatio: 0.15 }),
+        // A touch screen has no hover to un-fade the navigator, so keep it pinned.
+        navigatorAutoFade: !isMobile,
         gestureSettingsMouse: { scrollToZoom: true },
-        // Rotation controls
         showRotationControl: true,
-        gestureSettingsTouch: { pinchRotate: true },
-        // Position controls at bottom-left
+        // Cooperative gestures on mobile: one finger scrolls the page, two drive
+        // the viewer. Native pinchRotate is off (it twisted on the tiniest pinch);
+        // a dead-zoned rotation is re-implemented on 'canvas-pinch' below.
+        gestureSettingsTouch: isMobile
+          ? { pinchRotate: false, dragToPan: false, flickEnabled: false, pinchToZoom: true }
+          : { pinchRotate: true },
         navigationControlAnchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
+        // Mobile hides the native cluster in favour of the custom React pill.
+        showNavigationControl: !isMobile,
       })
     } catch (error) {
       emitFrontendError({
@@ -997,7 +912,7 @@ export default function ImageViewer({
           },
           overlays: labelPairs
             .slice(0, MAX_SHARE_OVERLAYS)
-            .map((p) => ({ x: p.rect.x, y: p.rect.y, width: p.rect.width, height: p.rect.height })),
+            .map((p) => ({ x: p.rect.x, y: p.rect.y, w: p.rect.width, h: p.rect.height })),
         }
       }
       selectionModeRef.current = false
@@ -1097,10 +1012,7 @@ export default function ImageViewer({
     measure()
 
     if (typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver()
-    ;(observer as unknown as { onresize?: () => void }).onresize = () => {
-      measure()
-    }
+    const observer = new ResizeObserver(() => measure())
     observer.observe(row)
     return () => observer.disconnect()
   }, [isMobile, viewerInstance])

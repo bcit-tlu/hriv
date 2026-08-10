@@ -165,6 +165,13 @@ export function useShareableImageState(
   const pendingViewport = useRef<ViewportState | undefined>(initialUrl.viewport)
   const pendingOverlays = useRef<OverlayRect[] | undefined>(initialUrl.overlays)
   const pendingCatIds = useRef<number[] | null>(initialUrl.catIds)
+  // Guard for the URL-sync effect, as *state* (not just the ref above). Both the
+  // restore effect and the sync effect read this from the same render snapshot,
+  // so the sync effect can never observe a half-applied restore — it stays true
+  // until the restore commit lands the resolved `path`, then flips false on the
+  // next render. This removes the previous reliance on the restore effect being
+  // declared/executed before the sync effect within a single commit.
+  const [catRestorePending, setCatRestorePending] = useState(initialUrl.catIds !== null)
 
   // Once categories are loaded, restore a pending shared-link image
   useEffect(() => {
@@ -223,14 +230,22 @@ export function useShareableImageState(
 
   // Resolve pending category path from URL (when no image param is present)
   useEffect(() => {
-    if (pendingCatIds.current === null || categoriesLoading) return
+    if (!catRestorePending || categoriesLoading) return
     const ids = pendingCatIds.current
     pendingCatIds.current = null
-    const resolved = resolveCategoryPath(categories, ids)
-    if (resolved.length > 0) {
-      setPath(resolved)
+    if (ids) {
+      const resolved = resolveCategoryPath(categories, ids)
+      if (resolved.length > 0) {
+        setPath(resolved)
+      }
     }
-  }, [categories, categoriesLoading, setPath])
+    // Lower the guard via state so the URL-sync effect re-runs on the *next*
+    // commit — by then `path` holds the restored value, so it never strips the
+    // `?cat=` params it's about to write back. The extra render is the whole
+    // point (it re-runs the sync with the guard down and the path restored).
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional one-shot guard release after restore
+    setCatRestorePending(false)
+  }, [catRestorePending, categories, categoriesLoading, setPath])
 
   // Keep URL search params in sync with the current view.
   // Skipped when enableUrlSync is false so consumers that only need the
@@ -242,7 +257,7 @@ export function useShareableImageState(
     // still empty, and would otherwise strip the very params we're about to
     // restore from (leaving the user at the root).
     if (pendingImageId.current !== null) return
-    if (pendingCatIds.current !== null) return
+    if (catRestorePending) return
     const params = new URLSearchParams()
     if (page !== 'browse') {
       params.set('page', page)
@@ -278,7 +293,7 @@ export function useShareableImageState(
       '',
       newUrl,
     )
-  }, [enableUrlSync, page, path, selectedImage, viewportState, overlays])
+  }, [enableUrlSync, page, path, selectedImage, viewportState, overlays, catRestorePending])
 
   const handleViewportChange = useCallback((state: ViewportState) => {
     setViewportState(state)
@@ -381,6 +396,7 @@ export function useShareableImageState(
     pendingViewport.current = undefined
     pendingOverlays.current = undefined
     pendingCatIds.current = null
+    setCatRestorePending(false)
   }, [])
 
   return {

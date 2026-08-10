@@ -167,6 +167,7 @@ function createAnnotationTextbox(
  * Explicit newlines start a new paragraph; words that exceed the width remain
  * intact, matching Fabric's default dynamicMinWidth behaviour.
  */
+// eslint-disable-next-line react-refresh/only-export-components -- shared text helper colocated with its consumer; not a component
 export function wrapCanvasText(
   ctx: Pick<CanvasRenderingContext2D, 'measureText'>,
   text: string,

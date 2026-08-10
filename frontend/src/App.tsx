@@ -64,7 +64,6 @@ import {
 } from './treeUtils'
 import UploadImageModal from './components/UploadImageModal'
 import { isAcceptedFile } from './fileUtils'
-import { formatFileSize } from './formatUtils'
 import { useAuth } from './useAuth'
 import {
   fetchImage as apiFetchImage,
@@ -960,6 +959,19 @@ export default function App() {
   // touches two scopes; surface whichever needs attention most.
   const manageAttentionScope = useMostSevereScope(manageReorderScopes)
   const manageTileOrdering = useTileOrdering(manageAttentionScope ?? null)
+
+  // Navigation-safe reorder coordinator for the current Browse scope (the
+  // deepest category in the path, or the root when at the top).
+  const browseScopeId = path.length > 0 ? path[path.length - 1].id : null
+  const tileOrdering = useTileOrdering(browseScopeId)
+  const browseTileOrderingProp = useMemo(
+    () => ({
+      displayOrder: tileOrdering.displayOrder,
+      reportOrder: tileOrdering.reportOrder,
+      claimGeneration: tileOrdering.claimGeneration,
+    }),
+    [tileOrdering.displayOrder, tileOrdering.reportOrder, tileOrdering.claimGeneration],
+  )
 
   // The Manage dialog's save-state indicator unmounts with the dialog, so a
   // reorder that fails after the user closed it would otherwise be invisible.

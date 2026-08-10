@@ -295,7 +295,8 @@ function CategoryTile({
             <Box
               sx={{
                 display: 'flex',
-                alignItems: isMobile ? 'flex-start' : 'center',
+                // Top-align so the icon sits with the first line of a multi-line title.
+                alignItems: 'flex-start',
                 gap: isMobile ? '5px' : 0.5,
               }}
             >
@@ -304,26 +305,36 @@ function CategoryTile({
                 color="primary"
                 sx={{ flexShrink: 0, ...(isMobile && { fontSize: 16, mt: '1px' }) }}
               />
-              <Typography
-                variant="h6"
-                noWrap={!isMobile}
-                sx={{
-                  color: category.status === 'hidden' ? visColors.inactive : 'primary.main',
-                  ...(isMobile && {
-                    fontSize: mobileLabelFontSize,
-                    fontWeight: 600,
-                    lineHeight: 1.3,
-                    // Wrap the full name onto as many lines as it needs rather
-                    // than clamping/ellipsising it — nothing gets cut off. Long
-                    // unbroken tokens break mid-word so they can't overflow the
-                    // card width.
-                    whiteSpace: 'normal',
-                    overflowWrap: 'anywhere',
-                  }),
-                }}
-              >
-                {category.label}
-              </Typography>
+              <Tooltip title={category.label}>
+                <Typography
+                  variant="h6"
+                  sx={{
+                    color: category.status === 'hidden' ? visColors.inactive : 'primary.main',
+                    ...(isMobile
+                      ? {
+                          fontSize: mobileLabelFontSize,
+                          fontWeight: 600,
+                          lineHeight: 1.3,
+                          // Wrap the full name onto as many lines as it needs
+                          // rather than clamping — nothing gets cut off; long
+                          // unbroken tokens break mid-word.
+                          whiteSpace: 'normal',
+                          overflowWrap: 'anywhere',
+                        }
+                      : {
+                          // Desktop: clamp to three lines (the hover tooltip above
+                          // surfaces the full label); break long tokens mid-word.
+                          display: '-webkit-box',
+                          WebkitLineClamp: 3,
+                          WebkitBoxOrient: 'vertical',
+                          overflow: 'hidden',
+                          wordBreak: 'break-word',
+                        }),
+                  }}
+                >
+                  {category.label}
+                </Typography>
+              </Tooltip>
               {category.status === 'hidden' && (
                 <Tooltip title="Visibility: Hidden">
                   <span

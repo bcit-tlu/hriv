@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { useState } from 'react'
 import { renderHook, act } from '@testing-library/react'
 import { useShareableImageState } from '../src/useShareableImageState'
 import type { UseShareableImageStateDeps } from '../src/useShareableImageState'
@@ -305,6 +306,35 @@ describe('useShareableImageState', () => {
 
       renderHook(() => useShareableImageState(makeDeps({ categoriesLoading: true })))
 
+      expect(new URLSearchParams(window.location.search).get('cat')).toBe('1,2')
+    })
+
+    it('never writes a cat-less URL across the restore commit', () => {
+      // The sync effect must not fire with the pre-restore (empty) path in the
+      // commit the restore lands — that would strip ?cat and bounce a reload
+      // back to the root. This is independent of the restore/sync effect order.
+      // Uses a real `path` state so setPath actually updates the view.
+      window.history.replaceState(null, '', '/?cat=1,2')
+      const child = makeCategory({ id: 2, label: 'Child' })
+      const root = makeCategory({ id: 1, label: 'Root', children: [child] })
+
+      const { rerender } = renderHook(
+        (props: { categories: ReturnType<typeof makeCategory>[]; categoriesLoading: boolean }) => {
+          const [path, setPath] = useState<ReturnType<typeof makeCategory>[]>([])
+          return useShareableImageState(makeDeps({ ...props, path, setPath }))
+        },
+        { initialProps: { categories: [], categoriesLoading: true } },
+      )
+
+      // Categories arrive → restore fires and setPath propagates within this act.
+      replaceStateSpy.mockClear()
+      rerender({ categories: [root], categoriesLoading: false })
+
+      const syncedUrls = replaceStateSpy.mock.calls.map((c) => String(c[2] ?? ''))
+      // The params are written back…
+      expect(syncedUrls.some((u) => u.includes('cat='))).toBe(true)
+      // …and no sync in between ever dropped them.
+      expect(syncedUrls.every((u) => u.includes('cat='))).toBe(true)
       expect(new URLSearchParams(window.location.search).get('cat')).toBe('1,2')
     })
   })

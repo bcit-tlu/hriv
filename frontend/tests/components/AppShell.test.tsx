@@ -57,9 +57,10 @@ describe('AppShell', () => {
       render(<AppShell {...makeProps()} />)
 
       const heading = screen.getByRole('heading', { name: 'HRIV' })
-      // The tooltip names the control "Home", which reads better than the
-      // brand alone for screen-reader users.
-      const brandButton = screen.getByRole('button', { name: 'Home' })
+      // The button keeps its visible name ("HRIV") so the enclosing h1 also
+      // reads "HRIV"; the tooltip only *describes* the action ("Home") via
+      // describeChild, rather than overriding the name.
+      const brandButton = screen.getByRole('button', { name: 'HRIV' })
       // Both the mark and the wordmark live in one control, and it stays within
       // the h1 so the page keeps its heading.
       expect(heading).toContainElement(brandButton)
@@ -339,7 +340,7 @@ describe('AppShell', () => {
     it('navigates to browse when the brand lockup is clicked from another page', () => {
       const props = makeProps({ page: 'manage' })
       render(<AppShell {...props} />)
-      fireEvent.click(screen.getByRole('button', { name: 'Home' }))
+      fireEvent.click(screen.getByRole('button', { name: 'HRIV' }))
       expect(props.onTabChange).toHaveBeenCalledWith('browse')
       expect(props.onHomeClick).not.toHaveBeenCalled()
     })
@@ -347,7 +348,7 @@ describe('AppShell', () => {
     it('resets to the category root when the brand lockup is clicked on browse', () => {
       const props = makeProps({ page: 'browse' })
       render(<AppShell {...props} />)
-      fireEvent.click(screen.getByRole('button', { name: 'Home' }))
+      fireEvent.click(screen.getByRole('button', { name: 'HRIV' }))
       expect(props.onHomeClick).toHaveBeenCalledTimes(1)
       expect(props.onTabChange).not.toHaveBeenCalled()
     })
