@@ -1,12 +1,14 @@
 """Prometheus metrics for ordering (reorder) operations.
 
-Server-side reorder requests are observed directly by the category/image
-reorder endpoints. Client-side operation states (ignored, queued, coalesced,
-stale-discarded, …) are counted when the authenticated telemetry ingestion
-endpoint accepts a ``reorder.operation`` event.
+Server-side reorder requests are observed by ``PUT /api/tile-order``, the
+sole ordering writer (the per-entity category/image reorder endpoints were
+removed in #998, so their ``entity`` labels only appear in historical data).
+Client-side operation states (ignored, queued, coalesced, stale-discarded, …)
+are counted when the authenticated telemetry ingestion endpoint accepts a
+``reorder.operation`` event.
 
 Labels stay on the bounded allowlist in ``docs/observability-conventions.md``:
-entity (``category``/``image``), outcome, and a small closed set of client
+entity (``tile``; ``category``/``image`` are legacy), outcome, and a small closed set of client
 operation states. Operation IDs, category IDs, and revisions belong in traces
 and structured logs, never in metric labels.
 """
