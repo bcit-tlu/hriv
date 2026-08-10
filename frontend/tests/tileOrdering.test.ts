@@ -236,6 +236,29 @@ describe('TileOrderingCoordinator', () => {
     expect(coordinator.hasFailedScopesOutside(null)).toBe(false)
   })
 
+  it('surfaces and resolves a conflicted scope from outside its scope', async () => {
+    const current = response(3, refs(3, 1, 2))
+    mockedPut.mockRejectedValueOnce(conflictError(current))
+
+    coordinator.reportOrder(7, refs(2, 1, 3))
+    await flushMicrotasks()
+    expect(coordinator.getScope(7).status).toBe('conflict')
+
+    // An unresolved conflict is visible from any other scope too — it arms
+    // the unload guard, so the user needs an affordance to settle it.
+    expect(coordinator.hasFailedScopesOutside(null)).toBe(true)
+    expect(coordinator.hasFailedScopesOutside(7)).toBe(false)
+
+    // …and resolving adopts the server's authoritative order.
+    coordinator.retryFailedScopes()
+    await flushMicrotasks()
+    const state = coordinator.getScope(7)
+    expect(state.status).toBe('saved')
+    expect(state.displayOrder).toEqual(refs(3, 1, 2))
+    expect(state.pending).toBeNull()
+    expect(coordinator.hasFailedScopesOutside(null)).toBe(false)
+  })
+
   it('a failure does not roll back newer local changes', async () => {
     const first = deferred<TileOrderResponse>()
     mockedPut.mockReturnValueOnce(first.promise)
@@ -354,6 +377,26 @@ describe('TileOrderingCoordinator', () => {
     expect(state.pending).toEqual(refs(2, 1, 3))
     expect(mockedPut).toHaveBeenCalledTimes(1)
     expect(events.some((e) => e.state === 'conflicted')).toBe(true)
+  })
+
+  it('reapplyLocalOrder reconciles pending against drifted membership instead of looping', async () => {
+    // Membership drift: image 3 left the scope, image 4 arrived.
+    const current = response(4, refs(3, 1, 4))
+    mockedPut.mockRejectedValueOnce(new ApiError(400, 'Images not in scope: [2]'))
+    mockedGet.mockResolvedValue(current)
+    mockedPut.mockResolvedValueOnce(response(5, refs(1, 3, 4)))
+
+    coordinator.reportOrder(null, refs(2, 1, 3))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('conflict')
+
+    coordinator.reapplyLocalOrder(null)
+    await flushMicrotasks()
+
+    const state = coordinator.getScope(null)
+    expect(state.status).toBe('saved')
+    // Departed item dropped, local relative order kept, newcomer appended.
+    expect(mockedPut).toHaveBeenLastCalledWith(null, 4, refs(1, 3, 4), expect.any(String))
   })
 
   it('shows saving during seeding and emits a failed diagnostic when the seed GET fails', async () => {

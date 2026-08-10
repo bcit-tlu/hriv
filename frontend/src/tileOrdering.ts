@@ -92,6 +92,10 @@ function scopeFromKey(key: string): ScopeId {
   return key === 'root' ? null : Number(key)
 }
 
+function refKey(ref: TileOrderItemRef): string {
+  return `${ref.type}:${ref.id}`
+}
+
 function sameOrder(a: TileOrderItemRef[], b: TileOrderItemRef[]): boolean {
   return a.length === b.length && a.every((ref, i) => ref.type === b[i].type && ref.id === b[i].id)
 }
@@ -311,24 +315,31 @@ export class TileOrderingCoordinator {
   }
 
   /**
-   * True when a scope other than `scope` holds a failed save. Only the
-   * browsed scope renders a save-state indicator, so failures elsewhere
-   * (e.g. a category the user has navigated away from) need a cross-scope
-   * affordance — otherwise the order is never saved and the unload guard
-   * stays armed with nothing the user can act on.
+   * True when a scope other than `scope` needs user attention (a failed
+   * save or an unresolved conflict). Only the browsed scope renders a
+   * save-state indicator, so unresolved states elsewhere (e.g. a category
+   * the user has navigated away from) need a cross-scope affordance —
+   * otherwise the order is never settled and the unload guard stays armed
+   * with nothing the user can act on.
    */
   hasFailedScopesOutside(scope: ScopeId): boolean {
     const exclude = scopeKey(scope)
     for (const [key, state] of this.scopes) {
-      if (key !== exclude && state.status === 'error') return true
+      if (key !== exclude && (state.status === 'error' || state.status === 'conflict')) return true
     }
     return false
   }
 
-  /** Retry every scope whose last save failed (see `hasFailedScopesOutside`). */
+  /**
+   * Resolve every scope needing attention (see `hasFailedScopesOutside`):
+   * failed saves are retried; conflicted scopes adopt the server's
+   * authoritative order — the same resolution the browsed-scope conflict
+   * affordance offers.
+   */
   retryFailedScopes(): void {
     for (const [key, state] of [...this.scopes]) {
       if (state.status === 'error') this.retry(scopeFromKey(key))
+      else if (state.status === 'conflict') this.acceptServerOrder(scopeFromKey(key))
     }
   }
 
@@ -370,11 +381,27 @@ export class TileOrderingCoordinator {
       this.acceptServerOrder(scope)
       return
     }
+    // A 400-style conflict means scope membership drifted: resubmitting the
+    // pending list verbatim would be rejected again forever. Reconcile it
+    // against the authoritative membership — keep the local relative order
+    // for surviving items, drop departed ones, append newcomers in server
+    // order.
+    let pending = state.pending
+    if (state.conflictOrder !== null) {
+      const authoritative = new Set(state.conflictOrder.map(refKey))
+      const local = new Set(pending.map(refKey))
+      pending = [
+        ...pending.filter((ref) => authoritative.has(refKey(ref))),
+        ...state.conflictOrder.filter((ref) => !local.has(refKey(ref))),
+      ]
+    }
     // The conflict's authoritative order is retained until a commit
     // succeeds, keeping accept-server-order available if the retry fails.
     this.setScope(scope, {
       ...state,
       status: 'dirty',
+      pending,
+      displayOrder: pending,
       error: null,
     })
     void this.flush(scope)
