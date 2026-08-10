@@ -99,32 +99,26 @@ untouched. Moving a tile into another category stays on the existing
 category/image endpoints, preserving the projected-index drop behaviour
 from PR #631 (this contract changes persistence only).
 
-### Legacy endpoints
+### Legacy endpoints (removed)
 
-`PUT /api/categories/reorder` and `PUT /api/images/reorder` remain during
-the staged frontend migration (#979–#982) but are **deprecated for
-ordering**: they persist through separate transactions and row-by-row
-updates. They DO bump the tile-order revision of every scope they touch
-(`bump_scopes`), so a tile-order client holding a pre-reorder revision
-gets a 409 instead of silently overwriting a legacy write while both
-paths coexist. The legacy endpoints take the revision locks BEFORE
-mutating category/image rows — the same revision-then-rows lock order as
-`PUT /api/tile-order` — so concurrent same-scope writes across both paths
-serialize instead of deadlocking.
-
-As of #982 no frontend caller uses these endpoints for ordering: Browse and
-Manage Categories both persist through the shared coordinator and
-`PUT /api/tile-order`. The endpoints (and the legacy non-coordinator
-fallback path in `SortableTileGrid`) are retained only for API clients and
-tests; their removal is tracked in #998.
+`PUT /api/categories/reorder` and `PUT /api/images/reorder` existed during
+the staged frontend migration (#979–#982) but persisted through separate
+transactions and row-by-row updates. As of #982 no frontend caller used
+them for ordering — Browse and Manage Categories both persist through the
+shared coordinator and `PUT /api/tile-order` — so #998 removed the
+endpoints, their request schemas, the `reorderCategories`/`reorderImages`
+API wrappers, and the non-coordinator fallback path in `SortableTileGrid`
+(the `tileOrdering` prop is now required). `PUT /api/tile-order` is the
+only ordering write path.
 
 ## Telemetry
 
 The endpoint participates in the reorder observability contract
 (`docs/reorder-telemetry.md`): `tile.reorder` spans, `reorder.persisted`
 structured logs, and `hriv_reorder_*` metrics with `entity="tile"`.
-`X-Reorder-Operation-Id` is superseded by the request-body `operation_id`
-for this endpoint.
+The correlation ID travels in the request body (`operation_id`); the
+`X-Reorder-Operation-Id` header used by the removed legacy endpoints is no
+longer sent.
 
 ## Ordering normalization
 
@@ -141,8 +135,8 @@ DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv \
 Normalization is deterministic: running it twice yields the same order.
 
 Normalization runs as ONE transaction and locks every scope's revision row
-until it commits, so concurrent ordering writes (`PUT /api/tile-order` and
-the legacy reorder endpoints) block for the duration of the run. This is
+until it commits, so concurrent ordering writes (`PUT /api/tile-order`)
+block for the duration of the run. This is
 intentional — it is an operator-invoked repair tool and a single transaction
 guarantees an all-or-nothing repair — but schedule it outside peak editing
 hours on large libraries.

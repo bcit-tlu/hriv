@@ -1,10 +1,10 @@
 /**
  * Coordinator-mode grid tests (epic #975, issue #979).
  *
- * With the `tileOrdering` prop, `SortableTileGrid` applies every accepted
- * drag locally and reports the new order to the coordinator — it never calls
- * the legacy persistence APIs and never discards a drop, even when a save is
- * in flight (the coordinator owns queueing/coalescing).
+ * `SortableTileGrid` applies every accepted drag locally and reports the new
+ * order to the coordinator via the required `tileOrdering` prop — it never
+ * persists directly and never discards a drop, even when a save is in flight
+ * (the coordinator owns queueing/coalescing).
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -48,18 +48,6 @@ vi.mock('@dnd-kit/react', async () => {
   }
 })
 
-import * as apiModule from '../../src/api'
-
-vi.mock('../../src/api', async () => {
-  const actual = await vi.importActual<typeof apiModule>('../../src/api')
-  return {
-    ...actual,
-    reorderCategories: vi.fn(() => Promise.resolve()),
-    reorderImages: vi.fn(() => Promise.resolve()),
-  }
-})
-
-import { reorderCategories, reorderImages } from '../../src/api'
 import type { TileOrderItemRef } from '../../src/api'
 
 function makeTileOrdering() {
@@ -73,6 +61,7 @@ function makeTileOrdering() {
 
 function renderGrid(overrides: Partial<SortableTileGridProps> = {}) {
   const defaults: SortableTileGridProps = {
+    tileOrdering: makeTileOrdering(),
     allCategories: [],
     currentCategories: [],
     currentImages: [],
@@ -85,8 +74,6 @@ function renderGrid(overrides: Partial<SortableTileGridProps> = {}) {
     onImageClick: vi.fn(),
     onFilesDrop: vi.fn(),
     onDropImageOnCategory: vi.fn(),
-    onReorderComplete: vi.fn(),
-    onReorderError: vi.fn(),
   }
   const props = { ...defaults, ...overrides }
   return { ...render(<SortableTileGrid {...props} />), props }
@@ -109,8 +96,6 @@ describe('SortableTileGrid coordinator mode', () => {
 
   beforeEach(() => {
     capturedOnDragEnd = undefined
-    vi.mocked(reorderCategories).mockReset().mockResolvedValue()
-    vi.mocked(reorderImages).mockReset().mockResolvedValue()
   })
 
   it('reports the new order to the coordinator instead of persisting directly', async () => {
@@ -129,8 +114,6 @@ describe('SortableTileGrid coordinator mode', () => {
       { type: 'image', id: images[4].id },
     ])
     expect(generation).toBe(1)
-    expect(reorderImages).not.toHaveBeenCalled()
-    expect(reorderCategories).not.toHaveBeenCalled()
   })
 
   it('never discards consecutive drops (no in-flight guard in coordinator mode)', async () => {
@@ -141,7 +124,6 @@ describe('SortableTileGrid coordinator mode', () => {
     await dropImage(images[4].id, images[1].id, 4, 1)
 
     expect(tileOrdering.reportOrder).toHaveBeenCalledTimes(2)
-    expect(reorderImages).not.toHaveBeenCalled()
   })
 
   it('renders items in the coordinator display order on mount', () => {

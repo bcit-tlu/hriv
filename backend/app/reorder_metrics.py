@@ -1,12 +1,14 @@
 """Prometheus metrics for ordering (reorder) operations.
 
-Server-side reorder requests are observed directly by the category/image
-reorder endpoints. Client-side operation states (ignored, queued, coalesced,
-stale-discarded, …) are counted when the authenticated telemetry ingestion
-endpoint accepts a ``reorder.operation`` event.
+Server-side reorder requests are observed by ``PUT /api/tile-order``, the
+sole ordering writer (the per-entity category/image reorder endpoints were
+removed in #998, so their ``entity`` labels only appear in historical data).
+Client-side operation states (ignored, queued, coalesced, stale-discarded, …)
+are counted when the authenticated telemetry ingestion endpoint accepts a
+``reorder.operation`` event.
 
 Labels stay on the bounded allowlist in ``docs/observability-conventions.md``:
-entity (``category``/``image``), outcome, and a small closed set of client
+entity (``tile``; ``category``/``image`` are legacy), outcome, and a small closed set of client
 operation states. Operation IDs, category IDs, and revisions belong in traces
 and structured logs, never in metric labels.
 """
@@ -24,6 +26,10 @@ from prometheus_client import (
 _registry = CollectorRegistry()
 
 REORDER_ENTITIES = frozenset({"category", "image", "tile"})
+# Sentinel that unrecognized entities are coerced to, and the full domain of
+# the `entity` metric label (the caller allowlist plus the sentinel).
+REORDER_ENTITY_OTHER = "other"
+REORDER_ENTITY_LABELS = REORDER_ENTITIES | frozenset({REORDER_ENTITY_OTHER})
 REORDER_OUTCOMES = frozenset({"success", "failure", "conflict", "client_error"})
 
 # The frontend reorder diagnostics vocabulary
@@ -75,7 +81,7 @@ def observe_reorder_request(
 ) -> None:
     """Record one server-side reorder request observation."""
     if entity not in REORDER_ENTITIES:
-        entity = "category"
+        entity = REORDER_ENTITY_OTHER
     if outcome not in REORDER_OUTCOMES:
         outcome = "failure"
     _request_duration.labels(entity=entity).observe(duration_seconds)

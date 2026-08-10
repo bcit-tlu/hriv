@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
@@ -25,12 +25,6 @@ import { getCategoryHiddenStateFromPath } from '../treeUtils'
 import CategoryTile from './CategoryTile'
 import ImageTile from './ImageTile'
 import FileDropZone from './FileDropZone'
-import { reorderCategories, reorderImages } from '../api'
-import {
-  emitReorderDiagnostic,
-  newReorderOperationId,
-  reorderErrorCode,
-} from '../reorderDiagnostics'
 import {
   buildTileItems,
   collectDescendantIds,
@@ -46,18 +40,6 @@ import type { TileItem } from './sortableTileGridUtils'
 // Stable default so omitting `groups` cannot produce a fresh array on every
 // render and defeat the render-callback memoization below.
 const NO_GROUPS: Group[] = []
-
-// Shared by the real reorder path and the in-flight discarded-drop
-// accounting so the two order-change checks cannot drift apart.
-function computeReorderedIds(
-  items: TileItem[],
-  event: DragEndEvent,
-): { ids: string[]; reorderedIds: string[]; isNoOp: boolean } {
-  const ids = items.map(tileId)
-  const reorderedIds = move(ids, event)
-  const isNoOp = reorderedIds.length === ids.length && reorderedIds.every((id, i) => id === ids[i])
-  return { ids, reorderedIds, isNoOp }
-}
 
 interface SortableTileProps {
   id: string
@@ -240,18 +222,16 @@ export interface SortableTileGridProps {
   onFilesDrop: (files: File[]) => void
   onGridDragOver?: React.DragEventHandler
   onGridDrop?: React.DragEventHandler
-  onReorderComplete?: () => Promise<void> | void
-  onReorderError?: (err: unknown) => void
 
   /**
-   * Coordinator-managed reordering (epic #975, issue #979). When provided,
-   * the grid applies every accepted drag locally and reports the new order
-   * to the coordinator; it never calls persistence APIs directly and never
+   * Coordinator-managed reordering (epic #975, issue #979). The grid applies
+   * every accepted drag locally and reports the new order to the
+   * coordinator; it never calls persistence APIs directly and never
    * discards a drop. `displayOrder` is the coordinator's newest order for
    * this scope (survives unmount/remount); `claimGeneration` guards against
    * a stale grid instance overwriting a remounted one.
    */
-  tileOrdering?: {
+  tileOrdering: {
     displayOrder: TileOrderItemRef[] | null
     reportOrder: (
       order: TileOrderItemRef[],
@@ -284,8 +264,6 @@ export default function SortableTileGrid({
   onFilesDrop,
   onGridDragOver,
   onGridDrop,
-  onReorderComplete,
-  onReorderError,
   tileOrdering,
 }: SortableTileGridProps) {
   const visibleImages = useMemo(
@@ -300,32 +278,22 @@ export default function SortableTileGrid({
   const parentId = path.length > 0 ? path[path.length - 1].id : null
   const [items, setItems] = useState<TileItem[]>(() => {
     const built = buildTileItems(currentCategories, visibleImages)
-    return tileOrdering?.displayOrder ? orderTileItems(built, tileOrdering.displayOrder) : built
+    return tileOrdering.displayOrder ? orderTileItems(built, tileOrdering.displayOrder) : built
   })
   const [activeItem, setActiveItem] = useState<TileItem | null>(null)
   const gridGenerationRef = useRef<number | null>(null)
-  const claimGeneration = tileOrdering?.claimGeneration
+  const claimGeneration = tileOrdering.claimGeneration
   // Claim a fresh grid-instance generation per scope so callbacks from an
   // unmounted grid (SPA navigation) cannot overwrite a remounted one.
   useLayoutEffect(() => {
-    if (claimGeneration) gridGenerationRef.current = claimGeneration()
+    gridGenerationRef.current = claimGeneration()
   }, [claimGeneration, parentId])
-  const reorderInFlightRef = useRef(false)
-  const discardedDropsRef = useRef(0)
-  const activeOperationRef = useRef<string | null>(null)
-  const pendingItemsRef = useRef<TileItem[] | null>(null)
-  // Refs for async callback access (always reflect latest props)
-  const currentCategoriesRef = useRef(currentCategories)
-  const visibleImagesRef = useRef(visibleImages)
   const syncedCategoriesRef = useRef(currentCategories)
   const syncedVisibleImagesRef = useRef(visibleImages)
-  const coordinatorOrder = tileOrdering?.displayOrder ?? null
+  const coordinatorOrder = tileOrdering.displayOrder
   const syncedCoordinatorOrderRef = useRef(coordinatorOrder)
 
   useLayoutEffect(() => {
-    currentCategoriesRef.current = currentCategories
-    visibleImagesRef.current = visibleImages
-
     const membershipChanged =
       syncedCategoriesRef.current !== currentCategories ||
       syncedVisibleImagesRef.current !== visibleImages
@@ -341,28 +309,8 @@ export default function SortableTileGrid({
     syncedCoordinatorOrderRef.current = coordinatorOrder
 
     const built = buildTileItems(currentCategories, visibleImages)
-    const nextItems = coordinatorOrder !== null ? orderTileItems(built, coordinatorOrder) : built
-    if (reorderInFlightRef.current) {
-      pendingItemsRef.current = nextItems
-      return
-    }
-    pendingItemsRef.current = null
-    setItems(nextItems)
+    setItems(coordinatorOrder !== null ? orderTileItems(built, coordinatorOrder) : built)
   }, [currentCategories, visibleImages, coordinatorOrder])
-
-  // Record navigation/unmount while a save is active: the operation's outcome
-  // becomes unobservable to this component, which is one of the failure modes
-  // tracked by epic #975.
-  useEffect(() => {
-    return () => {
-      if (reorderInFlightRef.current && activeOperationRef.current !== null) {
-        emitReorderDiagnostic({
-          operationId: activeOperationRef.current,
-          state: 'abandoned',
-        })
-      }
-    }
-  }, [])
 
   const blockedIdsMap = useMemo(() => {
     const map = new Map<number, Set<number>>()
@@ -385,7 +333,7 @@ export default function SortableTileGrid({
   )
 
   const handleDragEnd = useCallback(
-    async (event: DragEndEvent) => {
+    (event: DragEndEvent) => {
       setActiveItem(null)
 
       const { operation } = event
@@ -397,32 +345,6 @@ export default function SortableTileGrid({
 
       const sourceId = String(source.id)
       const targetId = String(target.id)
-
-      if (reorderInFlightRef.current) {
-        // Legacy (non-coordinator) path only — Browse uses the coordinator,
-        // which queues these drops instead. Here a drop during an in-flight
-        // save is silently discarded; record reorder drops so they are
-        // observable. Move-into-category drops are outside the reorder
-        // lifecycle and no-op drops (order unchanged, mirroring the
-        // idle-path filter) are not reported as reorder operations.
-        if (!targetId.startsWith(DROP_PREFIX)) {
-          if (computeReorderedIds(items, event).isNoOp) return
-          discardedDropsRef.current += 1
-          emitReorderDiagnostic({
-            operationId: newReorderOperationId(),
-            state: 'ignored',
-            scopeCategoryId: path.length > 0 ? path[path.length - 1].id : null,
-            itemType: sourceId.startsWith('img-') ? 'image' : 'category',
-            itemId: Number(sourceId.slice(4)),
-            categoryCount: currentCategoriesRef.current.length,
-            imageCount: visibleImagesRef.current.length,
-            // Running count of drops discarded during the current save
-            // (this legacy path has no queue).
-            queueDepth: discardedDropsRef.current,
-          })
-        }
-        return
-      }
 
       if (targetId.startsWith(DROP_PREFIX)) {
         const targetCatId = Number(targetId.slice(DROP_PREFIX.length))
@@ -438,170 +360,35 @@ export default function SortableTileGrid({
       // The target is the sortable tile the pointer settled on. `move`
       // derives the new order from the source's reflowed sortable index,
       // so the committed order matches the on-screen preview exactly.
-      const { ids, reorderedIds, isNoOp } = computeReorderedIds(items, event)
-      if (isNoOp) return
+      const ids = items.map(tileId)
+      const reorderedIds = move(ids, event)
+      if (reorderedIds.length === ids.length && reorderedIds.every((id, i) => id === ids[i])) {
+        return
+      }
       const itemById = new Map(items.map((item) => [tileId(item), item] as const))
       const reordered = reorderedIds
         .map((id) => itemById.get(id))
         .filter((item): item is TileItem => item !== undefined)
       if (reordered.length !== items.length) return
 
-      if (tileOrdering) {
-        // Coordinator mode (issue #979): apply locally and report the new
-        // order. Queueing, coalescing, persistence, and save-state UX are
-        // owned above the grid; nothing is discarded here.
-        setItems(reordered)
-        tileOrdering.reportOrder(
-          reordered.map((item) => ({ type: item.type, id: item.data.id })),
-          gridGenerationRef.current ?? undefined,
-          // Drag detail rides along so lifecycle telemetry keeps per-drag
-          // context (which tile moved, from/to index) on this surface.
-          {
-            itemType: sourceId.startsWith('img-') ? 'image' : 'category',
-            itemId: Number(sourceId.slice(4)),
-            fromIndex: ids.indexOf(sourceId),
-            toIndex: reorderedIds.indexOf(sourceId),
-          },
-        )
-        return
-      }
-
-      const operationId = newReorderOperationId()
-      const startedAt = performance.now()
-      reorderInFlightRef.current = true
-      discardedDropsRef.current = 0
-      activeOperationRef.current = operationId
+      // Coordinator mode (issue #979): apply locally and report the new
+      // order. Queueing, coalescing, persistence, and save-state UX are
+      // owned above the grid; nothing is discarded here.
       setItems(reordered)
-
-      const catUpdates: Array<{
-        id: number
-        parent_id: number | null
-        sort_order: number
-      }> = []
-      const imgUpdates: Array<{ id: number; sort_order: number }> = []
-
-      reordered.forEach((item, index) => {
-        if (item.type === 'category') {
-          catUpdates.push({
-            id: item.data.id,
-            parent_id: parentId,
-            sort_order: index,
-          })
-        } else {
-          imgUpdates.push({
-            id: item.data.id,
-            sort_order: index,
-          })
-        }
-      })
-
-      const itemType =
-        catUpdates.length > 0 && imgUpdates.length > 0
-          ? 'mixed'
-          : sourceId.startsWith('img-')
-            ? 'image'
-            : 'category'
-      emitReorderDiagnostic({
-        operationId,
-        state: 'submitted',
-        scopeCategoryId: parentId,
-        itemType,
-        itemId: Number(sourceId.slice(4)),
-        fromIndex: ids.indexOf(sourceId),
-        toIndex: reorderedIds.indexOf(sourceId),
-        categoryCount: catUpdates.length,
-        imageCount: imgUpdates.length,
-        queueDepth: 0,
-      })
-
-      try {
-        const promises: Promise<void>[] = []
-        if (catUpdates.length > 0) promises.push(reorderCategories(catUpdates, operationId))
-        if (imgUpdates.length > 0) promises.push(reorderImages(imgUpdates, operationId))
-
-        const results = await Promise.allSettled(promises)
-        // Persistence-only duration: terminal events measure the same interval
-        // on every path (the follow-up refresh is excluded).
-        const persistenceDurationMs = performance.now() - startedAt
-        const failed = results.filter((r) => r.status === 'rejected')
-
-        if (failed.length > 0) {
-          const err =
-            (failed[0] as PromiseRejectedResult).reason ?? new Error('Reorder partially failed')
-          console.error('Reorder partially failed', failed)
-          emitReorderDiagnostic({
-            operationId,
-            state: 'failed',
-            scopeCategoryId: parentId,
-            itemType,
-            categoryCount: catUpdates.length,
-            imageCount: imgUpdates.length,
-            durationMs: persistenceDurationMs,
-            errorCode: reorderErrorCode(err),
-          })
-          reorderInFlightRef.current = false
-          activeOperationRef.current = null
-          pendingItemsRef.current = null
-          setItems((current) => (current === reordered ? items : current))
-          onReorderError?.(err)
-          onReorderComplete?.()
-          return
-        }
-
-        // Keep the in-flight flag raised until the caller
-        // refreshes categories so the render-time guard
-        // doesn't rebuild items from stale sort_order.
-        try {
-          await onReorderComplete?.()
-        } catch {
-          /* handled inside the callback */
-        }
-        emitReorderDiagnostic({
-          operationId,
-          state: 'committed',
-          scopeCategoryId: parentId,
-          itemType,
-          categoryCount: catUpdates.length,
-          imageCount: imgUpdates.length,
-          durationMs: persistenceDurationMs,
-        })
-        reorderInFlightRef.current = false
-        activeOperationRef.current = null
-        setItems(
-          pendingItemsRef.current ??
-            buildTileItems(currentCategoriesRef.current, visibleImagesRef.current),
-        )
-        pendingItemsRef.current = null
-      } catch (err) {
-        console.error('Failed to persist reorder', err)
-        emitReorderDiagnostic({
-          operationId,
-          state: 'failed',
-          scopeCategoryId: parentId,
-          itemType,
-          categoryCount: catUpdates.length,
-          imageCount: imgUpdates.length,
-          durationMs: performance.now() - startedAt,
-          errorCode: reorderErrorCode(err),
-        })
-        reorderInFlightRef.current = false
-        activeOperationRef.current = null
-        pendingItemsRef.current = null
-        setItems((current) => (current === reordered ? items : current))
-        onReorderError?.(err)
-        onReorderComplete?.()
-      }
+      tileOrdering.reportOrder(
+        reordered.map((item) => ({ type: item.type, id: item.data.id })),
+        gridGenerationRef.current ?? undefined,
+        // Drag detail rides along so lifecycle telemetry keeps per-drag
+        // context (which tile moved, from/to index) on this surface.
+        {
+          itemType: sourceId.startsWith('img-') ? 'image' : 'category',
+          itemId: Number(sourceId.slice(4)),
+          fromIndex: ids.indexOf(sourceId),
+          toIndex: reorderedIds.indexOf(sourceId),
+        },
+      )
     },
-    [
-      items,
-      path,
-      parentId,
-      tileOrdering,
-      onDropCategoryOnCategory,
-      onDropImageOnCategory,
-      onReorderComplete,
-      onReorderError,
-    ],
+    [items, tileOrdering, onDropCategoryOnCategory, onDropImageOnCategory],
   )
 
   const renderCategoryTile = useCallback(

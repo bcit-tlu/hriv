@@ -22,14 +22,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.models import Category, Image, TileOrderRevision
 from app.reorder_fixture import seed_reorder_fixture
-from app.routers.categories import reorder_categories
-from app.routers.images import reorder_images
 from app.routers.tile_order import get_tile_order, put_tile_order
 from app.schemas import (
-    CategoryReorderItem,
-    CategoryReorderRequest,
-    ImageReorderItem,
-    ImageReorderRequest,
     TileOrderItemRef,
     TileOrderRequest,
     TileOrderScope,
@@ -472,47 +466,6 @@ async def test_concurrent_writers_with_same_revision_only_one_succeeds(db_engine
     assert len(successes) == 1
     assert len(conflicts) == 1
     assert successes[0].revision == current.revision + 1
-
-
-@requires_db
-async def test_legacy_reorder_endpoints_bump_scope_revision(db_session):
-    """Legacy per-entity reorders must invalidate tile-order revisions so a
-    later PUT /api/tile-order holding a pre-reorder revision gets a 409."""
-    parent_id, cats, imgs = await _mixed_scope(db_session)
-    before = await get_tile_order(_admin(), parent_id, db_session)
-
-    cat_body = CategoryReorderRequest(
-        items=[
-            CategoryReorderItem(id=cid, parent_id=parent_id, sort_order=idx)
-            for idx, cid in enumerate(reversed(cats))
-        ]
-    )
-    await reorder_categories(cat_body, _admin(), db_session)
-    after_cats = await get_tile_order(_admin(), parent_id, db_session)
-    assert after_cats.revision > before.revision
-
-    img_body = ImageReorderRequest(
-        items=[
-            ImageReorderItem(id=iid, sort_order=idx)
-            for idx, iid in enumerate(reversed(imgs))
-        ]
-    )
-    await reorder_images(img_body, _admin(), db_session)
-    after_imgs = await get_tile_order(_admin(), parent_id, db_session)
-    assert after_imgs.revision > after_cats.revision
-
-    # A tile-order writer still holding the pre-legacy-reorder revision
-    # must now conflict instead of silently overwriting.
-    full = [("category", c) for c in cats] + [("image", i) for i in imgs]
-    body = TileOrderRequest(
-        scope=TileOrderScope(parent_category_id=parent_id),
-        expected_revision=before.revision,
-        operation_id=None,
-        items=[TileOrderItemRef(type=t, id=i) for t, i in full],
-    )
-    with pytest.raises(HTTPException) as excinfo:
-        await put_tile_order(body, _admin(), db_session)
-    assert excinfo.value.status_code == 409
 
 
 @requires_db

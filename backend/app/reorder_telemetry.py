@@ -1,10 +1,10 @@
 """Correlation and structured-log helpers for reorder endpoints.
 
-The frontend generates one ``operation_id`` per ordering operation and sends it
-on persistence requests via the ``X-Reorder-Operation-Id`` header. These
-helpers validate that header (bounded, low-risk charset) and emit one
-structured log line per reorder request so a single operation can be followed
-end-to-end across frontend events, backend spans, and logs.
+The frontend generates one ``operation_id`` per ordering operation and sends
+it in the ``PUT /api/tile-order`` request body. These helpers validate that
+ID (bounded, low-risk charset) and emit one structured log line per reorder
+request so a single operation can be followed end-to-end across frontend
+events, backend spans, and logs.
 """
 
 from __future__ import annotations
@@ -19,8 +19,6 @@ from .middleware import get_request_id
 from .reorder_metrics import observe_reorder_request
 
 logger = logging.getLogger(__name__)
-
-REORDER_OPERATION_ID_HEADER = "X-Reorder-Operation-Id"
 
 # UUIDs plus a little slack; anything else is dropped so arbitrary client text
 # never reaches traces or logs.

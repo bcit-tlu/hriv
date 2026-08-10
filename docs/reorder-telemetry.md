@@ -18,53 +18,52 @@ Every ordering operation gets a client-generated `operation_id`
    per lifecycle state transition, sent through the authenticated ingestion
    endpoint (`POST /api/telemetry/events`).
 2. **Persistence requests** — `PUT /api/tile-order` carries the operation ID
-   in its request body (`operation_id`); the legacy
-   `PUT /api/categories/reorder` and `PUT /api/images/reorder` endpoints
-   carry the `X-Reorder-Operation-Id` header while they remain.
-3. **Backend spans** — `category.reorder` / `image.reorder` spans carry the
+   in the request body (`operation_id`); the legacy per-entity reorder
+   endpoints that carried the `X-Reorder-Operation-Id` header were removed
+   in #998.
+3. **Backend spans** — `tile.reorder` spans carry the
    `reorder.operation_id`, `reorder.entity`, and `reorder.item_count`
    attributes.
 4. **Backend structured logs** — one `reorder.persisted` log line per
    persistence request with the operation ID, entity, item count, duration,
    outcome, and the request ID.
 
-The header value is validated server-side (`^[A-Za-z0-9-]{8,64}$`); anything
-else is dropped so arbitrary client text never reaches traces or logs.
+The request-body `operation_id` is validated server-side
+(`^[A-Za-z0-9-]{8,64}$`); anything else is dropped so arbitrary client text
+never reaches traces or logs.
 
 ## Lifecycle states
 
 `REORDER_OPERATION_STATES` (frontend) and `REORDER_CLIENT_STATES` (backend)
 share this bounded vocabulary:
 
-| State             | Meaning                                                                          |
-| ----------------- | -------------------------------------------------------------------------------- |
-| `ignored`         | Drop accepted visually but discarded by the in-flight guard (legacy path)        |
-| `queued`          | Drop accepted and waiting behind an in-flight save                               |
-| `coalesced`       | Queued drop merged into a newer one before submission                            |
-| `submitted`       | Persistence requests sent to the backend                                         |
-| `committed`       | Persistence completed successfully (refresh-callback failures are not reflected) |
-| `conflicted`      | Backend rejected the operation due to a revision conflict                        |
-| `failed`          | Persistence failed (fully or partially) and the UI rolled back                   |
-| `stale_discarded` | Queued snapshot or refresh response discarded because it was superseded (#980)   |
-| `abandoned`       | Component unmounted (navigation) while the operation was active (legacy path)    |
+| State             | Meaning                                                                                    |
+| ----------------- | ------------------------------------------------------------------------------------------ |
+| `ignored`         | Drop accepted visually but discarded by the in-flight guard (legacy path, removed in #998) |
+| `queued`          | Drop accepted and waiting behind an in-flight save                                         |
+| `coalesced`       | Queued drop merged into a newer one before submission                                      |
+| `submitted`       | Persistence requests sent to the backend                                                   |
+| `committed`       | Persistence completed successfully and the authoritative order was applied                 |
+| `conflicted`      | Backend rejected the operation due to a revision conflict                                  |
+| `failed`          | Persistence failed (fully or partially) and the UI rolled back                             |
+| `stale_discarded` | Queued snapshot or refresh response discarded because it was superseded (#980)             |
+| `abandoned`       | Component unmounted (navigation) while the operation was active (legacy path)              |
 
-As of #979 the Browse coordinator (`frontend/src/tileOrdering.ts`) emits
-`queued`, `coalesced`, `submitted`, `committed`, `conflicted`, and `failed`;
-`ignored` and `abandoned` remain emitted only by the legacy non-coordinator
-grid path (the coordinator survives navigation, so Browse no longer emits
-`abandoned` at all), and
-`stale_discarded` is emitted since #980 when conflict resolution discards a
-queued snapshot (see below). As of #982 both reorder surfaces
+The coordinator (`frontend/src/tileOrdering.ts`) emits `queued`,
+`coalesced`, `submitted`, `committed`, `conflicted`, `failed`, and (since
+#980) `stale_discarded` when conflict resolution discards a queued snapshot
+(see below). `ignored` and `abandoned` were emitted only by the legacy
+non-coordinator grid path removed in #998; they remain in the vocabulary so
+historical dashboards keep working. As of #982 both reorder surfaces
 persist through the same coordinator: the Browse grid and the Manage
 Categories dialog both hand their full per-scope order to
 `tileOrderingCoordinator.reportOrder`, so the coordinator owns the entire
 lifecycle for every ordering operation (the dialog no longer emits its own
-`submitted`/`committed`/`failed` events, and the former `useCategoryActions`
-inline reorder helpers were removed). Each coordinator save is one operation
-ID per scope — a Manage drag that touches two scopes (a cross-parent move)
-produces one lifecycle per affected scope rather than one shared ID. Each
-lifecycle pairs exactly one `submitted` with one terminal event per
-operation ID.
+`submitted`/`committed`/`failed` events). Each coordinator save is one
+operation ID per scope — a Manage drag that touches two scopes (a
+cross-parent move) produces one lifecycle per affected scope rather than one
+shared ID, and every surface emits exactly one `submitted` and one terminal
+event per operation ID.
 
 Three coordinator edge cases relax that pairing. Two are tied to revision
 seeding (the one-time `GET /api/tile-order` that fetches a scope's CAS token
@@ -115,8 +114,8 @@ synthetic reorder volume.
   absent — `to_index: -1` in the source scope it left, `from_index: -1` in the
   destination scope it joined)
 - `category_count`, `image_count` (items in the persisted scope)
-- `queue_depth` (depth of the coalescing queue behind the in-flight save; at most 1 because newer snapshots replace each other)
-- `local_revision` (the client's ordering revision for the scope)
+- `queue_depth` (coordinator coalescing depth; capped at 1 because a newer queued snapshot replaces the older one)
+- `local_revision` (the client's ordering revision for the scope at submission time)
 - `duration_ms` (for terminal states)
 - `error` / `error_code` (bounded category — `api_http_4xx`, `api_http_5xx`, or `api_network_error` — for `failed`; never free-text)
 
@@ -126,9 +125,11 @@ Structured log fields are prefixed `reorder.*` (e.g. `reorder.state`,
 ## Metrics
 
 Rendered into `/api/metrics` by `backend/app/reorder_metrics.py`. Labels are
-bounded (`entity` — `category`, `image`, or `tile` for the atomic
-`PUT /api/tile-order` endpoint (`docs/tile-ordering.md`) — plus `outcome`
-and `state`); operation IDs and category IDs never appear as metric labels.
+bounded (`entity` — `tile` for the atomic `PUT /api/tile-order` endpoint
+(`docs/tile-ordering.md`); `category` and `image` appear only in historical
+series from the removed per-entity endpoints, and unrecognized values are
+coerced to `other` — plus `outcome` and `state`); operation IDs and category
+IDs never appear as metric labels.
 
 | Metric                                  | Type      | Labels              | Meaning                                                             |
 | --------------------------------------- | --------- | ------------------- | ------------------------------------------------------------------- |
@@ -147,16 +148,21 @@ and `state`); operation IDs and category IDs never appear as metric labels.
    `reorder.persisted` lines give per-entity duration, item count, and
    outcome, plus `request_id` for the audit log.
 3. **Open the trace.** In Tempo, search
-   `{ span.reorder.operation_id = "<id>" }` to find the `category.reorder` /
-   `image.reorder` spans with their database child spans.
-4. **Interpret the outcome.** `abandoned` means the grid unmounted
+   `{ span.reorder.operation_id = "<id>" }` to find the `tile.reorder`
+   spans with their database child spans.
+4. **Interpret the outcome.** `abandoned` appears only in historical
+   (pre-#998) data — the coordinator is a module-level singleton that
+   survives unmount, so current operations always end in a terminal
+   `committed` / `failed` / `conflicted`. In that historical data,
+   `abandoned` means the grid unmounted
    (navigation) while the save was active, so the outcome was unobservable to
    the user. For in-app (SPA) navigation the in-flight request keeps running,
    so the same operation usually also emits a terminal `committed` / `failed`
    afterwards — `abandoned` marks the UX gap, not the network outcome. An
    `abandoned` with no terminal event means a full page unload cut the
-   operation off entirely. An `ignored` event is a drop the current UI
-   silently discarded (the defect tracked by epic #975).
+   operation off entirely. An `ignored` event is a drop the legacy
+   (pre-#998) UI silently discarded (the defect tracked by epic #975);
+   the current UI never emits it.
 
 ## Local verification
 
@@ -164,7 +170,7 @@ and `state`); operation IDs and category IDs never appear as metric labels.
 # Backend: correlation, structured logs, metrics
 cd backend && poetry run pytest tests/test_reorder_telemetry.py
 
-# Frontend: diagnostics module + grid correlation tests
+# Frontend: diagnostics module + coordinator correlation tests
 cd frontend && npx vitest run tests/reorderDiagnostics.test.ts \
-  tests/components/SortableTileGridReorderTelemetry.test.tsx
+  tests/tileOrdering.test.ts
 ```
