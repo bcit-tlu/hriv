@@ -111,9 +111,12 @@ function sameRefs(a: TileOrderItemRef[], b: TileOrderItemRef[]): boolean {
  * from the old order are returned; scopes left with no members are skipped.
  *
  * When `displayOrderFor` returns an order for a scope (the coordinator's
- * newest local/pending order), it is used as the template instead of the
- * last-loaded `sortOrder`, so a category-only reorder never reverts a
- * pending image reorder for the same scope.
+ * newest local/pending order), it re-ranks the members it knows so a
+ * category-only reorder never reverts a pending image reorder for the same
+ * scope. Members it does not know keep their original slot — the same
+ * placement rule as `reorderFlatOptions`, so an untouched scope never
+ * diffs as changed merely because the coordinator's order is missing a
+ * member (e.g. during a cross-parent move's refresh window).
  */
 export function interleavedTileOrders(
   newCatList: FlatOption[],
@@ -149,46 +152,6 @@ export function interleavedTileOrders(
     const images = imagesByParent.get(parentKey) ?? []
     const parentId = parentKey === 'null' ? null : Number(parentKey)
 
-    const display = displayOrderFor?.(parentId)
-    if (display && display.length > 0) {
-      // Use the coordinator's newest order as the template: keep only
-      // current members, then append members it doesn't know about yet.
-      const oldCatIds = new Set(oldCats.map((c) => c.id))
-      const imageIds = new Set(images.map((i) => i.id))
-      const template = display.filter((ref) =>
-        ref.type === 'category' ? oldCatIds.has(ref.id) : imageIds.has(ref.id),
-      )
-      // An entirely-stale coordinator order (no current members) carries no
-      // interleaving information — fall back to the sortOrder template.
-      if (template.length > 0) {
-        const seenCats = new Set(template.filter((r) => r.type === 'category').map((r) => r.id))
-        const seenImgs = new Set(template.filter((r) => r.type === 'image').map((r) => r.id))
-        for (const cat of oldCats) {
-          if (!seenCats.has(cat.id)) template.push({ type: 'category', id: cat.id })
-        }
-        for (const img of images) {
-          if (!seenImgs.has(img.id)) template.push({ type: 'image', id: img.id })
-        }
-
-        const newOrder: TileOrderItemRef[] = []
-        let newCatIdx = 0
-        for (const ref of template) {
-          if (ref.type === 'image') {
-            newOrder.push(ref)
-          } else if (newCatIdx < newCats.length) {
-            newOrder.push({ type: 'category', id: newCats[newCatIdx++].id })
-          }
-        }
-        while (newCatIdx < newCats.length) {
-          newOrder.push({ type: 'category', id: newCats[newCatIdx++].id })
-        }
-
-        if (newOrder.length === 0 || sameRefs(template, newOrder)) continue
-        scopes.push({ scope: parentId, order: newOrder })
-        continue
-      }
-    }
-
     // Build the old interleaved template from old categories + images.
     // Old categories don't carry a meaningful sortOrder in FlatOption,
     // so infer positions: they occupied the gaps left by images in [0, N)
@@ -214,13 +177,31 @@ export function interleavedTileOrders(
         : { type: 'image', id: images[slot.index].id },
     )
 
+    // Re-rank members the coordinator's newest order knows about; members
+    // it does not know keep their original slot (mirrors reorderFlatOptions).
+    let template = oldOrder
+    const display = displayOrderFor?.(parentId)
+    if (display && display.length > 0) {
+      const rank = new Map<string, number>()
+      display.forEach((ref, i) => rank.set(`${ref.type}:${ref.id}`, i))
+      const ranked = oldOrder
+        .filter((ref) => rank.has(`${ref.type}:${ref.id}`))
+        .sort((a, b) => rank.get(`${a.type}:${a.id}`)! - rank.get(`${b.type}:${b.id}`)!)
+      if (ranked.length > 0) {
+        let rankedIdx = 0
+        template = oldOrder.map((ref) =>
+          rank.has(`${ref.type}:${ref.id}`) ? ranked[rankedIdx++] : ref,
+        )
+      }
+    }
+
     // Replace category slots with new categories in order; collapse/append
     // if the count changed (cross-parent move)
     const newOrder: TileOrderItemRef[] = []
     let newCatIdx = 0
-    for (const slot of oldSlots) {
-      if (slot.type === 'img') {
-        newOrder.push({ type: 'image', id: images[slot.index].id })
+    for (const ref of template) {
+      if (ref.type === 'image') {
+        newOrder.push(ref)
       } else if (newCatIdx < newCats.length) {
         newOrder.push({ type: 'category', id: newCats[newCatIdx++].id })
       }
@@ -230,7 +211,7 @@ export function interleavedTileOrders(
       newOrder.push({ type: 'category', id: newCats[newCatIdx++].id })
     }
 
-    if (newOrder.length === 0 || sameRefs(oldOrder, newOrder)) continue
+    if (newOrder.length === 0 || sameRefs(template, newOrder)) continue
     scopes.push({ scope: parentId, order: newOrder })
   }
 

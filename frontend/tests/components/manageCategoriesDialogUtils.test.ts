@@ -267,7 +267,7 @@ describe('interleavedTileOrders', () => {
     ])
   })
 
-  it('drops stale refs and appends unknown members when using a display-order template', () => {
+  it('drops stale refs and keeps unknown members in their slot with a display-order template', () => {
     const oldCats = [makeFlatOption({ id: 1, parentId: null })]
     const newCats = [makeFlatOption({ id: 1, parentId: null })]
     const imagesByParent = new Map([['null', [makeImage({ id: 10, sortOrder: 0 })]]])
@@ -278,6 +278,28 @@ describe('interleavedTileOrders', () => {
       { type: 'category' as const, id: 1 },
     ]
     expect(interleavedTileOrders(newCats, oldCats, imagesByParent, () => displayOrder)).toEqual([])
+  })
+
+  it('does not emit a scope order for an untouched scope missing from the display order', () => {
+    // The coordinator's display order does not know category 1 (e.g. its
+    // cross-parent move is still refreshing). The on-screen order keeps it
+    // in its original slot (reorderFlatOptions), so this untouched scope
+    // must not diff as changed and must not be re-saved.
+    const oldCats = [
+      makeFlatOption({ id: 1, parentId: null }),
+      makeFlatOption({ id: 2, parentId: null }),
+      makeFlatOption({ id: 3, parentId: null }),
+    ]
+    const newCats = [
+      makeFlatOption({ id: 1, parentId: null }),
+      makeFlatOption({ id: 3, parentId: null }),
+      makeFlatOption({ id: 2, parentId: null }),
+    ]
+    const displayOrder = [
+      { type: 'category' as const, id: 3 },
+      { type: 'category' as const, id: 2 },
+    ]
+    expect(interleavedTileOrders(newCats, oldCats, new Map(), () => displayOrder)).toEqual([])
   })
 
   it('falls back to the sortOrder template when the display order is entirely stale', () => {
