@@ -315,31 +315,18 @@ async def replace_image(
                 v is not None
                 for v in (name, category_id, copyright, note, active, metadata_extra)
             )
+            # Parse and validate all metadata fields up front so 400s fire
+            # before any disk or database work, and so no lock is held
+            # while the client streams the file.
+            parsed_cat: int | None = None
+            parsed_metadata: dict | list | None = None
+            span.set_attribute("image.metadata_update", has_metadata)
             if has_metadata:
-                span.set_attribute("image.metadata_update", True)
                 if category_id is not None:
                     try:
                         parsed_cat = int(category_id) if category_id != "" else None
                     except (ValueError, TypeError):
                         raise HTTPException(status_code=400, detail="Invalid category_id")
-                    if parsed_cat != img.category_id:
-                        # A category move changes scope membership: invalidate
-                        # both scopes' tile-order revisions so clients holding
-                        # older revisions get a 409 instead of silently
-                        # overwriting (same rule as PATCH /images/{id}).
-                        # Bumped before any row mutation so the session is
-                        # clean while the revision lock is taken, preserving
-                        # the revision-then-rows lock order
-                        # (docs/tile-ordering.md).
-                        await bump_scopes(
-                            db,
-                            {scope_key_for(img.category_id), scope_key_for(parsed_cat)},
-                        )
-                    img.category_id = parsed_cat
-                if name is not None:
-                    img.name = name
-                if copyright is not None:
-                    img.copyright = copyright if copyright != "" else None
                 if note is not None:
                     try:
                         note = normalize_note_value(note)
@@ -348,17 +335,11 @@ async def replace_image(
                             status_code=400,
                             detail=f"Note must be {MAX_NOTE_LENGTH} characters or fewer",
                         )
-                    img.note = note
-                if active is not None:
-                    img.active = active.lower() in ("true", "1")
                 if metadata_extra is not None:
                     try:
-                        img.metadata_ = json.loads(metadata_extra) if metadata_extra else None
+                        parsed_metadata = json.loads(metadata_extra) if metadata_extra else None
                     except (json.JSONDecodeError, TypeError):
                         raise HTTPException(status_code=400, detail="Invalid metadata_extra")
-                img.version = img.version + 1
-            else:
-                span.set_attribute("image.metadata_update", False)
 
             os.makedirs(settings.source_images_dir, exist_ok=True)
 
@@ -393,6 +374,36 @@ async def replace_image(
                 raise
 
             file_size = os.path.getsize(stored_path)
+
+            # ── Apply optional metadata updates atomically ──────────
+            # Done after the upload loop so the revision lock below is
+            # held only for the short transaction, never across client
+            # I/O; and before any row mutation so the session is clean
+            # while the lock is taken, preserving the revision-then-rows
+            # lock order (docs/tile-ordering.md).
+            if has_metadata:
+                if category_id is not None and parsed_cat != img.category_id:
+                    # A category move changes scope membership: invalidate
+                    # both scopes' tile-order revisions so clients holding
+                    # older revisions get a 409 instead of silently
+                    # overwriting (same rule as PATCH /images/{id}).
+                    await bump_scopes(
+                        db,
+                        {scope_key_for(img.category_id), scope_key_for(parsed_cat)},
+                    )
+                if category_id is not None:
+                    img.category_id = parsed_cat
+                if name is not None:
+                    img.name = name
+                if copyright is not None:
+                    img.copyright = copyright if copyright != "" else None
+                if note is not None:
+                    img.note = note
+                if active is not None:
+                    img.active = active.lower() in ("true", "1")
+                if metadata_extra is not None:
+                    img.metadata_ = parsed_metadata
+                img.version = img.version + 1
 
             src = SourceImage(
                 original_filename=file.filename,
