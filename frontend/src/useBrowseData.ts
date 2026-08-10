@@ -100,10 +100,16 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
   // Newest in-flight authoritative refresh per data type: a superseded
   // refresh chains onto this so its caller receives the data the winning
   // refresh commits, not a possibly pre-mutation mirror.
-  const categoriesRefreshRef = useRef<{ gen: number; promise: Promise<Category[]> } | null>(null)
-  const uncategorizedRefreshRef = useRef<{ gen: number; promise: Promise<ImageItem[]> } | null>(
-    null,
-  )
+  const categoriesRefreshRef = useRef<{
+    gen: number
+    promise: Promise<Category[]>
+    settled: boolean
+  } | null>(null)
+  const uncategorizedRefreshRef = useRef<{
+    gen: number
+    promise: Promise<ImageItem[]>
+    settled: boolean
+  } | null>(null)
   useEffect(() => {
     categoriesRef.current = categories
   }, [categories])
@@ -119,6 +125,23 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
       // An already-cancelled read must not claim the newest-read generation,
       // or it would silently invalidate a live read's commit.
       if (signal?.aborted) return false
+      // An in-flight authoritative refresh holds the newest generation and
+      // bypasses the HTTP cache; superseding it with a plain (possibly
+      // ETag-cached) load could reinstall pre-mutation data. Reuse it.
+      const newestRefresh = categoriesRefreshRef.current
+      if (
+        !signal &&
+        newestRefresh !== null &&
+        !newestRefresh.settled &&
+        newestRefresh.gen === categoriesReadGen.current
+      ) {
+        try {
+          await newestRefresh.promise
+          return true
+        } catch {
+          // The refresh failed — fall through to a normal load.
+        }
+      }
       const gen = ++categoriesReadGen.current
       let effectiveSignal = signal
       if (!signal) {
@@ -158,6 +181,21 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
       // An already-cancelled read must not claim the newest-read generation,
       // or it would silently invalidate a live read's commit.
       if (signal?.aborted) return false
+      // Reuse an in-flight authoritative refresh (see loadCategories).
+      const newestRefresh = uncategorizedRefreshRef.current
+      if (
+        !signal &&
+        newestRefresh !== null &&
+        !newestRefresh.settled &&
+        newestRefresh.gen === uncategorizedReadGen.current
+      ) {
+        try {
+          await newestRefresh.promise
+          return true
+        } catch {
+          // The refresh failed — fall through to a normal load.
+        }
+      }
       const gen = ++uncategorizedReadGen.current
       let effectiveSignal = signal
       if (!signal) {
@@ -232,10 +270,18 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
       try {
         const tree = await fetchCategoryTree({ cache: 'reload', signal: ac.signal })
         const cats = tree.map(apiTreeToCategory)
-        if (gen === categoriesReadGen.current) setCategories(cats)
+        if (gen === categoriesReadGen.current) {
+          setCategories(cats)
+          return cats
+        }
+        // Superseded while the response was in flight: hand back the
+        // winning refresh's data (mirroring the abort path) so callers
+        // never receive a snapshot older than committed state.
+        const newest = categoriesRefreshRef.current
+        if (newest !== null && newest.gen > gen) return newest.promise
         return cats
       } catch (err) {
-        if (isAbortError(err)) {
+        if (ac.signal.aborted || isAbortError(err)) {
           // A newer authoritative refresh superseded this one: expected
           // control flow, not a failure — resolve with the winning
           // refresh's data so callers never receive pre-mutation state.
@@ -246,7 +292,12 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
         throw err
       }
     })()
-    categoriesRefreshRef.current = { gen, promise: run }
+    const record = { gen, promise: run, settled: false }
+    categoriesRefreshRef.current = record
+    run.then(
+      () => (record.settled = true),
+      () => (record.settled = true),
+    )
     return run
   }, [])
 
@@ -266,10 +317,15 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
         if (gen === uncategorizedReadGen.current) {
           setUncategorizedImages(items)
           uncategorizedLoaded.current = true
+          return items
         }
+        // Superseded: resolve with the winning refresh's data (see
+        // refreshCategories).
+        const newest = uncategorizedRefreshRef.current
+        if (newest !== null && newest.gen > gen) return newest.promise
         return items
       } catch (err) {
-        if (isAbortError(err)) {
+        if (ac.signal.aborted || isAbortError(err)) {
           const newest = uncategorizedRefreshRef.current
           if (newest !== null && newest.gen > gen) return newest.promise
           return uncategorizedRef.current
@@ -277,7 +333,12 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
         throw err
       }
     })()
-    uncategorizedRefreshRef.current = { gen, promise: run }
+    const record = { gen, promise: run, settled: false }
+    uncategorizedRefreshRef.current = record
+    run.then(
+      () => (record.settled = true),
+      () => (record.settled = true),
+    )
     return run
   }, [])
 
