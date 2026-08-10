@@ -317,8 +317,6 @@ async def replace_image(
             )
             if has_metadata:
                 span.set_attribute("image.metadata_update", True)
-                if name is not None:
-                    img.name = name
                 if category_id is not None:
                     try:
                         parsed_cat = int(category_id) if category_id != "" else None
@@ -329,11 +327,17 @@ async def replace_image(
                         # both scopes' tile-order revisions so clients holding
                         # older revisions get a 409 instead of silently
                         # overwriting (same rule as PATCH /images/{id}).
+                        # Bumped before any row mutation so the session is
+                        # clean while the revision lock is taken, preserving
+                        # the revision-then-rows lock order
+                        # (docs/tile-ordering.md).
                         await bump_scopes(
                             db,
                             {scope_key_for(img.category_id), scope_key_for(parsed_cat)},
                         )
                     img.category_id = parsed_cat
+                if name is not None:
+                    img.name = name
                 if copyright is not None:
                     img.copyright = copyright if copyright != "" else None
                 if note is not None:
