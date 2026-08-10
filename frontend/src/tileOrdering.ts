@@ -291,6 +291,17 @@ export class TileOrderingCoordinator {
       return
     }
 
+    // A queued snapshot left over from a failed save is superseded by this
+    // drop; the flush reuses its operation ID, so report the merge.
+    const queuedId = this.pendingOperationIds.get(scopeKey(scope))
+    if (queuedId !== undefined && state.pending !== null) {
+      emitReorderDiagnostic({
+        operationId: queuedId,
+        state: 'coalesced',
+        scopeCategoryId: scope,
+        queueDepth: 1,
+      })
+    }
     this.setScope(scope, {
       ...state,
       status: 'dirty',
