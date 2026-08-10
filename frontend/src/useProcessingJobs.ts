@@ -59,8 +59,8 @@ export interface UseProcessingJobsDeps {
     height: number | null
     file_size: number | null
   }>
-  loadCategories: () => Promise<void>
-  loadUncategorizedImages: () => Promise<void>
+  loadCategories: () => Promise<unknown>
+  loadUncategorizedImages: () => Promise<unknown>
   selectedImageRef: React.RefObject<ImageItem | null>
   setSelectedImage: (img: ImageItem) => void
   setImagesVersion: React.Dispatch<React.SetStateAction<number>>

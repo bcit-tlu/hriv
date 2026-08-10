@@ -38,7 +38,7 @@ export default defineConfig({
       // are filled in.  The >80 % AGENTS.md target is the goal.
       thresholds: {
         lines: 71,
-        statements: 69,
+        statements: 70,
         functions: 70,
         branches: 65,
       },
