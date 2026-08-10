@@ -5,6 +5,7 @@ import type { SortableTileGridProps } from '../../src/components/SortableTileGri
 import type { Group, Program } from '../../src/types'
 import { DROP_PREFIX } from '../../src/components/sortableTileGridUtils'
 import { makeCategory, makeImage } from '../helpers/fixtures'
+import type { TileOrderItemRef } from '../../src/api'
 
 // Capture onDragEnd from DragDropProvider for direct invocation.
 // Real @dnd-kit Sortable sources/targets carry their projected sortable index
@@ -43,18 +44,14 @@ vi.mock('@dnd-kit/react', async () => {
   }
 })
 
-import * as apiModule from '../../src/api'
-
-vi.mock('../../src/api', async () => {
-  const actual = await vi.importActual<typeof apiModule>('../../src/api')
+function makeTileOrdering() {
+  let generation = 0
   return {
-    ...actual,
-    reorderCategories: vi.fn(() => Promise.resolve()),
-    reorderImages: vi.fn(() => Promise.resolve()),
+    displayOrder: null as TileOrderItemRef[] | null,
+    reportOrder: vi.fn(),
+    claimGeneration: vi.fn(() => ++generation),
   }
-})
-
-import { reorderCategories, reorderImages } from '../../src/api'
+}
 
 const defaultPrograms: Program[] = [
   {
@@ -78,8 +75,11 @@ const defaultGroups: Group[] = [
   },
 ]
 
+let tileOrdering: ReturnType<typeof makeTileOrdering>
+
 function renderGrid(overrides: Partial<SortableTileGridProps> = {}) {
   const defaults: SortableTileGridProps = {
+    tileOrdering,
     allCategories: [],
     currentCategories: [],
     currentImages: [],
@@ -92,8 +92,6 @@ function renderGrid(overrides: Partial<SortableTileGridProps> = {}) {
     onImageClick: vi.fn(),
     onFilesDrop: vi.fn(),
     onDropImageOnCategory: vi.fn(),
-    onReorderComplete: vi.fn(),
-    onReorderError: vi.fn(),
   }
   const props = { ...defaults, ...overrides }
   return { ...render(<SortableTileGrid {...props} />), props }
@@ -102,8 +100,7 @@ function renderGrid(overrides: Partial<SortableTileGridProps> = {}) {
 describe('SortableTileGrid', () => {
   beforeEach(() => {
     capturedOnDragEnd = undefined
-    vi.mocked(reorderCategories).mockReset().mockResolvedValue()
-    vi.mocked(reorderImages).mockReset().mockResolvedValue()
+    tileOrdering = makeTileOrdering()
   })
 
   it('renders category and image tiles', () => {
@@ -181,11 +178,14 @@ describe('SortableTileGrid', () => {
       })
     })
 
-    expect(reorderImages).toHaveBeenCalledWith([
-      { id: 11, sort_order: 0 },
-      { id: 10, sort_order: 1 },
-    ])
-    expect(reorderCategories).not.toHaveBeenCalled()
+    expect(tileOrdering.reportOrder).toHaveBeenCalledWith(
+      [
+        { type: 'image', id: 11 },
+        { type: 'image', id: 10 },
+      ],
+      expect.any(Number),
+      expect.any(Object),
+    )
   })
 
   it('reorders an interleaved category + image when dropped on a tile', async () => {
@@ -206,38 +206,21 @@ describe('SortableTileGrid', () => {
       })
     })
 
-    expect(reorderImages).toHaveBeenCalledWith([{ id: 10, sort_order: 0 }])
-    expect(reorderCategories).toHaveBeenCalledWith([{ id: 1, parent_id: null, sort_order: 1 }])
-  })
-
-  it('calls onReorderError when a reorder API call fails', async () => {
-    vi.mocked(reorderImages).mockRejectedValueOnce(new Error('Network error'))
-    const onReorderError = vi.fn()
-
-    renderGrid({
-      currentImages: [makeImage({ id: 10, sortOrder: 0 }), makeImage({ id: 11, sortOrder: 1 })],
-      onReorderError,
-    })
-
-    await act(async () => {
-      await capturedOnDragEnd!({
-        operation: {
-          source: sortableSource('img-11', 0, 1),
-          target: { id: 'img-10' },
-          canceled: false,
-        },
-      })
-    })
-
-    expect(onReorderError).toHaveBeenCalled()
+    expect(tileOrdering.reportOrder).toHaveBeenCalledWith(
+      [
+        { type: 'image', id: 10 },
+        { type: 'category', id: 1 },
+      ],
+      expect.any(Number),
+      expect.any(Object),
+    )
   })
 })
 
 describe('DroppableCategoryZone (rendering + accept)', () => {
   beforeEach(() => {
     capturedOnDragEnd = undefined
-    vi.mocked(reorderCategories).mockReset().mockResolvedValue()
-    vi.mocked(reorderImages).mockReset().mockResolvedValue()
+    tileOrdering = makeTileOrdering()
   })
 
   it('does not show move overlay text when not hovering', () => {
@@ -302,8 +285,7 @@ describe('DroppableCategoryZone (rendering + accept)', () => {
 describe('handleDragEnd — move guards', () => {
   beforeEach(() => {
     capturedOnDragEnd = undefined
-    vi.mocked(reorderCategories).mockReset().mockResolvedValue()
-    vi.mocked(reorderImages).mockReset().mockResolvedValue()
+    tileOrdering = makeTileOrdering()
   })
 
   it('calls onDropCategoryOnCategory (not image) when category dropped on zone', async () => {
@@ -353,7 +335,7 @@ describe('handleDragEnd — move guards', () => {
     })
 
     expect(onDropImageOnCategory).not.toHaveBeenCalled()
-    expect(reorderImages).not.toHaveBeenCalled()
+    expect(tileOrdering.reportOrder).not.toHaveBeenCalled()
   })
 
   it('reorders when source.id === target.id but projected index differs (optimistic reflow)', async () => {
@@ -377,10 +359,14 @@ describe('handleDragEnd — move guards', () => {
       })
     })
 
-    expect(reorderImages).toHaveBeenCalledWith([
-      { id: 11, sort_order: 0 },
-      { id: 10, sort_order: 1 },
-    ])
+    expect(tileOrdering.reportOrder).toHaveBeenCalledWith(
+      [
+        { type: 'image', id: 11 },
+        { type: 'image', id: 10 },
+      ],
+      expect.any(Number),
+      expect.any(Object),
+    )
   })
 
   it('does nothing when target is null', async () => {
@@ -428,11 +414,10 @@ describe('handleDragEnd — move guards', () => {
 describe('handleDragEnd — reorder branches', () => {
   beforeEach(() => {
     capturedOnDragEnd = undefined
-    vi.mocked(reorderCategories).mockReset().mockResolvedValue()
-    vi.mocked(reorderImages).mockReset().mockResolvedValue()
+    tileOrdering = makeTileOrdering()
   })
 
-  it('uses parent_id from path for nested category reorder', async () => {
+  it('reports the full mixed order for a nested category reorder', async () => {
     const parent = makeCategory({ id: 99, label: 'Parent', sortOrder: 0 })
 
     renderGrid({
@@ -453,14 +438,17 @@ describe('handleDragEnd — reorder branches', () => {
       })
     })
 
-    expect(reorderCategories).toHaveBeenCalledWith([
-      { id: 2, parent_id: 99, sort_order: 0 },
-      { id: 1, parent_id: 99, sort_order: 1 },
-    ])
-    expect(reorderImages).not.toHaveBeenCalled()
+    expect(tileOrdering.reportOrder).toHaveBeenCalledWith(
+      [
+        { type: 'category', id: 2 },
+        { type: 'category', id: 1 },
+      ],
+      expect.any(Number),
+      expect.any(Object),
+    )
   })
 
-  it('calls only reorderImages when no categories are present', async () => {
+  it('reports an image-only order when no categories are present', async () => {
     renderGrid({
       currentImages: [
         makeImage({ id: 10, name: 'A', sortOrder: 0 }),
@@ -478,155 +466,32 @@ describe('handleDragEnd — reorder branches', () => {
       })
     })
 
-    expect(reorderImages).toHaveBeenCalled()
-    expect(reorderCategories).not.toHaveBeenCalled()
-  })
-
-  it('reports partial failure when one API call rejects (Promise.allSettled)', async () => {
-    vi.mocked(reorderCategories).mockRejectedValueOnce(new Error('Cat reorder failed'))
-    const onReorderError = vi.fn()
-
-    renderGrid({
-      currentCategories: [makeCategory({ id: 1, sortOrder: 0 })],
-      currentImages: [makeImage({ id: 10, sortOrder: 1 })],
-      onReorderError,
-    })
-
-    await act(async () => {
-      await capturedOnDragEnd!({
-        operation: {
-          source: sortableSource('img-10', 0, 1),
-          target: { id: 'cat-1' },
-          canceled: false,
-        },
-      })
-    })
-
-    expect(onReorderError).toHaveBeenCalled()
-  })
-
-  it('still calls onReorderComplete (server refresh) on reorder failure', async () => {
-    vi.mocked(reorderImages).mockRejectedValueOnce(new Error('Network error'))
-    const onReorderComplete = vi.fn()
-    const onReorderError = vi.fn()
-
-    renderGrid({
-      currentCategories: [makeCategory({ id: 1, sortOrder: 0 })],
-      currentImages: [makeImage({ id: 10, sortOrder: 1 })],
-      onReorderComplete,
-      onReorderError,
-    })
-
-    await act(async () => {
-      await capturedOnDragEnd!({
-        operation: {
-          source: sortableSource('img-10', 0, 1),
-          target: { id: 'cat-1' },
-          canceled: false,
-        },
-      })
-    })
-
-    expect(onReorderError).toHaveBeenCalled()
-    expect(onReorderComplete).toHaveBeenCalled()
-  })
-
-  it('calls onReorderComplete on success path', async () => {
-    const onReorderComplete = vi.fn()
-
-    renderGrid({
-      currentImages: [
-        makeImage({ id: 10, name: 'A', sortOrder: 0 }),
-        makeImage({ id: 11, name: 'B', sortOrder: 1 }),
+    expect(tileOrdering.reportOrder).toHaveBeenCalledWith(
+      [
+        { type: 'image', id: 11 },
+        { type: 'image', id: 10 },
       ],
-      onReorderComplete,
-    })
-
-    await act(async () => {
-      await capturedOnDragEnd!({
-        operation: {
-          source: sortableSource('img-11', 0, 1),
-          target: { id: 'img-10' },
-          canceled: false,
-        },
-      })
-    })
-
-    expect(onReorderComplete).toHaveBeenCalledTimes(1)
+      expect.any(Number),
+      expect.any(Object),
+    )
   })
 
-  it('awaits async onReorderComplete before releasing in-flight guard', async () => {
-    // Verify handleDragEnd awaits the Promise returned by
-    // onReorderComplete (keeps reorderInFlightRef true so the
-    // render-time guard doesn't rebuild items from stale data).
-    const callLog: string[] = []
-    const onReorderComplete = vi.fn(async () => {
-      callLog.push('complete-called')
-      // Simulate an async refresh (e.g. fetchCategoryTree)
-      await Promise.resolve()
-      callLog.push('complete-resolved')
-    })
-
-    renderGrid({
-      currentImages: [
-        makeImage({ id: 10, name: 'A', sortOrder: 0 }),
-        makeImage({ id: 11, name: 'B', sortOrder: 1 }),
-      ],
-      onReorderComplete,
-    })
-
-    await act(async () => {
-      await capturedOnDragEnd!({
-        operation: {
-          source: sortableSource('img-11', 0, 1),
-          target: { id: 'img-10' },
-          canceled: false,
-        },
-      })
-    })
-
-    // Both steps ran — the handler awaited the async callback.
-    expect(callLog).toEqual(['complete-called', 'complete-resolved'])
-  })
-
-  it('applies refreshed props that arrive while reorder is still in flight', async () => {
-    const initialImages = [
-      makeImage({ id: 10, name: 'A', sortOrder: 0 }),
-      makeImage({ id: 11, name: 'B', sortOrder: 1 }),
+  it('renders items in the coordinator display order when provided', () => {
+    tileOrdering.displayOrder = [
+      { type: 'image', id: 11 },
+      { type: 'image', id: 10 },
     ]
-    const refreshedImages = [
-      makeImage({ id: 11, name: 'B', sortOrder: 0 }),
-      makeImage({ id: 10, name: 'A', sortOrder: 1 }),
-    ]
-
     const view = renderGrid({
-      currentImages: initialImages,
-      onReorderComplete: async () => {
-        view.rerender(
-          <SortableTileGrid
-            {...view.props}
-            currentImages={refreshedImages}
-            onReorderComplete={view.props.onReorderComplete}
-          />,
-        )
-        await Promise.resolve()
-      },
+      currentImages: [
+        makeImage({ id: 10, name: 'A', sortOrder: 0 }),
+        makeImage({ id: 11, name: 'B', sortOrder: 1 }),
+      ],
     })
 
-    const getTileLabels = () =>
-      Array.from(view.container.querySelectorAll('h6')).map((node) => node.textContent ?? '')
-
-    await act(async () => {
-      await capturedOnDragEnd!({
-        operation: {
-          source: sortableSource('img-11', 0, 1),
-          target: { id: 'img-10' },
-          canceled: false,
-        },
-      })
-    })
-
-    expect(getTileLabels().slice(0, 2)).toEqual(['B', 'A'])
+    const labels = Array.from(view.container.querySelectorAll('h6')).map(
+      (node) => node.textContent ?? '',
+    )
+    expect(labels.slice(0, 2)).toEqual(['B', 'A'])
   })
 })
 
@@ -638,11 +503,10 @@ describe('handleDragEnd — reorder branches', () => {
 describe('drag-and-drop spec contract (docs/drag-and-drop.md)', () => {
   beforeEach(() => {
     capturedOnDragEnd = undefined
-    vi.mocked(reorderCategories).mockReset().mockResolvedValue()
-    vi.mocked(reorderImages).mockReset().mockResolvedValue()
+    tileOrdering = makeTileOrdering()
   })
 
-  it('move fires only on a drop-cat-* target (never the reorder APIs)', async () => {
+  it('move fires only on a drop-cat-* target (never a reorder report)', async () => {
     const onDropImageOnCategory = vi.fn()
     renderGrid({
       currentCategories: [makeCategory({ id: 5, sortOrder: 0 })],
@@ -661,8 +525,7 @@ describe('drag-and-drop spec contract (docs/drag-and-drop.md)', () => {
     })
 
     expect(onDropImageOnCategory).toHaveBeenCalledWith(42, 5)
-    expect(reorderImages).not.toHaveBeenCalled()
-    expect(reorderCategories).not.toHaveBeenCalled()
+    expect(tileOrdering.reportOrder).not.toHaveBeenCalled()
   })
 
   it('a drop-cat-* target only moves; it never reorders (move wins over the sortable)', async () => {
@@ -684,8 +547,7 @@ describe('drag-and-drop spec contract (docs/drag-and-drop.md)', () => {
     })
 
     expect(onDropImageOnCategory).toHaveBeenCalledWith(11, 1)
-    expect(reorderImages).not.toHaveBeenCalled()
-    expect(reorderCategories).not.toHaveBeenCalled()
+    expect(tileOrdering.reportOrder).not.toHaveBeenCalled()
   })
 
   it('handleDragEnd dispatches reorder for a bare tile target (pure dispatch; move-wins suppression is enforced upstream)', async () => {
@@ -715,7 +577,7 @@ describe('drag-and-drop spec contract (docs/drag-and-drop.md)', () => {
       })
     })
 
-    expect(reorderCategories).toHaveBeenCalled()
+    expect(tileOrdering.reportOrder).toHaveBeenCalled()
     expect(onDropCategoryOnCategory).not.toHaveBeenCalled()
   })
 
@@ -734,7 +596,7 @@ describe('drag-and-drop spec contract (docs/drag-and-drop.md)', () => {
       })
     })
 
-    expect(reorderImages).toHaveBeenCalled()
+    expect(tileOrdering.reportOrder).toHaveBeenCalled()
   })
 
   it("commits the projected sortable index, not the target's array position (3+ tiles)", async () => {
@@ -765,10 +627,14 @@ describe('drag-and-drop spec contract (docs/drag-and-drop.md)', () => {
 
     // Projected index 2 → [11, 12, 10]. Target position 1 would give
     // [11, 10, 12]; asserting the former proves we follow source.index.
-    expect(reorderImages).toHaveBeenCalledWith([
-      { id: 11, sort_order: 0 },
-      { id: 12, sort_order: 1 },
-      { id: 10, sort_order: 2 },
-    ])
+    expect(tileOrdering.reportOrder).toHaveBeenCalledWith(
+      [
+        { type: 'image', id: 11 },
+        { type: 'image', id: 12 },
+        { type: 'image', id: 10 },
+      ],
+      expect.any(Number),
+      expect.any(Object),
+    )
   })
 })
