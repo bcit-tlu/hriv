@@ -31,7 +31,7 @@ export interface UseTileOrderingResult {
   retry: () => void
   /** True when a scope other than this one holds a failed save. */
   otherScopesFailed: boolean
-  /** Retry every scope whose last save failed. */
+  /** Resolve every scope needing attention, except this (browsed) one. */
   retryFailedScopes: () => void
   /** Adopt the server's order after a conflict. */
   acceptServerOrder: () => void
@@ -72,7 +72,7 @@ export function useTileOrdering(scope: ScopeId): UseTileOrderingResult {
     claimGeneration: useCallback(() => tileOrderingCoordinator.claimGeneration(scope), [scope]),
     retry: useCallback(() => tileOrderingCoordinator.retry(scope), [scope]),
     otherScopesFailed,
-    retryFailedScopes: useCallback(() => tileOrderingCoordinator.retryFailedScopes(), []),
+    retryFailedScopes: useCallback(() => tileOrderingCoordinator.retryFailedScopes(scope), [scope]),
     acceptServerOrder: useCallback(() => tileOrderingCoordinator.acceptServerOrder(scope), [scope]),
   }
 }
