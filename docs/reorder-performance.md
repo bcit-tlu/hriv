@@ -60,7 +60,10 @@ untouched):
   every tile — a tile re-renders only when its own item, index, or disabled
   state changes.
 
-Covered by `frontend/tests/components/tileMemoization.test.tsx`.
+Covered by `frontend/tests/components/tileMemoization.test.tsx`, which
+asserts both the tile-level `React.memo` behaviour and — with a mounted
+`SortableTileGrid` — that a drag start (grid-level state change) does not
+re-execute the mounted tile components.
 
 ## After optimization
 
