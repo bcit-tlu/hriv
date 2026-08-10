@@ -128,10 +128,23 @@ export class TileOrderingCoordinator {
    * `submitted` emission. Coalesced drops keep the latest drag's detail.
    */
   private dragContexts = new Map<string, ReorderDragContext>()
+  /** Notified after each successful commit (see `onCommitted`). */
+  private commitListeners = new Set<(scope: ScopeId) => void>()
 
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
+  }
+
+  /**
+   * Subscribe to successful commits. The app refreshes its shared category
+   * tree / uncategorized-image data on commit so every consumer of that data
+   * (e.g. Manage Categories) sees the just-saved order instead of stale
+   * pre-save positions it could silently write back. Returns an unsubscribe.
+   */
+  onCommitted(listener: (scope: ScopeId) => void): () => void {
+    this.commitListeners.add(listener)
+    return () => this.commitListeners.delete(listener)
   }
 
   getScope(scope: ScopeId): ScopeState {
@@ -409,6 +422,13 @@ export class TileOrderingCoordinator {
           // accumulated during the save — never roll back newer changes.
           displayOrder: stillNewest ? refsOf(response) : after.displayOrder,
         })
+        for (const listener of this.commitListeners) {
+          try {
+            listener(scope)
+          } catch {
+            /* a bad listener must never break the save loop */
+          }
+        }
         if (stillNewest) return
         continue
       } catch (err) {
