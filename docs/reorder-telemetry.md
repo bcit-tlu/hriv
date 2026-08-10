@@ -78,8 +78,8 @@ synthetic reorder volume.
   display-name lookup)
 - `from_index`, `to_index` (original and projected indices)
 - `category_count`, `image_count` (items in the persisted scope)
-- `queue_depth` (running count of drops discarded during the in-flight save; becomes a real queue depth once #979 lands)
-- `local_revision` (client ordering revision; populated once #978 lands)
+- `queue_depth` (coordinator coalescing depth; capped at 1 because a newer queued snapshot replaces the older one)
+- `local_revision` (the client's ordering revision for the scope at submission time)
 - `duration_ms` (for terminal states)
 - `error` / `error_code` (bounded category — `api_http_4xx`, `api_http_5xx`, or `api_network_error` — for `failed`; never free-text)
 
