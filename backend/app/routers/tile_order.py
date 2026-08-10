@@ -34,6 +34,7 @@ from ..schemas import (
     TileOrderScope,
 )
 from ..tile_order import (
+    INITIAL_SCOPE_REVISION,
     load_scope_members,
     load_scope_tiles,
     lock_scope_revision,
@@ -87,7 +88,7 @@ async def get_tile_order(
             TileOrderRevision.scope_key == scope_key_for(parent_category_id)
         )
     )
-    revision = result.scalar_one_or_none() or 1
+    revision = result.scalar_one_or_none() or INITIAL_SCOPE_REVISION
     return await _authoritative_response(db, parent_category_id, revision)
 
 

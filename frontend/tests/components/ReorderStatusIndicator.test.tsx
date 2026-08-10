@@ -4,13 +4,14 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import ReorderStatusIndicator from '../../src/components/ReorderStatusIndicator'
 import type { TileOrderStatus } from '../../src/tileOrdering'
 
-function renderIndicator(status: TileOrderStatus) {
+function renderIndicator(status: TileOrderStatus, serverOrderAvailable = false) {
   const onRetry = vi.fn()
   const onAcceptServerOrder = vi.fn()
   const onReapplyLocalOrder = vi.fn()
   const result = render(
     <ReorderStatusIndicator
       status={status}
+      serverOrderAvailable={serverOrderAvailable}
       onRetry={onRetry}
       onAcceptServerOrder={onAcceptServerOrder}
       onReapplyLocalOrder={onReapplyLocalOrder}
@@ -62,6 +63,18 @@ describe('ReorderStatusIndicator', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(onRetry).toHaveBeenCalledTimes(1)
     expect(onAcceptServerOrder).not.toHaveBeenCalled()
+  })
+
+  it('offers "Use server order" in error state while a server order is retained', () => {
+    const { onAcceptServerOrder, onRetry } = renderIndicator('error', true)
+    fireEvent.click(screen.getByRole('button', { name: 'Use server order' }))
+    expect(onAcceptServerOrder).toHaveBeenCalledTimes(1)
+    expect(onRetry).not.toHaveBeenCalled()
+  })
+
+  it('hides "Use server order" in error state when no server order is retained', () => {
+    renderIndicator('error')
+    expect(screen.queryByRole('button', { name: 'Use server order' })).not.toBeInTheDocument()
   })
 
   it('exposes a status region for assistive technology', () => {
