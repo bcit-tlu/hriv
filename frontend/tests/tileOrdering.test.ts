@@ -494,6 +494,25 @@ describe('TileOrderingCoordinator', () => {
     expect(coordinator.getScope(null).displayOrder).toBeNull()
   })
 
+  it('invalidateRevision forces the next save to re-seed against the server revision', async () => {
+    mockedPut.mockResolvedValueOnce(response(2, refs(2, 1)))
+    coordinator.reportOrder(null, refs(2, 1))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('saved')
+
+    // An operation outside the coordinator (e.g. a parent-move PATCH) bumped
+    // the scope's server-side revision: the cached token is now stale.
+    coordinator.invalidateRevision(null)
+    expect(coordinator.getScope(null).revision).toBeNull()
+
+    mockedGet.mockResolvedValueOnce(response(5, refs(2, 1)))
+    mockedPut.mockResolvedValueOnce(response(6, refs(1, 2)))
+    coordinator.reportOrder(null, refs(1, 2))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('saved')
+    expect(mockedPut).toHaveBeenLastCalledWith(null, 5, refs(1, 2), expect.any(String))
+  })
+
   it('queues drops that land during revision seeding', async () => {
     const seed = deferred<TileOrderResponse>()
     mockedGet.mockReturnValueOnce(seed.promise)

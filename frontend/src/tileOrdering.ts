@@ -193,6 +193,20 @@ export class TileOrderingCoordinator {
   }
 
   /**
+   * Forget a scope's cached revision (CAS token) so the next save re-seeds
+   * it with a GET. Called after an operation outside the coordinator bumps
+   * the scope's server-side revision (e.g. a category parent-move PATCH),
+   * which would otherwise make the coordinator's next PUT falsely 409 as
+   * "order changed elsewhere". Local order intent is left untouched.
+   */
+  invalidateRevision(scope: ScopeId): void {
+    const key = scopeKey(scope)
+    const state = this.scopes.get(key)
+    if (!state || state.revision === null) return
+    this.scopes.set(key, { ...state, revision: null })
+  }
+
+  /**
    * Snapshot of the write counter. Capture before starting a data refresh
    * and pass to `releaseCleanScopes` so scopes saved while the refresh was
    * in flight (whose order is newer than the fetched data) survive.

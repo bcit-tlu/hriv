@@ -255,6 +255,7 @@ export function useCategoryActions({
       for (const move of moves) {
         const catPath = findCategoryPath(categories, move.categoryId)
         const version = catPath?.at(-1)?.version
+        const oldParentId = catPath?.at(-2)?.id ?? null
         try {
           await apiUpdateCategory(move.categoryId, { parent_id: move.newParentId }, version)
         } catch (err) {
@@ -262,6 +263,11 @@ export function useCategoryActions({
           setErrorSnack(userMessage(err, 'Failed to move category.'))
           throw err
         }
+        // The parent-move PATCH bumps the tile-order revision of both scopes
+        // server-side, so any revision the coordinator still caches for them
+        // is stale and would make the reportOrder below falsely 409.
+        tileOrderingCoordinator.invalidateRevision(oldParentId)
+        tileOrderingCoordinator.invalidateRevision(move.newParentId)
       }
       for (const { scope, order } of scopes) {
         tileOrderingCoordinator.reportOrder(scope, order)
@@ -513,6 +519,7 @@ export function useCategoryActions({
     toggleCategoryVisibility,
     reorderTilesFromManage,
     manageReorderScopes,
+    setManageReorderScopes,
     handleMoveCategory,
     handleRequestMoveCategory,
     handleDropImageOnCategory,

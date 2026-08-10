@@ -197,7 +197,11 @@ there is no second independent ordering implementation:
   rejection), then the full interleaved category+image order of every
   changed scope is reported to the shared `tileOrderingCoordinator`, which
   persists each scope atomically via `PUT /api/tile-order` with CAS
-  revisions. When the coordinator already holds a newer (pending/unsaved)
+  revisions. Because the parent-move PATCH bumps the tile-order revision of
+  both affected scopes server-side, the coordinator's cached revision for
+  those scopes is invalidated first (`invalidateRevision`) so the follow-up
+  order writes re-seed via GET instead of falsely 409ing against a stale
+  token. When the coordinator already holds a newer (pending/unsaved)
   order for a scope, that order is used as the interleaving template, so a
   category-only reorder never reverts a pending image reorder for the same
   scope; scopes left with no members are skipped.

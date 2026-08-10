@@ -916,6 +916,7 @@ export default function App() {
     toggleCategoryVisibility,
     reorderTilesFromManage,
     manageReorderScopes,
+    setManageReorderScopes,
     handleMoveCategory,
     handleRequestMoveCategory,
     handleDropImageOnCategory,
@@ -965,6 +966,23 @@ export default function App() {
     surface()
     return tileOrderingCoordinator.subscribe(surface)
   }, [dialogOpen, manageAttentionScope])
+
+  // Once the dialog is closed and every tracked scope has settled, stop
+  // tracking: the snackbar above must not re-fire for later conflicts the
+  // dialog didn't cause (e.g. a Browse reorder of the same scope), and a
+  // reopened dialog should start without a stale save-state readout.
+  useEffect(() => {
+    if (dialogOpen || manageReorderScopes === null) return
+    const clearWhenSettled = () => {
+      const settled = manageReorderScopes.every((scope) => {
+        const status = tileOrderingCoordinator.getScope(scope).status
+        return status === 'saved' || status === 'idle'
+      })
+      if (settled) setManageReorderScopes(null)
+    }
+    queueMicrotask(clearWhenSettled)
+    return tileOrderingCoordinator.subscribe(clearWhenSettled)
+  }, [dialogOpen, manageReorderScopes, setManageReorderScopes])
 
   const visibleJobs = getVisibleJobs({
     uploadOpen,
