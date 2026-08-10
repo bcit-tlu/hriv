@@ -454,6 +454,21 @@ describe('TileOrderingCoordinator', () => {
     expect(mockedPut).toHaveBeenCalledWith(null, 1, refs(3, 2, 1), expect.any(String))
   })
 
+  it('notifies commit listeners after each successful save', async () => {
+    mockedPut.mockResolvedValue(response(2, refs(2, 1, 3)))
+    const committed: Array<number | null> = []
+    const off = coordinator.onCommitted((scope) => committed.push(scope))
+
+    coordinator.reportOrder(null, refs(2, 1, 3))
+    await flushMicrotasks()
+    expect(committed).toEqual([null])
+
+    off()
+    coordinator.reportOrder(null, refs(1, 2, 3))
+    await flushMicrotasks()
+    expect(committed).toEqual([null])
+  })
+
   it('attaches the drag context to the submitted diagnostic', async () => {
     mockedPut.mockResolvedValueOnce(response(2, refs(2, 1, 3)))
 

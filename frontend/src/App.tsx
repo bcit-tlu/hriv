@@ -98,6 +98,7 @@ import { useImageActions } from './useImageActions'
 import { useAnnouncementModal } from './useAnnouncementModal'
 import { useUserProfile } from './useUserProfile'
 import { useTileOrdering } from './useTileOrdering'
+import { tileOrderingCoordinator } from './tileOrdering'
 
 const COLLAPSED_BREADCRUMB_CATEGORY_DEPTH = 2
 
@@ -1048,6 +1049,15 @@ export default function App() {
       setWarnSnack('Could not refresh images after reorder.')
     }
   }, [refreshCategories, refreshUncategorizedImages])
+
+  // Every successful coordinator save refreshes the shared category tree and
+  // uncategorized images so all consumers (e.g. Manage Categories, which can
+  // write orders back) see the just-saved positions instead of stale
+  // pre-save data.
+  useEffect(
+    () => tileOrderingCoordinator.onCommitted(() => void handleReorderComplete()),
+    [handleReorderComplete],
+  )
 
   // Adopting the server's order can stem from membership drift (a 400
   // conflict): reload the browse data too so tiles added or removed
