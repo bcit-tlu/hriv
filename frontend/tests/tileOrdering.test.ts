@@ -356,6 +356,26 @@ describe('TileOrderingCoordinator', () => {
     expect(events.some((e) => e.state === 'conflicted')).toBe(true)
   })
 
+  it('reapplyLocalOrder reconciles pending against drifted membership instead of looping', async () => {
+    // Membership drift: image 3 left the scope, image 4 arrived.
+    const current = response(4, refs(3, 1, 4))
+    mockedPut.mockRejectedValueOnce(new ApiError(400, 'Images not in scope: [2]'))
+    mockedGet.mockResolvedValue(current)
+    mockedPut.mockResolvedValueOnce(response(5, refs(1, 3, 4)))
+
+    coordinator.reportOrder(null, refs(2, 1, 3))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('conflict')
+
+    coordinator.reapplyLocalOrder(null)
+    await flushMicrotasks()
+
+    const state = coordinator.getScope(null)
+    expect(state.status).toBe('saved')
+    // Departed item dropped, local relative order kept, newcomer appended.
+    expect(mockedPut).toHaveBeenLastCalledWith(null, 4, refs(1, 3, 4), expect.any(String))
+  })
+
   it('shows saving during seeding and emits a failed diagnostic when the seed GET fails', async () => {
     let rejectGet: (err: unknown) => void = () => {}
     mockedGet.mockImplementation(

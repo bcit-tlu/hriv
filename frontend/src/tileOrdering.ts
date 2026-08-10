@@ -92,6 +92,10 @@ function scopeFromKey(key: string): ScopeId {
   return key === 'root' ? null : Number(key)
 }
 
+function refKey(ref: TileOrderItemRef): string {
+  return `${ref.type}:${ref.id}`
+}
+
 function sameOrder(a: TileOrderItemRef[], b: TileOrderItemRef[]): boolean {
   return a.length === b.length && a.every((ref, i) => ref.type === b[i].type && ref.id === b[i].id)
 }
@@ -370,11 +374,27 @@ export class TileOrderingCoordinator {
       this.acceptServerOrder(scope)
       return
     }
+    // A 400-style conflict means scope membership drifted: resubmitting the
+    // pending list verbatim would be rejected again forever. Reconcile it
+    // against the authoritative membership — keep the local relative order
+    // for surviving items, drop departed ones, append newcomers in server
+    // order.
+    let pending = state.pending
+    if (state.conflictOrder !== null) {
+      const authoritative = new Set(state.conflictOrder.map(refKey))
+      const local = new Set(pending.map(refKey))
+      pending = [
+        ...pending.filter((ref) => authoritative.has(refKey(ref))),
+        ...state.conflictOrder.filter((ref) => !local.has(refKey(ref))),
+      ]
+    }
     // The conflict's authoritative order is retained until a commit
     // succeeds, keeping accept-server-order available if the retry fails.
     this.setScope(scope, {
       ...state,
       status: 'dirty',
+      pending,
+      displayOrder: pending,
       error: null,
     })
     void this.flush(scope)
