@@ -54,17 +54,13 @@ The same workflow seeds a deployed/staging database for browser-level
 - **Integration tests** (run when `REORDER_FIXTURE_DATABASE_URL` is set to a
   migrated PostgreSQL database; CI provides a `postgres:16-alpine` service):
   idempotent re-seeding, purge, and full-scope authoritative order round-trip
-  through the real reorder endpoints.
+  through `PUT /api/tile-order`.
 
-Two `xfail(strict=True)` regression tests document currently-broken
-behaviour and will flip to hard failures (forcing marker removal) once fixed:
-
-- `test_mixed_reorder_is_atomic_across_categories_and_images` — the
-  two-request category/image persistence flow commits one half when the
-  other fails (partial persistence; fixed by the atomic contract in #978).
-- `test_stale_submission_from_second_tab_is_rejected` — two editors
-  submitting from the same initial ordering silently last-write-win instead
-  of conflicting (fixed by the revisioned contract in #978).
+The two `xfail(strict=True)` regression tests that documented partial
+persistence and silent last-write-wins were removed in #998: the atomic,
+revisioned `PUT /api/tile-order` contract (#978) fixed both behaviours, and
+the positive coverage now lives in `backend/tests/test_tile_order.py`
+(atomicity, membership validation, and stale-revision 409 conflicts).
 
 ## Frontend regression scaffolding
 
@@ -73,21 +69,15 @@ generators plus `createDeferred()` for injecting realistic latency into
 category persistence, image persistence, and background refreshes
 independently.
 
-`frontend/tests/components/SortableTileGridReorderRegression.test.tsx` covers
-the browser-level scenarios from #976 at the component level. Passing
-baselines:
-
-- rendering the full 80-category / 600-image scope;
-- 20 consecutive awaited reorders all persisting.
-
-`it.fails(...)` regressions asserting the DESIRED behaviour (they pass only
-while the bug exists):
-
-- a second drop made while the first save is in flight is silently discarded
-  (`reorderInFlightRef` early-return in `SortableTileGrid.handleDragEnd`);
-- a stale refresh response overwrites a newer successfully-saved order;
-- independent category/image persistence outcomes commit one half when the
-  other fails.
+The `it.fails(...)` regression suite
+(`SortableTileGridReorderRegression.test.tsx`) that asserted the legacy
+path's silent-discard, stale-refresh, and partial-persistence bugs was
+removed in #998 along with the legacy fallback path itself. The equivalent
+desired-behaviour coverage now lives in `frontend/tests/tileOrdering.test.ts`
+(coordinator queueing, coalescing, conflict adoption, and the
+20-rapid-reorder scenario) and
+`frontend/tests/components/SortableTileGridCoordinator.test.tsx` (the grid's
+coordinator wiring, including the full 80-category / 600-image scope).
 
 Navigation-away-during-save and reload-and-compare journeys are browser-level
 concerns: seed the fixture with the CLI above and drive them via Playwright

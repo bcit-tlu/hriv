@@ -39,11 +39,11 @@ share this bounded vocabulary:
 | State             | Meaning                                                                                    |
 | ----------------- | ------------------------------------------------------------------------------------------ |
 | `ignored`         | Drop accepted visually but discarded by the in-flight guard (legacy path, removed in #998) |
-| `queued`          | Drop accepted and waiting behind an in-flight save (future #979)                           |
-| `coalesced`       | Queued drop merged into a newer one before submission (future #979)                        |
+| `queued`          | Drop accepted and waiting behind an in-flight save                                         |
+| `coalesced`       | Queued drop merged into a newer one before submission                                      |
 | `submitted`       | Persistence requests sent to the backend                                                   |
-| `committed`       | Persistence and follow-up refresh completed successfully                                   |
-| `conflicted`      | Backend rejected the operation due to a revision conflict (future #978/#980)               |
+| `committed`       | Persistence completed successfully and the authoritative order was applied                 |
+| `conflicted`      | Backend rejected the operation due to a revision conflict                                  |
 | `failed`          | Persistence failed (fully or partially) and the UI rolled back                             |
 | `stale_discarded` | Refresh response discarded because a newer operation superseded it (future #980)           |
 | `abandoned`       | Component unmounted (navigation) while the operation was active                            |
