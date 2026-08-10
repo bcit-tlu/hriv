@@ -307,6 +307,33 @@ export class TileOrderingCoordinator {
       return
     }
 
+    // A drop while a conflict is unresolved folds into the retained local
+    // intent instead of auto-submitting with the conflict-time revision:
+    // resolution stays explicit (Refresh / Keep my order), so the concurrent
+    // server change is never silently overwritten (docs/tile-ordering.md).
+    if (state.status === 'conflict') {
+      const key = scopeKey(scope)
+      // With no open queued operation for the scope, a drop mints a fresh
+      // operation and emits `queued`; when one is still open (minted while
+      // the conflicting save was in flight, or by an earlier drop during
+      // this conflict) the drop coalesces into it.
+      const existingId = this.pendingOperationIds.get(key)
+      const operationId = existingId ?? newReorderOperationId()
+      this.pendingOperationIds.set(key, operationId)
+      emitReorderDiagnostic({
+        operationId,
+        state: existingId !== undefined ? 'coalesced' : 'queued',
+        scopeCategoryId: scope,
+        queueDepth: 1,
+      })
+      this.setScope(scope, {
+        ...state,
+        pending: order,
+        displayOrder: order,
+      })
+      return
+    }
+
     // Treat revision seeding like an in-flight save: the drop is queued so
     // the status stays 'saving'-family instead of flickering back to dirty,
     // and queued/coalesced telemetry is emitted for it.
