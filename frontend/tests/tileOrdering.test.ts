@@ -318,6 +318,34 @@ describe('TileOrderingCoordinator', () => {
     expect(mockedPut).toHaveBeenLastCalledWith(null, 4, refs(2, 1, 3), expect.any(String))
   })
 
+  it('a new drop during an unresolved conflict stays queued for explicit resolution', async () => {
+    const current = response(4, refs(3, 1, 2))
+    mockedPut
+      .mockRejectedValueOnce(conflictError(current))
+      .mockResolvedValueOnce(response(5, refs(3, 2, 1)))
+
+    coordinator.reportOrder(null, refs(2, 1, 3))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('conflict')
+    expect(mockedPut).toHaveBeenCalledTimes(1)
+
+    // A new drag does not auto-submit with the conflict-time revision.
+    coordinator.reportOrder(null, refs(3, 2, 1))
+    await flushMicrotasks()
+    let state = coordinator.getScope(null)
+    expect(state.status).toBe('conflict')
+    expect(state.displayOrder).toEqual(refs(3, 2, 1))
+    expect(state.conflictOrder).toEqual(refs(3, 1, 2))
+    expect(mockedPut).toHaveBeenCalledTimes(1)
+
+    // Explicit "Keep my order" submits the newest intent.
+    coordinator.reapplyLocalOrder(null)
+    await flushMicrotasks()
+    state = coordinator.getScope(null)
+    expect(state.status).toBe('saved')
+    expect(mockedPut).toHaveBeenLastCalledWith(null, 4, refs(3, 2, 1), expect.any(String))
+  })
+
   it('keeps accept-server-order available when the reapply retry fails', async () => {
     const current = response(4, refs(3, 1, 2))
     mockedPut
