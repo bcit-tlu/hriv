@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.42.2](https://github.com/bcit-tlu/hriv/compare/frontend-v0.42.1...frontend-v0.42.2) (2026-08-10)
+
+
+### Bug Fixes
+
+* **frontend:** rename login link to 'Sign in with a guest account' ([#1042](https://github.com/bcit-tlu/hriv/issues/1042)) ([1017519](https://github.com/bcit-tlu/hriv/commit/10175198877c56c9d4d19e3317834c0cdfaaf818))
+
 ## [0.42.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.42.0...frontend-v0.42.1) (2026-08-10)
 
 
