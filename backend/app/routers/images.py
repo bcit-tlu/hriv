@@ -141,6 +141,16 @@ async def bulk_update_images(
             if len(images) != len(set(body.image_ids)):
                 raise HTTPException(status_code=404, detail="One or more images not found")
             update_data = body.model_dump(exclude_unset=True, exclude={"image_ids"})
+            # A bulk category move changes scope membership: invalidate the
+            # tile-order revisions of every source scope and the destination
+            # scope so clients of PUT /api/tile-order get a 409 instead of
+            # silently overwriting. Revision locks are taken before any row
+            # mutation, matching PUT /api/tile-order's revision-then-rows
+            # lock order (docs/tile-ordering.md).
+            if "category_id" in update_data:
+                affected = {scope_key_for(img.category_id) for img in images}
+                affected.add(scope_key_for(update_data["category_id"]))
+                await bump_scopes(db, affected)
             for img in images:
                 for key, value in update_data.items():
                     setattr(img, key, value)
@@ -169,6 +179,19 @@ async def update_image(
             img = await db.get(Image, image_id)
             if not img:
                 raise HTTPException(status_code=404, detail="Image not found")
+
+            # An ordering write (sort_order or a category move) must
+            # invalidate the affected scopes' tile-order revisions so a
+            # client holding an older revision gets a 409 instead of
+            # silently overwriting this change. Revision locks are taken
+            # before any row mutation, matching PUT /api/tile-order's
+            # revision-then-rows lock order (docs/tile-ordering.md).
+            ordering_fields = body.model_dump(exclude_unset=True)
+            if "sort_order" in ordering_fields or "category_id" in ordering_fields:
+                affected = {scope_key_for(img.category_id)}
+                if "category_id" in ordering_fields:
+                    affected.add(scope_key_for(ordering_fields["category_id"]))
+                await bump_scopes(db, affected)
 
             # Optimistic concurrency: if the client sends If-Match, verify the
             # version has not changed since the client last read the resource.
