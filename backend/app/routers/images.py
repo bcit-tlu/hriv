@@ -324,6 +324,15 @@ async def replace_image(
                         parsed_cat = int(category_id) if category_id != "" else None
                     except (ValueError, TypeError):
                         raise HTTPException(status_code=400, detail="Invalid category_id")
+                    if parsed_cat != img.category_id:
+                        # A category move changes scope membership: invalidate
+                        # both scopes' tile-order revisions so clients holding
+                        # older revisions get a 409 instead of silently
+                        # overwriting (same rule as PATCH /images/{id}).
+                        await bump_scopes(
+                            db,
+                            {scope_key_for(img.category_id), scope_key_for(parsed_cat)},
+                        )
                     img.category_id = parsed_cat
                 if copyright is not None:
                     img.copyright = copyright if copyright != "" else None

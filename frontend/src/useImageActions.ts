@@ -253,6 +253,7 @@ export function useImageActions(deps: UseImageActionsDeps) {
       )
         .then((result) => {
           transitionReplaceToProcessing(uploadId, result.id)
+          invalidateMovedImageScopes(prevImage.categoryId ?? null, formData.category_id)
           setImageEditOpen(false)
           loadCategories()
           loadUncategorizedImages()
@@ -299,6 +300,7 @@ export function useImageActions(deps: UseImageActionsDeps) {
       )
         .then((result) => {
           transitionReplaceToProcessing(uploadId, result.id)
+          invalidateMovedImageScopes(browseEditImage.categoryId ?? null, formData.category_id)
           setBrowseEditImage(null)
           loadCategories()
           loadUncategorizedImages()

@@ -303,11 +303,16 @@ export function useCategoryActions({
       try {
         const catPath = findCategoryPath(categories, categoryId)
         const version = catPath?.at(-1)?.version
-        const oldParentId = catPath && catPath.length >= 2 ? catPath[catPath.length - 2].id : null
+        // Distinguish "parent is root" (path found, length 1) from "path not
+        // found" (stale tree): the latter must not invalidate the root scope
+        // in place of the unknown real source scope.
+        const oldParentId = catPath ? (catPath.at(-2)?.id ?? null) : undefined
         await apiUpdateCategory(categoryId, { parent_id: newParentId }, version)
         // The membership PATCH bumps both scopes' tile-order revisions
         // server-side, so any cached revision is stale.
-        tileOrderingCoordinator.invalidateRevision(oldParentId)
+        if (oldParentId !== undefined) {
+          tileOrderingCoordinator.invalidateRevision(oldParentId)
+        }
         tileOrderingCoordinator.invalidateRevision(newParentId)
         setMoveCatOpen(false)
         setMovingCategory(null)
@@ -400,8 +405,9 @@ export function useCategoryActions({
     async (draggedCategoryId: number, targetCategoryId: number) => {
       try {
         const draggedPath = findCategoryPath(categories, draggedCategoryId)
-        const prevParentId =
-          draggedPath && draggedPath.length >= 2 ? draggedPath[draggedPath.length - 2].id : null
+        // undefined = path not found (stale tree); null = parent is root.
+        // An unknown source scope must not invalidate root in its place.
+        const prevParentId = draggedPath ? (draggedPath.at(-2)?.id ?? null) : undefined
         const draggedName = draggedPath?.at(-1)?.label ?? 'category'
         const targetPath = findCategoryPath(categories, targetCategoryId)
         const targetName = targetPath?.at(-1)?.label ?? 'category'
@@ -413,7 +419,9 @@ export function useCategoryActions({
           },
           draggedVersion,
         )
-        tileOrderingCoordinator.invalidateRevision(prevParentId)
+        if (prevParentId !== undefined) {
+          tileOrderingCoordinator.invalidateRevision(prevParentId)
+        }
         tileOrderingCoordinator.invalidateRevision(targetCategoryId)
         await loadCategories()
         setMoveSnack({
@@ -424,11 +432,13 @@ export function useCategoryActions({
               await apiUpdateCategory(
                 draggedCategoryId,
                 {
-                  parent_id: prevParentId,
+                  parent_id: prevParentId ?? null,
                 },
                 resp.version,
               )
-              tileOrderingCoordinator.invalidateRevision(prevParentId)
+              if (prevParentId !== undefined) {
+                tileOrderingCoordinator.invalidateRevision(prevParentId)
+              }
               tileOrderingCoordinator.invalidateRevision(targetCategoryId)
               await loadCategories()
             } catch (undoErr) {

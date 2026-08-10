@@ -1978,6 +1978,7 @@ export default function ManagePage({
                     formData,
                   )
                   onReplaceImage?.(result.id, file.name, file.size)
+                  invalidateMovedImageScopes(editingImage.category_id ?? null, formData.category_id)
                   setEditOpen(false)
                   setEditingImage(null)
                   await loadImages()
