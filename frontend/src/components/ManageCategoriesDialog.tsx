@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from 'react'
+import { useState, useMemo, useCallback, useEffect, useReducer, useRef } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
@@ -23,11 +23,6 @@ import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import Visibility from '@mui/icons-material/Visibility'
 import type { Category, Group, ImageItem, Program } from '../types'
 import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
-import {
-  emitReorderDiagnostic,
-  newReorderOperationId,
-  reorderErrorCode,
-} from '../reorderDiagnostics'
 import { findCategoryPath } from '../treeUtils'
 import { getVisibilityColors } from '../theme'
 import { MAX_DEPTH } from '../types'
@@ -40,8 +35,14 @@ import {
   getAncestorHiddenIds,
   type FlatCategoryOption,
 } from './categoryOptionUtils'
-import { collectImagesByParent, interleavedSortOrders } from './manageCategoriesDialogUtils'
-import type { FlatOption } from './manageCategoriesDialogUtils'
+import {
+  collectImagesByParent,
+  diffParentMoves,
+  interleavedTileOrders,
+  reorderFlatOptions,
+} from './manageCategoriesDialogUtils'
+import type { FlatOption, ParentMove, ScopeOrder } from './manageCategoriesDialogUtils'
+import { tileOrderingCoordinator } from '../tileOrdering'
 import { useCategoryTreeExpansionPreferences } from '../useCategoryTreeExpansionPreferences'
 
 /** Collect all descendant IDs of a given category from the flat list. */
@@ -166,15 +167,15 @@ interface ManageCategoriesDialogProps {
   programs?: Program[]
   groups?: Group[]
   onToggleVisibility?: (categoryId: number) => Promise<void>
-  onReorderCategories?: (
-    items: Array<{ id: number; parent_id: number | null; sort_order: number }>,
-    operationId?: string,
-  ) => Promise<void>
-  onReorderImages?: (
-    items: Array<{ id: number; sort_order: number }>,
-    operationId?: string,
-  ) => Promise<void>
+  /**
+   * Persist a drop through the shared ordering contract (epic #975, issue
+   * #982): parent changes first, then the full interleaved order of every
+   * affected scope via the tile-ordering coordinator.
+   */
+  onReorderTiles?: (moves: ParentMove[], scopes: ScopeOrder[]) => Promise<void> | void
   onReorderComplete?: () => Promise<void> | void
+  /** Save-state readout for the coordinator scope(s) touched by this dialog. */
+  reorderStatus?: React.ReactNode
 }
 
 export default function ManageCategoriesDialog({
@@ -187,9 +188,9 @@ export default function ManageCategoriesDialog({
   onDeleteCategory,
   onEditCategory,
   onToggleVisibility,
-  onReorderCategories,
-  onReorderImages,
+  onReorderTiles,
   onReorderComplete,
+  reorderStatus,
   programs = [],
   groups = [],
 }: ManageCategoriesDialogProps) {
@@ -206,7 +207,31 @@ export default function ManageCategoriesDialog({
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null)
 
-  const options = useMemo(() => flattenCategoryOptions(categories) as FlatOption[], [categories])
+  // Re-render when the shared tile-ordering coordinator changes so sibling
+  // order reflects the newest local intent (optimistic/pending order) instead
+  // of snapping back to the last-loaded sort_order while a save is in flight.
+  const [coordinatorVersion, bumpCoordinatorVersion] = useReducer((v: number) => v + 1, 0)
+  useEffect(
+    () => tileOrderingCoordinator.subscribe(bumpCoordinatorVersion),
+    [bumpCoordinatorVersion],
+  )
+
+  const baseOptions = useMemo(
+    () => flattenCategoryOptions(categories) as FlatOption[],
+    [categories],
+  )
+  const options = useMemo(
+    () =>
+      reorderFlatOptions(
+        baseOptions,
+        (parentId) => tileOrderingCoordinator.getScope(parentId).displayOrder,
+      ),
+    // coordinatorVersion invalidates the memo whenever the coordinator's
+    // per-scope display orders change (the coordinator is read imperatively,
+    // so the linter cannot see the dependency).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [baseOptions, coordinatorVersion],
+  )
   const [dragId, setDragId] = useState<number | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
   const listRef = useRef<HTMLUListElement>(null)
@@ -404,7 +429,7 @@ export default function ManageCategoriesDialog({
   const handleDrop = useCallback(
     async (e: React.DragEvent) => {
       e.preventDefault()
-      if (dragId == null || dropTarget == null || !onReorderCategories) {
+      if (dragId == null || dropTarget == null || !onReorderTiles) {
         setDragId(null)
         setDropTarget(null)
         return
@@ -449,61 +474,35 @@ export default function ManageCategoriesDialog({
       ]
 
       const imagesByParent = collectImagesByParent(categories, uncategorizedImages)
-      const { catItems, imgItems } = interleavedSortOrders(newList, options, imagesByParent)
+      const moves = diffParentMoves(newList, options)
+      const scopes = interleavedTileOrders(
+        newList,
+        options,
+        imagesByParent,
+        (parentId) => tileOrderingCoordinator.getScope(parentId).displayOrder,
+        dragId,
+      )
 
       setDragId(null)
       setDropTarget(null)
 
-      // One drag = one correlation ID and one lifecycle (exactly one
-      // `submitted` and one terminal event) across both persistence calls.
-      const operationId = newReorderOperationId()
-      const startedAt = performance.now()
-      // Only count the image half when it will actually be persisted.
-      const persistedImgCount = onReorderImages ? imgItems.length : 0
-      const itemType = persistedImgCount > 0 ? 'mixed' : 'category'
-      emitReorderDiagnostic({
-        operationId,
-        state: 'submitted',
-        itemType,
-        categoryCount: catItems.length,
-        imageCount: persistedImgCount,
-        queueDepth: 0,
-      })
-      let failure: unknown
+      if (moves.length === 0 && scopes.length === 0) return
       try {
-        await onReorderCategories(catItems, operationId)
-        if (imgItems.length > 0 && onReorderImages) {
-          try {
-            await onReorderImages(imgItems, operationId)
-          } catch (err) {
-            /* error already surfaced by the wrapper */
-            failure = err
-          }
-        }
-      } catch (err) {
-        failure = err
+        await onReorderTiles(moves, scopes)
+      } catch {
+        // Error already surfaced by the handler; refresh authoritative state.
+        await onReorderComplete?.()
+        return
       }
-      if (failure === undefined) {
-        emitReorderDiagnostic({
-          operationId,
-          state: 'committed',
-          itemType,
-          categoryCount: catItems.length,
-          imageCount: persistedImgCount,
-          durationMs: performance.now() - startedAt,
-        })
-      } else {
-        emitReorderDiagnostic({
-          operationId,
-          state: 'failed',
-          itemType,
-          categoryCount: catItems.length,
-          imageCount: persistedImgCount,
-          durationMs: performance.now() - startedAt,
-          errorCode: reorderErrorCode(failure),
-        })
-      }
-      await onReorderComplete?.()
+      // Success path: for pure reorders the coordinator persists
+      // asynchronously and triggers the authoritative refresh itself once
+      // the save commits (via its committed listener), so refreshing here
+      // would only re-fetch pre-save data. Parent moves, however, were
+      // already durably committed by the awaited PATCH and get no commit
+      // notification if the follow-up order save conflicts/fails, so they
+      // need their refresh here (releaseCleanScopes keeps any newer
+      // coordinator state safe from the re-fetched data).
+      if (moves.length > 0) await onReorderComplete?.()
     },
     [
       dragId,
@@ -511,8 +510,7 @@ export default function ManageCategoriesDialog({
       options,
       categories,
       uncategorizedImages,
-      onReorderCategories,
-      onReorderImages,
+      onReorderTiles,
       onReorderComplete,
     ],
   )
@@ -571,8 +569,23 @@ export default function ManageCategoriesDialog({
   return (
     <>
       <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-        <DialogTitle>Manage Categories</DialogTitle>
-        <DialogContent>
+        {/* The save-state indicator (a live region with buttons) must not
+            live inside DialogTitle's <h2>, so it sits in a flex row beside
+            it. That breaks MUI's `.MuiDialogTitle-root +
+            .MuiDialogContent-root` padding-top reset, re-applied below. */}
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 1,
+            pr: 3,
+          }}
+        >
+          <DialogTitle>Manage Categories</DialogTitle>
+          {reorderStatus}
+        </Box>
+        <DialogContent sx={{ pt: 0 }}>
           <List
             dense
             disablePadding
@@ -607,7 +620,7 @@ export default function ManageCategoriesDialog({
                 <ListItem
                   key={opt.id}
                   data-category-id={opt.id}
-                  draggable={!!onReorderCategories}
+                  draggable={!!onReorderTiles}
                   onDragStart={(e) => handleDragStart(e, opt.id)}
                   onDragEnd={handleDragEnd}
                   sx={{
@@ -717,7 +730,7 @@ export default function ManageCategoriesDialog({
                   ) : (
                     <Box sx={{ width: 30, flexShrink: 0 }} />
                   )}
-                  {onReorderCategories && (
+                  {onReorderTiles && (
                     <DragIndicatorIcon
                       fontSize="small"
                       sx={{ color: 'text.secondary', mr: 0.5, flexShrink: 0, cursor: 'grab' }}

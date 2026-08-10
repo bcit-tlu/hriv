@@ -1,9 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, renderHook } from '@testing-library/react'
 
-import { useTileOrdering } from '../src/useTileOrdering'
+import { useMostSevereScope, useTileOrdering } from '../src/useTileOrdering'
 import { tileOrderingCoordinator } from '../src/tileOrdering'
-import { getTileOrder, putTileOrder, type TileOrderResponse } from '../src/api'
+import {
+  getTileOrder,
+  putTileOrder,
+  type TileOrderItemRef,
+  type TileOrderResponse,
+} from '../src/api'
 
 vi.mock('../src/api', async () => {
   const actual = await vi.importActual<typeof import('../src/api')>('../src/api')
@@ -16,6 +21,10 @@ vi.mock('../src/api', async () => {
 
 const mockedGet = vi.mocked(getTileOrder)
 const mockedPut = vi.mocked(putTileOrder)
+
+function refs(...ids: number[]): TileOrderItemRef[] {
+  return ids.map((id) => ({ type: 'image' as const, id }))
+}
 
 function response(revision: number, ids: number[]): TileOrderResponse {
   return {
@@ -139,5 +148,49 @@ describe('useTileOrdering', () => {
     window.dispatchEvent(event)
     expect(event.defaultPrevented).toBe(true)
     hasUnsaved.mockRestore()
+  })
+})
+
+// `useMostSevereScope` (issue #982): a cross-parent move in Manage
+// Categories touches two scopes and the single save-state indicator must
+// surface whichever scope most urgently needs attention.
+describe('useMostSevereScope', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  // The coordinator is a module-level singleton: reset so a scope left in
+  // `error` (with retained pending intent) never leaks into later tests.
+  afterEach(() => {
+    cleanup()
+    tileOrderingCoordinator.reset()
+  })
+
+  it('returns undefined when no scopes are tracked', () => {
+    const { result } = renderHook(() => useMostSevereScope(null))
+    expect(result.current).toBeUndefined()
+    const { result: empty } = renderHook(() => useMostSevereScope([]))
+    expect(empty.current).toBeUndefined()
+  })
+
+  it('surfaces the scope with a failed save over a saved one', async () => {
+    const savedScope = scopeCounter++
+    const errorScope = scopeCounter++
+    mockedGet.mockResolvedValue(response(1, [1, 2]))
+    mockedPut.mockResolvedValueOnce(response(2, [1, 2]))
+    mockedPut.mockRejectedValueOnce(new Error('boom'))
+
+    const { result } = renderHook(() => useMostSevereScope([savedScope, errorScope]))
+
+    await act(async () => {
+      tileOrderingCoordinator.reportOrder(savedScope, refs(1, 2))
+      await flushMicrotasks()
+      tileOrderingCoordinator.reportOrder(errorScope, refs(2, 1))
+      await flushMicrotasks()
+    })
+
+    expect(tileOrderingCoordinator.getScope(savedScope).status).toBe('saved')
+    expect(tileOrderingCoordinator.getScope(errorScope).status).toBe('error')
+    expect(result.current).toBe(errorScope)
   })
 })

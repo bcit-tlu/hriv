@@ -44,6 +44,42 @@ export interface UseTileOrderingResult {
   reapplyLocalOrder: () => void
 }
 
+/** Higher = more urgently needs the user's attention. */
+const STATUS_SEVERITY: Record<TileOrderStatus, number> = {
+  conflict: 6,
+  error: 5,
+  'dirty-while-saving': 4,
+  saving: 3,
+  dirty: 2,
+  saved: 1,
+  idle: 0,
+}
+
+/**
+ * Pick the scope whose save state most urgently needs attention (e.g. a
+ * cross-parent move touches both the source and destination scopes, and a
+ * single indicator should surface whichever one is conflicted or failed).
+ * Returns `undefined` when no scopes are tracked.
+ */
+export function useMostSevereScope(scopes: ScopeId[] | null): ScopeId | undefined {
+  return useSyncExternalStore(
+    useCallback((listener) => tileOrderingCoordinator.subscribe(listener), []),
+    () => {
+      if (!scopes || scopes.length === 0) return undefined
+      let best = scopes[0]
+      let bestSeverity = -1
+      for (const scope of scopes) {
+        const severity = STATUS_SEVERITY[tileOrderingCoordinator.getScope(scope).status]
+        if (severity > bestSeverity) {
+          bestSeverity = severity
+          best = scope
+        }
+      }
+      return best
+    },
+  )
+}
+
 export function useTileOrdering(scope: ScopeId): UseTileOrderingResult {
   const state: ScopeState = useSyncExternalStore(
     useCallback((listener) => tileOrderingCoordinator.subscribe(listener), []),

@@ -97,7 +97,7 @@ import { useCategoryActions } from './useCategoryActions'
 import { useImageActions } from './useImageActions'
 import { useAnnouncementModal } from './useAnnouncementModal'
 import { useUserProfile } from './useUserProfile'
-import { useTileOrdering } from './useTileOrdering'
+import { useMostSevereScope, useTileOrdering } from './useTileOrdering'
 import { tileOrderingCoordinator } from './tileOrdering'
 
 const COLLAPSED_BREADCRUMB_CATEGORY_DEPTH = 2
@@ -914,8 +914,9 @@ export default function App() {
     deleteCategoryInline,
     editCategoryInline,
     toggleCategoryVisibility,
-    reorderCategoriesInline,
-    reorderImagesInline,
+    reorderTilesFromManage,
+    manageReorderScopes,
+    setManageReorderScopes,
     handleMoveCategory,
     handleRequestMoveCategory,
     handleDropImageOnCategory,
@@ -941,6 +942,65 @@ export default function App() {
     setWarningSnack: setWarnSnack,
     setMoveSnack,
   })
+
+  // Save-state readout for the scopes most recently reordered from the
+  // Manage Categories dialog (epic #975, issue #982). A cross-parent move
+  // touches two scopes; surface whichever needs attention most.
+  const manageAttentionScope = useMostSevereScope(manageReorderScopes)
+  const manageTileOrdering = useTileOrdering(manageAttentionScope ?? null)
+
+  // The Manage dialog's save-state indicator unmounts with the dialog, so a
+  // reorder that fails after the user closed it would otherwise be invisible.
+  // Surface it globally and point the user back at the dialog, where the
+  // Retry / Use server order actions remain available.
+  useEffect(() => {
+    if (dialogOpen || manageAttentionScope === undefined) return
+    // Latch per status transition so a dismissed snackbar is not re-set by
+    // unrelated coordinator notifications while the status is unchanged.
+    let surfacedStatus: string | null = null
+    const surface = () => {
+      const status = tileOrderingCoordinator.getScope(manageAttentionScope).status
+      if (status !== 'conflict' && status !== 'error') {
+        surfacedStatus = null
+        return
+      }
+      if (status === surfacedStatus) return
+      surfacedStatus = status
+      if (status === 'conflict') {
+        setErrorSnack('Category order changed elsewhere — reopen Manage Categories to resolve.')
+      } else {
+        setErrorSnack('Category order could not be saved — reopen Manage Categories to retry.')
+      }
+    }
+    surface()
+    return tileOrderingCoordinator.subscribe(surface)
+  }, [dialogOpen, manageAttentionScope])
+
+  // Once the dialog is closed and every tracked scope has settled, stop
+  // tracking, so the snackbar above stops firing for later conflicts the
+  // dialog didn't cause (e.g. a Browse reorder of the same scope) and a
+  // reopened dialog starts without a stale save-state readout. While a
+  // tracked scope is still unsettled, a Browse-caused failure of that same
+  // scope can still trip the snackbar — accepted, since the scope also
+  // carries the dialog's unsaved intent at that point.
+  useEffect(() => {
+    if (dialogOpen || manageReorderScopes === null) return
+    let cancelled = false
+    const clearWhenSettled = () => {
+      if (cancelled) return
+      const settled = manageReorderScopes.every((scope) => {
+        const status = tileOrderingCoordinator.getScope(scope).status
+        return status === 'saved' || status === 'idle'
+      })
+      if (settled) setManageReorderScopes(null)
+    }
+    queueMicrotask(clearWhenSettled)
+    const unsubscribe = tileOrderingCoordinator.subscribe(clearWhenSettled)
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
+  }, [dialogOpen, manageReorderScopes, setManageReorderScopes])
 
   const visibleJobs = getVisibleJobs({
     uploadOpen,
@@ -1076,6 +1136,14 @@ export default function App() {
     acceptServerOrder()
     void handleReorderComplete()
   }, [acceptServerOrder, handleReorderComplete])
+
+  // Manage Categories counterpart: adopting the server order there can also
+  // stem from membership drift, so reload the shared browse data too.
+  const manageAcceptServerOrder = manageTileOrdering.acceptServerOrder
+  const handleManageAcceptServerOrder = useCallback(() => {
+    manageAcceptServerOrder()
+    void handleReorderComplete()
+  }, [manageAcceptServerOrder, handleReorderComplete])
 
   const handleReorderError = useCallback((err: unknown) => {
     setErrorSnack(userMessage(err, 'Failed to reorder tiles.'))
@@ -1946,9 +2014,20 @@ export default function App() {
         onDeleteCategory={deleteCategoryInline}
         onEditCategory={editCategoryInline}
         onToggleVisibility={toggleCategoryVisibility}
-        onReorderCategories={reorderCategoriesInline}
-        onReorderImages={reorderImagesInline}
+        onReorderTiles={reorderTilesFromManage}
         onReorderComplete={handleReorderComplete}
+        reorderStatus={
+          manageAttentionScope !== undefined ? (
+            <ReorderStatusIndicator
+              ariaLabel="Manage Categories reorder save state"
+              status={manageTileOrdering.status}
+              serverOrderAvailable={manageTileOrdering.serverOrderAvailable}
+              onRetry={manageTileOrdering.retry}
+              onAcceptServerOrder={handleManageAcceptServerOrder}
+              onReapplyLocalOrder={manageTileOrdering.reapplyLocalOrder}
+            />
+          ) : undefined
+        }
         programs={programs}
         groups={groups}
       />

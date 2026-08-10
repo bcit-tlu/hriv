@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useCategoryActions } from '../src/useCategoryActions'
 import type { UseCategoryActionsDeps } from '../src/useCategoryActions'
 import * as api from '../src/api'
+import { tileOrderingCoordinator } from '../src/tileOrdering'
 import { makeCategory, makeImage } from './helpers/fixtures'
 
 vi.mock('../src/api', async () => {
@@ -372,63 +373,90 @@ describe('useCategoryActions', () => {
     })
   })
 
-  describe('reorderCategoriesInline', () => {
-    it('calls reorder API without reloading (caller handles reload)', async () => {
-      const deps = makeDeps()
-      mockReorderCategories.mockResolvedValue(undefined)
-      const items = [{ id: 1, parent_id: null, sort_order: 0 }]
-      const { result } = renderHook(() => useCategoryActions(deps))
-
-      await act(async () => {
-        await result.current.reorderCategoriesInline(items)
-      })
-
-      expect(mockReorderCategories).toHaveBeenCalledWith(items, expect.any(String))
-      expect(deps.loadCategories).not.toHaveBeenCalled()
+  describe('reorderTilesFromManage', () => {
+    // tileOrderingCoordinator is a module-level singleton: restore its spies
+    // even when an assertion fails mid-test so stubs never leak.
+    afterEach(() => {
+      vi.restoreAllMocks()
     })
 
-    it('shows error snack and re-throws on failure', async () => {
+    it('reports each scope order to the shared coordinator', async () => {
       const deps = makeDeps()
-      mockReorderCategories.mockRejectedValue(new Error('fail'))
+      const reportOrder = vi
+        .spyOn(tileOrderingCoordinator, 'reportOrder')
+        .mockImplementation(() => {})
       const { result } = renderHook(() => useCategoryActions(deps))
 
-      await act(async () => {
-        await expect(result.current.reorderCategoriesInline([])).rejects.toThrow('fail')
-      })
-
-      expect(deps.setErrorSnack).toHaveBeenCalled()
-    })
-  })
-
-  describe('reorderImagesInline', () => {
-    it('calls reorder API without reloading (caller handles reload)', async () => {
-      const deps = makeDeps()
-      mockReorderImages.mockResolvedValue(undefined)
-      const items = [
-        { id: 10, sort_order: 0 },
-        { id: 11, sort_order: 1 },
+      const scopes = [
+        { scope: null, order: [{ type: 'category' as const, id: 2 }] },
+        { scope: 1, order: [{ type: 'image' as const, id: 10 }] },
       ]
-      const { result } = renderHook(() => useCategoryActions(deps))
-
       await act(async () => {
-        await result.current.reorderImagesInline(items)
+        await result.current.reorderTilesFromManage([], scopes)
       })
 
-      expect(mockReorderImages).toHaveBeenCalledWith(items, expect.any(String))
-      expect(deps.loadCategories).not.toHaveBeenCalled()
-      expect(deps.loadUncategorizedImages).not.toHaveBeenCalled()
+      expect(reportOrder).toHaveBeenCalledTimes(2)
+      expect(reportOrder).toHaveBeenNthCalledWith(1, null, scopes[0].order, undefined, undefined)
+      expect(reportOrder).toHaveBeenNthCalledWith(2, 1, scopes[1].order, undefined, undefined)
+      expect(result.current.manageReorderScopes).toEqual([null, 1])
     })
 
-    it('shows error snack and re-throws on failure', async () => {
-      const deps = makeDeps()
-      mockReorderImages.mockRejectedValue(new Error('reorder failed'))
+    it('persists parent moves through the versioned category PATCH first', async () => {
+      const cat = makeCategory({ id: 2, version: 7 })
+      const deps = makeDeps({ categories: [cat] })
+      mockUpdateCategory.mockResolvedValue({
+        id: 2,
+        label: 'Cat',
+        parent_id: 5,
+        program_ids: [],
+        group_ids: [],
+        status: null,
+        sort_order: 0,
+        version: 8,
+        metadata_extra: null,
+        created_at: '',
+        updated_at: '',
+      })
+      const reportOrder = vi
+        .spyOn(tileOrderingCoordinator, 'reportOrder')
+        .mockImplementation(() => {})
       const { result } = renderHook(() => useCategoryActions(deps))
 
       await act(async () => {
-        await expect(result.current.reorderImagesInline([])).rejects.toThrow('reorder failed')
+        await result.current.reorderTilesFromManage(
+          [{ categoryId: 2, newParentId: 5 }],
+          [{ scope: 5, order: [{ type: 'category', id: 2 }] }],
+        )
+      })
+
+      expect(mockUpdateCategory).toHaveBeenCalledWith(2, { parent_id: 5 }, 7)
+      expect(reportOrder).toHaveBeenCalledWith(
+        5,
+        [{ type: 'category', id: 2 }],
+        undefined,
+        undefined,
+      )
+    })
+
+    it('shows error snack, re-throws, and skips ordering when a move fails', async () => {
+      const deps = makeDeps({ categories: [makeCategory({ id: 2 })] })
+      mockUpdateCategory.mockRejectedValue(new Error('move failed'))
+      const reportOrder = vi
+        .spyOn(tileOrderingCoordinator, 'reportOrder')
+        .mockImplementation(() => {})
+      const { result } = renderHook(() => useCategoryActions(deps))
+
+      await act(async () => {
+        await expect(
+          result.current.reorderTilesFromManage(
+            [{ categoryId: 2, newParentId: null }],
+            [{ scope: null, order: [] }],
+          ),
+        ).rejects.toThrow('move failed')
       })
 
       expect(deps.setErrorSnack).toHaveBeenCalled()
+      expect(reportOrder).not.toHaveBeenCalled()
     })
   })
 

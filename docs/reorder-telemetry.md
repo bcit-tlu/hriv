@@ -17,8 +17,10 @@ Every ordering operation gets a client-generated `operation_id`
 1. **Frontend diagnostic events** — one `reorder.operation` telemetry event
    per lifecycle state transition, sent through the authenticated ingestion
    endpoint (`POST /api/telemetry/events`).
-2. **Persistence requests** — `PUT /api/categories/reorder` and
-   `PUT /api/images/reorder` carry the `X-Reorder-Operation-Id` header.
+2. **Persistence requests** — `PUT /api/tile-order` carries the operation ID
+   in its request body (`operation_id`); the legacy
+   `PUT /api/categories/reorder` and `PUT /api/images/reorder` endpoints
+   carry the `X-Reorder-Operation-Id` header while they remain.
 3. **Backend spans** — `category.reorder` / `image.reorder` spans carry the
    `reorder.operation_id`, `reorder.entity`, and `reorder.item_count`
    attributes.
@@ -52,16 +54,17 @@ As of #979 the Browse coordinator (`frontend/src/tileOrdering.ts`) emits
 grid path (the coordinator survives navigation, so Browse no longer emits
 `abandoned` at all), and
 `stale_discarded` is emitted since #980 when conflict resolution discards a
-queued snapshot (see below). Both reorder surfaces are
-instrumented: the Browse grid (via the coordinator, full lifecycle) and the
-Manage Categories dialog
-(`submitted`/`committed`/`failed`). Every surface emits exactly one
-`submitted` and one terminal event per operation ID: a Manage Categories drag
-that persists both categories and images shares one operation ID across both
-requests, with the dialog owning the single lifecycle (the
-`useCategoryActions` inline helpers skip their own emission when the caller
-supplies an operation ID). A drag whose category half succeeded but whose
-image half failed is reported as one `failed` operation.
+queued snapshot (see below). As of #982 both reorder surfaces
+persist through the same coordinator: the Browse grid and the Manage
+Categories dialog both hand their full per-scope order to
+`tileOrderingCoordinator.reportOrder`, so the coordinator owns the entire
+lifecycle for every ordering operation (the dialog no longer emits its own
+`submitted`/`committed`/`failed` events, and the former `useCategoryActions`
+inline reorder helpers were removed). Each coordinator save is one operation
+ID per scope — a Manage drag that touches two scopes (a cross-parent move)
+produces one lifecycle per affected scope rather than one shared ID. Each
+lifecycle pairs exactly one `submitted` with one terminal event per
+operation ID.
 
 Three coordinator edge cases relax that pairing. Two are tied to revision
 seeding (the one-time `GET /api/tile-order` that fetches a scope's CAS token
@@ -107,7 +110,10 @@ synthetic reorder volume.
   `mixed` scopes and category moves)
 - `image_id` (moved image, for single image moves; also drives the ingestion
   display-name lookup)
-- `from_index`, `to_index` (original and projected indices)
+- `from_index`, `to_index` (original and projected indices; on a cross-parent
+  Manage Categories move, `-1` marks the side where the dragged category is
+  absent — `to_index: -1` in the source scope it left, `from_index: -1` in the
+  destination scope it joined)
 - `category_count`, `image_count` (items in the persisted scope)
 - `queue_depth` (depth of the coalescing queue behind the in-flight save; at most 1 because newer snapshots replace each other)
 - `local_revision` (the client's ordering revision for the scope)

@@ -148,11 +148,10 @@ async def bulk_update_images(
             # mutation, matching PUT /api/tile-order's revision-then-rows
             # lock order (docs/tile-ordering.md).
             if "category_id" in update_data:
-                new_category_id = update_data["category_id"]
-                moved = [img for img in images if img.category_id != new_category_id]
+                moved = [img for img in images if img.category_id != update_data["category_id"]]
                 if moved:
                     affected = {scope_key_for(img.category_id) for img in moved}
-                    affected.add(scope_key_for(new_category_id))
+                    affected.add(scope_key_for(update_data["category_id"]))
                     await bump_scopes(db, affected)
             for img in images:
                 for key, value in update_data.items():
@@ -183,22 +182,28 @@ async def update_image(
             if not img:
                 raise HTTPException(status_code=404, detail="Image not found")
 
-            # An ordering write (a sort_order or category value that actually
-            # changes) must invalidate the affected scopes' tile-order
-            # revisions so a client holding an older revision gets a 409
-            # instead of silently overwriting this change. Value comparison
-            # (not key presence) keeps no-op metadata edits from bumping the
-            # revision. Revision locks are taken before any row mutation,
-            # matching PUT /api/tile-order's revision-then-rows lock order
-            # (docs/tile-ordering.md).
+            # An ordering write (sort_order or a category move) must
+            # invalidate the affected scopes' tile-order revisions so a
+            # client holding an older revision gets a 409 instead of
+            # silently overwriting this change. Revision locks are taken
+            # before any row mutation, matching PUT /api/tile-order's
+            # revision-then-rows lock order (docs/tile-ordering.md).
+            # Only an actual value change invalidates: edit dialogs echo the
+            # current category_id/sort_order back on every save, and bumping
+            # on presence alone would 409 clients whose cached revision is
+            # still accurate.
             ordering_fields = body.model_dump(exclude_unset=True)
-            affected: set[int] = set()
-            if ordering_fields.get("sort_order", img.sort_order) != img.sort_order:
-                affected.add(scope_key_for(img.category_id))
-            if ordering_fields.get("category_id", img.category_id) != img.category_id:
-                affected.add(scope_key_for(img.category_id))
-                affected.add(scope_key_for(ordering_fields["category_id"]))
-            if affected:
+            sort_changed = (
+                "sort_order" in ordering_fields and ordering_fields["sort_order"] != img.sort_order
+            )
+            category_changed = (
+                "category_id" in ordering_fields
+                and ordering_fields["category_id"] != img.category_id
+            )
+            if sort_changed or category_changed:
+                affected = {scope_key_for(img.category_id)}
+                if category_changed:
+                    affected.add(scope_key_for(ordering_fields["category_id"]))
                 await bump_scopes(db, affected)
 
             # Optimistic concurrency: if the client sends If-Match, verify the
@@ -310,37 +315,32 @@ async def replace_image(
                 v is not None
                 for v in (name, category_id, copyright, note, active, metadata_extra)
             )
+            # Parse and validate all metadata fields up front so 400s fire
+            # before any disk or database work, and so no lock is held
+            # while the client streams the file.
+            parsed_cat: int | None = None
+            parsed_note: str | None = None
+            parsed_metadata: dict | list | None = None
+            span.set_attribute("image.metadata_update", has_metadata)
             if has_metadata:
-                span.set_attribute("image.metadata_update", True)
-                if name is not None:
-                    img.name = name
                 if category_id is not None:
                     try:
                         parsed_cat = int(category_id) if category_id != "" else None
                     except (ValueError, TypeError):
                         raise HTTPException(status_code=400, detail="Invalid category_id")
-                    img.category_id = parsed_cat
-                if copyright is not None:
-                    img.copyright = copyright if copyright != "" else None
                 if note is not None:
                     try:
-                        note = normalize_note_value(note)
+                        parsed_note = normalize_note_value(note)
                     except ValueError:
                         raise HTTPException(
                             status_code=400,
                             detail=f"Note must be {MAX_NOTE_LENGTH} characters or fewer",
                         )
-                    img.note = note
-                if active is not None:
-                    img.active = active.lower() in ("true", "1")
                 if metadata_extra is not None:
                     try:
-                        img.metadata_ = json.loads(metadata_extra) if metadata_extra else None
+                        parsed_metadata = json.loads(metadata_extra) if metadata_extra else None
                     except (json.JSONDecodeError, TypeError):
                         raise HTTPException(status_code=400, detail="Invalid metadata_extra")
-                img.version = img.version + 1
-            else:
-                span.set_attribute("image.metadata_update", False)
 
             os.makedirs(settings.source_images_dir, exist_ok=True)
 
@@ -375,6 +375,36 @@ async def replace_image(
                 raise
 
             file_size = os.path.getsize(stored_path)
+
+            # ── Apply optional metadata updates atomically ──────────
+            # Done after the upload loop so the revision lock below is
+            # held only for the short transaction, never across client
+            # I/O; and before any row mutation so the session is clean
+            # while the lock is taken, preserving the revision-then-rows
+            # lock order (docs/tile-ordering.md).
+            if has_metadata:
+                if category_id is not None and parsed_cat != img.category_id:
+                    # A category move changes scope membership: invalidate
+                    # both scopes' tile-order revisions so clients holding
+                    # older revisions get a 409 instead of silently
+                    # overwriting (same rule as PATCH /images/{id}).
+                    await bump_scopes(
+                        db,
+                        {scope_key_for(img.category_id), scope_key_for(parsed_cat)},
+                    )
+                if category_id is not None:
+                    img.category_id = parsed_cat
+                if name is not None:
+                    img.name = name
+                if copyright is not None:
+                    img.copyright = copyright if copyright != "" else None
+                if note is not None:
+                    img.note = parsed_note
+                if active is not None:
+                    img.active = active.lower() in ("true", "1")
+                if metadata_extra is not None:
+                    img.metadata_ = parsed_metadata
+                img.version = img.version + 1
 
             src = SourceImage(
                 original_filename=file.filename,

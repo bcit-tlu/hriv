@@ -207,6 +207,24 @@ export class TileOrderingCoordinator {
   }
 
   /**
+   * Forget a scope's cached revision (CAS token) so the next save re-seeds
+   * it with a GET. Called after an operation outside the coordinator bumps
+   * the scope's server-side revision (e.g. a category parent-move PATCH),
+   * which would otherwise make the coordinator's next PUT falsely 409 as
+   * "order changed elsewhere". Local order intent is left untouched —
+   * including the write counter: dropping a CAS token is not a local order
+   * write, so it must not shield the scope's cached display order from a
+   * `releaseCleanScopes` whose marker predates the invalidation.
+   */
+  invalidateRevision(scope: ScopeId): void {
+    const key = scopeKey(scope)
+    const state = this.scopes.get(key)
+    if (!state || state.revision === null) return
+    this.scopes.set(key, { ...state, revision: null })
+    for (const listener of this.listeners) listener()
+  }
+
+  /**
    * Snapshot of the write counter. Capture before starting a data refresh
    * and pass to `releaseCleanScopes` so scopes saved while the refresh was
    * in flight (whose order is newer than the fetched data) survive.
@@ -260,7 +278,11 @@ export class TileOrderingCoordinator {
     if (generation !== undefined && !this.isCurrentGeneration(scope, generation)) return
     const state = this.getScope(scope)
     if (state.displayOrder !== null && sameOrder(state.displayOrder, order)) return
+    // A contextless report clears any stored context so a scope can never
+    // attach an earlier operation's drag detail to this submission's
+    // telemetry (e.g. a Manage drop reporting sibling scopes of a drag).
     if (dragContext !== undefined) this.dragContexts.set(scopeKey(scope), dragContext)
+    else this.dragContexts.delete(scopeKey(scope))
 
     // A drop while a conflict is unresolved folds into the retained local
     // intent instead of auto-submitting with the conflict-time revision:
@@ -645,3 +667,19 @@ export class TileOrderingCoordinator {
  * component so pending saves survive SPA navigation and grid remounts.
  */
 export const tileOrderingCoordinator = new TileOrderingCoordinator()
+
+/**
+ * A category change through an entity write (edit modal, move dialog, bulk
+ * edit) bumps the tile-order revision of both affected scopes server-side, so
+ * any revision the coordinator still caches for them is stale and would make
+ * the next reorder falsely 409. No-op when the category is unchanged — the
+ * server only bumps on an actual value change.
+ */
+export function invalidateMovedImageScopes(
+  oldCategoryId: ScopeId,
+  newCategoryId: number | null | undefined,
+): void {
+  if (newCategoryId === undefined || newCategoryId === oldCategoryId) return
+  tileOrderingCoordinator.invalidateRevision(oldCategoryId)
+  tileOrderingCoordinator.invalidateRevision(newCategoryId)
+}

@@ -664,6 +664,41 @@ describe('TileOrderingCoordinator', () => {
     expect(coordinator.getScope(null).displayOrder).toBeNull()
   })
 
+  it('invalidateRevision forces the next save to re-seed against the server revision', async () => {
+    mockedPut.mockResolvedValueOnce(response(2, refs(2, 1)))
+    coordinator.reportOrder(null, refs(2, 1))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('saved')
+
+    // An operation outside the coordinator (e.g. a parent-move PATCH) bumped
+    // the scope's server-side revision: the cached token is now stale.
+    coordinator.invalidateRevision(null)
+    expect(coordinator.getScope(null).revision).toBeNull()
+
+    mockedGet.mockResolvedValueOnce(response(5, refs(2, 1)))
+    mockedPut.mockResolvedValueOnce(response(6, refs(1, 2)))
+    coordinator.reportOrder(null, refs(1, 2))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('saved')
+    expect(mockedPut).toHaveBeenLastCalledWith(null, 5, refs(1, 2), expect.any(String))
+  })
+
+  it('invalidateRevision does not shield a scope from a release whose marker predates it', async () => {
+    mockedPut.mockResolvedValueOnce(response(2, refs(2, 1)))
+    coordinator.reportOrder(null, refs(2, 1))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('saved')
+
+    // A refresh starts (captures the marker), then an entity move invalidates
+    // the scope's revision while the refresh is in flight. Dropping the CAS
+    // token is not a local order write, so the release must still discard
+    // the cached display order in favour of the refreshed data.
+    const marker = coordinator.marker()
+    coordinator.invalidateRevision(null)
+    coordinator.releaseCleanScopes(marker)
+    expect(coordinator.getScope(null).displayOrder).toBeNull()
+  })
+
   it('a released scope re-seeds its revision so external bumps never cause a false conflict', async () => {
     mockedPut.mockResolvedValueOnce(response(2, refs(2, 1)))
     coordinator.reportOrder(null, refs(2, 1))
@@ -742,6 +777,26 @@ describe('TileOrderingCoordinator', () => {
       fromIndex: 1,
       toIndex: 0,
     })
+  })
+
+  it('a contextless report clears a previously stored drag context', async () => {
+    mockedPut.mockResolvedValueOnce(response(2, refs(2, 1, 3)))
+    coordinator.reportOrder(null, refs(2, 1, 3), undefined, {
+      itemType: 'image',
+      itemId: 2,
+      fromIndex: 1,
+      toIndex: 0,
+    })
+    await flushMicrotasks()
+
+    mockedPut.mockResolvedValueOnce(response(3, refs(1, 2, 3)))
+    coordinator.reportOrder(null, refs(1, 2, 3))
+    await flushMicrotasks()
+
+    const submitted = events.filter((e) => e.state === 'submitted')
+    expect(submitted).toHaveLength(2)
+    expect(submitted[1].itemId).toBeUndefined()
+    expect(submitted[1].fromIndex).toBeUndefined()
   })
 
   it('a stale seeding flush cannot clear a post-reset seeding mark', async () => {

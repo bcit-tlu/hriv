@@ -10,6 +10,8 @@ import type { TileOrderStatus } from '../tileOrdering'
 
 export interface ReorderStatusIndicatorProps {
   status: TileOrderStatus
+  /** Accessible name for the status live region (unique per mounted surface). */
+  ariaLabel?: string
   /** A retained authoritative server order can still be adopted. */
   serverOrderAvailable?: boolean
   onRetry: () => void
@@ -28,6 +30,7 @@ export interface ReorderStatusIndicatorProps {
  */
 export default function ReorderStatusIndicator({
   status,
+  ariaLabel = 'Reorder save state',
   serverOrderAvailable = false,
   onRetry,
   onAcceptServerOrder,
@@ -108,7 +111,7 @@ export default function ReorderStatusIndicator({
   return (
     <Box
       role="status"
-      aria-label="Reorder save state"
+      aria-label={ariaLabel}
       sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, minHeight: 28 }}
     >
       {content}

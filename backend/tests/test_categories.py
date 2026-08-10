@@ -3,7 +3,7 @@
 import json as _json
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -521,6 +521,51 @@ async def test_update_category_descendant_cycle() -> None:
         await update_category(1, body, _mock_request(), MagicMock(), db=db)
     assert exc.value.status_code == 400
     assert "descendants" in exc.value.detail.lower()
+
+
+async def test_update_category_unchanged_ordering_fields_do_not_bump_scopes() -> None:
+    """Edit dialogs echo parent_id/sort_order back on every save; bumping on
+    presence alone would 409 clients whose cached revision is still accurate."""
+    cat = _make_category(1, "Cat", parent_id=5, sort_order=2)
+    body = CategoryUpdate(label="Renamed", parent_id=5, sort_order=2)
+
+    dup_result = MagicMock()
+    dup_result.scalar_one_or_none.return_value = None
+    parent = _make_category(5, "Parent")
+
+    async def mock_get(model, id_):
+        return {1: cat, 5: parent}.get(id_)
+
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=mock_get)
+    db.execute = AsyncMock(return_value=dup_result)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    with patch("app.routers.categories.bump_scopes", new=AsyncMock()) as bump:
+        await update_category(1, body, _mock_request(), MagicMock(), db=db)
+
+    bump.assert_not_awaited()
+
+
+async def test_update_category_parent_change_bumps_both_scopes() -> None:
+    cat = _make_category(1, "Cat", parent_id=5)
+    body = CategoryUpdate(parent_id=None)
+
+    dup_result = MagicMock()
+    dup_result.scalar_one_or_none.return_value = None
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=cat)
+    db.execute = AsyncMock(return_value=dup_result)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    with patch("app.routers.categories.bump_scopes", new=AsyncMock()) as bump:
+        await update_category(1, body, _mock_request(), MagicMock(), db=db)
+
+    bump.assert_awaited_once()
+    assert bump.await_args.args[1] == {5, 0}
 
 
 async def test_update_category_version_bumped_without_if_match() -> None:
