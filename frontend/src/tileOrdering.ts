@@ -361,10 +361,16 @@ export class TileOrderingCoordinator {
    * Resolve every scope needing attention (see `hasFailedScopesOutside`):
    * failed saves are retried; conflicted scopes adopt the server's
    * authoritative order — the same resolution the browsed-scope conflict
-   * affordance offers.
+   * affordance offers. `excluding` (the browsed scope, mirroring
+   * `hasFailedScopesOutside`) is left untouched: it renders its own
+   * affordances, so the cross-scope action must never discard the local
+   * intent the user can still see and act on. Pass `undefined` to resolve
+   * every scope (note the root scope is `null`, not `undefined`).
    */
-  retryFailedScopes(): void {
+  retryFailedScopes(excluding?: ScopeId): void {
+    const exclude = excluding === undefined ? undefined : scopeKey(excluding)
     for (const [key, state] of [...this.scopes]) {
+      if (key === exclude) continue
       if (state.status === 'error') this.retry(scopeFromKey(key))
       else if (state.status === 'conflict') this.acceptServerOrder(scopeFromKey(key))
     }

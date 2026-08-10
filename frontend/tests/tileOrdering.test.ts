@@ -259,6 +259,30 @@ describe('TileOrderingCoordinator', () => {
     expect(coordinator.hasFailedScopesOutside(null)).toBe(false)
   })
 
+  it('resolving other scopes leaves the excluded (browsed) scope untouched', async () => {
+    const current = response(3, refs(3, 1, 2))
+    const otherCurrent = response(5, refs(6, 5, 4))
+    mockedPut.mockRejectedValueOnce(conflictError(current))
+    mockedPut.mockRejectedValueOnce(conflictError(otherCurrent))
+
+    coordinator.reportOrder(null, refs(2, 1, 3))
+    await flushMicrotasks()
+    coordinator.reportOrder(7, refs(5, 4, 6))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('conflict')
+    expect(coordinator.getScope(7).status).toBe('conflict')
+
+    // Resolving "other" scopes from the browsed root scope settles scope 7
+    // but must not discard the root scope's own pending local intent.
+    coordinator.retryFailedScopes(null)
+    await flushMicrotasks()
+    expect(coordinator.getScope(7).status).toBe('saved')
+    const browsed = coordinator.getScope(null)
+    expect(browsed.status).toBe('conflict')
+    expect(browsed.pending).toEqual(refs(2, 1, 3))
+    expect(browsed.displayOrder).toEqual(refs(2, 1, 3))
+  })
+
   it('a failure does not roll back newer local changes', async () => {
     const first = deferred<TileOrderResponse>()
     mockedPut.mockReturnValueOnce(first.promise)
