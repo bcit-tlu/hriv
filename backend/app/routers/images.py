@@ -148,9 +148,12 @@ async def bulk_update_images(
             # mutation, matching PUT /api/tile-order's revision-then-rows
             # lock order (docs/tile-ordering.md).
             if "category_id" in update_data:
-                affected = {scope_key_for(img.category_id) for img in images}
-                affected.add(scope_key_for(update_data["category_id"]))
-                await bump_scopes(db, affected)
+                new_category_id = update_data["category_id"]
+                moved = [img for img in images if img.category_id != new_category_id]
+                if moved:
+                    affected = {scope_key_for(img.category_id) for img in moved}
+                    affected.add(scope_key_for(new_category_id))
+                    await bump_scopes(db, affected)
             for img in images:
                 for key, value in update_data.items():
                     setattr(img, key, value)
@@ -180,17 +183,22 @@ async def update_image(
             if not img:
                 raise HTTPException(status_code=404, detail="Image not found")
 
-            # An ordering write (sort_order or a category move) must
-            # invalidate the affected scopes' tile-order revisions so a
-            # client holding an older revision gets a 409 instead of
-            # silently overwriting this change. Revision locks are taken
-            # before any row mutation, matching PUT /api/tile-order's
-            # revision-then-rows lock order (docs/tile-ordering.md).
+            # An ordering write (a sort_order or category value that actually
+            # changes) must invalidate the affected scopes' tile-order
+            # revisions so a client holding an older revision gets a 409
+            # instead of silently overwriting this change. Value comparison
+            # (not key presence) keeps no-op metadata edits from bumping the
+            # revision. Revision locks are taken before any row mutation,
+            # matching PUT /api/tile-order's revision-then-rows lock order
+            # (docs/tile-ordering.md).
             ordering_fields = body.model_dump(exclude_unset=True)
-            if "sort_order" in ordering_fields or "category_id" in ordering_fields:
-                affected = {scope_key_for(img.category_id)}
-                if "category_id" in ordering_fields:
-                    affected.add(scope_key_for(ordering_fields["category_id"]))
+            affected: set[int] = set()
+            if ordering_fields.get("sort_order", img.sort_order) != img.sort_order:
+                affected.add(scope_key_for(img.category_id))
+            if ordering_fields.get("category_id", img.category_id) != img.category_id:
+                affected.add(scope_key_for(img.category_id))
+                affected.add(scope_key_for(ordering_fields["category_id"]))
+            if affected:
                 await bump_scopes(db, affected)
 
             # Optimistic concurrency: if the client sends If-Match, verify the

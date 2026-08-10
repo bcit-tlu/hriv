@@ -413,17 +413,21 @@ async def update_category(
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found")
 
-    # An ordering write (sort_order or a parent move) must invalidate the
-    # affected scopes' tile-order revisions so a client holding an older
-    # revision gets a 409 instead of silently overwriting this change.
-    # Revision locks are taken before any row mutation, matching
-    # PUT /api/tile-order's revision-then-rows lock order
-    # (docs/tile-ordering.md).
+    # An ordering write (a sort_order or parent value that actually changes)
+    # must invalidate the affected scopes' tile-order revisions so a client
+    # holding an older revision gets a 409 instead of silently overwriting
+    # this change. Value comparison (not key presence) keeps no-op metadata
+    # edits from bumping the revision. Revision locks are taken before any
+    # row mutation, matching PUT /api/tile-order's revision-then-rows lock
+    # order (docs/tile-ordering.md).
     ordering_fields = body.model_dump(exclude_unset=True)
-    if "sort_order" in ordering_fields or "parent_id" in ordering_fields:
-        affected = {scope_key_for(cat.parent_id)}
-        if "parent_id" in ordering_fields:
-            affected.add(scope_key_for(ordering_fields["parent_id"]))
+    affected: set[int] = set()
+    if ordering_fields.get("sort_order", cat.sort_order) != cat.sort_order:
+        affected.add(scope_key_for(cat.parent_id))
+    if ordering_fields.get("parent_id", cat.parent_id) != cat.parent_id:
+        affected.add(scope_key_for(cat.parent_id))
+        affected.add(scope_key_for(ordering_fields["parent_id"]))
+    if affected:
         await bump_scopes(db, affected)
 
     # Optimistic concurrency: same CAS pattern as image updates.
