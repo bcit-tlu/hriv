@@ -714,7 +714,15 @@ describe('ManageCategoriesDialog — edit save', () => {
 // Tests — Drag-and-drop reorder
 // ---------------------------------------------------------------------------
 
-/** Give the list and its rows deterministic geometry (jsdom rects are all 0). */
+/**
+ * Give the list and its rows deterministic geometry (jsdom rects are all 0).
+ *
+ * Rects are assigned by index over ALL rows, including the row that is later
+ * dragged. computeDropTarget filters the dragged row out of the visible set
+ * but keeps the remaining rows' original rects, so the visible rows have a
+ * y-gap at the dragged row's slot — drop coordinates near that slot resolve
+ * against the gapped midpoints, not a re-packed list.
+ */
 function mockListGeometry() {
   // Scope to the list that actually contains the category rows
   const list = document
@@ -827,12 +835,13 @@ describe('ManageCategoriesDialog — drag-and-drop reorder', () => {
     await waitFor(() => expect(onReorderTiles).toHaveBeenCalledTimes(1))
     const [moves, scopes] = onReorderTiles.mock.calls[0] as [ParentMove[], ScopeOrder[]]
     expect(moves).toEqual([])
-    expect(scopes[0].order).toEqual([
+    const rootScope = scopes.find((s) => s.scope === null)
+    expect(rootScope?.order).toEqual([
       { type: 'category', id: 1 },
       { type: 'category', id: 3 },
       { type: 'category', id: 2 },
     ])
-    expect(scopes[0].dragContext).toEqual({
+    expect(rootScope?.dragContext).toEqual({
       itemType: 'category',
       itemId: 3,
       fromIndex: 2,
@@ -874,7 +883,7 @@ describe('ManageCategoriesDialog — drag-and-drop reorder', () => {
     await waitFor(() => expect(onReorderTiles).toHaveBeenCalledTimes(1))
     const [, scopes] = onReorderTiles.mock.calls[0] as [ParentMove[], ScopeOrder[]]
     // The image keeps interleave slot 0; the categories fill the rest
-    expect(scopes[0].order).toEqual([
+    expect(scopes.find((s) => s.scope === null)?.order).toEqual([
       { type: 'image', id: 100 },
       { type: 'category', id: 1 },
       { type: 'category', id: 3 },
@@ -916,8 +925,7 @@ describe('ManageCategoriesDialog — drag-and-drop reorder', () => {
     const [moves, scopes] = onReorderTiles.mock.calls[0] as [ParentMove[], ScopeOrder[]]
     // Alpha moved after Beta at root; AlphaChild stays under Alpha (no move)
     expect(moves).toEqual([])
-    expect(scopes[0].scope).toBeNull()
-    expect(scopes[0].order).toEqual([
+    expect(scopes.find((s) => s.scope === null)?.order).toEqual([
       { type: 'category', id: 2 },
       { type: 'category', id: 1 },
     ])
