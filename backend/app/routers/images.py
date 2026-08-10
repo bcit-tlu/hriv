@@ -33,6 +33,7 @@ from ..reorder_telemetry import (
     record_reorder_result,
     sanitize_reorder_operation_id,
 )
+from ..tile_order import bump_scopes, scope_key_for
 from ..tracing import record_exception_if_server_error
 from ..visibility import get_student_excluded_category_ids, is_category_visible_to_student
 
@@ -140,6 +141,19 @@ async def bulk_update_images(
             if len(images) != len(set(body.image_ids)):
                 raise HTTPException(status_code=404, detail="One or more images not found")
             update_data = body.model_dump(exclude_unset=True, exclude={"image_ids"})
+            # A bulk category move changes scope membership: invalidate the
+            # tile-order revisions of every source scope and the destination
+            # scope so clients of PUT /api/tile-order get a 409 instead of
+            # silently overwriting. Revision locks are taken before any row
+            # mutation, matching PUT /api/tile-order's revision-then-rows
+            # lock order (docs/tile-ordering.md).
+            if "category_id" in update_data:
+                new_category_id = update_data["category_id"]
+                moved = [img for img in images if img.category_id != new_category_id]
+                if moved:
+                    affected = {scope_key_for(img.category_id) for img in moved}
+                    affected.add(scope_key_for(new_category_id))
+                    await bump_scopes(db, affected)
             for img in images:
                 for key, value in update_data.items():
                     setattr(img, key, value)
@@ -168,6 +182,24 @@ async def update_image(
             img = await db.get(Image, image_id)
             if not img:
                 raise HTTPException(status_code=404, detail="Image not found")
+
+            # An ordering write (a sort_order or category value that actually
+            # changes) must invalidate the affected scopes' tile-order
+            # revisions so a client holding an older revision gets a 409
+            # instead of silently overwriting this change. Value comparison
+            # (not key presence) keeps no-op metadata edits from bumping the
+            # revision. Revision locks are taken before any row mutation,
+            # matching PUT /api/tile-order's revision-then-rows lock order
+            # (docs/tile-ordering.md).
+            ordering_fields = body.model_dump(exclude_unset=True)
+            affected: set[int] = set()
+            if ordering_fields.get("sort_order", img.sort_order) != img.sort_order:
+                affected.add(scope_key_for(img.category_id))
+            if ordering_fields.get("category_id", img.category_id) != img.category_id:
+                affected.add(scope_key_for(img.category_id))
+                affected.add(scope_key_for(ordering_fields["category_id"]))
+            if affected:
+                await bump_scopes(db, affected)
 
             # Optimistic concurrency: if the client sends If-Match, verify the
             # version has not changed since the client last read the resource.
@@ -430,10 +462,22 @@ async def reorder_images(
                 operation_id=operation_id,
                 item_count=len(body.items),
             )
+            affected_scopes: set[int] = set()
+            imgs: list[Image] = []
             for item in body.items:
                 img = await db.get(Image, item.id)
                 if img is None:
                     raise HTTPException(status_code=404, detail=f"Image {item.id} not found")
+                affected_scopes.add(scope_key_for(img.category_id))
+                imgs.append(img)
+            # Invalidate tile-order revisions for every touched scope so
+            # clients of PUT /api/tile-order get a 409 instead of silently
+            # overwriting this write. Revision locks are taken BEFORE the
+            # image rows are mutated, matching PUT /api/tile-order's
+            # revision-then-rows lock order to avoid deadlocks
+            # (docs/tile-ordering.md).
+            await bump_scopes(db, affected_scopes)
+            for img, item in zip(imgs, body.items):
                 img.sort_order = item.sort_order
             await db.commit()
         except Exception as exc:

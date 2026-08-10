@@ -14,6 +14,7 @@ from ..authz import (
     can_attach_program_to_category,
 )
 from ..database import get_db
+from ..tile_order import bump_scopes, scope_key_for
 from ..reorder_telemetry import (
     annotate_reorder_span,
     classify_reorder_exception,
@@ -412,6 +413,23 @@ async def update_category(
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found")
 
+    # An ordering write (a sort_order or parent value that actually changes)
+    # must invalidate the affected scopes' tile-order revisions so a client
+    # holding an older revision gets a 409 instead of silently overwriting
+    # this change. Value comparison (not key presence) keeps no-op metadata
+    # edits from bumping the revision. Revision locks are taken before any
+    # row mutation, matching PUT /api/tile-order's revision-then-rows lock
+    # order (docs/tile-ordering.md).
+    ordering_fields = body.model_dump(exclude_unset=True)
+    affected: set[int] = set()
+    if ordering_fields.get("sort_order", cat.sort_order) != cat.sort_order:
+        affected.add(scope_key_for(cat.parent_id))
+    if ordering_fields.get("parent_id", cat.parent_id) != cat.parent_id:
+        affected.add(scope_key_for(cat.parent_id))
+        affected.add(scope_key_for(ordering_fields["parent_id"]))
+    if affected:
+        await bump_scopes(db, affected)
+
     # Optimistic concurrency: same CAS pattern as image updates.
     if_match = request.headers.get("If-Match")
     if if_match is not None:
@@ -542,10 +560,23 @@ async def reorder_categories(
                         ancestor = await db.get(Category, current)
                         current = ancestor.parent_id if ancestor else None
 
+            affected_scopes: set[int] = set()
+            cats: list[Category] = []
             for item in body.items:
                 cat = await db.get(Category, item.id)
                 if cat is None:
                     raise HTTPException(status_code=404, detail=f"Category {item.id} not found")
+                affected_scopes.add(scope_key_for(cat.parent_id))
+                affected_scopes.add(scope_key_for(item.parent_id))
+                cats.append(cat)
+            # Invalidate tile-order revisions for every touched scope so
+            # clients of PUT /api/tile-order get a 409 instead of silently
+            # overwriting this write. Revision locks are taken BEFORE the
+            # category rows are mutated, matching PUT /api/tile-order's
+            # revision-then-rows lock order to avoid deadlocks
+            # (docs/tile-ordering.md).
+            await bump_scopes(db, affected_scopes)
+            for cat, item in zip(cats, body.items):
                 cat.parent_id = item.parent_id
                 cat.sort_order = item.sort_order
             await db.commit()
