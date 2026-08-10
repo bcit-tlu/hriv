@@ -33,7 +33,7 @@ export const REORDER_OPERATION_STATES = [
   'conflicted',
   /** Persistence failed (fully or partially) and the UI rolled back. */
   'failed',
-  /** A refresh response was discarded because a newer operation superseded it. */
+  /** A queued snapshot or refresh response was discarded because it was superseded. */
   'stale_discarded',
   /** The component unmounted (navigation) while the operation was active (legacy path, removed in #998; the coordinator survives unmounts). */
   'abandoned',
