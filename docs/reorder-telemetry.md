@@ -46,16 +46,17 @@ share this bounded vocabulary:
 | `committed`       | Persistence completed successfully and the authoritative order was applied                 |
 | `conflicted`      | Backend rejected the operation due to a revision conflict                                  |
 | `failed`          | Persistence failed (fully or partially) and the UI rolled back                             |
-| `stale_discarded` | Refresh response discarded because a newer operation superseded it (future #980)           |
+| `stale_discarded` | Queued snapshot or refresh response discarded because it was superseded (#980)             |
 | `abandoned`       | Component unmounted (navigation) while the operation was active (legacy path)              |
 
 The coordinator (`frontend/src/tileOrdering.ts`) emits `queued`,
-`coalesced`, `submitted`, `committed`, `conflicted`, and `failed`.
-`ignored` and `abandoned` were emitted only by the legacy
-non-coordinator grid path removed in #998; they and `stale_discarded`
-remain in the vocabulary so historical dashboards keep working. As of #982
-both reorder surfaces persist through the same coordinator: the Browse grid
-and the Manage Categories dialog both hand their full per-scope order to
+`coalesced`, `submitted`, `committed`, `conflicted`, `failed`, and (since
+#980) `stale_discarded` when conflict resolution discards a queued snapshot
+(see below). `ignored` and `abandoned` were emitted only by the legacy
+non-coordinator grid path removed in #998; they remain in the vocabulary so
+historical dashboards keep working. As of #982 both reorder surfaces
+persist through the same coordinator: the Browse grid and the Manage
+Categories dialog both hand their full per-scope order to
 `tileOrderingCoordinator.reportOrder`, so the coordinator owns the entire
 lifecycle for every ordering operation (the dialog no longer emits its own
 `submitted`/`committed`/`failed` events). Each coordinator save is one
@@ -64,9 +65,9 @@ cross-parent move) produces one lifecycle per affected scope rather than one
 shared ID, and every surface emits exactly one `submitted` and one terminal
 event per operation ID.
 
-Two coordinator edge cases relax that pairing, both tied to revision seeding
-(the one-time `GET /api/tile-order` that fetches a scope's CAS token before
-its first save):
+Three coordinator edge cases relax that pairing. Two are tied to revision
+seeding (the one-time `GET /api/tile-order` that fetches a scope's CAS token
+before its first save):
 
 - A seeding failure emits a terminal `failed` for a fresh operation ID with
   no preceding `submitted` — nothing was ever submitted, so dashboards
@@ -76,6 +77,15 @@ its first save):
   coalesces into that snapshot and emits `coalesced` for an operation ID
   that never emitted `queued` (the seeded snapshot itself was reported via
   the dirty path, which does not mint a queue-time ID).
+
+The third is conflict resolution (#980): drops made while a 409 conflict is
+unresolved queue behind the retained local intent (the first mints a fresh
+operation ID and emits `queued`; later ones emit `coalesced` for it). If the
+user resolves the conflict with "Refresh" (`acceptServerOrder`), that queued
+snapshot is discarded and its operation ID closes with a terminal
+`stale_discarded` — such an ID never reaches `submitted`. Resolving with
+"Keep my order" (`reapplyLocalOrder`) re-submits the retained intent, so the
+ID continues its normal `submitted` → terminal lifecycle.
 
 Server-side, an event that omits `state` entirely is logged with
 `reorder.state: "missing"` and skipped by the client-operations counter, so

@@ -282,13 +282,15 @@ export class TileOrderingCoordinator {
     // server change is never silently overwritten (docs/tile-ordering.md).
     if (state.status === 'conflict') {
       const key = scopeKey(scope)
-      const operationId = this.pendingOperationIds.get(key) ?? newReorderOperationId()
+      // flush() consumed the scope's operation ID at submission, so the
+      // first drop after a 409 starts a fresh operation and emits `queued`;
+      // later drops during the same unresolved conflict coalesce into it.
+      const existingId = this.pendingOperationIds.get(key)
+      const operationId = existingId ?? newReorderOperationId()
       this.pendingOperationIds.set(key, operationId)
-      // A conflict always retains pending intent, so the drop always
-      // coalesces with it.
       emitReorderDiagnostic({
         operationId,
-        state: 'coalesced',
+        state: existingId !== undefined ? 'coalesced' : 'queued',
         scopeCategoryId: scope,
         queueDepth: 1,
       })
@@ -403,7 +405,16 @@ export class TileOrderingCoordinator {
     if (state.status !== 'conflict' && !(state.status === 'error' && state.conflictOrder !== null))
       return
     // The queued snapshot is discarded here, so its correlation ID and drag
-    // detail must not be inherited by the next (unrelated) operation.
+    // detail must not be inherited by the next (unrelated) operation. Give
+    // the discarded operation a terminal event so its lifecycle closes.
+    const discardedId = this.pendingOperationIds.get(scopeKey(scope))
+    if (discardedId !== undefined) {
+      emitReorderDiagnostic({
+        operationId: discardedId,
+        state: 'stale_discarded',
+        scopeCategoryId: scope,
+      })
+    }
     this.pendingOperationIds.delete(scopeKey(scope))
     this.dragContexts.delete(scopeKey(scope))
     this.setScope(scope, {

@@ -242,9 +242,11 @@ Conflict recovery is explicit, never last-write-wins: on 409 the indicator
 offers both **Refresh** (adopt the server's authoritative order via
 `acceptServerOrder`) and **Keep my order** (`reapplyLocalOrder`, which
 resubmits the newest local intent against the authoritative revision from
-the conflict body). Scope-specific refreshes go through
-`GET /api/tile-order` for the affected scope rather than reloading the
-full category tree.
+the conflict body). Inside the coordinator, the membership-drift (400)
+conflict path re-fetches only the affected scope via `GET /api/tile-order`;
+the UI-level **Refresh** action itself reloads the full category tree and
+uncategorized images (`handleReorderComplete` in `App.tsx`) so everything the
+user sees is consistent after adopting the server's order.
 
 ## Tests
 
