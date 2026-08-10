@@ -141,8 +141,11 @@ describe('GridTile memoization inside SortableTileGrid', () => {
         onImageClick={noop}
         onFilesDrop={noop}
         onDropImageOnCategory={noop}
-        onReorderComplete={noop}
-        onReorderError={noop}
+        tileOrdering={{
+          displayOrder: null,
+          reportOrder: noop,
+          claimGeneration: () => 1,
+        }}
       />,
     )
   }
