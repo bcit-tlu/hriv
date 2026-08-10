@@ -955,11 +955,20 @@ export default function App() {
   // Retry / Use server order actions remain available.
   useEffect(() => {
     if (dialogOpen || manageAttentionScope === undefined) return
+    // Latch per status transition so a dismissed snackbar is not re-set by
+    // unrelated coordinator notifications while the status is unchanged.
+    let surfacedStatus: string | null = null
     const surface = () => {
       const status = tileOrderingCoordinator.getScope(manageAttentionScope).status
+      if (status !== 'conflict' && status !== 'error') {
+        surfacedStatus = null
+        return
+      }
+      if (status === surfacedStatus) return
+      surfacedStatus = status
       if (status === 'conflict') {
         setErrorSnack('Category order changed elsewhere — reopen Manage Categories to resolve.')
-      } else if (status === 'error') {
+      } else {
         setErrorSnack('Category order could not be saved — reopen Manage Categories to retry.')
       }
     }
