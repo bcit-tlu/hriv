@@ -225,6 +225,9 @@ export class TileOrderingCoordinator {
     this.seeding.clear()
     this.dragContexts.clear()
     this.lastWrite.clear()
+    // Invalidate outstanding grid generations so a callback from a grid
+    // mounted before the reset can never write into the next user's state.
+    this.generations.clear()
     if (this.scopes.size === 0 && this.pendingOperationIds.size === 0) return
     this.scopes.clear()
     this.pendingOperationIds.clear()
