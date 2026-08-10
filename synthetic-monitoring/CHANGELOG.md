@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.3](https://github.com/bcit-tlu/hriv/compare/synthetic-monitoring-v1.2.2...synthetic-monitoring-v1.2.3) (2026-08-10)
+
+
+### Bug Fixes
+
+* **frontend:** rename login link to 'Log in with a guest account' ([#1023](https://github.com/bcit-tlu/hriv/issues/1023)) ([c2696cb](https://github.com/bcit-tlu/hriv/commit/c2696cb6477df3cc05cb4dd0c8d47c33d3d85f94))
+* **frontend:** rename login link to 'Sign in with a guest account' ([#1042](https://github.com/bcit-tlu/hriv/issues/1042)) ([1017519](https://github.com/bcit-tlu/hriv/commit/10175198877c56c9d4d19e3317834c0cdfaaf818))
+
 ## [1.2.2](https://github.com/bcit-tlu/hriv/compare/synthetic-monitoring-v1.2.1...synthetic-monitoring-v1.2.2) (2026-07-21)
 
 
