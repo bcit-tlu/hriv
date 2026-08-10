@@ -1055,6 +1055,15 @@ export default function App() {
     }
   }, [refreshCategories, refreshUncategorizedImages])
 
+  // Adopting the server's order can stem from membership drift (a 400
+  // conflict): reload the browse data too so tiles added or removed
+  // elsewhere appear alongside the adopted order.
+  const acceptServerOrder = tileOrdering.acceptServerOrder
+  const handleAcceptServerOrder = useCallback(() => {
+    acceptServerOrder()
+    void handleReorderComplete()
+  }, [acceptServerOrder, handleReorderComplete])
+
   const navigateToDepth = (depth: number) => {
     setPath((prev) => prev.slice(0, depth))
   }
@@ -1822,7 +1831,7 @@ export default function App() {
                   <ReorderStatusIndicator
                     status={tileOrdering.status}
                     onRetry={tileOrdering.retry}
-                    onAcceptServerOrder={tileOrdering.acceptServerOrder}
+                    onAcceptServerOrder={handleAcceptServerOrder}
                     onReapplyLocalOrder={tileOrdering.reapplyLocalOrder}
                   />
                 </Box>

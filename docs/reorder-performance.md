@@ -24,6 +24,14 @@ scale (epic [#975](https://github.com/bcit-tlu/hriv/issues/975), sub-issue
 Numbers below are representative single runs on the CI-class dev VM;
 run-to-run variance observed was ± ~10 %.
 
+Note on the measured window: the tables below were captured with a harness
+that stopped sampling before the Escape-cancel and pointer release, so they
+reflect drag activation + steady-state movement only — drag-end cost falls
+outside them. The harness now keeps long-task sampling running through the
+cancel/release (so the drag-end cluster is captured) while drag FPS is still
+computed over the movement phase only, so FPS remains comparable with the
+tables below but future long-task totals will be slightly higher.
+
 ## Baseline (before optimization)
 
 | Scope   | Tiles | Drag FPS | Long tasks (count / total / max) | Slowest pointer event | JS heap |
