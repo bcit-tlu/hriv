@@ -155,6 +155,17 @@ describe('useTileOrdering', () => {
 // Categories touches two scopes and the single save-state indicator must
 // surface whichever scope most urgently needs attention.
 describe('useMostSevereScope', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  // The coordinator is a module-level singleton: reset so a scope left in
+  // `error` (with retained pending intent) never leaks into later tests.
+  afterEach(() => {
+    cleanup()
+    tileOrderingCoordinator.reset()
+  })
+
   it('returns undefined when no scopes are tracked', () => {
     const { result } = renderHook(() => useMostSevereScope(null))
     expect(result.current).toBeUndefined()
@@ -163,22 +174,23 @@ describe('useMostSevereScope', () => {
   })
 
   it('surfaces the scope with a failed save over a saved one', async () => {
-    // Unique scope ids: the coordinator is a module-level singleton.
+    const savedScope = scopeCounter++
+    const errorScope = scopeCounter++
     mockedGet.mockResolvedValue(response(1, [1, 2]))
     mockedPut.mockResolvedValueOnce(response(2, [1, 2]))
     mockedPut.mockRejectedValueOnce(new Error('boom'))
 
-    const { result } = renderHook(() => useMostSevereScope([901, 902]))
+    const { result } = renderHook(() => useMostSevereScope([savedScope, errorScope]))
 
     await act(async () => {
-      tileOrderingCoordinator.reportOrder(901, refs(1, 2))
+      tileOrderingCoordinator.reportOrder(savedScope, refs(1, 2))
       await flushMicrotasks()
-      tileOrderingCoordinator.reportOrder(902, refs(2, 1))
+      tileOrderingCoordinator.reportOrder(errorScope, refs(2, 1))
       await flushMicrotasks()
     })
 
-    expect(tileOrderingCoordinator.getScope(901).status).toBe('saved')
-    expect(tileOrderingCoordinator.getScope(902).status).toBe('error')
-    expect(result.current).toBe(902)
+    expect(tileOrderingCoordinator.getScope(savedScope).status).toBe('saved')
+    expect(tileOrderingCoordinator.getScope(errorScope).status).toBe('error')
+    expect(result.current).toBe(errorScope)
   })
 })
