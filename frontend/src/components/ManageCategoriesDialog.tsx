@@ -493,13 +493,15 @@ export default function ManageCategoriesDialog({
         await onReorderComplete?.()
         return
       }
-      // Success path: when scope orders were reported, the coordinator
-      // persists asynchronously and triggers the authoritative refresh
-      // itself once the save commits (via its committed listener), so
-      // refreshing here would only re-fetch pre-save data. A pure parent
-      // move with no ordering delta produces no commit, so the awaited
-      // PATCH needs its refresh here.
-      if (scopes.length === 0) await onReorderComplete?.()
+      // Success path: for pure reorders the coordinator persists
+      // asynchronously and triggers the authoritative refresh itself once
+      // the save commits (via its committed listener), so refreshing here
+      // would only re-fetch pre-save data. Parent moves, however, were
+      // already durably committed by the awaited PATCH and get no commit
+      // notification if the follow-up order save conflicts/fails, so they
+      // need their refresh here (releaseCleanScopes keeps any newer
+      // coordinator state safe from the re-fetched data).
+      if (moves.length > 0 || scopes.length === 0) await onReorderComplete?.()
     },
     [
       dragId,
