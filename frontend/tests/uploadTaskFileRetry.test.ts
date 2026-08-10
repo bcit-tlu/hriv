@@ -98,7 +98,7 @@ function fetchResponse(status: number, body: unknown) {
 
 const mockFetch = vi.fn((url: string, init?: RequestInit) => {
   const method = init?.method ?? 'GET'
-  const queue = method === 'POST' ? finalizeScripts : statusScripts
+  const queue = url.endsWith('/upload/finalize') ? finalizeScripts : statusScripts
   const script = queue.shift()
   if (!script) {
     // A thrown error here would be wrapped into a retryable ApiTransportError
@@ -157,7 +157,14 @@ async function settle<T>(promise: Promise<T>): Promise<T> {
   // Prevent unhandled rejection warnings while we pump timers.
   guarded.catch(() => {})
   for (let pumps = 0; !settled; pumps += 1) {
-    if (pumps > 100) throw new Error('Upload promise did not settle within the pump budget')
+    if (pumps > 100) {
+      // Drain the script queues so the afterEach leftover assertions do not
+      // stack a second failure on top of the budget error.
+      chunkScripts.length = 0
+      statusScripts.length = 0
+      finalizeScripts.length = 0
+      throw new Error('Upload promise did not settle within the pump budget')
+    }
     await vi.advanceTimersByTimeAsync(1000)
   }
   return guarded
