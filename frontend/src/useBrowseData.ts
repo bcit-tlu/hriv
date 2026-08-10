@@ -10,6 +10,7 @@ import type { Category, Group, ImageItem, Program, User } from './types'
 import { narrowProgramIds, narrowGroupIds, resolvePathNode } from './categoryUtils'
 import { apiGroupToGroup } from './groupUtils'
 import { useBackgroundRefresh } from './useBackgroundRefresh'
+import { tileOrderingCoordinator } from './tileOrdering'
 
 function apiImageToItem(img: ApiImage): ImageItem {
   return {
@@ -153,6 +154,10 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
     async (signal: AbortSignal) => {
       await loadCategories({ silent: true, signal })
       await loadUncategorizedImages({ signal })
+      // Fresh authoritative data has landed: drop the coordinator's cached
+      // display order for scopes with no local intent so order changes made
+      // elsewhere (another client or surface) become visible.
+      if (!signal.aborted) tileOrderingCoordinator.releaseCleanScopes()
     },
     [loadCategories, loadUncategorizedImages],
   )
