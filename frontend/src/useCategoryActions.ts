@@ -298,7 +298,12 @@ export function useCategoryActions({
       try {
         const catPath = findCategoryPath(categories, categoryId)
         const version = catPath?.at(-1)?.version
+        const oldParentId = catPath && catPath.length >= 2 ? catPath[catPath.length - 2].id : null
         await apiUpdateCategory(categoryId, { parent_id: newParentId }, version)
+        // The membership PATCH bumps both scopes' tile-order revisions
+        // server-side, so any cached revision is stale.
+        tileOrderingCoordinator.invalidateRevision(oldParentId)
+        tileOrderingCoordinator.invalidateRevision(newParentId)
         setMoveCatOpen(false)
         setMovingCategory(null)
         await loadCategories()
@@ -352,6 +357,8 @@ export function useCategoryActions({
         const prevCategoryId = img.categoryId ?? null
         const targetName = findCategoryPath(categories, categoryId)?.at(-1)?.label ?? 'category'
         const updated = await apiUpdateImage(imageId, { category_id: categoryId }, img.version)
+        tileOrderingCoordinator.invalidateRevision(prevCategoryId)
+        tileOrderingCoordinator.invalidateRevision(categoryId)
         await loadCategories()
         loadUncategorizedImages()
         setMoveSnack({
@@ -360,6 +367,8 @@ export function useCategoryActions({
             try {
               setMoveSnack(null)
               await apiUpdateImage(imageId, { category_id: prevCategoryId }, updated.version)
+              tileOrderingCoordinator.invalidateRevision(prevCategoryId)
+              tileOrderingCoordinator.invalidateRevision(categoryId)
               await loadCategories()
               loadUncategorizedImages()
             } catch (undoErr) {
@@ -399,6 +408,8 @@ export function useCategoryActions({
           },
           draggedVersion,
         )
+        tileOrderingCoordinator.invalidateRevision(prevParentId)
+        tileOrderingCoordinator.invalidateRevision(targetCategoryId)
         await loadCategories()
         setMoveSnack({
           message: `Moved \u201c${draggedName}\u201d into \u201c${targetName}\u201d`,
@@ -412,6 +423,8 @@ export function useCategoryActions({
                 },
                 resp.version,
               )
+              tileOrderingCoordinator.invalidateRevision(prevParentId)
+              tileOrderingCoordinator.invalidateRevision(targetCategoryId)
               await loadCategories()
             } catch (undoErr) {
               setErrorSnack(userMessage(undoErr, 'Failed to undo move.'))
