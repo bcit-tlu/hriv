@@ -17,7 +17,7 @@
 
 import { StrictMode } from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ManageCategoriesDialog from '../../src/components/ManageCategoriesDialog'
 import type { Program } from '../../src/types'
@@ -52,6 +52,7 @@ function renderDialog(overrides: Partial<Parameters<typeof ManageCategoriesDialo
   const onEditCategory = overrides.onEditCategory ?? vi.fn().mockResolvedValue(undefined)
   const onToggleVisibility = overrides.onToggleVisibility ?? undefined
   const onReorderTiles = overrides.onReorderTiles ?? undefined
+  const onReorderComplete = overrides.onReorderComplete ?? undefined
   const onCategoryNavigate = overrides.onCategoryNavigate ?? undefined
   return {
     onClose,
@@ -71,6 +72,7 @@ function renderDialog(overrides: Partial<Parameters<typeof ManageCategoriesDialo
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleVisibility}
         onReorderTiles={onReorderTiles}
+        onReorderComplete={onReorderComplete}
         programs={overrides.programs ?? programs}
         groups={overrides.groups ?? []}
       />,
@@ -453,6 +455,93 @@ describe('ManageCategoriesDialog — drag handle', () => {
     const categories = [makeCategory({ id: 1, label: 'Cat' })]
     renderDialog({ categories })
     expect(document.querySelector('svg[data-testid="DragIndicatorIcon"]')).not.toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Tests — Drop → onReorderTiles decomposition
+// ---------------------------------------------------------------------------
+
+describe('ManageCategoriesDialog — drop → onReorderTiles', () => {
+  // jsdom reports zero-size rects for every list item, so a dragover at
+  // clientY > 0 always resolves to "insert after the last visible item";
+  // clientX controls the indent depth (24px per level).
+  const dataTransfer = () => ({
+    effectAllowed: '',
+    dropEffect: '',
+    setData: vi.fn(),
+    getData: vi.fn(),
+  })
+
+  // jsdom has no DragEvent constructor, so fireEvent.dragOver would drop the
+  // clientX/clientY init options; build MouseEvents (which carry coordinates)
+  // and attach a dataTransfer stub as an own property instead.
+  function fireDrag(target: Element, type: string, clientX: number, clientY: number) {
+    const evt = new MouseEvent(type, { bubbles: true, cancelable: true, clientX, clientY })
+    Object.assign(evt, { dataTransfer: dataTransfer() })
+    fireEvent(target, evt)
+  }
+
+  function dragToEnd(id: number, clientX: number) {
+    const item = document.querySelector(`[data-category-id="${id}"]`)!
+    const list = item.closest('ul')!
+    fireDrag(item, 'dragstart', 0, 0)
+    fireDrag(list, 'dragover', clientX, 100)
+    fireDrag(list, 'drop', clientX, 100)
+  }
+
+  const categories = () => [
+    makeCategory({ id: 1, label: 'Alpha' }),
+    makeCategory({ id: 2, label: 'Beta' }),
+  ]
+
+  it('pure same-parent reorder reports scopes with no moves and skips onReorderComplete', async () => {
+    const onReorderTiles = vi.fn().mockResolvedValue(undefined)
+    const onReorderComplete = vi.fn().mockResolvedValue(undefined)
+    renderDialog({ categories: categories(), onReorderTiles, onReorderComplete })
+
+    dragToEnd(1, 0)
+
+    await waitFor(() => expect(onReorderTiles).toHaveBeenCalledTimes(1))
+    expect(onReorderTiles).toHaveBeenCalledWith(
+      [],
+      [
+        {
+          scope: null,
+          order: [
+            { type: 'category', id: 2 },
+            { type: 'category', id: 1 },
+          ],
+        },
+      ],
+    )
+    // Pure reorders are persisted by the coordinator, which triggers the
+    // authoritative refresh itself on commit — no dialog-level refresh.
+    expect(onReorderComplete).not.toHaveBeenCalled()
+  })
+
+  it('cross-parent drop reports the parent move and refreshes on success', async () => {
+    const onReorderTiles = vi.fn().mockResolvedValue(undefined)
+    const onReorderComplete = vi.fn().mockResolvedValue(undefined)
+    renderDialog({ categories: categories(), onReorderTiles, onReorderComplete })
+
+    // clientX ≈ one indent level → depth 1, nesting Alpha under Beta.
+    dragToEnd(1, 30)
+
+    await waitFor(() => expect(onReorderTiles).toHaveBeenCalledTimes(1))
+    const [moves] = onReorderTiles.mock.calls[0]
+    expect(moves).toEqual([{ categoryId: 1, newParentId: 2 }])
+    await waitFor(() => expect(onReorderComplete).toHaveBeenCalledTimes(1))
+  })
+
+  it('refreshes authoritative state when onReorderTiles rejects', async () => {
+    const onReorderTiles = vi.fn().mockRejectedValue(new Error('patch failed'))
+    const onReorderComplete = vi.fn().mockResolvedValue(undefined)
+    renderDialog({ categories: categories(), onReorderTiles, onReorderComplete })
+
+    dragToEnd(1, 0)
+
+    await waitFor(() => expect(onReorderComplete).toHaveBeenCalledTimes(1))
   })
 })
 
