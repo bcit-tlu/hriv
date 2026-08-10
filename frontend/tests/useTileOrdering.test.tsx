@@ -76,7 +76,7 @@ describe('useTileOrdering', () => {
     act(() => {
       result.current.reportOrder([{ type: 'image', id: 5 }], 3)
     })
-    expect(spy).toHaveBeenCalledWith(scope, [{ type: 'image', id: 5 }], 3)
+    expect(spy).toHaveBeenCalledWith(scope, [{ type: 'image', id: 5 }], 3, undefined)
     spy.mockRestore()
   })
 

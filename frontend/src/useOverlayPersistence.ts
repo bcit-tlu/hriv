@@ -9,7 +9,7 @@ export interface UseOverlayPersistenceDeps {
   flushCanvasAnnotations: () => Promise<void>
   latestVersionRef: React.MutableRefObject<number>
   latestMetadataRef: React.MutableRefObject<Record<string, unknown> | null | undefined>
-  loadCategories: () => Promise<void>
+  loadCategories: () => Promise<unknown>
   loadUncategorizedImages: (opts?: { signal?: AbortSignal }) => void
   setLockEngaged: React.Dispatch<React.SetStateAction<boolean>>
   setErrorSnack: React.Dispatch<React.SetStateAction<string | null>>

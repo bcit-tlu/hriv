@@ -8,6 +8,7 @@ import { useCallback, useEffect, useSyncExternalStore } from 'react'
 import type { TileOrderItemRef } from './api'
 import {
   tileOrderingCoordinator,
+  type ReorderDragContext,
   type ScopeId,
   type ScopeState,
   type TileOrderStatus,
@@ -19,7 +20,11 @@ export interface UseTileOrderingResult {
   /** Order the grid should display (newest local intent), if any. */
   displayOrder: TileOrderItemRef[] | null
   /** Report a new local order after an accepted drag. */
-  reportOrder: (order: TileOrderItemRef[], generation?: number) => void
+  reportOrder: (
+    order: TileOrderItemRef[],
+    generation?: number,
+    dragContext?: ReorderDragContext,
+  ) => void
   /** Claim a grid-instance generation on mount (stale-callback guard). */
   claimGeneration: () => number
   /** Retry the newest local order after a failure. */
@@ -51,8 +56,8 @@ export function useTileOrdering(scope: ScopeId): UseTileOrderingResult {
     status: state.status,
     displayOrder: state.displayOrder,
     reportOrder: useCallback(
-      (order: TileOrderItemRef[], generation?: number) =>
-        tileOrderingCoordinator.reportOrder(scope, order, generation),
+      (order: TileOrderItemRef[], generation?: number, dragContext?: ReorderDragContext) =>
+        tileOrderingCoordinator.reportOrder(scope, order, generation, dragContext),
       [scope],
     ),
     claimGeneration: useCallback(() => tileOrderingCoordinator.claimGeneration(scope), [scope]),
