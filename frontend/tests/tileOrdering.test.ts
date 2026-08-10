@@ -370,6 +370,31 @@ describe('TileOrderingCoordinator', () => {
     expect(mockedPut).toHaveBeenLastCalledWith(null, 4, refs(3, 2, 1), expect.any(String))
   })
 
+  it('closes the conflict-time queued operation lifecycle in telemetry', async () => {
+    const current = response(4, refs(3, 1, 2))
+    mockedPut.mockRejectedValueOnce(conflictError(current))
+
+    coordinator.reportOrder(null, refs(2, 1, 3))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('conflict')
+    events.length = 0
+
+    // First post-conflict drop starts a fresh operation: `queued`.
+    coordinator.reportOrder(null, refs(3, 2, 1))
+    expect(events.map((e) => e.state)).toEqual(['queued'])
+    const operationId = events[0].operationId
+
+    // A later drop during the same conflict coalesces into it.
+    coordinator.reportOrder(null, refs(1, 3, 2))
+    expect(events.map((e) => e.state)).toEqual(['queued', 'coalesced'])
+    expect(events[1].operationId).toBe(operationId)
+
+    // "Refresh" discards the queued snapshot with a terminal event.
+    coordinator.acceptServerOrder(null)
+    expect(events.map((e) => e.state)).toEqual(['queued', 'coalesced', 'stale_discarded'])
+    expect(events[2].operationId).toBe(operationId)
+  })
+
   it('keeps accept-server-order available when the reapply retry fails', async () => {
     const current = response(4, refs(3, 1, 2))
     mockedPut

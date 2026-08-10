@@ -39,15 +39,16 @@ export default function ReorderStatusIndicator({
   // navigated away from is otherwise invisible and unrecoverable, while
   // still arming the unload guard. Rendered alongside the current scope's
   // own readout so it stays reachable whatever the browsed scope is doing.
-  const crossScope = otherScopesFailed ? (
-    <>
-      <ErrorOutlineIcon color="error" sx={{ fontSize: 16 }} />
-      <Typography variant="caption">Unresolved order changes in another category</Typography>
-      <Button size="small" onClick={onRetryFailedScopes}>
-        Resolve
-      </Button>
-    </>
-  ) : null
+  const crossScope =
+    otherScopesFailed && onRetryFailedScopes !== undefined ? (
+      <>
+        <ErrorOutlineIcon color="error" sx={{ fontSize: 16 }} />
+        <Typography variant="caption">Unresolved order changes in another category</Typography>
+        <Button size="small" onClick={onRetryFailedScopes}>
+          Resolve
+        </Button>
+      </>
+    ) : null
 
   if (status === 'idle' && crossScope === null) return null
 

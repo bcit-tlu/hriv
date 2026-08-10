@@ -43,7 +43,7 @@ share this bounded vocabulary:
 | `committed`       | Persistence completed successfully (refresh-callback failures are not reflected) |
 | `conflicted`      | Backend rejected the operation due to a revision conflict                        |
 | `failed`          | Persistence failed (fully or partially) and the UI rolled back                   |
-| `stale_discarded` | Refresh response discarded because a newer operation superseded it (future #980) |
+| `stale_discarded` | Queued snapshot or refresh response discarded because it was superseded (#980)   |
 | `abandoned`       | Component unmounted (navigation) while the operation was active (legacy path)    |
 
 As of #979 the Browse coordinator (`frontend/src/tileOrdering.ts`) emits
@@ -51,8 +51,8 @@ As of #979 the Browse coordinator (`frontend/src/tileOrdering.ts`) emits
 `ignored` and `abandoned` remain emitted only by the legacy non-coordinator
 grid path (the coordinator survives navigation, so Browse no longer emits
 `abandoned` at all), and
-`stale_discarded` is defined for later sub-issues (#980) so dashboards can
-adopt it without another contract change. Both reorder surfaces are
+`stale_discarded` is emitted since #980 when conflict resolution discards a
+queued snapshot (see below). Both reorder surfaces are
 instrumented: the Browse grid (via the coordinator, full lifecycle) and the
 Manage Categories dialog
 (`submitted`/`committed`/`failed`). Every surface emits exactly one
@@ -63,9 +63,9 @@ requests, with the dialog owning the single lifecycle (the
 supplies an operation ID). A drag whose category half succeeded but whose
 image half failed is reported as one `failed` operation.
 
-Two coordinator edge cases relax that pairing, both tied to revision seeding
-(the one-time `GET /api/tile-order` that fetches a scope's CAS token before
-its first save):
+Three coordinator edge cases relax that pairing. Two are tied to revision
+seeding (the one-time `GET /api/tile-order` that fetches a scope's CAS token
+before its first save):
 
 - A seeding failure emits a terminal `failed` for a fresh operation ID with
   no preceding `submitted` — nothing was ever submitted, so dashboards
@@ -75,6 +75,15 @@ its first save):
   coalesces into that snapshot and emits `coalesced` for an operation ID
   that never emitted `queued` (the seeded snapshot itself was reported via
   the dirty path, which does not mint a queue-time ID).
+
+The third is conflict resolution (#980): drops made while a 409 conflict is
+unresolved queue behind the retained local intent (the first mints a fresh
+operation ID and emits `queued`; later ones emit `coalesced` for it). If the
+user resolves the conflict with "Refresh" (`acceptServerOrder`), that queued
+snapshot is discarded and its operation ID closes with a terminal
+`stale_discarded` — such an ID never reaches `submitted`. Resolving with
+"Keep my order" (`reapplyLocalOrder`) re-submits the retained intent, so the
+ID continues its normal `submitted` → terminal lifecycle.
 
 Server-side, an event that omits `state` entirely is logged with
 `reorder.state: "missing"` and skipped by the client-operations counter, so
