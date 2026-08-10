@@ -737,6 +737,8 @@ describe('Tile order API', () => {
   })
 
   it('putTileOrder sends PUT with scope, expected_revision, operation_id, and items', async () => {
+    // The operation ID travels only in the body; the unused
+    // X-Reorder-Operation-Id header was removed in #998.
     mockFetch.mockReturnValueOnce(jsonResponse(TILE_ORDER_FIXTURE))
     await putTileOrder(
       5,
@@ -759,10 +761,10 @@ describe('Tile order API', () => {
         { type: 'image', id: 2 },
       ],
     })
-    expect(init.headers['X-Reorder-Operation-Id']).toBe('op-123')
+    expect(init.headers?.['X-Reorder-Operation-Id']).toBeUndefined()
   })
 
-  it('putTileOrder without an operationId sends null operation_id and no header', async () => {
+  it('putTileOrder without an operationId sends null operation_id', async () => {
     mockFetch.mockReturnValueOnce(jsonResponse(TILE_ORDER_FIXTURE))
     await putTileOrder(null, 0, [{ type: 'image', id: 9 }])
     const [, init] = mockFetch.mock.calls[0]
@@ -772,7 +774,7 @@ describe('Tile order API', () => {
       operation_id: null,
       items: [{ type: 'image', id: 9 }],
     })
-    expect(init.headers['X-Reorder-Operation-Id']).toBeUndefined()
+    expect(init.headers?.['X-Reorder-Operation-Id']).toBeUndefined()
   })
 
   it('tileOrderConflictCurrent returns the current payload for a 409 ApiError', () => {
