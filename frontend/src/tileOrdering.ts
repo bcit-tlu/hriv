@@ -315,24 +315,31 @@ export class TileOrderingCoordinator {
   }
 
   /**
-   * True when a scope other than `scope` holds a failed save. Only the
-   * browsed scope renders a save-state indicator, so failures elsewhere
-   * (e.g. a category the user has navigated away from) need a cross-scope
-   * affordance — otherwise the order is never saved and the unload guard
-   * stays armed with nothing the user can act on.
+   * True when a scope other than `scope` needs user attention (a failed
+   * save or an unresolved conflict). Only the browsed scope renders a
+   * save-state indicator, so unresolved states elsewhere (e.g. a category
+   * the user has navigated away from) need a cross-scope affordance —
+   * otherwise the order is never settled and the unload guard stays armed
+   * with nothing the user can act on.
    */
   hasFailedScopesOutside(scope: ScopeId): boolean {
     const exclude = scopeKey(scope)
     for (const [key, state] of this.scopes) {
-      if (key !== exclude && state.status === 'error') return true
+      if (key !== exclude && (state.status === 'error' || state.status === 'conflict')) return true
     }
     return false
   }
 
-  /** Retry every scope whose last save failed (see `hasFailedScopesOutside`). */
+  /**
+   * Resolve every scope needing attention (see `hasFailedScopesOutside`):
+   * failed saves are retried; conflicted scopes adopt the server's
+   * authoritative order — the same resolution the browsed-scope conflict
+   * affordance offers.
+   */
   retryFailedScopes(): void {
     for (const [key, state] of [...this.scopes]) {
       if (state.status === 'error') this.retry(scopeFromKey(key))
+      else if (state.status === 'conflict') this.acceptServerOrder(scopeFromKey(key))
     }
   }
 
