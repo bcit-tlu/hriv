@@ -270,6 +270,49 @@ describe('TileOrderingCoordinator', () => {
     expect(mockedPut).toHaveBeenLastCalledWith(null, 4, refs(2, 1, 3), expect.any(String))
   })
 
+  it('keeps accept-server-order available when the reapply retry fails', async () => {
+    const current = response(4, refs(3, 1, 2))
+    mockedPut
+      .mockRejectedValueOnce(conflictError(current))
+      .mockRejectedValueOnce(new ApiError(500, 'boom'))
+
+    coordinator.reportOrder(null, refs(2, 1, 3))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('conflict')
+
+    coordinator.reapplyLocalOrder(null)
+    await flushMicrotasks()
+
+    let state = coordinator.getScope(null)
+    expect(state.status).toBe('error')
+    // The conflict's authoritative order survives the failed retry...
+    expect(state.conflictOrder).toEqual(refs(3, 1, 2))
+
+    // ...so the user can still fall back to the server's order.
+    coordinator.acceptServerOrder(null)
+    state = coordinator.getScope(null)
+    expect(state.status).toBe('saved')
+    expect(state.displayOrder).toEqual(refs(3, 1, 2))
+    expect(state.conflictOrder).toBeNull()
+    expect(state.pending).toBeNull()
+  })
+
+  it('clears the retained conflict order once a reapply retry commits', async () => {
+    const current = response(4, refs(3, 1, 2))
+    mockedPut
+      .mockRejectedValueOnce(conflictError(current))
+      .mockResolvedValueOnce(response(5, refs(2, 1, 3)))
+
+    coordinator.reportOrder(null, refs(2, 1, 3))
+    await flushMicrotasks()
+    coordinator.reapplyLocalOrder(null)
+    await flushMicrotasks()
+
+    const state = coordinator.getScope(null)
+    expect(state.status).toBe('saved')
+    expect(state.conflictOrder).toBeNull()
+  })
+
   it('treats a 400 membership change like a conflict and refreshes via GET', async () => {
     const current = response(4, refs(3, 1, 2))
     mockedPut.mockRejectedValueOnce(new ApiError(400, 'Images not in scope: [99]'))

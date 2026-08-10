@@ -303,7 +303,11 @@ export class TileOrderingCoordinator {
    */
   acceptServerOrder(scope: ScopeId): void {
     const state = this.getScope(scope)
-    if (state.status !== 'conflict') return
+    // Also honored from a failed "keep my order" retry: the conflict's
+    // authoritative order is retained through `reapplyLocalOrder`, so the
+    // user can still fall back to the server's order when the retry errors.
+    if (state.status !== 'conflict' && !(state.status === 'error' && state.conflictOrder !== null))
+      return
     this.setScope(scope, {
       ...state,
       status: 'saved',
@@ -326,10 +330,11 @@ export class TileOrderingCoordinator {
       this.acceptServerOrder(scope)
       return
     }
+    // The conflict's authoritative order is retained until a commit
+    // succeeds, keeping accept-server-order available if the retry fails.
     this.setScope(scope, {
       ...state,
       status: 'dirty',
-      conflictOrder: null,
       error: null,
     })
     void this.flush(scope)
@@ -442,6 +447,7 @@ export class TileOrderingCoordinator {
           // Only adopt the authoritative order when no newer local intent
           // accumulated during the save — never roll back newer changes.
           displayOrder: stillNewest ? refsOf(response) : after.displayOrder,
+          conflictOrder: null,
         })
         for (const listener of this.commitListeners) {
           try {
