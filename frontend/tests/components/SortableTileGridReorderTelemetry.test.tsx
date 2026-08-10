@@ -7,7 +7,7 @@
  * it as the `X-Reorder-Operation-Id` header).
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, act } from '@testing-library/react'
 import SortableTileGrid from '../../src/components/SortableTileGrid'
 import type { SortableTileGridProps } from '../../src/components/SortableTileGrid'
@@ -106,8 +106,11 @@ describe('reorder operation correlation', () => {
     vi.mocked(reorderCategories).mockReset().mockResolvedValue()
     vi.mocked(reorderImages).mockReset().mockResolvedValue()
     events = []
-    unsubscribe?.()
     unsubscribe = subscribeReorderDiagnostics((e) => events.push(e))
+  })
+
+  afterEach(() => {
+    unsubscribe()
   })
 
   it('emits submitted and committed with one operation ID, passed to the API call', async () => {

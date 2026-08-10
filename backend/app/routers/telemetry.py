@@ -83,6 +83,9 @@ _ALLOWED_EVENTS = frozenset({
 # Hard limits to prevent accidental or malicious payload abuse. These are
 # per-request guards; per-user rate limiting is enforced separately below via
 # the shared Redis rate limiter.
+# NOTE: the frontend batches flushes to this cap
+# (frontend/src/observability.ts MAX_EVENTS_PER_REQUEST); keep them in sync
+# or larger client batches will be rejected wholesale with a 422.
 _MAX_EVENTS_PER_REQUEST = 10
 _MAX_ATTRIBUTE_LENGTH = 1000
 
