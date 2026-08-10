@@ -196,7 +196,10 @@ there is no second independent ordering implementation:
   both affected scopes server-side, the coordinator's cached revision for
   those scopes is invalidated first (`invalidateRevision`) so the follow-up
   order writes re-seed via GET instead of falsely 409ing against a stale
-  token. When the coordinator already holds a newer (pending/unsaved)
+  token. Entity PATCHes bump revisions only when `parent_id` /
+  `category_id` / `sort_order` actually change value — edit dialogs echo
+  the current values back on every save, and bumping on presence alone
+  would 409 clients whose cached revision is still accurate. When the coordinator already holds a newer (pending/unsaved)
   order for a scope, that order is used as the interleaving template, so a
   category-only reorder never reverts a pending image reorder for the same
   scope; scopes left with no members are skipped.

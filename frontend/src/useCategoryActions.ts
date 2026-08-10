@@ -255,7 +255,10 @@ export function useCategoryActions({
       for (const move of moves) {
         const catPath = findCategoryPath(categories, move.categoryId)
         const version = catPath?.at(-1)?.version
-        const oldParentId = catPath?.at(-2)?.id ?? null
+        // Distinguish "parent is root" (path found, length 1) from "path not
+        // found" (stale tree): the latter must not invalidate the root scope
+        // in place of the unknown real source scope.
+        const oldParentId = catPath ? (catPath.at(-2)?.id ?? null) : undefined
         try {
           await apiUpdateCategory(move.categoryId, { parent_id: move.newParentId }, version)
         } catch (err) {
@@ -266,7 +269,9 @@ export function useCategoryActions({
         // The parent-move PATCH bumps the tile-order revision of both scopes
         // server-side, so any revision the coordinator still caches for them
         // is stale and would make the reportOrder below falsely 409.
-        tileOrderingCoordinator.invalidateRevision(oldParentId)
+        if (oldParentId !== undefined) {
+          tileOrderingCoordinator.invalidateRevision(oldParentId)
+        }
         tileOrderingCoordinator.invalidateRevision(move.newParentId)
       }
       for (const { scope, order } of scopes) {

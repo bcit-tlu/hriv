@@ -422,6 +422,78 @@ async def test_bulk_update_images_metadata_only_does_not_bump_scopes() -> None:
     bump.assert_not_awaited()
 
 
+async def test_bulk_update_images_unchanged_category_does_not_bump_scopes() -> None:
+    """Echoing the images' current category back must not bump revisions."""
+    imgs = [_make_image(id=1, category_id=7), _make_image(id=2, category_id=7)]
+
+    async def mock_execute(stmt):
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = imgs
+        return mock_result
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=mock_execute)
+    db.commit = AsyncMock()
+
+    body = ImageBulkUpdate(image_ids=[1, 2], category_id=7)
+    with patch("app.routers.images.bump_scopes", new=AsyncMock()) as bump:
+        await bulk_update_images(body, _make_user(), db)
+
+    bump.assert_not_awaited()
+
+
+async def test_bulk_update_images_partial_move_bumps_only_moved_sources() -> None:
+    """Only images actually changing category contribute source scopes."""
+    imgs = [_make_image(id=1, category_id=7), _make_image(id=2, category_id=3)]
+
+    async def mock_execute(stmt):
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = imgs
+        return mock_result
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=mock_execute)
+    db.commit = AsyncMock()
+
+    body = ImageBulkUpdate(image_ids=[1, 2], category_id=7)
+    with patch("app.routers.images.bump_scopes", new=AsyncMock()) as bump:
+        await bulk_update_images(body, _make_user(), db)
+
+    bump.assert_awaited_once()
+    assert bump.await_args.args[1] == {3, 7}
+
+
+async def test_update_image_unchanged_ordering_fields_do_not_bump_scopes() -> None:
+    """Edit dialogs echo category_id/sort_order back on every save; bumping on
+    presence alone would 409 clients whose cached revision is still accurate."""
+    img = _make_image(category_id=7, sort_order=2)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    body = ImageUpdate(name="renamed", category_id=7, sort_order=2)
+    with patch("app.routers.images.bump_scopes", new=AsyncMock()) as bump:
+        await update_image(1, body, _mock_request(), _make_user(), db)
+
+    bump.assert_not_awaited()
+
+
+async def test_update_image_category_change_bumps_both_scopes() -> None:
+    img = _make_image(category_id=7)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    body = ImageUpdate(category_id=3)
+    with patch("app.routers.images.bump_scopes", new=AsyncMock()) as bump:
+        await update_image(1, body, _mock_request(), _make_user(), db)
+
+    bump.assert_awaited_once()
+    assert bump.await_args.args[1] == {7, 3}
+
+
 async def test_bulk_update_images_not_found() -> None:
     imgs = [_make_image(id=1)]
     mock_result = MagicMock()

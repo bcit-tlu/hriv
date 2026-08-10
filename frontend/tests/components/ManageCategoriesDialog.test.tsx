@@ -16,17 +16,25 @@
  */
 
 import { StrictMode } from 'react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ManageCategoriesDialog from '../../src/components/ManageCategoriesDialog'
 import type { Program } from '../../src/types'
 import { resetCategoryTreeExpansionPreferencesForTests } from '../../src/useCategoryTreeExpansionPreferences'
+import { tileOrderingCoordinator } from '../../src/tileOrdering'
 import { makeCategory, makeImage } from '../helpers/fixtures'
 
 beforeEach(() => {
   localStorage.clear()
   resetCategoryTreeExpansionPreferencesForTests()
+})
+
+// The dialog reads per-scope display orders from the module-singleton
+// coordinator during render; reset it so no test's leftover scope state
+// can make another test's rendered sibling order order-dependent.
+afterEach(() => {
+  tileOrderingCoordinator.reset()
 })
 
 // ---------------------------------------------------------------------------

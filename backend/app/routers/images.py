@@ -140,9 +140,11 @@ async def bulk_update_images(
             # mutation, matching PUT /api/tile-order's revision-then-rows
             # lock order (docs/tile-ordering.md).
             if "category_id" in update_data:
-                affected = {scope_key_for(img.category_id) for img in images}
-                affected.add(scope_key_for(update_data["category_id"]))
-                await bump_scopes(db, affected)
+                moved = [img for img in images if img.category_id != update_data["category_id"]]
+                if moved:
+                    affected = {scope_key_for(img.category_id) for img in moved}
+                    affected.add(scope_key_for(update_data["category_id"]))
+                    await bump_scopes(db, affected)
             for img in images:
                 for key, value in update_data.items():
                     setattr(img, key, value)
@@ -178,10 +180,21 @@ async def update_image(
             # silently overwriting this change. Revision locks are taken
             # before any row mutation, matching PUT /api/tile-order's
             # revision-then-rows lock order (docs/tile-ordering.md).
+            # Only an actual value change invalidates: edit dialogs echo the
+            # current category_id/sort_order back on every save, and bumping
+            # on presence alone would 409 clients whose cached revision is
+            # still accurate.
             ordering_fields = body.model_dump(exclude_unset=True)
-            if "sort_order" in ordering_fields or "category_id" in ordering_fields:
+            sort_changed = (
+                "sort_order" in ordering_fields and ordering_fields["sort_order"] != img.sort_order
+            )
+            category_changed = (
+                "category_id" in ordering_fields
+                and ordering_fields["category_id"] != img.category_id
+            )
+            if sort_changed or category_changed:
                 affected = {scope_key_for(img.category_id)}
-                if "category_id" in ordering_fields:
+                if category_changed:
                     affected.add(scope_key_for(ordering_fields["category_id"]))
                 await bump_scopes(db, affected)
 
