@@ -59,4 +59,37 @@ describe('ReorderStatusIndicator', () => {
     renderIndicator('saved')
     expect(screen.getByRole('status', { name: 'Reorder save state' })).toBeInTheDocument()
   })
+
+  it('surfaces failed scopes elsewhere while idle', () => {
+    const onRetryFailedScopes = vi.fn()
+    render(
+      <ReorderStatusIndicator
+        status="idle"
+        onRetry={vi.fn()}
+        onAcceptServerOrder={vi.fn()}
+        otherScopesFailed
+        onRetryFailedScopes={onRetryFailedScopes}
+      />,
+    )
+    expect(screen.getByText('Unresolved order changes in another category')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Resolve' }))
+    expect(onRetryFailedScopes).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the cross-scope Resolve affordance visible alongside a non-idle status', () => {
+    const onRetryFailedScopes = vi.fn()
+    render(
+      <ReorderStatusIndicator
+        status="error"
+        onRetry={vi.fn()}
+        onAcceptServerOrder={vi.fn()}
+        otherScopesFailed
+        onRetryFailedScopes={onRetryFailedScopes}
+      />,
+    )
+    expect(screen.getByText('Could not save order')).toBeInTheDocument()
+    expect(screen.getByText('Unresolved order changes in another category')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Resolve' }))
+    expect(onRetryFailedScopes).toHaveBeenCalledTimes(1)
+  })
 })
