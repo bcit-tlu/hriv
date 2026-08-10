@@ -33,6 +33,7 @@ from .backup_access import (
     restore_snapshot_file,
 )
 from .database import get_async_session, settings
+from .tile_order import INITIAL_SCOPE_REVISION
 from .worker import enqueue_admin_task
 from .models import (
     ACTIVE_TASK_STATUSES,
@@ -1006,6 +1007,16 @@ async def run_db_import(task_id: int) -> None:
                 await data_session.execute(text("DELETE FROM changelog_entries"))
                 await data_session.execute(text("DELETE FROM announcements"))
                 await data_session.execute(text("DELETE FROM programs"))
+                # The restore rewrites category/image sort_order wholesale, so
+                # invalidate every tile-order revision: clients holding a
+                # pre-restore revision must get a 409 from PUT /api/tile-order
+                # instead of silently overwriting the restored order.
+                await data_session.execute(
+                    text(
+                        "UPDATE tile_order_revisions "
+                        "SET revision = revision + 1, updated_at = now()"
+                    )
+                )
 
                 # Import programs
                 await _update_task(status_session, task, log_line="Importing programs…", progress=15, check_cancelled=True)
@@ -1153,6 +1164,32 @@ async def run_db_import(task_id: int) -> None:
                     )
                     data_session.add(img)
                 await data_session.flush()
+
+                # Drop revision rows for scopes that no longer exist after the
+                # restore. The ID sequence is reset to the restored MAX(id), so
+                # a later category could be assigned an ID that still has a
+                # leftover revision row (benign for CAS, but avoid the orphan).
+                await data_session.execute(
+                    text(
+                        "DELETE FROM tile_order_revisions WHERE scope_key <> 0 "
+                        "AND scope_key NOT IN (SELECT id FROM categories)"
+                    )
+                )
+                # Revision rows are created lazily, so the wholesale bump above
+                # misses scopes that have never been written through
+                # PUT /api/tile-order (clients read the implicit
+                # INITIAL_SCOPE_REVISION for those). Materialize every restored
+                # scope one revision higher so an implicit pre-restore revision
+                # can never pass the CAS check.
+                await data_session.execute(
+                    text(
+                        "INSERT INTO tile_order_revisions (scope_key, revision) "
+                        "SELECT s.scope_key, CAST(:rev AS INTEGER) FROM "
+                        "(SELECT 0 AS scope_key UNION SELECT id FROM categories) s "
+                        "ON CONFLICT (scope_key) DO NOTHING"
+                    ),
+                    {"rev": INITIAL_SCOPE_REVISION + 1},
+                )
 
                 # Import source images
                 await _update_task(status_session, task, log_line="Importing source images…", progress=65)

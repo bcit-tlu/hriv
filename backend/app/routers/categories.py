@@ -3,7 +3,6 @@ import json as _json
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from opentelemetry import trace
 from sqlalchemy import and_, select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,20 +12,18 @@ from ..authz import (
     can_attach_program_to_category,
 )
 from ..database import get_db
-from ..tracing import record_exception_if_server_error
 from ..models import Category, Group, Image, Program, User
 from ..schemas import (
     CategoryCreate,
     CategoryUpdate,
     CategoryOut,
     CategoryTree,
-    CategoryReorderRequest,
     CategoryWarning,
     ImageOut,
 )
+from ..tile_order import bump_scopes, scope_key_for
 from ..visibility import compute_excluded_category_ids, get_student_excluded_category_ids, is_category_visible_to_student
 
-tracer = trace.get_tracer(__name__)
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
@@ -405,6 +402,24 @@ async def update_category(
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found")
 
+    # An ordering write (sort_order or a parent move) must invalidate the
+    # affected scopes' tile-order revisions so a client holding an older
+    # revision gets a 409 instead of silently overwriting this change.
+    # Revision locks are taken before any row mutation, matching
+    # PUT /api/tile-order's revision-then-rows lock order
+    # (docs/tile-ordering.md).
+    # Only an actual value change invalidates: edit dialogs echo the current
+    # parent_id/sort_order back on every save, and bumping on presence alone
+    # would 409 clients whose cached revision is still accurate.
+    ordering_fields = body.model_dump(exclude_unset=True)
+    sort_changed = "sort_order" in ordering_fields and ordering_fields["sort_order"] != cat.sort_order
+    parent_changed = "parent_id" in ordering_fields and ordering_fields["parent_id"] != cat.parent_id
+    if sort_changed or parent_changed:
+        affected = {scope_key_for(cat.parent_id)}
+        if parent_changed:
+            affected.add(scope_key_for(ordering_fields["parent_id"]))
+        await bump_scopes(db, affected)
+
     # Optimistic concurrency: same CAS pattern as image updates.
     if_match = request.headers.get("If-Match")
     if if_match is not None:
@@ -488,53 +503,6 @@ async def update_category(
     )
     response.headers["ETag"] = f'"{cat.version}"'
     return response
-
-
-@router.put("/reorder", status_code=200)
-async def reorder_categories(
-    body: CategoryReorderRequest,
-    _user: Annotated[User, Depends(require_role("admin", "instructor"))],
-    db: AsyncSession = Depends(get_db),
-):
-    with tracer.start_as_current_span("category.reorder") as span:
-        try:
-            span.set_attribute("category.count", len(body.items))
-            # Build proposed parent graph and validate for cycles
-            parent_map: dict[int, int | None] = {item.id: item.parent_id for item in body.items}
-            for item in body.items:
-                if item.parent_id == item.id:
-                    raise HTTPException(
-                        status_code=400, detail="A category cannot be its own parent"
-                    )
-            # Walk ancestor chains in the proposed graph to detect cycles
-            for item_id in parent_map:
-                visited: set[int] = set()
-                current: int | None = item_id
-                while current is not None:
-                    if current in visited:
-                        raise HTTPException(
-                            status_code=400,
-                            detail="Reorder would create a circular parent reference",
-                        )
-                    visited.add(current)
-                    if current in parent_map:
-                        current = parent_map[current]
-                    else:
-                        # Not in the request — look up its existing parent in the DB
-                        ancestor = await db.get(Category, current)
-                        current = ancestor.parent_id if ancestor else None
-
-            for item in body.items:
-                cat = await db.get(Category, item.id)
-                if cat is None:
-                    raise HTTPException(status_code=404, detail=f"Category {item.id} not found")
-                cat.parent_id = item.parent_id
-                cat.sort_order = item.sort_order
-            await db.commit()
-            return {"status": "ok"}
-        except Exception as exc:
-            record_exception_if_server_error(span, exc)
-            raise
 
 
 @router.delete("/{category_id}", status_code=204)

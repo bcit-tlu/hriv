@@ -8,11 +8,9 @@ Two layers:
 - Database integration tests that run when ``REORDER_FIXTURE_DATABASE_URL``
   points at a PostgreSQL database (CI provides one; locally use
   ``docker compose up -d db`` and
-  ``postgresql+asyncpg://hriv:hriv@localhost:5432/hriv``). These include
-  ``xfail(strict=True)`` regression tests that document the current
-  partial-persistence and silent last-write-wins behaviour the rest of the
-  epic will fix — they flip to failures once the behaviour is corrected,
-  forcing the markers to be removed.
+  ``postgresql+asyncpg://hriv:hriv@localhost:5432/hriv``). Atomicity and
+  stale-submission conflict behaviour are covered by ``test_tile_order.py``
+  against the same fixture.
 """
 
 import os
@@ -20,7 +18,6 @@ from collections import Counter, defaultdict
 from types import SimpleNamespace
 
 import pytest
-from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -40,13 +37,11 @@ from app.reorder_fixture import (
     purge_reorder_fixture,
     seed_reorder_fixture,
 )
-from app.routers.categories import reorder_categories
-from app.routers.images import reorder_images
+from app.routers.tile_order import get_tile_order, put_tile_order
 from app.schemas import (
-    CategoryReorderItem,
-    CategoryReorderRequest,
-    ImageReorderItem,
-    ImageReorderRequest,
+    TileOrderItemRef,
+    TileOrderRequest,
+    TileOrderScope,
 )
 
 DB_URL = os.environ.get("REORDER_FIXTURE_DATABASE_URL", "")
@@ -225,104 +220,26 @@ async def test_purge_removes_all_fixture_rows(db_session):
 
 @requires_db
 async def test_full_authoritative_order_round_trip(db_session):
-    """Reorder the 80-category flat scope and read the whole order back."""
+    """Reverse the flat scope's full mixed order and read it back.
+
+    The scope holds the 80 flat sibling categories plus any images seeded
+    into it; the round trip covers the whole interleaved order.
+    """
     spec = await seed_reorder_fixture(db_session)
     flat_parent = spec.categories[0].id
-    flat = [c for c in spec.categories if c.parent_id == flat_parent]
-    reversed_ids = [c.id for c in reversed(flat)]
 
-    body = CategoryReorderRequest(
-        items=[
-            CategoryReorderItem(id=cid, parent_id=flat_parent, sort_order=idx)
-            for idx, cid in enumerate(reversed_ids)
-        ]
+    current = await get_tile_order(_admin(), flat_parent, db_session)
+    reversed_items = list(reversed(current.items))
+
+    body = TileOrderRequest(
+        scope=TileOrderScope(parent_category_id=flat_parent),
+        expected_revision=current.revision,
+        operation_id=None,
+        items=[TileOrderItemRef(type=i.type, id=i.id) for i in reversed_items],
     )
-    await reorder_categories(body, _admin(), db_session)
+    await put_tile_order(body, _admin(), db_session)
 
-    rows = (
-        await db_session.execute(
-            select(Category.id)
-            .where(Category.parent_id == flat_parent)
-            .order_by(Category.sort_order, Category.label)
-        )
-    ).all()
-    assert [row[0] for row in rows] == reversed_ids
-
-
-@requires_db
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Epic #975 regression: category and image reorders persist through "
-        "separate transactions, so one half can commit while the other fails "
-        "(sub-issue #978 will make the pair atomic)."
-    ),
-)
-async def test_mixed_reorder_is_atomic_across_categories_and_images(db_session):
-    """A failing image half must not leave the category half committed."""
-    spec = await seed_reorder_fixture(db_session)
-    root_cats = [c for c in spec.categories if c.parent_id is None]
-    original_first = root_cats[0].id
-
-    cat_body = CategoryReorderRequest(
-        items=[
-            CategoryReorderItem(id=c.id, parent_id=None, sort_order=len(root_cats) - i)
-            for i, c in enumerate(root_cats)
-        ]
-    )
-    img_body = ImageReorderRequest(
-        items=[ImageReorderItem(id=IMAGE_ID_BASE - 1, sort_order=0)]  # nonexistent
-    )
-
-    # Mirrors the frontend's two-request flow (SortableTileGrid.handleDragEnd).
-    await reorder_categories(cat_body, _admin(), db_session)
-    with pytest.raises(HTTPException):
-        await reorder_images(img_body, _admin(), db_session)
-    await db_session.rollback()
-
-    rows = (
-        await db_session.execute(
-            select(Category.id)
-            .where(Category.parent_id.is_(None), Category.label.like(f"{FIXTURE_PREFIX}%"))
-            .order_by(Category.sort_order, Category.label)
-        )
-    ).all()
-    # Atomicity requires the category half to have rolled back too — today it
-    # commits, so the original leader is no longer first and this assert fails.
-    assert [row[0] for row in rows][0] == original_first
-
-
-@requires_db
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Epic #975 regression: concurrent editors submitting from the same "
-        "initial ordering silently last-write-win (sub-issue #978 adds a "
-        "revisioned contract that must reject the stale submission)."
-    ),
-)
-async def test_stale_submission_from_second_tab_is_rejected(db_session):
-    """Two tabs reorder from the same revision; the stale one must conflict."""
-    spec = await seed_reorder_fixture(db_session)
-    root_cats = [c for c in spec.categories if c.parent_id is None]
-    ids = [c.id for c in root_cats]
-
-    tab_a = CategoryReorderRequest(
-        items=[
-            CategoryReorderItem(id=cid, parent_id=None, sort_order=i)
-            for i, cid in enumerate(reversed(ids))
-        ]
-    )
-    # Tab B still believes the initial ordering and submits a different order.
-    tab_b = CategoryReorderRequest(
-        items=[
-            CategoryReorderItem(id=cid, parent_id=None, sort_order=i)
-            for i, cid in enumerate(ids)
-        ]
-    )
-
-    await reorder_categories(tab_a, _admin(), db_session)
-    # A revisioned contract must reject tab B's stale submission; today it
-    # silently overwrites tab A's committed order (last write wins).
-    with pytest.raises(HTTPException):
-        await reorder_categories(tab_b, _admin(), db_session)
+    after = await get_tile_order(_admin(), flat_parent, db_session)
+    assert [(i.type, i.id) for i in after.items] == [
+        (i.type, i.id) for i in reversed_items
+    ]
