@@ -27,10 +27,10 @@ run-to-run variance observed was ± ~10 %.
 Note on the measured window: the tables below were captured with a harness
 that stopped sampling before the Escape-cancel and pointer release, so they
 reflect drag activation + steady-state movement only — drag-end cost falls
-outside them. The harness now keeps the cancel/release inside the sampled
-window (and excludes the file drop zone from the tile count), so future runs
-will report slightly higher long-task totals and a tile count one lower than
-the tables below for edit-capable users; compare like with like.
+outside them. The harness now keeps long-task sampling running through the
+cancel/release (so the drag-end cluster is captured) while drag FPS is still
+computed over the movement phase only, so FPS remains comparable with the
+tables below but future long-task totals will be slightly higher.
 
 ## Baseline (before optimization)
 
