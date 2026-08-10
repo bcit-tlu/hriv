@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useCategoryActions } from '../src/useCategoryActions'
 import type { UseCategoryActionsDeps } from '../src/useCategoryActions'
@@ -368,6 +368,12 @@ describe('useCategoryActions', () => {
   })
 
   describe('reorderTilesFromManage', () => {
+    // tileOrderingCoordinator is a module-level singleton: restore its spies
+    // even when an assertion fails mid-test so stubs never leak.
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
     it('reports each scope order to the shared coordinator', async () => {
       const deps = makeDeps()
       const reportOrder = vi
@@ -387,7 +393,6 @@ describe('useCategoryActions', () => {
       expect(reportOrder).toHaveBeenNthCalledWith(1, null, scopes[0].order)
       expect(reportOrder).toHaveBeenNthCalledWith(2, 1, scopes[1].order)
       expect(result.current.manageReorderScopes).toEqual([null, 1])
-      reportOrder.mockRestore()
     })
 
     it('persists parent moves through the versioned category PATCH first', async () => {
@@ -420,7 +425,6 @@ describe('useCategoryActions', () => {
 
       expect(mockUpdateCategory).toHaveBeenCalledWith(2, { parent_id: 5 }, 7)
       expect(reportOrder).toHaveBeenCalledWith(5, [{ type: 'category', id: 2 }])
-      reportOrder.mockRestore()
     })
 
     it('shows error snack, re-throws, and skips ordering when a move fails', async () => {
@@ -442,7 +446,6 @@ describe('useCategoryActions', () => {
 
       expect(deps.setErrorSnack).toHaveBeenCalled()
       expect(reportOrder).not.toHaveBeenCalled()
-      reportOrder.mockRestore()
     })
   })
 
