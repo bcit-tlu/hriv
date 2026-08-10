@@ -73,4 +73,3 @@ export function makeMixedRootScope(): {
   )
   return { categories, uncategorizedImages }
 }
-
