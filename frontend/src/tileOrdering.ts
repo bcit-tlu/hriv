@@ -659,3 +659,19 @@ export class TileOrderingCoordinator {
  * component so pending saves survive SPA navigation and grid remounts.
  */
 export const tileOrderingCoordinator = new TileOrderingCoordinator()
+
+/**
+ * A category change through an entity write (edit modal, move dialog, bulk
+ * edit) bumps the tile-order revision of both affected scopes server-side, so
+ * any revision the coordinator still caches for them is stale and would make
+ * the next reorder falsely 409. No-op when the category is unchanged — the
+ * server only bumps on an actual value change.
+ */
+export function invalidateMovedImageScopes(
+  oldCategoryId: ScopeId,
+  newCategoryId: number | null | undefined,
+): void {
+  if (newCategoryId === undefined || newCategoryId === oldCategoryId) return
+  tileOrderingCoordinator.invalidateRevision(oldCategoryId)
+  tileOrderingCoordinator.invalidateRevision(newCategoryId)
+}
