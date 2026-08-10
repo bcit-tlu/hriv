@@ -184,6 +184,7 @@ describe('SortableTileGrid', () => {
         { type: 'image', id: 10 },
       ],
       expect.any(Number),
+      expect.any(Object),
     )
   })
 
@@ -211,6 +212,7 @@ describe('SortableTileGrid', () => {
         { type: 'category', id: 1 },
       ],
       expect.any(Number),
+      expect.any(Object),
     )
   })
 })
@@ -363,6 +365,7 @@ describe('handleDragEnd — move guards', () => {
         { type: 'image', id: 10 },
       ],
       expect.any(Number),
+      expect.any(Object),
     )
   })
 
@@ -441,6 +444,7 @@ describe('handleDragEnd — reorder branches', () => {
         { type: 'category', id: 1 },
       ],
       expect.any(Number),
+      expect.any(Object),
     )
   })
 
@@ -468,6 +472,7 @@ describe('handleDragEnd — reorder branches', () => {
         { type: 'image', id: 10 },
       ],
       expect.any(Number),
+      expect.any(Object),
     )
   })
 
@@ -629,6 +634,7 @@ describe('drag-and-drop spec contract (docs/drag-and-drop.md)', () => {
         { type: 'image', id: 10 },
       ],
       expect.any(Number),
+      expect.any(Object),
     )
   })
 })
