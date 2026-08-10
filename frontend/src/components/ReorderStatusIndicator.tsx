@@ -51,8 +51,9 @@ export default function ReorderStatusIndicator({
     switch (status) {
       case 'idle':
         return null
+      // 'dirty' is a transient internal state: reportOrder flushes it into
+      // 'saving' in the same synchronous step, so render it as saving too.
       case 'dirty':
-        return <Typography variant="caption">Unsaved order</Typography>
       case 'saving':
       case 'dirty-while-saving':
         return (
