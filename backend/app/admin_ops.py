@@ -1012,7 +1012,10 @@ async def run_db_import(task_id: int) -> None:
                 # pre-restore revision must get a 409 from PUT /api/tile-order
                 # instead of silently overwriting the restored order.
                 await data_session.execute(
-                    text("UPDATE tile_order_revisions SET revision = revision + 1")
+                    text(
+                        "UPDATE tile_order_revisions "
+                        "SET revision = revision + 1, updated_at = now()"
+                    )
                 )
 
                 # Import programs
