@@ -21,6 +21,20 @@ vi.mock('../src/useBackgroundRefresh', () => ({
   useBackgroundRefresh: vi.fn(() => vi.fn()),
 }))
 
+vi.mock('../src/tileOrdering', () => ({
+  tileOrderingCoordinator: {
+    hasUnsavedChanges: vi.fn(() => false),
+    marker: vi.fn(() => 0),
+    releaseCleanScopes: vi.fn(),
+  },
+}))
+
+import { useBackgroundRefresh } from '../src/useBackgroundRefresh'
+import { tileOrderingCoordinator } from '../src/tileOrdering'
+
+const mockUseBackgroundRefresh = vi.mocked(useBackgroundRefresh)
+const mockHasUnsavedChanges = vi.mocked(tileOrderingCoordinator.hasUnsavedChanges)
+
 const mockFetchCategoryTree = vi.mocked(api.fetchCategoryTree)
 const mockFetchUncategorizedImages = vi.mocked(api.fetchUncategorizedImages)
 const mockFetchPrograms = vi.mocked(api.fetchPrograms)
@@ -109,6 +123,7 @@ describe('useBrowseData', () => {
     mockFetchPrograms.mockResolvedValue([])
     mockFetchGroups.mockReset()
     mockFetchGroups.mockResolvedValue([])
+    mockHasUnsavedChanges.mockReturnValue(false)
   })
   afterEach(() => {
     vi.restoreAllMocks()
@@ -577,6 +592,310 @@ describe('useBrowseData', () => {
 
       // Only first ancestor: [10, 20, 30]
       expect(result.current.getPathRestriction(1)).toEqual([10, 20, 30])
+    })
+  })
+
+  describe('latest-request-wins sequencing (issue #980)', () => {
+    it('an older category response cannot overwrite a newer one', async () => {
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+      await triggerInitialLoad(result)
+
+      // Two overlapping background-style reads (each with its own signal, so
+      // neither is aborted): the older resolves after the newer.
+      let resolveOld!: (v: ApiCategoryTree[]) => void
+      let resolveNew!: (v: ApiCategoryTree[]) => void
+      mockFetchCategoryTree
+        .mockImplementationOnce(() => new Promise((r) => (resolveOld = r)))
+        .mockImplementationOnce(() => new Promise((r) => (resolveNew = r)))
+
+      let oldDone!: Promise<void>
+      let newDone!: Promise<void>
+      act(() => {
+        oldDone = result.current.loadCategories({
+          silent: true,
+          signal: new AbortController().signal,
+        })
+        newDone = result.current.loadCategories({
+          silent: true,
+          signal: new AbortController().signal,
+        })
+      })
+
+      await act(async () => {
+        resolveNew([makeApiTree({ id: 2, label: 'Newer' })])
+        await newDone
+      })
+      expect(result.current.categories[0].label).toBe('Newer')
+
+      await act(async () => {
+        resolveOld([makeApiTree({ id: 1, label: 'Older' })])
+        await oldDone
+      })
+      // The stale response must not replace the newer one.
+      expect(result.current.categories[0].label).toBe('Newer')
+    })
+
+    it('an older uncategorized-image response cannot overwrite a newer one', async () => {
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+      await triggerInitialLoad(result)
+
+      let resolveOld!: (v: api.ApiImage[]) => void
+      mockFetchUncategorizedImages.mockImplementationOnce(
+        () => new Promise((r) => (resolveOld = r)),
+      )
+
+      let oldDone!: Promise<void>
+      act(() => {
+        oldDone = result.current.loadUncategorizedImages({
+          signal: new AbortController().signal,
+        })
+      })
+
+      mockFetchUncategorizedImages.mockResolvedValue([makeApiImage(2, { name: 'newer' })])
+      await act(async () => {
+        await result.current.refreshUncategorizedImages()
+      })
+      expect(result.current.uncategorizedImages[0].name).toBe('newer')
+
+      await act(async () => {
+        resolveOld([makeApiImage(1, { name: 'older' })])
+        await oldDone
+      })
+      expect(result.current.uncategorizedImages[0].name).toBe('newer')
+    })
+
+    it('a foreground load aborts the previous foreground read and its response is discarded', async () => {
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+      await triggerInitialLoad(result)
+
+      let resolveOld!: (v: ApiCategoryTree[]) => void
+      let oldSignal: AbortSignal | undefined
+      mockFetchCategoryTree.mockImplementationOnce((init?: RequestInit) => {
+        oldSignal = init?.signal ?? undefined
+        return new Promise((r) => (resolveOld = r))
+      })
+
+      let oldDone!: Promise<void>
+      act(() => {
+        oldDone = result.current.loadCategories({ silent: true })
+      })
+
+      mockFetchCategoryTree.mockResolvedValue([makeApiTree({ id: 2, label: 'Fresh' })])
+      await act(async () => {
+        await result.current.refreshCategories()
+      })
+      expect(oldSignal?.aborted).toBe(true)
+      expect(result.current.categories[0].label).toBe('Fresh')
+
+      await act(async () => {
+        resolveOld([makeApiTree({ id: 1, label: 'Stale' })])
+        await oldDone
+      })
+      expect(result.current.categories[0].label).toBe('Fresh')
+    })
+
+    it('a superseded refresh resolves with the freshest committed data instead of rejecting', async () => {
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+      await triggerInitialLoad(result)
+
+      let rejectOld!: (err: unknown) => void
+      mockFetchCategoryTree.mockImplementationOnce(
+        () => new Promise((_resolve, reject) => (rejectOld = reject)),
+      )
+
+      let oldRefresh!: Promise<Category[]>
+      act(() => {
+        oldRefresh = result.current.refreshCategories()
+      })
+
+      mockFetchCategoryTree.mockResolvedValue([makeApiTree({ id: 2, label: 'Newest' })])
+      await act(async () => {
+        await result.current.refreshCategories()
+      })
+
+      let cats: Category[] = []
+      await act(async () => {
+        rejectOld(new DOMException('The operation was aborted.', 'AbortError'))
+        cats = await oldRefresh
+      })
+      // Resolves (no rejection) with the freshest committed data.
+      expect(cats[0].label).toBe('Newest')
+      expect(result.current.categories[0].label).toBe('Newest')
+    })
+
+    it('a plain load during an in-flight refresh fetches fresh (cache-bypassing) data itself', async () => {
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+      await triggerInitialLoad(result)
+
+      // Start an authoritative refresh that stays in flight (it predates the
+      // mutation below, so its response must not satisfy the later load).
+      let resolveRefresh!: (v: ApiCategoryTree[]) => void
+      mockFetchCategoryTree.mockImplementationOnce(() => new Promise((r) => (resolveRefresh = r)))
+      let refreshDone!: Promise<Category[]>
+      act(() => {
+        refreshDone = result.current.refreshCategories()
+      })
+
+      // A mutation commits, then its callback loads categories: the load
+      // must issue its own cache-bypassing request, not reuse the refresh.
+      let loadInit: RequestInit | { cache?: string } | undefined
+      mockFetchCategoryTree.mockImplementationOnce(async (init?: RequestInit) => {
+        loadInit = init
+        return [makeApiTree({ id: 2, label: 'Post-mutation' })]
+      })
+      await act(async () => {
+        await result.current.loadCategories({ silent: true })
+      })
+      expect((loadInit as { cache?: string } | undefined)?.cache).toBe('reload')
+      expect(result.current.categories[0].label).toBe('Post-mutation')
+
+      // The older refresh settling later cannot overwrite the newer load.
+      await act(async () => {
+        resolveRefresh([makeApiTree({ id: 1, label: 'Pre-mutation' })])
+        await refreshDone
+      })
+      expect(result.current.categories[0].label).toBe('Post-mutation')
+    })
+
+    it('a silent read finishing later cannot strand the visible loading spinner', async () => {
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+      await triggerInitialLoad(result)
+
+      let resolveVisible!: (v: ApiCategoryTree[]) => void
+      mockFetchCategoryTree.mockImplementationOnce(() => new Promise((r) => (resolveVisible = r)))
+
+      let visibleDone!: Promise<void>
+      act(() => {
+        visibleDone = result.current.loadCategories({ signal: new AbortController().signal })
+      })
+      expect(result.current.categoriesLoading).toBe(true)
+
+      // A silent background read starts and finishes while the visible load
+      // is still in flight (bumping the read generation past it).
+      mockFetchCategoryTree.mockResolvedValue([makeApiTree({ id: 2, label: 'Silent' })])
+      await act(async () => {
+        await result.current.loadCategories({
+          silent: true,
+          signal: new AbortController().signal,
+        })
+      })
+
+      await act(async () => {
+        resolveVisible([makeApiTree({ id: 1, label: 'Visible' })])
+        await visibleDone
+      })
+      // The visible load still clears the spinner even though it was
+      // superseded for data purposes.
+      expect(result.current.categoriesLoading).toBe(false)
+      expect(result.current.categories[0].label).toBe('Silent')
+    })
+
+    it('a refresh that aborts a visible load keeps the loading flag until the refresh settles', async () => {
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+      await triggerInitialLoad(result)
+
+      // A visible foreground load is in flight (its request never resolves —
+      // the refresh below aborts it).
+      mockFetchCategoryTree.mockImplementationOnce(
+        (init?: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () =>
+              reject(new DOMException('The operation was aborted.', 'AbortError')),
+            )
+          }),
+      )
+      let visibleDone!: Promise<boolean>
+      act(() => {
+        visibleDone = result.current.loadCategories()
+      })
+      expect(result.current.categoriesLoading).toBe(true)
+
+      // An authoritative refresh aborts the visible load and stays in flight;
+      // the aborted load must NOT clear the loading flag (no data landed yet).
+      let resolveRefresh!: (v: ApiCategoryTree[]) => void
+      mockFetchCategoryTree.mockImplementationOnce(() => new Promise((r) => (resolveRefresh = r)))
+      let refreshDone!: Promise<Category[]>
+      act(() => {
+        refreshDone = result.current.refreshCategories()
+      })
+      await act(async () => {
+        await visibleDone
+      })
+      expect(result.current.categoriesLoading).toBe(true)
+
+      // The refresh settles: data commits and the flag clears.
+      await act(async () => {
+        resolveRefresh([makeApiTree({ id: 3, label: 'Refreshed' })])
+        await refreshDone
+      })
+      expect(result.current.categoriesLoading).toBe(false)
+      expect(result.current.categories[0].label).toBe('Refreshed')
+    })
+
+    it('treats an aborted request as control flow, not a user-facing failure', async () => {
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+      await triggerInitialLoad(result)
+
+      mockFetchCategoryTree.mockRejectedValueOnce(
+        new DOMException('The operation was aborted.', 'AbortError'),
+      )
+      await act(async () => {
+        await result.current.loadCategories({ silent: true })
+      })
+
+      expect(spy).not.toHaveBeenCalled()
+      spy.mockRestore()
+    })
+  })
+
+  describe('pending-order protection (issue #980)', () => {
+    it('background polling skips reads while reorder state is unsaved', async () => {
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+      await triggerInitialLoad(result)
+
+      const backgroundRefresh = mockUseBackgroundRefresh.mock.calls.at(-1)![0]
+      mockFetchCategoryTree.mockClear()
+      mockFetchUncategorizedImages.mockClear()
+
+      mockHasUnsavedChanges.mockReturnValue(true)
+      await act(async () => {
+        await backgroundRefresh(new AbortController().signal)
+      })
+      expect(mockFetchCategoryTree).not.toHaveBeenCalled()
+      expect(mockFetchUncategorizedImages).not.toHaveBeenCalled()
+    })
+
+    it('background polling resumes after the reorder resolves', async () => {
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+      await triggerInitialLoad(result)
+
+      const backgroundRefresh = mockUseBackgroundRefresh.mock.calls.at(-1)![0]
+      mockFetchCategoryTree.mockClear()
+      mockFetchUncategorizedImages.mockClear()
+
+      mockHasUnsavedChanges.mockReturnValue(true)
+      await act(async () => {
+        await backgroundRefresh(new AbortController().signal)
+      })
+      expect(mockFetchCategoryTree).not.toHaveBeenCalled()
+
+      mockHasUnsavedChanges.mockReturnValue(false)
+      await act(async () => {
+        await backgroundRefresh(new AbortController().signal)
+      })
+      expect(mockFetchCategoryTree).toHaveBeenCalledTimes(1)
+      expect(mockFetchUncategorizedImages).toHaveBeenCalledTimes(1)
     })
   })
 

@@ -10,8 +10,11 @@ import type { TileOrderStatus } from '../tileOrdering'
 
 export interface ReorderStatusIndicatorProps {
   status: TileOrderStatus
+  /** A retained authoritative server order can still be adopted. */
+  serverOrderAvailable?: boolean
   onRetry: () => void
   onAcceptServerOrder: () => void
+  onReapplyLocalOrder: () => void
   /** A scope other than the browsed one holds a failed save. */
   otherScopesFailed?: boolean
   /** Retry the failed saves of every scope, including ones not browsed. */
@@ -25,8 +28,10 @@ export interface ReorderStatusIndicatorProps {
  */
 export default function ReorderStatusIndicator({
   status,
+  serverOrderAvailable = false,
   onRetry,
   onAcceptServerOrder,
+  onReapplyLocalOrder,
   otherScopesFailed = false,
   onRetryFailedScopes,
 }: ReorderStatusIndicatorProps) {
@@ -77,6 +82,9 @@ export default function ReorderStatusIndicator({
             <Button size="small" onClick={onAcceptServerOrder}>
               Refresh
             </Button>
+            <Button size="small" onClick={onReapplyLocalOrder}>
+              Keep my order
+            </Button>
           </>
         )
       case 'error':
@@ -87,6 +95,11 @@ export default function ReorderStatusIndicator({
             <Button size="small" onClick={onRetry}>
               Retry
             </Button>
+            {serverOrderAvailable && (
+              <Button size="small" onClick={onAcceptServerOrder}>
+                Use server order
+              </Button>
+            )}
           </>
         )
     }

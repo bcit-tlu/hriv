@@ -1848,8 +1848,10 @@ export default function App() {
                   <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
                     <ReorderStatusIndicator
                       status={tileOrdering.status}
+                      serverOrderAvailable={tileOrdering.serverOrderAvailable}
                       onRetry={tileOrdering.retry}
                       onAcceptServerOrder={handleAcceptServerOrder}
+                      onReapplyLocalOrder={tileOrdering.reapplyLocalOrder}
                       otherScopesFailed={tileOrdering.otherScopesFailed}
                       onRetryFailedScopes={tileOrdering.retryFailedScopes}
                     />

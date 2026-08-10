@@ -92,6 +92,10 @@ function scopeFromKey(key: string): ScopeId {
   return key === 'root' ? null : Number(key)
 }
 
+function refKey(ref: TileOrderItemRef): string {
+  return `${ref.type}:${ref.id}`
+}
+
 function sameOrder(a: TileOrderItemRef[], b: TileOrderItemRef[]): boolean {
   return a.length === b.length && a.every((ref, i) => ref.type === b[i].type && ref.id === b[i].id)
 }
@@ -258,6 +262,33 @@ export class TileOrderingCoordinator {
     if (state.displayOrder !== null && sameOrder(state.displayOrder, order)) return
     if (dragContext !== undefined) this.dragContexts.set(scopeKey(scope), dragContext)
 
+    // A drop while a conflict is unresolved folds into the retained local
+    // intent instead of auto-submitting with the conflict-time revision:
+    // resolution stays explicit (Refresh / Keep my order), so the concurrent
+    // server change is never silently overwritten (docs/tile-ordering.md).
+    if (state.status === 'conflict') {
+      const key = scopeKey(scope)
+      // With no open queued operation for the scope, a drop mints a fresh
+      // operation and emits `queued`; when one is still open (minted while
+      // the conflicting save was in flight, or by an earlier drop during
+      // this conflict) the drop coalesces into it.
+      const existingId = this.pendingOperationIds.get(key)
+      const operationId = existingId ?? newReorderOperationId()
+      this.pendingOperationIds.set(key, operationId)
+      emitReorderDiagnostic({
+        operationId,
+        state: existingId !== undefined ? 'coalesced' : 'queued',
+        scopeCategoryId: scope,
+        queueDepth: 1,
+      })
+      this.setScope(scope, {
+        ...state,
+        pending: order,
+        displayOrder: order,
+      })
+      return
+    }
+
     // Treat revision seeding like an in-flight save: the drop is queued so
     // the status stays 'saving'-family instead of flickering back to dirty,
     // and queued/coalesced telemetry is emitted for it.
@@ -287,6 +318,9 @@ export class TileOrderingCoordinator {
         status: 'dirty-while-saving',
         pending: order,
         displayOrder: order,
+        // A retained conflict-era server order no longer corresponds to this
+        // newest intent; drop it so "Use server order" can't adopt stale data.
+        conflictOrder: null,
       })
       return
     }
@@ -307,6 +341,7 @@ export class TileOrderingCoordinator {
       status: 'dirty',
       pending: order,
       displayOrder: order,
+      conflictOrder: null,
       error: null,
     })
     void this.flush(scope)
@@ -362,9 +397,22 @@ export class TileOrderingCoordinator {
    */
   acceptServerOrder(scope: ScopeId): void {
     const state = this.getScope(scope)
-    if (state.status !== 'conflict') return
+    // Also honored from a failed "keep my order" retry: the conflict's
+    // authoritative order is retained through `reapplyLocalOrder`, so the
+    // user can still fall back to the server's order when the retry errors.
+    if (state.status !== 'conflict' && !(state.status === 'error' && state.conflictOrder !== null))
+      return
     // The queued snapshot is discarded here, so its correlation ID and drag
-    // detail must not be inherited by the next (unrelated) operation.
+    // detail must not be inherited by the next (unrelated) operation. Give
+    // the discarded operation a terminal event so its lifecycle closes.
+    const discardedId = this.pendingOperationIds.get(scopeKey(scope))
+    if (discardedId !== undefined) {
+      emitReorderDiagnostic({
+        operationId: discardedId,
+        state: 'stale_discarded',
+        scopeCategoryId: scope,
+      })
+    }
     this.pendingOperationIds.delete(scopeKey(scope))
     this.dragContexts.delete(scopeKey(scope))
     this.setScope(scope, {
@@ -375,6 +423,45 @@ export class TileOrderingCoordinator {
       conflictOrder: null,
       error: null,
     })
+  }
+
+  /**
+   * Resolve a conflict by reapplying the newest local intent against the
+   * server's current revision (deliberate "keep my order" path — never a
+   * silent last-write-wins).
+   */
+  reapplyLocalOrder(scope: ScopeId): void {
+    const state = this.getScope(scope)
+    if (state.status !== 'conflict') return
+    if (state.pending === null) {
+      this.acceptServerOrder(scope)
+      return
+    }
+    // Reconcile the pending list against the authoritative membership —
+    // keep the local relative order for surviving items, drop departed
+    // ones, append newcomers in server order. This runs for every conflict:
+    // it is a no-op for a pure 409 revision clash (identical membership)
+    // and prevents a 400-style membership-drift conflict from being
+    // resubmitted verbatim and rejected forever.
+    let pending = state.pending
+    if (state.conflictOrder !== null) {
+      const authoritative = new Set(state.conflictOrder.map(refKey))
+      const local = new Set(pending.map(refKey))
+      pending = [
+        ...pending.filter((ref) => authoritative.has(refKey(ref))),
+        ...state.conflictOrder.filter((ref) => !local.has(refKey(ref))),
+      ]
+    }
+    // The conflict's authoritative order is retained until a commit
+    // succeeds, keeping accept-server-order available if the retry fails.
+    this.setScope(scope, {
+      ...state,
+      status: 'dirty',
+      pending,
+      displayOrder: pending,
+      error: null,
+    })
+    void this.flush(scope)
   }
 
   private setScope(scope: ScopeId, state: ScopeState): void {
@@ -484,6 +571,7 @@ export class TileOrderingCoordinator {
           // Only adopt the authoritative order when no newer local intent
           // accumulated during the save — never roll back newer changes.
           displayOrder: stillNewest ? refsOf(response) : after.displayOrder,
+          conflictOrder: null,
         })
         for (const listener of this.commitListeners) {
           try {

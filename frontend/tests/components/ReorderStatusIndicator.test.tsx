@@ -4,17 +4,20 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import ReorderStatusIndicator from '../../src/components/ReorderStatusIndicator'
 import type { TileOrderStatus } from '../../src/tileOrdering'
 
-function renderIndicator(status: TileOrderStatus) {
+function renderIndicator(status: TileOrderStatus, serverOrderAvailable = false) {
   const onRetry = vi.fn()
   const onAcceptServerOrder = vi.fn()
+  const onReapplyLocalOrder = vi.fn()
   const result = render(
     <ReorderStatusIndicator
       status={status}
+      serverOrderAvailable={serverOrderAvailable}
       onRetry={onRetry}
       onAcceptServerOrder={onAcceptServerOrder}
+      onReapplyLocalOrder={onReapplyLocalOrder}
     />,
   )
-  return { ...result, onRetry, onAcceptServerOrder }
+  return { ...result, onRetry, onAcceptServerOrder, onReapplyLocalOrder }
 }
 
 describe('ReorderStatusIndicator', () => {
@@ -45,12 +48,31 @@ describe('ReorderStatusIndicator', () => {
     expect(onRetry).not.toHaveBeenCalled()
   })
 
+  it('shows a "Keep my order" button wired to onReapplyLocalOrder in conflict', () => {
+    const { onReapplyLocalOrder, onAcceptServerOrder } = renderIndicator('conflict')
+    fireEvent.click(screen.getByRole('button', { name: 'Keep my order' }))
+    expect(onReapplyLocalOrder).toHaveBeenCalledTimes(1)
+    expect(onAcceptServerOrder).not.toHaveBeenCalled()
+  })
+
   it('shows the error message with a Retry button wired to onRetry', () => {
     const { onRetry, onAcceptServerOrder } = renderIndicator('error')
     expect(screen.getByText('Could not save order')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(onRetry).toHaveBeenCalledTimes(1)
     expect(onAcceptServerOrder).not.toHaveBeenCalled()
+  })
+
+  it('offers "Use server order" in error state while a server order is retained', () => {
+    const { onAcceptServerOrder, onRetry } = renderIndicator('error', true)
+    fireEvent.click(screen.getByRole('button', { name: 'Use server order' }))
+    expect(onAcceptServerOrder).toHaveBeenCalledTimes(1)
+    expect(onRetry).not.toHaveBeenCalled()
+  })
+
+  it('hides "Use server order" in error state when no server order is retained', () => {
+    renderIndicator('error')
+    expect(screen.queryByRole('button', { name: 'Use server order' })).not.toBeInTheDocument()
   })
 
   it('exposes a status region for assistive technology', () => {
@@ -65,6 +87,7 @@ describe('ReorderStatusIndicator', () => {
         status="idle"
         onRetry={vi.fn()}
         onAcceptServerOrder={vi.fn()}
+        onReapplyLocalOrder={vi.fn()}
         otherScopesFailed
         onRetryFailedScopes={onRetryFailedScopes}
       />,
@@ -81,6 +104,7 @@ describe('ReorderStatusIndicator', () => {
         status="error"
         onRetry={vi.fn()}
         onAcceptServerOrder={vi.fn()}
+        onReapplyLocalOrder={vi.fn()}
         otherScopesFailed
         onRetryFailedScopes={onRetryFailedScopes}
       />,

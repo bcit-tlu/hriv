@@ -345,6 +345,123 @@ describe('TileOrderingCoordinator', () => {
     expect(state.conflictOrder).toBeNull()
   })
 
+  it('reapplyLocalOrder resubmits the newest local intent against the conflict revision', async () => {
+    const current = response(4, refs(3, 1, 2))
+    mockedPut
+      .mockRejectedValueOnce(conflictError(current))
+      .mockResolvedValueOnce(response(5, refs(2, 1, 3)))
+
+    coordinator.reportOrder(null, refs(2, 1, 3))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('conflict')
+
+    coordinator.reapplyLocalOrder(null)
+    await flushMicrotasks()
+
+    const state = coordinator.getScope(null)
+    expect(state.status).toBe('saved')
+    expect(state.revision).toBe(5)
+    expect(state.displayOrder).toEqual(refs(2, 1, 3))
+    // The second PUT used the authoritative revision from the conflict body.
+    expect(mockedPut).toHaveBeenLastCalledWith(null, 4, refs(2, 1, 3), expect.any(String))
+  })
+
+  it('a new drop during an unresolved conflict stays queued for explicit resolution', async () => {
+    const current = response(4, refs(3, 1, 2))
+    mockedPut
+      .mockRejectedValueOnce(conflictError(current))
+      .mockResolvedValueOnce(response(5, refs(3, 2, 1)))
+
+    coordinator.reportOrder(null, refs(2, 1, 3))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('conflict')
+    expect(mockedPut).toHaveBeenCalledTimes(1)
+
+    // A new drag does not auto-submit with the conflict-time revision.
+    coordinator.reportOrder(null, refs(3, 2, 1))
+    await flushMicrotasks()
+    let state = coordinator.getScope(null)
+    expect(state.status).toBe('conflict')
+    expect(state.displayOrder).toEqual(refs(3, 2, 1))
+    expect(state.conflictOrder).toEqual(refs(3, 1, 2))
+    expect(mockedPut).toHaveBeenCalledTimes(1)
+
+    // Explicit "Keep my order" submits the newest intent.
+    coordinator.reapplyLocalOrder(null)
+    await flushMicrotasks()
+    state = coordinator.getScope(null)
+    expect(state.status).toBe('saved')
+    expect(mockedPut).toHaveBeenLastCalledWith(null, 4, refs(3, 2, 1), expect.any(String))
+  })
+
+  it('closes the conflict-time queued operation lifecycle in telemetry', async () => {
+    const current = response(4, refs(3, 1, 2))
+    mockedPut.mockRejectedValueOnce(conflictError(current))
+
+    coordinator.reportOrder(null, refs(2, 1, 3))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('conflict')
+    events.length = 0
+
+    // First post-conflict drop starts a fresh operation: `queued`.
+    coordinator.reportOrder(null, refs(3, 2, 1))
+    expect(events.map((e) => e.state)).toEqual(['queued'])
+    const operationId = events[0].operationId
+
+    // A later drop during the same conflict coalesces into it.
+    coordinator.reportOrder(null, refs(1, 3, 2))
+    expect(events.map((e) => e.state)).toEqual(['queued', 'coalesced'])
+    expect(events[1].operationId).toBe(operationId)
+
+    // "Refresh" discards the queued snapshot with a terminal event.
+    coordinator.acceptServerOrder(null)
+    expect(events.map((e) => e.state)).toEqual(['queued', 'coalesced', 'stale_discarded'])
+    expect(events[2].operationId).toBe(operationId)
+  })
+
+  it('keeps accept-server-order available when the reapply retry fails', async () => {
+    const current = response(4, refs(3, 1, 2))
+    mockedPut
+      .mockRejectedValueOnce(conflictError(current))
+      .mockRejectedValueOnce(new ApiError(500, 'boom'))
+
+    coordinator.reportOrder(null, refs(2, 1, 3))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('conflict')
+
+    coordinator.reapplyLocalOrder(null)
+    await flushMicrotasks()
+
+    let state = coordinator.getScope(null)
+    expect(state.status).toBe('error')
+    // The conflict's authoritative order survives the failed retry...
+    expect(state.conflictOrder).toEqual(refs(3, 1, 2))
+
+    // ...so the user can still fall back to the server's order.
+    coordinator.acceptServerOrder(null)
+    state = coordinator.getScope(null)
+    expect(state.status).toBe('saved')
+    expect(state.displayOrder).toEqual(refs(3, 1, 2))
+    expect(state.conflictOrder).toBeNull()
+    expect(state.pending).toBeNull()
+  })
+
+  it('clears the retained conflict order once a reapply retry commits', async () => {
+    const current = response(4, refs(3, 1, 2))
+    mockedPut
+      .mockRejectedValueOnce(conflictError(current))
+      .mockResolvedValueOnce(response(5, refs(2, 1, 3)))
+
+    coordinator.reportOrder(null, refs(2, 1, 3))
+    await flushMicrotasks()
+    coordinator.reapplyLocalOrder(null)
+    await flushMicrotasks()
+
+    const state = coordinator.getScope(null)
+    expect(state.status).toBe('saved')
+    expect(state.conflictOrder).toBeNull()
+  })
+
   it('treats a 400 membership change like a conflict and refreshes via GET', async () => {
     const current = response(4, refs(3, 1, 2))
     mockedPut.mockRejectedValueOnce(new ApiError(400, 'Images not in scope: [99]'))
@@ -361,6 +478,26 @@ describe('TileOrderingCoordinator', () => {
     expect(state.pending).toEqual(refs(2, 1, 3))
     expect(mockedPut).toHaveBeenCalledTimes(1)
     expect(events.some((e) => e.state === 'conflicted')).toBe(true)
+  })
+
+  it('reapplyLocalOrder reconciles pending against drifted membership instead of looping', async () => {
+    // Membership drift: image 3 left the scope, image 4 arrived.
+    const current = response(4, refs(3, 1, 4))
+    mockedPut.mockRejectedValueOnce(new ApiError(400, 'Images not in scope: [2]'))
+    mockedGet.mockResolvedValue(current)
+    mockedPut.mockResolvedValueOnce(response(5, refs(1, 3, 4)))
+
+    coordinator.reportOrder(null, refs(2, 1, 3))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('conflict')
+
+    coordinator.reapplyLocalOrder(null)
+    await flushMicrotasks()
+
+    const state = coordinator.getScope(null)
+    expect(state.status).toBe('saved')
+    // Departed item dropped, local relative order kept, newcomer appended.
+    expect(mockedPut).toHaveBeenLastCalledWith(null, 4, refs(1, 3, 4), expect.any(String))
   })
 
   it('shows saving during seeding and emits a failed diagnostic when the seed GET fails', async () => {
