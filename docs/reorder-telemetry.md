@@ -63,6 +63,19 @@ requests, with the dialog owning the single lifecycle (the
 supplies an operation ID). A drag whose category half succeeded but whose
 image half failed is reported as one `failed` operation.
 
+Two coordinator edge cases relax that pairing, both tied to revision seeding
+(the one-time `GET /api/tile-order` that fetches a scope's CAS token before
+its first save):
+
+- A seeding failure emits a terminal `failed` for a fresh operation ID with
+  no preceding `submitted` — nothing was ever submitted, so dashboards
+  pairing `submitted` with terminals should treat `failed` events whose ID
+  never appeared as `submitted` as pre-submission (seeding) failures.
+- A drop landing while its scope's very first snapshot is still seeding
+  coalesces into that snapshot and emits `coalesced` for an operation ID
+  that never emitted `queued` (the seeded snapshot itself was reported via
+  the dirty path, which does not mint a queue-time ID).
+
 Server-side, an event that omits `state` entirely is logged with
 `reorder.state: "missing"` and skipped by the client-operations counter, so
 the `other` bucket only ever means "unrecognized state" (vocabulary drift).
