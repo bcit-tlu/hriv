@@ -6,6 +6,7 @@ to periodically flush progress updates to the database.
 """
 
 import asyncio
+import errno
 import logging
 import math
 import os
@@ -17,7 +18,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pyvips
-from opentelemetry import trace
+from opentelemetry import metrics, trace
 from opentelemetry.trace import StatusCode
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,6 +36,69 @@ from .tile_provenance import (
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
+
+_meter = metrics.get_meter(__name__)
+
+
+def _source_image_file_size_bytes(src: SourceImage) -> int | None:
+    if src.file_size is not None:
+        return src.file_size
+    try:
+        return os.path.getsize(src.stored_path)
+    except OSError:
+        return None
+
+_processing_started_counter = _meter.create_counter(
+    "hriv.image_processing.started",
+    description="Number of image processing jobs started",
+    unit="1",
+)
+_processing_completed_counter = _meter.create_counter(
+    "hriv.image_processing.completed",
+    description="Number of image processing jobs completed",
+    unit="1",
+)
+_processing_duration_histogram = _meter.create_histogram(
+    "hriv.image_processing.duration",
+    description="Duration of image processing jobs",
+    unit="s",
+)
+
+
+def _record_processing_started(task_type: str) -> None:
+    _processing_started_counter.add(1, {"task_type": task_type})
+
+
+def _record_processing_finished(
+    task_type: str, duration_s: float, success: bool,
+) -> None:
+    _processing_completed_counter.add(
+        1,
+        {"task_type": task_type, "outcome": "success" if success else "failure"},
+    )
+    _processing_duration_histogram.record(duration_s, {"task_type": task_type})
+
+
+def _is_enospc(exc: Exception) -> bool:
+    """Whether *exc* represents an out-of-disk-space failure.
+
+    Direct filesystem calls raise ``OSError`` with ``errno.ENOSPC``, while
+    libvips write failures (e.g. ``dzsave``) surface as ``pyvips.Error``
+    carrying the strerror text in the message/detail instead of an errno,
+    so fall back to matching the strerror text.
+    """
+    if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
+        return True
+    return "no space left on device" in str(exc).lower()
+
+
+def _processing_failure_message(exc: Exception, *, replacement: bool = False) -> str:
+    """Translate common processing failures into operator-facing messages."""
+    if _is_enospc(exc):
+        return "Insufficient storage — the tiles volume is full"
+    if replacement:
+        return "Image replacement failed. Check server logs."
+    return "Tile generation failed. Check server logs."
 
 
 # ── Pyramidal image detection ─────────────────────────────
@@ -449,6 +513,7 @@ async def process_source_image(source_image_id: int) -> None:
                 "file_size": getattr(src, "file_size", None),
             },
         )
+        _record_processing_started("process")
         t_start = time.monotonic()
 
         span.set_attribute("source_image.filename", src.original_filename)
@@ -577,17 +642,7 @@ async def process_source_image(source_image_id: int) -> None:
 
                 name = src.name or Path(src.original_filename).stem
 
-                # Compute file size in MB from the source image on disk
-                file_size_mb: float | None = None
-                if src.file_size is not None:
-                    file_size_mb = round(src.file_size / (1024 * 1024), 2)
-                else:
-                    try:
-                        file_size_mb = round(
-                            os.path.getsize(src.stored_path) / (1024 * 1024), 2
-                        )
-                    except OSError:
-                        pass
+                file_size = _source_image_file_size_bytes(src)
 
                 # Build metadata from pyramid detection results
                 image_metadata: dict = {}
@@ -616,7 +671,7 @@ async def process_source_image(source_image_id: int) -> None:
                     metadata_=image_metadata,
                     width=img_width,
                     height=img_height,
-                    file_size=file_size_mb,
+                    file_size=file_size,
                 )
                 db.add(img)
                 await db.flush()
@@ -636,6 +691,7 @@ async def process_source_image(source_image_id: int) -> None:
                 await db.commit()
 
             duration_ms = round((time.monotonic() - t_start) * 1000)
+            _record_processing_finished("process", duration_ms / 1000, True)
             logger.info(
                 "Processing completed successfully",
                 extra={
@@ -652,6 +708,7 @@ async def process_source_image(source_image_id: int) -> None:
             span.record_exception(exc)
             span.set_status(StatusCode.ERROR, str(exc))
             duration_ms = round((time.monotonic() - t_start) * 1000)
+            _record_processing_finished("process", duration_ms / 1000, False)
             logger.exception(
                 "Failed to process source image",
                 extra={
@@ -667,7 +724,7 @@ async def process_source_image(source_image_id: int) -> None:
             src = await db.get(SourceImage, source_image_id)
             if src is not None:
                 src.status = "failed"
-                src.error_message = "Tile generation failed. Check server logs."
+                src.error_message = _processing_failure_message(exc)
                 src.status_message = "Failed"
                 await db.commit()
 
@@ -730,6 +787,7 @@ async def process_replace_image(
                 "original_filename": src.original_filename,
             },
         )
+        _record_processing_started("replace")
         t_start = time.monotonic()
 
         try:
@@ -841,16 +899,7 @@ async def process_replace_image(
             await db.commit()
 
             with tracer.start_as_current_span("update_image_record"):
-                file_size_mb: float | None = None
-                if src.file_size is not None:
-                    file_size_mb = round(src.file_size / (1024 * 1024), 2)
-                else:
-                    try:
-                        file_size_mb = round(
-                            os.path.getsize(src.stored_path) / (1024 * 1024), 2,
-                        )
-                    except OSError:
-                        pass
+                file_size = _source_image_file_size_bytes(src)
 
                 # Re-fetch to pick up any concurrent metadata changes
                 await db.refresh(img)
@@ -859,7 +908,7 @@ async def process_replace_image(
                 img.thumb = thumb_url
                 img.width = img_width
                 img.height = img_height
-                img.file_size = file_size_mb
+                img.file_size = file_size
                 img.version = img.version + 1
 
                 # Clear edit canvas metadata (annotations and overlays)
@@ -917,6 +966,7 @@ async def process_replace_image(
                 )
 
             duration_ms = round((time.monotonic() - t_start) * 1000)
+            _record_processing_finished("replace", duration_ms / 1000, True)
             logger.info(
                 "Replacement processing completed",
                 extra={
@@ -932,6 +982,7 @@ async def process_replace_image(
             span.record_exception(exc)
             span.set_status(StatusCode.ERROR, str(exc))
             duration_ms = round((time.monotonic() - t_start) * 1000)
+            _record_processing_finished("replace", duration_ms / 1000, False)
             logger.exception(
                 "Failed to process replacement image",
                 extra={
@@ -946,7 +997,7 @@ async def process_replace_image(
             src = await db.get(SourceImage, source_image_id)
             if src is not None:
                 src.status = "failed"
-                src.error_message = "Image replacement failed. Check server logs."
+                src.error_message = _processing_failure_message(exc, replacement=True)
                 src.status_message = "Failed"
                 await db.commit()
 
@@ -1173,6 +1224,9 @@ async def rebuild_source_image_tiles(
         settings.tiles_dir, f".rebuild-{src.id}-{uuid4().hex}",
     )
 
+    _record_processing_started("rebuild")
+    t_start = time.monotonic()
+
     try:
         with tracer.start_as_current_span("rebuild_generate_tiles"):
             dzi_rel, thumb_rel, img_width, img_height = await asyncio.to_thread(
@@ -1203,6 +1257,8 @@ async def rebuild_source_image_tiles(
         await asyncio.to_thread(_swap)
     except Exception:
         await asyncio.to_thread(shutil.rmtree, tmp_dir, True)
+        duration_ms = round((time.monotonic() - t_start) * 1000)
+        _record_processing_finished("rebuild", duration_ms / 1000, False)
         raise
 
     source_checksum = await _best_effort_source_checksum(src.stored_path)
@@ -1221,6 +1277,9 @@ async def rebuild_source_image_tiles(
         img.version = img.version + 1
 
     await session.commit()
+
+    duration_ms = round((time.monotonic() - t_start) * 1000)
+    _record_processing_finished("rebuild", duration_ms / 1000, True)
 
     logger.info(
         "Rebuilt tiles for source image",

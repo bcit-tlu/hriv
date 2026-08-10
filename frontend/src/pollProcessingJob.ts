@@ -9,6 +9,8 @@
  * this helper handles the state machine for exactly one job.
  */
 
+import { isAuthFailure } from './api'
+
 export interface SourceImageStatus {
   /** Backend-reported status — any string is tolerated; only the three
    * recognized values below trigger callbacks. */
@@ -24,10 +26,14 @@ export interface PollProcessingJobCallbacks {
   /** Fetch the current status of the job.  Rejections are treated as
    * transient errors and the poll is retried after `pollIntervalMs`. */
   fetchStatus: (jobId: number) => Promise<SourceImageStatus>
-  /** Called exactly once when the backend reports `status === "completed"`. */
+  /** Called when the backend reports `status === "completed"`.
+   * If it throws a retryable error, polling retries and may call it again. */
   onCompleted: (imageId: number | null) => void | Promise<void>
   /** Called exactly once when the backend reports `status === "failed"`. */
   onFailed: (progress: number, errorMessage: string | null) => void
+  /** Called exactly once when auth failed and retrying would be misleading.
+   * If omitted, polling stops silently on 401/403. */
+  onAuthFailure?: () => void
   /** Called on every poll that reports a non-terminal status. */
   onProgress: (progress: number, statusMessage: string | null) => void
   /** Interval between polls, in milliseconds.  Defaults to 3000. */
@@ -47,7 +53,8 @@ const DEFAULT_POLL_INTERVAL_MS = 3000
  *
  * Invariants:
  * - At most one in-flight fetch is outstanding at any time.
- * - Terminal callbacks (`onCompleted` / `onFailed`) fire at most once.
+ * - `onFailed` and `onAuthFailure` fire at most once.
+ * - `onCompleted` is retried if its own follow-up work throws a non-auth error.
  * - After `cancel()` no further callbacks fire.
  * - Transient fetch rejections schedule a retry at the same interval.
  */
@@ -64,29 +71,56 @@ export function pollProcessingJob(jobId: number, cb: PollProcessingJobCallbacks)
 
   const poll = async () => {
     if (controller.signal.aborted || terminated) return
+    let src: SourceImageStatus
     try {
-      const src = await cb.fetchStatus(jobId)
-      if (controller.signal.aborted || terminated) return
+      src = await cb.fetchStatus(jobId)
+    } catch (err) {
+      if (isAuthFailure(err)) {
+        terminated = true
+        cb.onAuthFailure?.()
+        return
+      }
+      // Transient error — retry on the same schedule.
+      scheduleNext()
+      return
+    }
 
-      if (src.status === 'completed') {
+    if (controller.signal.aborted || terminated) return
+
+    if (src.status === 'completed') {
+      try {
         // Await the terminal callback *before* flipping `terminated`
-        // so that if it rejects (e.g. a data-refresh network blip),
-        // the outer catch schedules a retry — matching the
-        // pre-extraction behaviour where the whole poll was retried
-        // on any error inside the completion handler.
+        // so that retryable refresh failures keep the pre-extraction
+        // behavior, while confirmed completions can still suppress
+        // auth failures from follow-up refresh work.
         await cb.onCompleted(src.image_id ?? null)
         terminated = true
-        return
+      } catch (err) {
+        if (controller.signal.aborted || terminated) return
+        if (isAuthFailure(err)) {
+          terminated = true
+          return
+        }
+        // Transient completion-refresh error — retry on the same schedule.
+        scheduleNext()
       }
-      if (src.status === 'failed') {
-        cb.onFailed(src.progress, src.error_message ?? null)
-        terminated = true
-        return
-      }
+      return
+    }
+    if (src.status === 'failed') {
+      cb.onFailed(src.progress, src.error_message ?? null)
+      terminated = true
+      return
+    }
 
+    try {
       cb.onProgress(src.progress, src.status_message ?? null)
       scheduleNext()
-    } catch {
+    } catch (err) {
+      if (isAuthFailure(err)) {
+        terminated = true
+        cb.onAuthFailure?.()
+        return
+      }
       // Transient error — retry on the same schedule.
       scheduleNext()
     }

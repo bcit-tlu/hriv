@@ -122,7 +122,7 @@ RUN apt-get update \
        libglib2.0-0t64 libexpat1 \
        libjpeg62-turbo libspng0 libtiff6 libwebp7 libwebpdemux2 libwebpmux3 \
        libexif12 liblcms2-2 libopenslide0 libfftw3-double3 liborc-0.4-0t64 \
-       libcgif0 libhwy1t64 libimagequant0 libarchive13t64 \
+       libcgif0 libhwy1t64 libimagequant0 libarchive13t64 pigz \
     && rm -rf /var/lib/apt/lists/*
 
 # Custom libvips from the ``libvips-build`` stage.  ``ldconfig`` picks

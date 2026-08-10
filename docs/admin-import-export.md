@@ -104,6 +104,36 @@ matters because of foreign keys.
   `programs`, `groups`, `categories`, `images`, `users`, `announcements`,
   `changelog_entries`, `source_images`.
 
+## Filesystem export/import
+
+The Admin page's **Filesystem Export** is intentionally **source-images only**.
+It writes a `.tar.gz` of the preserved filesystem data needed to restore the
+application state, but it excludes the derived DZI tile pyramid under
+`/data/tiles/**`. That keeps exports much smaller and avoids spending time
+walking millions of generated tile files.
+
+- **Export contents:** source images and other authoritative filesystem data.
+- **Excluded:** the tile pyramid (`image_files/`, `image.dzi`,
+  `thumbnail.jpeg`, and other derived tile artifacts) plus `admin_tasks/`
+  scratch files.
+- **Import behavior:** filesystem imports restore the source files only. After a
+  successful files import, a **Rebuild Tiles** task is queued automatically; it
+  regenerates missing or stale DZI pyramids from the restored source images. The
+  same **Rebuild Tiles** control can also be triggered manually if needed.
+  Until then, viewers may show missing or stale tile placeholders.
+
+For a full cross-environment clone, follow this order:
+
+1. **Database import**
+2. **Filesystem import**
+3. **Rebuild Tiles** (queued automatically; can be triggered manually if needed)
+
+> Compression is parallelized with `pigz` when the backend container image
+> provides it (the backend Dockerfile installs it); otherwise the export falls
+> back to single-threaded gzip automatically.
+> Set `EXPORT_PIGZ_THREADS=2` to cap pigz at a modest thread count; use `0`
+> to opt out and let pigz use all available cores.
+
 > HRIV is **not** in production and has no legacy export archives. Imports do not
 > need to support older export formats — backward-compat code can be removed
 > rather than maintained.
@@ -113,9 +143,78 @@ matters because of foreign keys.
 Filesystem imports use a two-step flow to stream a potentially large archive:
 
 1. `create_files_import` creates the task in **`uploading`** status.
-2. `upload_task_file` streams the archive, then atomically transitions
+2. For small archives, `upload_task_file` accepts a raw `application/octet-stream`
+   request body, streams the archive directly to disk, then atomically transitions
    `uploading → pending` (a guarded `UPDATE ... WHERE status = 'uploading'`, so a
-   concurrent cancel is respected). Wrong-state uploads return **409**.
+   concurrent cancel is respected). Multipart uploads are rejected with
+   **415** and wrong-state uploads return **409**.
+3. For archives larger than 10 MiB, the client uses the resumable chunked flow:
+   `GET /api/admin/tasks/{task_id}/upload` returns the current `bytes_received`;
+   `PATCH /api/admin/tasks/{task_id}/upload` appends a raw chunk with the
+   `Upload-Offset` and `Upload-Length` headers; and
+   `POST /api/admin/tasks/{task_id}/upload/finalize` transitions the task to
+   `pending` once the total bytes match. Offset mismatches return **409** with
+   the current `bytes_received` so the client can resume without re-sending data.
+4. Before streaming starts, the handler compares `Content-Length` (or the chunk /
+   total size for chunked uploads) against free space on the admin-tasks volume.
+   If the declared size will not fit, the task is marked failed and the endpoint
+   returns **507** with the required and available byte counts.
+
+Once the task enters `pending`, `run_files_import` stages the archive under
+`IMPORT_STAGING_DIR` on the same volume as `data_dir` (default:
+`<data_dir>/.import-staging`), performs a coarse free-space preflight with a
+small margin over the compressed archive size, and extracts the archive in a
+single pass. A second runtime floor checks the staging volume during
+extraction so highly compressible archives still fail before the swap if free
+space drops too low. When extraction finishes, it swaps each exported top-level
+entry into `/data` one by one with same-volume renames. That keeps `tiles/`
+and `admin_tasks/` in place, avoids a whole-directory rename of `/data`, and
+removes the extra copytree back from `/tmp`.
+
+Archive progress is reported from compressed bytes read, so the UI can keep a
+meaningful extract bar without a separate count-only scan. The implementation
+uses `pigz -dc` when available and falls back to Python gzip streaming when it
+is not. Filesystem-import archives remain on the data volume after import so
+operators can rerun them without re-uploading; delete them when you want to
+reclaim space, and be aware that retained archives can accumulate over time.
+The `IMPORT_STAGING_FREE_SPACE_FACTOR` preflight is only a coarse gate for the
+compressed archive size; `IMPORT_STAGING_MIN_FREE_BYTES` is the authoritative
+runtime floor during extraction.
+
+Because entries are moved into place with `os.rename`, `IMPORT_STAGING_DIR`
+**must be on the same filesystem/volume as `data_dir`** (the default satisfies
+this). If it is overridden to a different volume, the import fails fast at the
+preflight with a clear error rather than surfacing a cryptic cross-device
+(`EXDEV`) failure part-way through the swap.
+
+The admin UI's "Previously uploaded import archives" list shows cumulative
+storage usage (for example, "3 retained archives using 87.4 GiB") so operators
+can see at a glance how much persistent space retained archives consume before
+deciding what to reclaim.
+
+## Stored export archives
+
+Completed `db_export` and `files_export` tasks leave their result archive on the
+admin-tasks volume so it can be re-downloaded. Over time these accumulate, so
+the admin UI's "Stored export archives" panel lists each retained export
+artifact with its filename, size, owning task metadata, and cumulative storage
+usage, and lets operators purge individual archives.
+
+- `GET /admin/tasks/backup-archives` (admin only) lists all on-disk export
+  result archives. Only `db_export`/`files_export` tasks whose `result_path`
+  resolves (via `_safe_admin_task_file`) to an existing file **inside** the
+  admin-tasks directory are returned. Each entry carries a `purgeable` flag that
+  is `false` while the owning task is still active.
+- `DELETE /admin/tasks/backup-archives/{task_id}/{artifact_role}` (admin only)
+  deletes a single archive from disk and clears the task's `result_filename` /
+  `result_path` columns. Only `artifact_role="result"` is supported (400
+  otherwise); the task must exist (404) and be an export task (404 otherwise),
+  and it must not be active (409 while `uploading`/`pending`/`running`/
+  `cancelling`). Filesystem-import archives are managed separately via
+  `DELETE /tasks/files-import/archives/{id}`.
+
+When an export task reaches a terminal state, the panel refreshes automatically
+so a newly produced archive appears without switching tabs.
 
 ## Rebuild tiles
 
@@ -125,6 +224,11 @@ restore brings back the database (and source-image volume) but **not** the
 large tile volume, or when a pipeline change makes existing tiles stale. See
 [Tile-cache provenance](tile-cache-provenance.md) for how `missing` vs `stale`
 is determined.
+
+A `rebuild_tiles` task is queued **automatically** after a successful
+`files_import`. The Admin UI also exposes a **Rebuild Tiles** control so an
+operator can start one manually — for example, after a cancelled automatic
+rebuild, a per-file restore, or a stale-tile cleanup.
 
 - Endpoint: `POST /admin/tasks/rebuild-tiles` (admin only). Optional JSON body
   `{ "scope": "missing_stale", "image_ids": [..] }`.
@@ -160,6 +264,22 @@ never resurrected.
   unreadable parameters file), never because one image failed.
 - A rerun skips tile sets that are already current (unless `scope = all`), so
   the operation is safe to run repeatedly.
+
+## Per-file backup restore
+
+The admin area also exposes a manifest-browsing restore flow for restoring a
+single file out of a backup snapshot archive:
+
+- `GET /admin/backups/snapshots`
+- `GET /admin/backups/snapshots/{snapshot_name}/manifest`
+- `POST /admin/tasks/file-restore`
+
+The backend talks directly to Azure Blob Storage with a read-only SAS URL
+(`AZURE_READ_SAS_URL`) and the snapshot prefix (`AZURE_BACKUP_PREFIX`).
+Snapshot manifests are read from the sidecar blob when present, with a
+tar-stream fallback for older snapshots. The restore task only accepts members
+under `data/` and reminds operators that Rebuild Tiles can be run if a restored
+source image needs fresh tiles.
 
 ## Stale task reconciliation
 

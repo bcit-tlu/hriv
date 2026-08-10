@@ -1,6 +1,11 @@
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.orm import DeclarativeBase
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -9,6 +14,9 @@ class Settings(BaseSettings):
     data_dir: str = "/data"
     source_images_dir: str = "/data/source_images"
     tiles_dir: str = "/data/tiles"
+    export_pigz_threads: int = Field(default=2, ge=0)
+    azure_read_sas_url: str = ""
+    azure_backup_prefix: str = ""
     cors_origins: str = "*"
     db_pool_size: int = 10
     db_max_overflow: int = 20
@@ -16,17 +24,29 @@ class Settings(BaseSettings):
     # Redis URL for task queue (Phase 5 — arq worker) and rate limiting
     redis_url: str = "redis://redis:6379"
 
-    # Audit middleware: comma-separated list of URL path prefixes whose
-    # request logs are emitted at DEBUG instead of INFO. Intended for
-    # high-volume, low-signal endpoints (container healthchecks, tile
-    # serving, etc.) that would otherwise drown out real traffic in the
-    # audit log. Operators can extend the list per deployment without a
-    # code change by setting the AUDIT_EXCLUDE_PREFIXES env var.
-    audit_exclude_prefixes: str = "/api/health,/api/health/ready,/api/tiles/"
+    # Audit middleware: comma-separated list of URL paths whose request logs are
+    # emitted at DEBUG instead of INFO. Entries without a trailing slash match
+    # the exact path or a subpath (e.g. /api/metrics matches /api/metrics but not
+    # /api/metrics_custom). Entries with a trailing slash match any path under
+    # that prefix. Intended for high-volume, low-signal endpoints (container
+    # healthchecks, tile serving, Prometheus scrapes, etc.). Operators can
+    # extend the list per deployment by setting the AUDIT_EXCLUDE_PREFIXES env var.
+    audit_exclude_prefixes: str = "/api/health,/api/tiles/,/api/metrics"
 
     # Login rate limiting (Phase 5)
     rate_limit_login_max: int = 5
     rate_limit_login_window: int = 60  # seconds
+
+    # Telemetry ingestion rate limiting. Batches are small and best-effort, so
+    # the window is generous; this only guards against a misbehaving or
+    # malicious client flooding the structured-log pipeline. Two budgets are
+    # enforced over the same window: a per-tab (user + session) limit that
+    # stops an accidental tab loop, and a higher per-user aggregate cap so a
+    # client rotating ``X-Session-ID`` cannot mint unlimited throughput while
+    # legitimately shared student accounts still retain plenty of headroom.
+    rate_limit_telemetry_max: int = 60
+    rate_limit_telemetry_user_max: int = 600
+    rate_limit_telemetry_window: int = 60  # seconds
 
     # OIDC / OAuth settings (Phase 3 — Identity)
     oidc_enabled: bool = False
@@ -57,7 +77,7 @@ _engine = None
 _async_session = None
 
 
-def get_engine() -> "AsyncEngine":
+def get_engine() -> AsyncEngine:
     """Return the async engine, creating it on first call.
 
     Lazy initialisation avoids executing ``create_async_engine`` at module

@@ -23,6 +23,12 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     include: ['tests/**/*.test.{ts,tsx}'],
+    // jsdom + MUI + userEvent component tests run comfortably locally but can
+    // exceed 15s under full coverage on slower/shared CI runners. Give the
+    // suite enough headroom to avoid timeout-only flakes without changing test
+    // assertions or masking genuinely hung tests indefinitely.
+    testTimeout: 30000,
+    hookTimeout: 30000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'text-summary'],
@@ -31,10 +37,10 @@ export default defineConfig({
       // Floor — not target.  Ratchet upward as component-level tests
       // are filled in.  The >80 % AGENTS.md target is the goal.
       thresholds: {
-        lines: 62,
-        statements: 60,
-        functions: 58,
-        branches: 55,
+        lines: 71,
+        statements: 70,
+        functions: 70,
+        branches: 65,
       },
     },
   },

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -43,6 +43,21 @@ def _validate_locked_overlays(meta: dict | None) -> dict | None:
     return meta
 
 
+def normalize_nonblank_value(v: str | None) -> str | None:
+    if isinstance(v, str):
+        v = v.strip()
+        if not v:
+            raise ValueError("must not be blank")
+        return v
+    return v
+
+
+def normalize_optional_nonblank_value(v: str | None) -> str | None:
+    if v is None:
+        return v
+    return normalize_nonblank_value(v)
+
+
 # ── Program ──────────────────────────────────────────────
 
 class ProgramBase(BaseModel):
@@ -69,6 +84,7 @@ def normalize_note_value(v: str | None) -> str | None:
 class ProgramCreate(ProgramBase):
     oidc_group: str | None = None
 
+    _validate_name = field_validator("name", mode="before")(normalize_nonblank_value)
     _norm_oidc = field_validator("oidc_group", mode="before")(_normalize_oidc_group)
 
 
@@ -76,6 +92,7 @@ class ProgramUpdate(BaseModel):
     name: str | None = None
     oidc_group: str | None = None
 
+    _validate_name = field_validator("name", mode="before")(normalize_optional_nonblank_value)
     _norm_oidc = field_validator("oidc_group", mode="before")(_normalize_oidc_group)
 
 
@@ -96,12 +113,14 @@ class GroupBase(BaseModel):
 
 
 class GroupCreate(GroupBase):
-    pass
+    _validate_name = field_validator("name", mode="before")(normalize_nonblank_value)
 
 
 class GroupUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
+
+    _validate_name = field_validator("name", mode="before")(normalize_optional_nonblank_value)
 
 
 class GroupMemberOut(BaseModel):
@@ -130,16 +149,14 @@ class GroupOut(GroupBase):
     def extract_member_ids(cls, data: object) -> object:
         """Flatten the members/instructors relationships into id lists."""
         if hasattr(data, "members"):
-            return dict(
-                id=data.id,
-                name=data.name,
-                description=data.description,
-                created_by_user_id=data.created_by_user_id,
-                member_ids=[m.id for m in data.members],
-                instructor_ids=[i.id for i in data.instructors],
-                created_at=data.created_at,
-                updated_at=data.updated_at,
-            )
+            result = {
+                name: getattr(data, name)
+                for name in cls.model_fields
+                if hasattr(data, name)
+            }
+            result["member_ids"] = [m.id for m in data.members]
+            result["instructor_ids"] = [i.id for i in data.instructors]
+            return result
         return data
 
 
@@ -165,6 +182,8 @@ class AnnouncementUpdate(BaseModel):
     message: str | None = None
     enabled: bool | None = None
 
+    _validate_message = field_validator("message", mode="before")(normalize_optional_nonblank_value)
+
 
 # ── Changelog ────────────────────────────────────────────
 
@@ -183,10 +202,16 @@ class ChangelogEntryCreate(BaseModel):
     title: str
     body: str
 
+    _validate_title = field_validator("title", mode="before")(normalize_nonblank_value)
+    _validate_body = field_validator("body", mode="before")(normalize_nonblank_value)
+
 
 class ChangelogEntryUpdate(BaseModel):
     title: str | None = None
     body: str | None = None
+
+    _validate_title = field_validator("title", mode="before")(normalize_optional_nonblank_value)
+    _validate_body = field_validator("body", mode="before")(normalize_optional_nonblank_value)
 
 
 class ChangelogMarkReadResponse(BaseModel):
@@ -218,7 +243,7 @@ class CategoryBase(BaseModel):
 
 
 class CategoryCreate(CategoryBase):
-    pass
+    _validate_label = field_validator("label", mode="before")(normalize_nonblank_value)
 
 
 class CategoryUpdate(BaseModel):
@@ -230,15 +255,33 @@ class CategoryUpdate(BaseModel):
     sort_order: int | None = None
     metadata_extra: dict | None = None
 
+    _validate_label = field_validator("label", mode="before")(normalize_optional_nonblank_value)
 
-class CategoryReorderItem(BaseModel):
+
+class TileOrderScope(BaseModel):
+    parent_category_id: int | None = None
+
+
+class TileOrderItemRef(BaseModel):
+    type: Literal["category", "image"]
     id: int
-    parent_id: int | None = None
+
+
+class TileOrderRequest(BaseModel):
+    scope: TileOrderScope
+    expected_revision: int
+    operation_id: str | None = Field(None, max_length=64)
+    items: list[TileOrderItemRef]
+
+
+class TileOrderItemOut(TileOrderItemRef):
     sort_order: int
 
 
-class CategoryReorderRequest(BaseModel):
-    items: list[CategoryReorderItem]
+class TileOrderResponse(BaseModel):
+    scope: TileOrderScope
+    revision: int
+    items: list[TileOrderItemOut]
 
 
 class CategoryOut(CategoryBase):
@@ -255,22 +298,16 @@ class CategoryOut(CategoryBase):
     def extract_program_ids(cls, data: object) -> object:
         """Convert the 'programs'/'groups' relationships into id lists."""
         if hasattr(data, "programs"):
-            program_ids = [p.id for p in data.programs]
-            group_ids = [g.id for g in data.groups]
-            return dict(
-                label=data.label,
-                parent_id=data.parent_id,
-                program_ids=program_ids,
-                group_ids=group_ids,
-                status=data.status,
-                sort_order=data.sort_order,
-                metadata_=data.metadata_,
-                id=data.id,
-                version=data.version,
-                created_at=data.created_at,
-                updated_at=data.updated_at,
-                warnings=getattr(data, "_category_warnings", []),
-            )
+            result = {
+                name: getattr(data, name)
+                for name in cls.model_fields
+                if hasattr(data, name)
+            }
+            result["program_ids"] = [p.id for p in data.programs]
+            result["group_ids"] = [g.id for g in data.groups]
+            result["metadata_extra"] = data.metadata_
+            result["warnings"] = getattr(data, "_category_warnings", [])
+            return result
         return data
 
 
@@ -293,7 +330,7 @@ class ImageBase(BaseModel):
     metadata_extra: Annotated[dict | None, Field(validation_alias="metadata_")] = None
     width: int | None = None
     height: int | None = None
-    file_size: float | None = None
+    file_size: int | None = None
 
 
 class ImageCreate(ImageBase):
@@ -327,15 +364,6 @@ class ImageUpdate(BaseModel):
             if raw is not None:
                 _validate_locked_overlays(self.metadata_extra_merge)
         return self
-
-
-class ImageReorderItem(BaseModel):
-    id: int
-    sort_order: int
-
-
-class ImageReorderRequest(BaseModel):
-    items: list[ImageReorderItem]
 
 
 class ImageOut(ImageBase):
@@ -400,6 +428,48 @@ class RebuildTilesRequest(BaseModel):
         return value
 
 
+class FileRestoreRequest(BaseModel):
+    """Parameters for restoring a single file from a snapshot."""
+
+    snapshot_name: str
+    member_path: str
+
+    _validate_snapshot = field_validator("snapshot_name", mode="before")(normalize_nonblank_value)
+    _validate_member_path = field_validator("member_path", mode="before")(normalize_nonblank_value)
+
+
+class FilesImportArchiveOut(BaseModel):
+    archive_task_id: int
+    original_filename: str | None = None
+    size_bytes: int
+    created_at: datetime
+    last_status: str
+
+
+class FilesImportRerunRequest(BaseModel):
+    archive_task_id: int
+
+
+class UploadChunkResponse(BaseModel):
+    """Status returned after appending a chunk to an in-progress upload."""
+
+    bytes_received: int
+    status: str
+
+
+class UploadFinalizeRequest(BaseModel):
+    """Finalize a chunked filesystem-import upload once all bytes are received."""
+
+    total_bytes: int = Field(..., ge=1)
+
+
+class UploadStatusResponse(BaseModel):
+    """Current offset for resuming a chunked filesystem-import upload."""
+
+    bytes_received: int
+    status: str
+
+
 # ── Bulk Import Job ──────────────────────────────────────
 
 class BulkImportJobOut(BaseModel):
@@ -429,6 +499,9 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str
 
+    _validate_name = field_validator("name", mode="before")(normalize_nonblank_value)
+    _validate_email = field_validator("email", mode="before")(normalize_nonblank_value)
+
 
 class UserUpdate(BaseModel):
     name: str | None = None
@@ -437,6 +510,9 @@ class UserUpdate(BaseModel):
     program_ids: list[int] | None = None
     password: str | None = None
     metadata_extra: dict | None = None
+
+    _validate_name = field_validator("name", mode="before")(normalize_optional_nonblank_value)
+    _validate_email = field_validator("email", mode="before")(normalize_optional_nonblank_value)
 
 
 class UserBulkUpdate(BaseModel):

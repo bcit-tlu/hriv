@@ -124,6 +124,7 @@ services:
       - ./frontend/tsconfig.app.json:/app/tsconfig.app.json
     environment:
       - NODE_ENV=development
+      - VITE_OTEL_ENDPOINT=http://localhost:4318
       # No VITE_APP_VERSION here: the deployed frontend fetches its
       # version from the nginx-served /version endpoint (see
       # charts/frontend/files/default.conf.template), which does not

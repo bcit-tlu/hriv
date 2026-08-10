@@ -23,6 +23,8 @@ FROM deps AS build
 COPY . .
 ARG VITE_API_URL
 ENV VITE_API_URL=${VITE_API_URL}
+ARG VITE_OTEL_ENDPOINT
+ENV VITE_OTEL_ENDPOINT=${VITE_OTEL_ENDPOINT}
 # ``VITE_APP_VERSION`` is deliberately **not** a build-time ARG anymore.
 # Vite would bake its value into the bundled JS as an ``import.meta.env``
 # compile-time constant, which survives intact when

@@ -62,6 +62,8 @@ spec:
               value: {{ .Values.env.BACKUP_CRON_SCHEDULE | quote }}
             - name: BACKUP_RETENTION_COUNT
               value: {{ .Values.env.BACKUP_RETENTION_COUNT | quote }}
+            - name: BACKUP_STALE_HOURS
+              value: {{ .Values.env.BACKUP_STALE_HOURS | quote }}
             - name: BACKUP_MODE
               value: {{ .Values.env.BACKUP_MODE | quote }}
             - name: AZURE_STORAGE_CONNECTION_STRING

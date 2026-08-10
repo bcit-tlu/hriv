@@ -23,6 +23,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 from ..auth import create_access_token
+from ..auth_events import (
+    AUTH_METHOD_OIDC,
+    AUTH_OUTCOME_FAILURE,
+    AUTH_OUTCOME_SUCCESS,
+    AuthUser,
+    auth_event_fields,
+)
 from ..tracing import record_exception_if_server_error
 from ..database import get_db, settings as _settings
 from ..models import Program, User
@@ -191,6 +198,7 @@ def _oidc_callback_error(
     *,
     log_detail: str,
     extra: dict[str, Any] | None = None,
+    user: AuthUser | None = None,
 ) -> HTMLResponse:
     """Redirect the browser to the frontend with ``#oidc_error=<code>``.
 
@@ -220,6 +228,18 @@ def _oidc_callback_error(
         # Caller-provided keys win so they can override ``event`` with a
         # more specific value (e.g. ``oidc.missing_claims``) when useful.
         merged_extra.update(extra)
+    # Canonical auth fields are merged LAST so a caller's ``extra`` can never
+    # override them — dashboards depend on ``auth.outcome``/``auth.method``
+    # being authoritative. Role/id/synthetic are included only when the failing
+    # request is tied to a known user (e.g. subject mismatch); otherwise just
+    # method + failure outcome.
+    merged_extra.update(
+        auth_event_fields(
+            method=AUTH_METHOD_OIDC,
+            outcome=AUTH_OUTCOME_FAILURE,
+            user=user,
+        )
+    )
     logger.error(
         "OIDC callback error (%s): %s",
         error_code,
@@ -271,6 +291,10 @@ async def oidc_login(request: Request):
                 "event": "oidc.provider_unreachable",
                 "metadata_url": metadata_url,
                 "issuer": _settings.oidc_issuer,
+                **auth_event_fields(
+                    method=AUTH_METHOD_OIDC,
+                    outcome=AUTH_OUTCOME_FAILURE,
+                ),
             },
         )
         raise HTTPException(
@@ -447,6 +471,11 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
                         "email": email,
                         "role": resolved_role or "student",
                         "program_ids": [p.id for p in user.programs],
+                        **auth_event_fields(
+                            method=AUTH_METHOD_OIDC,
+                            outcome=AUTH_OUTCOME_SUCCESS,
+                            user=user,
+                        ),
                     },
                 )
             else:
@@ -463,6 +492,7 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
                             "existing_sub": user.oidc_subject,
                             "incoming_sub": sub,
                         },
+                        user=user,
                     )
                 if not user.oidc_subject:
                     user.oidc_subject = sub
@@ -481,6 +511,11 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
                         "email": email,
                         "role": resolved_role,
                         "program_ids": [p.id for p in user.programs],
+                        **auth_event_fields(
+                            method=AUTH_METHOD_OIDC,
+                            outcome=AUTH_OUTCOME_SUCCESS,
+                            user=user,
+                        ),
                     },
                 )
 

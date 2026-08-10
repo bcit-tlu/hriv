@@ -9,9 +9,21 @@ import {
   deleteUser as apiDeleteUser,
   setToken,
   getToken,
-  clearUserStorage,
+  clearUserStorage as apiClearUserStorage,
 } from './api'
 import type { ApiUser } from './api'
+import { emitEventNow } from './observability'
+import { tileOrderingCoordinator } from './tileOrdering'
+
+/**
+ * Clear HRIV-scoped storage AND in-memory per-user state (the tile-ordering
+ * coordinator caches display orders, revisions, and unsaved-change flags)
+ * so nothing leaks to the next user on a shared browser.
+ */
+function clearUserStorage(): void {
+  apiClearUserStorage()
+  tileOrderingCoordinator.reset()
+}
 
 // Capture the URL fragment immediately at module-load time.  In React,
 // children’s effects fire before their parents’ effects.  App (a child of
@@ -20,6 +32,11 @@ import type { ApiUser } from './api'
 // on mount, which strips the hash *before* our useEffect can read it.
 // By snapshotting the hash here we guarantee we see the original value.
 const _initialHash = window.location.hash.replace(/^#/, '')
+
+// True only on the document load that carries a fresh OIDC callback token,
+// so `auth.login_succeeded` fires once per OIDC login rather than on every
+// mount-time token revalidation.
+let _oidcLoginPending = new URLSearchParams(_initialHash).get('oidc_token') !== null
 
 function toUser(u: ApiUser): User {
   return {
@@ -150,6 +167,14 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
           setCurrentUser(freshUser)
           setToken(token)
           localStorage.setItem('hriv_user', JSON.stringify(freshUser))
+          if (_oidcLoginPending) {
+            _oidcLoginPending = false
+            emitEventNow({
+              event: 'auth.login_succeeded',
+              action: 'login',
+              outcome: 'success',
+            })
+          }
         } else {
           // Token invalid or user no longer exists — clear session
           clearUserStorage()
@@ -190,9 +215,19 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     setToken(resp.access_token)
     setCurrentUser(user)
     localStorage.setItem('hriv_user', JSON.stringify(user))
+    emitEventNow({
+      event: 'auth.login_succeeded',
+      action: 'login',
+      outcome: 'success',
+    })
   }, [])
 
   const logout = useCallback(() => {
+    emitEventNow({
+      event: 'auth.logout_selected',
+      action: 'logout',
+      outcome: 'success',
+    })
     setCurrentUser(null)
     clearUserStorage()
   }, [])

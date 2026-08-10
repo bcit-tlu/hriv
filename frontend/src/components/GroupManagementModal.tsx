@@ -11,7 +11,7 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
-import InputAdornment from '@mui/material/InputAdornment'
+import Link from '@mui/material/Link'
 import List from '@mui/material/List'
 import ListItemButton from '@mui/material/ListItemButton'
 import ListItemText from '@mui/material/ListItemText'
@@ -36,19 +36,24 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import CloseIcon from '@mui/icons-material/Close'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import PeopleIcon from '@mui/icons-material/People'
-import SearchIcon from '@mui/icons-material/Search'
 import {
   addGroupInstructorsBulk,
   addGroupMembersBulk,
   fetchPrograms,
   fetchUsersPaged,
+  attachedCategoriesFromError,
   removeGroupInstructor,
   removeGroupMember,
+  userMessage,
 } from '../api'
 import type { ApiProgram, ApiUser } from '../api'
 import { apiGroupToGroup } from '../groupUtils'
 import { getGroupChipColors } from '../theme'
 import type { Group } from '../types'
+import FilterBar from './FilterBar'
+import FilterOptionPanel from './FilterOptionPanel'
+import FilterPopoverButton, { filterSurfaceBg } from './FilterPopoverButton'
+import FilterTextPanel from './FilterTextPanel'
 
 interface GroupManagementModalProps {
   open: boolean
@@ -57,6 +62,7 @@ interface GroupManagementModalProps {
   onAdd: (name: string, description: string | null) => void | Promise<void>
   onEdit: (id: number, name: string, description: string | null) => void | Promise<void>
   onDelete: (id: number) => void | Promise<void>
+  onCategoryNavigate?: (categoryId: number) => void
   /** Propagates membership updates back to the parent app state. */
   onGroupUpdated?: (group: Group) => void
   /**
@@ -81,6 +87,7 @@ export default function GroupManagementModal({
   onAdd,
   onEdit,
   onDelete,
+  onCategoryNavigate,
   canManage,
   onGroupUpdated,
 }: GroupManagementModalProps) {
@@ -96,6 +103,10 @@ export default function GroupManagementModal({
   const [menuAnchorEl, setMenuAnchorEl] = useState<HTMLElement | null>(null)
   const [menuGroupId, setMenuGroupId] = useState<number | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleteBlockedCategories, setDeleteBlockedCategories] = useState<
+    { id: number; label: string }[]
+  >([])
+  const [deleteBlockedCategoriesExpanded, setDeleteBlockedCategoriesExpanded] = useState(false)
 
   const [tab, setTab] = useState<TabKey>('students')
   const [programs, setPrograms] = useState<ApiProgram[]>([])
@@ -186,6 +197,8 @@ export default function GroupManagementModal({
       setMenuAnchorEl(null)
       setMenuGroupId(null)
       setDeleteDialogOpen(false)
+      setDeleteBlockedCategories([])
+      setDeleteBlockedCategoriesExpanded(false)
       setTab('students')
       setSelectedProgramIds([])
       setSearchInput('')
@@ -242,12 +255,19 @@ export default function GroupManagementModal({
     return names
   }, [programs])
 
+  const selectedProgramOptions = useMemo(
+    () => programs.filter((program) => selectedProgramIds.includes(program.id)),
+    [programs, selectedProgramIds],
+  )
+
   const currentRows = rows.filter((row) => assignedIds.has(row.id))
   const availableRows = rows.filter((row) => !assignedIds.has(row.id))
   const allAvailableSelected =
     availableRows.length > 0 && availableRows.every((row) => selectedUserIds.has(row.id))
   const someAvailableSelected = availableRows.some((row) => selectedUserIds.has(row.id))
   const colSpan = tab === 'students' ? 5 : 4
+  const hasActiveProgramFilters = tab === 'students' && selectedProgramIds.length > 0
+  const hasActiveMemberFilters = searchInput.trim().length > 0 || hasActiveProgramFilters
 
   const openCreateDialog = () => {
     setGroupNameDraft('')
@@ -279,6 +299,8 @@ export default function GroupManagementModal({
 
   const startDelete = () => {
     setGroupActionError(null)
+    setDeleteBlockedCategories([])
+    setDeleteBlockedCategoriesExpanded(false)
     setDeleteDialogOpen(true)
     closeGroupMenu()
   }
@@ -302,9 +324,12 @@ export default function GroupManagementModal({
       setGroupDialogMode(null)
       setGroupNameDraft('')
       setGroupDescriptionDraft('')
-    } catch {
+    } catch (err) {
       setGroupActionError(
-        groupDialogMode === 'create' ? 'Failed to create group.' : 'Failed to rename group.',
+        userMessage(
+          err,
+          groupDialogMode === 'create' ? 'Failed to create group.' : 'Failed to rename group.',
+        ),
       )
     } finally {
       setGroupPending(false)
@@ -323,8 +348,12 @@ export default function GroupManagementModal({
       }
       setDeleteDialogOpen(false)
       setMenuGroupId(null)
-    } catch {
-      setGroupActionError('Failed to delete group. It may still be attached to categories.')
+      setDeleteBlockedCategories([])
+      setDeleteBlockedCategoriesExpanded(false)
+    } catch (err) {
+      setGroupActionError(userMessage(err, 'Failed to delete group.'))
+      setDeleteBlockedCategories(attachedCategoriesFromError(err) ?? [])
+      setDeleteBlockedCategoriesExpanded(false)
     } finally {
       setGroupPending(false)
     }
@@ -333,12 +362,6 @@ export default function GroupManagementModal({
   const selectGroup = (groupId: number) => {
     setSelectedGroupId(groupId)
     setMobileDetailOpen(true)
-  }
-
-  const toggleProgram = (programId: number) => {
-    setSelectedProgramIds((prev) =>
-      prev.includes(programId) ? prev.filter((id) => id !== programId) : [...prev, programId],
-    )
   }
 
   const toggleSelectAllAvailable = () => {
@@ -387,11 +410,14 @@ export default function GroupManagementModal({
           : await addGroupInstructorsBulk(selectedGroup.id, ids)
       updateGroupFromApi(apiGroupToGroup(updatedGroup))
       setSelectedUserIds(new Set())
-    } catch {
+    } catch (err) {
       setMemberError(
-        tab === 'students'
-          ? 'Failed to add the selected students to the group.'
-          : 'Failed to add the selected instructors to the group.',
+        userMessage(
+          err,
+          tab === 'students'
+            ? 'Failed to add the selected students to the group.'
+            : 'Failed to add the selected instructors to the group.',
+        ),
       )
     } finally {
       setBulkPending(false)
@@ -408,11 +434,14 @@ export default function GroupManagementModal({
           ? await removeGroupMember(selectedGroup.id, user.id)
           : await removeGroupInstructor(selectedGroup.id, user.id)
       updateGroupFromApi(apiGroupToGroup(updatedGroup))
-    } catch {
+    } catch (err) {
       setMemberError(
-        tab === 'students'
-          ? 'Failed to remove the student from the group.'
-          : 'Failed to remove the instructor (a group must keep at least one).',
+        userMessage(
+          err,
+          tab === 'students'
+            ? 'Failed to remove the student from the group.'
+            : 'Failed to remove the instructor (a group must keep at least one).',
+        ),
       )
     } finally {
       setPendingRemoveId(null)
@@ -653,63 +682,138 @@ export default function GroupManagementModal({
                       membership.
                     </Alert>
                   )}
-                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ mb: 1.5 }}>
-                    <TextField
-                      fullWidth
-                      size="small"
-                      placeholder="Search name or email"
-                      value={searchInput}
-                      onChange={(event) => setSearchInput(event.target.value)}
-                      InputProps={{
-                        startAdornment: (
-                          <InputAdornment position="start">
-                            <SearchIcon fontSize="small" />
-                          </InputAdornment>
-                        ),
-                      }}
-                    />
-                    <Button
-                      variant="contained"
-                      color="secondary"
-                      startIcon={bulkPending ? <CircularProgress size={16} /> : <AddIcon />}
-                      disabled={selectedUserIds.size === 0 || bulkPending || !manageable}
-                      onClick={() => void handleBulkAdd()}
-                      sx={{ minWidth: 160, whiteSpace: 'nowrap' }}
-                    >
-                      Add {selectedUserIds.size > 0 ? selectedUserIds.size : ''} to Group
-                    </Button>
-                  </Stack>
-                  {tab === 'students' && programs.length > 0 && (
-                    <Box>
-                      <Typography
-                        variant="caption"
-                        color="text.secondary"
-                        sx={{ display: 'block', mb: 0.75 }}
-                      >
-                        Filter by program
-                      </Typography>
-                      <Stack direction="row" flexWrap="wrap" gap={0.75}>
-                        {programs.map((program) => {
-                          const active = selectedProgramIds.includes(program.id)
-                          return (
+                  <FilterBar
+                    clearAction={
+                      hasActiveMemberFilters ? (
+                        <Button
+                          size="small"
+                          color="secondary"
+                          onClick={() => {
+                            setSearchInput('')
+                            setQ('')
+                            setSelectedProgramIds([])
+                          }}
+                          sx={{
+                            minWidth: 0,
+                            px: 0,
+                            fontWeight: 600,
+                            textTransform: 'none',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          Clear all
+                        </Button>
+                      ) : undefined
+                    }
+                    summary={
+                      hasActiveMemberFilters ? (
+                        <>
+                          {searchInput.trim().length > 0 && (
                             <Chip
-                              key={program.id}
-                              label={program.name}
-                              onClick={() => toggleProgram(program.id)}
-                              color={active ? 'primary' : 'default'}
-                              variant={active ? 'filled' : 'outlined'}
+                              label={`Search: ${searchInput.trim()}`}
                               size="small"
+                              onDelete={() => {
+                                setSearchInput('')
+                                setQ('')
+                              }}
+                              sx={{
+                                bgcolor: (theme) =>
+                                  theme.palette.mode === 'dark'
+                                    ? 'rgba(165, 36, 56, 0.22)'
+                                    : 'rgba(165, 36, 56, 0.08)',
+                                color: 'secondary.main',
+                                border: '1px solid',
+                                borderColor: 'secondary.main',
+                                '& .MuiChip-deleteIcon': {
+                                  color: 'secondary.main',
+                                },
+                              }}
                             />
-                          )
-                        })}
-                      </Stack>
-                    </Box>
-                  )}
+                          )}
+                          {tab === 'students' &&
+                            selectedProgramOptions.map((program) => (
+                              <Chip
+                                key={program.id}
+                                label={`Program: ${program.name}`}
+                                size="small"
+                                onDelete={() =>
+                                  setSelectedProgramIds((prev) =>
+                                    prev.filter((programId) => programId !== program.id),
+                                  )
+                                }
+                                sx={{
+                                  bgcolor: (theme) =>
+                                    theme.palette.mode === 'dark'
+                                      ? 'rgba(165, 36, 56, 0.22)'
+                                      : 'rgba(165, 36, 56, 0.08)',
+                                  color: 'secondary.main',
+                                  border: '1px solid',
+                                  borderColor: 'secondary.main',
+                                  '& .MuiChip-deleteIcon': {
+                                    color: 'secondary.main',
+                                  },
+                                }}
+                              />
+                            ))}
+                        </>
+                      ) : undefined
+                    }
+                    actions={
+                      <Button
+                        variant="contained"
+                        color="secondary"
+                        startIcon={bulkPending ? <CircularProgress size={16} /> : <AddIcon />}
+                        disabled={selectedUserIds.size === 0 || bulkPending || !manageable}
+                        onClick={() => void handleBulkAdd()}
+                        sx={{ minWidth: 160, whiteSpace: 'nowrap' }}
+                      >
+                        Add {selectedUserIds.size > 0 ? selectedUserIds.size : ''} to Group
+                      </Button>
+                    }
+                  >
+                    <FilterPopoverButton
+                      label="Search"
+                      activeCount={searchInput.trim().length > 0 ? 1 : 0}
+                      panelWidth={280}
+                    >
+                      <FilterTextPanel
+                        value={searchInput}
+                        onChange={setSearchInput}
+                        placeholder="Search name or email"
+                        ariaLabel="Name or email"
+                        width={280}
+                      />
+                    </FilterPopoverButton>
+                    {tab === 'students' && programs.length > 0 && (
+                      <FilterPopoverButton
+                        label="Program"
+                        activeCount={selectedProgramOptions.length}
+                        panelWidth={280}
+                      >
+                        <FilterOptionPanel
+                          options={programs.map((program) => ({
+                            value: String(program.id),
+                            label: program.name,
+                          }))}
+                          selectedValues={selectedProgramOptions.map((program) =>
+                            String(program.id),
+                          )}
+                          onChange={(values) =>
+                            setSelectedProgramIds(values.map((value) => Number(value)))
+                          }
+                        />
+                      </FilterPopoverButton>
+                    )}
+                  </FilterBar>
                 </Box>
 
                 <TableContainer sx={{ flex: 1, minHeight: 0 }}>
                   <Table stickyHeader size="small">
-                    <TableHead>
+                    <TableHead
+                      sx={{
+                        '& .MuiTableCell-head': { bgcolor: (theme) => filterSurfaceBg(theme) },
+                      }}
+                    >
                       <TableRow>
                         <TableCell padding="checkbox">
                           <Checkbox
@@ -892,6 +996,8 @@ export default function GroupManagementModal({
         onClose={() => {
           setDeleteDialogOpen(false)
           setGroupActionError(null)
+          setDeleteBlockedCategories([])
+          setDeleteBlockedCategoriesExpanded(false)
         }}
         maxWidth="xs"
         fullWidth
@@ -900,7 +1006,52 @@ export default function GroupManagementModal({
         <DialogContent>
           {groupActionError && (
             <Alert severity="error" sx={{ mb: 2 }}>
-              {groupActionError}
+              <Stack spacing={1}>
+                <Box>{groupActionError}</Box>
+                {deleteBlockedCategories.length > 0 && (
+                  <Box>
+                    <Link
+                      component="button"
+                      type="button"
+                      variant="body2"
+                      onClick={() => setDeleteBlockedCategoriesExpanded((expanded) => !expanded)}
+                      aria-expanded={deleteBlockedCategoriesExpanded}
+                      aria-controls="delete-group-blocked-categories"
+                    >
+                      What categories?
+                    </Link>
+                    {deleteBlockedCategoriesExpanded && (
+                      <Box id="delete-group-blocked-categories" sx={{ mt: 1 }}>
+                        {deleteBlockedCategories.map((category, index) => (
+                          <span key={category.id}>
+                            {onCategoryNavigate ? (
+                              <Link
+                                component="button"
+                                type="button"
+                                underline="hover"
+                                onClick={() => onCategoryNavigate(category.id)}
+                                sx={{
+                                  p: 0,
+                                  border: 0,
+                                  background: 'none',
+                                  font: 'inherit',
+                                  textAlign: 'left',
+                                  verticalAlign: 'baseline',
+                                }}
+                              >
+                                {category.label}
+                              </Link>
+                            ) : (
+                              <span>{category.label}</span>
+                            )}
+                            {index < deleteBlockedCategories.length - 1 ? ', ' : ''}
+                          </span>
+                        ))}
+                      </Box>
+                    )}
+                  </Box>
+                )}
+              </Stack>
             </Alert>
           )}
           <Alert severity="warning" sx={{ mb: 2 }}>

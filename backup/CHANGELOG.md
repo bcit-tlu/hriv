@@ -1,5 +1,59 @@
 # Changelog
 
+## [0.12.2](https://github.com/bcit-tlu/hriv/compare/backup-v0.12.1...backup-v0.12.2) (2026-07-20)
+
+
+### Bug Fixes
+
+* **backup:** preserve OTEL log handlers so backup log format is applied ([#957](https://github.com/bcit-tlu/hriv/issues/957)) ([5803eea](https://github.com/bcit-tlu/hriv/commit/5803eea092207e2f890b9a132d52aed35e6efe29))
+
+## [0.12.1](https://github.com/bcit-tlu/hriv/compare/backup-v0.12.0...backup-v0.12.1) (2026-07-17)
+
+
+### Bug Fixes
+
+* triggering CI build for all components ([#937](https://github.com/bcit-tlu/hriv/issues/937)) ([2f5745a](https://github.com/bcit-tlu/hriv/commit/2f5745a1845399f7cb964cfa73999483d1f7624b))
+
+## [0.12.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.11.0...backup-v0.12.0) (2026-07-14)
+
+
+### Features
+
+* **observability:** add restore and build telemetry ([#925](https://github.com/bcit-tlu/hriv/issues/925)) ([6197188](https://github.com/bcit-tlu/hriv/commit/619718896b39f64d97992bc5ae4c85616faecbc2))
+
+## [0.11.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.10.0...backup-v0.11.0) (2026-07-14)
+
+
+### Features
+
+* **observability:** split backup and archive telemetry ([#922](https://github.com/bcit-tlu/hriv/issues/922)) ([98e2d49](https://github.com/bcit-tlu/hriv/commit/98e2d4932688182a804fe0875984481645b0030b))
+
+## [0.10.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.9.0...backup-v0.10.0) (2026-07-07)
+
+
+### Features
+
+* **admin:** per-file restore from backup snapshots via Admin UI ([#828](https://github.com/bcit-tlu/hriv/issues/828)) ([dc047ae](https://github.com/bcit-tlu/hriv/commit/dc047aeb7f62b827bc03febf342d604d9348c742))
+
+## [0.9.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.8.0...backup-v0.9.0) (2026-07-06)
+
+
+### Features
+
+* **backup:** last-success heartbeat, status command, and operator DR runbook ([#822](https://github.com/bcit-tlu/hriv/issues/822)) ([36bc2d0](https://github.com/bcit-tlu/hriv/commit/36bc2d0c0e8018807662134f1846ed465b20b76c))
+
+## [0.8.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.7.0...backup-v0.8.0) (2026-06-30)
+
+
+### Features
+
+* **backup:** add BACKUP_MODE for production tile exclusion ([#753](https://github.com/bcit-tlu/hriv/issues/753)) ([1ae8897](https://github.com/bcit-tlu/hriv/commit/1ae8897b304e642bad027aa03931594d5ffac66e))
+
+
+### Documentation
+
+* publish production backup and disaster recovery strategy ([#755](https://github.com/bcit-tlu/hriv/issues/755)) ([c89a210](https://github.com/bcit-tlu/hriv/commit/c89a21035f40ba51a2c8088386035ddd745445ba))
+
 ## [0.7.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.6.1...backup-v0.7.0) (2026-06-23)
 
 

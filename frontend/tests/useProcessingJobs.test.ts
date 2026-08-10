@@ -5,7 +5,13 @@ import {
   type UseProcessingJobsDeps,
   type ProcessingJob,
 } from '../src/useProcessingJobs'
-import type { ApiBulkImportJob } from '../src/api'
+import { ApiError, type ApiBulkImportJob } from '../src/api'
+
+async function flushMicrotasks() {
+  await Promise.resolve()
+  await Promise.resolve()
+  await Promise.resolve()
+}
 
 function makeDeps(overrides: Partial<UseProcessingJobsDeps> = {}): UseProcessingJobsDeps {
   return {
@@ -207,6 +213,122 @@ describe('useProcessingJobs', () => {
         status: 'processing',
       })
     })
+
+    it('marks a confirmed-complete job completed when refresh hits auth failure', async () => {
+      const deps = makeDeps({
+        fetchSourceImage: vi.fn().mockResolvedValue({
+          status: 'completed',
+          progress: 100,
+          status_message: 'Done',
+          error_message: null,
+          image_id: 42,
+        }),
+        loadCategories: vi.fn().mockRejectedValue(new ApiError(401, 'Unauthorized')),
+        loadUncategorizedImages: vi.fn().mockResolvedValue(undefined),
+      })
+      const { result } = renderHook(() => useProcessingJobs(deps))
+
+      act(() => {
+        result.current.addProcessingJob(42, 'upload.tiff', 3000)
+      })
+      await act(async () => {
+        await flushMicrotasks()
+      })
+
+      expect(deps.fetchSourceImage).toHaveBeenCalledTimes(1)
+      expect(result.current.processingJobs[0]).toMatchObject({
+        id: 42,
+        status: 'completed',
+        imageId: 42,
+        serverProgress: 100,
+      })
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000)
+      })
+
+      expect(deps.fetchSourceImage).toHaveBeenCalledTimes(1)
+    })
+
+    it('retries a completed image refresh when any follow-up refresh fails with a non-auth error', async () => {
+      const deps = makeDeps({
+        fetchSourceImage: vi.fn().mockResolvedValue({
+          status: 'completed',
+          progress: 100,
+          status_message: 'Done',
+          error_message: null,
+          image_id: 42,
+        }),
+        loadCategories: vi.fn().mockRejectedValue(new ApiError(401, 'Unauthorized')),
+        loadUncategorizedImages: vi.fn().mockRejectedValue(new Error('boom')),
+      })
+      const { result } = renderHook(() => useProcessingJobs(deps))
+
+      act(() => {
+        result.current.addProcessingJob(42, 'upload.tiff', 3000)
+      })
+      await act(async () => {
+        await flushMicrotasks()
+      })
+
+      expect(result.current.processingJobs[0]).toMatchObject({
+        id: 42,
+        status: 'processing',
+      })
+      expect(deps.fetchSourceImage).toHaveBeenCalledTimes(1)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000)
+      })
+
+      expect(deps.fetchSourceImage).toHaveBeenCalledTimes(2)
+    })
+
+    it('uses the latest completion refresh handlers for an in-flight image job after rerender', async () => {
+      const firstLoadCategories = vi.fn().mockResolvedValue(undefined)
+      const firstLoadUncategorizedImages = vi.fn().mockResolvedValue(undefined)
+      const updatedLoadCategories = vi.fn().mockResolvedValue(undefined)
+      const updatedLoadUncategorizedImages = vi.fn().mockResolvedValue(undefined)
+
+      const initialDeps = makeDeps({
+        fetchSourceImage: vi.fn().mockResolvedValue({
+          status: 'completed',
+          progress: 100,
+          status_message: 'Done',
+          error_message: null,
+          image_id: 42,
+        }),
+        loadCategories: firstLoadCategories,
+        loadUncategorizedImages: firstLoadUncategorizedImages,
+      })
+
+      const { result, rerender } = renderHook(
+        (deps: UseProcessingJobsDeps) => useProcessingJobs(deps),
+        {
+          initialProps: initialDeps,
+        },
+      )
+
+      act(() => {
+        result.current.addProcessingJob(42, 'upload.tiff', 3000)
+      })
+
+      const updatedDeps: UseProcessingJobsDeps = {
+        ...initialDeps,
+        loadCategories: updatedLoadCategories,
+        loadUncategorizedImages: updatedLoadUncategorizedImages,
+      }
+      rerender(updatedDeps)
+
+      await act(async () => {
+        await flushMicrotasks()
+      })
+
+      expect(updatedLoadCategories).toHaveBeenCalledTimes(1)
+      expect(updatedLoadUncategorizedImages).toHaveBeenCalledTimes(1)
+      expect(firstLoadCategories).not.toHaveBeenCalled()
+      expect(firstLoadUncategorizedImages).not.toHaveBeenCalled()
+    })
   })
 
   describe('handleBulkImportStarted', () => {
@@ -236,6 +358,154 @@ describe('useProcessingJobs', () => {
         status: 'importing',
         bulkImportJobId: 5,
       })
+    })
+
+    it('stops polling and surfaces an auth error when bulk import status returns 401', async () => {
+      const deps = makeDeps({
+        fetchBulkImportJob: vi.fn().mockRejectedValue(new ApiError(401, 'Unauthorized')),
+      })
+      const { result } = renderHook(() => useProcessingJobs(deps))
+
+      act(() => {
+        result.current.handleBulkImportStarted(
+          {
+            id: 5,
+            status: 'importing',
+            total_count: 10,
+            completed_count: 3,
+            failed_count: 0,
+            errors: null,
+          },
+          'archive.zip',
+          50_000,
+        )
+      })
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000)
+      })
+
+      expect(result.current.processingJobs[0]).toMatchObject({
+        kind: 'bulk-import',
+        status: 'failed',
+        errorMessage:
+          'Bulk import status tracking stopped because your session ended or became invalid. The import may still complete on the server. Log back in and refresh to confirm.',
+      })
+      expect(deps.fetchBulkImportJob).toHaveBeenCalledTimes(1)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000)
+      })
+
+      expect(deps.fetchBulkImportJob).toHaveBeenCalledTimes(1)
+    })
+
+    it('marks a completed bulk import done when completion refresh hits auth failure', async () => {
+      const deps = makeDeps({
+        fetchBulkImportJob: vi.fn().mockResolvedValue({
+          id: 5,
+          status: 'completed',
+          total_count: 10,
+          completed_count: 10,
+          failed_count: 0,
+          errors: null,
+        }),
+        loadCategories: vi.fn().mockRejectedValue(new ApiError(401, 'Unauthorized')),
+      })
+      const { result } = renderHook(() => useProcessingJobs(deps))
+
+      act(() => {
+        result.current.handleBulkImportStarted(
+          {
+            id: 5,
+            status: 'importing',
+            total_count: 10,
+            completed_count: 9,
+            failed_count: 0,
+            errors: null,
+          },
+          'archive.zip',
+          50_000,
+        )
+      })
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000)
+        await flushMicrotasks()
+      })
+
+      expect(result.current.processingJobs[0]).toMatchObject({
+        kind: 'bulk-import',
+        status: 'completed',
+        bulkImportJobId: 5,
+        serverProgress: 100,
+      })
+      expect(deps.fetchBulkImportJob).toHaveBeenCalledTimes(1)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000)
+      })
+
+      expect(deps.fetchBulkImportJob).toHaveBeenCalledTimes(1)
+    })
+
+    it('uses the latest completion refresh handlers for an in-flight bulk import after rerender', async () => {
+      const firstLoadCategories = vi.fn().mockResolvedValue(undefined)
+      const firstLoadUncategorizedImages = vi.fn().mockResolvedValue(undefined)
+      const updatedLoadCategories = vi.fn().mockResolvedValue(undefined)
+      const updatedLoadUncategorizedImages = vi.fn().mockResolvedValue(undefined)
+
+      const initialDeps = makeDeps({
+        fetchBulkImportJob: vi.fn().mockResolvedValue({
+          id: 5,
+          status: 'completed',
+          total_count: 10,
+          completed_count: 10,
+          failed_count: 0,
+          errors: null,
+        }),
+        loadCategories: firstLoadCategories,
+        loadUncategorizedImages: firstLoadUncategorizedImages,
+      })
+
+      const { result, rerender } = renderHook(
+        (deps: UseProcessingJobsDeps) => useProcessingJobs(deps),
+        {
+          initialProps: initialDeps,
+        },
+      )
+
+      act(() => {
+        result.current.handleBulkImportStarted(
+          {
+            id: 5,
+            status: 'importing',
+            total_count: 10,
+            completed_count: 9,
+            failed_count: 0,
+            errors: null,
+          },
+          'archive.zip',
+          50_000,
+        )
+      })
+
+      const updatedDeps: UseProcessingJobsDeps = {
+        ...initialDeps,
+        loadCategories: updatedLoadCategories,
+        loadUncategorizedImages: updatedLoadUncategorizedImages,
+      }
+      rerender(updatedDeps)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000)
+        await flushMicrotasks()
+      })
+
+      expect(updatedLoadCategories).toHaveBeenCalledTimes(1)
+      expect(updatedLoadUncategorizedImages).toHaveBeenCalledTimes(1)
+      expect(firstLoadCategories).not.toHaveBeenCalled()
+      expect(firstLoadUncategorizedImages).not.toHaveBeenCalled()
     })
   })
 

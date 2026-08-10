@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useMemo, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import { alpha } from '@mui/material/styles'
 import Card from '@mui/material/Card'
@@ -72,7 +72,7 @@ interface CategoryTileProps {
   onDropFiles?: (categoryId: number, files: File[]) => void
 }
 
-export default function CategoryTile({
+function CategoryTile({
   category,
   onClick,
   onMove,
@@ -330,7 +330,7 @@ export default function CategoryTile({
                   <span
                     role="img"
                     aria-label="Visibility: Hidden"
-                    style={{ display: 'inline-flex' }}
+                    style={{ display: 'inline-flex', flexShrink: 0 }}
                   >
                     <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
                   </span>
@@ -468,3 +468,8 @@ export default function CategoryTile({
     </>
   )
 }
+
+// Memoized: Browse can mount many category tiles, and grid-level state
+// changes (drag start/end, optimistic reorder) would otherwise re-render
+// every card. Props are stable references from the grid.
+export default memo(CategoryTile)

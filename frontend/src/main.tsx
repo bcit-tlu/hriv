@@ -3,14 +3,20 @@ import { createRoot } from 'react-dom/client'
 import ColorModeProvider from './ThemeContext'
 import AuthProvider from './AuthContext'
 import MaintenanceBanner from './components/MaintenanceBanner'
+import ObservabilityErrorBoundary from './components/ObservabilityErrorBoundary'
 import App from './App'
+import { initObservability } from './observability'
+
+initObservability()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ColorModeProvider>
       <MaintenanceBanner>
         <AuthProvider>
-          <App />
+          <ObservabilityErrorBoundary>
+            <App />
+          </ObservabilityErrorBoundary>
         </AuthProvider>
       </MaintenanceBanner>
     </ColorModeProvider>

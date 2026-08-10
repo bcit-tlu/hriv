@@ -19,6 +19,7 @@ import {
   formatMeasurement,
   createMeasurementLabel,
   computeMagnification,
+  createPinchRotationTracker,
   MAX_SHARE_OVERLAYS,
   type ViewportState,
   type MeasurementConfig,
@@ -27,6 +28,10 @@ import {
 
 interface ImageViewerProps {
   tileSources: OpenSeadragon.TileSourceOptions | string
+  /** Id of the image being viewed; emitted as a structured telemetry field. */
+  imageId?: number
+  /** Id of the image's category; emitted as a structured telemetry field. */
+  categoryId?: number
   height?: string
   initialViewport?: ViewportState
   onViewportChange?: (state: ViewportState) => void
@@ -64,6 +69,8 @@ interface DragState {
 
 export default function ImageViewer({
   tileSources,
+  imageId,
+  categoryId,
   height = '70vh',
   initialViewport,
   onViewportChange,
@@ -115,8 +122,30 @@ export default function ImageViewer({
   const onClearOverlaysRef = useRef(onClearOverlays)
   const overlaysLockedRef = useRef(overlaysLocked)
   const canEditContentRef = useRef(canEditContent)
+  const viewStartTimeRef = useRef<number | null>(null)
+  const imageIdRef = useRef(imageId)
+  const categoryIdRef = useRef(categoryId)
+  useEffect(() => {
+    imageIdRef.current = imageId
+  }, [imageId])
+  useEffect(() => {
+    categoryIdRef.current = categoryId
+  }, [categoryId])
+  const emitToolbarAction = useCallback((action: string) => {
+    emitEvent({
+      event: 'ui.toolbar_action',
+      action,
+      outcome: 'success',
+      image_id: imageIdRef.current,
+      category_id: categoryIdRef.current,
+    })
+  }, [])
   const updateLockUiRef = useRef<(() => void) | null>(null)
   const updateCanvasEditUiRef = useRef<((active: boolean) => void) | null>(null)
+  const canvasCancelRef = useRef<(() => Promise<void>) | null>(null)
+  const registerCanvasCancel = useCallback((handler: (() => Promise<void>) | null) => {
+    canvasCancelRef.current = handler
+  }, [])
   const updateMagnificationRef = useRef<(() => void) | null>(null)
   useEffect(() => {
     onViewportChangeRef.current = onViewportChange
@@ -304,6 +333,94 @@ export default function ImageViewer({
       // Mobile hides the native cluster in favour of the custom React pill.
       showNavigationControl: !isMobile,
     })
+
+    try {
+      viewerRef.current = OpenSeadragon({
+        element: containerRef.current,
+        tileSources,
+        prefixUrl: '/openseadragon-svg-icons/',
+        navImages: {
+          zoomIn: {
+            REST: 'zoomin_rest.svg',
+            GROUP: 'zoomin_grouphover.svg',
+            HOVER: 'zoomin_hover.svg',
+            DOWN: 'zoomin_pressed.svg',
+          },
+          zoomOut: {
+            REST: 'zoomout_rest.svg',
+            GROUP: 'zoomout_grouphover.svg',
+            HOVER: 'zoomout_hover.svg',
+            DOWN: 'zoomout_pressed.svg',
+          },
+          home: {
+            REST: 'home_rest.svg',
+            GROUP: 'home_grouphover.svg',
+            HOVER: 'home_hover.svg',
+            DOWN: 'home_pressed.svg',
+          },
+          fullpage: {
+            REST: 'fullpage_rest.svg',
+            GROUP: 'fullpage_grouphover.svg',
+            HOVER: 'fullpage_hover.svg',
+            DOWN: 'fullpage_pressed.svg',
+          },
+          rotateleft: {
+            REST: 'rotateleft_rest.svg',
+            GROUP: 'rotateleft_grouphover.svg',
+            HOVER: 'rotateleft_hover.svg',
+            DOWN: 'rotateleft_pressed.svg',
+          },
+          rotateright: {
+            REST: 'rotateright_rest.svg',
+            GROUP: 'rotateright_grouphover.svg',
+            HOVER: 'rotateright_hover.svg',
+            DOWN: 'rotateright_pressed.svg',
+          },
+          previous: {
+            REST: 'previous_rest.svg',
+            GROUP: 'previous_grouphover.svg',
+            HOVER: 'previous_hover.svg',
+            DOWN: 'previous_pressed.svg',
+          },
+          next: {
+            REST: 'next_rest.svg',
+            GROUP: 'next_grouphover.svg',
+            HOVER: 'next_hover.svg',
+            DOWN: 'next_pressed.svg',
+          },
+          flip: {
+            REST: 'flip_rest.svg',
+            GROUP: 'flip_grouphover.svg',
+            HOVER: 'flip_hover.svg',
+            DOWN: 'flip_pressed.svg',
+          },
+        },
+        animationTime: 0.4,
+        blendTime: 0.1,
+        minZoomImageRatio: 0.8,
+        maxZoomPixelRatio: 4,
+        visibilityRatio: 1,
+        constrainDuringPan: true,
+        showNavigator: true,
+        navigatorPosition: 'BOTTOM_RIGHT',
+        navigatorSizeRatio: 0.15,
+        gestureSettingsMouse: { scrollToZoom: true },
+        // Rotation controls
+        showRotationControl: true,
+        gestureSettingsTouch: { pinchRotate: true },
+        // Position controls at bottom-left
+        navigationControlAnchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
+      })
+    } catch (error) {
+      emitFrontendError({
+        action: 'image_viewer_init',
+        error: 'image_viewer',
+        errorCode: 'image_viewer_init_failed',
+        imageId: imageIdRef.current,
+        categoryId: categoryIdRef.current,
+      })
+      throw error
+    }
 
     const viewer = viewerRef.current
 
@@ -561,6 +678,7 @@ export default function ImageViewer({
         srcHover: prefix + 'lock_open_hover.svg',
         srcDown: prefix + 'lock_open_pressed.svg',
         onClick: () => {
+          emitToolbarAction(overlaysLockedRef.current ? 'overlays_unlock' : 'overlays_lock')
           if (overlaysLockedRef.current) {
             onUnlockOverlaysRef.current?.()
           } else {
@@ -604,6 +722,12 @@ export default function ImageViewer({
         srcDown: prefix + 'canvas_edit_pressed.svg',
         onClick: () => {
           const entering = !canvasEditModeRef.current
+          emitToolbarAction(entering ? 'canvas_edit_on' : 'canvas_edit_off')
+          if (!entering && canvasCancelRef.current) {
+            // Exit through the overlay's cancel flow so unsaved changes are discarded
+            void canvasCancelRef.current()
+            return
+          }
           canvasEditModeRef.current = entering
           setCanvasEditMode(entering)
           viewer.setMouseNavEnabled(!entering)
@@ -622,6 +746,14 @@ export default function ImageViewer({
         canvasEditButton.element.style.outlineOffset = active ? '-2px' : ''
       }
     }
+
+    // Keep the bottom-left toolbar above the canvas edit overlay (zIndex 15/20)
+    // so its buttons stay visible and clickable while in canvas edit mode.
+    let toolbarAnchor: HTMLElement | null = selectionButton.element
+    while (toolbarAnchor && toolbarAnchor.parentElement !== viewer.container) {
+      toolbarAnchor = toolbarAnchor.parentElement
+    }
+    if (toolbarAnchor) toolbarAnchor.style.zIndex = '25'
 
     // --- Magnification factor badge (inside the navigator mini-map) ---
     // Only visible when the image has measurement settings (scale + unit).
@@ -675,6 +807,26 @@ export default function ImageViewer({
 
     // Restore viewport state and initial overlays after the image has loaded
     viewer.addOnceHandler('open', () => {
+      const duration = viewStartTimeRef.current
+        ? Math.round(performance.now() - viewStartTimeRef.current)
+        : undefined
+      emitEvent({
+        event: 'image.view.ready',
+        action: 'view',
+        outcome: 'success',
+        duration_ms: duration,
+        image_id: imageIdRef.current,
+        category_id: categoryIdRef.current,
+      })
+      if (duration !== undefined) {
+        emitFrontendPerformance({
+          metric: 'image_ready',
+          value: duration,
+          unit: 'ms',
+          imageId: imageIdRef.current,
+          categoryId: categoryIdRef.current,
+        })
+      }
       if (initialViewport) {
         viewer.viewport.zoomTo(initialViewport.zoom, undefined, true)
         viewer.viewport.panTo(new OpenSeadragon.Point(initialViewport.x, initialViewport.y), true)
@@ -693,9 +845,60 @@ export default function ImageViewer({
       updateMagnification()
     })
 
+    viewer.addHandler('open-failed', () => {
+      const duration = viewStartTimeRef.current
+        ? Math.round(performance.now() - viewStartTimeRef.current)
+        : undefined
+      emitEvent({
+        event: 'image.view.failed',
+        action: 'view',
+        outcome: 'failure',
+        duration_ms: duration,
+        image_id: imageIdRef.current,
+        category_id: categoryIdRef.current,
+      })
+      emitFrontendError({
+        action: 'image_viewer_open',
+        error: 'image_viewer',
+        errorCode: 'image_viewer_open_failed',
+        imageId: imageIdRef.current,
+        categoryId: categoryIdRef.current,
+      })
+    })
+
     // Reset rotation to 0 when the home button is clicked
     viewer.addHandler('home', () => {
+      emitToolbarAction('home')
       viewer.viewport.setRotation(0)
+    })
+    viewer.addHandler('full-page', (event) => {
+      // Fires on both enter and exit; count only entering full screen.
+      if (event.fullPage) emitToolbarAction('full_screen')
+    })
+
+    const pinchRotationTracker = createPinchRotationTracker()
+
+    // Damp the touch pinch-rotate gesture. OpenSeadragon rotates the viewport
+    // 1:1 with finger movement, which is hard to control on mobile. Require a
+    // clear rotation before activating, then apply a scaled-down delta.
+    viewer.addHandler('canvas-pinch', (event) => {
+      const points = event.gesturePoints
+      if (!points || points.length < 2) return
+      event.preventDefaultRotateAction = true
+      const timestamp = event.originalEvent?.timeStamp ?? performance.now()
+      const { rotationDelta, suppressZoom } = pinchRotationTracker.update(
+        points[0].lastPos,
+        points[1].lastPos,
+        points[0].currentPos,
+        points[1].currentPos,
+        event.lastDistance,
+        event.distance,
+        timestamp,
+      )
+      event.preventDefaultZoomAction = suppressZoom
+      if (rotationDelta === 0) return
+      const pivot = viewer.viewport.pointFromPixel(event.center, true)
+      viewer.viewport.rotateTo(viewer.viewport.getRotation(true) + rotationDelta, pivot, true)
     })
 
     // Report viewport changes after animations finish
@@ -748,6 +951,17 @@ export default function ImageViewer({
     }
 
     return () => {
+      const dwellMs = viewStartTimeRef.current
+        ? Math.round(performance.now() - viewStartTimeRef.current)
+        : undefined
+      emitEventNow({
+        event: 'image.view.ended',
+        action: 'view',
+        outcome: 'success',
+        duration_ms: dwellMs,
+        image_id: imageIdRef.current,
+        category_id: categoryIdRef.current,
+      })
       selectionModeRef.current = false
       dragRef.current = null
       overlaysRef.current = []
@@ -934,6 +1148,7 @@ export default function ImageViewer({
           editMode={canvasEditMode}
           onEditModeChange={handleCanvasEditModeChange}
           onFlushAnnotations={onFlushCanvasAnnotations}
+          registerCancelHandler={registerCanvasCancel}
         />
       )}
 

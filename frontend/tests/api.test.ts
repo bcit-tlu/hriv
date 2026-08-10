@@ -38,12 +38,12 @@ import {
   getToken,
   clearUserStorage,
   ApiError,
+  ApiTransportError,
   fetchStatus,
   fetchCategoryTree,
   createCategory,
   updateCategory,
   deleteCategory,
-  reorderCategories,
   fetchImage,
   fetchImages,
   fetchUncategorizedImages,
@@ -51,7 +51,10 @@ import {
   deleteImage,
   bulkUpdateImages,
   bulkDeleteImages,
-  reorderImages,
+  getTileOrder,
+  putTileOrder,
+  tileOrderConflictCurrent,
+  type TileOrderResponse,
   fetchOidcEnabled,
   getOidcLoginUrl,
   fetchUsers,
@@ -94,17 +97,18 @@ import {
   fetchAdminTask,
   cancelAdminTask,
   uploadSourceImage,
-  uploadTaskFile,
   bulkImportImages,
   replaceImage,
   type ApiCategory,
   type ApiCategoryTree,
   type ApiImage,
+  attachedCategoriesFromError,
   type ApiUser,
   type ApiProgram,
   type ApiAnnouncement,
   type ApiChangelogEntry,
   type ApiSourceImage,
+  setApiFailureObserver,
   userMessage,
 } from '../src/api'
 
@@ -115,6 +119,7 @@ function jsonResponse(body: unknown, status = 200) {
     ok: status >= 200 && status < 300,
     status,
     statusText: 'OK',
+    headers: { get: () => null },
     json: () => Promise.resolve(body),
     text: () => Promise.resolve(JSON.stringify(body)),
   })
@@ -125,16 +130,18 @@ function noContentResponse() {
     ok: true,
     status: 204,
     statusText: 'No Content',
+    headers: { get: () => null },
     json: () => Promise.reject(new Error('no body')),
     text: () => Promise.resolve(''),
   })
 }
 
-function errorResponse(status: number, body: string) {
+function errorResponse(status: number, body: string, requestId?: string) {
   return Promise.resolve({
     ok: false,
     status,
     statusText: body,
+    headers: { get: (key: string) => (key === 'X-Request-ID' ? (requestId ?? null) : null) },
     json: () => Promise.resolve(body),
     text: () => Promise.resolve(body),
   })
@@ -255,12 +262,60 @@ describe('ApiError', () => {
   })
 })
 
+describe('ApiTransportError', () => {
+  it('has the transport request context', () => {
+    const err = new ApiTransportError('Network error', { method: 'GET', path: '/status' })
+    expect(err.name).toBe('ApiTransportError')
+    expect(err.method).toBe('GET')
+    expect(err.path).toBe('/status')
+  })
+})
+
 describe('userMessage', () => {
-  it('returns conflict message for 409', () => {
-    const err = new ApiError(409, 'Conflict')
+  afterEach(() => {
+    setApiFailureObserver(null)
+  })
+
+  it('returns friendly message for concurrency-style 409s', () => {
+    const err = new ApiError(409, 'Resource has been modified by another client')
     expect(userMessage(err, 'fallback')).toBe(
       'This item was modified by another user. Please refresh and try again.',
     )
+  })
+
+  it('returns friendly message for 409s without usable detail', () => {
+    const err = new ApiError(409, '')
+    expect(userMessage(err, 'fallback')).toBe(
+      'This item was modified by another user. Please refresh and try again.',
+    )
+  })
+
+  it('returns specific detail for 409 conflicts with usable backend messages', () => {
+    const err = new ApiError(409, 'Group name already exists')
+    expect(userMessage(err, 'fallback')).toBe('Group name already exists')
+  })
+
+  it('extracts attached categories from structured 409 details', () => {
+    const err = new ApiError(409, 'Group is attached to one or more categories', {
+      message: 'Group is attached to one or more categories',
+      category_ids: [1, 2],
+      categories: [
+        { id: 1, label: 'Italian' },
+        { id: 2, label: 'Gothic' },
+      ],
+    })
+
+    expect(attachedCategoriesFromError(err)).toEqual([
+      { id: 1, label: 'Italian' },
+      { id: 2, label: 'Gothic' },
+    ])
+  })
+
+  it('returns null for non-structured attached categories errors', () => {
+    expect(
+      attachedCategoriesFromError(new ApiError(409, 'Group is attached to one or more categories')),
+    ).toBeNull()
+    expect(attachedCategoriesFromError(new TypeError('nope'))).toBeNull()
   })
 
   it('returns detail for short 4xx errors', () => {
@@ -268,9 +323,24 @@ describe('userMessage', () => {
     expect(userMessage(err, 'fallback')).toBe('Name already exists')
   })
 
-  it('returns fallback for HTML detail', () => {
+  it('returns a clear message for 413 detail', () => {
     const err = new ApiError(413, '<!DOCTYPE html><html>error page</html>')
-    expect(userMessage(err, 'Too large')).toBe('Too large')
+    expect(userMessage(err, 'Too large')).toBe('This file is too large to upload.')
+  })
+
+  it('returns a clear message for 413 without usable detail', () => {
+    const err = new ApiError(413, '')
+    expect(userMessage(err, 'Too large')).toBe('This file is too large to upload.')
+  })
+
+  it('returns detail for 507 storage errors', () => {
+    const err = new ApiError(
+      507,
+      'Insufficient space to upload archive: required 1 bytes, available 0 bytes',
+    )
+    expect(userMessage(err, 'fallback')).toBe(
+      'Insufficient space to upload archive: required 1 bytes, available 0 bytes',
+    )
   })
 
   it('returns fallback for detail exceeding 200 chars', () => {
@@ -299,6 +369,50 @@ describe('userMessage', () => {
     )
   })
 
+  it('notifies the API failure observer for ApiError values', () => {
+    const observer = vi.fn()
+    setApiFailureObserver(observer)
+
+    expect(
+      userMessage(
+        new ApiError(503, 'Backend unavailable', undefined, {
+          method: 'GET',
+          path: '/images',
+          requestId: 'req-123',
+        }),
+        'fallback',
+      ),
+    ).toBe('fallback')
+    expect(observer).toHaveBeenCalledWith(
+      expect.any(ApiError),
+      expect.objectContaining({
+        method: 'GET',
+        path: '/images',
+        requestId: 'req-123',
+        status: 503,
+      }),
+    )
+  })
+
+  it('notifies the API failure observer for transport errors', () => {
+    const observer = vi.fn()
+    setApiFailureObserver(observer)
+
+    expect(
+      userMessage(
+        new ApiTransportError('Network error', { method: 'POST', path: '/images' }),
+        'fallback',
+      ),
+    ).toBe('Network error \u2014 check your connection and try again.')
+    expect(observer).toHaveBeenCalledWith(
+      expect.any(ApiTransportError),
+      expect.objectContaining({
+        method: 'POST',
+        path: '/images',
+      }),
+    )
+  })
+
   it('returns fallback for AbortError', () => {
     const err = new DOMException('Aborted', 'AbortError')
     expect(userMessage(err, 'fallback')).toBe('fallback')
@@ -310,13 +424,13 @@ describe('userMessage', () => {
     expect(userMessage(null, 'fallback')).toBe('fallback')
   })
 
-  it('returns fallback for HTML fragment detail', () => {
+  it('returns a clear message for HTML fragment detail on 413', () => {
     expect(userMessage(new ApiError(400, '<div>Service Unavailable</div>'), 'fallback')).toBe(
       'fallback',
     )
     expect(
       userMessage(new ApiError(413, '<h1>413 Request Entity Too Large</h1>'), 'fallback'),
-    ).toBe('fallback')
+    ).toBe('This file is too large to upload.')
     expect(userMessage(new ApiError(400, '<pre>Error details</pre>'), 'fallback')).toBe('fallback')
     expect(
       userMessage(new ApiError(400, '<table><tr><td>Error</td></tr></table>'), 'fallback'),
@@ -357,7 +471,7 @@ describe('request helper (via wrapper functions)', () => {
   })
 
   it('throws ApiError with correct status code', async () => {
-    mockFetch.mockReturnValueOnce(errorResponse(422, 'Validation Error'))
+    mockFetch.mockReturnValueOnce(errorResponse(422, 'Validation Error', 'req-422'))
     try {
       await fetchCategoryTree()
       expect.fail('should have thrown')
@@ -365,7 +479,13 @@ describe('request helper (via wrapper functions)', () => {
       expect(e).toBeInstanceOf(ApiError)
       expect((e as ApiError).status).toBe(422)
       expect((e as ApiError).message).toContain('422')
+      expect((e as ApiError).requestId).toBe('req-422')
     }
+  })
+
+  it('throws ApiTransportError on fetch network failures', async () => {
+    mockFetch.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    await expect(fetchCategoryTree()).rejects.toThrow(ApiTransportError)
   })
 
   it('falls back to statusText when text() rejects', async () => {
@@ -374,6 +494,7 @@ describe('request helper (via wrapper functions)', () => {
         ok: false,
         status: 500,
         statusText: 'Internal Server Error',
+        headers: { get: () => null },
         json: () => Promise.reject(new Error('no json')),
         text: () => Promise.reject(new Error('no text')),
       }),
@@ -386,6 +507,39 @@ describe('request helper (via wrapper functions)', () => {
       expect((e as ApiError).status).toBe(500)
       expect((e as ApiError).message).toContain('Internal Server Error')
     }
+  })
+
+  it('surfaces object detail messages from error payloads', async () => {
+    mockFetch.mockReturnValueOnce(
+      Promise.resolve({
+        ok: false,
+        status: 409,
+        statusText: 'Conflict',
+        headers: { get: () => null },
+        json: () =>
+          Promise.resolve({
+            detail: { message: 'Group is attached to one or more categories', category_ids: [1] },
+          }),
+        text: () =>
+          Promise.resolve(
+            JSON.stringify({
+              detail: {
+                message: 'Group is attached to one or more categories',
+                category_ids: [1],
+              },
+            }),
+          ),
+      }),
+    )
+
+    await expect(createGroup({ name: 'New Group' })).rejects.toMatchObject({
+      status: 409,
+      detail: 'Group is attached to one or more categories',
+      data: {
+        message: 'Group is attached to one or more categories',
+        category_ids: [1],
+      },
+    })
   })
 })
 
@@ -468,17 +622,6 @@ describe('Category API', () => {
     expect(url).toBe('/api/categories/1')
     expect(init.method).toBe('DELETE')
   })
-
-  it('reorderCategories sends PUT with items array', async () => {
-    mockFetch.mockReturnValueOnce(noContentResponse())
-    await reorderCategories([{ id: 1, parent_id: null, sort_order: 0 }])
-    const [url, init] = mockFetch.mock.calls[0]
-    expect(url).toBe('/api/categories/reorder')
-    expect(init.method).toBe('PUT')
-    expect(JSON.parse(init.body)).toEqual({
-      items: [{ id: 1, parent_id: null, sort_order: 0 }],
-    })
-  })
 })
 
 // ── Images ───────────────────────────────────────────────────────────────
@@ -560,22 +703,92 @@ describe('Image API', () => {
     expect(url).toBe('/api/images/bulk')
     expect(init.method).toBe('DELETE')
   })
+})
 
-  it('reorderImages sends PUT with items array', async () => {
-    mockFetch.mockReturnValueOnce(noContentResponse())
-    await reorderImages([
-      { id: 1, sort_order: 0 },
-      { id: 2, sort_order: 1 },
-    ])
+// ── Tile order ───────────────────────────────────────────────────────────
+
+describe('Tile order API', () => {
+  const TILE_ORDER_FIXTURE: TileOrderResponse = {
+    scope: { parent_category_id: 5 },
+    revision: 3,
+    items: [
+      { type: 'category', id: 1, sort_order: 0 },
+      { type: 'image', id: 2, sort_order: 1 },
+    ],
+  }
+
+  beforeEach(() => {
+    mockFetch.mockReset()
+    setToken('jwt')
+  })
+  afterEach(() => setToken(null))
+
+  it('getTileOrder with a numeric scope appends parent_category_id query param', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(TILE_ORDER_FIXTURE))
+    const result = await getTileOrder(5)
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/tile-order?parent_category_id=5')
+    expect(result).toEqual(TILE_ORDER_FIXTURE)
+  })
+
+  it('getTileOrder with the root scope sends no query string', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(TILE_ORDER_FIXTURE))
+    await getTileOrder(null)
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/tile-order')
+  })
+
+  it('putTileOrder sends PUT with scope, expected_revision, operation_id, and items', async () => {
+    // The operation ID travels only in the body; the unused
+    // X-Reorder-Operation-Id header was removed in #998.
+    mockFetch.mockReturnValueOnce(jsonResponse(TILE_ORDER_FIXTURE))
+    await putTileOrder(
+      5,
+      3,
+      [
+        { type: 'category', id: 1 },
+        { type: 'image', id: 2 },
+      ],
+      'op-123',
+    )
     const [url, init] = mockFetch.mock.calls[0]
-    expect(url).toBe('/api/images/reorder')
+    expect(url).toBe('/api/tile-order')
     expect(init.method).toBe('PUT')
     expect(JSON.parse(init.body)).toEqual({
+      scope: { parent_category_id: 5 },
+      expected_revision: 3,
+      operation_id: 'op-123',
       items: [
-        { id: 1, sort_order: 0 },
-        { id: 2, sort_order: 1 },
+        { type: 'category', id: 1 },
+        { type: 'image', id: 2 },
       ],
     })
+    expect(init.headers?.['X-Reorder-Operation-Id']).toBeUndefined()
+  })
+
+  it('putTileOrder without an operationId sends null operation_id', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(TILE_ORDER_FIXTURE))
+    await putTileOrder(null, 0, [{ type: 'image', id: 9 }])
+    const [, init] = mockFetch.mock.calls[0]
+    expect(JSON.parse(init.body)).toEqual({
+      scope: { parent_category_id: null },
+      expected_revision: 0,
+      operation_id: null,
+      items: [{ type: 'image', id: 9 }],
+    })
+    expect(init.headers?.['X-Reorder-Operation-Id']).toBeUndefined()
+  })
+
+  it('tileOrderConflictCurrent returns the current payload for a 409 ApiError', () => {
+    const err = new ApiError(409, 'stale revision', { current: TILE_ORDER_FIXTURE })
+    expect(tileOrderConflictCurrent(err)).toEqual(TILE_ORDER_FIXTURE)
+  })
+
+  it('tileOrderConflictCurrent returns null for non-409 and non-ApiError values', () => {
+    expect(
+      tileOrderConflictCurrent(new ApiError(400, 'bad request', { current: TILE_ORDER_FIXTURE })),
+    ).toBeNull()
+    expect(tileOrderConflictCurrent(new ApiError(409, 'stale revision', {}))).toBeNull()
+    expect(tileOrderConflictCurrent(new Error('boom'))).toBeNull()
+    expect(tileOrderConflictCurrent(undefined)).toBeNull()
   })
 })
 
@@ -965,11 +1178,19 @@ describe('Issue API', () => {
   afterEach(() => setToken(null))
 
   it('reportIssue sends POST', async () => {
-    mockFetch.mockReturnValueOnce(jsonResponse({ issue_url: 'https://github.com/...' }))
+    mockFetch.mockReturnValueOnce(
+      jsonResponse({
+        destination: 'github',
+        tracking_url: 'https://github.com/...',
+        issue_url: 'https://github.com/...',
+      }),
+    )
     const result = await reportIssue({ description: 'Bug', page_url: 'http://localhost' })
     const [url, init] = mockFetch.mock.calls[0]
     expect(url).toBe('/api/issues/report')
     expect(init.method).toBe('POST')
+    expect(result.destination).toBe('github')
+    expect(result.tracking_url).toBe('https://github.com/...')
     expect(result.issue_url).toBe('https://github.com/...')
   })
 })
@@ -1000,7 +1221,12 @@ describe('Version API', () => {
 
   it('fetchFrontendVersion throws on non-OK response', async () => {
     mockFetch.mockReturnValueOnce(
-      Promise.resolve({ ok: false, status: 404, statusText: 'Not Found' }),
+      Promise.resolve({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+        headers: { get: () => null },
+      }),
     )
     await expect(fetchFrontendVersion()).rejects.toThrow('Frontend /version 404')
   })
@@ -1198,15 +1424,6 @@ describe('XHR upload abort support', () => {
       undefined,
       ac.signal,
     )
-    ac.abort()
-    await expect(promise).rejects.toThrow('Upload aborted')
-    await expect(promise).rejects.toMatchObject({ name: 'AbortError' })
-  })
-
-  it('uploadTaskFile rejects with AbortError when signal is aborted', async () => {
-    const ac = new AbortController()
-    const file = new File(['test'], 'test.tar.gz')
-    const promise = uploadTaskFile(1, file, undefined, ac.signal)
     ac.abort()
     await expect(promise).rejects.toThrow('Upload aborted')
     await expect(promise).rejects.toMatchObject({ name: 'AbortError' })

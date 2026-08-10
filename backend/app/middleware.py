@@ -7,12 +7,13 @@ the entire body in RAM before the streaming-to-disk handler runs.
 """
 
 import logging
+import re
 import time
 import uuid
 from contextvars import ContextVar
 
 from jose import jwt
-from opentelemetry import trace
+from opentelemetry import metrics, trace
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -21,11 +22,63 @@ from .database import settings
 from .maintenance import is_maintenance_mode
 
 logger = logging.getLogger(__name__)
+_meter = metrics.get_meter(__name__)
+
+_tile_request_counter = _meter.create_counter(
+    "hriv.tile.requests",
+    description="Number of tile-delivery HTTP responses",
+    unit="1",
+)
+_tile_error_counter = _meter.create_counter(
+    "hriv.tile.errors",
+    description="Number of tile-delivery HTTP responses classified as errors",
+    unit="1",
+)
+_tile_duration_histogram = _meter.create_histogram(
+    "hriv.tile.response.duration",
+    description="Duration of tile-delivery HTTP responses",
+    unit="s",
+)
+_tile_response_size_histogram = _meter.create_histogram(
+    "hriv.tile.response.size",
+    description="Response size of tile-delivery HTTP responses",
+    unit="By",
+)
+
+_UUID_PATH_SEGMENT = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+_TILE_DZI_ROUTE = re.compile(r"/api/tiles/[0-9]+/image\.dzi")
+_TILE_THUMBNAIL_ROUTE = re.compile(r"/api/tiles/[0-9]+/thumbnail\.[A-Za-z0-9]+")
+_TILE_IMAGE_FILE_ROUTE = re.compile(
+    r"/api/tiles/[0-9]+/image_files/[0-9]+/[0-9]+_[0-9]+\.[A-Za-z0-9]+"
+)
+_IMAGE_REPLACE_ROUTE = re.compile(r"/api/images/[0-9]+/replace")
+_ADMIN_TASK_UPLOAD_ROUTE = re.compile(r"/api/admin/tasks/[^/]+/upload(?:/finalize)?")
+_CATCH_ALL_ROUTE_PARAM = re.compile(r"\{[^/{}:]+:path\}")
+_TILE_METRIC_ROUTES = frozenset({
+    "/api/tiles/{image_id}/image.dzi",
+    "/api/tiles/{image_id}/thumbnail.{format}",
+    "/api/tiles/{image_id}/image_files/{level}/{col}_{row}.{format}",
+})
 
 
 def _parse_exclude_prefixes(raw: str) -> tuple[str, ...]:
     """Normalise a comma-separated path-prefix list into a tuple."""
     return tuple(p.strip() for p in raw.split(",") if p.strip())
+
+
+def _path_matches_excluded(path: str, prefix: str) -> bool:
+    """Return True if ``path`` is covered by an audit-exclude prefix.
+
+    Prefixes that end with ``/`` are treated as directory prefixes.
+    Prefixes without a trailing slash match the exact path or the path plus a
+    ``/`` sub-path, but do not match sibling paths that merely start with the
+    same characters (e.g. ``/api/metrics`` must not match ``/api/metrics_custom``).
+    """
+    if prefix.endswith("/"):
+        return path.startswith(prefix)
+    return path == prefix or path.startswith(prefix + "/")
 
 
 def _parse_content_length(raw: str | None) -> int | str | None:
@@ -42,8 +95,116 @@ def _is_upload_path(path: str) -> bool:
         path == "/api/source-images/upload"
         or path.startswith("/api/admin/bulk-import")
         or path in {"/api/admin/tasks/db-import", "/api/admin/tasks/files-import"}
+        or (path.startswith("/api/admin/tasks/") and path.endswith("/upload"))
         or (path.startswith("/api/images/") and path.endswith("/replace"))
     )
+
+
+def _is_tile_route(route: str) -> bool:
+    return route in _TILE_METRIC_ROUTES
+
+
+def _status_class(status_code: int) -> str:
+    if 100 <= status_code <= 599:
+        return f"{status_code // 100}xx"
+    return "other"
+
+
+def _tile_outcome(status_code: int) -> str:
+    if status_code == 404:
+        return "not_found"
+    if status_code in {401, 403}:
+        return "access_denied"
+    if 400 <= status_code <= 499:
+        return "client_error"
+    if 500 <= status_code <= 599:
+        return "server_error"
+    return "success"
+
+
+def _record_tile_metrics(
+    *,
+    method: str,
+    route: str,
+    status_code: int,
+    duration_s: float,
+    response_size_bytes: int,
+) -> None:
+    if not _is_tile_route(route):
+        return
+
+    attrs = {
+        "http.method": method,
+        "http.route": route,
+        "http.status_code": status_code,
+        "status_class": _status_class(status_code),
+        "outcome": _tile_outcome(status_code),
+    }
+    _tile_request_counter.add(1, attrs)
+    _tile_duration_histogram.record(duration_s, attrs)
+    _tile_response_size_histogram.record(response_size_bytes, attrs)
+    if status_code >= 400:
+        _tile_error_counter.add(1, attrs)
+
+
+def _normalize_path_fallback(path: str) -> str:
+    """Normalize a raw URL path when no framework route template is available.
+
+    This fallback is intentionally conservative: generic segment rewriting only
+    covers purely numeric ids and UUIDs. Routes that introduce other dynamic
+    high-cardinality segments should add an explicit normalization rule above
+    rather than broadening the heuristic and risking false positives for stable
+    literals such as ``db-import``.
+    """
+    if _TILE_DZI_ROUTE.fullmatch(path):
+        return "/api/tiles/{image_id}/image.dzi"
+    if _TILE_THUMBNAIL_ROUTE.fullmatch(path):
+        return "/api/tiles/{image_id}/thumbnail.{format}"
+    if _TILE_IMAGE_FILE_ROUTE.fullmatch(path):
+        return "/api/tiles/{image_id}/image_files/{level}/{col}_{row}.{format}"
+    if _IMAGE_REPLACE_ROUTE.fullmatch(path):
+        return "/api/images/{image_id}/replace"
+    if _ADMIN_TASK_UPLOAD_ROUTE.fullmatch(path):
+        if path.endswith("/finalize"):
+            return "/api/admin/tasks/{task_id}/upload/finalize"
+        return "/api/admin/tasks/{task_id}/upload"
+
+    normalized_segments: list[str] = []
+    for segment in path.split("/"):
+        if _is_ascii_numeric_segment(segment) or _UUID_PATH_SEGMENT.fullmatch(segment):
+            normalized_segments.append("{id}")
+        else:
+            normalized_segments.append(segment)
+    return "/".join(normalized_segments) or "/"
+
+
+def _is_ascii_numeric_segment(segment: str) -> bool:
+    """Return True only for non-empty ASCII decimal path segments."""
+    return bool(segment) and segment.isascii() and segment.isdecimal()
+
+
+def normalize_http_route(scope: Scope) -> str:
+    """Return a low-cardinality route template for the current request.
+
+    Prefer the framework-provided route template when available. Mounted static
+    paths such as tile delivery do not provide one, so apply explicit
+    normalization rules there and fall back to replacing numeric/UUID-like path
+    segments with ``{id}``.
+    """
+    route = scope.get("route")
+    route_path = getattr(route, "path", None)
+    # Starlette ``Mount`` routes can surface a catch-all template such as
+    # ``/api/tiles/{path:path}`` or ``/api/files/{filepath:path}``, which is
+    # less descriptive than the explicit path rules below. Prefer the fallback
+    # normalization for any catch-all ``:path`` mount template.
+    if (
+        isinstance(route_path, str)
+        and route_path
+        and _CATCH_ALL_ROUTE_PARAM.search(route_path) is None
+    ):
+        return route_path
+
+    return _normalize_path_fallback(scope["path"])
 
 
 # Snapshot the configured prefixes at import time so the per-request
@@ -125,11 +286,13 @@ class AuditMiddleware:
         )
 
         if method in {"POST", "PUT", "PATCH"} and _is_upload_path(path):
+            upload_route = _normalize_path_fallback(path)
             extra: dict[str, object] = {
                 "event": "http.upload_started",
                 "request_id": req_id,
                 "method": method,
                 "path": path,
+                "route": upload_route,
             }
             if content_length is not None:
                 extra["content_length"] = content_length
@@ -137,15 +300,18 @@ class AuditMiddleware:
 
         start = time.monotonic()
         status_code = 500  # default if the inner app raises
+        response_size_bytes = 0
 
         async def send_wrapper(message: Message) -> None:
-            nonlocal status_code
+            nonlocal status_code, response_size_bytes
             if message["type"] == "http.response.start":
                 status_code = message["status"]
                 # Inject X-Request-ID into the response headers
                 headers = list(message.get("headers", []))
                 headers.append((b"x-request-id", req_id.encode("latin-1")))
                 message = {**message, "headers": headers}
+            elif message["type"] == "http.response.body":
+                response_size_bytes += len(message.get("body", b""))
             await send(message)
 
         try:
@@ -153,7 +319,9 @@ class AuditMiddleware:
         except Exception:
             raise
         finally:
-            duration_ms = round((time.monotonic() - start) * 1000)
+            duration_s = time.monotonic() - start
+            duration_ms = round(duration_s * 1000)
+            route = normalize_http_route(scope)
 
             client_ip = get_client_ip(scope)
 
@@ -191,6 +359,7 @@ class AuditMiddleware:
                 "request_id": req_id,
                 "method": method,
                 "path": path,
+                "route": route,
                 "status": status_code,
                 "duration_ms": duration_ms,
                 "client_ip": client_ip,
@@ -211,6 +380,7 @@ class AuditMiddleware:
             # OTEL span so distributed traces carry user context.
             span = trace.get_current_span()
             if span.is_recording():
+                span.set_attribute("http.route", route)
                 span.set_attribute("request.id", req_id)
                 if session_id:
                     span.set_attribute("session.id", session_id)
@@ -219,7 +389,15 @@ class AuditMiddleware:
                 if user_role:
                     span.set_attribute("enduser.role", user_role)
 
-            is_excluded = any(path.startswith(p) for p in _EXCLUDE_PREFIXES)
+            _record_tile_metrics(
+                method=method,
+                route=route,
+                status_code=status_code,
+                duration_s=duration_s,
+                response_size_bytes=response_size_bytes,
+            )
+
+            is_excluded = any(_path_matches_excluded(path, p) for p in _EXCLUDE_PREFIXES)
             _log = logger.debug if is_excluded else logger.info
             _log(
                 "%s %s %s %dms",
@@ -234,10 +412,12 @@ class AuditMiddleware:
 # ── Maintenance-mode middleware ─────────────────────────
 
 # Paths that must remain reachable during a restore so that health
-# probes, the status endpoint, and the maintenance toggle keep working.
+# probes, the status endpoint, metrics scraping, and the maintenance toggle
+# keep working.
 _MAINTENANCE_EXEMPT: tuple[str, ...] = (
     "/api/health",
     "/api/status",
+    "/api/metrics",
     "/api/admin/maintenance",
 )
 
@@ -258,7 +438,7 @@ class MaintenanceMiddleware:
 
         if is_maintenance_mode():
             path: str = scope["path"]
-            if not any(path.startswith(p) for p in _MAINTENANCE_EXEMPT):
+            if not any(_path_matches_excluded(path, p) for p in _MAINTENANCE_EXEMPT):
                 response = JSONResponse(
                     status_code=503,
                     content={

@@ -1,21 +1,25 @@
 import app.otel_bootstrap  # noqa: F401, I001 — side-effect: MUST run before any framework import
 
+import asyncio
 import logging
 import os
+import uuid
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException, status as http_status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.sessions import SessionMiddleware
 
-from .admin_ops import reconcile_stale_tasks
+from .admin_ops import _ensure_tasks_dir, reconcile_stale_tasks
 from .auth import auth_settings
 from .database import get_async_session, get_db, settings
 from .logging_config import setup_logging
+from .metrics import render_metrics
 from .maintenance import is_maintenance_mode
 from .middleware import AuditMiddleware, MaintenanceMiddleware
 from .processing import reconcile_stale_source_images
@@ -31,11 +35,56 @@ from .routers import (
     issues,
     oidc,
     programs,
+    telemetry,
+    tile_order,
     upload,
     users,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _check_storage_writable() -> bool:
+    """Verify the admin tasks directory is actually writable.
+
+    This catches a Longhorn share-manager or NFS client that is returning
+    EIO for writes: the directory may still exist and be mountable, but
+    creating a new file will fail. The check creates and then immediately
+    removes a uniquely named dotfile so it never collides with real task
+    files.
+    """
+    tasks_dir: str | None = None
+    try:
+        tasks_dir = _ensure_tasks_dir()
+        path = os.path.join(tasks_dir, f".healthcheck-{uuid.uuid4().hex}")
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+        try:
+            os.close(fd)
+        finally:
+            os.unlink(path)
+    except OSError:
+        logger.exception(
+            "Storage health check failed for %s",
+            tasks_dir or "unknown",
+            extra={"event": "health.storage_failed"},
+        )
+        return False
+    return True
+
+
+async def _check_storage_ready(timeout: float = 5.0) -> bool:
+    """Run the storage write check in a thread with a bounded timeout."""
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(_check_storage_writable),
+            timeout=timeout,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "Storage health check timed out after %s seconds", timeout,
+            extra={"event": "health.storage_timeout"},
+        )
+        return False
 
 
 async def _check_oidc_connectivity() -> None:
@@ -185,6 +234,8 @@ app.include_router(groups.router, prefix="/api")
 app.include_router(images.router, prefix="/api")
 app.include_router(issues.router, prefix="/api")
 app.include_router(programs.router, prefix="/api")
+app.include_router(telemetry.router, prefix="/api")
+app.include_router(tile_order.router, prefix="/api")
 app.include_router(upload.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
 
@@ -200,12 +251,50 @@ async def health():
 
 @app.get("/api/health/ready")
 async def readiness(db: AsyncSession = Depends(get_db)):
-    """Readiness probe: verifies the database connection is alive."""
+    """Readiness probe: verifies the database connection and storage are alive."""
     await db.execute(text("SELECT 1"))
+    if not await _check_storage_ready():
+        raise HTTPException(
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Storage not writable",
+        )
     return {"status": "ready", "version": app.version}
+
+
+@app.get("/api/health/storage")
+async def storage_health():
+    """Storage liveness probe: verifies /data/admin_tasks is writable.
+
+    Kubernetes liveness probes can be pointed here so a pod whose
+    source-images volume is returning EIO is restarted automatically.
+    """
+    if not await _check_storage_ready():
+        raise HTTPException(
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Storage not writable",
+        )
+    return {"status": "ok", "version": app.version}
 
 
 @app.get("/api/status")
 async def status():
     """Public endpoint for the frontend to check maintenance mode."""
     return {"maintenance": is_maintenance_mode(), "version": app.version}
+
+
+@app.get("/api/metrics")
+async def metrics():
+    """Prometheus metrics endpoint for durable operational state.
+
+    Exposes backup and authoritative synthetic-monitor state as gauges.
+    Operational RED metrics are emitted via OpenTelemetry OTLP and stored in
+    Prometheus via remote write; this endpoint covers the low-frequency durable
+    state that must survive the originating job or process.
+
+    This endpoint is intentionally unauthenticated so in-cluster Prometheus
+    scrapes work without per-pod credentials. It should only be reachable
+    inside the cluster via the ServiceMonitor; do not expose it on a public
+    ingress.
+    """
+    content, media_type = await render_metrics()
+    return Response(content=content, media_type=media_type)

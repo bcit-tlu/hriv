@@ -44,7 +44,10 @@ All seed users share the password `password`.
 | List users                      | Yes   | Yes        | No      |
 
 \* Instructors manage only the groups they co-own and may attach only groups
-they manage; admins manage and attach any group. See [docs/groups.md](docs/groups.md).
+they manage; admins manage and attach any group. Inherited program and group
+restrictions are treated as pre-existing when an instructor creates a child
+category, so carrying an ancestor restriction does not require new attach
+authority. See [docs/groups.md](docs/groups.md).
 
 ### Programs
 
@@ -106,6 +109,7 @@ reconciliation model for both environments.
 | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
 | [docs/groups.md](docs/groups.md)                                                     | Groups model, authorization, API surface, and frontend behaviour                |
 | [docs/changelog-notifications.md](docs/changelog-notifications.md)                   | Notification bell, What's New feed, changelog CRUD, and unread-state rules      |
+| [docs/feedback-subsystem.md](docs/feedback-subsystem.md)                             | In-app feedback routing, provider contract, and environment policy              |
 | [docs/category-visibility-and-programs.md](docs/category-visibility-and-programs.md) | Dual-gate student visibility (programs AND groups), cascade rules, tree loading |
 | [docs/domain-model.md](docs/domain-model.md)                                         | Data model reference (entities, junctions, conventions)                         |
 | [docs/admin-import-export.md](docs/admin-import-export.md)                           | Admin import/export task lifecycle and data round-trip                          |
@@ -114,12 +118,20 @@ reconciliation model for both environments.
 | [docs/TESTING.md](docs/TESTING.md)                                                   | Test plan, API endpoint → minimum-role table                                    |
 | [docs/OIDC_SETUP.md](docs/OIDC_SETUP.md)                                             | OIDC / auth configuration                                                       |
 | [docs/drag-and-drop.md](docs/drag-and-drop.md)                                       | Tile drag-and-drop move-vs-reorder contract                                     |
+| [docs/reorder-fixture.md](docs/reorder-fixture.md)                                   | Production-scale reorder fixture and regression scaffolding (epic #975)         |
+| [docs/reorder-telemetry.md](docs/reorder-telemetry.md)                               | Reorder operation correlation, timing, and diagnostic telemetry (epic #975)     |
+| [docs/tile-ordering.md](docs/tile-ordering.md)                                       | Atomic, revisioned tile-order API and ordering normalization (epic #975)        |
+| [docs/reorder-performance.md](docs/reorder-performance.md)                           | Browse drag-and-drop profiling results and optimization record (epic #975)      |
 | [docs/image-metadata-and-versioning.md](docs/image-metadata-and-versioning.md)       | Image metadata, versioning, and optimistic concurrency control                  |
 | [docs/image-processing-lifecycle.md](docs/image-processing-lifecycle.md)             | Image processing pipeline stages, tile generation, and worker configuration     |
 | [docs/tile-cache-provenance.md](docs/tile-cache-provenance.md)                       | Tile-cache provenance fields and current/missing/stale/failed status rules      |
 | [docs/backup-and-disaster-recovery.md](docs/backup-and-disaster-recovery.md)         | Production backup and DR strategy, volume layout, restore order, and runbook    |
 | [docs/ui-behaviour-spec.md](docs/ui-behaviour-spec.md)                               | UI behaviour spec (role gating, browse, dialogs, viewer, file drop)             |
 | [docs/RELEASE_AND_DEPLOY_FLOW.md](docs/RELEASE_AND_DEPLOY_FLOW.md)                   | Release-please + Flux deploy flow                                               |
+| [docs/observability-conventions.md](docs/observability-conventions.md)               | OTel spans, telemetry ingestion, canonical auth logs, usage dashboard           |
+| [docs/observability-operations.md](docs/observability-operations.md)                 | Alert catalogue, routing policy, validation drills, and readiness checklist     |
+| [docs/observability-runbooks.md](docs/observability-runbooks.md)                     | Alert-linked operator runbooks for availability, storage, backups, and load     |
+| [docs/synthetic-monitoring.md](docs/synthetic-monitoring.md)                         | Synthetic Playwright journey, configuration, and operator runbook               |
 | [AGENTS.md](AGENTS.md)                                                               | Contributor setup, workflow, and **Critical Invariants**                        |
 
 ## License

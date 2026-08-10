@@ -147,6 +147,11 @@ selected programs (and would therefore lose access to the AND-gated category):
 The operation still succeeds — this is purely informational and is computed the
 same way regardless of which dimension was added last.
 
+When editing a parent category's group restriction in the frontend, a separate
+non-blocking warning identifies descendants whose own group restrictions are
+disjoint from the proposed parent selection. Such descendants would become
+hidden through group narrowing; the warning does not block saving.
+
 ## Frontend behaviour
 
 | Concern                                                                              | Where                                                                   |
@@ -172,13 +177,20 @@ of several hundred students and keeps the membership table inline rather than
 opening a second dialog. The detail panel has **Students** and **Instructors**
 tabs, each backed by a server-paginated table:
 
-- **Students tab** — multi-select program **filter chips** (OR semantics) plus a
-  debounced name/email search box, over a paginated table (10 rows/page). Row
-  checkboxes + "select all on page" feed a single **"Add N to group"** bulk call
+- Mutation failures surface backend detail through the shared API error helper
+  instead of replacing it with hardcoded copy, so duplicate-name and
+  category-attachment 409s stay specific; delete-blocked groups also list the
+  attached categories as links inside the confirmation dialog.
+
+- **Students tab** — a persistent **Filter by** bar combines the debounced
+  name/email search box with multi-select program **filter chips** (OR
+  semantics), over a paginated table (10 rows/page). Row checkboxes + "select
+  all on page" feed a single **"Add N to group"** bulk call
   (`POST /api/groups/{id}/members/bulk`). The table syncs from the returned
   `GroupOut`, so added rows flip to a _Member_ chip with no re-fetch spinner.
-- **Instructors tab** — the same searchable, paginated table (no program filter,
-  since instructors aren't program-gated) for bulk-adding co-owners
+- **Instructors tab** — the same paginated table with the persistent **Filter
+  by** search bar (no program filter, since instructors aren't program-gated)
+  for bulk-adding co-owners
   (`POST /api/groups/{id}/instructors/bulk`).
 
 The table is fed by `fetchUsersPaged({ role, programIds, q, page, pageSize })`,
@@ -232,3 +244,14 @@ and sequence-reset details.
 
 Local end-to-end setup and walkthroughs live in
 [`.agents/skills/testing-hriv/SKILL.md`](../.agents/skills/testing-hriv/SKILL.md).
+
+### Creating children with inherited group restrictions
+
+When an instructor creates a child category, a group restriction inherited
+from the parent path is treated as an existing restriction rather than a new
+group attachment. Therefore an instructor can carry an ancestor's narrowed
+group restriction into a new child even when they do not manage that group.
+New, non-inherited group IDs in the same create request still require the
+instructor to manage those groups. The backend applies the same top-down
+intersection semantics used by the frontend, independently of the program
+restriction dimension.

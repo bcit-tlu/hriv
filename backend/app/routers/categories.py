@@ -3,7 +3,6 @@ import json as _json
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from opentelemetry import trace
 from sqlalchemy import and_, select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,20 +12,18 @@ from ..authz import (
     can_attach_program_to_category,
 )
 from ..database import get_db
-from ..tracing import record_exception_if_server_error
 from ..models import Category, Group, Image, Program, User
 from ..schemas import (
     CategoryCreate,
     CategoryUpdate,
     CategoryOut,
     CategoryTree,
-    CategoryReorderRequest,
     CategoryWarning,
     ImageOut,
 )
+from ..tile_order import bump_scopes, scope_key_for
 from ..visibility import compute_excluded_category_ids, get_student_excluded_category_ids, is_category_visible_to_student
 
-tracer = trace.get_tracer(__name__)
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
@@ -47,6 +44,7 @@ async def _resolve_programs(
         select(Program).where(Program.id.in_(program_ids))
     )).scalars().all()
     found_ids = {p.id for p in progs}
+    name_by_id = {p.id: p.name for p in progs}
     missing = set(program_ids) - found_ids
     if missing:
         raise HTTPException(422, f"Invalid program IDs: {sorted(missing)}")
@@ -54,7 +52,7 @@ async def _resolve_programs(
         if not can_attach_program_to_category(user, pid):
             raise HTTPException(
                 403,
-                f"You may only attach programs you belong to (program {pid})",
+                f"You may only attach programs you belong to ({name_by_id[pid]})",
             )
     return list(progs)
 
@@ -84,9 +82,65 @@ async def _resolve_groups(
         ):
             raise HTTPException(
                 403,
-                f"You may only attach groups you manage (group {gid})",
+                f"You may only attach groups you manage ({by_id[gid].name})",
             )
     return list(grps)
+
+
+async def _inherited_restrictions(
+    db: AsyncSession, parent_id: int | None,
+) -> tuple[set[int], set[int]]:
+    """Compute the effective inherited program and group IDs for a new child
+    under *parent_id*, using the same narrowing (intersection) semantics as the
+    frontend ``narrowProgramIds`` / ``narrowGroupIds`` helpers.
+
+    Walks the ancestor chain top-down: the first ancestor with a restriction on
+    a dimension initializes the effective set; each subsequent restricted
+    ancestor intersects (narrows) it. Ancestors with no restriction on a
+    dimension are unrestricted there and skipped.
+
+    These inherited IDs are already enforced up the ancestor chain, so a new
+    child that carries them forward does not widen access. They are therefore
+    treated as pre-existing (not new attachments) when validating attach
+    authority — mirroring the Edit flow's ``existing_ids`` semantics.
+    """
+    if parent_id is None:
+        return set(), set()
+    # Collect ancestors bottom-up, then reverse to top-down.
+    chain: list[Category] = []
+    current_id: int | None = parent_id
+    seen: set[int] = set()
+    while current_id is not None and current_id not in seen:
+        seen.add(current_id)
+        cat = await db.get(Category, current_id)
+        if cat is None:
+            break
+        chain.append(cat)
+        current_id = cat.parent_id
+    chain.reverse()
+
+    program_ids: set[int] = set()
+    program_initialized = False
+    group_ids: set[int] = set()
+    group_initialized = False
+    for cat in chain:
+        cat_program_ids = {p.id for p in cat.programs}
+        if cat_program_ids:
+            program_ids = (
+                program_ids & cat_program_ids
+                if program_initialized
+                else cat_program_ids
+            )
+            program_initialized = True
+        cat_group_ids = {g.id for g in cat.groups}
+        if cat_group_ids:
+            group_ids = (
+                group_ids & cat_group_ids
+                if group_initialized
+                else cat_group_ids
+            )
+            group_initialized = True
+    return program_ids, group_ids
 
 
 def _intersection_warnings(
@@ -310,8 +364,15 @@ async def create_category(
             detail="A category with this name already exists at this level",
         )
 
-    progs = await _resolve_programs(db, _user, body.program_ids, set())
-    grps = await _resolve_groups(db, _user, body.group_ids, set())
+    inherited_program_ids, inherited_group_ids = await _inherited_restrictions(
+        db, body.parent_id,
+    )
+    progs = await _resolve_programs(
+        db, _user, body.program_ids, inherited_program_ids,
+    )
+    grps = await _resolve_groups(
+        db, _user, body.group_ids, inherited_group_ids,
+    )
 
     cat = Category(
         label=body.label,
@@ -340,6 +401,24 @@ async def update_category(
     cat = await db.get(Category, category_id)
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found")
+
+    # An ordering write (sort_order or a parent move) must invalidate the
+    # affected scopes' tile-order revisions so a client holding an older
+    # revision gets a 409 instead of silently overwriting this change.
+    # Revision locks are taken before any row mutation, matching
+    # PUT /api/tile-order's revision-then-rows lock order
+    # (docs/tile-ordering.md).
+    # Only an actual value change invalidates: edit dialogs echo the current
+    # parent_id/sort_order back on every save, and bumping on presence alone
+    # would 409 clients whose cached revision is still accurate.
+    ordering_fields = body.model_dump(exclude_unset=True)
+    sort_changed = "sort_order" in ordering_fields and ordering_fields["sort_order"] != cat.sort_order
+    parent_changed = "parent_id" in ordering_fields and ordering_fields["parent_id"] != cat.parent_id
+    if sort_changed or parent_changed:
+        affected = {scope_key_for(cat.parent_id)}
+        if parent_changed:
+            affected.add(scope_key_for(ordering_fields["parent_id"]))
+        await bump_scopes(db, affected)
 
     # Optimistic concurrency: same CAS pattern as image updates.
     if_match = request.headers.get("If-Match")
@@ -424,53 +503,6 @@ async def update_category(
     )
     response.headers["ETag"] = f'"{cat.version}"'
     return response
-
-
-@router.put("/reorder", status_code=200)
-async def reorder_categories(
-    body: CategoryReorderRequest,
-    _user: Annotated[User, Depends(require_role("admin", "instructor"))],
-    db: AsyncSession = Depends(get_db),
-):
-    with tracer.start_as_current_span("category.reorder") as span:
-        try:
-            span.set_attribute("category.count", len(body.items))
-            # Build proposed parent graph and validate for cycles
-            parent_map: dict[int, int | None] = {item.id: item.parent_id for item in body.items}
-            for item in body.items:
-                if item.parent_id == item.id:
-                    raise HTTPException(
-                        status_code=400, detail="A category cannot be its own parent"
-                    )
-            # Walk ancestor chains in the proposed graph to detect cycles
-            for item_id in parent_map:
-                visited: set[int] = set()
-                current: int | None = item_id
-                while current is not None:
-                    if current in visited:
-                        raise HTTPException(
-                            status_code=400,
-                            detail="Reorder would create a circular parent reference",
-                        )
-                    visited.add(current)
-                    if current in parent_map:
-                        current = parent_map[current]
-                    else:
-                        # Not in the request — look up its existing parent in the DB
-                        ancestor = await db.get(Category, current)
-                        current = ancestor.parent_id if ancestor else None
-
-            for item in body.items:
-                cat = await db.get(Category, item.id)
-                if cat is None:
-                    raise HTTPException(status_code=404, detail=f"Category {item.id} not found")
-                cat.parent_id = item.parent_id
-                cat.sort_order = item.sort_order
-            await db.commit()
-            return {"status": "ok"}
-        except Exception as exc:
-            record_exception_if_server_error(span, exc)
-            raise
 
 
 @router.delete("/{category_id}", status_code=204)

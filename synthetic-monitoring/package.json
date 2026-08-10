@@ -1,0 +1,17 @@
+{
+  "name": "hriv-synthetic-monitoring",
+  "version": "1.2.2",
+  "private": true,
+  "description": "Playwright-based synthetic monitoring journeys for HRIV.",
+  "scripts": {
+    "check:image-version": "node scripts/check-playwright-image-version.mjs",
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.1",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.4.0"
+  }
+}

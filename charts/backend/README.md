@@ -1,38 +1,61 @@
 # hriv-backend chart notes
 
-## GitHub issue reporting (`github-issue.enabled`)
+## Feedback delivery (`feedback.provider`)
 
-The backend can create GitHub issues via `POST /api/issues/report`.
-This integration is now explicitly gated by `github-issue.enabled`.
+The backend accepts in-app feedback via `POST /api/issues/report`, then routes
+the submission through the configured delivery provider. The new generic chart
+config uses `feedback.provider`, with GitHub and Teams currently implemented.
 
 ### Values
 
-- `github-issue.enabled` (bool, default `false`)
-- `github-issue.repository` (string, default `""`, format `owner/repo`)
-- `github-issue.token.existingSecret` (string, default `""`)
+- `feedback.provider` (string, default `""`; supported: `github`, `teams`)
+- `feedback.github.repository` (string, default `""`, format `owner/repo`)
+- `feedback.github.token.existingSecret` (string, default `""`)
+- `feedback.teams.webhook.existingSecret` (string, default `""`)
+
+Legacy fallback values are still honored for upgrade compatibility:
+
+- `github-issue.enabled`
+- `github-issue.repository`
+- `github-issue.token.existingSecret`
 
 ### Behavior
 
-When `github-issue.enabled: false`:
+When `feedback.provider: ""` and `github-issue.enabled: false`:
 
-- `GITHUB_REPO` is not injected
-- `GITHUB_TOKEN` is not injected
-- No GitHub secret is referenced
+- no feedback delivery env vars are injected
+- no feedback secret is referenced
 
-When `github-issue.enabled: true`:
+When `feedback.provider: github`:
 
-- `GITHUB_REPO` is injected from `github-issue.repository`
-- `GITHUB_TOKEN` is read from secret `github-issue.token.existingSecret`, key `token`
+- `FEEDBACK_DELIVERY_PROVIDER=github` is injected
+- `FEEDBACK_GITHUB_REPOSITORY` is injected from `feedback.github.repository`
+- `FEEDBACK_GITHUB_TOKEN` is read from secret
+  `feedback.github.token.existingSecret`, key `token`
 - chart render fails if either required value is missing
+
+When `feedback.provider: teams`:
+
+- `FEEDBACK_DELIVERY_PROVIDER=teams` is injected
+- `FEEDBACK_TEAMS_WEBHOOK_URL` is read from secret
+  `feedback.teams.webhook.existingSecret`, key `url`
+- chart render fails if the webhook secret is missing
+
+When `feedback.provider` is empty but `github-issue.enabled: true`:
+
+- the chart maps the legacy GitHub-only values into the new generic runtime env
+- this fallback is intended only for upgrade compatibility while overlays move
+  to the `feedback.*` config
 
 ### Example (enabled)
 
 ```yaml
-github-issue:
-  enabled: true
-  repository: bcit-tlu/hriv
-  token:
-    existingSecret: github-report-issue-token
+feedback:
+  provider: github
+  github:
+    repository: bcit-tlu/hriv
+    token:
+      existingSecret: github-report-issue-token
 ```
 
 Create the referenced secret:
@@ -40,6 +63,24 @@ Create the referenced secret:
 ```bash
 kubectl create secret generic github-report-issue-token \
   --from-literal=token=ghp_YOUR_SCOPED_PAT \
+  -n <namespace>
+```
+
+### Example (Teams)
+
+```yaml
+feedback:
+  provider: teams
+  teams:
+    webhook:
+      existingSecret: hriv-feedback-teams-webhook
+```
+
+Create the referenced secret:
+
+```bash
+kubectl create secret generic hriv-feedback-teams-webhook \
+  --from-literal=url=https://outlook.office.com/webhook/... \
   -n <namespace>
 ```
 
@@ -59,6 +100,30 @@ runtime paths stored in the database:
 
 For multi-replica API or worker deployments, both PVCs must use
 `ReadWriteMany`.
+
+## Health probes and worker resources
+
+The backend pod's probe settings are configurable through `probes.backend.*`.
+The defaults are chosen to tolerate transient node or database load:
+
+- liveness: `GET /api/health`, `timeoutSeconds: 5`, `failureThreshold: 6`
+- readiness: `GET /api/health/ready`, `timeoutSeconds: 5`, `failureThreshold: 3`
+
+Initial delays and periods remain the same defaults as the previous chart
+behavior, but both probes can be overridden in values if a cluster needs
+different timings.
+
+The arq worker inherits its CPU and memory limits from
+`redis.worker.resources` and now also carries modest ephemeral-storage defaults
+for defense in depth:
+
+- `resources.requests.ephemeral-storage: 256Mi`
+- `resources.limits.ephemeral-storage: 1Gi`
+
+These defaults are intentionally small because import staging now lives on the
+`/data` PVC. Overlays that already set worker CPU/memory continue to merge with
+the chart defaults; no overlay change is required for the new storage keys to
+take effect.
 
 ## Upgrade Notes
 

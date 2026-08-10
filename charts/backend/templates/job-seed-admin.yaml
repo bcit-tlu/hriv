@@ -8,6 +8,7 @@ metadata:
   name: {{ include "hriv-backend.fullname" . }}-seed-admin
   labels:
     {{- include "hriv-backend.labels" . | nindent 4 }}
+    app.kubernetes.io/component: seed-admin
   annotations:
     # Run only on initial install — never on upgrades or rollbacks.
     helm.sh/hook: post-install
@@ -19,6 +20,7 @@ spec:
     metadata:
       labels:
         {{- include "hriv-backend.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: seed-admin
     spec:
       restartPolicy: Never
       initContainers:

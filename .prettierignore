@@ -10,6 +10,7 @@ backend/htmlcov
 backend/CHANGELOG.md
 frontend/CHANGELOG.md
 backup/CHANGELOG.md
+synthetic-monitoring/CHANGELOG.md
 
 
 backup/.venv

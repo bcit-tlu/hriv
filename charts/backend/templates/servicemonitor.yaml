@@ -1,0 +1,17 @@
+{{- if .Values.observability.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "hriv-backend.fullname" . }}-metrics
+  labels:
+    {{- include "hriv-backend.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "hriv-backend.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: http
+      path: /api/metrics
+      interval: {{ .Values.observability.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.observability.serviceMonitor.scrapeTimeout }}
+{{- end }}

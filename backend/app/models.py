@@ -181,7 +181,7 @@ class Image(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     width: Mapped[int | None] = mapped_column(Integer, nullable=True)
     height: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    file_size: Mapped[float | None] = mapped_column(Float, nullable=True)
+    file_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -190,6 +190,24 @@ class Image(Base):
     )
 
     category: Mapped["Category | None"] = relationship("Category", back_populates="images")
+
+
+class TileOrderRevision(Base):
+    """Durable ordering revision for one root/category tile scope.
+
+    ``scope_key`` is the parent category ID, or ``ROOT_SCOPE_KEY`` (0) for the
+    root scope (real category IDs start at 1). Every atomic tile-order write
+    locks this row, verifies the caller's expected revision, and increments it
+    in the same transaction (epic #975, issue #978).
+    """
+
+    __tablename__ = "tile_order_revisions"
+
+    scope_key: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class SourceImage(Base):
@@ -346,7 +364,7 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     oidc_subject: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
     role: Mapped[str] = mapped_column(
@@ -380,6 +398,17 @@ class User(Base):
     )
 
 
+# Canonical set of ``AdminTask.status`` values that mean the task is still
+# in-flight (not yet in a terminal ``cancelled``/``completed``/``failed`` state).
+# Shared so routers and background workers agree on what "active" means.
+ACTIVE_TASK_STATUSES: tuple[str, ...] = (
+    "uploading",
+    "pending",
+    "running",
+    "cancelling",
+)
+
+
 class AdminTask(Base):
     """Tracks long-running admin operations (import/export) executed in the background."""
 
@@ -407,6 +436,9 @@ class AdminTask(Base):
     result_filename: Mapped[str | None] = mapped_column(String(500), nullable=True)
     result_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     input_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    original_filename: Mapped[str | None] = mapped_column(
+        String(500), nullable=True,
+    )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True,

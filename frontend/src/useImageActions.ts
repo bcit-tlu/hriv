@@ -9,6 +9,7 @@ import type { ApiImage } from './api'
 import type { ImageFormData, ReplaceImageData } from './components/EditImageModal'
 import type { Category, ImageItem } from './types'
 import { findCategoryPath, findImageInTree, updateImageInTree } from './treeUtils'
+import { invalidateMovedImageScopes } from './tileOrdering'
 
 export interface UseImageActionsDeps {
   categories: Category[]
@@ -18,8 +19,8 @@ export interface UseImageActionsDeps {
   selectedImage: ImageItem | null
   setSelectedImage: React.Dispatch<React.SetStateAction<ImageItem | null>>
   setPath: React.Dispatch<React.SetStateAction<Category[]>>
-  loadCategories: () => Promise<void>
-  loadUncategorizedImages: (opts?: { signal?: AbortSignal }) => Promise<void>
+  loadCategories: () => Promise<unknown>
+  loadUncategorizedImages: (opts?: { signal?: AbortSignal }) => Promise<unknown>
   refreshCategories: () => Promise<Category[]>
   setErrorSnack: React.Dispatch<React.SetStateAction<string | null>>
   clearImage: () => void
@@ -159,6 +160,7 @@ export function useImageActions(deps: UseImageActionsDeps) {
       if (!browseEditImage) return
       try {
         await apiUpdateImage(browseEditImage.id, data)
+        invalidateMovedImageScopes(browseEditImage.categoryId ?? null, data.category_id)
         setBrowseEditImage(null)
         await loadCategories()
         loadUncategorizedImages()
@@ -175,6 +177,7 @@ export function useImageActions(deps: UseImageActionsDeps) {
       if (!selectedImage) return
       try {
         const updated = await apiUpdateImage(selectedImage.id, data)
+        invalidateMovedImageScopes(selectedImage.categoryId ?? null, data.category_id)
         setSelectedImage({
           id: updated.id,
           name: updated.name,
@@ -250,6 +253,7 @@ export function useImageActions(deps: UseImageActionsDeps) {
       )
         .then((result) => {
           transitionReplaceToProcessing(uploadId, result.id)
+          invalidateMovedImageScopes(prevImage.categoryId ?? null, formData.category_id)
           setImageEditOpen(false)
           loadCategories()
           loadUncategorizedImages()
@@ -296,6 +300,7 @@ export function useImageActions(deps: UseImageActionsDeps) {
       )
         .then((result) => {
           transitionReplaceToProcessing(uploadId, result.id)
+          invalidateMovedImageScopes(browseEditImage.categoryId ?? null, formData.category_id)
           setBrowseEditImage(null)
           loadCategories()
           loadUncategorizedImages()

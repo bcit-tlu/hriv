@@ -15,8 +15,10 @@ operational documentation changes.
    behavior.
 3. Read `../../../docs/observability-conventions.md` for tracing/logging/metrics
    conventions.
-4. Use `$testing-backup-service` for backup service verification.
-5. Use `$hriv-admin-operations` when deployment changes affect admin import,
+4. Read `../../../docs/observability-operations.md` when the change affects
+   alerting, runbooks, or operator validation.
+5. Use `$testing-backup-service` for backup service verification.
+6. Use `$hriv-admin-operations` when deployment changes affect admin import,
    export, or background task operations.
 
 ## Operational Rules

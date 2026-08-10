@@ -62,6 +62,13 @@ production role is:
 - **Why** — walking and checksumming millions of tile files is slow, produces
   enormous archives, and competes with Longhorn's efficient block-level snapshots.
 
+This same source-only approach is what the Admin UI's Filesystem Export uses.
+Compression is parallelized with `pigz` when it is present in the container
+image (the backend Dockerfile installs it); otherwise the export falls back to
+single-threaded gzip automatically. The `EXPORT_PIGZ_THREADS` env var caps
+pigz's worker count when set to a positive integer; the backend defaults it to
+`2`, and `0` preserves the current all-cores behavior.
+
 Set `BACKUP_MODE=production` (the Helm chart default) to enable this mode.
 Use `BACKUP_MODE=development` for local dev or manual exports that include
 the full `/data` tree.
@@ -213,6 +220,12 @@ Use this when the entire cluster is lost or a fresh redeployment is needed.
 5. **Verify** — confirm health, viewer access, and tile-cache status as
    described above.
 
+If you only need to restore a single file from a snapshot, use the Admin UI’s
+per-file restore browser instead of a full archive restore. It reads snapshot
+manifests through the backend’s read-only Azure SAS path, restores one
+`data/` member at a time, and notes that Rebuild Tiles may be run if a
+source-image restore leaves tiles stale.
+
 ## Known risks and tradeoffs
 
 - **Large first backup** — the initial source-images backup can be large
@@ -259,4 +272,6 @@ Actual numbers should be measured during the pre-production DR drill
 - [tile-cache-provenance.md](tile-cache-provenance.md) — provenance fields and staleness rules
 - [admin-import-export.md](admin-import-export.md) — rebuild-tiles admin task API reference
 - [image-processing-lifecycle.md](image-processing-lifecycle.md) — tile generation pipeline
+- [backup-restore-runbook.md](backup-restore-runbook.md) — cold-grab operator checklist for health checks and restores
+- [per-file-restore-design.md](per-file-restore-design.md) — proposal for manifest-browsed single-file restores
 - [RELEASE_AND_DEPLOY_FLOW.md](RELEASE_AND_DEPLOY_FLOW.md) — release and Flux deployment flow

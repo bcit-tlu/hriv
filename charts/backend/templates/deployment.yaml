@@ -1,21 +1,41 @@
 {{- if and .Values.tiles.enabled (not .Values.persistence.enabled) }}
 {{- fail "tiles.enabled requires persistence.enabled — the sidecar serves tiles from the PVC" }}
 {{- end }}
+{{- $backupVersionMountPath := trimSuffix "/" .Values.backupVersionConfigMap.mountPath -}}
+{{- $frontendVersionMountPath := trimSuffix "/" .Values.frontendVersionConfigMap.mountPath -}}
+{{- if and .Values.backupVersionConfigMap.enabled .Values.frontendVersionConfigMap.enabled (eq $backupVersionMountPath $frontendVersionMountPath) }}
+{{- fail "backupVersionConfigMap.mountPath and frontendVersionConfigMap.mountPath must differ when both ConfigMap mounts are enabled" }}
+{{- end }}
 {{- $sourceImages := include "hriv-backend.resolvedSourceImagesPersistence" . | fromYaml -}}
 {{- $tiles := include "hriv-backend.resolvedTilesPersistence" . | fromYaml -}}
+{{- $feedback := include "hriv-backend.feedbackConfig" . | fromYaml -}}
+{{- $backendProbes := .Values.probes.backend | default dict -}}
+{{- $backendLivenessProbe := get $backendProbes "liveness" | default dict -}}
+{{- $backendReadinessProbe := get $backendProbes "readiness" | default dict -}}
 {{- $sourceImagesAccessModes := get $sourceImages "accessModes" -}}
 {{- $tilesAccessModes := get $tiles "accessModes" -}}
-{{- if and (index .Values "github-issue" "enabled") (not (index .Values "github-issue" "repository")) }}
-{{- fail "github-issue.enabled=true requires github-issue.repository" }}
+{{- $feedbackProvider := get $feedback "provider" -}}
+{{- if and $feedbackProvider (not (has $feedbackProvider (list "github" "teams"))) }}
+{{- fail "feedback.provider currently supports only 'github', 'teams', or empty/disabled while ServiceNow is still unimplemented" }}
 {{- end }}
-{{- if and (index .Values "github-issue" "enabled") (not (index .Values "github-issue" "token" "existingSecret")) }}
-{{- fail "github-issue.enabled=true requires github-issue.token.existingSecret (secret must contain key 'token')" }}
+{{- if and (eq $feedbackProvider "github") (not (get $feedback "githubRepository")) }}
+{{- fail "feedback.provider=github requires feedback.github.repository (or legacy github-issue.repository)" }}
+{{- end }}
+{{- if and (eq $feedbackProvider "github") (not (get $feedback "githubSecret")) }}
+{{- fail "feedback.provider=github requires feedback.github.token.existingSecret (or legacy github-issue.token.existingSecret); secret must contain key 'token'" }}
+{{- end }}
+{{- if and (eq $feedbackProvider "teams") (not (get $feedback "teamsSecret")) }}
+{{- fail "feedback.provider=teams requires feedback.teams.webhook.existingSecret; secret must contain key 'url'" }}
 {{- end }}
 {{- if and .Values.persistence.enabled (gt (.Values.replicaCount | int) 1) (not (has "ReadWriteMany" $sourceImagesAccessModes)) }}
 {{- fail "replicaCount > 1 requires a ReadWriteMany source-images PVC — background admin tasks write result files to the shared /data volume that any replica must be able to serve" }}
 {{- end }}
 {{- if and .Values.persistence.enabled (gt (.Values.replicaCount | int) 1) (not (has "ReadWriteMany" $tilesAccessModes)) }}
 {{- fail "replicaCount > 1 requires a ReadWriteMany tiles PVC — all replicas must be able to serve generated DZI tiles" }}
+{{- end }}
+{{- $rwoPersistence := and .Values.persistence.enabled (or (has "ReadWriteOnce" $sourceImagesAccessModes) (has "ReadWriteOnce" $tilesAccessModes)) -}}
+{{- if and .Values.updateStrategy $rwoPersistence (ne (get .Values.updateStrategy "type") "Recreate") }}
+{{- fail "ReadWriteOnce PVCs require Recreate; set updateStrategy.type=Recreate or switch to ReadWriteMany" }}
 {{- end }}
 apiVersion: apps/v1
 kind: Deployment
@@ -25,9 +45,18 @@ metadata:
     {{- include "hriv-backend.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
-  {{- if and .Values.persistence.enabled (or (has "ReadWriteOnce" $sourceImagesAccessModes) (has "ReadWriteOnce" $tilesAccessModes)) }}
+  {{- if .Values.updateStrategy }}
+  strategy:
+    {{- toYaml .Values.updateStrategy | nindent 4 }}
+  {{- else if $rwoPersistence }}
   strategy:
     type: Recreate
+  {{- else if and .Values.scheduling.zoneAntiAffinity.enabled (gt (.Values.replicaCount | int) 1) }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   {{- end }}
   selector:
     matchLabels:
@@ -36,6 +65,8 @@ spec:
     metadata:
       labels:
         {{- include "hriv-backend.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: backend
+        hriv.bcit.ca/backend-zone-member: "true"
     spec:
       initContainers:
         # Run ``alembic upgrade head`` against the database before the
@@ -73,14 +104,35 @@ spec:
               value: {{ .Values.env.SOURCE_IMAGES_DIR | quote }}
             - name: TILES_DIR
               value: {{ .Values.env.TILES_DIR | quote }}
-            {{- if (index .Values "github-issue" "enabled") }}
-            - name: GITHUB_TOKEN
+            - name: EXPORT_PIGZ_THREADS
+              value: {{ .Values.env.EXPORT_PIGZ_THREADS | quote }}
+            - name: AZURE_BACKUP_PREFIX
+              value: {{ .Values.env.AZURE_BACKUP_PREFIX | quote }}
+            - name: AZURE_READ_SAS_URL
               valueFrom:
                 secretKeyRef:
-                  name: {{ index .Values "github-issue" "token" "existingSecret" }}
+                  name: {{ .Values.azureReadBackup.secretName | quote }}
+                  key: azureReadSasUrl
+                  optional: true
+            {{- if $feedbackProvider }}
+            - name: FEEDBACK_DELIVERY_PROVIDER
+              value: {{ $feedbackProvider | quote }}
+            {{- end }}
+            {{- if eq $feedbackProvider "github" }}
+            - name: FEEDBACK_GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ get $feedback "githubSecret" }}
                   key: token
-            - name: GITHUB_REPO
-              value: {{ index .Values "github-issue" "repository" | quote }}
+            - name: FEEDBACK_GITHUB_REPOSITORY
+              value: {{ get $feedback "githubRepository" | quote }}
+            {{- end }}
+            {{- if eq $feedbackProvider "teams" }}
+            - name: FEEDBACK_TEAMS_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ get $feedback "teamsSecret" }}
+                  key: url
             {{- end }}
             # Backend component version surfaced by /api/admin/version
             # and the FastAPI `app.version` attribute. Rendered from
@@ -93,6 +145,8 @@ spec:
             # the main-build `latest` env renders `<ver>-rc.<short>`.
             - name: APP_VERSION
               value: {{ include "hriv-backend.displayVersion" . | quote }}
+            - name: APP_IMAGE_TAG
+              value: {{ .Values.image.tag | default .Chart.AppVersion | quote }}
             # Backup component version surfaced by /api/admin/version.
             # Precedence (see backend/app/routers/admin.py):
             #   1. BACKUP_VERSION_FILE → file contents (ConfigMap mount,
@@ -105,6 +159,16 @@ spec:
             {{- if .Values.backupVersionConfigMap.enabled }}
             - name: BACKUP_VERSION_FILE
               value: {{ printf "%s/%s" (trimSuffix "/" .Values.backupVersionConfigMap.mountPath) .Values.backupVersionConfigMap.key | quote }}
+            - name: BACKUP_IMAGE_TAG_FILE
+              value: {{ printf "%s/%s" (trimSuffix "/" .Values.backupVersionConfigMap.mountPath) .Values.backupVersionConfigMap.imageTagKey | quote }}
+            {{- end }}
+            - name: FRONTEND_VERSION
+              value: {{ .Values.frontendVersion | default "" | quote }}
+            {{- if .Values.frontendVersionConfigMap.enabled }}
+            - name: FRONTEND_VERSION_FILE
+              value: {{ printf "%s/%s" (trimSuffix "/" .Values.frontendVersionConfigMap.mountPath) .Values.frontendVersionConfigMap.key | quote }}
+            - name: FRONTEND_IMAGE_TAG_FILE
+              value: {{ printf "%s/%s" (trimSuffix "/" .Values.frontendVersionConfigMap.mountPath) .Values.frontendVersionConfigMap.imageTagKey | quote }}
             {{- end }}
             {{- if .Values.observability.openTelemetry.enabled }}
             - name: OTEL_SERVICE_NAME
@@ -158,21 +222,25 @@ spec:
           {{- end }}
           livenessProbe:
             httpGet:
-              path: /api/health
+              path: {{ get $backendLivenessProbe "path" | default "/api/health" | quote }}
               port: http
-            initialDelaySeconds: 10
-            periodSeconds: 30
+            initialDelaySeconds: {{ get $backendLivenessProbe "initialDelaySeconds" | default 10 }}
+            periodSeconds: {{ get $backendLivenessProbe "periodSeconds" | default 30 }}
+            timeoutSeconds: {{ get $backendLivenessProbe "timeoutSeconds" | default 5 }}
+            failureThreshold: {{ get $backendLivenessProbe "failureThreshold" | default 6 }}
           readinessProbe:
             httpGet:
-              path: /api/health
+              path: {{ get $backendReadinessProbe "path" | default "/api/health/ready" | quote }}
               port: http
-            initialDelaySeconds: 5
-            periodSeconds: 10
+            initialDelaySeconds: {{ get $backendReadinessProbe "initialDelaySeconds" | default 5 }}
+            periodSeconds: {{ get $backendReadinessProbe "periodSeconds" | default 10 }}
+            timeoutSeconds: {{ get $backendReadinessProbe "timeoutSeconds" | default 5 }}
+            failureThreshold: {{ get $backendReadinessProbe "failureThreshold" | default 3 }}
           {{- with .Values.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- if or .Values.persistence.enabled .Values.backupVersionConfigMap.enabled }}
+          {{- if or .Values.persistence.enabled .Values.backupVersionConfigMap.enabled .Values.frontendVersionConfigMap.enabled }}
           volumeMounts:
             {{- if .Values.persistence.enabled }}
             - name: source-images
@@ -183,6 +251,11 @@ spec:
             {{- if .Values.backupVersionConfigMap.enabled }}
             - name: backup-version
               mountPath: {{ .Values.backupVersionConfigMap.mountPath | quote }}
+              readOnly: true
+            {{- end }}
+            {{- if .Values.frontendVersionConfigMap.enabled }}
+            - name: frontend-version
+              mountPath: {{ .Values.frontendVersionConfigMap.mountPath | quote }}
               readOnly: true
             {{- end }}
           {{- end }}
@@ -220,7 +293,7 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
         {{- end }}
-      {{- if or .Values.persistence.enabled .Values.tiles.enabled .Values.backupVersionConfigMap.enabled }}
+      {{- if or .Values.persistence.enabled .Values.tiles.enabled .Values.backupVersionConfigMap.enabled .Values.frontendVersionConfigMap.enabled }}
       volumes:
         {{- if .Values.persistence.enabled }}
         - name: source-images
@@ -245,6 +318,12 @@ spec:
             name: {{ .Values.backupVersionConfigMap.name | quote }}
             optional: true
         {{- end }}
+        {{- if .Values.frontendVersionConfigMap.enabled }}
+        - name: frontend-version
+          configMap:
+            name: {{ .Values.frontendVersionConfigMap.name | quote }}
+            optional: true
+        {{- end }}
       {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
@@ -256,7 +335,8 @@ spec:
       {{- end }}
       {{- $aff := deepCopy (.Values.affinity | default dict) }}
       {{- if .Values.scheduling.zoneAntiAffinity.enabled }}
-        {{- $zoneRule := dict "labelSelector" (dict "matchLabels" (include "hriv-backend.selectorLabels" . | fromYaml)) "topologyKey" .Values.scheduling.zoneAntiAffinity.topologyKey }}
+        {{- $zoneMatchLabels := dict "hriv.bcit.ca/backend-zone-member" "true" }}
+        {{- $zoneRule := dict "labelSelector" (dict "matchLabels" $zoneMatchLabels) "topologyKey" .Values.scheduling.zoneAntiAffinity.topologyKey }}
         {{- $existing := list }}
         {{- if and (hasKey $aff "podAntiAffinity") $aff.podAntiAffinity }}
           {{- $existing = $aff.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution | default list }}

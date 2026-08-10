@@ -6,6 +6,16 @@ metadata:
     {{- include "hriv-frontend.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  {{- if .Values.updateStrategy }}
+  strategy:
+    {{- toYaml .Values.updateStrategy | nindent 4 }}
+  {{- else if and .Values.scheduling.zoneAntiAffinity.enabled (gt (.Values.replicaCount | int) 1) }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  {{- end }}
   selector:
     matchLabels:
       {{- include "hriv-frontend.selectorLabels" . | nindent 6 }}

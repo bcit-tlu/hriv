@@ -1,5 +1,228 @@
 # Changelog
 
+## [0.42.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.41.2...frontend-v0.42.0) (2026-08-10)
+
+
+### Features
+
+* add navigation-safe frontend reorder coordinator and save-state UX ([#995](https://github.com/bcit-tlu/hriv/issues/995)) ([3c1d09a](https://github.com/bcit-tlu/hriv/commit/3c1d09aef6b2c4914186b8a642f51b319892a1ac))
+* add reorder operation correlation, timing, and diagnostic telemetry ([#993](https://github.com/bcit-tlu/hriv/issues/993)) ([ec67619](https://github.com/bcit-tlu/hriv/commit/ec67619ed042e0837dd929e809ec83a5a4452165))
+* migrate Manage Categories to the shared tile-ordering workflow ([#999](https://github.com/bcit-tlu/hriv/issues/999)) ([b95fd59](https://github.com/bcit-tlu/hriv/commit/b95fd5976c60b977bf12b4ebca122fb06be942d9))
+* prevent stale refresh overwrites and add ordering conflict recovery ([#996](https://github.com/bcit-tlu/hriv/issues/996)) ([9a91121](https://github.com/bcit-tlu/hriv/commit/9a911219f36d2f8a92e70566c140671a74f74a84))
+
+
+### Bug Fixes
+
+* correct Fabric text box resizing ([#984](https://github.com/bcit-tlu/hriv/issues/984)) ([e5a4355](https://github.com/bcit-tlu/hriv/commit/e5a4355b5adca9461bd861b9dd82b1617c5b5b1f))
+
+
+### Performance Improvements
+
+* profile and optimize Browse drag-and-drop for large collections ([#997](https://github.com/bcit-tlu/hriv/issues/997)) ([1702953](https://github.com/bcit-tlu/hriv/commit/1702953ef9117f61200e8ee89ae25b1a50bab8e1))
+
+## [0.41.2](https://github.com/bcit-tlu/hriv/compare/frontend-v0.41.1...frontend-v0.41.2) (2026-07-21)
+
+
+### Bug Fixes
+
+* removes Grafana dashboards as part of the migration to a separate git ([#986](https://github.com/bcit-tlu/hriv/issues/986)) ([925ccff](https://github.com/bcit-tlu/hriv/commit/925ccff9e0bd612998fe804d374c417988579473))
+
+## [0.41.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.41.0...frontend-v0.41.1) (2026-07-21)
+
+
+### Bug Fixes
+
+* **frontend:** render multi-line canvas text annotations in view mode ([#972](https://github.com/bcit-tlu/hriv/issues/972)) ([f3de096](https://github.com/bcit-tlu/hriv/commit/f3de09687f6517d76982df73541af845d7b62cda))
+
+## [0.41.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.40.0...frontend-v0.41.0) (2026-07-20)
+
+
+### Features
+
+* **frontend:** warn when parent group restrictions would hide incompatible child categories ([#950](https://github.com/bcit-tlu/hriv/issues/950)) ([6ea7767](https://github.com/bcit-tlu/hriv/commit/6ea7767b4f28c2f2aa39b2daf5c73f103420fc2b))
+* **observability:** navigation direction telemetry, Sankey funnel rework, service-health metric fixes ([#961](https://github.com/bcit-tlu/hriv/issues/961)) ([6c9efc3](https://github.com/bcit-tlu/hriv/commit/6c9efc3562bb5fb06fdc6c5ac693ef5b77966609))
+* **observability:** navigation transition telemetry and path panels ([#953](https://github.com/bcit-tlu/hriv/issues/953)) ([0cdb3e3](https://github.com/bcit-tlu/hriv/commit/0cdb3e377f32527dd749014539419cd3381ad51d))
+
+
+### Bug Fixes
+
+* **backend:** store image file size in bytes instead of megabytes ([#956](https://github.com/bcit-tlu/hriv/issues/956)) ([2283530](https://github.com/bcit-tlu/hriv/commit/2283530b03dcfd7bce28e09fbf79e62b787937e3))
+* **frontend:** damp mobile pinch-rotate velocity in image viewer ([#958](https://github.com/bcit-tlu/hriv/issues/958)) ([0c60706](https://github.com/bcit-tlu/hriv/commit/0c60706ffdc3e97852494886f2b6ca21b68773c8))
+* **frontend:** prevent admin task poll from restarting after stopPolling ([#952](https://github.com/bcit-tlu/hriv/issues/952)) ([8079e2a](https://github.com/bcit-tlu/hriv/commit/8079e2a1f66ba9fd9764496e2f28c43e6d3bc02b))
+* **frontend:** serialize absolute coordinates for objects in an ActiveSelection ([#951](https://github.com/bcit-tlu/hriv/issues/951)) ([b0421b8](https://github.com/bcit-tlu/hriv/commit/b0421b81656b4780c3255f6be7772b86ba4f4d72))
+
+## [0.40.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.39.2...frontend-v0.40.0) (2026-07-20)
+
+
+### Features
+
+* **observability:** analytics-tier telemetry events, dashboard panels, and docs ([#944](https://github.com/bcit-tlu/hriv/issues/944)) ([c738808](https://github.com/bcit-tlu/hriv/commit/c738808b43d96a4265ef0b4fd04547ff32210ec4))
+
+## [0.39.2](https://github.com/bcit-tlu/hriv/compare/frontend-v0.39.1...frontend-v0.39.2) (2026-07-17)
+
+
+### Bug Fixes
+
+* triggering CI build for all components ([#937](https://github.com/bcit-tlu/hriv/issues/937)) ([2f5745a](https://github.com/bcit-tlu/hriv/commit/2f5745a1845399f7cb964cfa73999483d1f7624b))
+
+## [0.39.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.39.0...frontend-v0.39.1) (2026-07-15)
+
+
+### Bug Fixes
+
+* **observability:** replace usage dashboard with corrected loki queries ([#932](https://github.com/bcit-tlu/hriv/issues/932)) ([28e719a](https://github.com/bcit-tlu/hriv/commit/28e719a6a45cfd813860e7ad0009cc89822eba45))
+
+## [0.39.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.38.0...frontend-v0.39.0) (2026-07-15)
+
+
+### Features
+
+* complete frontend observability events, ingestion, and docs ([#928](https://github.com/bcit-tlu/hriv/issues/928)) ([e2f59ae](https://github.com/bcit-tlu/hriv/commit/e2f59aef4b041641b538cf321b543b303bb6e7cd))
+
+
+### Bug Fixes
+
+* **observability:** consolidate HRIV Grafana dashboards ([#931](https://github.com/bcit-tlu/hriv/issues/931)) ([cf716cf](https://github.com/bcit-tlu/hriv/commit/cf716cf4ec22301419d6291aa81faddce9617057))
+
+## [0.38.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.37.0...frontend-v0.38.0) (2026-07-14)
+
+
+### Features
+
+* define observability contracts ([#915](https://github.com/bcit-tlu/hriv/issues/915)) ([4ff5050](https://github.com/bcit-tlu/hriv/commit/4ff5050c1d5509b2a0a7cabb6d6c695bd5768ffb))
+
+## [0.37.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.36.1...frontend-v0.37.0) (2026-07-14)
+
+
+### Features
+
+* **observability:** versioned usage telemetry, canonical auth logs, usage dashboard, synthetic monitor release ([#892](https://github.com/bcit-tlu/hriv/issues/892)) ([e61636c](https://github.com/bcit-tlu/hriv/commit/e61636cfa1a8bb8790e22aa19e96f505c04c7f22))
+
+## [0.36.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.36.0...frontend-v0.36.1) (2026-07-13)
+
+
+### Bug Fixes
+
+* **frontend:** align observability code with OpenTelemetry JS SDK v2.x ([#889](https://github.com/bcit-tlu/hriv/issues/889)) ([e96d20b](https://github.com/bcit-tlu/hriv/commit/e96d20b24e4b79f49c6132b2b575b46a34fe5adc))
+
+## [0.36.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.35.2...frontend-v0.36.0) (2026-07-13)
+
+
+### Features
+
+* **observability:** implement HRIV frontend and backend observability ([#883](https://github.com/bcit-tlu/hriv/issues/883)) ([8b8394b](https://github.com/bcit-tlu/hriv/commit/8b8394b66af60dd23fc16824d43bc6930e52bc9e))
+
+## [0.35.2](https://github.com/bcit-tlu/hriv/compare/frontend-v0.35.1...frontend-v0.35.2) (2026-07-11)
+
+
+### Bug Fixes
+
+* stabilize bulk import completion and auth polling ([#873](https://github.com/bcit-tlu/hriv/issues/873)) ([#874](https://github.com/bcit-tlu/hriv/issues/874)) ([e439950](https://github.com/bcit-tlu/hriv/commit/e43995084632f8336a2bf143f0c7222d235c417e))
+
+## [0.35.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.35.0...frontend-v0.35.1) (2026-07-10)
+
+
+### Bug Fixes
+
+* **backend:** retry transient migration bootstrap outages ([#869](https://github.com/bcit-tlu/hriv/issues/869)) ([56cef30](https://github.com/bcit-tlu/hriv/commit/56cef30385a9e88cca2ff03042e3c9e16765fa44))
+
+## [0.35.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.34.0...frontend-v0.35.0) (2026-07-09)
+
+
+### Features
+
+* queue rebuild_tiles after filesystem import and add manual Rebuild Tiles UI ([#856](https://github.com/bcit-tlu/hriv/issues/856)) ([6e17b90](https://github.com/bcit-tlu/hriv/commit/6e17b9000e2dcbf67a71cebef2b60ebe714ddfec))
+
+## [0.34.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.33.0...frontend-v0.34.0) (2026-07-09)
+
+
+### Features
+
+* **backend,frontend:** resumable chunked upload for large filesystem import archives ([#851](https://github.com/bcit-tlu/hriv/issues/851)) ([a38c455](https://github.com/bcit-tlu/hriv/commit/a38c45525544c40367836608ef15a3a6c0a45fe1))
+
+## [0.33.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.32.1...frontend-v0.33.0) (2026-07-08)
+
+
+### Features
+
+* **backend,frontend:** backup archive management — list and purge stored archives ([#846](https://github.com/bcit-tlu/hriv/issues/846)) ([250f7e4](https://github.com/bcit-tlu/hriv/commit/250f7e4ee7e2040c52b1d6075ee6c3fd34c10b58))
+
+
+### Bug Fixes
+
+* **backend:** robust, efficient filesystem import with on-volume staging + re-run ([#838](https://github.com/bcit-tlu/hriv/issues/838)) ([d9af9bc](https://github.com/bcit-tlu/hriv/commit/d9af9bcc06315315c2d0377f15c3299fa131e2a3))
+* **frontend:** prevent zone anti-affinity rolling-update deadlock ([#837](https://github.com/bcit-tlu/hriv/issues/837)) ([9ed42ac](https://github.com/bcit-tlu/hriv/commit/9ed42aca6bd42ccf1bff49c506d5bfabf1979df3))
+
+## [0.32.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.32.0...frontend-v0.32.1) (2026-07-07)
+
+
+### Bug Fixes
+
+* **frontend:** show a clear message when an upload is too large ([#835](https://github.com/bcit-tlu/hriv/issues/835)) ([7e45877](https://github.com/bcit-tlu/hriv/commit/7e45877ef2234662e834c567ac84d537471b6bd3))
+
+## [0.32.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.31.0...frontend-v0.32.0) (2026-07-07)
+
+
+### Features
+
+* **admin:** per-file restore from backup snapshots via Admin UI ([#828](https://github.com/bcit-tlu/hriv/issues/828)) ([dc047ae](https://github.com/bcit-tlu/hriv/commit/dc047aeb7f62b827bc03febf342d604d9348c742))
+* **admin:** source-images-only filesystem export with scan-phase progress and cancellation ([#821](https://github.com/bcit-tlu/hriv/issues/821)) ([c3eae16](https://github.com/bcit-tlu/hriv/commit/c3eae1622918b612bf4ea9f497206297d800d083))
+
+
+### Bug Fixes
+
+* **admin:** handle session loss during import and make task cancel idempotent ([#820](https://github.com/bcit-tlu/hriv/issues/820)) ([067fb77](https://github.com/bcit-tlu/hriv/commit/067fb776a1af4eddbb3c06c5d70b10a6828c173c))
+
+## [0.31.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.30.1...frontend-v0.31.0) (2026-07-06)
+
+
+### Features
+
+* **frontend:** AND multi-term filters and category checkbox tree ([#818](https://github.com/bcit-tlu/hriv/issues/818)) ([acb3ae3](https://github.com/bcit-tlu/hriv/commit/acb3ae3ac7661dbc67f1c94ee3f33b4792c3405a))
+* **frontend:** annotations column, persistent + comma-separated table filters ([#809](https://github.com/bcit-tlu/hriv/issues/809)) ([bbcd20e](https://github.com/bcit-tlu/hriv/commit/bbcd20e7dbc07a3945b9a69aabe044fb4b5ef296))
+* **frontend:** paginate ManagePage table top and bottom; dim rows via per-cell data attributes ([#810](https://github.com/bcit-tlu/hriv/issues/810)) ([4d3d614](https://github.com/bcit-tlu/hriv/commit/4d3d614271577469444787cff3485277dbb79c5c))
+
+
+### Bug Fixes
+
+* **frontend:** improve tile titles, search labels, category tooltip, and profile chip wrapping ([#815](https://github.com/bcit-tlu/hriv/issues/815)) ([125f631](https://github.com/bcit-tlu/hriv/commit/125f631dc8677ad66d90fc8210e1e4689c99acd4))
+
+## [0.30.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.30.0...frontend-v0.30.1) (2026-07-03)
+
+
+### Bug Fixes
+
+* **frontend:** keep Add Images form intact on background refresh and submit on Enter ([#803](https://github.com/bcit-tlu/hriv/issues/803)) ([66d05b3](https://github.com/bcit-tlu/hriv/commit/66d05b3714ec3252ec5f308d2d53cc7ff3797183))
+
+## [0.30.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.29.0...frontend-v0.30.0) (2026-07-03)
+
+
+### Features
+
+* **frontend:** share table filter bar ([#796](https://github.com/bcit-tlu/hriv/issues/796)) ([2e62957](https://github.com/bcit-tlu/hriv/commit/2e6295759dbbabd03882cdea0b0442fb0cdb7a31))
+
+## [0.29.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.28.1...frontend-v0.29.0) (2026-07-02)
+
+
+### Features
+
+* abstract feedback delivery config ([#791](https://github.com/bcit-tlu/hriv/issues/791)) ([67bba5d](https://github.com/bcit-tlu/hriv/commit/67bba5dbad2a998b9e5fd3ecb197cb390dd13c8a))
+* **frontend:** warn when parent program restrictions conflict with child restrictions ([#782](https://github.com/bcit-tlu/hriv/issues/782)) ([650fa29](https://github.com/bcit-tlu/hriv/commit/650fa29d4d0d22fbf1d01f53b76657bfd52c1929))
+
+
+### Bug Fixes
+
+* **frontend:** disable non-member program chips + name program in attach error ([#629](https://github.com/bcit-tlu/hriv/issues/629)) ([#778](https://github.com/bcit-tlu/hriv/issues/778)) ([8b5f6c8](https://github.com/bcit-tlu/hriv/commit/8b5f6c8179229c7bd8fb532d2bf68463371a0371))
+* **frontend:** stop dismissed-announcement flash on reload ([#752](https://github.com/bcit-tlu/hriv/issues/752)) ([#794](https://github.com/bcit-tlu/hriv/issues/794)) ([d2851bc](https://github.com/bcit-tlu/hriv/commit/d2851bcf654819c48c10eeacf5102bffd87c9760))
+* **frontend:** surface backend 4xx detail in group error messages ([#790](https://github.com/bcit-tlu/hriv/issues/790)) ([1521ba5](https://github.com/bcit-tlu/hriv/commit/1521ba54134f9d1319e044c90898d9bca635974d))
+
+## [0.28.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.28.0...frontend-v0.28.1) (2026-07-01)
+
+
+### Bug Fixes
+
+* **frontend:** recognise Greek small mu (μ) in measurement units ([#775](https://github.com/bcit-tlu/hriv/issues/775)) ([673aa40](https://github.com/bcit-tlu/hriv/commit/673aa409c1943f9456233440e0dbd0481c175132))
+
 ## [0.28.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.27.0...frontend-v0.28.0) (2026-06-30)
 
 

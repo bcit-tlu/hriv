@@ -3,21 +3,23 @@
 import json as _json
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
 
+import app.auth as auth
+from app.routers import categories as categories_router
 from app.routers.categories import (
     _load_tree,
     list_categories,
     get_category,
     create_category,
     update_category,
-    reorder_categories,
     delete_category,
 )
-from app.schemas import CategoryCreate, CategoryUpdate, CategoryReorderRequest, CategoryReorderItem
+from app.schemas import CategoryCreate, CategoryUpdate
 
 
 def _make_program(id: int = 1, name: str = "Test Program") -> SimpleNamespace:
@@ -117,6 +119,24 @@ def _mock_db(categories: list, images: list) -> AsyncMock:
 
     db.execute = AsyncMock(side_effect=execute_side_effect)
     return db
+
+
+def _make_user(
+    role: str = "admin", programs: list | None = None, groups: list | None = None,
+) -> SimpleNamespace:
+    return SimpleNamespace(id=1, role=role, email=f"{role}@example.com", programs=programs or [], groups=groups or [])
+
+
+def _categories_test_app(user_role: str, db: AsyncMock) -> FastAPI:
+    app = FastAPI()
+    app.include_router(categories_router.router, prefix="/api")
+
+    async def override_db():
+        yield db
+
+    app.dependency_overrides[auth.get_current_user] = lambda: _make_user(user_role)
+    app.dependency_overrides[categories_router.get_db] = override_db
+    return app
 
 
 async def test_load_tree_empty_database() -> None:
@@ -348,6 +368,67 @@ async def test_create_category_invalid_program_ids() -> None:
     assert "999" in str(exc.value.detail)
 
 
+async def test_create_category_instructor_cannot_attach_unmanaged_program_name() -> None:
+    body = CategoryCreate(label="C", parent_id=None, program_ids=[10])
+    dup = MagicMock()
+    dup.scalar_one_or_none.return_value = None
+    prog_result = MagicMock()
+    prog_result.scalars.return_value.all.return_value = [_make_program(10, "Biology")]
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=[dup, prog_result])
+    with pytest.raises(HTTPException) as exc:
+        await create_category(body, _editor("instructor", id=7, programs=[20]), db=db)
+    assert exc.value.status_code == 403
+    assert "Biology" in exc.value.detail
+    assert db.execute.await_count == 2
+
+
+async def test_create_category_instructor_can_carry_inherited_program_restriction() -> None:
+    body = CategoryCreate(label="Child", parent_id=10, program_ids=[20])
+    parent = _make_category(10, "Parent", programs=[_make_program(20, "Restricted")])
+    dup = MagicMock()
+    dup.scalar_one_or_none.return_value = None
+    prog_result = MagicMock()
+    prog_result.scalars.return_value.all.return_value = [
+        _make_program(20, "Restricted")
+    ]
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=[parent])
+    db.execute = AsyncMock(side_effect=[dup, prog_result])
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    result = await create_category(
+        body, _editor("instructor", id=7, programs=[30]), db=db,
+    )
+
+    assert result.programs == [_make_program(20, "Restricted")]
+    db.commit.assert_awaited_once()
+
+
+async def test_create_category_instructor_cannot_attach_non_inherited_program() -> None:
+    body = CategoryCreate(label="Child", parent_id=10, program_ids=[30])
+    parent = _make_category(10, "Parent", programs=[_make_program(20)])
+    dup = MagicMock()
+    dup.scalar_one_or_none.return_value = None
+    prog_result = MagicMock()
+    prog_result.scalars.return_value.all.return_value = [
+        _make_program(30, "Unmanaged")
+    ]
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=[parent])
+    db.execute = AsyncMock(side_effect=[dup, prog_result])
+
+    with pytest.raises(HTTPException) as exc:
+        await create_category(
+            body, _editor("instructor", id=7, programs=[40]), db=db,
+        )
+
+    assert exc.value.status_code == 403
+    assert "Unmanaged" in exc.value.detail
+
+
 async def test_update_category_not_found() -> None:
     body = CategoryUpdate(label="Updated")
     db = AsyncMock()
@@ -441,6 +522,51 @@ async def test_update_category_descendant_cycle() -> None:
     assert "descendants" in exc.value.detail.lower()
 
 
+async def test_update_category_unchanged_ordering_fields_do_not_bump_scopes() -> None:
+    """Edit dialogs echo parent_id/sort_order back on every save; bumping on
+    presence alone would 409 clients whose cached revision is still accurate."""
+    cat = _make_category(1, "Cat", parent_id=5, sort_order=2)
+    body = CategoryUpdate(label="Renamed", parent_id=5, sort_order=2)
+
+    dup_result = MagicMock()
+    dup_result.scalar_one_or_none.return_value = None
+    parent = _make_category(5, "Parent")
+
+    async def mock_get(model, id_):
+        return {1: cat, 5: parent}.get(id_)
+
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=mock_get)
+    db.execute = AsyncMock(return_value=dup_result)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    with patch("app.routers.categories.bump_scopes", new=AsyncMock()) as bump:
+        await update_category(1, body, _mock_request(), MagicMock(), db=db)
+
+    bump.assert_not_awaited()
+
+
+async def test_update_category_parent_change_bumps_both_scopes() -> None:
+    cat = _make_category(1, "Cat", parent_id=5)
+    body = CategoryUpdate(parent_id=None)
+
+    dup_result = MagicMock()
+    dup_result.scalar_one_or_none.return_value = None
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=cat)
+    db.execute = AsyncMock(return_value=dup_result)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    with patch("app.routers.categories.bump_scopes", new=AsyncMock()) as bump:
+        await update_category(1, body, _mock_request(), MagicMock(), db=db)
+
+    bump.assert_awaited_once()
+    assert bump.await_args.args[1] == {5, 0}
+
+
 async def test_update_category_version_bumped_without_if_match() -> None:
     """Version increments unconditionally when no If-Match header is sent."""
     cat = _make_category(1, "Cat", version=3)
@@ -516,50 +642,32 @@ async def test_update_category_if_match_invalid() -> None:
     assert "if-match" in exc.value.detail.lower()
 
 
-async def test_reorder_categories_self_parent() -> None:
-    items = [CategoryReorderItem(id=1, parent_id=1, sort_order=0)]
-    body = CategoryReorderRequest(items=items)
+async def test_delete_category_endpoint_allows_instructor() -> None:
+    cat = _make_category(1, "Cat")
     db = AsyncMock()
-
-    with pytest.raises(HTTPException) as exc:
-        await reorder_categories(body, MagicMock(), db=db)
-    assert exc.value.status_code == 400
-    assert "own parent" in exc.value.detail.lower()
-
-
-async def test_reorder_categories_success() -> None:
-    cat1 = _make_category(1, "A")
-    cat2 = _make_category(2, "B")
-
-    items = [
-        CategoryReorderItem(id=1, parent_id=None, sort_order=1),
-        CategoryReorderItem(id=2, parent_id=None, sort_order=0),
-    ]
-    body = CategoryReorderRequest(items=items)
-
-    async def mock_get(model, id_):
-        lookup = {1: cat1, 2: cat2}
-        return lookup.get(id_)
-
-    db = AsyncMock()
-    db.get = AsyncMock(side_effect=mock_get)
+    db.get = AsyncMock(return_value=cat)
+    db.delete = AsyncMock()
     db.commit = AsyncMock()
 
-    result = await reorder_categories(body, MagicMock(), db=db)
-    assert result == {"status": "ok"}
+    transport = httpx.ASGITransport(app=_categories_test_app("instructor", db))
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.delete("/api/categories/1")
+
+    assert response.status_code == 204
+    db.get.assert_awaited_once()
+    db.delete.assert_awaited_once_with(cat)
     db.commit.assert_awaited_once()
 
 
-async def test_reorder_categories_missing_category() -> None:
-    items = [CategoryReorderItem(id=999, parent_id=None, sort_order=0)]
-    body = CategoryReorderRequest(items=items)
-
+async def test_delete_category_endpoint_rejects_student() -> None:
     db = AsyncMock()
-    db.get = AsyncMock(return_value=None)
 
-    with pytest.raises(HTTPException) as exc:
-        await reorder_categories(body, MagicMock(), db=db)
-    assert exc.value.status_code == 404
+    transport = httpx.ASGITransport(app=_categories_test_app("student", db))
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.delete("/api/categories/1")
+
+    assert response.status_code == 403
+    db.get.assert_not_called()
 
 
 async def test_delete_category_success() -> None:
@@ -584,18 +692,6 @@ async def test_delete_category_not_found() -> None:
 
 
 # ── Program-scoped student filtering ────────────────────────
-
-
-def _make_student_user(
-    programs: list | None = None, groups: list | None = None,
-) -> SimpleNamespace:
-    return SimpleNamespace(
-        id=1,
-        role="student",
-        email="s@example.com",
-        programs=programs or [],
-        groups=groups or [],
-    )
 
 
 async def test_list_categories_student_excludes_restricted() -> None:
@@ -624,7 +720,7 @@ async def test_list_categories_student_excludes_restricted() -> None:
     db = AsyncMock()
     db.execute = AsyncMock(side_effect=execute_side_effect)
 
-    result = await list_categories(_make_student_user(), parent_id=None, db=db)
+    result = await list_categories(_make_user("student"), parent_id=None, db=db)
     assert len(result) == 1
     assert result[0].label == "Open"
 
@@ -652,7 +748,7 @@ async def test_list_categories_student_sees_matching_program() -> None:
     db.execute = AsyncMock(side_effect=execute_side_effect)
 
     result = await list_categories(
-        _make_student_user(programs=[_make_program(10)]),
+        _make_user("student", programs=[_make_program(10)]),
         parent_id=None,
         db=db,
     )
@@ -683,7 +779,7 @@ async def test_get_category_student_hidden() -> None:
     db.get = AsyncMock(return_value=cat)
 
     with pytest.raises(HTTPException) as exc:
-        await get_category(1, _make_student_user(), db=db)
+        await get_category(1, _make_user("student"), db=db)
     assert exc.value.status_code == 404
 
 
@@ -693,7 +789,7 @@ async def test_get_category_student_program_restricted() -> None:
     db.get = AsyncMock(return_value=cat)
 
     with pytest.raises(HTTPException) as exc:
-        await get_category(1, _make_student_user(), db=db)
+        await get_category(1, _make_user("student"), db=db)
     assert exc.value.status_code == 404
 
 
@@ -703,7 +799,7 @@ async def test_get_category_student_matching_program() -> None:
     db.get = AsyncMock(return_value=cat)
 
     result = await get_category(
-        1, _make_student_user(programs=[_make_program(10)]), db=db,
+        1, _make_user("student", programs=[_make_program(10)]), db=db,
     )
     assert result.label == "Match"
 
@@ -719,7 +815,7 @@ async def test_get_category_student_hidden_ancestor() -> None:
     db.get = AsyncMock(side_effect=mock_get)
 
     with pytest.raises(HTTPException) as exc:
-        await get_category(2, _make_student_user(), db=db)
+        await get_category(2, _make_user("student"), db=db)
     assert exc.value.status_code == 404
 
 
@@ -734,7 +830,7 @@ async def test_get_category_student_restricted_ancestor() -> None:
     db.get = AsyncMock(side_effect=mock_get)
 
     with pytest.raises(HTTPException) as exc:
-        await get_category(2, _make_student_user(programs=[_make_program(20)]), db=db)
+        await get_category(2, _make_user("student", programs=[_make_program(20)]), db=db)
     assert exc.value.status_code == 404
 
 
@@ -743,7 +839,7 @@ async def test_get_category_student_unrestricted() -> None:
     db = AsyncMock()
     db.get = AsyncMock(return_value=cat)
 
-    result = await get_category(1, _make_student_user(), db=db)
+    result = await get_category(1, _make_user("student"), db=db)
     assert result.label == "Open"
 
 
@@ -761,9 +857,12 @@ def _editor(role: str, id: int = 1, programs=None, groups=None) -> SimpleNamespa
     )
 
 
-def _group_ns(id: int, instructors=None, members=None) -> SimpleNamespace:
+def _group_ns(
+    id: int, instructors=None, members=None, name: str = "Cohort",
+) -> SimpleNamespace:
     return SimpleNamespace(
         id=id,
+        name=name,
         instructors=[SimpleNamespace(id=i) for i in (instructors or [])],
         members=members or [],
     )
@@ -788,12 +887,15 @@ async def test_create_category_instructor_cannot_attach_unmanaged_group() -> Non
     dup = MagicMock()
     dup.scalar_one_or_none.return_value = None
     grp_result = MagicMock()
-    grp_result.scalars.return_value.all.return_value = [_group_ns(5, instructors=[99])]
+    grp_result.scalars.return_value.all.return_value = [
+        _group_ns(5, instructors=[99], name="Cohort A")
+    ]
     db = AsyncMock()
     db.execute = AsyncMock(side_effect=[dup, grp_result])
     with pytest.raises(HTTPException) as exc:
         await create_category(body, _editor("instructor", id=7), db=db)
     assert exc.value.status_code == 403
+    assert "Cohort A" in exc.value.detail
 
 
 async def test_create_category_admin_attaches_group() -> None:
@@ -826,6 +928,84 @@ async def test_create_category_instructor_attaches_managed_group() -> None:
     db.refresh = AsyncMock()
     result = await create_category(body, _editor("instructor", id=7), db=db)
     assert result.groups == [group]
+
+
+async def test_create_category_instructor_can_carry_inherited_group_restriction() -> None:
+    body = CategoryCreate(label="Child", parent_id=10, group_ids=[5])
+    group = _group_ns(5, instructors=[99], name="Inherited Cohort")
+    parent = _make_category(10, "Parent", groups=[group])
+    dup = MagicMock()
+    dup.scalar_one_or_none.return_value = None
+    grp_result = MagicMock()
+    grp_result.scalars.return_value.all.return_value = [group]
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=[parent])
+    db.execute = AsyncMock(side_effect=[dup, grp_result])
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    result = await create_category(
+        body, _editor("instructor", id=7), db=db,
+    )
+
+    assert result.groups == [group]
+    db.commit.assert_awaited_once()
+
+
+async def test_inherited_restrictions_narrow_across_ancestor_levels() -> None:
+    root = _make_category(
+        1, "Root", programs=[_make_program(10), _make_program(11)],
+        groups=[_group_ns(1), _group_ns(2)],
+    )
+    middle = _make_category(
+        2, "Middle", parent_id=1, programs=[_make_program(11), _make_program(12)],
+        groups=[_group_ns(2), _group_ns(3)],
+    )
+    parent = _make_category(
+        3, "Parent", parent_id=2, programs=[_make_program(11), _make_program(13)],
+        groups=[_group_ns(2), _group_ns(4)],
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=[parent, middle, root])
+
+    inherited_programs, inherited_groups = (
+        await categories_router._inherited_restrictions(db, 3)
+    )
+
+    assert inherited_programs == {11}
+    assert inherited_groups == {2}
+
+
+async def test_create_category_admin_can_attach_inherited_and_new_restrictions() -> None:
+    body = CategoryCreate(
+        label="Child", parent_id=10, program_ids=[20, 30], group_ids=[5, 6],
+    )
+    inherited_group = _group_ns(5, instructors=[99], name="Inherited")
+    new_group = _group_ns(6, instructors=[98], name="New")
+    parent = _make_category(
+        10, "Parent", programs=[_make_program(20)], groups=[inherited_group],
+    )
+    dup = MagicMock()
+    dup.scalar_one_or_none.return_value = None
+    prog_result = MagicMock()
+    prog_result.scalars.return_value.all.return_value = [
+        _make_program(20), _make_program(30),
+    ]
+    grp_result = MagicMock()
+    grp_result.scalars.return_value.all.return_value = [inherited_group, new_group]
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=[parent])
+    db.execute = AsyncMock(side_effect=[dup, prog_result, grp_result])
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    result = await create_category(body, _editor("admin"), db=db)
+
+    assert {program.id for program in result.programs} == {20, 30}
+    assert {group.id for group in result.groups} == {5, 6}
+    db.commit.assert_awaited_once()
 
 
 # ── _intersection_warnings (symmetric, non-blocking advisory) ─

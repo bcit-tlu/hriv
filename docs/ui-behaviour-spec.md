@@ -79,6 +79,16 @@ Two capability flags in `AuthContext.tsx` drive all gating:
 
 - Students view locked overlays and annotations read-only; edit mode and
   measurement tools are gated by `canEditContent`.
+- Touch pinch gestures use a per-gesture zoom-vs-rotate mode lock. The
+  `ImageViewer` intercepts `canvas-pinch` and compares initial finger-line
+  rotation against finger-separation change. The dominant motion wins:
+  rotation locks `ROTATE` mode, suppresses native zoom, and applies the
+  damped `PINCH_ROTATE_SENSITIVITY` delta; separation locks `ZOOM` mode,
+  suppresses rotation, and leaves native zoom available. Before either motion
+  crosses its activation threshold, both zoom and pan remain available but
+  rotation is suppressed. A gap greater than `PINCH_GESTURE_GAP_MS` resets
+  arbitration for the next gesture. Covered by `measurement.test.ts`
+  (`pinchRotationDeltaDegrees`, `createPinchRotationTracker`).
 
 ### Search modal (`SearchModal.test.tsx`)
 
@@ -93,6 +103,8 @@ Two capability flags in `AuthContext.tsx` drive all gating:
   create search hits.
 - Field filters expose dedicated chips for `Annotation`, `Link`, and
   `Link URL`, so users can keep only annotation-derived image matches visible.
+- Search result field labels render in a stronger secondary style so the field
+  name reads as metadata rather than body text.
 
 ---
 
@@ -195,12 +207,23 @@ committed on Save) in the edit modals.
 - Parent visibility overrides child: if a parent is hidden, child tiles always
   appear desaturated regardless of their own status.
 
+#### Tile titles and hover affordances (`CategoryTile.tsx`, `ImageTile.tsx`)
+
+- Category and image tile titles wrap to a maximum of 3 lines before
+  truncating, using a word-breaking clamp so long labels do not expand the
+  tile horizontally.
+- Category tile title rows align their action icons to the top edge of the
+  title block so multi-line labels stay visually balanced.
+- Category tile titles expose the full category name in a hover tooltip.
+- Image tiles expose the full image name in a hover tooltip.
+
 #### ManagePage table row desaturation
 
 - **Given** an image row in the ManagePage table, **When** the image is
-  individually hidden **or** its category is hidden, **Then** the row
-  (including thumbnail) is dimmed via `data-dimmed` attribute; the visibility
-  Switch is disabled when hidden by category.
+  individually hidden **or** its category is hidden, **Then** the row's
+  non-interactive cells (and the thumbnail) are dimmed via a per-cell
+  `data-dimmed` attribute (independent of MUI internal class names); the
+  visibility Switch is disabled when hidden by category.
 
 #### Category dropdowns (CategoryPickerSelect, ManageCategoriesDialog)
 
@@ -220,12 +243,48 @@ committed on Save) in the edit modals.
   non-interactive `<span role="img" aria-label="…">` **without** `tabIndex`
   (query via `getByLabelText`, not `getByTitle`).
 
+### People page filtering (`PeoplePage.tsx`)
+
+- The People page now exposes a persistent **Filter by** bar above the table
+  instead of hiding filters behind a toggle button.
+- The filter bar shows only controls for currently visible filterable columns
+  (for example, hiding the `Groups` column also removes the `Groups` filter
+  controls). Hiding a filtered column clears that column's active filter state.
+- Text filters accept comma-separated terms, render one chip per term, and
+  match only when every term is present.
+- Filter selections persist per user between logins using localStorage, in the
+  same style as table column visibility and category-tree collapse preferences.
+
+### Profile popover memberships (`AppShell.tsx`)
+
+- The profile popover caps its width so long program/group chip lists wrap
+  vertically instead of forcing the menu to grow horizontally. Program and
+  group memberships remain read-only chips.
+
 ### Manage page filtering & auto-refresh (`ManagePage.tsx`)
 
 - The Images/Manage page (`ManagePage.tsx`) shows a paginated image table with a
-  toggleable filter row (category, program, status, etc.). Images with no
+  persistent **Filter by** bar above the table (category, program, visibility,
+  etc.) instead of a toggleable filter row. The filter bar only includes
+  controls for visible filterable columns, so the column chooser and filter bar
+  stay in sync. Images with no
   category (`category_id == null`) render as uncategorised (`—`) and can be
   assigned a category via the row's move action.
+- The `Annotations` column is available in the column chooser but is off by
+  default; it indicates whether an image has canvas edit annotations in
+  `metadata_extra.canvas_annotations`.
+- Text filters accept comma-separated terms, render one chip per term, and
+  match only when every term is present.
+- The `Category` filter is a collapsible checkbox tree. Checking a parent
+  matches the whole subtree, the tree shares its expand/collapse state with
+  `ManageCategoriesDialog`, and selected categories persist per user between
+  logins using localStorage.
+- Filter selections persist per user between logins using localStorage, in the
+  same style as table column visibility and category-tree collapse preferences.
+- **Pagination controls render at both the top and bottom of the table** so
+  users can change page or rows-per-page without scrolling to the end of a long
+  list. Both controls are bound to the same page / rows-per-page state, so a
+  change made in one is reflected in the other.
 - **Auto-refresh:** `ManagePage` reloads (`loadImages`) whenever the
   `imagesVersion` prop changes. **Given** a bulk import job completes, **When**
   the app bumps `imagesVersion`, **Then** the table re-fetches so newly imported

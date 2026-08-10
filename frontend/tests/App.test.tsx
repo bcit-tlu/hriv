@@ -46,6 +46,15 @@ const mockCurrentUser = {
   group_names: ['Lab A2'],
 }
 
+let authState = {
+  currentUser: mockCurrentUser,
+  loading: false,
+  login: vi.fn(),
+  logout: vi.fn(),
+  canManageUsers: false,
+  canEditContent: true,
+}
+
 const mockGroups = [
   {
     id: 10,
@@ -215,6 +224,9 @@ const overlayPersistenceMock = {
   handleClearOverlays: vi.fn(),
 }
 
+const emitEventMock = vi.fn()
+const emitSessionStartedOnceMock = vi.fn()
+
 const categoryActionsMock = {
   moveCatOpen: false,
   setMoveCatOpen: vi.fn(),
@@ -232,8 +244,9 @@ const categoryActionsMock = {
   deleteCategoryInline: vi.fn(),
   editCategoryInline: vi.fn(),
   toggleCategoryVisibility: vi.fn(),
-  reorderCategoriesInline: vi.fn(),
-  reorderImagesInline: vi.fn(),
+  reorderTilesFromManage: vi.fn(),
+  manageReorderScopes: null,
+  setManageReorderScopes: vi.fn(),
   handleMoveCategory: vi.fn(),
   handleRequestMoveCategory: vi.fn(),
   handleDropImageOnCategory: vi.fn(),
@@ -290,6 +303,10 @@ vi.mock('../src/components/EditImageModal', () => ({ default: () => null }))
 vi.mock('../src/components/ProgramManagementModal', () => ({ default: () => null }))
 vi.mock('../src/components/GroupManagementModal', () => ({ default: () => null }))
 vi.mock('../src/components/ReportIssueModal', () => ({ default: () => null }))
+vi.mock('../src/observability', () => ({
+  emitEvent: (...args: unknown[]) => emitEventMock(...args),
+  emitSessionStartedOnce: (...args: unknown[]) => emitSessionStartedOnceMock(...args),
+}))
 vi.mock('../src/components/SearchModal', () => ({
   default: ({
     onSelectImage,
@@ -308,14 +325,7 @@ vi.mock('../src/components/EditCategoryDialog', () => ({ default: () => null }))
 vi.mock('../src/components/AddEditPersonModal', () => ({ default: () => null }))
 
 vi.mock('../src/useAuth', () => ({
-  useAuth: () => ({
-    currentUser: mockCurrentUser,
-    loading: false,
-    login: vi.fn(),
-    logout: vi.fn(),
-    canManageUsers: false,
-    canEditContent: true,
-  }),
+  useAuth: () => authState,
 }))
 
 vi.mock('../src/useColorMode', () => ({
@@ -388,6 +398,7 @@ vi.mock('../src/useCategoryActions', () => ({
 
 describe('App breadcrumbs', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
     mockImage.active = true
     mockImage.categoryId = 1
     mockImage.note = null
@@ -395,6 +406,14 @@ describe('App breadcrumbs', () => {
     mockSecondImage.categoryId = 1
     mockSecondImage.note = null
     currentImagesMock = [mockImage]
+    authState = {
+      currentUser: mockCurrentUser,
+      loading: false,
+      login: vi.fn(),
+      logout: vi.fn(),
+      canManageUsers: false,
+      canEditContent: true,
+    }
     mockInitialPath = []
     mockCategories.splice(0, mockCategories.length, {
       id: 1,
@@ -699,5 +718,18 @@ describe('App breadcrumbs', () => {
 
     expect(screen.queryByRole('button', { name: /Show less/i })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Show more/i })).toBeInTheDocument()
+  })
+
+  it('does not load the announcement while auth is still loading', async () => {
+    authState = {
+      ...authState,
+      currentUser: null,
+      loading: true,
+    }
+
+    render(<App />)
+
+    await screen.findByRole('progressbar')
+    expect(announcementModalMock.loadAnnouncement).not.toHaveBeenCalled()
   })
 })

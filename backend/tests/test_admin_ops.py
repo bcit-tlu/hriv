@@ -1,32 +1,48 @@
 """Tests for the background admin operations module."""
 
+import asyncio
+import builtins
+import gzip
+import io
 import json
 import os
 import tarfile
 import tempfile
 import threading
 from datetime import datetime, timezone
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.models import AdminTask
+
 from app.admin_ops import (
     TaskCancelled,
     _create_tar_file,
+    _ensure_import_staging_same_device,
     _ensure_tasks_dir,
+    _extract_archive_stream,
     _extract_and_restore,
     _iter_export_files,
     _parse_dt,
     _read_file,
     _update_task,
     _write_file,
+    delete_files_import_archive,
+    list_files_import_archives,
     reconcile_stale_tasks,
     run_db_export,
     run_db_import,
+    run_file_restore,
     run_files_export,
     run_files_import,
+    rerun_files_import_archive,
     run_rebuild_tiles,
+    _validate_retained_files_import_archive_path,
+    _swap_imported_entries,
+    _queue_rebuild_tiles_after_import,
 )
 
 
@@ -71,55 +87,26 @@ def test_ensure_tasks_dir(tmp_path) -> None:
     assert os.path.isdir(tasks_dir)
 
 
-def test_extract_and_restore(tmp_path) -> None:
-    # Create a data directory and archive it
-    data_dir = tmp_path / "original_data"
-    data_dir.mkdir()
-    tiles_dir = data_dir / "tiles"
-    tiles_dir.mkdir()
-    source_dir = data_dir / "source_images"
-    source_dir.mkdir()
-    (tiles_dir / "tile1.jpeg").write_text("tile data")
-    (source_dir / "src1.tiff").write_text("source data")
-
-    archive = str(tmp_path / "test.tar.gz")
-    with tarfile.open(archive, "w:gz") as tar:
-        tar.add(str(data_dir), arcname="data")
-
-    restore_dir = tmp_path / "restored_data"
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        result = _extract_and_restore(
-            archive,
-            tmpdir,
-            str(restore_dir),
-            str(restore_dir / "tiles"),
-            str(restore_dir / "source_images"),
-        )
-
-    assert result["tile_files"] >= 1
-    assert result["source_files"] >= 1
-
-
-def test_extract_and_restore_preserves_admin_tasks(tmp_path) -> None:
-    """admin_tasks/ inside the data dir must survive a filesystem restore."""
+def test_extract_and_restore_preserves_side_dirs_and_swaps_source_images(tmp_path) -> None:
     data_dir = tmp_path / "data"
     data_dir.mkdir()
     tiles_dir = data_dir / "tiles"
     tiles_dir.mkdir()
+    (tiles_dir / "tile1.jpeg").write_text("tile")
     source_dir = data_dir / "source_images"
     source_dir.mkdir()
-    (tiles_dir / "tile1.jpeg").write_text("tile data")
-    (source_dir / "src1.tiff").write_text("source data")
-
-    # Simulate an existing admin_tasks dir with a prior export result
+    (source_dir / "old.tiff").write_text("old")
     tasks_dir = data_dir / "admin_tasks"
     tasks_dir.mkdir()
-    (tasks_dir / "prior-export.json").write_text('{"old": true}')
+    (tasks_dir / "keep.json").write_text("keep")
 
+    payload_dir = tmp_path / "payload"
+    payload_source = payload_dir / "source_images"
+    payload_source.mkdir(parents=True)
+    (payload_source / "new.tiff").write_text("new")
     archive = str(tmp_path / "test.tar.gz")
     with tarfile.open(archive, "w:gz") as tar:
-        tar.add(str(data_dir), arcname="data")
+        tar.add(str(payload_dir), arcname="data")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         result = _extract_and_restore(
@@ -130,11 +117,58 @@ def test_extract_and_restore_preserves_admin_tasks(tmp_path) -> None:
             str(source_dir),
         )
 
-    assert result["tile_files"] >= 1
-    # admin_tasks dir and its contents must still exist
+    assert (source_dir / "new.tiff").read_text() == "new"
+    assert not (source_dir / "old.tiff").exists()
+    assert (tiles_dir / "tile1.jpeg").read_text() == "tile"
     assert tasks_dir.exists()
-    assert (tasks_dir / "prior-export.json").exists()
-    assert (tasks_dir / "prior-export.json").read_text() == '{"old": true}'
+    assert (tasks_dir / "keep.json").read_text() == "keep"
+    assert result["source_files"] >= 1
+
+
+def test_extract_and_restore_rolls_back_on_entry_failure(tmp_path, monkeypatch) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    tiles_dir = data_dir / "tiles"
+    tiles_dir.mkdir()
+    (tiles_dir / "tile1.jpeg").write_text("tile")
+    source_dir = data_dir / "source_images"
+    source_dir.mkdir()
+    (source_dir / "old.tiff").write_text("old")
+    tasks_dir = data_dir / "admin_tasks"
+    tasks_dir.mkdir()
+    (tasks_dir / "keep.json").write_text("keep")
+
+    payload_dir = tmp_path / "payload"
+    (payload_dir / "source_images").mkdir(parents=True)
+    (payload_dir / "source_images" / "new.tiff").write_text("new")
+    (payload_dir / "zzz-bad").mkdir()
+    (payload_dir / "zzz-bad" / "oops.txt").write_text("oops")
+    archive = str(tmp_path / "test.tar.gz")
+    with tarfile.open(archive, "w:gz") as tar:
+        tar.add(str(payload_dir), arcname="data")
+
+    real_rename = os.rename
+
+    def _rename_with_failure(src: str, dst: str) -> None:
+        if Path(dst).name == "zzz-bad":
+            raise OSError(5, "simulated failure")
+        real_rename(src, dst)
+
+    monkeypatch.setattr(os, "rename", _rename_with_failure)
+
+    with tempfile.TemporaryDirectory() as tmpdir, pytest.raises(OSError, match="simulated failure"):
+        _extract_and_restore(
+            archive,
+            tmpdir,
+            str(data_dir),
+            str(tiles_dir),
+            str(source_dir),
+        )
+
+    assert (source_dir / "old.tiff").read_text() == "old"
+    assert not (source_dir / "new.tiff").exists()
+    assert (tiles_dir / "tile1.jpeg").read_text() == "tile"
+    assert (tasks_dir / "keep.json").read_text() == "keep"
 
 
 def test_extract_and_restore_empty_archive(tmp_path) -> None:
@@ -153,29 +187,246 @@ def test_extract_and_restore_empty_archive(tmp_path) -> None:
             )
 
 
+def test_extract_archive_stream_uses_pigz_when_available(tmp_path, monkeypatch) -> None:
+    source_dir = tmp_path / "payload"
+    (source_dir / "source_images").mkdir(parents=True)
+    (source_dir / "source_images" / "a.txt").write_text("a")
+    tar_bytes = _tar_bytes_from_tree(source_dir)
+
+    archive = tmp_path / "archive.tar.gz"
+    with tarfile.open(str(archive), "w:gz") as tar:
+        tar.add(str(source_dir), arcname="data")
+
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    fake_proc = _FakeImportPigzProcess(io.BytesIO(tar_bytes))
+    monkeypatch.setattr("app.admin_ops.shutil.which", lambda _: "/usr/bin/pigz")
+    monkeypatch.setattr("app.admin_ops.subprocess.Popen", lambda *args, **kwargs: fake_proc)
+
+    member_count = _extract_archive_stream(str(archive), staging)
+
+    assert member_count >= 1
+    assert (staging / "data" / "source_images" / "a.txt").read_text() == "a"
+    assert fake_proc.stdin.getvalue()
+
+
+def test_extract_archive_stream_falls_back_without_pigz(tmp_path, monkeypatch) -> None:
+    source_dir = tmp_path / "payload"
+    (source_dir / "source_images").mkdir(parents=True)
+    (source_dir / "source_images" / "a.txt").write_text("a")
+    archive = tmp_path / "archive.tar.gz"
+    with tarfile.open(str(archive), "w:gz") as tar:
+        tar.add(str(source_dir), arcname="data")
+
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    monkeypatch.setattr("app.admin_ops.shutil.which", lambda _: None)
+
+    member_count = _extract_archive_stream(str(archive), staging)
+
+    assert member_count >= 1
+    assert (staging / "data" / "source_images" / "a.txt").read_text() == "a"
+
+
+def test_extract_archive_stream_falls_back_without_pigz_cancelled(
+    tmp_path, monkeypatch
+) -> None:
+    archive = tmp_path / "archive.tar.gz"
+    archive.write_bytes(b"placeholder")
+
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    cancel_event = threading.Event()
+
+    class _FakeTar:
+        def __init__(self):
+            self._yielded = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            if not self._yielded:
+                self._yielded = True
+                return SimpleNamespace(name="data/source_images/a.txt")
+            raise tarfile.ReadError("unexpected end of data")
+
+        def extract(self, member, path, filter=None):
+            cancel_event.set()
+
+    monkeypatch.setattr("app.admin_ops.shutil.which", lambda _: None)
+    monkeypatch.setattr("app.admin_ops.tarfile.open", lambda *args, **kwargs: _FakeTar())
+
+    with pytest.raises(TaskCancelled):
+        _extract_archive_stream(str(archive), staging, cancel_event=cancel_event)
 # ── _create_tar_file tests ─────────────────────────────────
+
+
+class _FakePigzStdin:
+    def __init__(self):
+        self._buffer = bytearray()
+        self.closed = False
+
+    def write(self, data):
+        self._buffer.extend(data)
+        return len(data)
+
+    def flush(self):
+        return None
+
+    def close(self):
+        self.closed = True
+
+    def tell(self):
+        return len(self._buffer)
+
+    def getvalue(self):
+        return bytes(self._buffer)
+
+
+class _FakePigzProcess:
+    def __init__(self, stdout):
+        self.stdin = _FakePigzStdin()
+        self.stdout = stdout
+        self.stderr = io.BytesIO()
+        self.returncode = None
+        self._terminated = False
+        self._killed = False
+
+    def poll(self):
+        return self.returncode
+
+    def wait(self, timeout=None):
+        if self.returncode is not None:
+            return self.returncode
+        if self._terminated:
+            self.returncode = 1
+            return self.returncode
+        if self._killed:
+            self.returncode = -9
+            return self.returncode
+        self.stdout.write(gzip.compress(self.stdin.getvalue()))
+        self.stdout.flush()
+        self.returncode = 0
+        return self.returncode
+
+    def terminate(self):
+        self._terminated = True
+
+    def kill(self):
+        self._killed = True
+
+
+
+
+class _FakeImportPigzProcess:
+    def __init__(self, stdout):
+        self.stdin = _FakePigzStdin()
+        self.stdout = stdout
+        self.stderr = io.BytesIO()
+        self.returncode = None
+        self._terminated = False
+        self._killed = False
+
+    def poll(self):
+        return self.returncode
+
+    def wait(self, timeout=None):
+        if self.returncode is not None:
+            return self.returncode
+        if self._terminated:
+            self.returncode = 1
+            return self.returncode
+        if self._killed:
+            self.returncode = -9
+            return self.returncode
+        self.returncode = 0
+        return self.returncode
+
+    def terminate(self):
+        self._terminated = True
+
+    def kill(self):
+        self._killed = True
+
+
+def _tar_bytes_from_tree(path, arcname="data"):
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w") as tar:
+        tar.add(str(path), arcname=arcname)
+    return buffer.getvalue()
+def _make_source_only_tree(tmp_path):
+    data_dir = tmp_path / "data"
+    source_dir = data_dir / "source_images"
+    source_dir.mkdir(parents=True)
+    nested_dir = source_dir / "nested"
+    nested_dir.mkdir()
+    (source_dir / "source.jpg").write_text("data")
+    (nested_dir / "nested.txt").write_text("nested")
+    tiles_dir = data_dir / "tiles"
+    tiles_dir.mkdir()
+    (tiles_dir / "tile.jpg").write_text("derived")
+    tasks_dir = data_dir / "admin_tasks"
+    tasks_dir.mkdir()
+    (tasks_dir / "old.tar.gz").write_text("old")
+    return data_dir, tiles_dir, tasks_dir
+
+
+def _normalize_archive_names(names):
+    return {name.rstrip("/") for name in names}
+
+
+def _assert_source_only_archive(path):
+    with tarfile.open(path, "r:gz") as tar:
+        names = tar.getnames()
+    normalized = _normalize_archive_names(names)
+    assert "data" in normalized
+    assert "data/source_images" in normalized
+    assert "data/source_images/nested" in normalized
+    assert "data/source_images/source.jpg" in normalized
+    assert "data/source_images/nested/nested.txt" in normalized
+    assert not any("tiles" in name for name in normalized)
+    assert not any("admin_tasks" in name for name in normalized)
+
+
+def _assert_callback_matches_archive(entries, path):
+    with tarfile.open(path, "r:gz") as tar:
+        names = tar.getnames()
+    assert _normalize_archive_names(name for name, _size in entries) == _normalize_archive_names(names)
 
 
 def test_create_tar_file_on_entry_reports_members(tmp_path) -> None:
     """on_entry callback receives every archive member name."""
     data_dir = tmp_path / "data"
+    source = data_dir / "source_images"
+    source.mkdir(parents=True)
     tiles = data_dir / "tiles"
-    tiles.mkdir(parents=True)
-    (tiles / "a.jpg").write_text("a")
-    (tiles / "b.jpg").write_text("b")
+    tiles.mkdir()
+    tasks = data_dir / "admin_tasks"
+    tasks.mkdir()
+    (source / "a.jpg").write_text("a")
+    (tiles / "tile.jpg").write_text("tile")
+    (tasks / "old.json").write_text("stale")
 
     dest = str(tmp_path / "out.tar.gz")
     entries: list[tuple[str, int]] = []
 
-    with patch("app.admin_ops._TASKS_DIR", str(data_dir / "admin_tasks")):
+    with patch("app.admin_ops._TASKS_DIR", str(tasks)):
         _create_tar_file(
             str(data_dir), dest,
             on_entry=lambda name, size: entries.append((name, size)),
         )
 
     names = [n for n, _ in entries]
-    assert any(n.endswith("a.jpg") for n in names)
-    assert any(n.endswith("b.jpg") for n in names)
+    assert any("source_images" in n and n.endswith("a.jpg") for n in names)
+    assert not any("/tiles/" in n or n.endswith("tiles/") for n in names)
+    assert not any("admin_tasks" in n for n in names)
     # Directory entries should end with /
     assert any(n.endswith("/") for n in names)
     # File entries report their size; directory entries report 0.
@@ -185,12 +436,15 @@ def test_create_tar_file_on_entry_reports_members(tmp_path) -> None:
     assert dir_sizes and all(s == 0 for s in dir_sizes)
 
 
-def test_create_tar_file_excludes_admin_tasks(tmp_path) -> None:
-    """admin_tasks directory must be excluded from the archive."""
+def test_create_tar_file_excludes_admin_tasks_and_tiles(tmp_path) -> None:
+    """admin_tasks and generated tiles must be excluded from the archive."""
     data_dir = tmp_path / "data"
+    source = data_dir / "source_images"
+    source.mkdir(parents=True)
     tiles = data_dir / "tiles"
-    tiles.mkdir(parents=True)
+    tiles.mkdir()
     (tiles / "tile.jpg").write_text("tile")
+    (source / "src.tiff").write_text("source")
     tasks = data_dir / "admin_tasks"
     tasks.mkdir()
     (tasks / "old.json").write_text("stale")
@@ -205,8 +459,129 @@ def test_create_tar_file_excludes_admin_tasks(tmp_path) -> None:
         )
 
     assert not any("admin_tasks" in e for e in entries)
+    assert not any("/tiles/" in e or e.endswith("tiles/") for e in entries)
     with tarfile.open(dest, "r:gz") as tar:
         assert not any("admin_tasks" in m for m in tar.getnames())
+        assert not any("/tiles/" in m or m.endswith("tiles") for m in tar.getnames())
+
+
+def test_create_tar_file_uses_pigz_when_available(tmp_path) -> None:
+    data_dir, tiles_dir, tasks_dir = _make_source_only_tree(tmp_path)
+    dest = str(tmp_path / "pigz.tar.gz")
+    entries: list[tuple[str, int]] = []
+    processes: list[_FakePigzProcess] = []
+
+    def _fake_popen(*_args, **kwargs):
+        proc = _FakePigzProcess(kwargs["stdout"])
+        processes.append(proc)
+        return proc
+
+    with (
+        patch("app.admin_ops._TASKS_DIR", str(tasks_dir)),
+        patch("app.admin_ops.settings") as mock_settings,
+        patch("app.admin_ops.shutil.which", return_value="/usr/bin/pigz"),
+        patch("app.admin_ops.subprocess.Popen", side_effect=_fake_popen) as mock_popen,
+    ):
+        mock_settings.tiles_dir = str(tiles_dir)
+        mock_settings.export_pigz_threads = 2
+        _create_tar_file(
+            str(data_dir), dest,
+            on_entry=lambda name, size: entries.append((name, size)),
+        )
+
+    mock_popen.assert_called_once()
+    assert mock_popen.call_args.args[0] == ["/usr/bin/pigz", "-c", "-p", "2"]
+    assert processes and processes[0].returncode == 0
+    assert os.path.exists(dest)
+    _assert_source_only_archive(dest)
+    _assert_callback_matches_archive(entries, dest)
+
+
+def test_create_tar_file_omits_pigz_thread_cap_when_zero(tmp_path) -> None:
+    data_dir, tiles_dir, tasks_dir = _make_source_only_tree(tmp_path)
+    dest = str(tmp_path / "pigz-zero.tar.gz")
+
+    def _fake_popen(*_args, **kwargs):
+        return _FakePigzProcess(kwargs["stdout"])
+
+    with (
+        patch("app.admin_ops._TASKS_DIR", str(tasks_dir)),
+        patch("app.admin_ops.settings") as mock_settings,
+        patch("app.admin_ops.shutil.which", return_value="/usr/bin/pigz"),
+        patch("app.admin_ops.subprocess.Popen", side_effect=_fake_popen) as mock_popen,
+    ):
+        mock_settings.tiles_dir = str(tiles_dir)
+        mock_settings.export_pigz_threads = 0
+        _create_tar_file(str(data_dir), dest)
+
+    mock_popen.assert_called_once()
+    assert mock_popen.call_args.args[0] == ["/usr/bin/pigz", "-c"]
+    assert os.path.exists(dest)
+
+
+def test_create_tar_file_falls_back_without_pigz(tmp_path) -> None:
+    data_dir, tiles_dir, tasks_dir = _make_source_only_tree(tmp_path)
+    dest = str(tmp_path / "fallback.tar.gz")
+    entries: list[tuple[str, int]] = []
+
+    with (
+        patch("app.admin_ops._TASKS_DIR", str(tasks_dir)),
+        patch("app.admin_ops.settings") as mock_settings,
+        patch("app.admin_ops.shutil.which", return_value=None),
+        patch("app.admin_ops.subprocess.Popen") as mock_popen,
+    ):
+        mock_settings.tiles_dir = str(tiles_dir)
+        _create_tar_file(
+            str(data_dir), dest,
+            on_entry=lambda name, size: entries.append((name, size)),
+        )
+
+    mock_popen.assert_not_called()
+    assert os.path.exists(dest)
+    _assert_source_only_archive(dest)
+    _assert_callback_matches_archive(entries, dest)
+
+
+def test_create_tar_file_cleans_up_when_popen_fails(tmp_path) -> None:
+    data_dir, tiles_dir, tasks_dir = _make_source_only_tree(tmp_path)
+    dest = str(tmp_path / "broken.tar.gz")
+    real_open = builtins.open
+
+    class _TrackedFile:
+        def __init__(self, wrapped):
+            self._wrapped = wrapped
+            self.closed_called = False
+
+        def close(self):
+            self.closed_called = True
+            return self._wrapped.close()
+
+        def __getattr__(self, name):
+            return getattr(self._wrapped, name)
+
+    tracked_files = []
+
+    def _open(path, mode="r", *args, **kwargs):
+        fh = real_open(path, mode, *args, **kwargs)
+        if path == dest and mode == "wb":
+            tracked = _TrackedFile(fh)
+            tracked_files.append(tracked)
+            return tracked
+        return fh
+
+    with (
+        patch("app.admin_ops._TASKS_DIR", str(tasks_dir)),
+        patch("app.admin_ops.settings") as mock_settings,
+        patch("app.admin_ops.shutil.which", return_value="/usr/bin/pigz"),
+        patch("app.admin_ops.subprocess.Popen", side_effect=OSError("pigz missing")),
+        patch("builtins.open", side_effect=_open),
+    ):
+        mock_settings.tiles_dir = str(tiles_dir)
+        with pytest.raises(OSError):
+            _create_tar_file(str(data_dir), dest)
+
+    assert not os.path.exists(dest)
+    assert tracked_files and tracked_files[0].closed_called
 
 
 def test_create_tar_file_cancel_event_aborts(tmp_path) -> None:
@@ -888,6 +1263,7 @@ async def test_run_files_export_empty_data_dir(tmp_path) -> None:
         patch("app.admin_ops.settings") as mock_settings,
     ):
         mock_settings.tiles_dir = str(data_dir / "tiles")
+        mock_settings.export_pigz_threads = 2
         await run_files_export(1)
 
     assert task.status == "failed"
@@ -896,9 +1272,12 @@ async def test_run_files_export_empty_data_dir(tmp_path) -> None:
 
 async def test_run_files_export_success(tmp_path) -> None:
     data_dir = tmp_path / "data"
+    source_dir = data_dir / "source_images"
+    source_dir.mkdir(parents=True)
     tiles_dir = data_dir / "tiles"
-    tiles_dir.mkdir(parents=True)
-    (tiles_dir / "tile.jpg").write_text("data")
+    tiles_dir.mkdir()
+    (source_dir / "source.jpg").write_text("data")
+    (tiles_dir / "tile.jpg").write_text("derived")
 
     task = SimpleNamespace(
         id=1, task_type="files_export", status="pending", progress=0, log="",
@@ -920,21 +1299,30 @@ async def test_run_files_export_success(tmp_path) -> None:
         patch("app.admin_ops._TASKS_DIR", tasks_dir),
     ):
         mock_settings.tiles_dir = str(tiles_dir)
+        mock_settings.export_pigz_threads = 2
         await run_files_export(1)
 
     assert task.status == "completed"
     assert task.progress == 100
     assert task.result_filename is not None
     assert task.result_filename.endswith(".tar.gz")
+    assert "Scan complete" in task.log
+    assert "source file(s)" in task.log
+    with tarfile.open(os.path.join(tasks_dir, task.result_filename), "r:gz") as tar:
+        names = tar.getnames()
+        assert any("source_images" in name for name in names)
+        assert not any("/tiles/" in name or name.endswith("/tiles") for name in names)
 
 
-def test_iter_export_files_skips_admin_tasks(tmp_path) -> None:
-    """``_iter_export_files`` reports sizes and omits ``admin_tasks``."""
+def test_iter_export_files_skips_admin_tasks_and_tiles(tmp_path) -> None:
+    """``_iter_export_files`` reports sizes and omits tiles/admin_tasks."""
     data_dir = tmp_path / "data"
+    source = data_dir / "source_images"
+    source.mkdir(parents=True)
     tiles = data_dir / "tiles"
-    tiles.mkdir(parents=True)
-    (tiles / "a.bin").write_bytes(b"0123456789")  # 10 bytes
-    (tiles / "b.bin").write_bytes(b"xy")          # 2 bytes
+    tiles.mkdir()
+    (source / "a.bin").write_bytes(b"0123456789")  # 10 bytes
+    (tiles / "b.bin").write_bytes(b"xy")          # excluded
     tasks = data_dir / "admin_tasks"
     tasks.mkdir()
     (tasks / "stale.tar.gz").write_bytes(b"A" * 1000)
@@ -943,25 +1331,23 @@ def test_iter_export_files_skips_admin_tasks(tmp_path) -> None:
         results = list(_iter_export_files(str(data_dir)))
 
     names = {os.path.basename(p): sz for p, sz in results}
-    assert names == {"a.bin": 10, "b.bin": 2}
+    assert names == {"a.bin": 10}
 
 
 async def test_run_files_export_reports_byte_progress(tmp_path) -> None:
     """Progress advances between 20% and 95% as bytes are archived.
 
-    Previously the bar jumped from 20 to 100 when the tar completed,
-    leaving users staring at a stuck progress indicator during the slow
-    archiving phase.  The new pre-walk + per-entry byte accounting
-    should produce at least one intermediate progress update above 20
-    and below 95.
+    The scan phase establishes the payload size up front, then the
+    per-entry byte accounting should produce at least one intermediate
+    progress update above 20 and below 95.
     """
     data_dir = tmp_path / "data"
-    tiles = data_dir / "tiles"
-    tiles.mkdir(parents=True)
+    source = data_dir / "source_images"
+    source.mkdir(parents=True)
     # Write files large enough that the byte-based progress calculation
     # produces observable motion.
     for i in range(5):
-        (tiles / f"blob{i}.bin").write_bytes(b"X" * 1024)
+        (source / f"blob{i}.bin").write_bytes(b"X" * 1024)
 
     task = SimpleNamespace(
         id=1, task_type="files_export", status="pending", progress=0, log="",
@@ -990,7 +1376,8 @@ async def test_run_files_export_reports_byte_progress(tmp_path) -> None:
         # before the archive finishes.
         patch("app.admin_ops._LOG_FLUSH_INTERVAL", 0.0),
     ):
-        mock_settings.tiles_dir = str(tiles)
+        mock_settings.tiles_dir = str(data_dir / "tiles")
+        mock_settings.export_pigz_threads = 2
         await run_files_export(1)
 
     assert task.status == "completed"
@@ -1005,9 +1392,12 @@ async def test_run_files_export_reports_byte_progress(tmp_path) -> None:
 async def test_run_files_export_verbose_log(tmp_path) -> None:
     """Verbose archive entries appear in the task log."""
     data_dir = tmp_path / "data"
+    source_dir = data_dir / "source_images"
+    source_dir.mkdir(parents=True)
     tiles_dir = data_dir / "tiles"
-    tiles_dir.mkdir(parents=True)
-    (tiles_dir / "img.jpg").write_text("pixel")
+    tiles_dir.mkdir()
+    (source_dir / "img.jpg").write_text("pixel")
+    (tiles_dir / "derived.jpg").write_text("derived")
 
     task = SimpleNamespace(
         id=1, task_type="files_export", status="pending", progress=0, log="",
@@ -1030,6 +1420,7 @@ async def test_run_files_export_verbose_log(tmp_path) -> None:
         patch("app.admin_ops._LOG_FLUSH_INTERVAL", 0.05),
     ):
         mock_settings.tiles_dir = str(tiles_dir)
+        mock_settings.export_pigz_threads = 2
         await run_files_export(1)
 
     assert task.status == "completed"
@@ -1042,9 +1433,9 @@ async def test_run_files_export_cancellation(tmp_path) -> None:
     import time
 
     data_dir = tmp_path / "data"
-    tiles_dir = data_dir / "tiles"
-    tiles_dir.mkdir(parents=True)
-    (tiles_dir / "f0.txt").write_text("0")
+    source_dir = data_dir / "source_images"
+    source_dir.mkdir(parents=True)
+    (source_dir / "f0.txt").write_text("0")
 
     task = SimpleNamespace(
         id=1, task_type="files_export", status="pending", progress=0, log="",
@@ -1056,10 +1447,9 @@ async def test_run_files_export_cancellation(tmp_path) -> None:
     async def _refresh(obj, attribute_names=None):
         nonlocal refresh_count
         refresh_count += 1
-        # There are 3 check_cancelled=True calls before the archive
-        # starts, so trigger cancellation later to exercise the
-        # during-archiving _flush_and_poll path.
-        if refresh_count >= 6:
+        # Trigger cancellation after the export has entered the archive
+        # phase so this test exercises the tar-thread cancellation path.
+        if refresh_count >= 4:
             task.status = "cancelling"
 
     def _slow_tar(data_dir, dest, *, cancel_event=None, on_entry=None):
@@ -1092,7 +1482,8 @@ async def test_run_files_export_cancellation(tmp_path) -> None:
         patch("app.admin_ops._LOG_FLUSH_INTERVAL", 0.05),
         patch("app.admin_ops._create_tar_file", side_effect=_slow_tar),
     ):
-        mock_settings.tiles_dir = str(tiles_dir)
+        mock_settings.tiles_dir = str(data_dir / "tiles")
+        mock_settings.export_pigz_threads = 2
         await run_files_export(1)
 
     assert task.status == "cancelled"
@@ -1110,9 +1501,9 @@ async def test_run_files_export_force_cancelled_during_archive(tmp_path) -> None
     import time
 
     data_dir = tmp_path / "data"
-    tiles_dir = data_dir / "tiles"
-    tiles_dir.mkdir(parents=True)
-    (tiles_dir / "f0.txt").write_text("0")
+    source_dir = data_dir / "source_images"
+    source_dir.mkdir(parents=True)
+    (source_dir / "f0.txt").write_text("0")
 
     task = SimpleNamespace(
         id=1, task_type="files_export", status="pending", progress=0, log="",
@@ -1156,13 +1547,67 @@ async def test_run_files_export_force_cancelled_during_archive(tmp_path) -> None
         patch("app.admin_ops._LOG_FLUSH_INTERVAL", 0.05),
         patch("app.admin_ops._create_tar_file", side_effect=_slow_tar),
     ):
-        mock_settings.tiles_dir = str(tiles_dir)
+        mock_settings.tiles_dir = str(data_dir / "tiles")
         await run_files_export(1)
 
     # The force-cancel propagates through TaskCancelled handling, which
     # sets the task to ``cancelled``; whichever terminal state wins the
     # race, the point is we exited promptly rather than hung.
     assert task.status == "cancelled"
+
+
+async def test_run_files_export_cancelled_during_scan(tmp_path) -> None:
+    """Cancelling during the scan phase stops before tar creation starts."""
+    import time
+
+    data_dir = tmp_path / "data"
+    source_dir = data_dir / "source_images"
+    source_dir.mkdir(parents=True)
+    (source_dir / "scan.dat").write_text("scan")
+
+    task = SimpleNamespace(
+        id=1, task_type="files_export", status="pending", progress=0, log="",
+        result_filename=None, result_path=None, input_path=None, error_message=None,
+    )
+
+    refresh_count = 0
+
+    async def _refresh(obj, attribute_names=None):
+        nonlocal refresh_count
+        refresh_count += 1
+        if refresh_count >= 4:
+            task.status = "cancelling"
+
+    def _slow_scan(data_dir, *, cancel_event=None):
+        while cancel_event is not None and not cancel_event.is_set():
+            time.sleep(0.01)
+        raise TaskCancelled("Task cancelled by admin")
+
+    mock_session = AsyncMock()
+    mock_session.get = AsyncMock(return_value=task)
+    mock_session.commit = AsyncMock()
+    mock_session.refresh = AsyncMock(side_effect=_refresh)
+    mock_session.rollback = AsyncMock()
+    mock_session_factory = MagicMock()
+    mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    tasks_dir = str(tmp_path / "admin_tasks")
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=mock_session_factory),
+        patch("app.admin_ops.settings") as mock_settings,
+        patch("app.admin_ops._TASKS_DIR", tasks_dir),
+        patch("app.admin_ops._LOG_FLUSH_INTERVAL", 0.05),
+        patch("app.admin_ops._scan_export_files", side_effect=_slow_scan),
+        patch("app.admin_ops._create_tar_file") as mock_tar,
+    ):
+        mock_settings.tiles_dir = str(data_dir / "tiles")
+        await run_files_export(1)
+
+    assert task.status == "cancelled"
+    mock_tar.assert_not_called()
+    assert "Scanning source files" in task.log
 
 
 # ── run_files_import tests ─────────────────────────────────
@@ -1200,75 +1645,26 @@ async def test_run_files_import_missing_archive() -> None:
     assert "not found" in (task.error_message or "")
 
 
-def test_extract_and_restore_handles_cross_device_tmpdir(tmp_path, monkeypatch) -> None:
-    """``tmpdir`` may live on a different filesystem than ``data_dir``
-    (e.g. when /tmp is a tmpfs and data lives on a PVC). ``os.rename``
-    would raise EXDEV; ``shutil.move`` must fall back to copy+delete.
-    We simulate this by making ``os.rename`` refuse paths that cross the
-    fake device boundary, and verify the import still succeeds."""
+async def test_run_files_import_uses_import_staging_dir_and_preserves_data(tmp_path) -> None:
     data_dir = tmp_path / "data"
     data_dir.mkdir()
-    (data_dir / "old.txt").write_text("old")
-    tasks_sub = data_dir / "admin_tasks"
-    tasks_sub.mkdir()
-    (tasks_sub / "keep.txt").write_text("keep-me")
-
-    staging_src = tmp_path / "src"
-    (staging_src / "tiles").mkdir(parents=True)
-    (staging_src / "tiles" / "t.jpg").write_text("tile")
-    archive = tmp_path / "upload.tar.gz"
-    with tarfile.open(str(archive), "w:gz") as tar:
-        tar.add(str(staging_src), arcname="data")
-
-    tmpdir = tmp_path / "tmp_other_fs"
-    tmpdir.mkdir()
-
-    real_rename = os.rename
-
-    def _cross_device_rename(src: str, dst: str) -> None:
-        # Simulate EXDEV whenever src and dst straddle the data_dir/tmpdir
-        # boundary. Intra-directory renames (used inside shutil.copytree
-        # and friends) still succeed.
-        src_s, dst_s = str(src), str(dst)
-        spans_tmp = (str(tmpdir) in src_s) ^ (str(tmpdir) in dst_s)
-        if spans_tmp:
-            raise OSError(18, "Invalid cross-device link")  # EXDEV
-        real_rename(src_s, dst_s)
-
-    # Patch ``os.rename`` at the module level so ``shutil.move``'s
-    # internal rename attempt is also intercepted (``shutil`` imports
-    # ``os`` directly, not through ``app.admin_ops``).
-    monkeypatch.setattr(os, "rename", _cross_device_rename)
-
-    result = _extract_and_restore(
-        tmp_archive=str(archive),
-        tmpdir=str(tmpdir),
-        data_dir=str(data_dir),
-        tiles_dir=str(data_dir / "tiles"),
-        source_images_dir=str(data_dir / "source_images"),
-    )
-
-    # admin_tasks sheltering + data swap + restoration all survived EXDEV.
-    assert (data_dir / "tiles" / "t.jpg").read_text() == "tile"
-    assert (data_dir / "admin_tasks" / "keep.txt").read_text() == "keep-me"
-    assert result["tile_files"] >= 1
-
-
-async def test_run_files_import_success(tmp_path) -> None:
-    # Create a valid archive
-    data_dir = tmp_path / "orig"
     tiles_dir = data_dir / "tiles"
-    tiles_dir.mkdir(parents=True)
+    tiles_dir.mkdir()
+    (tiles_dir / "tile1.jpeg").write_text("tile")
     source_dir = data_dir / "source_images"
     source_dir.mkdir()
-    (tiles_dir / "t.jpg").write_text("tile")
-    (source_dir / "s.tiff").write_text("src")
+    (source_dir / "old.tiff").write_text("old")
+    tasks_dir = data_dir / "admin_tasks"
+    tasks_dir.mkdir()
+    (tasks_dir / "keep.json").write_text("keep")
 
+    payload_dir = tmp_path / "payload"
+    payload_source = payload_dir / "source_images"
+    payload_source.mkdir(parents=True)
+    (payload_source / "new.tiff").write_text("new")
     archive = str(tmp_path / "upload.tar.gz")
     with tarfile.open(archive, "w:gz") as tar:
-        tar.add(str(data_dir), arcname="data")
-
-    restore_dir = tmp_path / "restored"
+        tar.add(str(payload_dir), arcname="data")
 
     task = SimpleNamespace(
         id=1, task_type="files_import", status="pending", progress=0, log="",
@@ -1279,21 +1675,448 @@ async def test_run_files_import_success(tmp_path) -> None:
     mock_session = AsyncMock()
     mock_session.get = AsyncMock(return_value=task)
     mock_session.commit = AsyncMock()
+    exec_result = MagicMock()
+    exec_result.scalar.return_value = 99
+    exec_result.scalars.return_value.first.return_value = None
+    mock_session.execute.return_value = exec_result
+    mock_session_factory = MagicMock()
+    mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    captured_tmpdir: dict[str, str | None] = {}
+    real_tempdir = tempfile.TemporaryDirectory
+
+    def _recording_tempdir(*args, **kwargs):
+        captured_tmpdir["dir"] = kwargs.get("dir")
+        return real_tempdir(*args, **kwargs)
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=mock_session_factory),
+        patch("app.admin_ops.settings") as mock_settings,
+        patch("app.admin_ops._IMPORT_STAGING_DIR", str(data_dir / ".import-staging")),
+        patch("app.admin_ops.tempfile.TemporaryDirectory", side_effect=_recording_tempdir),
+        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=True),
+        patch("app.admin_ops._ensure_tasks_dir", return_value=str(tasks_dir)),
+    ):
+        mock_settings.data_dir = str(data_dir)
+        mock_settings.tiles_dir = str(tiles_dir)
+        mock_settings.source_images_dir = str(source_dir)
+        await run_files_import(1)
+
+    assert captured_tmpdir["dir"] == str(data_dir / ".import-staging")
+    assert task.status == "completed"
+    assert task.progress == 100
+    assert "Tile rebuild task #99" in task.log
+    assert (source_dir / "new.tiff").read_text() == "new"
+    assert not (source_dir / "old.tiff").exists()
+    assert (tiles_dir / "tile1.jpeg").read_text() == "tile"
+    assert (tasks_dir / "keep.json").read_text() == "keep"
+
+
+async def test_run_files_import_rejects_insufficient_staging_space(tmp_path) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    source_dir = data_dir / "source_images"
+    source_dir.mkdir()
+    archive = tmp_path / "upload.tar.gz"
+    with tarfile.open(str(archive), "w:gz") as tar:
+        tar.add(str(source_dir), arcname="data/source_images")
+
+    task = SimpleNamespace(
+        id=1, task_type="files_import", status="pending", progress=0, log="",
+        result_filename=None, result_path=None, input_path=str(archive),
+        error_message=None,
+    )
+
+    mock_session = AsyncMock()
+    mock_session.get = AsyncMock(return_value=task)
+    mock_session.commit = AsyncMock()
+    mock_session_factory = MagicMock()
+    mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    staging_root = data_dir / ".import-staging"
+
+    def _disk_usage(path):
+        assert Path(path) == staging_root
+        return SimpleNamespace(total=100, used=99, free=1)
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=mock_session_factory),
+        patch("app.admin_ops.settings") as mock_settings,
+        patch("app.admin_ops._IMPORT_STAGING_DIR", str(staging_root)),
+        patch("app.admin_ops._IMPORT_STAGING_FREE_SPACE_FACTOR", 1.25),
+        patch("app.admin_ops.shutil.disk_usage", side_effect=_disk_usage),
+    ):
+        mock_settings.data_dir = str(data_dir)
+        mock_settings.tiles_dir = str(data_dir / "tiles")
+        mock_settings.source_images_dir = str(source_dir)
+        await run_files_import(1)
+
+    assert task.status == "failed"
+    assert "on-volume staging" in (task.error_message or "")
+
+
+def test_ensure_import_staging_same_device_allows_same_filesystem(tmp_path) -> None:
+    staging_dir = tmp_path / "data" / ".import-staging"
+    staging_dir.mkdir(parents=True)
+    data_dir = tmp_path / "data"
+
+    # Both paths live on the same tmp filesystem, so this must not raise.
+    _ensure_import_staging_same_device(staging_dir, data_dir)
+
+
+def test_ensure_import_staging_same_device_rejects_cross_device(tmp_path) -> None:
+    staging_dir = tmp_path / "data" / ".import-staging"
+    staging_dir.mkdir(parents=True)
+    data_dir = tmp_path / "data"
+
+    def _stat(path, *args, **kwargs):
+        if Path(path) == staging_dir:
+            return SimpleNamespace(st_dev=1)
+        return SimpleNamespace(st_dev=2)
+
+    with patch("app.admin_ops.os.stat", side_effect=_stat):
+        with pytest.raises(ValueError, match="same volume"):
+            _ensure_import_staging_same_device(staging_dir, data_dir)
+
+
+async def test_run_files_import_rejects_cross_device_staging(tmp_path) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    source_dir = data_dir / "source_images"
+    source_dir.mkdir()
+    archive = tmp_path / "upload.tar.gz"
+    with tarfile.open(str(archive), "w:gz") as tar:
+        tar.add(str(source_dir), arcname="data/source_images")
+
+    task = SimpleNamespace(
+        id=1, task_type="files_import", status="pending", progress=0, log="",
+        result_filename=None, result_path=None, input_path=str(archive),
+        error_message=None,
+    )
+
+    mock_session = AsyncMock()
+    mock_session.get = AsyncMock(return_value=task)
+    mock_session.commit = AsyncMock()
+    mock_session_factory = MagicMock()
+    mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    staging_root = data_dir / ".import-staging"
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=mock_session_factory),
+        patch("app.admin_ops.settings") as mock_settings,
+        patch("app.admin_ops._IMPORT_STAGING_DIR", str(staging_root)),
+        patch(
+            "app.admin_ops._ensure_import_staging_same_device",
+            side_effect=ValueError(
+                "Filesystem import staging directory must be on the same volume "
+                "as the data directory"
+            ),
+        ),
+    ):
+        mock_settings.data_dir = str(data_dir)
+        mock_settings.tiles_dir = str(data_dir / "tiles")
+        mock_settings.source_images_dir = str(source_dir)
+        await run_files_import(1)
+
+    assert task.status == "failed"
+    assert "same volume" in (task.error_message or "")
+
+
+async def test_run_files_import_trips_runtime_free_space_floor_and_cleans_up(
+    tmp_path,
+) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    tiles_dir = data_dir / "tiles"
+    tiles_dir.mkdir()
+    source_dir = data_dir / "source_images"
+    source_dir.mkdir()
+    (source_dir / "old.tiff").write_text("old")
+
+    archive_source = tmp_path / "payload"
+    archive_source_source_images = archive_source / "source_images"
+    archive_source_source_images.mkdir(parents=True)
+    (archive_source_source_images / "new.tiff").write_text("new")
+    archive = tmp_path / "upload.tar.gz"
+    with tarfile.open(str(archive), "w:gz") as tar:
+        tar.add(str(archive_source), arcname="data")
+
+    task = SimpleNamespace(
+        id=1,
+        task_type="files_import",
+        status="pending",
+        progress=0,
+        log="",
+        result_filename=None,
+        result_path=None,
+        input_path=str(archive),
+        error_message=None,
+    )
+
+    mock_session = AsyncMock()
+    mock_session.get = AsyncMock(return_value=task)
+    mock_session.commit = AsyncMock()
+    mock_session_factory = MagicMock()
+    mock_session_factory.return_value.__aenter__ = AsyncMock(
+        return_value=mock_session
+    )
+    mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    staging_root = data_dir / ".import-staging"
+    staging_root.mkdir()
+    disk_usages = iter(
+        [
+            SimpleNamespace(total=10, used=1, free=2 * 1024 * 1024 * 1024),
+            SimpleNamespace(total=10, used=9, free=512 * 1024 * 1024),
+        ]
+    )
+
+    def _disk_usage(path):
+        assert Path(path).is_relative_to(staging_root)
+        return next(disk_usages)
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=mock_session_factory),
+        patch("app.admin_ops.settings") as mock_settings,
+        patch("app.admin_ops._IMPORT_STAGING_DIR", str(staging_root)),
+        patch("app.admin_ops._IMPORT_STAGING_FREE_SPACE_CHECK_INTERVAL_BYTES", 1),
+        patch("app.admin_ops.shutil.which", return_value=None),
+        patch("app.admin_ops.shutil.disk_usage", side_effect=_disk_usage),
+        patch("app.admin_ops._swap_imported_entries") as mock_swap,
+    ):
+        mock_settings.data_dir = str(data_dir)
+        mock_settings.tiles_dir = str(tiles_dir)
+        mock_settings.source_images_dir = str(source_dir)
+        await run_files_import(1)
+
+    assert task.status == "failed"
+    assert "during filesystem import" in (task.error_message or "")
+    assert "1.0 GiB" in (task.error_message or "")
+    assert (source_dir / "old.tiff").read_text() == "old"
+    assert not (source_dir / "new.tiff").exists()
+    assert list(staging_root.iterdir()) == []
+    mock_swap.assert_not_called()
+
+
+def test_swap_imported_entries_keeps_success_on_backup_cleanup_failure(
+    tmp_path, monkeypatch
+) -> None:
+    extracted_dir = tmp_path / "staging" / "data"
+    extracted_source = extracted_dir / "source_images"
+    extracted_source.mkdir(parents=True)
+    (extracted_source / "new.tiff").write_text("new")
+
+    data_dir = tmp_path / "data"
+    data_source = data_dir / "source_images"
+    data_source.mkdir(parents=True)
+    (data_source / "old.tiff").write_text("old")
+    tiles_dir = data_dir / "tiles"
+    tiles_dir.mkdir()
+
+    from app import admin_ops as admin_ops_module
+
+    real_remove_path = admin_ops_module._remove_path
+
+    def _remove_path_with_cleanup_failure(path: Path) -> None:
+        if path.name.startswith("source_images.bak"):
+            raise OSError("simulated cleanup failure")
+        real_remove_path(path)
+
+    monkeypatch.setattr("app.admin_ops._remove_path", _remove_path_with_cleanup_failure)
+
+    result = _swap_imported_entries(
+        extracted_dir,
+        data_dir,
+        str(tiles_dir),
+        str(data_source),
+    )
+
+    assert result["source_files"] == 1
+    assert (data_source / "new.tiff").read_text() == "new"
+    assert not (data_source / "old.tiff").exists()
+
+
+async def test_list_files_import_archives_returns_retained_uploads(tmp_path) -> None:
+    tasks_dir = tmp_path / "admin_tasks"
+    tasks_dir.mkdir()
+    archive = tasks_dir / "import-1.tar.gz"
+    archive.write_bytes(b"archive-bytes")
+
+    task = SimpleNamespace(
+        id=7,
+        task_type="files_import",
+        status="completed",
+        progress=100,
+        log="Awaiting file upload: archive.tar.gz\n",
+        result_filename=None,
+        result_path=None,
+        input_path=str(archive),
+        original_filename="archive.tar.gz",
+        error_message=None,
+        created_by=1,
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+    )
+
+    result = MagicMock()
+    result.scalars.return_value = [task]
+    session = AsyncMock()
+    session.execute = AsyncMock(return_value=result)
+
+    with patch("app.admin_ops._TASKS_DIR", str(tasks_dir)):
+        archives = await list_files_import_archives(session)
+
+    assert archives == [
+        {
+            "archive_task_id": 7,
+            "original_filename": "archive.tar.gz",
+            "size_bytes": archive.stat().st_size,
+            "created_at": task.created_at,
+            "last_status": "completed",
+        }
+    ]
+
+
+async def test_rerun_files_import_archive_reuses_retained_file(tmp_path) -> None:
+    tasks_dir = tmp_path / "admin_tasks"
+    tasks_dir.mkdir()
+    archive = tasks_dir / "import-1.tar.gz"
+    archive.write_bytes(b"archive-bytes")
+
+    archive_task = SimpleNamespace(
+        id=7,
+        task_type="files_import",
+        status="completed",
+        progress=100,
+        log="Awaiting file upload: archive.tar.gz\n",
+        result_filename=None,
+        result_path=None,
+        input_path=str(archive),
+        original_filename="archive.tar.gz",
+        error_message=None,
+        created_by=1,
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+    )
+
+    session = AsyncMock()
+    session.get = AsyncMock(return_value=archive_task)
+    existing_result = MagicMock()
+    existing_result.scalars.return_value.first.return_value = None
+    session.execute = AsyncMock(return_value=existing_result)
+    session.add = MagicMock()
+    session.commit = AsyncMock()
+    session.refresh = AsyncMock(side_effect=lambda obj: setattr(obj, "id", 8) or None)
+
+    with patch("app.admin_ops._TASKS_DIR", str(tasks_dir)):
+        result = await rerun_files_import_archive(session, SimpleNamespace(id=9), 7)
+
+    assert result.id == 8
+    assert result.task_type == "files_import"
+    assert result.status == "pending"
+    assert result.input_path == str(archive)
+    assert result.original_filename == "archive.tar.gz"
+    assert "Re-running retained archive" in result.log
+    session.add.assert_called_once()
+    session.commit.assert_awaited()
+
+
+async def test_delete_files_import_archive_removes_retained_file(tmp_path) -> None:
+    tasks_dir = tmp_path / "admin_tasks"
+    tasks_dir.mkdir()
+    archive = tasks_dir / "import-1.tar.gz"
+    archive.write_bytes(b"archive-bytes")
+
+    archive_task = SimpleNamespace(
+        id=7,
+        task_type="files_import",
+        status="completed",
+        progress=100,
+        log="Awaiting file upload: archive.tar.gz\n",
+        result_filename=None,
+        result_path=None,
+        input_path=str(archive),
+        original_filename="archive.tar.gz",
+        error_message=None,
+        created_by=1,
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+    )
+
+    active_result = MagicMock()
+    active_result.scalars.return_value.first.return_value = None
+    session = AsyncMock()
+    session.get = AsyncMock(return_value=archive_task)
+    session.execute = AsyncMock(return_value=active_result)
+
+    with patch("app.admin_ops._TASKS_DIR", str(tasks_dir)):
+        result = await delete_files_import_archive(session, 7)
+
+    assert result["deleted"] is True
+    assert result["archive_task_id"] == 7
+    assert not archive.exists()
+
+
+def test_validate_retained_files_import_archive_path_rejects_traversal(tmp_path) -> None:
+    tasks_dir = tmp_path / "admin_tasks"
+    tasks_dir.mkdir()
+    with patch("app.admin_ops._TASKS_DIR", str(tasks_dir)):
+        with pytest.raises(ValueError, match="outside admin_tasks dir"):
+            _validate_retained_files_import_archive_path(str(tmp_path / "escape.tar.gz"))
+
+async def test_run_file_restore_success(tmp_path) -> None:
+    request_file = tmp_path / "restore.json"
+    request_file.write_text(
+        json.dumps(
+            {
+                "snapshot_name": "hriv-backup-20260102-020000",
+                "member_path": "data/source_images/a.jpg",
+            }
+        )
+    )
+    task = SimpleNamespace(
+        id=1,
+        task_type="file_restore",
+        status="pending",
+        progress=0,
+        log="",
+        result_filename=None,
+        result_path=None,
+        input_path=str(request_file),
+        error_message=None,
+    )
+
+    mock_session = AsyncMock()
+    mock_session.get = AsyncMock(return_value=task)
+    mock_session.commit = AsyncMock()
+    mock_session.refresh = AsyncMock()
     mock_session_factory = MagicMock()
     mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
     mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
     with (
         patch("app.admin_ops.get_async_session", return_value=mock_session_factory),
-        patch("app.admin_ops.settings") as mock_settings,
+        patch(
+            "app.admin_ops.restore_snapshot_file",
+            return_value={
+                "snapshot_name": "hriv-backup-20260102-020000",
+                "member_path": "data/source_images/a.jpg",
+                "destination": "/data/source_images/a.jpg",
+                "size": 3,
+                "sha256": "abc",
+            },
+        ),
     ):
-        mock_settings.tiles_dir = str(restore_dir / "tiles")
-        mock_settings.source_images_dir = str(restore_dir / "source_images")
-        await run_files_import(1)
+        await run_file_restore(1)
 
     assert task.status == "completed"
     assert task.progress == 100
-    assert "Restored" in task.log
+    assert "Rebuild Tiles" in task.log
+    assert not request_file.exists()
 
 
 async def test_run_db_import_with_groups(tmp_path) -> None:
@@ -1557,3 +2380,150 @@ async def test_run_rebuild_tiles_invalid_scope_fails_task() -> None:
 
     assert task.status == "failed"
     assert "Unknown rebuild scope" in (task.error_message or "")
+
+
+async def test_run_rebuild_tiles_marks_interrupted_task_failed() -> None:
+    """Worker interruption should fail the task instead of leaving it running."""
+    task = _rebuild_task()
+    session, factory = _rebuild_factory(task)
+    targets = [SimpleNamespace(id=161, image_id=162)]
+    session.get = AsyncMock(side_effect=[task, SimpleNamespace(id=161, image_id=162), task])
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=factory),
+        patch(
+            "app.processing.select_rebuild_targets",
+            AsyncMock(return_value=targets),
+        ),
+        patch(
+            "app.processing.rebuild_source_image_tiles",
+            AsyncMock(side_effect=asyncio.CancelledError()),
+        ),
+    ):
+        with pytest.raises(asyncio.CancelledError):
+            await run_rebuild_tiles(1)
+
+    assert task.status == "failed"
+    assert "Worker interrupted while processing source #161." == task.error_message
+    assert "rerun the task to continue" in task.log
+
+
+# ── _queue_rebuild_tiles_after_import tests ────────────────
+
+
+def _queue_session_factory(existing=None, insert_id=99, raise_on_insert=False):
+    """Factory mock for _queue_rebuild_tiles_after_import tests."""
+    session = AsyncMock()
+    exec_result = MagicMock()
+    exec_result.scalar.return_value = insert_id
+    exec_result.scalars.return_value.first.return_value = existing
+
+    call_count = 0
+
+    async def _execute(stmt):
+        nonlocal call_count
+        call_count += 1
+        if raise_on_insert and call_count == 2:
+            raise RuntimeError("insert failed")
+        return exec_result
+
+    session.execute = AsyncMock(side_effect=_execute)
+    session.commit = AsyncMock()
+    session_factory = MagicMock()
+    session_factory.return_value.__aenter__ = AsyncMock(return_value=session)
+    session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+    return session, session_factory
+
+
+async def test_queue_rebuild_tiles_after_import_skips_active_and_cleans_params(tmp_path) -> None:
+    """When a rebuild task is already active, the params file is cleaned up."""
+    import_task = SimpleNamespace(
+        input_path=str(tmp_path / "import.tar.gz"),
+        created_by=1,
+    )
+    existing = AdminTask(
+        id=77,
+        task_type="rebuild_tiles",
+        status="running",
+    )
+    _, session_factory = _queue_session_factory(existing=existing)
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=session_factory),
+        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock) as mock_enqueue,
+        patch("app.admin_ops._ensure_tasks_dir", return_value=str(tmp_path)),
+    ):
+        message = await _queue_rebuild_tiles_after_import(import_task)
+
+    assert "already active (#77)" in message
+    assert not any(tmp_path.glob("rebuild-after-import-*.json"))
+    mock_enqueue.assert_not_awaited()
+
+
+async def test_queue_rebuild_tiles_after_import_marks_failed_on_enqueue_error(tmp_path) -> None:
+    """When enqueue fails, the pending task is marked failed and params are removed."""
+    import_task = SimpleNamespace(
+        input_path=str(tmp_path / "import.tar.gz"),
+        created_by=1,
+    )
+    session, session_factory = _queue_session_factory(insert_id=99)
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=session_factory),
+        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=False),
+        patch("app.admin_ops._ensure_tasks_dir", return_value=str(tmp_path)),
+    ):
+        message = await _queue_rebuild_tiles_after_import(import_task)
+
+    assert "Could not queue automatic tile rebuild" in message
+    assert not any(tmp_path.glob("rebuild-after-import-*.json"))
+    assert session.execute.await_count == 3  # select, insert, update
+    session.commit.assert_awaited()
+
+
+async def test_queue_rebuild_tiles_after_import_queues_on_success(tmp_path) -> None:
+    """A new rebuild task is created and enqueued when Redis is available."""
+    import_task = SimpleNamespace(
+        input_path=str(tmp_path / "import.tar.gz"),
+        created_by=1,
+    )
+    session, session_factory = _queue_session_factory(insert_id=99)
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=session_factory),
+        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=True),
+        patch("app.admin_ops._ensure_tasks_dir", return_value=str(tmp_path)),
+    ):
+        message = await _queue_rebuild_tiles_after_import(import_task)
+
+    assert "Tile rebuild task #99 was queued automatically" in message
+    params_files = list(tmp_path.glob("rebuild-after-import-*.json"))
+    assert len(params_files) == 1
+    with open(params_files[0], "r", encoding="utf-8") as f:
+        assert json.load(f)["scope"] == "missing_stale"
+    assert session.execute.await_count == 2  # select, insert
+
+
+async def test_queue_rebuild_tiles_after_import_falls_back_to_background_tasks(tmp_path) -> None:
+    """When Redis is unavailable and a BackgroundTasks object is available,
+    the rebuild is scheduled to run in-process after the import completes."""
+    import_task = SimpleNamespace(
+        input_path=str(tmp_path / "import.tar.gz"),
+        created_by=1,
+    )
+    session, session_factory = _queue_session_factory(insert_id=99)
+    bg = MagicMock()
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=session_factory),
+        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=False),
+        patch("app.admin_ops._ensure_tasks_dir", return_value=str(tmp_path)),
+    ):
+        message = await _queue_rebuild_tiles_after_import(import_task, bg)
+
+    assert "Tile rebuild task #99 was scheduled to run automatically" in message
+    assert session.execute.await_count == 2  # select, insert
+    bg.add_task.assert_called_once_with(run_rebuild_tiles, 99)
+    # Params file is left for the in-process runner to consume and delete.
+    params_files = list(tmp_path.glob("rebuild-after-import-*.json"))
+    assert len(params_files) == 1

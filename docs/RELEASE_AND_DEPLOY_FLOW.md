@@ -1,8 +1,16 @@
 # Release & Deploy Flow
 
-How code gets from a merged PR on `main` to a running pod, for each of the
-three components (`frontend`, `backend`, `backup`). This is the contract
+How code gets from a merged PR on `main` to a running pod, for the three
+deployable components (`frontend`, `backend`, `backup`). This is the contract
 between this repo and your downstream FluxCD repository (for example, `bcit-tlu/flux-fleet`).
+
+A fourth Release Please component, `synthetic-monitoring`, follows the same
+image-release contract (RC images on `main`, `<component>-v<ver>` tags, digest
+retag to `<ver>`/`latest`) but is **image-only — it has no Helm chart** and is
+therefore not deployed by flux-fleet. Its `helm-publish.yaml` dispatch is
+skipped in `release-please.yaml`, and it is absent from the `helm-publish.yaml`
+and `ci.yaml` chart-publish loops. See
+[synthetic-monitoring.md](synthetic-monitoring.md).
 
 ## At a glance
 

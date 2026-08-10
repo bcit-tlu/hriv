@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useImageActions } from '../src/useImageActions'
 import type { UseImageActionsDeps } from '../src/useImageActions'
 import * as api from '../src/api'
+import { tileOrderingCoordinator } from '../src/tileOrdering'
 import { makeCategory, makeImage } from './helpers/fixtures'
 
 vi.mock('../src/api', async () => {
@@ -245,6 +246,12 @@ describe('useImageActions', () => {
   })
 
   describe('handleSaveBrowseImage', () => {
+    // tileOrderingCoordinator is a module-level singleton: restore its spies
+    // even when an assertion fails mid-test so stubs never leak.
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
     it('saves and reloads categories', async () => {
       const img = makeImage({ id: 50, name: 'Browse Image' })
       const deps = makeDeps()
@@ -308,6 +315,77 @@ describe('useImageActions', () => {
       })
 
       expect(deps.setErrorSnack).toHaveBeenCalled()
+    })
+
+    it('invalidates both scopes\u2019 cached revisions when the category changes', async () => {
+      const img = makeImage({ id: 50, categoryId: 1 })
+      const deps = makeDeps()
+      mockUpdateImage.mockResolvedValue({
+        id: 50,
+        name: 'Moved',
+        thumb: '/thumb/50.jpg',
+        tile_sources: '/tiles/50',
+        category_id: 2,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 0,
+        version: 2,
+        metadata_extra: null,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '',
+        updated_at: '',
+      })
+      const invalidate = vi.spyOn(tileOrderingCoordinator, 'invalidateRevision')
+      const { result } = renderHook(() => useImageActions(deps))
+
+      act(() => {
+        result.current.setBrowseEditImage(img)
+      })
+
+      await act(async () => {
+        await result.current.handleSaveBrowseImage({ name: 'Moved', category_id: 2 })
+      })
+
+      expect(invalidate).toHaveBeenCalledWith(1)
+      expect(invalidate).toHaveBeenCalledWith(2)
+    })
+
+    it('does not invalidate revisions when the category is unchanged', async () => {
+      const img = makeImage({ id: 50, categoryId: 1 })
+      const deps = makeDeps()
+      mockUpdateImage.mockResolvedValue({
+        id: 50,
+        name: 'Renamed',
+        thumb: '/thumb/50.jpg',
+        tile_sources: '/tiles/50',
+        category_id: 1,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 0,
+        version: 2,
+        metadata_extra: null,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '',
+        updated_at: '',
+      })
+      const invalidate = vi.spyOn(tileOrderingCoordinator, 'invalidateRevision')
+      const { result } = renderHook(() => useImageActions(deps))
+
+      act(() => {
+        result.current.setBrowseEditImage(img)
+      })
+
+      await act(async () => {
+        await result.current.handleSaveBrowseImage({ name: 'Renamed', category_id: 1 })
+      })
+
+      expect(invalidate).not.toHaveBeenCalled()
     })
   })
 

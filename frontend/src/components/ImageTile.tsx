@@ -1,3 +1,5 @@
+import { memo } from 'react'
+
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
@@ -21,12 +23,7 @@ interface ImageTileProps {
   categoryHidden?: boolean
 }
 
-export default function ImageTile({
-  image,
-  onClick,
-  onEditDetails,
-  categoryHidden = false,
-}: ImageTileProps) {
+function ImageTile({ image, onClick, onEditDetails, categoryHidden = false }: ImageTileProps) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
   const isMobile = useIsMobile()
@@ -97,7 +94,7 @@ export default function ImageTile({
                 <span
                   role="img"
                   aria-label="Visibility: Inactive"
-                  style={{ display: 'inline-flex' }}
+                  style={{ display: 'inline-flex', flexShrink: 0 }}
                 >
                   <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
                 </span>
@@ -134,3 +131,8 @@ export default function ImageTile({
     </Card>
   )
 }
+
+// Memoized: Browse can mount hundreds of image tiles, and grid-level state
+// changes (drag start/end, optimistic reorder) would otherwise re-render
+// every card. Props are stable references from the grid.
+export default memo(ImageTile)

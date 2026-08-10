@@ -231,3 +231,24 @@ if the Secret is missing or empty.
 To supply your own pre-existing secret, set `jwtSecret` in `values.yaml` (or
 manage the `<release>-jwt` Secret out-of-band and the chart will honour the
 existing value).
+
+## Deployment rollout strategy
+
+The backend Deployment auto-selects a rollout strategy from chart values.
+Hard zone anti-affinity with `replicaCount > 1` uses
+`maxSurge: 0` / `maxUnavailable: 1` so one zone frees up before its
+replacement schedules, avoiding the two-zone deadlock seen on stable.
+`updateStrategy` can override the Deployment `.spec.strategy` explicitly.
+ReadWriteOnce persistence forces `Recreate`; any explicit `updateStrategy`
+override must also use `type: Recreate`.
+
+## Grafana dashboards
+
+The backend Helm chart no longer provisions Grafana dashboards and no longer
+supports `observability.grafanaDashboards.enabled`.
+
+Dashboard JSON and provisioning now live in a separate Grafana git-sync
+repository managed outside this repo. Keep this backend repo focused on the
+telemetry contract (metric names, log fields, and semantics), and coordinate
+any dashboard updates in the external provisioning repo when that contract
+changes.

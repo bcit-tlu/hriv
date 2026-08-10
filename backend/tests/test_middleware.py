@@ -1,15 +1,18 @@
 """Tests for the audit middleware and correlation-ID context."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.middleware import (
     AuditMiddleware,
     MaintenanceMiddleware,
+    _normalize_path_fallback,
     _is_upload_path,
     _parse_content_length,
     _parse_exclude_prefixes,
     get_client_ip,
     get_request_id,
+    normalize_http_route,
     request_id_ctx,
 )
 
@@ -194,6 +197,7 @@ async def test_audit_extracts_session_id() -> None:
         call_args = mock_logger.info.call_args
         extra = call_args.kwargs.get("extra", {})
         assert extra["session_id"] == "session-abc"
+        assert extra["route"] == "/api/test"
 
 
 async def test_audit_extracts_user_from_jwt() -> None:
@@ -251,8 +255,27 @@ async def test_audit_sets_span_attributes_for_authenticated_request() -> None:
     assert calls["enduser.id"] == 42
     assert "enduser.email" not in calls
     assert calls["enduser.role"] == "admin"
+    assert calls["http.route"] == "/api/test"
     assert calls["session.id"] == "session-xyz"
     assert "request.id" in calls
+
+
+async def test_audit_uses_router_template_after_inner_app_dispatch() -> None:
+    """The final audit log uses the framework route template once dispatch runs."""
+    mw = AuditMiddleware(app=AsyncMock())
+    scope = _make_scope(path="/api/images/42/replace")
+
+    async def inner_app(scope, receive, send):
+        scope["route"] = SimpleNamespace(path="/api/images/{image_id}/replace")
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    mw.app = inner_app
+
+    with patch("app.middleware.logger") as mock_logger:
+        await mw(scope, _noop_receive, _noop_send)
+        extra = mock_logger.info.call_args.kwargs.get("extra", {})
+        assert extra["route"] == "/api/images/{image_id}/replace"
 
 
 async def test_audit_sets_span_attributes_for_anonymous_request() -> None:
@@ -295,7 +318,6 @@ async def test_audit_handles_invalid_jwt_gracefully() -> None:
 
     with patch("app.middleware.logger") as mock_logger:
         messages = await _invoke(mw, scope)
-        headers = _response_headers(messages)
         # Should still succeed; invalid JWT just means no user info in logs
         for msg in messages:
             if msg["type"] == "http.response.start":
@@ -331,15 +353,42 @@ async def test_audit_handles_exception_in_inner_app() -> None:
 
 
 async def test_audit_logs_health_check_at_debug() -> None:
-    """Health-check endpoints should be logged at DEBUG, not INFO."""
+    """Health-check endpoints should be logged at DEBUG, not INFO.
+
+    The ``/api/health`` prefix (no trailing slash) covers the exact path and
+    its subpaths, so ``/api/health/ready`` and ``/api/health/storage`` are
+    excluded without needing their own entries in ``audit_exclude_prefixes``.
+    """
     mw = AuditMiddleware(app=AsyncMock())
 
-    for path in ("/api/health", "/api/health/ready"):
+    for path in ("/api/health", "/api/health/ready", "/api/health/storage"):
         scope = _make_scope(path=path)
         with patch("app.middleware.logger") as mock_logger:
             await _invoke(mw, scope)
             mock_logger.debug.assert_called_once()
             mock_logger.info.assert_not_called()
+
+
+async def test_audit_logs_metrics_at_debug() -> None:
+    """The Prometheus scrape endpoint should be logged at DEBUG."""
+    mw = AuditMiddleware(app=AsyncMock())
+    scope = _make_scope(path="/api/metrics")
+
+    with patch("app.middleware.logger") as mock_logger:
+        await _invoke(mw, scope)
+        mock_logger.debug.assert_called_once()
+        mock_logger.info.assert_not_called()
+
+
+async def test_audit_metrics_does_not_suppress_similar_paths() -> None:
+    """A hypothetical /api/metrics_custom path must still be logged at INFO."""
+    mw = AuditMiddleware(app=AsyncMock())
+    scope = _make_scope(path="/api/metrics_custom")
+
+    with patch("app.middleware.logger") as mock_logger:
+        await _invoke(mw, scope)
+        mock_logger.info.assert_called_once()
+        mock_logger.debug.assert_not_called()
 
 
 async def test_audit_logs_non_health_at_info() -> None:
@@ -397,8 +446,100 @@ def test_parse_content_length() -> None:
 def test_is_upload_path() -> None:
     assert _is_upload_path("/api/source-images/upload")
     assert _is_upload_path("/api/admin/bulk-import/")
+    assert _is_upload_path("/api/admin/tasks/123/upload")
     assert _is_upload_path("/api/images/123/replace")
     assert not _is_upload_path("/api/images")
+    assert not _is_upload_path("/api/admin/tasks/123/cancel")
+
+
+def test_normalize_http_route_prefers_router_template() -> None:
+    scope = _make_scope(path="/api/images/42/replace")
+    scope["route"] = SimpleNamespace(path="/api/images/{image_id}/replace")
+
+    assert normalize_http_route(scope) == "/api/images/{image_id}/replace"
+
+
+def test_normalize_http_route_preserves_category_template() -> None:
+    scope = _make_scope(path="/api/categories/42")
+    scope["route"] = SimpleNamespace(path="/api/categories/{category_id}")
+
+    assert normalize_http_route(scope) == "/api/categories/{category_id}"
+
+
+def test_normalize_http_route_preserves_auth_template() -> None:
+    scope = _make_scope(path="/api/auth/login")
+    scope["route"] = SimpleNamespace(path="/api/auth/login")
+
+    assert normalize_http_route(scope) == "/api/auth/login"
+
+
+def test_normalize_http_route_ignores_mount_catch_all_template() -> None:
+    scope = _make_scope(path="/api/tiles/123/image_files/4/2_2.jpeg")
+    scope["route"] = SimpleNamespace(path="/api/tiles/{filepath:path}")
+
+    assert (
+        normalize_http_route(scope)
+        == "/api/tiles/{image_id}/image_files/{level}/{col}_{row}.{format}"
+    )
+
+
+def test_normalize_http_route_falls_back_when_route_has_no_path() -> None:
+    scope = _make_scope(path="/api/images/42/replace")
+    scope["route"] = object()
+
+    assert normalize_http_route(scope) == "/api/images/{image_id}/replace"
+
+
+def test_normalize_http_route_normalizes_tile_paths() -> None:
+    scope = _make_scope(path="/api/tiles/123/image_files/4/2_2.jpeg")
+
+    assert (
+        normalize_http_route(scope)
+        == "/api/tiles/{image_id}/image_files/{level}/{col}_{row}.{format}"
+    )
+
+
+def test_normalize_http_route_normalizes_tile_manifest_path() -> None:
+    scope = _make_scope(path="/api/tiles/123/image.dzi")
+
+    assert normalize_http_route(scope) == "/api/tiles/{image_id}/image.dzi"
+
+
+def test_normalize_http_route_normalizes_tile_thumbnail_path() -> None:
+    scope = _make_scope(path="/api/tiles/123/thumbnail.webp")
+
+    assert normalize_http_route(scope) == "/api/tiles/{image_id}/thumbnail.{format}"
+
+
+def test_normalize_http_route_collapses_dynamic_tile_cardinality() -> None:
+    expected = "/api/tiles/{image_id}/image_files/{level}/{col}_{row}.{format}"
+    paths = (
+        "/api/tiles/1/image_files/0/0_0.jpeg",
+        "/api/tiles/42/image_files/4/2_2.png",
+        "/api/tiles/999999/image_files/12/2048_4096.webp",
+    )
+
+    assert {normalize_http_route(_make_scope(path=path)) for path in paths} == {expected}
+
+
+def test_normalize_http_route_scrubs_numeric_and_uuid_segments() -> None:
+    scope = _make_scope(
+        path="/api/admin/tasks/123e4567-e89b-12d3-a456-426614174000/artifacts/42"
+    )
+
+    assert normalize_http_route(scope) == "/api/admin/tasks/{id}/artifacts/{id}"
+
+
+def test_normalize_path_fallback_uses_descriptive_upload_templates() -> None:
+    assert _normalize_path_fallback("/api/images/123/replace") == "/api/images/{image_id}/replace"
+    assert (
+        _normalize_path_fallback("/api/admin/tasks/123e4567-e89b-12d3-a456-426614174000/upload")
+        == "/api/admin/tasks/{task_id}/upload"
+    )
+
+
+def test_normalize_path_fallback_does_not_treat_unicode_digits_as_ids() -> None:
+    assert _normalize_path_fallback("/api/images/١٢٣/replace") == "/api/images/١٢٣/replace"
 
 
 async def test_audit_logs_upload_start_for_upload_paths() -> None:
@@ -415,18 +556,170 @@ async def test_audit_logs_upload_start_for_upload_paths() -> None:
         extra = upload_call.kwargs.get("extra", {})
         assert extra["event"] == "http.upload_started"
         assert extra["content_length"] == 3607772528
+        assert extra["route"] == "/api/admin/bulk-import/"
+
+
+async def test_audit_logs_descriptive_upload_route_before_dispatch() -> None:
+    mw = AuditMiddleware(app=AsyncMock())
+    scope = _make_scope(
+        method="POST",
+        path="/api/images/123/replace",
+        headers={"content-length": "1024"},
+    )
+
+    with patch("app.middleware.logger") as mock_logger:
+        await _invoke(mw, scope)
+        upload_call = mock_logger.info.call_args_list[0]
+        extra = upload_call.kwargs.get("extra", {})
+        assert extra["route"] == "/api/images/{image_id}/replace"
 
 
 async def test_audit_logs_tiles_at_debug() -> None:
     """Tile-serving endpoints match the default prefix list and log at DEBUG."""
     mw = AuditMiddleware(app=AsyncMock())
-    scope = _make_scope(path="/api/tiles/123/4/2/2.jpg")
+    scope = _make_scope(path="/api/tiles/123/image_files/4/2_2.jpeg")
 
     with patch("app.middleware._EXCLUDE_PREFIXES", ("/api/tiles/",)):
         with patch("app.middleware.logger") as mock_logger:
             await _invoke(mw, scope)
             mock_logger.debug.assert_called_once()
             mock_logger.info.assert_not_called()
+            extra = mock_logger.debug.call_args.kwargs.get("extra", {})
+            assert (
+                extra["route"]
+                == "/api/tiles/{image_id}/image_files/{level}/{col}_{row}.{format}"
+            )
+
+
+async def test_audit_records_tile_metrics_without_buffering_streams() -> None:
+    mw = AuditMiddleware(app=AsyncMock())
+    scope = _make_scope(path="/api/tiles/123/image_files/4/2_2.jpeg")
+    captured: list[dict] = []
+
+    async def inner_app(scope, receive, send):
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"abc", "more_body": True})
+        await send({"type": "http.response.body", "body": b"defg", "more_body": False})
+
+    mw.app = inner_app
+
+    async def capturing_send(message: dict) -> None:
+        captured.append(message)
+
+    with patch("app.middleware._tile_request_counter") as request_counter:
+        with patch("app.middleware._tile_error_counter") as error_counter:
+            with patch("app.middleware._tile_duration_histogram") as duration_histogram:
+                with patch(
+                    "app.middleware._tile_response_size_histogram"
+                ) as size_histogram:
+                    with patch("app.middleware.logger"):
+                        await mw(scope, _noop_receive, capturing_send)
+
+    request_counter.add.assert_called_once()
+    assert request_counter.add.call_args.args[0] == 1
+    attrs = request_counter.add.call_args.args[1]
+    assert attrs["http.method"] == "GET"
+    assert attrs["http.route"] == "/api/tiles/{image_id}/image_files/{level}/{col}_{row}.{format}"
+    assert attrs["http.status_code"] == 200
+    assert attrs["status_class"] == "2xx"
+    assert attrs["outcome"] == "success"
+
+    duration_histogram.record.assert_called_once()
+    assert duration_histogram.record.call_args.args[0] >= 0
+
+    size_histogram.record.assert_called_once_with(7, attrs)
+    error_counter.add.assert_not_called()
+
+    assert [message["type"] for message in captured] == [
+        "http.response.start",
+        "http.response.body",
+        "http.response.body",
+    ]
+    assert captured[1]["body"] == b"abc"
+    assert captured[1]["more_body"] is True
+    assert captured[2]["body"] == b"defg"
+    assert captured[2]["more_body"] is False
+
+
+async def test_audit_records_tile_error_metrics_by_failure_class() -> None:
+    cases = (
+        ("/api/tiles/123/image.dzi", 404, "/api/tiles/{image_id}/image.dzi", "not_found"),
+        (
+            "/api/tiles/123/image_files/4/2_2.jpeg",
+            403,
+            "/api/tiles/{image_id}/image_files/{level}/{col}_{row}.{format}",
+            "access_denied",
+        ),
+        (
+            "/api/tiles/123/image_files/4/2_2.jpeg",
+            503,
+            "/api/tiles/{image_id}/image_files/{level}/{col}_{row}.{format}",
+            "server_error",
+        ),
+    )
+
+    for path, status_code, expected_route, expected_outcome in cases:
+        mw = AuditMiddleware(app=AsyncMock())
+        scope = _make_scope(path=path)
+
+        with patch("app.middleware._tile_request_counter") as request_counter:
+            with patch("app.middleware._tile_error_counter") as error_counter:
+                with patch("app.middleware._tile_duration_histogram"):
+                    with patch("app.middleware._tile_response_size_histogram"):
+                        with patch("app.middleware.logger"):
+                            await _invoke(mw, scope, response_status=status_code)
+
+        request_attrs = request_counter.add.call_args.args[1]
+        error_attrs = error_counter.add.call_args.args[1]
+        assert request_attrs["http.route"] == expected_route
+        assert request_attrs["http.status_code"] == status_code
+        assert request_attrs["outcome"] == expected_outcome
+        assert error_attrs == request_attrs
+
+
+async def test_audit_does_not_record_tile_metrics_for_non_tile_routes() -> None:
+    mw = AuditMiddleware(app=AsyncMock())
+    scope = _make_scope(path="/api/images/42/replace")
+
+    async def inner_app(scope, receive, send):
+        scope["route"] = SimpleNamespace(path="/api/images/{image_id}/replace")
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    mw.app = inner_app
+
+    with patch("app.middleware._tile_request_counter") as request_counter:
+        with patch("app.middleware._tile_error_counter") as error_counter:
+            with patch("app.middleware._tile_duration_histogram") as duration_histogram:
+                with patch(
+                    "app.middleware._tile_response_size_histogram"
+                ) as size_histogram:
+                    with patch("app.middleware.logger"):
+                        await mw(scope, _noop_receive, _noop_send)
+
+    request_counter.add.assert_not_called()
+    error_counter.add.assert_not_called()
+    duration_histogram.record.assert_not_called()
+    size_histogram.record.assert_not_called()
+
+
+async def test_audit_does_not_record_tile_metrics_for_unrecognized_tile_path() -> None:
+    mw = AuditMiddleware(app=AsyncMock())
+    scope = _make_scope(path="/api/tiles/123/debug")
+
+    with patch("app.middleware._tile_request_counter") as request_counter:
+        with patch("app.middleware._tile_error_counter") as error_counter:
+            with patch("app.middleware._tile_duration_histogram") as duration_histogram:
+                with patch(
+                    "app.middleware._tile_response_size_histogram"
+                ) as size_histogram:
+                    with patch("app.middleware.logger"):
+                        await _invoke(mw, scope, response_status=404)
+
+    request_counter.add.assert_not_called()
+    error_counter.add.assert_not_called()
+    duration_histogram.record.assert_not_called()
+    size_histogram.record.assert_not_called()
 
 
 async def test_audit_respects_configured_exclude_prefixes() -> None:

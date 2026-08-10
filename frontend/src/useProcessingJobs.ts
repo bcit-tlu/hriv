@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
-import type { ApiBulkImportJob } from './api'
+import { useState, useCallback, useEffect, useEffectEvent, useRef } from 'react'
+import { isAuthFailure, type ApiBulkImportJob } from './api'
 import { pollProcessingJob, type PollHandle } from './pollProcessingJob'
 import type { ImageItem } from './types'
 
@@ -59,8 +59,8 @@ export interface UseProcessingJobsDeps {
     height: number | null
     file_size: number | null
   }>
-  loadCategories: () => Promise<void>
-  loadUncategorizedImages: () => Promise<void>
+  loadCategories: () => Promise<unknown>
+  loadUncategorizedImages: () => Promise<unknown>
   selectedImageRef: React.RefObject<ImageItem | null>
   setSelectedImage: (img: ImageItem) => void
   setImagesVersion: React.Dispatch<React.SetStateAction<number>>
@@ -72,6 +72,12 @@ export interface VisibleJobsFilter {
   imageEditOpen: boolean
   browseEditImage: unknown | null
 }
+
+const IMAGE_POLL_AUTH_FAILURE_MESSAGE =
+  'Processing status tracking stopped because your session ended or became invalid. The image may still finish processing on the server. Log back in and refresh to confirm.'
+
+const BULK_IMPORT_AUTH_FAILURE_MESSAGE =
+  'Bulk import status tracking stopped because your session ended or became invalid. The import may still complete on the server. Log back in and refresh to confirm.'
 
 export function useProcessingJobs(deps: UseProcessingJobsDeps) {
   const {
@@ -110,6 +116,30 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
   } | null>(null)
   // AbortController for the active replace-image upload
   const replaceAbortRef = useRef<AbortController | null>(null)
+
+  const refreshImageListsAfterCompletion = useEffectEvent(
+    async ({ swallowNonAuth = false }: { swallowNonAuth?: boolean } = {}) => {
+      const results = await Promise.allSettled([loadCategories(), loadUncategorizedImages()])
+      const errors = results.flatMap((result) =>
+        result.status === 'rejected' ? [result.reason] : [],
+      )
+
+      if (errors.length === 0) {
+        return
+      }
+
+      const nonAuthError = errors.find((err) => !isAuthFailure(err))
+      if (nonAuthError) {
+        if (!swallowNonAuth) {
+          throw nonAuthError
+        }
+        return
+      }
+
+      // The server-side job already completed; keep local completion state
+      // and let the next authenticated refresh reconcile the lists.
+    },
+  )
 
   // Client-side progress interpolation — a simple tick counter that
   // increments every 500 ms to trigger re-renders without mutating
@@ -208,7 +238,7 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
       const handle = pollProcessingJob(job.id, {
         fetchStatus: fetchSourceImage,
         onCompleted: async (imageId) => {
-          await Promise.all([loadCategories(), loadUncategorizedImages()])
+          await refreshImageListsAfterCompletion()
           setImagesVersion((v) => v + 1)
           const current = selectedImageRef.current
           if (imageId != null && current && current.id === imageId) {
@@ -260,6 +290,20 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
                     status: 'failed' as const,
                     serverProgress: progress,
                     errorMessage: errorMessage || undefined,
+                  }
+                : j,
+            ),
+          )
+        },
+        onAuthFailure: () => {
+          refs.delete(job.id)
+          setProcessingJobs((prev) =>
+            prev.map((j) =>
+              j.id === job.id
+                ? {
+                    ...j,
+                    status: 'failed' as const,
+                    errorMessage: IMAGE_POLL_AUTH_FAILURE_MESSAGE,
                   }
                 : j,
             ),
@@ -357,10 +401,11 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
     for (const job of processingJobs) {
       if (job.status !== 'importing' || job.bulkImportJobId == null) continue
       if (refs.has(job.bulkImportJobId)) continue
+      const bulkImportJobId = job.bulkImportJobId
 
       const interval = setInterval(async () => {
         try {
-          const updated = await fetchBulkImportJob(job.bulkImportJobId!)
+          const updated = await fetchBulkImportJob(bulkImportJobId)
           updateBulkImportJob(updated, job.filename, job.fileSize)
           if (updated.status === 'completed' || updated.status === 'failed') {
             const ref = refs.get(updated.id)
@@ -368,15 +413,28 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
               clearInterval(ref)
               refs.delete(updated.id)
             }
-            loadCategories()
-            loadUncategorizedImages()
+            await refreshImageListsAfterCompletion({ swallowNonAuth: true })
             setImagesVersion((v) => v + 1)
           }
-        } catch {
-          // ignore poll errors
+        } catch (err) {
+          if (isAuthFailure(err)) {
+            clearInterval(interval)
+            refs.delete(bulkImportJobId)
+            setProcessingJobs((prev) =>
+              prev.map((j) =>
+                j.bulkImportJobId === bulkImportJobId
+                  ? {
+                      ...j,
+                      status: 'failed' as const,
+                      errorMessage: BULK_IMPORT_AUTH_FAILURE_MESSAGE,
+                    }
+                  : j,
+              ),
+            )
+          }
         }
       }, 2000)
-      refs.set(job.bulkImportJobId, interval)
+      refs.set(bulkImportJobId, interval)
     }
 
     for (const [id, interval] of refs) {

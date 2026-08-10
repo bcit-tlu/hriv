@@ -142,6 +142,25 @@ ancestor render using the same visual treatment at **0.6 opacity**. This is
 used in breadcrumb chips, browse tile chips, ManagePage restriction chips,
 inherited-only category dialog chips, and category restriction lock icons.
 
+In the Add/Edit category dialogs, program chips also respect the current
+instructor's membership: chips outside the instructor's programs are disabled,
+while inherited or already-selected/current program chips stay enabled so they
+can still be removed. When the backend rejects an invalid program (or group)
+attach, the error names the program/group instead of only showing its numeric
+ID.
+
 See also: [Groups](groups.md), [Domain model](domain-model.md),
 [`docs/TESTING.md`](TESTING.md), and the
 [agent feature map](agent-feature-map.md).
+
+## Creating children under restricted ancestors
+
+When an instructor creates a child category, the backend treats program and
+group IDs inherited from the parent path as pre-existing restrictions. The
+create flow computes those inherited IDs using the same top-down narrowing
+rules described above: unrestricted ancestors are skipped, the first
+restricted ancestor initializes the effective set, and each later restricted
+ancestor intersects it. This allows instructors to create children beneath
+ancestors restricted to programs they do not belong to or groups they do not
+manage, while still requiring attach authority for any additional,
+non-inherited program or group IDs submitted on the new category.

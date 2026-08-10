@@ -14,16 +14,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { AuthContext } from '../../src/authContextValue'
+import type { AuthContextValue } from '../../src/authContextValue'
 import AddCategoryDialog from '../../src/components/AddCategoryDialog'
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function renderDialog(props: Partial<Parameters<typeof AddCategoryDialog>[0]> = {}) {
+function renderDialog(
+  props: Partial<Parameters<typeof AddCategoryDialog>[0]> = {},
+  authValue: AuthContextValue | null = null,
+) {
   const onClose = props.onClose ?? vi.fn()
   const onAdd = props.onAdd ?? vi.fn()
-  const result = render(
+  const dialog = (
     <AddCategoryDialog
       open={true}
       onClose={onClose}
@@ -34,7 +39,10 @@ function renderDialog(props: Partial<Parameters<typeof AddCategoryDialog>[0]> = 
       inheritedProgramIds={props.inheritedProgramIds}
       groups={props.groups}
       inheritedGroupIds={props.inheritedGroupIds}
-    />,
+    />
+  )
+  const result = render(
+    authValue ? <AuthContext.Provider value={authValue}>{dialog}</AuthContext.Provider> : dialog,
   )
   return { ...result, onClose, onAdd }
 }
@@ -200,6 +208,44 @@ describe('AddCategoryDialog', () => {
     renderDialog({ programs, inheritedProgramIds: [] })
 
     expect(screen.getByLabelText('All students')).toBeChecked()
+  })
+
+  it('disables non-member program chips and shows the membership caption', async () => {
+    const user = userEvent.setup()
+    const programs = [
+      { id: 1, name: 'Nursing', oidc_group: null, created_at: '', updated_at: '' },
+      { id: 2, name: 'Dental', oidc_group: null, created_at: '', updated_at: '' },
+    ]
+    const authValue = {
+      currentUser: {
+        id: 1,
+        name: 'Instructor',
+        email: 'inst@example.com',
+        role: 'instructor',
+        program_ids: [1],
+        program_names: ['Nursing'],
+        group_ids: [],
+        group_names: [],
+      },
+      users: [],
+      loading: false,
+      login: vi.fn(),
+      logout: vi.fn(),
+      addUser: vi.fn(),
+      deleteUser: vi.fn(),
+      refreshUsers: vi.fn(),
+      canManageUsers: false,
+      canEditContent: true,
+      oidcError: null,
+      clearOidcError: vi.fn(),
+    } as unknown as AuthContextValue
+
+    renderDialog({ programs }, authValue)
+    await user.click(screen.getByLabelText('Specific programs'))
+
+    expect(screen.getByText('Nursing').closest('.MuiChip-root')).not.toHaveClass('Mui-disabled')
+    expect(screen.getByText('Dental').closest('.MuiChip-root')).toHaveClass('Mui-disabled')
+    expect(screen.getByText('You can only restrict to programs you belong to.')).toBeInTheDocument()
   })
 
   // --- Group restriction section ---

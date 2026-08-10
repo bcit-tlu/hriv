@@ -8,16 +8,13 @@ import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
-import FormControl from '@mui/material/FormControl'
 import IconButton from '@mui/material/IconButton'
-import InputAdornment from '@mui/material/InputAdornment'
 import Link from '@mui/material/Link'
 import ListItemIcon from '@mui/material/ListItemIcon'
 import ListItemText from '@mui/material/ListItemText'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
-import Select from '@mui/material/Select'
 import Switch from '@mui/material/Switch'
 import Table from '@mui/material/Table'
 import TableBody from '@mui/material/TableBody'
@@ -27,19 +24,13 @@ import TableHead from '@mui/material/TableHead'
 import TablePagination from '@mui/material/TablePagination'
 import TableRow from '@mui/material/TableRow'
 import TableSortLabel from '@mui/material/TableSortLabel'
-import TextField from '@mui/material/TextField'
-import ToggleButton from '@mui/material/ToggleButton'
-import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
 import Chip from '@mui/material/Chip'
 import Typography from '@mui/material/Typography'
-import type { SelectChangeEvent } from '@mui/material/Select'
-import { alpha } from '@mui/material/styles'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
-import ClearIcon from '@mui/icons-material/Clear'
+import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import DeleteIcon from '@mui/icons-material/Delete'
 import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
-import FilterListIcon from '@mui/icons-material/FilterList'
 import InfoIcon from '@mui/icons-material/Info'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import VisibilityIcon from '@mui/icons-material/Visibility'
@@ -54,6 +45,7 @@ import {
   bulkDeleteImages,
 } from '../api'
 import type { ApiBulkImportJob, ApiImage } from '../api'
+import { invalidateMovedImageScopes, tileOrderingCoordinator } from '../tileOrdering'
 import type { Category, Group, Program } from '../types'
 import { splitDirectAncestorGroupIds, splitDirectAncestorProgramIds } from '../categoryUtils'
 import { formatFileSize } from '../formatUtils'
@@ -66,9 +58,26 @@ import BulkEditImagesModal from './BulkEditImagesModal'
 import ColumnVisibilityDialog, { type ColumnVisibilityOption } from './ColumnVisibilityDialog'
 import EditImageModal from './EditImageModal'
 import type { ImageFormData, ReplaceImageData } from './EditImageModal'
+import FilterBar from './FilterBar'
+import CategoryFilterTreePanel from './CategoryFilterTreePanel'
+import FilterOptionPanel from './FilterOptionPanel'
+import FilterPopoverButton, { filterSurfaceBg } from './FilterPopoverButton'
+import FilterTextPanel from './FilterTextPanel'
 import MoveImageDialog from './MoveImageDialog'
 import NoteDisplay from './NoteDisplay'
 import UploadImageModal from './UploadImageModal'
+import {
+  getFilterTerms,
+  hasFilterTerms,
+  matchesTextFilter,
+  removeFilterTerm,
+} from '../tableFilterUtils'
+import {
+  getStoredIntSet,
+  getStoredTextFilters,
+  loadStoredTableFilters,
+  useTableFilterPreferences,
+} from '../useTableFilterPreferences'
 
 interface CategoryPathSegment {
   category: Category
@@ -171,6 +180,7 @@ type SortableColumn =
   | 'created_at'
   | 'dimensions'
   | 'file_size'
+  | 'annotations'
 type SortDirection = 'asc' | 'desc'
 type ManageTableColumn =
   | 'thumbnail'
@@ -187,6 +197,7 @@ type ManageTableColumn =
   | 'dimensions'
   | 'file_size'
   | 'measurement'
+  | 'annotations'
 
 const MANAGE_COLUMN_OPTIONS: readonly ColumnVisibilityOption<ManageTableColumn>[] = [
   { key: 'thumbnail', label: 'Thumbnail' },
@@ -203,6 +214,7 @@ const MANAGE_COLUMN_OPTIONS: readonly ColumnVisibilityOption<ManageTableColumn>[
   { key: 'dimensions', label: 'Dimensions' },
   { key: 'file_size', label: 'File Size' },
   { key: 'measurement', label: 'Measurement' },
+  { key: 'annotations', label: 'Annotations' },
 ]
 
 const MANAGE_DEFAULT_VISIBLE_COLUMNS: readonly ManageTableColumn[] = [
@@ -220,13 +232,54 @@ const MANAGE_ALL_COLUMNS: readonly ManageTableColumn[] = MANAGE_COLUMN_OPTIONS.m
 const MANAGE_COLUMN_FILTER_KEYS: Partial<Record<ManageTableColumn, string>> = {
   id: 'id',
   name: 'name',
-  category: 'category',
   copyright: 'copyright',
   note: 'note',
-  program: 'program',
-  group: 'group',
-  active: 'active',
 }
+
+function hasCanvasAnnotations(img: ApiImage): boolean {
+  return (
+    Array.isArray(img.metadata_extra?.canvas_annotations) &&
+    img.metadata_extra.canvas_annotations.length > 0
+  )
+}
+
+type ManageStoredFilters = {
+  text?: Record<string, unknown>
+  programs?: unknown[]
+  groups?: unknown[]
+  visibility?: unknown[]
+  categories?: unknown[]
+}
+
+function getStoredVisibilityFilters(
+  storedFilters: ManageStoredFilters | null,
+): Set<VisibilityFilterValue> {
+  const visibility = storedFilters?.visibility
+  if (!Array.isArray(visibility)) return new Set()
+  return new Set(
+    visibility.filter(
+      (value): value is VisibilityFilterValue => value === 'active' || value === 'inactive',
+    ),
+  )
+}
+
+function buildManageFilterSnapshot(
+  filters: Record<string, string>,
+  selectedPrograms: Set<number>,
+  selectedGroups: Set<number>,
+  selectedVisibility: Set<VisibilityFilterValue>,
+  selectedCategories: Set<number>,
+) {
+  return {
+    text: filters,
+    programs: [...selectedPrograms],
+    groups: [...selectedGroups],
+    visibility: [...selectedVisibility],
+    categories: [...selectedCategories],
+  }
+}
+
+type VisibilityFilterValue = 'active' | 'inactive'
 
 interface ManagePageProps {
   categories: Category[]
@@ -303,9 +356,34 @@ export default function ManagePage({
   const [sortColumn, setSortColumn] = useState<SortableColumn>('id')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
 
-  // Filter state
-  const [filters, setFilters] = useState<Record<string, string>>({})
-  const hasActiveFilters = Object.values(filters).some((v) => v !== '')
+  const storedFilters = useMemo(
+    () => loadStoredTableFilters<ManageStoredFilters>('manage-images'),
+    [],
+  )
+  // Filter state seeds synchronously from storage unless navigation wins.
+  const [filters, setFilters] = useState<Record<string, string>>(() => {
+    const next = getStoredTextFilters(storedFilters)
+    delete next.category
+    return next
+  })
+  const [selectedPrograms, setSelectedPrograms] = useState<Set<number>>(() =>
+    initialProgramFilter ? new Set<number>() : getStoredIntSet(storedFilters, 'programs'),
+  )
+  const [selectedGroups, setSelectedGroups] = useState<Set<number>>(() =>
+    getStoredIntSet(storedFilters, 'groups'),
+  )
+  const [selectedVisibility, setSelectedVisibility] = useState<Set<VisibilityFilterValue>>(() =>
+    getStoredVisibilityFilters(storedFilters),
+  )
+  const [selectedCategories, setSelectedCategories] = useState<Set<number>>(() =>
+    getStoredIntSet(storedFilters, 'categories'),
+  )
+  const hasActiveFilters =
+    Object.values(filters).some((v) => hasFilterTerms(v)) ||
+    selectedPrograms.size > 0 ||
+    selectedGroups.size > 0 ||
+    selectedVisibility.size > 0 ||
+    selectedCategories.size > 0
 
   const categoryPaths = useMemo(() => buildCategoryPaths(categories), [categories])
 
@@ -332,8 +410,6 @@ export default function ManagePage({
   const [moveOpen, setMoveOpen] = useState(false)
   const [movingImage, setMovingImage] = useState<ApiImage | null>(null)
 
-  // Filter row visibility
-  const [showFilters, setShowFilters] = useState(false)
   const [columnDialogOpen, setColumnDialogOpen] = useState(false)
   const { visibleColumns, isColumnVisible, setColumnVisible } =
     useTableColumnPreferences<ManageTableColumn>({
@@ -341,19 +417,30 @@ export default function ManagePage({
       allColumns: MANAGE_ALL_COLUMNS,
       defaultVisibleColumns: MANAGE_DEFAULT_VISIBLE_COLUMNS,
     })
+  const visibleColumnCount = useMemo(
+    () => MANAGE_ALL_COLUMNS.filter((column) => visibleColumns[column]).length,
+    [visibleColumns],
+  )
 
   // Pagination state
   const [rowsPerPage, setRowsPerPage] = useState(25)
   const [currentPage, setCurrentPage] = useState(0)
 
   // Apply initial program filter from external navigation (e.g. search)
-  const [prevInitialProgramFilter, setPrevInitialProgramFilter] = useState(initialProgramFilter)
+  const [prevInitialProgramFilter, setPrevInitialProgramFilter] = useState<string | undefined>(
+    undefined,
+  )
   if (initialProgramFilter !== prevInitialProgramFilter) {
     setPrevInitialProgramFilter(initialProgramFilter)
     if (initialProgramFilter) {
-      setFilters((prev) => ({ ...prev, program: initialProgramFilter }))
+      setSelectedPrograms(
+        new Set(
+          programs
+            .filter((program) => program.name === initialProgramFilter)
+            .map((program) => program.id),
+        ),
+      )
       setColumnVisible('program', true)
-      setShowFilters(true)
       setCurrentPage(0)
       onInitialProgramFilterConsumed?.()
     }
@@ -383,6 +470,49 @@ export default function ManagePage({
   useEffect(() => {
     loadImages() // eslint-disable-line react-hooks/set-state-in-effect -- standard data-fetch trigger on dependency change
   }, [loadImages, imagesVersion])
+
+  const filterSnapshot = useMemo(
+    () =>
+      buildManageFilterSnapshot(
+        filters,
+        selectedPrograms,
+        selectedGroups,
+        selectedVisibility,
+        selectedCategories,
+      ),
+    [filters, selectedCategories, selectedGroups, selectedPrograms, selectedVisibility],
+  )
+  useTableFilterPreferences({
+    tableKey: 'manage-images',
+    value: filterSnapshot,
+  })
+
+  useEffect(() => {
+    const validIds = new Set(programs.map((program) => program.id))
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- keep selections aligned with available programs
+    setSelectedPrograms((prev) => {
+      const pruned = new Set([...prev].filter((id) => validIds.has(id)))
+      return pruned.size === prev.size ? prev : pruned
+    })
+  }, [programs])
+
+  useEffect(() => {
+    const validIds = new Set(groups.map((group) => group.id))
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- keep selections aligned with available groups
+    setSelectedGroups((prev) => {
+      const pruned = new Set([...prev].filter((id) => validIds.has(id)))
+      return pruned.size === prev.size ? prev : pruned
+    })
+  }, [groups])
+
+  useEffect(() => {
+    const validIds = new Set(categoryPaths.keys())
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- keep selections aligned with available categories
+    setSelectedCategories((prev) => {
+      const pruned = new Set([...prev].filter((id) => validIds.has(id)))
+      return pruned.size === prev.size ? prev : pruned
+    })
+  }, [categoryPaths])
 
   // Sort handler
   const handleSort = (column: SortableColumn) => {
@@ -419,15 +549,30 @@ export default function ManagePage({
     [categoryPaths],
   )
 
-  // Helper to get program names for sorting/filtering
-  const getProgramNames = useCallback(
-    (img: ApiImage): string => {
+  const programNameById = useMemo(
+    () =>
+      new Map(
+        programs
+          .map((program) => [program.id, program.name.trim()] as const)
+          .filter(([, name]) => name.length > 0),
+      ),
+    [programs],
+  )
+
+  const getProgramNameList = useCallback(
+    (img: ApiImage): string[] => {
       const { direct, ancestor } = getInheritedProgramIds(img)
       return [...direct, ...ancestor]
-        .map((pid) => programs.find((p) => p.id === pid)?.name ?? '')
-        .join(', ')
+        .map((pid) => programNameById.get(pid) ?? '')
+        .filter((name) => name.length > 0)
     },
-    [programs, getInheritedProgramIds],
+    [getInheritedProgramIds, programNameById],
+  )
+
+  // Helper to get program names for sorting/filtering
+  const getProgramNames = useCallback(
+    (img: ApiImage): string => getProgramNameList(img).join(', '),
+    [getProgramNameList],
   )
 
   const getInheritedGroupIds = useCallback(
@@ -440,14 +585,76 @@ export default function ManagePage({
     [categoryPaths],
   )
 
-  const getGroupNames = useCallback(
-    (img: ApiImage): string => {
+  const groupNameById = useMemo(
+    () =>
+      new Map(
+        groups
+          .map((group) => [group.id, group.name.trim()] as const)
+          .filter(([, name]) => name.length > 0),
+      ),
+    [groups],
+  )
+
+  const getGroupNameList = useCallback(
+    (img: ApiImage): string[] => {
       const { direct, ancestor } = getInheritedGroupIds(img)
       return [...direct, ...ancestor]
-        .map((gid) => groups.find((g) => g.id === gid)?.name ?? '')
-        .join(', ')
+        .map((gid) => groupNameById.get(gid) ?? '')
+        .filter((name) => name.length > 0)
     },
-    [groups, getInheritedGroupIds],
+    [getInheritedGroupIds, groupNameById],
+  )
+
+  const getGroupNames = useCallback(
+    (img: ApiImage): string => getGroupNameList(img).join(', '),
+    [getGroupNameList],
+  )
+
+  const programFilterOptions = useMemo(
+    () =>
+      programs
+        .map((program) => ({ id: program.id, name: program.name.trim() }))
+        .filter((program) => program.name.length > 0)
+        .sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id),
+    [programs],
+  )
+  const groupFilterOptions = useMemo(
+    () =>
+      groups
+        .map((group) => ({ id: group.id, name: group.name.trim() }))
+        .filter((group) => group.name.length > 0)
+        .sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id),
+    [groups],
+  )
+  const selectedProgramOptions = useMemo(
+    () => programFilterOptions.filter((program) => selectedPrograms.has(program.id)),
+    [programFilterOptions, selectedPrograms],
+  )
+  const selectedGroupOptions = useMemo(
+    () => groupFilterOptions.filter((group) => selectedGroups.has(group.id)),
+    [groupFilterOptions, selectedGroups],
+  )
+  const selectedProgramValues = useMemo(
+    () => selectedProgramOptions.map((program) => String(program.id)),
+    [selectedProgramOptions],
+  )
+  const selectedGroupValues = useMemo(
+    () => selectedGroupOptions.map((group) => String(group.id)),
+    [selectedGroupOptions],
+  )
+  const selectedVisibilityValues = useMemo(
+    () =>
+      ['active', 'inactive'].filter((value): value is VisibilityFilterValue =>
+        selectedVisibility.has(value as VisibilityFilterValue),
+      ),
+    [selectedVisibility],
+  )
+  const selectedCategoryOptions = useMemo(
+    () =>
+      [...selectedCategories]
+        .map((id) => categoryPaths.get(id)?.category)
+        .filter((category): category is Category => category != null),
+    [categoryPaths, selectedCategories],
   )
 
   // Filtered and sorted images
@@ -456,24 +663,47 @@ export default function ManagePage({
     return images.filter((img) => {
       const match = (field: string, value: string) => {
         const filter = filters[field]
-        if (!filter) return true
-        return value.toLowerCase().includes(filter.toLowerCase())
+        return matchesTextFilter(value, filter ?? '')
       }
       if (!match('id', String(img.id))) return false
       if (!match('name', img.name)) return false
-      if (!match('category', getCategoryLabel(img))) return false
       if (!match('copyright', img.copyright ?? '')) return false
       if (!match('note', img.note ?? '')) return false
-      if (!match('program', getProgramNames(img))) return false
-      if (!match('group', getGroupNames(img))) return false
-      const statusFilter = filters['active']
-      if (statusFilter) {
-        if (statusFilter === 'active' && !img.active) return false
-        if (statusFilter === 'inactive' && img.active) return false
+      if (selectedCategories.size > 0) {
+        if (img.category_id == null) return false
+        const seg = categoryPaths.get(img.category_id)
+        if (!seg) return false
+        const candidateIds = new Set<number>([seg.category.id, ...seg.ancestors.map((a) => a.id)])
+        if (![...selectedCategories].some((value) => candidateIds.has(value))) return false
+      }
+      if (selectedPrograms.size > 0) {
+        const { direct, ancestor } = getInheritedProgramIds(img)
+        const imagePrograms = new Set([...direct, ...ancestor])
+        if (![...selectedPrograms].some((value) => imagePrograms.has(value))) return false
+      }
+      if (selectedGroups.size > 0) {
+        const { direct, ancestor } = getInheritedGroupIds(img)
+        const imageGroups = new Set([...direct, ...ancestor])
+        if (![...selectedGroups].some((value) => imageGroups.has(value))) return false
+      }
+      if (selectedVisibility.size > 0) {
+        const visibilityValue: VisibilityFilterValue = img.active ? 'active' : 'inactive'
+        if (!selectedVisibility.has(visibilityValue)) return false
       }
       return true
     })
-  }, [images, filters, hasActiveFilters, getCategoryLabel, getProgramNames, getGroupNames])
+  }, [
+    filters,
+    categoryPaths,
+    getInheritedGroupIds,
+    getInheritedProgramIds,
+    hasActiveFilters,
+    images,
+    selectedGroups,
+    selectedCategories,
+    selectedPrograms,
+    selectedVisibility,
+  ])
 
   const sortedImages = useMemo(() => {
     const sorted = [...filteredImages]
@@ -516,6 +746,9 @@ export default function ManagePage({
         case 'file_size':
           cmp = (a.file_size ?? 0) - (b.file_size ?? 0)
           break
+        case 'annotations':
+          cmp = Number(hasCanvasAnnotations(a)) - Number(hasCanvasAnnotations(b))
+          break
       }
       return sortDirection === 'asc' ? cmp : -cmp
     })
@@ -533,8 +766,17 @@ export default function ManagePage({
     setCurrentPage(0)
   }
 
+  const handleRemoveFilterTerm = (column: string, term: string) => {
+    setFilters((prev) => ({ ...prev, [column]: removeFilterTerm(prev[column] ?? '', term) }))
+    setCurrentPage(0)
+  }
+
   const handleClearFilters = () => {
     setFilters({})
+    setSelectedPrograms(new Set())
+    setSelectedGroups(new Set())
+    setSelectedVisibility(new Set())
+    setSelectedCategories(new Set())
     setCurrentPage(0)
   }
 
@@ -543,14 +785,25 @@ export default function ManagePage({
       const nextVisible = !visibleColumns[column]
       setColumnVisible(column, nextVisible)
       if (!nextVisible) {
-        const filterKey = MANAGE_COLUMN_FILTER_KEYS[column]
-        if (filterKey) {
-          setFilters((prev) => {
-            if (!prev[filterKey]) return prev
-            const next = { ...prev }
-            delete next[filterKey]
-            return next
-          })
+        setCurrentPage(0)
+        if (column === 'program') {
+          setSelectedPrograms(new Set())
+        } else if (column === 'group') {
+          setSelectedGroups(new Set())
+        } else if (column === 'active') {
+          setSelectedVisibility(new Set())
+        } else if (column === 'category') {
+          setSelectedCategories(new Set())
+        } else {
+          const filterKey = MANAGE_COLUMN_FILTER_KEYS[column]
+          if (filterKey) {
+            setFilters((prev) => {
+              if (!prev[filterKey]) return prev
+              const next = { ...prev }
+              delete next[filterKey]
+              return next
+            })
+          }
         }
       }
     },
@@ -560,6 +813,22 @@ export default function ManagePage({
   const pageImages = sortedImages.slice(
     currentPage * rowsPerPage,
     currentPage * rowsPerPage + rowsPerPage,
+  )
+
+  const renderPagination = (position: 'top' | 'bottom') => (
+    <TablePagination
+      rowsPerPageOptions={[5, 10, 25, 50]}
+      component="div"
+      count={sortedImages.length}
+      rowsPerPage={rowsPerPage}
+      page={currentPage}
+      onPageChange={(_, newPage) => setCurrentPage(newPage)}
+      onRowsPerPageChange={(e) => {
+        setRowsPerPage(parseInt(e.target.value, 10))
+        setCurrentPage(0)
+      }}
+      sx={position === 'top' ? { borderBottom: 1, borderColor: 'divider' } : undefined}
+    />
   )
 
   const selectedInView = useMemo(
@@ -608,6 +877,20 @@ export default function ManagePage({
         image_ids: Array.from(selected),
         ...data,
       })
+      // A bulk category move bumps the tile-order revision of every source
+      // scope and the destination server-side, so any revision the ordering
+      // coordinator still caches for them is stale and would make the next
+      // reorder falsely 409.
+      if (data.category_id !== undefined) {
+        const affected = new Set<number | null>()
+        for (const img of images) {
+          if (selected.has(img.id) && (img.category_id ?? null) !== data.category_id) {
+            affected.add(img.category_id ?? null)
+            affected.add(data.category_id)
+          }
+        }
+        for (const scope of affected) tileOrderingCoordinator.invalidateRevision(scope)
+      }
       setBulkEditOpen(false)
       setSelected(new Set())
       await loadImages()
@@ -642,6 +925,7 @@ export default function ManagePage({
     if (!editingImage) return
     try {
       await updateImage(editingImage.id, data)
+      invalidateMovedImageScopes(editingImage.category_id ?? null, data.category_id)
       setEditOpen(false)
       setEditingImage(null)
       await loadImages()
@@ -694,6 +978,7 @@ export default function ManagePage({
     if (!movingImage) return
     try {
       await updateImage(movingImage.id, { category_id: categoryId })
+      invalidateMovedImageScopes(movingImage.category_id ?? null, categoryId)
       setMoveOpen(false)
       setMovingImage(null)
       await loadImages()
@@ -774,7 +1059,7 @@ export default function ManagePage({
     setDeleting(false)
   }
 
-  if (loading) {
+  if (loading && images.length === 0) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}>
         <CircularProgress />
@@ -796,49 +1081,6 @@ export default function ManagePage({
       >
         <Typography variant="h5">Images</Typography>
         <Box sx={{ display: 'flex', gap: 2, flexShrink: 0, alignItems: 'center' }}>
-          <ToggleButtonGroup
-            size="small"
-            aria-label="Image table controls"
-            sx={{
-              '& .MuiToggleButton-root': (theme) => ({
-                bgcolor: alpha(theme.palette.text.primary, 0.09),
-                color: theme.palette.text.primary,
-                borderColor: alpha(theme.palette.text.primary, 0.2),
-                '&:hover': {
-                  bgcolor: alpha(theme.palette.text.primary, 0.13),
-                },
-              }),
-              '& .MuiToggleButton-root.Mui-selected': (theme) => ({
-                bgcolor: alpha(theme.palette.text.primary, 0.15),
-                color: theme.palette.text.primary,
-                borderColor: alpha(theme.palette.text.primary, 0.26),
-                '&:hover': {
-                  bgcolor: alpha(theme.palette.text.primary, 0.17),
-                },
-              }),
-            }}
-          >
-            <ToggleButton
-              value="filters"
-              selected={showFilters || hasActiveFilters}
-              size="small"
-              title={showFilters ? 'Hide filters' : 'Show filters'}
-              aria-label={showFilters ? 'Hide filters' : 'Show filters'}
-              onClick={() => setShowFilters((prev) => !prev)}
-            >
-              <FilterListIcon fontSize="small" />
-            </ToggleButton>
-            <ToggleButton
-              value="columns"
-              selected={columnDialogOpen}
-              size="small"
-              title="Choose columns"
-              aria-label="Choose columns"
-              onClick={() => setColumnDialogOpen(true)}
-            >
-              <ViewColumnIcon fontSize="small" />
-            </ToggleButton>
-          </ToggleButtonGroup>
           {selected.size > 0 && (
             <Button
               variant="contained"
@@ -859,14 +1101,351 @@ export default function ManagePage({
         </Box>
       </Box>
 
+      <FilterBar
+        clearAction={
+          hasActiveFilters ? (
+            <Button
+              size="small"
+              color="secondary"
+              onClick={handleClearFilters}
+              sx={{
+                minWidth: 0,
+                px: 0,
+                fontWeight: 600,
+                textTransform: 'none',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Clear all
+            </Button>
+          ) : undefined
+        }
+        summary={
+          hasActiveFilters ? (
+            <>
+              {Object.entries(filters)
+                .filter(([, value]) => hasFilterTerms(value))
+                .map(([key, value]) => {
+                  const labels: Record<string, string> = {
+                    id: 'ID',
+                    name: 'Name',
+                    copyright: 'Copyright',
+                    note: 'Note',
+                  }
+                  return getFilterTerms(value).map((term) => (
+                    <Chip
+                      key={`${key}:${term}`}
+                      label={`${labels[key] ?? key}: ${term}`}
+                      size="small"
+                      onDelete={() => handleRemoveFilterTerm(key, term)}
+                      sx={{
+                        bgcolor: (theme) =>
+                          theme.palette.mode === 'dark'
+                            ? 'rgba(165, 36, 56, 0.22)'
+                            : 'rgba(165, 36, 56, 0.08)',
+                        color: 'secondary.main',
+                        border: '1px solid',
+                        borderColor: 'secondary.main',
+                        '& .MuiChip-deleteIcon': {
+                          color: 'secondary.main',
+                        },
+                      }}
+                    />
+                  ))
+                })}
+              {selectedCategoryOptions.map((category) => (
+                <Chip
+                  key={`category:${category.id}`}
+                  label={`Category: ${category.label}`}
+                  size="small"
+                  onDelete={() => {
+                    setSelectedCategories((prev) => {
+                      const next = new Set(prev)
+                      next.delete(category.id)
+                      return next
+                    })
+                    setCurrentPage(0)
+                  }}
+                  sx={{
+                    bgcolor: (theme) =>
+                      theme.palette.mode === 'dark'
+                        ? 'rgba(165, 36, 56, 0.22)'
+                        : 'rgba(165, 36, 56, 0.08)',
+                    color: 'secondary.main',
+                    border: '1px solid',
+                    borderColor: 'secondary.main',
+                    '& .MuiChip-deleteIcon': {
+                      color: 'secondary.main',
+                    },
+                  }}
+                />
+              ))}
+              {selectedProgramOptions.map((program) => (
+                <Chip
+                  key={`program:${program.id}`}
+                  label={`Program: ${program.name}`}
+                  size="small"
+                  onDelete={() => {
+                    setSelectedPrograms((prev) => {
+                      const next = new Set(prev)
+                      next.delete(program.id)
+                      return next
+                    })
+                    setCurrentPage(0)
+                  }}
+                  sx={{
+                    bgcolor: (theme) =>
+                      theme.palette.mode === 'dark'
+                        ? 'rgba(165, 36, 56, 0.22)'
+                        : 'rgba(165, 36, 56, 0.08)',
+                    color: 'secondary.main',
+                    border: '1px solid',
+                    borderColor: 'secondary.main',
+                    '& .MuiChip-deleteIcon': {
+                      color: 'secondary.main',
+                    },
+                  }}
+                />
+              ))}
+              {selectedGroupOptions.map((group) => (
+                <Chip
+                  key={`group:${group.id}`}
+                  label={`Group: ${group.name}`}
+                  size="small"
+                  onDelete={() => {
+                    setSelectedGroups((prev) => {
+                      const next = new Set(prev)
+                      next.delete(group.id)
+                      return next
+                    })
+                    setCurrentPage(0)
+                  }}
+                  sx={{
+                    bgcolor: (theme) =>
+                      theme.palette.mode === 'dark'
+                        ? 'rgba(165, 36, 56, 0.22)'
+                        : 'rgba(165, 36, 56, 0.08)',
+                    color: 'secondary.main',
+                    border: '1px solid',
+                    borderColor: 'secondary.main',
+                    '& .MuiChip-deleteIcon': {
+                      color: 'secondary.main',
+                    },
+                  }}
+                />
+              ))}
+              {selectedVisibilityValues.map((value) => (
+                <Chip
+                  key={`visibility:${value}`}
+                  label={`Visibility: ${value === 'active' ? 'Visible' : 'Hidden'}`}
+                  size="small"
+                  onDelete={() => {
+                    setSelectedVisibility((prev) => {
+                      const next = new Set(prev)
+                      next.delete(value)
+                      return next
+                    })
+                    setCurrentPage(0)
+                  }}
+                  sx={{
+                    bgcolor: (theme) =>
+                      theme.palette.mode === 'dark'
+                        ? 'rgba(165, 36, 56, 0.22)'
+                        : 'rgba(165, 36, 56, 0.08)',
+                    color: 'secondary.main',
+                    border: '1px solid',
+                    borderColor: 'secondary.main',
+                    '& .MuiChip-deleteIcon': {
+                      color: 'secondary.main',
+                    },
+                  }}
+                />
+              ))}
+            </>
+          ) : undefined
+        }
+        summaryActions={
+          hasActiveFilters ? (
+            <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
+              {`${sortedImages.length} of ${images.length} ${images.length === 1 ? 'image' : 'images'}`}
+            </Typography>
+          ) : undefined
+        }
+        actions={
+          <>
+            <Button
+              size="small"
+              startIcon={<ViewColumnIcon fontSize="small" />}
+              aria-label="Choose columns"
+              onClick={() => setColumnDialogOpen(true)}
+            >
+              Choose columns
+            </Button>
+          </>
+        }
+      >
+        {isColumnVisible('id') && (
+          <FilterPopoverButton
+            label="ID"
+            activeCount={getFilterTerms(filters['id'] ?? '').length}
+            panelWidth={160}
+          >
+            <FilterTextPanel
+              value={filters['id'] ?? ''}
+              onChange={(value) => handleFilterChange('id', value)}
+              placeholder="Filter by ID"
+              ariaLabel="ID"
+              helperText="Separate terms with commas"
+              width={160}
+            />
+          </FilterPopoverButton>
+        )}
+        {isColumnVisible('name') && (
+          <FilterPopoverButton
+            label="Name"
+            activeCount={getFilterTerms(filters['name'] ?? '').length}
+            panelWidth={260}
+          >
+            <FilterTextPanel
+              value={filters['name'] ?? ''}
+              onChange={(value) => handleFilterChange('name', value)}
+              placeholder="Filter by name"
+              ariaLabel="Name"
+              helperText="Separate terms with commas"
+              width={260}
+            />
+          </FilterPopoverButton>
+        )}
+        {isColumnVisible('category') && (
+          <FilterPopoverButton
+            label="Category"
+            activeCount={selectedCategories.size}
+            panelWidth={300}
+          >
+            <CategoryFilterTreePanel
+              categories={categories}
+              selectedIds={selectedCategories}
+              onToggle={(id) => {
+                setSelectedCategories((prev) => {
+                  const next = new Set(prev)
+                  if (next.has(id)) {
+                    next.delete(id)
+                  } else {
+                    next.add(id)
+                  }
+                  return next
+                })
+                setCurrentPage(0)
+              }}
+            />
+          </FilterPopoverButton>
+        )}
+        {isColumnVisible('copyright') && (
+          <FilterPopoverButton
+            label="Copyright"
+            activeCount={getFilterTerms(filters['copyright'] ?? '').length}
+            panelWidth={260}
+          >
+            <FilterTextPanel
+              value={filters['copyright'] ?? ''}
+              onChange={(value) => handleFilterChange('copyright', value)}
+              placeholder="Filter by copyright"
+              ariaLabel="Copyright"
+              helperText="Separate terms with commas"
+              width={260}
+            />
+          </FilterPopoverButton>
+        )}
+        {isColumnVisible('note') && (
+          <FilterPopoverButton
+            label="Note"
+            activeCount={getFilterTerms(filters['note'] ?? '').length}
+            panelWidth={260}
+          >
+            <FilterTextPanel
+              value={filters['note'] ?? ''}
+              onChange={(value) => handleFilterChange('note', value)}
+              placeholder="Filter by note"
+              ariaLabel="Note"
+              helperText="Separate terms with commas"
+              width={260}
+            />
+          </FilterPopoverButton>
+        )}
+        {isColumnVisible('program') && (
+          <FilterPopoverButton label="Program" activeCount={selectedPrograms.size} panelWidth={260}>
+            <FilterOptionPanel
+              options={programFilterOptions.map((program) => ({
+                value: String(program.id),
+                label: program.name,
+              }))}
+              selectedValues={selectedProgramValues}
+              onChange={(values) => {
+                setSelectedPrograms(new Set(values.map((value) => Number(value))))
+                setCurrentPage(0)
+              }}
+            />
+          </FilterPopoverButton>
+        )}
+        {isColumnVisible('group') && (
+          <FilterPopoverButton label="Group" activeCount={selectedGroups.size} panelWidth={260}>
+            <FilterOptionPanel
+              options={groupFilterOptions.map((group) => ({
+                value: String(group.id),
+                label: group.name,
+              }))}
+              selectedValues={selectedGroupValues}
+              onChange={(values) => {
+                setSelectedGroups(new Set(values.map((value) => Number(value))))
+                setCurrentPage(0)
+              }}
+            />
+          </FilterPopoverButton>
+        )}
+        {isColumnVisible('active') && (
+          <FilterPopoverButton
+            label="Visibility"
+            activeCount={selectedVisibility.size}
+            panelWidth={180}
+          >
+            <FilterOptionPanel
+              options={[
+                { label: 'Visible', value: 'active' },
+                { label: 'Hidden', value: 'inactive' },
+              ]}
+              selectedValues={selectedVisibilityValues}
+              onChange={(values) => {
+                setSelectedVisibility(new Set(values as VisibilityFilterValue[]))
+                setCurrentPage(0)
+              }}
+            />
+          </FilterPopoverButton>
+        )}
+        {!isColumnVisible('id') &&
+          !isColumnVisible('name') &&
+          !isColumnVisible('category') &&
+          !isColumnVisible('copyright') &&
+          !isColumnVisible('note') &&
+          !isColumnVisible('program') &&
+          !isColumnVisible('group') &&
+          !isColumnVisible('active') && (
+            <Typography variant="body2" color="text.secondary">
+              Choose a visible filterable column to add controls here.
+            </Typography>
+          )}
+      </FilterBar>
+
       {images.length === 0 ? (
         <Typography variant="body1" color="text.secondary">
           No images found.
         </Typography>
       ) : (
         <TableContainer component={Paper} variant="outlined">
+          {renderPagination('top')}
           <Table size="small">
-            <TableHead>
+            <TableHead
+              sx={{ '& .MuiTableCell-head': { bgcolor: (theme) => filterSurfaceBg(theme) } }}
+            >
               <TableRow>
                 <TableCell padding="checkbox">
                   <Checkbox
@@ -1009,528 +1588,312 @@ export default function ManagePage({
                   </TableCell>
                 )}
                 {isColumnVisible('measurement') && <TableCell>Measurement</TableCell>}
+                {isColumnVisible('annotations') && (
+                  <TableCell sortDirection={sortColumn === 'annotations' ? sortDirection : false}>
+                    <TableSortLabel
+                      active={sortColumn === 'annotations'}
+                      direction={sortColumn === 'annotations' ? sortDirection : 'asc'}
+                      onClick={() => handleSort('annotations')}
+                    >
+                      Annotations
+                    </TableSortLabel>
+                  </TableCell>
+                )}
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
-              {showFilters && (
-                <TableRow>
-                  <TableCell padding="checkbox">
-                    {hasActiveFilters && (
-                      <IconButton
-                        size="small"
-                        onClick={handleClearFilters}
-                        title="Clear all filters"
-                      >
-                        <ClearIcon fontSize="small" />
-                      </IconButton>
-                    )}
-                  </TableCell>
-                  {isColumnVisible('thumbnail') && <TableCell />}
-                  {isColumnVisible('id') && (
-                    <TableCell>
-                      <TextField
-                        size="small"
-                        variant="standard"
-                        placeholder="Filter"
-                        value={filters['id'] ?? ''}
-                        onChange={(e) => handleFilterChange('id', e.target.value)}
-                        slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
-                        InputProps={
-                          filters['id']
-                            ? {
-                                endAdornment: (
-                                  <InputAdornment position="end">
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => handleFilterChange('id', '')}
-                                    >
-                                      <ClearIcon sx={{ fontSize: 14 }} />
-                                    </IconButton>
-                                  </InputAdornment>
-                                ),
-                              }
-                            : undefined
-                        }
-                      />
-                    </TableCell>
-                  )}
-                  {isColumnVisible('name') && (
-                    <TableCell>
-                      <TextField
-                        size="small"
-                        variant="standard"
-                        placeholder="Filter"
-                        value={filters['name'] ?? ''}
-                        onChange={(e) => handleFilterChange('name', e.target.value)}
-                        slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
-                        InputProps={
-                          filters['name']
-                            ? {
-                                endAdornment: (
-                                  <InputAdornment position="end">
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => handleFilterChange('name', '')}
-                                    >
-                                      <ClearIcon sx={{ fontSize: 14 }} />
-                                    </IconButton>
-                                  </InputAdornment>
-                                ),
-                              }
-                            : undefined
-                        }
-                      />
-                    </TableCell>
-                  )}
-                  {isColumnVisible('category') && (
-                    <TableCell>
-                      <TextField
-                        size="small"
-                        variant="standard"
-                        placeholder="Filter"
-                        value={filters['category'] ?? ''}
-                        onChange={(e) => handleFilterChange('category', e.target.value)}
-                        slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
-                        InputProps={
-                          filters['category']
-                            ? {
-                                endAdornment: (
-                                  <InputAdornment position="end">
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => handleFilterChange('category', '')}
-                                    >
-                                      <ClearIcon sx={{ fontSize: 14 }} />
-                                    </IconButton>
-                                  </InputAdornment>
-                                ),
-                              }
-                            : undefined
-                        }
-                      />
-                    </TableCell>
-                  )}
-                  {isColumnVisible('copyright') && (
-                    <TableCell>
-                      <TextField
-                        size="small"
-                        variant="standard"
-                        placeholder="Filter"
-                        value={filters['copyright'] ?? ''}
-                        onChange={(e) => handleFilterChange('copyright', e.target.value)}
-                        slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
-                        InputProps={
-                          filters['copyright']
-                            ? {
-                                endAdornment: (
-                                  <InputAdornment position="end">
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => handleFilterChange('copyright', '')}
-                                    >
-                                      <ClearIcon sx={{ fontSize: 14 }} />
-                                    </IconButton>
-                                  </InputAdornment>
-                                ),
-                              }
-                            : undefined
-                        }
-                      />
-                    </TableCell>
-                  )}
-                  {isColumnVisible('note') && (
-                    <TableCell>
-                      <TextField
-                        size="small"
-                        variant="standard"
-                        placeholder="Filter"
-                        value={filters['note'] ?? ''}
-                        onChange={(e) => handleFilterChange('note', e.target.value)}
-                        slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
-                        InputProps={
-                          filters['note']
-                            ? {
-                                endAdornment: (
-                                  <InputAdornment position="end">
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => handleFilterChange('note', '')}
-                                    >
-                                      <ClearIcon sx={{ fontSize: 14 }} />
-                                    </IconButton>
-                                  </InputAdornment>
-                                ),
-                              }
-                            : undefined
-                        }
-                      />
-                    </TableCell>
-                  )}
-                  {isColumnVisible('program') && (
-                    <TableCell>
-                      <TextField
-                        size="small"
-                        variant="standard"
-                        placeholder="Filter"
-                        value={filters['program'] ?? ''}
-                        onChange={(e) => handleFilterChange('program', e.target.value)}
-                        slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
-                        InputProps={
-                          filters['program']
-                            ? {
-                                endAdornment: (
-                                  <InputAdornment position="end">
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => handleFilterChange('program', '')}
-                                    >
-                                      <ClearIcon sx={{ fontSize: 14 }} />
-                                    </IconButton>
-                                  </InputAdornment>
-                                ),
-                              }
-                            : undefined
-                        }
-                      />
-                    </TableCell>
-                  )}
-                  {isColumnVisible('group') && (
-                    <TableCell>
-                      <TextField
-                        size="small"
-                        variant="standard"
-                        placeholder="Filter"
-                        value={filters['group'] ?? ''}
-                        onChange={(e) => handleFilterChange('group', e.target.value)}
-                        slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
-                        InputProps={
-                          filters['group']
-                            ? {
-                                endAdornment: (
-                                  <InputAdornment position="end">
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => handleFilterChange('group', '')}
-                                    >
-                                      <ClearIcon sx={{ fontSize: 14 }} />
-                                    </IconButton>
-                                  </InputAdornment>
-                                ),
-                              }
-                            : undefined
-                        }
-                      />
-                    </TableCell>
-                  )}
-                  {isColumnVisible('active') && (
-                    <TableCell>
-                      <FormControl size="small" variant="standard" fullWidth>
-                        <Select
-                          value={filters['active'] ?? ''}
-                          onChange={(e: SelectChangeEvent) =>
-                            handleFilterChange('active', e.target.value)
-                          }
-                          displayEmpty
-                          sx={{ fontSize: '0.8rem' }}
-                        >
-                          <MenuItem value="">
-                            <em>All</em>
-                          </MenuItem>
-                          <MenuItem value="active">Active</MenuItem>
-                          <MenuItem value="inactive">Inactive</MenuItem>
-                        </Select>
-                      </FormControl>
-                    </TableCell>
-                  )}
-                  {isColumnVisible('updated_at') && <TableCell />}
-                  {isColumnVisible('created_at') && <TableCell />}
-                  {isColumnVisible('dimensions') && <TableCell />}
-                  {isColumnVisible('file_size') && <TableCell />}
-                  {isColumnVisible('measurement') && <TableCell />}
-                  <TableCell />
-                </TableRow>
-              )}
             </TableHead>
             <TableBody>
-              {sortedImages
-                .slice(currentPage * rowsPerPage, currentPage * rowsPerPage + rowsPerPage)
-                .map((img) => {
-                  const categoryHidden = isImageCategoryHidden(img)
-                  return (
-                    <TableRow
-                      key={img.id}
-                      hover
-                      selected={selected.has(img.id)}
-                      {...((!img.active || categoryHidden) && { 'data-dimmed': true })}
-                      sx={{
-                        cursor: 'pointer',
-                        '&[data-dimmed] .MuiTableCell-body:not([data-interactive])': {
-                          color: visColors.inactive,
-                        },
-                        '&[data-dimmed] .MuiTableCell-body:not([data-interactive]) a, &[data-dimmed] .MuiTableCell-body:not([data-interactive]) .MuiLink-root':
-                          { color: 'inherit' },
-                      }}
-                      onClick={() => handleRowClick(img)}
+              {pageImages.map((img) => {
+                const categoryHidden = isImageCategoryHidden(img)
+                const dimmed = !img.active || categoryHidden
+                const dimAttr = dimmed ? { 'data-dimmed': true } : undefined
+                return (
+                  <TableRow
+                    key={img.id}
+                    hover
+                    selected={selected.has(img.id)}
+                    sx={{
+                      cursor: 'pointer',
+                      '& td[data-dimmed]': { color: visColors.inactive },
+                      '& td[data-dimmed] a, & td[data-dimmed] button': { color: 'inherit' },
+                    }}
+                    onClick={() => handleRowClick(img)}
+                  >
+                    <TableCell
+                      data-interactive="true"
+                      padding="checkbox"
+                      onClick={(e) => e.stopPropagation()}
                     >
+                      <Checkbox
+                        checked={selected.has(img.id)}
+                        onChange={(e) => handleSelectOne(img.id, e.target.checked)}
+                      />
+                    </TableCell>
+                    {isColumnVisible('thumbnail') && (
                       <TableCell
                         data-interactive="true"
-                        padding="checkbox"
-                        onClick={(e) => e.stopPropagation()}
+                        sx={{ p: 0.5 }}
+                        onClick={(e) => {
+                          if (onViewImage) {
+                            e.stopPropagation()
+                            onViewImage(img)
+                          }
+                        }}
                       >
-                        <Checkbox
-                          checked={selected.has(img.id)}
-                          onChange={(e) => handleSelectOne(img.id, e.target.checked)}
+                        <Box
+                          component="img"
+                          src={img.thumb}
+                          alt={img.name}
+                          sx={{
+                            width: 40,
+                            height: 40,
+                            objectFit: 'cover',
+                            borderRadius: 0.5,
+                            display: 'block',
+                            cursor: onViewImage ? 'pointer' : 'default',
+                            ...(!img.active || categoryHidden ? { filter: 'grayscale(100%)' } : {}),
+                          }}
                         />
                       </TableCell>
-                      {isColumnVisible('thumbnail') && (
-                        <TableCell
-                          data-interactive="true"
-                          sx={{ p: 0.5 }}
-                          onClick={(e) => {
-                            if (onViewImage) {
-                              e.stopPropagation()
-                              onViewImage(img)
-                            }
-                          }}
-                        >
-                          <Box
-                            component="img"
-                            src={img.thumb}
-                            alt={img.name}
-                            sx={{
-                              width: 40,
-                              height: 40,
-                              objectFit: 'cover',
-                              borderRadius: 0.5,
-                              display: 'block',
-                              cursor: onViewImage ? 'pointer' : 'default',
-                              ...(!img.active || categoryHidden
-                                ? { filter: 'grayscale(100%)' }
-                                : {}),
-                            }}
-                          />
-                        </TableCell>
-                      )}
-                      {isColumnVisible('id') && <TableCell>{img.id}</TableCell>}
-                      {isColumnVisible('name') && <TableCell>{img.name}</TableCell>}
-                      {isColumnVisible('category') && (
-                        <TableCell>
-                          <CategoryBreadcrumb
-                            categoryId={img.category_id}
-                            categoryPaths={categoryPaths}
-                            onNavigate={onNavigateCategory}
-                            hiddenColor={visColors.inactive}
-                          />
-                        </TableCell>
-                      )}
-                      {isColumnVisible('copyright') && (
-                        <TableCell>{img.copyright ?? '—'}</TableCell>
-                      )}
-                      {isColumnVisible('note') && (
-                        <TableCell sx={{ maxWidth: 260, minWidth: 180 }}>
-                          {img.note ? <NoteDisplay note={img.note} collapsedLines={2} /> : '—'}
-                        </TableCell>
-                      )}
-                      {isColumnVisible('program') && (
-                        <TableCell onClick={(e) => e.stopPropagation()}>
-                          {(() => {
-                            const { direct, ancestor } = getInheritedProgramIds(img)
-                            if (direct.length === 0 && ancestor.length === 0) return 'All programs'
-                            const chipClick = (name: string) => {
-                              if (onSearchProgram) {
-                                onSearchProgram(name)
-                              } else {
-                                setShowFilters(true)
-                                handleFilterChange('program', name)
-                              }
-                            }
-                            return (
-                              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                                {direct
-                                  .map((pid) => programs.find((p) => p.id === pid))
-                                  .filter((p): p is Program => p != null)
-                                  .map((p) => (
-                                    <Chip
-                                      key={p.id}
-                                      label={p.name}
-                                      size="small"
-                                      onClick={() => chipClick(p.name)}
-                                      {...(img.active
-                                        ? { color: 'primary', sx: { cursor: 'pointer' } }
-                                        : {
-                                            sx: {
-                                              cursor: 'pointer',
-                                              bgcolor: visColors.inactiveChipBg,
-                                              color: '#fff',
-                                            },
-                                          })}
-                                    />
-                                  ))}
-                                {ancestor
-                                  .map((pid) => programs.find((p) => p.id === pid))
-                                  .filter((p): p is Program => p != null)
-                                  .map((p) => (
-                                    <Chip
-                                      key={p.id}
-                                      label={p.name}
-                                      size="small"
-                                      onClick={() => chipClick(p.name)}
-                                      {...(img.active
-                                        ? {
-                                            color: 'primary',
-                                            sx: getInheritedRestrictionSx(true, {
-                                              cursor: 'pointer',
-                                            }),
-                                          }
-                                        : {
-                                            sx: getInheritedRestrictionSx(true, {
-                                              cursor: 'pointer',
-                                              bgcolor: visColors.inactiveChipBg,
-                                              color: '#fff',
-                                            }),
-                                          })}
-                                    />
-                                  ))}
-                              </Box>
-                            )
-                          })()}
-                        </TableCell>
-                      )}
-                      {isColumnVisible('group') && (
-                        <TableCell onClick={(e) => e.stopPropagation()}>
-                          {(() => {
-                            const { direct, ancestor } = getInheritedGroupIds(img)
-                            if (direct.length === 0 && ancestor.length === 0) return 'All groups'
-                            const chipClick = (name: string) => {
-                              setShowFilters(true)
-                              handleFilterChange('group', name)
-                            }
-                            return (
-                              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                                {direct
-                                  .map((gid) => groups.find((g) => g.id === gid))
-                                  .filter((g): g is Group => g != null)
-                                  .map((g) => (
-                                    <Chip
-                                      key={g.id}
-                                      label={g.name}
-                                      size="small"
-                                      color="secondary"
-                                      onClick={() => chipClick(g.name)}
-                                      sx={{
-                                        cursor: 'pointer',
-                                        ...(img.active
-                                          ? {}
-                                          : {
-                                              bgcolor: visColors.inactiveChipBg,
-                                              color: '#fff',
-                                            }),
-                                      }}
-                                    />
-                                  ))}
-                                {ancestor
-                                  .map((gid) => groups.find((g) => g.id === gid))
-                                  .filter((g): g is Group => g != null)
-                                  .map((g) => (
-                                    <Chip
-                                      key={g.id}
-                                      label={g.name}
-                                      size="small"
-                                      color="secondary"
-                                      onClick={() => chipClick(g.name)}
-                                      sx={
-                                        img.active
-                                          ? getInheritedRestrictionSx(true, { cursor: 'pointer' })
-                                          : getInheritedRestrictionSx(true, {
-                                              cursor: 'pointer',
-                                              bgcolor: visColors.inactiveChipBg,
-                                              color: '#fff',
-                                            })
-                                      }
-                                    />
-                                  ))}
-                              </Box>
-                            )
-                          })()}
-                        </TableCell>
-                      )}
-                      {isColumnVisible('active') && (
-                        <TableCell data-interactive="true" onClick={(e) => e.stopPropagation()}>
-                          <Tooltip
-                            title={categoryHidden ? 'Hidden by category' : ''}
-                            disableHoverListener={!categoryHidden}
-                          >
-                            <span>
-                              <Switch
-                                size="small"
-                                checked={img.active}
-                                onChange={() => {
-                                  handleToggleActive(img).catch(() => {})
-                                }}
-                                disabled={categoryHidden}
-                              />
-                            </span>
-                          </Tooltip>
-                        </TableCell>
-                      )}
-                      {isColumnVisible('updated_at') && (
-                        <TableCell>{new Date(img.updated_at).toLocaleDateString()}</TableCell>
-                      )}
-                      {isColumnVisible('created_at') && (
-                        <TableCell>{new Date(img.created_at).toLocaleDateString()}</TableCell>
-                      )}
-                      {isColumnVisible('dimensions') && (
-                        <TableCell>
-                          {img.width != null && img.height != null
-                            ? `${img.width} × ${img.height}`
-                            : '—'}
-                        </TableCell>
-                      )}
-                      {isColumnVisible('file_size') && (
-                        <TableCell>
-                          {img.file_size != null ? formatFileSize(img.file_size) : '—'}
-                        </TableCell>
-                      )}
-                      {isColumnVisible('measurement') && (
-                        <TableCell>
-                          {(() => {
-                            const meta = img.metadata_extra
-                            const scale = meta?.measurement_scale
-                            const unit = meta?.measurement_unit
-                            if (scale == null) return '—'
-                            return unit ? `${scale} px/${unit}` : `${scale} px`
-                          })()}
-                        </TableCell>
-                      )}
-                      <TableCell
-                        data-interactive="true"
-                        align="right"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <IconButton
-                          size="small"
-                          aria-label="actions"
-                          onClick={(e) => handleMenuOpen(e, img)}
-                        >
-                          <MoreVertIcon fontSize="small" />
-                        </IconButton>
+                    )}
+                    {isColumnVisible('id') && <TableCell {...dimAttr}>{img.id}</TableCell>}
+                    {isColumnVisible('name') && <TableCell {...dimAttr}>{img.name}</TableCell>}
+                    {isColumnVisible('category') && (
+                      <TableCell {...dimAttr}>
+                        <CategoryBreadcrumb
+                          categoryId={img.category_id}
+                          categoryPaths={categoryPaths}
+                          onNavigate={onNavigateCategory}
+                          hiddenColor={visColors.inactive}
+                        />
                       </TableCell>
-                    </TableRow>
-                  )
-                })}
+                    )}
+                    {isColumnVisible('copyright') && (
+                      <TableCell {...dimAttr}>{img.copyright ?? '—'}</TableCell>
+                    )}
+                    {isColumnVisible('note') && (
+                      <TableCell {...dimAttr} sx={{ maxWidth: 260, minWidth: 180 }}>
+                        {img.note ? <NoteDisplay note={img.note} collapsedLines={2} /> : '—'}
+                      </TableCell>
+                    )}
+                    {isColumnVisible('program') && (
+                      <TableCell {...dimAttr} onClick={(e) => e.stopPropagation()}>
+                        {(() => {
+                          const { direct, ancestor } = getInheritedProgramIds(img)
+                          if (direct.length === 0 && ancestor.length === 0) return 'All programs'
+                          const chipClick = (id: number) => {
+                            if (onSearchProgram) {
+                              onSearchProgram(programNameById.get(id) ?? '')
+                            } else {
+                              setSelectedPrograms((prev) => new Set(prev).add(id))
+                              setCurrentPage(0)
+                            }
+                          }
+                          return (
+                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                              {direct
+                                .map((pid) => programs.find((p) => p.id === pid))
+                                .filter((p): p is Program => p != null)
+                                .map((p) => (
+                                  <Chip
+                                    key={p.id}
+                                    label={p.name}
+                                    size="small"
+                                    onClick={() => chipClick(p.id)}
+                                    {...(img.active
+                                      ? { color: 'primary', sx: { cursor: 'pointer' } }
+                                      : {
+                                          sx: {
+                                            cursor: 'pointer',
+                                            bgcolor: visColors.inactiveChipBg,
+                                            color: '#fff',
+                                          },
+                                        })}
+                                  />
+                                ))}
+                              {ancestor
+                                .map((pid) => programs.find((p) => p.id === pid))
+                                .filter((p): p is Program => p != null)
+                                .map((p) => (
+                                  <Chip
+                                    key={p.id}
+                                    label={p.name}
+                                    size="small"
+                                    onClick={() => chipClick(p.id)}
+                                    {...(img.active
+                                      ? {
+                                          color: 'primary',
+                                          sx: getInheritedRestrictionSx(true, {
+                                            cursor: 'pointer',
+                                          }),
+                                        }
+                                      : {
+                                          sx: getInheritedRestrictionSx(true, {
+                                            cursor: 'pointer',
+                                            bgcolor: visColors.inactiveChipBg,
+                                            color: '#fff',
+                                          }),
+                                        })}
+                                  />
+                                ))}
+                            </Box>
+                          )
+                        })()}
+                      </TableCell>
+                    )}
+                    {isColumnVisible('group') && (
+                      <TableCell {...dimAttr} onClick={(e) => e.stopPropagation()}>
+                        {(() => {
+                          const { direct, ancestor } = getInheritedGroupIds(img)
+                          if (direct.length === 0 && ancestor.length === 0) return 'All groups'
+                          const chipClick = (id: number) => {
+                            setSelectedGroups((prev) => new Set(prev).add(id))
+                            setCurrentPage(0)
+                          }
+                          return (
+                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                              {direct
+                                .map((gid) => groups.find((g) => g.id === gid))
+                                .filter((g): g is Group => g != null)
+                                .map((g) => (
+                                  <Chip
+                                    key={g.id}
+                                    label={g.name}
+                                    size="small"
+                                    color="secondary"
+                                    onClick={() => chipClick(g.id)}
+                                    sx={{
+                                      cursor: 'pointer',
+                                      ...(img.active
+                                        ? {}
+                                        : {
+                                            bgcolor: visColors.inactiveChipBg,
+                                            color: '#fff',
+                                          }),
+                                    }}
+                                  />
+                                ))}
+                              {ancestor
+                                .map((gid) => groups.find((g) => g.id === gid))
+                                .filter((g): g is Group => g != null)
+                                .map((g) => (
+                                  <Chip
+                                    key={g.id}
+                                    label={g.name}
+                                    size="small"
+                                    color="secondary"
+                                    onClick={() => chipClick(g.id)}
+                                    sx={
+                                      img.active
+                                        ? getInheritedRestrictionSx(true, { cursor: 'pointer' })
+                                        : getInheritedRestrictionSx(true, {
+                                            cursor: 'pointer',
+                                            bgcolor: visColors.inactiveChipBg,
+                                            color: '#fff',
+                                          })
+                                    }
+                                  />
+                                ))}
+                            </Box>
+                          )
+                        })()}
+                      </TableCell>
+                    )}
+                    {isColumnVisible('active') && (
+                      <TableCell data-interactive="true" onClick={(e) => e.stopPropagation()}>
+                        <Tooltip
+                          title={categoryHidden ? 'Hidden by category' : ''}
+                          disableHoverListener={!categoryHidden}
+                        >
+                          <span>
+                            <Switch
+                              size="small"
+                              checked={img.active}
+                              onChange={() => {
+                                handleToggleActive(img).catch(() => {})
+                              }}
+                              disabled={categoryHidden}
+                            />
+                          </span>
+                        </Tooltip>
+                      </TableCell>
+                    )}
+                    {isColumnVisible('updated_at') && (
+                      <TableCell {...dimAttr}>
+                        {new Date(img.updated_at).toLocaleDateString()}
+                      </TableCell>
+                    )}
+                    {isColumnVisible('created_at') && (
+                      <TableCell {...dimAttr}>
+                        {new Date(img.created_at).toLocaleDateString()}
+                      </TableCell>
+                    )}
+                    {isColumnVisible('dimensions') && (
+                      <TableCell {...dimAttr}>
+                        {img.width != null && img.height != null
+                          ? `${img.width} × ${img.height}`
+                          : '—'}
+                      </TableCell>
+                    )}
+                    {isColumnVisible('file_size') && (
+                      <TableCell {...dimAttr}>
+                        {img.file_size != null ? formatFileSize(img.file_size) : '—'}
+                      </TableCell>
+                    )}
+                    {isColumnVisible('measurement') && (
+                      <TableCell {...dimAttr}>
+                        {(() => {
+                          const meta = img.metadata_extra
+                          const scale = meta?.measurement_scale
+                          const unit = meta?.measurement_unit
+                          if (scale == null) return '—'
+                          return unit ? `${scale} px/${unit}` : `${scale} px`
+                        })()}
+                      </TableCell>
+                    )}
+                    {isColumnVisible('annotations') && (
+                      <TableCell {...dimAttr}>
+                        {hasCanvasAnnotations(img) ? (
+                          <span
+                            role="img"
+                            aria-label="Has annotations"
+                            style={{ display: 'inline-flex', verticalAlign: 'middle' }}
+                          >
+                            <CheckCircleIcon color="success" sx={{ fontSize: 18 }} />
+                          </span>
+                        ) : (
+                          '—'
+                        )}
+                      </TableCell>
+                    )}
+                    <TableCell
+                      data-interactive="true"
+                      align="right"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <IconButton
+                        size="small"
+                        aria-label="actions"
+                        onClick={(e) => handleMenuOpen(e, img)}
+                      >
+                        <MoreVertIcon fontSize="small" />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+              {pageImages.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={visibleColumnCount + 2} align="center" sx={{ py: 6 }}>
+                    <Typography variant="body2" color="text.secondary">
+                      No images match the selected filters.
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
-          <TablePagination
-            rowsPerPageOptions={[5, 10, 25, 50]}
-            component="div"
-            count={sortedImages.length}
-            rowsPerPage={rowsPerPage}
-            page={currentPage}
-            onPageChange={(_, newPage) => setCurrentPage(newPage)}
-            onRowsPerPageChange={(e) => {
-              setRowsPerPage(parseInt(e.target.value, 10))
-              setCurrentPage(0)
-            }}
-          />
+          {renderPagination('bottom')}
         </TableContainer>
       )}
 
@@ -1615,6 +1978,7 @@ export default function ManagePage({
                     formData,
                   )
                   onReplaceImage?.(result.id, file.name, file.size)
+                  invalidateMovedImageScopes(editingImage.category_id ?? null, formData.category_id)
                   setEditOpen(false)
                   setEditingImage(null)
                   await loadImages()

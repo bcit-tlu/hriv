@@ -38,6 +38,11 @@
           "glob": true
         }
       ]
+    },
+    "synthetic-monitoring": {
+      "path": "synthetic-monitoring",
+      "component": "synthetic-monitoring",
+      "release-type": "node"
     }
   }
 }

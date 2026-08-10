@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { getStoredUserScope } from './userScope'
 
 type ColumnVisibilityMap<Key extends string> = Record<Key, boolean>
 
@@ -6,17 +7,6 @@ interface UseTableColumnPreferencesArgs<Key extends string> {
   tableKey: string
   allColumns: readonly Key[]
   defaultVisibleColumns: readonly Key[]
-}
-
-function getStoredUserScope(): string {
-  try {
-    const stored = localStorage.getItem('hriv_user')
-    if (!stored) return 'anonymous'
-    const parsed = JSON.parse(stored) as { id?: number | string }
-    return parsed.id != null ? String(parsed.id) : 'anonymous'
-  } catch {
-    return 'anonymous'
-  }
 }
 
 function buildDefaultVisibility<Key extends string>(

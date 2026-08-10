@@ -3,12 +3,13 @@ import {
   createCategory as apiCreateCategory,
   deleteCategory as apiDeleteCategory,
   updateCategory as apiUpdateCategory,
-  reorderCategories as apiReorderCategories,
-  reorderImages as apiReorderImages,
   updateImage as apiUpdateImage,
   userMessage,
 } from './api'
+import { tileOrderingCoordinator, type ScopeId } from './tileOrdering'
+import type { ParentMove, ScopeOrder } from './components/manageCategoriesDialogUtils'
 import { computeMoveRestrictionChange } from './categoryUtils'
+import { emitEvent } from './observability'
 import type { MoveRestrictionChange } from './categoryUtils'
 import { findImageInTree, findCategoryPath } from './treeUtils'
 import type { Category, ImageItem } from './types'
@@ -31,8 +32,8 @@ function moveDestinationLabel(parentId: number | null, ancestorPath: Category[])
 export interface UseCategoryActionsDeps {
   categories: Category[]
   uncategorizedImages: ImageItem[]
-  loadCategories: () => Promise<void>
-  loadUncategorizedImages: (opts?: { signal?: AbortSignal }) => Promise<void>
+  loadCategories: () => Promise<unknown>
+  loadUncategorizedImages: (opts?: { signal?: AbortSignal }) => Promise<unknown>
   currentCategories: Category[]
   ancestorProgramIds: number[]
   getPathRestriction: (depth?: number) => number[]
@@ -144,6 +145,12 @@ export function useCategoryActions({
       if (programIds !== undefined) body.program_ids = programIds
       if (groupIds !== undefined) body.group_ids = groupIds
       const created = await apiCreateCategory(body)
+      emitEvent({
+        event: 'category.created',
+        action: 'create',
+        outcome: 'success',
+        category_id: created.id,
+      })
       if (created.warnings?.length && setWarningSnack) {
         setWarningSnack(created.warnings.map((w) => w.message).join(' '))
       }
@@ -230,36 +237,73 @@ export function useCategoryActions({
     [categories, loadCategories, setErrorSnack, setPath],
   )
 
-  const reorderCategoriesInline = useCallback(
-    async (
-      items: Array<{
-        id: number
-        parent_id: number | null
-        sort_order: number
-      }>,
-    ) => {
-      try {
-        await apiReorderCategories(items)
-      } catch (err) {
-        console.error('Failed to reorder categories', err)
-        setErrorSnack(userMessage(err, 'Failed to reorder categories.'))
-        throw err
-      }
-    },
-    [setErrorSnack],
-  )
+  // All scopes touched by the most recent Manage Categories reorder, for
+  // the dialog's save-state indicator (a cross-parent move touches both the
+  // source and destination scopes). Null until the first dialog reorder.
+  const [manageReorderScopes, setManageReorderScopes] = useState<ScopeId[] | null>(null)
 
-  const reorderImagesInline = useCallback(
-    async (items: Array<{ id: number; sort_order: number }>) => {
-      try {
-        await apiReorderImages(items)
-      } catch (err) {
-        console.error('Failed to reorder images', err)
-        setErrorSnack(userMessage(err, 'Failed to reorder images.'))
-        throw err
+  /**
+   * Persist a Manage Categories drop through the shared ordering contract
+   * (epic #975, issue #982): parent changes go through the versioned
+   * category PATCH (same as Browse moves), then the full interleaved order
+   * of every affected scope is reported to the tile-ordering coordinator,
+   * which persists it atomically via PUT /api/tile-order with CAS revisions
+   * and explicit conflict handling.
+   */
+  const reorderTilesFromManage = useCallback(
+    async (moves: ParentMove[], scopes: ScopeOrder[]) => {
+      for (const move of moves) {
+        const catPath = findCategoryPath(categories, move.categoryId)
+        const version = catPath?.at(-1)?.version
+        // Distinguish "parent is root" (path found, length 1) from "path not
+        // found" (stale tree): the latter must not invalidate the root scope
+        // in place of the unknown real source scope.
+        const oldParentId = catPath ? (catPath.at(-2)?.id ?? null) : undefined
+        try {
+          await apiUpdateCategory(move.categoryId, { parent_id: move.newParentId }, version)
+        } catch (err) {
+          console.error('Failed to move category', err)
+          setErrorSnack(userMessage(err, 'Failed to move category.'))
+          throw err
+        }
+        // The parent-move PATCH bumps the tile-order revision of both scopes
+        // server-side, so any revision the coordinator still caches for them
+        // is stale and would make the reportOrder below falsely 409.
+        if (oldParentId !== undefined) {
+          tileOrderingCoordinator.invalidateRevision(oldParentId)
+        } else {
+          // Unknown source scope (stale tree): the PATCH still bumped it
+          // server-side, so invalidate every scope we are about to report —
+          // over-invalidating only costs a re-seeding GET, while a missed
+          // scope would 409 with a token the client knows is stale.
+          for (const { scope } of scopes) {
+            tileOrderingCoordinator.invalidateRevision(scope)
+          }
+        }
+        tileOrderingCoordinator.invalidateRevision(move.newParentId)
+      }
+      for (const { scope, order, dragContext } of scopes) {
+        tileOrderingCoordinator.reportOrder(scope, order, undefined, dragContext)
+      }
+      if (scopes.length > 0) {
+        // Merge with previously tracked scopes that have not settled yet so
+        // an earlier failed/conflicted save stays reachable from the
+        // indicator; settled scopes are pruned by the clear-when-settled
+        // effect in App.
+        setManageReorderScopes((prev) => {
+          const next = scopes.map((s) => s.scope)
+          const nextKeys = new Set(next)
+          for (const scope of prev ?? []) {
+            const status = tileOrderingCoordinator.getScope(scope).status
+            if (!nextKeys.has(scope) && status !== 'saved' && status !== 'idle') {
+              next.push(scope)
+            }
+          }
+          return next
+        })
       }
     },
-    [setErrorSnack],
+    [categories, setErrorSnack],
   )
 
   const doMoveCategory = useCallback(
@@ -267,7 +311,17 @@ export function useCategoryActions({
       try {
         const catPath = findCategoryPath(categories, categoryId)
         const version = catPath?.at(-1)?.version
+        // Distinguish "parent is root" (path found, length 1) from "path not
+        // found" (stale tree): the latter must not invalidate the root scope
+        // in place of the unknown real source scope.
+        const oldParentId = catPath ? (catPath.at(-2)?.id ?? null) : undefined
         await apiUpdateCategory(categoryId, { parent_id: newParentId }, version)
+        // The membership PATCH bumps both scopes' tile-order revisions
+        // server-side, so any cached revision is stale.
+        if (oldParentId !== undefined) {
+          tileOrderingCoordinator.invalidateRevision(oldParentId)
+        }
+        tileOrderingCoordinator.invalidateRevision(newParentId)
         setMoveCatOpen(false)
         setMovingCategory(null)
         await loadCategories()
@@ -321,6 +375,8 @@ export function useCategoryActions({
         const prevCategoryId = img.categoryId ?? null
         const targetName = findCategoryPath(categories, categoryId)?.at(-1)?.label ?? 'category'
         const updated = await apiUpdateImage(imageId, { category_id: categoryId }, img.version)
+        tileOrderingCoordinator.invalidateRevision(prevCategoryId)
+        tileOrderingCoordinator.invalidateRevision(categoryId)
         await loadCategories()
         loadUncategorizedImages()
         setMoveSnack({
@@ -329,6 +385,8 @@ export function useCategoryActions({
             try {
               setMoveSnack(null)
               await apiUpdateImage(imageId, { category_id: prevCategoryId }, updated.version)
+              tileOrderingCoordinator.invalidateRevision(prevCategoryId)
+              tileOrderingCoordinator.invalidateRevision(categoryId)
               await loadCategories()
               loadUncategorizedImages()
             } catch (undoErr) {
@@ -355,8 +413,9 @@ export function useCategoryActions({
     async (draggedCategoryId: number, targetCategoryId: number) => {
       try {
         const draggedPath = findCategoryPath(categories, draggedCategoryId)
-        const prevParentId =
-          draggedPath && draggedPath.length >= 2 ? draggedPath[draggedPath.length - 2].id : null
+        // undefined = path not found (stale tree); null = parent is root.
+        // An unknown source scope must not invalidate root in its place.
+        const prevParentId = draggedPath ? (draggedPath.at(-2)?.id ?? null) : undefined
         const draggedName = draggedPath?.at(-1)?.label ?? 'category'
         const targetPath = findCategoryPath(categories, targetCategoryId)
         const targetName = targetPath?.at(-1)?.label ?? 'category'
@@ -368,6 +427,10 @@ export function useCategoryActions({
           },
           draggedVersion,
         )
+        if (prevParentId !== undefined) {
+          tileOrderingCoordinator.invalidateRevision(prevParentId)
+        }
+        tileOrderingCoordinator.invalidateRevision(targetCategoryId)
         await loadCategories()
         setMoveSnack({
           message: `Moved \u201c${draggedName}\u201d into \u201c${targetName}\u201d`,
@@ -377,10 +440,14 @@ export function useCategoryActions({
               await apiUpdateCategory(
                 draggedCategoryId,
                 {
-                  parent_id: prevParentId,
+                  parent_id: prevParentId ?? null,
                 },
                 resp.version,
               )
+              if (prevParentId !== undefined) {
+                tileOrderingCoordinator.invalidateRevision(prevParentId)
+              }
+              tileOrderingCoordinator.invalidateRevision(targetCategoryId)
               await loadCategories()
             } catch (undoErr) {
               setErrorSnack(userMessage(undoErr, 'Failed to undo move.'))
@@ -500,8 +567,9 @@ export function useCategoryActions({
     deleteCategoryInline,
     editCategoryInline,
     toggleCategoryVisibility,
-    reorderCategoriesInline,
-    reorderImagesInline,
+    reorderTilesFromManage,
+    manageReorderScopes,
+    setManageReorderScopes,
     handleMoveCategory,
     handleRequestMoveCategory,
     handleDropImageOnCategory,

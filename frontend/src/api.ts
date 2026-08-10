@@ -32,7 +32,27 @@ let _token: string | null = readStoredToken()
 // Unique per browser-tab identifier sent on every API call.  Allows the
 // backend audit log to correlate all requests from a single tab, even when
 // many students share the same JWT (shared "student@example.ca" account).
-const SESSION_ID = globalThis.crypto?.randomUUID?.() ?? 'test-session'
+//
+// Persisted in sessionStorage so the id survives in-tab reloads and SPA
+// remounts (giving a stable notion of a "session" for usage analytics) while
+// still being distinct per tab — sessionStorage is not shared between tabs.
+function resolveSessionId(): string {
+  const fresh = (): string => globalThis.crypto?.randomUUID?.() ?? 'test-session'
+  try {
+    const storage = globalThis.sessionStorage
+    if (!storage) return fresh()
+    const existing = storage.getItem('hriv.session_id')
+    if (existing) return existing
+    const id = fresh()
+    storage.setItem('hriv.session_id', id)
+    return id
+  } catch {
+    // Private-mode or disabled storage: fall back to an in-memory id.
+    return fresh()
+  }
+}
+
+export const SESSION_ID = resolveSessionId()
 
 export function setToken(token: string | null): void {
   _token = token
@@ -90,29 +110,100 @@ function authHeaders(): Record<string, string> {
   return h
 }
 
+export interface ApiFailureContext {
+  method: string
+  path: string
+  requestId?: string | null
+  status?: number
+}
+
+type ApiFailureObserver = (error: unknown, context: ApiFailureContext) => void
+
+let _apiFailureObserver: ApiFailureObserver | null = null
+
+export function setApiFailureObserver(observer: ApiFailureObserver | null): void {
+  _apiFailureObserver = observer
+}
+
+function notifyVisibleApiFailure(error: unknown, context: ApiFailureContext): void {
+  _apiFailureObserver?.(error, context)
+}
+
 export class ApiError extends Error {
   status: number
   detail: string
-  constructor(status: number, detail: string) {
+  data?: unknown
+  requestId?: string | null
+  method?: string
+  path?: string
+  constructor(
+    status: number,
+    detail: string,
+    data?: unknown,
+    context?: Omit<ApiFailureContext, 'status'>,
+  ) {
     super(`API ${status}: ${detail}`)
     this.name = 'ApiError'
     this.status = status
     this.detail = detail
+    this.data = data
+    this.requestId = context?.requestId
+    this.method = context?.method
+    this.path = context?.path
   }
 }
 
+export class ApiTransportError extends TypeError {
+  method: string
+  path: string
+
+  constructor(message: string, context: Omit<ApiFailureContext, 'status' | 'requestId'>) {
+    super(message)
+    this.name = 'ApiTransportError'
+    this.method = context.method
+    this.path = context.path
+  }
+}
+
+export function isAuthFailure(err: unknown): err is ApiError {
+  return err instanceof ApiError && (err.status === 401 || err.status === 403)
+}
+
+// Converts an API-layer error into a user-facing string. When the caller is
+// about to surface the message to the user, this helper also notifies the
+// optional observability hook so we can record user-visible API failures.
 export function userMessage(err: unknown, fallback: string): string {
   if (err instanceof ApiError) {
+    notifyVisibleApiFailure(err, {
+      method: err.method ?? 'GET',
+      path: err.path ?? 'unknown',
+      requestId: err.requestId,
+      status: err.status,
+    })
+    const detail = err.detail.trim()
+    const looksLikeHtml =
+      /^<(!doctype|html|head|body|div|p|span|h[1-6]|pre|ul|ol|table|section|article)\b/i.test(
+        detail,
+      )
+    const usable = detail.length > 0 && detail.length <= 200 && !looksLikeHtml
+
     if (err.status === 409) {
-      return 'This item was modified by another user. Please refresh and try again.'
+      if (!usable || /modified by another/i.test(detail)) {
+        return 'This item was modified by another user. Please refresh and try again.'
+      }
+      return detail
     }
-    if (err.status >= 400 && err.status < 500 && err.detail) {
-      const detail = err.detail.trim()
-      const looksLikeHtml =
-        /^<(!doctype|html|head|body|div|p|span|h[1-6]|pre|ul|ol|table|section|article)\b/i.test(
-          detail,
-        )
-      if (!looksLikeHtml && detail.length > 0 && detail.length <= 200) {
+    if (err.status === 413) {
+      return 'This file is too large to upload.'
+    }
+    if (err.status === 507) {
+      if (usable) {
+        return detail
+      }
+      return 'Not enough free space is available to upload this file.'
+    }
+    if (err.status >= 400 && err.status < 500) {
+      if (usable) {
         return detail
       }
     }
@@ -121,6 +212,13 @@ export function userMessage(err: unknown, fallback: string): string {
   // Network failure: fetch rejects with TypeError (e.g. "Failed to fetch").
   // XHR-based handlers in this module also reject with TypeError for
   // consistency, so all network-level failures surface here.
+  if (err instanceof ApiTransportError) {
+    notifyVisibleApiFailure(err, {
+      method: err.method,
+      path: err.path,
+    })
+    return 'Network error — check your connection and try again.'
+  }
   if (err instanceof TypeError) {
     return 'Network error — check your connection and try again.'
   }
@@ -131,33 +229,102 @@ export function userMessage(err: unknown, fallback: string): string {
   return fallback
 }
 
-function parseErrorDetail(text: string): string {
-  let detail = text
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isMessageDetail(value: unknown): value is { message: string } {
+  return (
+    isRecord(value) &&
+    'message' in value &&
+    typeof (value as { message?: unknown }).message === 'string'
+  )
+}
+
+export interface AttachedCategory {
+  id: number
+  label: string
+}
+
+export interface AttachedCategoriesDetail {
+  message: string
+  category_ids: number[]
+  categories: AttachedCategory[]
+}
+
+function isAttachedCategory(value: unknown): value is AttachedCategory {
+  return isRecord(value) && typeof value.id === 'number' && typeof value.label === 'string'
+}
+
+export function isAttachedCategoriesDetail(value: unknown): value is AttachedCategoriesDetail {
+  return (
+    isRecord(value) &&
+    typeof value.message === 'string' &&
+    Array.isArray(value.category_ids) &&
+    value.category_ids.every((id) => typeof id === 'number') &&
+    Array.isArray(value.categories) &&
+    value.categories.every(isAttachedCategory)
+  )
+}
+
+export function attachedCategoriesFromError(err: unknown): AttachedCategory[] | null {
+  if (err instanceof ApiError && isAttachedCategoriesDetail(err.data)) {
+    return err.data.categories
+  }
+  return null
+}
+
+function parseError(text: string): { message: string; data?: unknown } {
+  let message = text
+  let data: unknown = undefined
   try {
-    const body = JSON.parse(text)
-    if (typeof body.detail === 'string') detail = body.detail
-    else if (Array.isArray(body.detail))
-      detail = body.detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join('; ')
-    else if (body.detail !== undefined) detail = String(body.detail)
+    const body: unknown = JSON.parse(text)
+    if (isRecord(body) && 'detail' in body) {
+      const bodyDetail = body.detail
+      data = bodyDetail
+      if (typeof bodyDetail === 'string') message = bodyDetail
+      else if (Array.isArray(bodyDetail))
+        message = bodyDetail
+          .map((e: unknown) =>
+            isRecord(e) && typeof e.msg === 'string' ? e.msg : JSON.stringify(e),
+          )
+          .join('; ')
+      else if (isMessageDetail(bodyDetail)) message = bodyDetail.message
+      else if (bodyDetail !== undefined) message = String(bodyDetail)
+    }
   } catch {
     /* use raw text */
   }
-  return detail
+  return { message, data }
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const { headers: initHeaders, ...restInit } = init ?? {}
-  const res = await fetch(`${BASE}/api${path}`, {
-    ...restInit,
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeaders(),
-      ...initHeaders,
-    },
-  })
+  const method = init?.method ?? 'GET'
+  let res: Response
+  try {
+    res = await fetch(`${BASE}/api${path}`, {
+      ...restInit,
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(),
+        ...initHeaders,
+      },
+    })
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw err
+    }
+    throw new ApiTransportError('Network error', { method, path })
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
-    throw new ApiError(res.status, parseErrorDetail(text))
+    const parsed = parseError(text)
+    throw new ApiError(res.status, parsed.message, parsed.data, {
+      method,
+      path,
+      requestId: res.headers.get('X-Request-ID'),
+    })
   }
   if (res.status === 204) return undefined as unknown as T
   return res.json() as Promise<T>
@@ -263,7 +430,12 @@ export async function fetchStatus(): Promise<ApiStatus> {
   const res = await fetch(`${BASE}/api/status`)
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
-    throw new ApiError(res.status, parseErrorDetail(text))
+    const parsed = parseError(text)
+    throw new ApiError(res.status, parsed.message, parsed.data, {
+      method: 'GET',
+      path: '/status',
+      requestId: res.headers.get('X-Request-ID'),
+    })
   }
   return res.json() as Promise<ApiStatus>
 }
@@ -315,23 +487,55 @@ export function deleteCategory(id: number): Promise<void> {
   return request(`/categories/${id}`, { method: 'DELETE' })
 }
 
-export function reorderCategories(
-  items: Array<{ id: number; parent_id: number | null; sort_order: number }>,
-): Promise<void> {
-  return request('/categories/reorder', {
+// ── Tile order (atomic combined ordering; docs/tile-ordering.md) ──
+
+export interface TileOrderItemRef {
+  type: 'category' | 'image'
+  id: number
+}
+
+export interface TileOrderItem extends TileOrderItemRef {
+  sort_order: number
+}
+
+export interface TileOrderResponse {
+  scope: { parent_category_id: number | null }
+  revision: number
+  items: TileOrderItem[]
+}
+
+export function getTileOrder(parentCategoryId: number | null): Promise<TileOrderResponse> {
+  const qs = parentCategoryId != null ? `?parent_category_id=${parentCategoryId}` : ''
+  return request(`/tile-order${qs}`)
+}
+
+export function putTileOrder(
+  parentCategoryId: number | null,
+  expectedRevision: number,
+  items: TileOrderItemRef[],
+  /** Client-generated correlation ID for end-to-end reorder telemetry. */
+  operationId?: string,
+): Promise<TileOrderResponse> {
+  return request('/tile-order', {
     method: 'PUT',
-    body: JSON.stringify({ items }),
+    body: JSON.stringify({
+      scope: { parent_category_id: parentCategoryId },
+      expected_revision: expectedRevision,
+      operation_id: operationId ?? null,
+      items,
+    }),
   })
+}
+
+/** Extract the authoritative current order from a 409 stale-revision ApiError. */
+export function tileOrderConflictCurrent(err: unknown): TileOrderResponse | null {
+  if (!(err instanceof ApiError) || err.status !== 409) return null
+  // `ApiError.data` is the response body's `detail` object.
+  const detail = err.data as { current?: TileOrderResponse } | undefined
+  return detail?.current ?? null
 }
 
 // ── Images ───────────────────────────────────────────────
-
-export function reorderImages(items: Array<{ id: number; sort_order: number }>): Promise<void> {
-  return request('/images/reorder', {
-    method: 'PUT',
-    body: JSON.stringify({ items }),
-  })
-}
 
 export function fetchImage(imageId: number): Promise<ApiImage> {
   return request(`/images/${imageId}`)
@@ -455,7 +659,8 @@ export async function fetchUsersPaged(params: UserListParams): Promise<Paginated
   })
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
-    throw new ApiError(res.status, parseErrorDetail(text))
+    const parsed = parseError(text)
+    throw new ApiError(res.status, parsed.message, parsed.data)
   }
   const items = (await res.json()) as ApiUser[]
   const header = res.headers.get('X-Total-Count')
@@ -783,7 +988,14 @@ export async function uploadSourceImage(
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve(JSON.parse(xhr.responseText) as ApiSourceImage)
         } else {
-          reject(new ApiError(xhr.status, parseErrorDetail(xhr.responseText || xhr.statusText)))
+          const parsed = parseError(xhr.responseText || xhr.statusText)
+          reject(
+            new ApiError(xhr.status, parsed.message, parsed.data, {
+              method: 'POST',
+              path: '/source-images/upload',
+              requestId: xhr.getResponseHeader('X-Request-ID'),
+            }),
+          )
         }
       } catch (e) {
         reject(e instanceof Error ? e : new Error('Failed to parse upload response'))
@@ -791,7 +1003,9 @@ export async function uploadSourceImage(
     })
 
     xhr.addEventListener('error', () => {
-      reject(new TypeError('Network error'))
+      reject(
+        new ApiTransportError('Network error', { method: 'POST', path: '/source-images/upload' }),
+      )
     })
 
     xhr.addEventListener('abort', () => {
@@ -863,7 +1077,14 @@ export async function replaceImage(
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve(JSON.parse(xhr.responseText) as ApiSourceImage)
         } else {
-          reject(new ApiError(xhr.status, parseErrorDetail(xhr.responseText || xhr.statusText)))
+          const parsed = parseError(xhr.responseText || xhr.statusText)
+          reject(
+            new ApiError(xhr.status, parsed.message, parsed.data, {
+              method: 'POST',
+              path: `/images/${imageId}/replace`,
+              requestId: xhr.getResponseHeader('X-Request-ID'),
+            }),
+          )
         }
       } catch (e) {
         reject(e instanceof Error ? e : new Error('Failed to parse replace response'))
@@ -871,7 +1092,12 @@ export async function replaceImage(
     })
 
     xhr.addEventListener('error', () => {
-      reject(new TypeError('Network error'))
+      reject(
+        new ApiTransportError('Network error', {
+          method: 'POST',
+          path: `/images/${imageId}/replace`,
+        }),
+      )
     })
 
     xhr.addEventListener('abort', () => {
@@ -944,7 +1170,14 @@ export async function bulkImportImages(
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve(JSON.parse(xhr.responseText) as ApiBulkImportJob)
         } else {
-          reject(new ApiError(xhr.status, parseErrorDetail(xhr.responseText || xhr.statusText)))
+          const parsed = parseError(xhr.responseText || xhr.statusText)
+          reject(
+            new ApiError(xhr.status, parsed.message, parsed.data, {
+              method: 'POST',
+              path: '/admin/bulk-import/',
+              requestId: xhr.getResponseHeader('X-Request-ID'),
+            }),
+          )
         }
       } catch (e) {
         reject(e instanceof Error ? e : new Error('Failed to parse bulk import response'))
@@ -952,7 +1185,9 @@ export async function bulkImportImages(
     })
 
     xhr.addEventListener('error', () => {
-      reject(new TypeError('Network error'))
+      reject(
+        new ApiTransportError('Network error', { method: 'POST', path: '/admin/bulk-import/' }),
+      )
     })
 
     xhr.addEventListener('abort', () => {
@@ -978,7 +1213,9 @@ export function fetchBulkImportJob(jobId: number): Promise<ApiBulkImportJob> {
 // ── Issues ──────────────────────────────────────────────
 
 export interface ReportIssueResponse {
-  issue_url: string
+  destination: string
+  tracking_url: string | null
+  issue_url: string | null
 }
 
 export function reportIssue(body: {
@@ -999,11 +1236,45 @@ export interface AdminTask {
   status: string
   progress: number
   log: string
+  original_filename?: string | null
   result_filename: string | null
   error_message: string | null
   created_by: number | null
   created_at: string | null
   updated_at: string | null
+}
+
+export interface FilesImportArchive {
+  archive_task_id: number
+  original_filename: string | null
+  size_bytes: number
+  created_at: string | null
+  last_status: string
+}
+
+export interface FilesImportArchiveDeleteResponse {
+  archive_task_id: number
+  deleted: boolean
+  path: string
+}
+
+export interface BackupSnapshotSummary {
+  name: string
+  blob_name: string
+  size: number
+  created_at: string | null
+}
+
+export interface BackupSnapshotManifestEntry {
+  size: number
+  sha256: string
+}
+
+export interface BackupSnapshotManifest {
+  snapshot_name: string
+  created_at: string | null
+  files: Record<string, BackupSnapshotManifestEntry>
+  [key: string]: unknown
 }
 
 export function startDbExport(): Promise<AdminTask> {
@@ -1020,13 +1291,97 @@ export async function startDbImport(file: File): Promise<AdminTask> {
   })
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
-    throw new ApiError(res.status, parseErrorDetail(text))
+    const parsed = parseError(text)
+    throw new ApiError(res.status, parsed.message, parsed.data, {
+      method: 'POST',
+      path: '/admin/tasks/db-import',
+      requestId: res.headers.get('X-Request-ID'),
+    })
   }
   return res.json() as Promise<AdminTask>
 }
 
 export function startFilesExport(): Promise<AdminTask> {
   return request('/admin/tasks/files-export', { method: 'POST' })
+}
+
+export function fetchFilesImportArchives(): Promise<FilesImportArchive[]> {
+  return request('/admin/tasks/files-import/archives')
+}
+
+export interface RebuildTilesRequest {
+  scope: 'missing' | 'stale' | 'missing_stale' | 'all'
+  image_ids?: number[] | null
+}
+
+export function startRebuildTiles(
+  body: RebuildTilesRequest = { scope: 'missing_stale' },
+): Promise<AdminTask> {
+  return request('/admin/tasks/rebuild-tiles', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function rerunFilesImportArchive(archiveTaskId: number): Promise<AdminTask> {
+  return request('/admin/tasks/files-import/rerun', {
+    method: 'POST',
+    body: JSON.stringify({ archive_task_id: archiveTaskId }),
+  })
+}
+
+export function deleteFilesImportArchive(
+  archiveTaskId: number,
+): Promise<FilesImportArchiveDeleteResponse> {
+  return request(`/admin/tasks/files-import/archives/${archiveTaskId}`, {
+    method: 'DELETE',
+  })
+}
+
+export interface ExportArchive {
+  task_id: number
+  task_type: string
+  artifact_role: 'result'
+  filename: string
+  size_bytes: number
+  status: string
+  created_at: string | null
+  updated_at: string | null
+  purgeable: boolean
+}
+
+export interface ExportArchivesResponse {
+  archives: ExportArchive[]
+  total_size_bytes: number
+}
+
+export function listExportArchives(): Promise<ExportArchivesResponse> {
+  return request('/admin/tasks/backup-archives')
+}
+
+export function purgeExportArchive(
+  taskId: number,
+  artifactRole: 'result',
+): Promise<{ deleted: boolean; task_id: number; artifact_role: string; size_bytes: number }> {
+  return request(`/admin/tasks/backup-archives/${taskId}/${artifactRole}`, { method: 'DELETE' })
+}
+
+export function listBackupSnapshots(): Promise<BackupSnapshotSummary[]> {
+  return request('/admin/backups/snapshots')
+}
+
+export function fetchBackupSnapshotManifest(snapshotName: string): Promise<BackupSnapshotManifest> {
+  return request(`/admin/backups/snapshots/${encodeURIComponent(snapshotName)}/manifest`)
+}
+
+export function startFileRestore(body: {
+  snapshot_name: string
+  member_path: string
+}): Promise<AdminTask> {
+  return request('/admin/tasks/file-restore', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
 }
 
 /**
@@ -1042,24 +1397,169 @@ export function initFilesImport(filename: string): Promise<AdminTask> {
   })
 }
 
+const UPLOAD_CHUNK_SIZE = 10 * 1024 * 1024 // 10 MiB
+const UPLOAD_MAX_RETRIES = 3
+const UPLOAD_MAX_RESYNCS = 5
+const UPLOAD_RETRY_BASE_MS = 1000
+
+function isRetryableUploadStatus(status: number): boolean {
+  return (status >= 500 && status !== 507) || status === 408 || status === 429
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function uploadChunk(
+  taskId: number,
+  file: File,
+  offset: number,
+  onProgress?: (fraction: number) => void,
+  signal?: AbortSignal,
+): Promise<{ bytes_received: number; status: string }> {
+  return new Promise<{ bytes_received: number; status: string }>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Upload aborted', 'AbortError'))
+      return
+    }
+
+    const end = Math.min(offset + UPLOAD_CHUNK_SIZE, file.size)
+    const chunk = file.slice(offset, end, 'application/octet-stream')
+    const xhr = new XMLHttpRequest()
+    xhr.open('PATCH', `${BASE}/api/admin/tasks/${taskId}/upload`)
+    xhr.setRequestHeader('Upload-Offset', String(offset))
+    xhr.setRequestHeader('Upload-Length', String(file.size))
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream')
+    const hdrs = authHeaders()
+    for (const [k, v] of Object.entries(hdrs)) {
+      xhr.setRequestHeader(k, v)
+    }
+
+    if (onProgress) {
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) {
+          onProgress((offset + e.loaded) / file.size)
+        }
+      })
+    }
+
+    const onAbort = () => xhr.abort()
+    if (signal) {
+      if (signal.aborted) {
+        reject(new DOMException('Upload aborted', 'AbortError'))
+        return
+      }
+      signal.addEventListener('abort', onAbort, { once: true })
+    }
+
+    xhr.addEventListener('load', () => {
+      signal?.removeEventListener('abort', onAbort)
+      if (xhr.status === 409) {
+        try {
+          const body = JSON.parse(xhr.responseText) as Record<string, unknown>
+          const resp = (body?.detail ?? body) as {
+            bytes_received: number
+            status: string
+          }
+          reject(
+            new ApiError(409, 'Upload offset conflict', resp, {
+              method: 'PATCH',
+              path: `/admin/tasks/${taskId}/upload`,
+              requestId: xhr.getResponseHeader('X-Request-ID'),
+            }),
+          )
+        } catch {
+          reject(
+            new ApiError(409, 'Upload offset conflict', undefined, {
+              method: 'PATCH',
+              path: `/admin/tasks/${taskId}/upload`,
+              requestId: xhr.getResponseHeader('X-Request-ID'),
+            }),
+          )
+        }
+        return
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as { bytes_received: number; status: string })
+        } catch (e) {
+          reject(e instanceof Error ? e : new Error('Failed to parse upload chunk response'))
+        }
+      } else {
+        const parsed = parseError(xhr.responseText || xhr.statusText)
+        reject(
+          new ApiError(xhr.status, parsed.message, parsed.data, {
+            method: 'PATCH',
+            path: `/admin/tasks/${taskId}/upload`,
+            requestId: xhr.getResponseHeader('X-Request-ID'),
+          }),
+        )
+      }
+    })
+
+    xhr.addEventListener('error', () => {
+      signal?.removeEventListener('abort', onAbort)
+      reject(
+        new ApiTransportError('Network error', {
+          method: 'PATCH',
+          path: `/admin/tasks/${taskId}/upload`,
+        }),
+      )
+    })
+
+    xhr.addEventListener('abort', () => {
+      signal?.removeEventListener('abort', onAbort)
+      reject(new DOMException('Upload aborted', 'AbortError'))
+    })
+
+    xhr.send(chunk)
+  })
+}
+
 /**
- * Upload the archive for an ``uploading``-status task via XHR.
+ * Return the current upload offset for resuming a chunked upload.
  *
- * On success the backend transitions the task to ``pending`` and
- * enqueues it for background processing.  The returned promise
- * resolves with the updated task object.
- *
- * @param onProgress  Called with a fraction (0–1) as the upload streams.
+ * Useful when a browser tab is reloaded or a network error occurred
+ * mid-transfer: the client can ask the server how much of the file it
+ * already has before sending the next chunk.
  */
-export function uploadTaskFile(
+export function getUploadStatus(
+  taskId: number,
+  signal?: AbortSignal,
+): Promise<{ bytes_received: number; status: string }> {
+  return request(`/admin/tasks/${taskId}/upload`, { signal })
+}
+
+/**
+ * Finalize a chunked filesystem-import upload once the client believes all
+ * bytes have been received.
+ */
+export function finalizeUpload(
+  taskId: number,
+  totalBytes: number,
+  signal?: AbortSignal,
+): Promise<AdminTask> {
+  return request(`/admin/tasks/${taskId}/upload/finalize`, {
+    method: 'POST',
+    body: JSON.stringify({ total_bytes: totalBytes }),
+    signal,
+  })
+}
+
+/**
+ * Small-file fast path: upload the archive in a single raw PUT.
+ *
+ * Archives that fit in one chunk (<= `UPLOAD_CHUNK_SIZE`) are sent in one
+ * request to avoid the extra round-trips of the chunked/resumable path. The
+ * backend streams raw bytes directly to the data volume without any multipart
+ * /tmp spooling.
+ */
+function uploadTaskFileRaw(
   taskId: number,
   file: File,
   onProgress?: (fraction: number) => void,
   signal?: AbortSignal,
 ): Promise<AdminTask> {
-  const form = new FormData()
-  form.append('file', file)
-
   return new Promise<AdminTask>((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('PUT', `${BASE}/api/admin/tasks/${taskId}/upload`)
@@ -1068,6 +1568,7 @@ export function uploadTaskFile(
     for (const [k, v] of Object.entries(hdrs)) {
       xhr.setRequestHeader(k, v)
     }
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream')
 
     if (onProgress) {
       xhr.upload.addEventListener('progress', (e) => {
@@ -1082,7 +1583,14 @@ export function uploadTaskFile(
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve(JSON.parse(xhr.responseText) as AdminTask)
         } else {
-          reject(new ApiError(xhr.status, parseErrorDetail(xhr.responseText || xhr.statusText)))
+          const parsed = parseError(xhr.responseText || xhr.statusText)
+          reject(
+            new ApiError(xhr.status, parsed.message, parsed.data, {
+              method: 'PUT',
+              path: `/admin/tasks/${taskId}/upload`,
+              requestId: xhr.getResponseHeader('X-Request-ID'),
+            }),
+          )
         }
       } catch (e) {
         reject(e instanceof Error ? e : new Error('Failed to parse upload response'))
@@ -1090,7 +1598,12 @@ export function uploadTaskFile(
     })
 
     xhr.addEventListener('error', () => {
-      reject(new TypeError('Network error'))
+      reject(
+        new ApiTransportError('Network error', {
+          method: 'PUT',
+          path: `/admin/tasks/${taskId}/upload`,
+        }),
+      )
     })
 
     xhr.addEventListener('abort', () => {
@@ -1105,7 +1618,146 @@ export function uploadTaskFile(
       signal.addEventListener('abort', () => xhr.abort(), { once: true })
     }
 
-    xhr.send(form)
+    xhr.send(file)
+  })
+}
+
+/**
+ * Upload the archive for an ``uploading``-status task using resumable chunks.
+ *
+ * Archives larger than `UPLOAD_CHUNK_SIZE` are sliced into 10 MiB pieces and
+ * sent via `PATCH` requests with `Upload-Offset` and `Upload-Length` headers.
+ * Network failures and 5xx responses are retried with a short exponential
+ * backoff; 409 offset-conflict responses trigger a resync from the server.
+ * Once the reported `bytes_received` equals `file.size`, the client calls
+ * `POST .../finalize`.
+ *
+ * On success the backend transitions the task to ``pending`` and enqueues it.
+ *
+ * @param onProgress  Called with a fraction (0–1) as each chunk streams.
+ */
+export function uploadTaskFile(
+  taskId: number,
+  file: File,
+  onProgress?: (fraction: number) => void,
+  signal?: AbortSignal,
+): Promise<AdminTask> {
+  if (file.size <= UPLOAD_CHUNK_SIZE) {
+    return uploadTaskFileRaw(taskId, file, onProgress, signal)
+  }
+
+  return new Promise<AdminTask>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Upload aborted', 'AbortError'))
+      return
+    }
+
+    let currentOffset = 0
+    let consecutiveRetries = 0
+    let nonProgressResyncs = 0
+
+    async function resync(): Promise<void> {
+      const status = await getUploadStatus(taskId, signal)
+      if (status.status !== 'uploading') {
+        throw new ApiError(409, `Task is in '${status.status}' state, expected 'uploading'`)
+      }
+      currentOffset = status.bytes_received
+      consecutiveRetries = 0
+    }
+
+    function checkStuck(offsetBefore: number, offsetAfter: number): void {
+      if (offsetAfter <= offsetBefore) {
+        nonProgressResyncs++
+      } else {
+        nonProgressResyncs = 0
+      }
+      if (nonProgressResyncs > UPLOAD_MAX_RESYNCS) {
+        throw new Error('Upload is stuck: offset is not advancing after multiple resyncs')
+      }
+    }
+
+    async function uploadChunks(): Promise<void> {
+      while (currentOffset < file.size) {
+        if (signal?.aborted) {
+          throw new DOMException('Upload aborted', 'AbortError')
+        }
+        try {
+          const resp = await uploadChunk(taskId, file, currentOffset, onProgress, signal)
+          if (resp.status !== 'uploading') {
+            // The backend moved the task out of uploading state unexpectedly.
+            throw new ApiError(409, `Task is in '${resp.status}' state, expected 'uploading'`)
+          }
+          if (resp.bytes_received <= currentOffset) {
+            // Server did not accept the chunk (offset conflict). Resync
+            // to avoid an infinite loop.
+            const previousOffset = currentOffset
+            await resync()
+            checkStuck(previousOffset, currentOffset)
+            continue
+          }
+          currentOffset = resp.bytes_received
+          nonProgressResyncs = 0
+          consecutiveRetries = 0
+        } catch (err: unknown) {
+          if (err instanceof ApiError && err.status === 409) {
+            const data =
+              isRecord(err.data) && typeof err.data.bytes_received === 'number'
+                ? (err.data as { bytes_received: number; status: string })
+                : null
+            if (data && data.status !== 'uploading') {
+              throw new ApiError(409, `Task is in '${data.status}' state, expected 'uploading'`)
+            }
+            const previousOffset = currentOffset
+            currentOffset =
+              data?.bytes_received ?? (await getUploadStatus(taskId, signal)).bytes_received
+            checkStuck(previousOffset, currentOffset)
+            consecutiveRetries = 0
+            continue
+          }
+          if (
+            err instanceof TypeError ||
+            (err instanceof ApiError && isRetryableUploadStatus(err.status))
+          ) {
+            consecutiveRetries++
+            if (consecutiveRetries > UPLOAD_MAX_RETRIES) throw err
+            await sleep(UPLOAD_RETRY_BASE_MS * consecutiveRetries)
+            continue
+          }
+          throw err
+        }
+      }
+    }
+
+    async function run() {
+      try {
+        await resync()
+        await uploadChunks()
+      } catch (err: unknown) {
+        reject(err)
+        return
+      }
+
+      try {
+        const task = await finalizeUpload(taskId, file.size, signal)
+        resolve(task)
+      } catch (err: unknown) {
+        if (err instanceof ApiError && err.status === 409) {
+          // Finalize reported a size mismatch; resync and try again once.
+          try {
+            await resync()
+            await uploadChunks()
+            const task = await finalizeUpload(taskId, file.size, signal)
+            resolve(task)
+          } catch (finalizeErr: unknown) {
+            reject(finalizeErr)
+          }
+        } else {
+          reject(err)
+        }
+      }
+    }
+
+    run()
   })
 }
 

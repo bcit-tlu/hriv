@@ -87,7 +87,7 @@ describe('MoveRestrictionConfirmDialog', () => {
     )
     await user.click(screen.getByRole('button', { name: /cancel/i }))
     expect(onCancel).toHaveBeenCalledOnce()
-  })
+  }, 30_000)
 
   it('shows program restriction section with names when programs change', () => {
     render(

@@ -5,29 +5,49 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 
 import json
+import pytest
 
+from app.backup_access import (
+    BackupRestoreNotConfiguredError,
+    BackupSnapshotManifestError,
+    BackupSnapshotNotFoundError,
+)
+from app.routers import admin as admin_router
 from app.routers.admin import (
+    _acquire_chunk_lock,
     _create_task,
     _kick_off,
+    _safe_admin_task_file,
     _task_to_dict,
+    list_backup_snapshots_endpoint,
+    get_backup_snapshot_manifest,
     get_version,
+    list_export_archives,
+    purge_backup_archive,
+    start_file_restore,
     start_db_export,
     start_db_import,
     start_files_export,
     start_files_import,
+    list_files_import_archives_endpoint,
+    rerun_files_import,
+    delete_files_import_archive_endpoint,
     start_rebuild_tiles,
     upload_task_file,
+    get_upload_status,
+    upload_task_chunk,
+    finalize_task_upload,
     list_tasks,
     get_task,
     cancel_task,
     create_task_download_token,
     download_task_result,
 )
-from app.schemas import RebuildTilesRequest
+from app.schemas import FileRestoreRequest, FilesImportRerunRequest, RebuildTilesRequest, UploadFinalizeRequest
 
 
 def _make_admin_task(
@@ -39,6 +59,7 @@ def _make_admin_task(
     result_filename=None,
     result_path=None,
     input_path=None,
+    original_filename=None,
     error_message=None,
     created_by=1,
     created_at=None,
@@ -54,6 +75,7 @@ def _make_admin_task(
         result_filename=result_filename,
         result_path=result_path,
         input_path=input_path,
+        original_filename=original_filename,
         error_message=error_message,
         created_by=created_by,
         created_at=now,
@@ -61,7 +83,32 @@ def _make_admin_task(
     )
 
 
-_VERSION_ENV_KEYS = ("APP_VERSION", "BACKUP_VERSION", "BACKUP_VERSION_FILE")
+class _FakeRequest:
+    def __init__(
+        self,
+        chunks: list[bytes],
+        *,
+        content_type: str = "application/octet-stream",
+        content_length: int | None = None,
+    ) -> None:
+        self.headers = {"content-type": content_type}
+        if content_length is not None:
+            self.headers["content-length"] = str(content_length)
+        self._chunks = chunks
+
+    async def stream(self):
+        for chunk in self._chunks:
+            yield chunk
+
+
+_VERSION_ENV_KEYS = (
+    "APP_VERSION",
+    "WORKER_VERSION",
+    "BACKUP_VERSION",
+    "BACKUP_VERSION_FILE",
+    "FRONTEND_VERSION",
+    "FRONTEND_VERSION_FILE",
+)
 
 
 def _version_env(**overrides: str) -> dict[str, str]:
@@ -81,29 +128,54 @@ async def test_get_version_returns_env_values() -> None:
     """With no ConfigMap mount, env vars are the source of truth."""
     with patch.dict(
         os.environ,
-        _version_env(APP_VERSION="1.2.3", BACKUP_VERSION="4.5.6"),
+        _version_env(
+            APP_VERSION="1.2.3",
+            WORKER_VERSION="1.2.4",
+            BACKUP_VERSION="4.5.6",
+            FRONTEND_VERSION="7.8.9",
+        ),
         clear=True,
-    ):
+    ), patch("app.routers.admin.load_stored_synthetic_result_state", return_value=None):
         result = await get_version(_user=SimpleNamespace(id=1, role="admin"))
-    assert result == {"backend": "1.2.3", "backup": "4.5.6"}
+    assert result == {
+        "backend": "1.2.3",
+        "worker": "1.2.4",
+        "backup": "4.5.6",
+        "frontend": "7.8.9",
+        "synthetic": "unknown",
+    }
 
 
 async def test_get_version_defaults_to_dev() -> None:
     """Unset env vars fall back to 'dev' so local builds still render."""
-    with patch.dict(os.environ, _version_env(), clear=True):
+    with patch.dict(os.environ, _version_env(), clear=True), patch(
+        "app.routers.admin.load_stored_synthetic_result_state", return_value=None
+    ):
         result = await get_version(_user=SimpleNamespace(id=1, role="admin"))
-    assert result == {"backend": "dev", "backup": "dev"}
+    assert result == {
+        "backend": "dev",
+        "worker": "dev",
+        "backup": "dev",
+        "frontend": "unknown",
+        "synthetic": "unknown",
+    }
 
 
 async def test_get_version_empty_env_falls_back_to_dev() -> None:
     """Empty string env vars (chart default for BACKUP_VERSION) → 'dev'."""
     with patch.dict(
         os.environ,
-        _version_env(APP_VERSION="", BACKUP_VERSION=""),
+        _version_env(APP_VERSION="", WORKER_VERSION="", BACKUP_VERSION="", FRONTEND_VERSION=""),
         clear=True,
-    ):
+    ), patch("app.routers.admin.load_stored_synthetic_result_state", return_value=None):
         result = await get_version(_user=SimpleNamespace(id=1, role="admin"))
-    assert result == {"backend": "dev", "backup": "dev"}
+    assert result == {
+        "backend": "dev",
+        "worker": "dev",
+        "backup": "dev",
+        "frontend": "unknown",
+        "synthetic": "unknown",
+    }
 
 
 async def test_get_version_reads_backup_from_configmap_mount(tmp_path) -> None:
@@ -118,11 +190,13 @@ async def test_get_version_reads_backup_from_configmap_mount(tmp_path) -> None:
             BACKUP_VERSION_FILE=str(version_file),
         ),
         clear=True,
-    ):
+    ), patch("app.routers.admin.load_stored_synthetic_result_state", return_value=None):
         result = await get_version(_user=SimpleNamespace(id=1, role="admin"))
     # Trailing whitespace/newline from the ConfigMap projection is stripped
     # so the footer stays tidy.
-    assert result == {"backend": "0.6.0", "backup": "0.3.1-head.abc1234"}
+    assert result["backend"] == "0.6.0"
+    assert result["worker"] == "0.6.0"
+    assert result["backup"] == "0.3.1-head.abc1234"
 
 
 async def test_get_version_falls_back_to_env_when_mount_missing(tmp_path) -> None:
@@ -136,9 +210,10 @@ async def test_get_version_falls_back_to_env_when_mount_missing(tmp_path) -> Non
             BACKUP_VERSION_FILE=str(missing),
         ),
         clear=True,
-    ):
+    ), patch("app.routers.admin.load_stored_synthetic_result_state", return_value=None):
         result = await get_version(_user=SimpleNamespace(id=1, role="admin"))
-    assert result == {"backend": "0.6.0", "backup": "0.3.0"}
+    assert result["backend"] == "0.6.0"
+    assert result["backup"] == "0.3.0"
 
 
 async def test_get_version_falls_back_to_env_when_mount_empty(tmp_path) -> None:
@@ -153,9 +228,10 @@ async def test_get_version_falls_back_to_env_when_mount_empty(tmp_path) -> None:
             BACKUP_VERSION_FILE=str(version_file),
         ),
         clear=True,
-    ):
+    ), patch("app.routers.admin.load_stored_synthetic_result_state", return_value=None):
         result = await get_version(_user=SimpleNamespace(id=1, role="admin"))
-    assert result == {"backend": "0.6.0", "backup": "0.3.0"}
+    assert result["backend"] == "0.6.0"
+    assert result["backup"] == "0.3.0"
 
 
 async def test_get_version_falls_back_to_dev_when_mount_and_env_missing(tmp_path) -> None:
@@ -165,9 +241,30 @@ async def test_get_version_falls_back_to_dev_when_mount_and_env_missing(tmp_path
         os.environ,
         _version_env(BACKUP_VERSION_FILE=str(missing)),
         clear=True,
+    ), patch("app.routers.admin.load_stored_synthetic_result_state", return_value=None):
+        result = await get_version(_user=SimpleNamespace(id=1, role="admin"))
+    assert result["backend"] == "dev"
+    assert result["backup"] == "dev"
+
+
+async def test_get_version_reads_frontend_and_synthetic_versions(tmp_path) -> None:
+    frontend_version = tmp_path / "frontend-version"
+    frontend_version.write_text("3.4.5\n")
+    synthetic_state = SimpleNamespace(
+        latest_result=SimpleNamespace(component_version="6.7.8"),
+    )
+    with patch.dict(
+        os.environ,
+        _version_env(FRONTEND_VERSION_FILE=str(frontend_version)),
+        clear=True,
+    ), patch(
+        "app.routers.admin.load_stored_synthetic_result_state",
+        return_value=synthetic_state,
     ):
         result = await get_version(_user=SimpleNamespace(id=1, role="admin"))
-    assert result == {"backend": "dev", "backup": "dev"}
+
+    assert result["frontend"] == "3.4.5"
+    assert result["synthetic"] == "6.7.8"
 
 
 def test_task_to_dict() -> None:
@@ -314,6 +411,98 @@ async def test_start_rebuild_tiles_creates_task(tmp_path) -> None:
     assert params == {"scope": "missing", "image_ids": [7, 9]}
 
 
+async def test_start_file_restore_creates_task(tmp_path) -> None:
+    user = SimpleNamespace(id=1)
+    bg = MagicMock()
+    db = AsyncMock()
+
+    mock_exec_result = MagicMock()
+    mock_exec_result.scalars.return_value.first.return_value = None
+    db.execute = AsyncMock(return_value=mock_exec_result)
+
+    task = _make_admin_task(task_type="file_restore")
+
+    async def mock_refresh(obj):
+        for k, v in vars(task).items():
+            setattr(obj, k, v)
+
+    db.refresh = AsyncMock(side_effect=mock_refresh)
+
+    tasks_dir = str(tmp_path / "admin_tasks")
+    request = FileRestoreRequest(
+        snapshot_name="hriv-backup-20260102-020000",
+        member_path="data/source_images/a.jpg",
+    )
+
+    manifest = {
+        "snapshot_name": request.snapshot_name,
+        "files": {
+            request.member_path: {"size": 3, "sha256": "abc"},
+        },
+    }
+
+    with (
+        patch("app.admin_ops._TASKS_DIR", tasks_dir),
+        patch("app.routers.admin.get_snapshot_manifest", return_value=manifest),
+        patch("app.routers.admin.enqueue_admin_task", new_callable=AsyncMock, return_value=True),
+    ):
+        result = await start_file_restore(user, bg, request=request, db=db)
+
+    assert result["task_type"] == "file_restore"
+    assert result["status"] == "pending"
+
+    param_files = [f for f in os.listdir(tasks_dir) if f.startswith("restore-")]
+    assert len(param_files) == 1
+    with open(os.path.join(tasks_dir, param_files[0])) as f:
+        params = json.load(f)
+    assert params == {
+        "snapshot_name": request.snapshot_name,
+        "member_path": request.member_path,
+    }
+
+
+async def test_list_backup_snapshots_disabled_returns_400() -> None:
+    with patch(
+        "app.routers.admin.list_snapshot_blobs",
+        side_effect=BackupRestoreNotConfiguredError("backup restore is not configured"),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await list_backup_snapshots_endpoint(MagicMock())
+    assert exc.value.status_code == 400
+
+
+async def test_get_backup_snapshot_manifest_not_configured_returns_400() -> None:
+    with patch(
+        "app.routers.admin.get_snapshot_manifest",
+        side_effect=BackupRestoreNotConfiguredError("backup restore is not configured"),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await get_backup_snapshot_manifest("hriv-backup-20260102-020000", MagicMock())
+    assert exc.value.status_code == 400
+
+
+async def test_get_backup_snapshot_manifest_invalid_manifest_returns_500() -> None:
+    with patch(
+        "app.routers.admin.get_snapshot_manifest",
+        side_effect=BackupSnapshotManifestError("manifest.json could not be parsed"),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await get_backup_snapshot_manifest("hriv-backup-20260102-020000", MagicMock())
+    assert exc.value.status_code == 500
+    assert exc.value.detail == "manifest.json could not be parsed"
+
+
+async def test_get_backup_snapshot_manifest_missing_archive_returns_404() -> None:
+    with patch(
+        "app.routers.admin.get_snapshot_manifest",
+        side_effect=BackupSnapshotNotFoundError("hriv-backup-20260102-020000"),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await get_backup_snapshot_manifest("hriv-backup-20260102-020000", MagicMock())
+    assert exc.value.status_code == 404
+    assert exc.value.detail == "Snapshot hriv-backup-20260102-020000 not found"
+
+
 def test_rebuild_tiles_request_defaults_and_validation() -> None:
     """The request model defaults to missing_stale and rejects bad scopes."""
     assert RebuildTilesRequest().scope == "missing_stale"
@@ -368,15 +557,163 @@ async def test_start_files_import_creates_uploading_task() -> None:
     assert result["status"] == "uploading"
 
 
+
+
+async def test_list_files_import_archives_endpoint_response_model_validation() -> None:
+    app = FastAPI()
+    app.include_router(admin_router.router, prefix="/api")
+
+    async def override_db():
+        yield AsyncMock()
+
+    app.dependency_overrides[admin_router._admin] = lambda: SimpleNamespace(id=1, role="admin")
+    app.dependency_overrides[admin_router.get_db] = override_db
+
+    archives = [
+        {
+            "archive_task_id": 7,
+            "original_filename": "backup.tar.gz",
+            "size_bytes": 123,
+            "created_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+            "last_status": "completed",
+        }
+    ]
+
+    with patch(
+        "app.routers.admin.list_files_import_archives",
+        new_callable=AsyncMock,
+        return_value=archives,
+    ):
+        with TestClient(app) as client:
+            response = client.get("/api/admin/tasks/files-import/archives")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "archive_task_id": 7,
+            "original_filename": "backup.tar.gz",
+            "size_bytes": 123,
+            "created_at": "2026-01-01T00:00:00Z",
+            "last_status": "completed",
+        }
+    ]
+
+
+async def test_list_files_import_archives_endpoint() -> None:
+    user = SimpleNamespace(id=1)
+    archives = [
+        {
+            "archive_task_id": 7,
+            "original_filename": "backup.tar.gz",
+            "size_bytes": 123,
+            "created_at": datetime.now(timezone.utc),
+            "last_status": "completed",
+        }
+    ]
+
+    with patch(
+        "app.routers.admin.list_files_import_archives",
+        new_callable=AsyncMock,
+        return_value=archives,
+    ):
+        result = await list_files_import_archives_endpoint(user, db=AsyncMock())
+
+    assert result == archives
+
+
+async def test_rerun_files_import_creates_pending_task() -> None:
+    user = SimpleNamespace(id=1)
+    bg = MagicMock()
+    db = AsyncMock()
+    task = _make_admin_task(task_type="files_import", status="pending")
+
+    with (
+        patch(
+            "app.routers.admin.rerun_files_import_archive",
+            new_callable=AsyncMock,
+            return_value=task,
+        ),
+        patch("app.routers.admin.enqueue_admin_task", new_callable=AsyncMock, return_value=True),
+    ):
+        result = await rerun_files_import(user, bg, FilesImportRerunRequest(archive_task_id=7), db=db)
+
+    assert result["task_type"] == "files_import"
+    assert result["status"] == "pending"
+
+
+async def test_rerun_files_import_concurrency_guard_returns_409() -> None:
+    user = SimpleNamespace(id=1)
+    bg = MagicMock()
+    db = AsyncMock()
+
+    with patch(
+        "app.routers.admin.rerun_files_import_archive",
+        side_effect=HTTPException(status_code=409, detail="already running"),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await rerun_files_import(user, bg, FilesImportRerunRequest(archive_task_id=7), db=db)
+    assert exc.value.status_code == 409
+
+
+async def test_rerun_files_import_traversal_rejected_returns_400() -> None:
+    user = SimpleNamespace(id=1)
+    bg = MagicMock()
+    db = AsyncMock()
+
+    with patch(
+        "app.routers.admin.rerun_files_import_archive",
+        side_effect=ValueError("Archive path is outside admin_tasks dir"),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await rerun_files_import(user, bg, FilesImportRerunRequest(archive_task_id=7), db=db)
+
+    assert exc.value.status_code == 400
+
+
+async def test_delete_files_import_archive_endpoint_happy_path() -> None:
+    with patch(
+        "app.routers.admin.delete_files_import_archive",
+        new_callable=AsyncMock,
+        return_value={"archive_task_id": 7, "deleted": True, "path": "/data/admin_tasks/import-1.tar.gz"},
+    ):
+        result = await delete_files_import_archive_endpoint(7, MagicMock(), db=AsyncMock())
+
+    assert result["deleted"] is True
+    assert result["archive_task_id"] == 7
+
+
+async def test_delete_files_import_archive_endpoint_missing_archive_returns_404() -> None:
+    with patch(
+        "app.routers.admin.delete_files_import_archive",
+        side_effect=FileNotFoundError("Archive file not found"),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await delete_files_import_archive_endpoint(7, MagicMock(), db=AsyncMock())
+
+    assert exc.value.status_code == 404
+
+
+async def test_delete_files_import_archive_endpoint_active_reference_returns_409() -> None:
+    with patch(
+        "app.routers.admin.delete_files_import_archive",
+        side_effect=RuntimeError("Archive is currently in use by an active files import"),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await delete_files_import_archive_endpoint(7, MagicMock(), db=AsyncMock())
+
+    assert exc.value.status_code == 409
+
+
 async def test_upload_task_file_not_found() -> None:
     """Upload to a non-existent task returns 404."""
     user = SimpleNamespace(id=1)
     bg = MagicMock()
     db = AsyncMock()
     db.get = AsyncMock(return_value=None)
+    request = _FakeRequest([b"fake-data"], content_length=9)
 
     with pytest.raises(HTTPException) as exc:
-        await upload_task_file(999, user, bg, file=MagicMock(), db=db)
+        await upload_task_file(999, request, user, bg, db=db)
     assert exc.value.status_code == 404
 
 
@@ -387,10 +724,119 @@ async def test_upload_task_file_wrong_status() -> None:
     task = _make_admin_task(status="running", input_path="/tmp/x.tar.gz")
     db = AsyncMock()
     db.get = AsyncMock(return_value=task)
+    request = _FakeRequest([b"fake-data"], content_length=9)
 
     with pytest.raises(HTTPException) as exc:
-        await upload_task_file(1, user, bg, file=MagicMock(), db=db)
+        await upload_task_file(1, request, user, bg, db=db)
     assert exc.value.status_code == 409
+
+
+async def test_upload_task_file_rejects_multipart() -> None:
+    """Multipart uploads are rejected so clients send raw bytes."""
+    user = SimpleNamespace(id=1)
+    bg = MagicMock()
+    db = AsyncMock()
+    request = _FakeRequest(
+        [b"--boundary--"],
+        content_type="multipart/form-data; boundary=boundary",
+        content_length=14,
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await upload_task_file(1, request, user, bg, db=db)
+
+    assert exc.value.status_code == 415
+    assert "raw file bytes" in exc.value.detail
+    db.get.assert_not_awaited()
+
+
+async def test_upload_task_file_fails_fast_on_insufficient_space(tmp_path) -> None:
+    """Declared Content-Length is compared to free space before streaming."""
+    user = SimpleNamespace(id=1)
+    bg = MagicMock()
+    task = _make_admin_task(
+        task_type="files_import",
+        status="uploading",
+        input_path=str(tmp_path / "import.tar.gz"),
+        log="Awaiting file upload: backup.tar.gz\n",
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+    db.commit = AsyncMock()
+    detail = (
+        "Insufficient space to upload archive: required 1024 bytes (1.0 KiB), "
+        f"available 512 bytes (512 B) in {tmp_path / 'admin_tasks'}"
+    )
+
+    async def _refresh_failed(obj) -> None:
+        obj.status = "failed"
+        obj.error_message = detail
+        obj.log = f"Awaiting file upload: backup.tar.gz\nERROR: {detail}\n"
+
+    db.refresh = AsyncMock(side_effect=_refresh_failed)
+    update_result = MagicMock()
+    update_result.scalar.return_value = task.id
+    db.execute = AsyncMock(return_value=update_result)
+    request = _FakeRequest([b"ignored"], content_length=1024)
+
+    with (
+        patch("app.routers.admin._ensure_tasks_dir", return_value=str(tmp_path / "admin_tasks")),
+        patch(
+            "app.routers.admin.shutil.disk_usage",
+            return_value=SimpleNamespace(free=512),
+        ),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await upload_task_file(1, request, user, bg, db=db)
+
+    assert exc.value.status_code == 507
+    assert "required 1024 bytes" in exc.value.detail
+    assert task.status == "failed"
+    assert "required 1024 bytes" in task.error_message
+    assert "ERROR:" in task.log
+    db.commit.assert_awaited_once()
+
+
+async def test_upload_task_file_stream_error_preserves_cancelled_status(
+    tmp_path,
+) -> None:
+    """A concurrent cancel must survive a later stream failure."""
+    user = SimpleNamespace(id=1)
+    bg = MagicMock()
+    task = _make_admin_task(
+        task_type="files_import",
+        status="uploading",
+        input_path=str(tmp_path / "import.tar.gz"),
+        log="Awaiting file upload: backup.tar.gz\n",
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+    db.refresh = AsyncMock()
+    db.commit = AsyncMock()
+    update_result = MagicMock()
+    update_result.scalar.return_value = None
+    db.execute = AsyncMock(return_value=update_result)
+
+    class _CancellingRequest(_FakeRequest):
+        async def stream(self):
+            yield b"part-1"
+            task.status = "cancelled"
+            raise OSError("client disconnected")
+
+    request = _CancellingRequest([b"part-1"], content_length=6)
+
+    with (
+        patch("app.routers.admin._ensure_tasks_dir", return_value=str(tmp_path / "admin_tasks")),
+        patch("app.routers.admin.shutil.disk_usage", return_value=SimpleNamespace(free=10**12)),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await upload_task_file(1, request, user, bg, db=db)
+
+    assert exc.value.status_code == 500
+    assert task.status == "cancelled"
+    assert task.error_message is None
+    assert task.log == "Awaiting file upload: backup.tar.gz\n"
+    db.commit.assert_awaited_once()
 
 
 async def test_upload_task_file_success(tmp_path) -> None:
@@ -407,6 +853,7 @@ async def test_upload_task_file_success(tmp_path) -> None:
     )
     db = AsyncMock()
     db.get = AsyncMock(return_value=task)
+    request = _FakeRequest([b"fake-data"], content_length=9)
 
     # The atomic UPDATE returns a result whose scalar() yields the task id.
     update_result = MagicMock()
@@ -421,16 +868,247 @@ async def test_upload_task_file_success(tmp_path) -> None:
     db.refresh = AsyncMock(side_effect=mock_refresh)
 
     # Fake upload file that yields one small chunk
-    upload = MagicMock()
-    upload.read = AsyncMock(side_effect=[b"fake-data", b""])
-
-    with patch("app.routers.admin.enqueue_admin_task", new_callable=AsyncMock, return_value=True):
-        result = await upload_task_file(task.id, user, bg, file=upload, db=db)
+    with (
+        patch("app.routers.admin._ensure_tasks_dir", return_value=str(tmp_path / "admin_tasks")),
+        patch("app.routers.admin.shutil.disk_usage", return_value=SimpleNamespace(free=10**12)),
+        patch("app.routers.admin.enqueue_admin_task", new_callable=AsyncMock, return_value=True),
+    ):
+        result = await upload_task_file(task.id, request, user, bg, db=db)
 
     assert result["status"] == "pending"
     assert "Upload complete" in result["log"]
     assert os.path.exists(input_path)  # file was written
     os.unlink(input_path)  # clean up
+
+
+async def test_get_upload_status_not_found() -> None:
+    """GET status for a non-existent task returns 404."""
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=None)
+
+    with pytest.raises(HTTPException) as exc:
+        await get_upload_status(999, MagicMock(), db=db)
+    assert exc.value.status_code == 404
+
+
+async def test_get_upload_status_returns_bytes_received(tmp_path) -> None:
+    """GET status returns the current on-disk size for the upload."""
+    input_path = tmp_path / "import.tar.gz"
+    input_path.write_bytes(b"partial-data")
+    task = _make_admin_task(
+        task_type="files_import",
+        status="uploading",
+        input_path=str(input_path),
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+
+    result = await get_upload_status(1, MagicMock(), db=db)
+    assert result == {"bytes_received": 12, "status": "uploading"}
+
+
+async def test_upload_task_chunk_not_found() -> None:
+    """PATCH chunk for a non-existent task returns 404."""
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=None)
+    request = _FakeRequest([b"data"], content_length=4)
+
+    with pytest.raises(HTTPException) as exc:
+        await upload_task_chunk(999, request, MagicMock(), db=db)
+    assert exc.value.status_code == 404
+
+
+async def test_upload_task_chunk_missing_headers() -> None:
+    """PATCH chunk without Upload-Offset or Content-Length returns 400."""
+    task = _make_admin_task(
+        task_type="files_import",
+        status="uploading",
+        input_path="/tmp/import.tar.gz",
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+    request = _FakeRequest([b"data"], content_length=None)
+
+    with pytest.raises(HTTPException) as exc:
+        await upload_task_chunk(1, request, MagicMock(), db=db)
+    assert exc.value.status_code == 400
+
+
+async def test_upload_task_chunk_offset_mismatch_returns_409(tmp_path) -> None:
+    """PATCH chunk with an offset that does not match the on-disk size returns 409."""
+    input_path = tmp_path / "import.tar.gz"
+    input_path.write_bytes(b"0123456789")
+    task = _make_admin_task(
+        task_type="files_import",
+        status="uploading",
+        input_path=str(input_path),
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+    request = _FakeRequest(
+        [b"more-data"],
+        content_length=9,
+    )
+    request.headers["upload-offset"] = "5"  # does not match current size 10
+
+    with pytest.raises(HTTPException) as exc:
+        await upload_task_chunk(1, request, MagicMock(), db=db)
+    assert exc.value.status_code == 409
+    assert exc.value.detail == {
+        "message": "Upload offset conflict",
+        "bytes_received": 10,
+        "status": "uploading",
+    }
+
+
+async def test_upload_task_chunk_insufficient_space_507(tmp_path) -> None:
+    """PATCH chunk is rejected fast when the declared chunk exceeds free space."""
+    input_path = tmp_path / "import.tar.gz"
+    task = _make_admin_task(
+        task_type="files_import",
+        status="uploading",
+        input_path=str(input_path),
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+    request = _FakeRequest([b"ignored"], content_length=1024)
+    request.headers["upload-offset"] = "0"
+    request.headers["upload-length"] = "1024"
+
+    with (
+        patch("app.routers.admin._ensure_tasks_dir", return_value=str(tmp_path / "admin_tasks")),
+        patch(
+            "app.routers.admin.shutil.disk_usage",
+            return_value=SimpleNamespace(free=512),
+        ),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await upload_task_chunk(1, request, MagicMock(), db=db)
+
+    assert exc.value.status_code == 507
+    assert "required 1024 bytes" in exc.value.detail
+
+
+async def test_upload_task_chunk_success_and_updates_progress(tmp_path) -> None:
+    """PATCH chunk appends bytes and updates task progress."""
+    input_path = tmp_path / "import.tar.gz"
+    task = _make_admin_task(
+        task_type="files_import",
+        status="uploading",
+        input_path=str(input_path),
+        progress=0,
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+    db.execute = AsyncMock()
+    db.commit = AsyncMock()
+    request = _FakeRequest([b"chunk-data"], content_length=10)
+    request.headers["upload-offset"] = "0"
+    request.headers["upload-length"] = "100"
+
+    with (
+        patch("app.routers.admin._ensure_tasks_dir", return_value=str(tmp_path / "admin_tasks")),
+        patch(
+            "app.routers.admin.shutil.disk_usage",
+            return_value=SimpleNamespace(free=10**12),
+        ),
+    ):
+        result = await upload_task_chunk(1, request, MagicMock(), db=db)
+
+    assert result["bytes_received"] == 10
+    assert result["status"] == "uploading"
+    assert input_path.read_bytes() == b"chunk-data"
+    db.execute.assert_awaited_once()
+    db.commit.assert_awaited_once()
+
+
+async def test_upload_task_chunk_does_not_write_beyond_content_length(
+    tmp_path,
+) -> None:
+    """The stream helper caps written bytes to the declared Content-Length."""
+    input_path = tmp_path / "import.tar.gz"
+    task = _make_admin_task(
+        task_type="files_import",
+        status="uploading",
+        input_path=str(input_path),
+        progress=0,
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+    db.execute = AsyncMock()
+    db.commit = AsyncMock()
+    request = _FakeRequest([b"oversized-chunk-data"], content_length=4)
+    request.headers["upload-offset"] = "0"
+    request.headers["upload-length"] = "100"
+
+    with (
+        patch("app.routers.admin._ensure_tasks_dir", return_value=str(tmp_path / "admin_tasks")),
+        patch(
+            "app.routers.admin.shutil.disk_usage",
+            return_value=SimpleNamespace(free=10**12),
+        ),
+    ):
+        result = await upload_task_chunk(1, request, MagicMock(), db=db)
+
+    assert input_path.read_bytes() == b"over"
+    assert result["bytes_received"] == 4
+    db.execute.assert_awaited_once()
+    db.commit.assert_awaited_once()
+
+
+async def test_finalize_task_upload_size_mismatch_returns_409(tmp_path) -> None:
+    """Finalize returns 409 if the on-disk size does not match the request."""
+    input_path = tmp_path / "import.tar.gz"
+    input_path.write_bytes(b"0123456789")
+    task = _make_admin_task(
+        task_type="files_import",
+        status="uploading",
+        input_path=str(input_path),
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+
+    with pytest.raises(HTTPException) as exc:
+        await finalize_task_upload(1, UploadFinalizeRequest(total_bytes=5), MagicMock(), MagicMock(), db=db)
+    assert exc.value.status_code == 409
+    assert exc.value.detail == {
+        "message": "Expected 5 bytes, received 10",
+        "bytes_received": 10,
+        "status": "uploading",
+    }
+
+
+async def test_finalize_task_upload_success(tmp_path) -> None:
+    """Finalize transitions the task to pending and enqueues it."""
+    input_path = tmp_path / "import.tar.gz"
+    input_path.write_bytes(b"0123456789")
+    task = _make_admin_task(
+        task_type="files_import",
+        status="uploading",
+        input_path=str(input_path),
+        log="Awaiting file upload: backup.tar.gz\n",
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+    update_result = MagicMock()
+    update_result.scalar.return_value = task.id
+    db.execute = AsyncMock(return_value=update_result)
+    db.commit = AsyncMock()
+
+    async def mock_refresh(obj, *_args, **_kwargs):
+        obj.status = "pending"
+        obj.log = (obj.log or "") + "Upload complete (0.0 MB). Queued for processing.\n"
+
+    db.refresh = AsyncMock(side_effect=mock_refresh)
+
+    with (
+        patch("app.routers.admin._ensure_tasks_dir", return_value=str(tmp_path / "admin_tasks")),
+        patch("app.routers.admin.enqueue_admin_task", new_callable=AsyncMock, return_value=True),
+    ):
+        result = await finalize_task_upload(1, UploadFinalizeRequest(total_bytes=10), MagicMock(), MagicMock(), db=db)
+
+    assert result["status"] == "pending"
+    assert "Upload complete" in result["log"]
 
 
 async def test_list_tasks() -> None:
@@ -492,10 +1170,20 @@ async def test_cancel_task_already_completed() -> None:
     task = _make_admin_task(status="completed")
     db = AsyncMock()
     db.get = AsyncMock(return_value=task)
+    db.refresh = AsyncMock()
 
-    with pytest.raises(HTTPException) as exc:
-        await cancel_task(1, MagicMock(), db=db)
-    assert exc.value.status_code == 400
+    result = await cancel_task(1, MagicMock(), db=db)
+    assert result["status"] == "completed"
+
+
+async def test_cancel_task_already_failed() -> None:
+    task = _make_admin_task(status="failed")
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+    db.refresh = AsyncMock()
+
+    result = await cancel_task(1, MagicMock(), db=db)
+    assert result["status"] == "failed"
 
 
 async def test_cancel_task_pending() -> None:
@@ -525,16 +1213,15 @@ async def test_cancel_task_force_transitions_from_cancelling() -> None:
     assert "Force-cancelled by admin" in task.log
 
 
-async def test_cancel_task_already_cancelled_rejected() -> None:
-    """Once a task is terminal (``cancelled``) it cannot be cancelled again."""
+async def test_cancel_task_already_cancelled() -> None:
+    """Cancelling a terminal task is a no-op."""
     task = _make_admin_task(status="cancelled")
     db = AsyncMock()
     db.get = AsyncMock(return_value=task)
+    db.refresh = AsyncMock()
 
-    with pytest.raises(HTTPException) as exc:
-        await cancel_task(1, MagicMock(), db=db)
-    assert exc.value.status_code == 400
-    assert "cancelled" in exc.value.detail
+    result = await cancel_task(1, MagicMock(), db=db)
+    assert result["status"] == "cancelled"
 
 
 async def test_create_task_download_token_success(tmp_path) -> None:
@@ -749,3 +1436,241 @@ async def test_download_task_tar_gz(tmp_path) -> None:
         mock_settings.jwt_algorithm = "HS256"
         response = await download_task_result(1, token=token, db=db)
     assert response.media_type == "application/gzip"
+
+
+# ── _safe_admin_task_file ───────────────────────────────
+
+
+def test_safe_admin_task_file_returns_none_for_empty() -> None:
+    assert _safe_admin_task_file(None) is None
+    assert _safe_admin_task_file("") is None
+
+
+def test_safe_admin_task_file_rejects_path_outside_tasks_dir(tmp_path) -> None:
+    tasks_dir = tmp_path / "admin_tasks"
+    tasks_dir.mkdir()
+    outside = str(tmp_path / "outside.json")
+    with patch("app.routers.admin._ensure_tasks_dir", return_value=str(tasks_dir)):
+        result = _safe_admin_task_file(outside)
+    assert result is None
+
+
+def test_safe_admin_task_file_accepts_path_inside_tasks_dir(tmp_path) -> None:
+    tasks_dir = tmp_path / "admin_tasks"
+    tasks_dir.mkdir()
+    inside = tasks_dir / "export.json"
+    inside.touch()
+    with patch("app.routers.admin._ensure_tasks_dir", return_value=str(tasks_dir)):
+        result = _safe_admin_task_file(str(inside))
+    assert result == inside.resolve()
+
+
+# ── list_export_archives ─────────────────────────────────
+
+
+async def test_list_export_archives_empty() -> None:
+    """Returns empty list and zero total when no tasks have on-disk result files."""
+    db = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = []
+    db.execute = AsyncMock(return_value=mock_result)
+    result = await list_export_archives(_user=MagicMock(), db=db)
+    assert result == {"archives": [], "total_size_bytes": 0}
+
+
+async def test_list_export_archives_includes_existing_file(tmp_path) -> None:
+    """A task with an on-disk result file appears in the archive list."""
+    filepath = tmp_path / "export.json"
+    filepath.write_text("hello")
+    task = _make_admin_task(
+        task_type="db_export",
+        status="completed",
+        result_path=str(filepath),
+        result_filename="export.json",
+    )
+    db = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = [task]
+    db.execute = AsyncMock(return_value=mock_result)
+    with patch("app.routers.admin._ensure_tasks_dir", return_value=str(tmp_path)):
+        result = await list_export_archives(_user=MagicMock(), db=db)
+    assert len(result["archives"]) == 1
+    assert result["archives"][0]["filename"] == "export.json"
+    assert result["archives"][0]["size_bytes"] == filepath.stat().st_size
+    assert result["total_size_bytes"] == filepath.stat().st_size
+    assert result["archives"][0]["purgeable"] is True
+
+
+async def test_list_export_archives_skips_missing_files(tmp_path) -> None:
+    """Tasks whose result files are missing on disk are silently omitted."""
+    task = _make_admin_task(
+        task_type="db_export",
+        status="completed",
+        result_path=str(tmp_path / "gone.json"),
+        result_filename="gone.json",
+    )
+    db = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = [task]
+    db.execute = AsyncMock(return_value=mock_result)
+    with patch("app.routers.admin._ensure_tasks_dir", return_value=str(tmp_path)):
+        result = await list_export_archives(_user=MagicMock(), db=db)
+    assert result == {"archives": [], "total_size_bytes": 0}
+
+
+async def test_list_export_archives_active_task_not_purgeable(tmp_path) -> None:
+    """A task that is still running has purgeable=False."""
+    filepath = tmp_path / "export.json"
+    filepath.write_text("data")
+    task = _make_admin_task(
+        task_type="db_export",
+        status="running",
+        result_path=str(filepath),
+        result_filename="export.json",
+    )
+    db = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = [task]
+    db.execute = AsyncMock(return_value=mock_result)
+    with patch("app.routers.admin._ensure_tasks_dir", return_value=str(tmp_path)):
+        result = await list_export_archives(_user=MagicMock(), db=db)
+    assert result["archives"][0]["purgeable"] is False
+
+
+# ── purge_backup_archive ─────────────────────────────────
+
+
+async def test_purge_backup_archive_success(tmp_path) -> None:
+    """Archive file is deleted and DB columns are cleared."""
+    filepath = tmp_path / "export.json"
+    filepath.write_text('{"data": true}')
+    task = _make_admin_task(
+        task_type="db_export",
+        status="completed",
+        result_path=str(filepath),
+        result_filename="export.json",
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+    with patch("app.routers.admin._ensure_tasks_dir", return_value=str(tmp_path)):
+        result = await purge_backup_archive(
+            task_id=1, artifact_role="result", _user=MagicMock(), db=db
+        )
+    assert result["deleted"] is True
+    assert result["task_id"] == 1
+    assert result["artifact_role"] == "result"
+    assert not filepath.exists()
+    assert task.result_filename is None
+    assert task.result_path is None
+    db.commit.assert_awaited_once()
+
+
+async def test_purge_backup_archive_unknown_role() -> None:
+    """400 for an artifact_role other than 'result'."""
+    db = AsyncMock()
+    with pytest.raises(HTTPException) as exc:
+        await purge_backup_archive(
+            task_id=1, artifact_role="input", _user=MagicMock(), db=db
+        )
+    assert exc.value.status_code == 400
+
+
+async def test_purge_backup_archive_task_not_found() -> None:
+    """404 when the task does not exist."""
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=None)
+    with pytest.raises(HTTPException) as exc:
+        await purge_backup_archive(
+            task_id=999, artifact_role="result", _user=MagicMock(), db=db
+        )
+    assert exc.value.status_code == 404
+
+
+async def test_purge_backup_archive_non_export_task_rejected() -> None:
+    """404 when the task is not an export task (never listed as an archive)."""
+    task = _make_admin_task(task_type="rebuild_tiles", status="completed")
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+    with pytest.raises(HTTPException) as exc:
+        await purge_backup_archive(
+            task_id=1, artifact_role="result", _user=MagicMock(), db=db
+        )
+    assert exc.value.status_code == 404
+
+
+async def test_purge_backup_archive_active_task_rejected() -> None:
+    """409 when the task is still active."""
+    task = _make_admin_task(task_type="db_export", status="running")
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+    with pytest.raises(HTTPException) as exc:
+        await purge_backup_archive(
+            task_id=1, artifact_role="result", _user=MagicMock(), db=db
+        )
+    assert exc.value.status_code == 409
+
+
+async def test_purge_backup_archive_no_result_path(tmp_path) -> None:
+    """404 when the task has no result_path set."""
+    task = _make_admin_task(task_type="db_export", status="completed")
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+    with patch("app.routers.admin._ensure_tasks_dir", return_value=str(tmp_path)):
+        with pytest.raises(HTTPException) as exc:
+            await purge_backup_archive(
+                task_id=1, artifact_role="result", _user=MagicMock(), db=db
+            )
+    assert exc.value.status_code == 404
+
+
+async def test_purge_backup_archive_file_not_on_disk(tmp_path) -> None:
+    """404 when the DB references a path that no longer exists on disk."""
+    task = _make_admin_task(
+        task_type="db_export",
+        status="completed",
+        result_path=str(tmp_path / "gone.json"),
+        result_filename="gone.json",
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+    with patch("app.routers.admin._ensure_tasks_dir", return_value=str(tmp_path)):
+        with pytest.raises(HTTPException) as exc:
+            await purge_backup_archive(
+                task_id=1, artifact_role="result", _user=MagicMock(), db=db
+            )
+    assert exc.value.status_code == 404
+
+
+def test_acquire_chunk_lock_retries_on_eio(tmp_path) -> None:
+    """If O_CREAT returns EIO while creating the lock file, open it without O_CREAT."""
+    import errno
+
+    lock_path = str(tmp_path / "import.tar.gz.lock")
+    real_open = os.open
+    call_count = 0
+
+    def fake_open(path, flags, *args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            assert path == lock_path
+            assert flags & os.O_CREAT
+            # Simulate NFS/FUSE: the file is created but the open fails with EIO.
+            fd = real_open(path, os.O_WRONLY | os.O_CREAT, 0)
+            os.close(fd)
+            raise OSError(errno.EIO, "Input/output error", path)
+        assert not (flags & os.O_CREAT)
+        return real_open(path, os.O_WRONLY | os.O_CREAT, 0o644)
+
+    with (
+        patch("app.routers.admin.os.open", side_effect=fake_open),
+        patch("app.routers.admin.os.chmod", side_effect=os.chmod) as mock_chmod,
+        patch("app.routers.admin.fcntl.flock") as mock_flock,
+    ):
+        fd = _acquire_chunk_lock(lock_path)
+
+    assert fd is not None
+    assert call_count == 2
+    mock_chmod.assert_called_once_with(lock_path, 0o644)
+    mock_flock.assert_called_once()
+    os.close(fd)

@@ -19,6 +19,14 @@ npm ci
 npm run dev        # starts dev server at http://localhost:5173
 ```
 
+## Deployment rollout strategy
+
+The frontend Deployment auto-selects a rollout strategy from chart values.
+Hard zone anti-affinity with `replicaCount > 1` uses `maxSurge: 0` /
+`maxUnavailable: 1` so one zone frees up before its replacement schedules,
+avoiding the two-zone deadlock seen on stable. `updateStrategy` can override
+the Deployment `.spec.strategy` explicitly.
+
 ## Available scripts
 
 | Script            | Description                      |
