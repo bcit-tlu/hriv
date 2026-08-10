@@ -101,13 +101,23 @@ def main() -> None:
 
         grid = page.get_by_role("region", name="Sortable tile grid")
         grid.wait_for(state="visible", timeout=30000)
-        tile_count = grid.evaluate("(el) => el.children.length")
 
         page.evaluate(INSTRUMENT)
 
-        tiles = grid.locator(":scope > div")
-        src = tiles.nth(min(2, tile_count - 1))
-        dst = tiles.nth(min(8, tile_count - 2))
+        # Direct children include the file drop zone (rendered last for
+        # edit-capable users, itself a region) — exclude it so tile_count
+        # and the source/destination picks only ever land on real tiles.
+        tiles = grid.locator(':scope > div:not([role="region"])')
+        tile_count = tiles.count()
+        if tile_count < 4:
+            raise SystemExit(
+                f"Grid has only {tile_count} tiles; need at least 4 for a meaningful drag — "
+                "seed the reorder fixture first (see docs/reorder-fixture.md)."
+            )
+        src_idx = min(2, tile_count - 2)
+        dst_idx = min(8, tile_count - 1)
+        src = tiles.nth(src_idx)
+        dst = tiles.nth(dst_idx)
         sb = src.bounding_box()
         db = dst.bounding_box()
         assert sb and db
@@ -123,10 +133,13 @@ def main() -> None:
             f = i / STEPS
             page.mouse.move(x0 + (x1 - x0) * f, y0 + (y1 - y0) * f)
         drag_wall = time.time() - t0
-        stats = page.evaluate("window.__profStop()")
+        # Keep the drag-end path (cancel + pointer release) inside the
+        # measured window: the docs attribute one of the two long-task
+        # clusters to drag end, so stop sampling only after it settles.
         page.keyboard.press("Escape")  # cancel: profiling only, no persistence
         page.mouse.up()
         page.wait_for_timeout(500)
+        stats = page.evaluate("window.__profStop()")
 
         heap = page.evaluate(
             "performance.memory ? Math.round(performance.memory.usedJSHeapSize/1048576) : null"
