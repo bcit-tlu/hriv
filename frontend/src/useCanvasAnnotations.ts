@@ -6,7 +6,7 @@ import type { ImageItem } from './types'
 /** Dependencies injected by the host component. */
 export interface UseCanvasAnnotationsDeps {
   selectedImage: ImageItem | null
-  loadCategories: () => Promise<void>
+  loadCategories: () => Promise<unknown>
   loadUncategorizedImages: (opts?: { signal?: AbortSignal }) => void
   setErrorSnack: React.Dispatch<React.SetStateAction<string | null>>
 }

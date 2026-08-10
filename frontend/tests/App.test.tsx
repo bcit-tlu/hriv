@@ -313,8 +313,9 @@ const categoryActionsMock = {
   deleteCategoryInline: vi.fn(),
   editCategoryInline: vi.fn(),
   toggleCategoryVisibility: vi.fn(),
-  reorderCategoriesInline: vi.fn(),
-  reorderImagesInline: vi.fn(),
+  reorderTilesFromManage: vi.fn(),
+  manageReorderScopes: null,
+  setManageReorderScopes: vi.fn(),
   handleMoveCategory: vi.fn(),
   handleRequestMoveCategory: vi.fn(),
   handleDropImageOnCategory: vi.fn(),
@@ -376,8 +377,6 @@ vi.mock('../src/components/SortableTileGrid', () => ({
     onImageClick,
     onCategoryClick,
     onFilesDrop,
-    onReorderComplete,
-    onReorderError,
     fileDragActive,
   }: {
     currentImages: (typeof mockImage)[]
@@ -385,8 +384,6 @@ vi.mock('../src/components/SortableTileGrid', () => ({
     onImageClick: (img: typeof mockImage) => void
     onCategoryClick: (category: (typeof mockCategories)[number]) => void
     onFilesDrop: (files: File[]) => void
-    onReorderComplete: () => Promise<void>
-    onReorderError: (err: unknown) => void
     fileDragActive: boolean
   }) => (
     <>
@@ -401,12 +398,6 @@ vi.mock('../src/components/SortableTileGrid', () => ({
         }
       >
         Drop files on grid
-      </button>
-      <button type="button" onClick={() => void onReorderComplete()}>
-        Grid reorder complete
-      </button>
-      <button type="button" onClick={() => onReorderError(new Error('boom'))}>
-        Grid reorder error
       </button>
       {currentImages.map((image, index) => (
         <button key={image.id} type="button" onClick={() => onImageClick(image)}>
@@ -431,7 +422,13 @@ vi.mock('../src/components/ImageViewer', () => ({
   default: () => <div>Image Viewer</div>,
 }))
 
-vi.mock('../src/components/ManageCategoriesDialog', () => ({ default: () => null }))
+vi.mock('../src/components/ManageCategoriesDialog', () => ({
+  default: ({ onReorderComplete }: { onReorderComplete: () => Promise<void> }) => (
+    <button type="button" onClick={() => void onReorderComplete()}>
+      Manage reorder complete
+    </button>
+  ),
+}))
 vi.mock('../src/components/AdminPage', () => ({ default: () => null }))
 vi.mock('../src/components/PeoplePage', () => ({ default: () => null }))
 vi.mock('../src/components/ManagePage', () => ({ default: () => null }))
@@ -998,7 +995,7 @@ describe('App grid file drops and reorder feedback', () => {
     browseDataFns.refreshCategories.mockRejectedValueOnce(new Error('offline'))
     render(<App />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Grid reorder complete' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Manage reorder complete' }))
     expect(
       await screen.findByText('Could not refresh categories after reorder.'),
     ).toBeInTheDocument()
@@ -1008,15 +1005,8 @@ describe('App grid file drops and reorder feedback', () => {
     browseDataFns.refreshUncategorizedImages.mockRejectedValueOnce(new Error('offline'))
     render(<App />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Grid reorder complete' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Manage reorder complete' }))
     expect(await screen.findByText('Could not refresh images after reorder.')).toBeInTheDocument()
-  })
-
-  it('surfaces reorder errors in an error snackbar', async () => {
-    render(<App />)
-
-    fireEvent.click(screen.getByRole('button', { name: 'Grid reorder error' }))
-    expect(await screen.findByText('Failed to reorder tiles.')).toBeInTheDocument()
   })
 
   it('toggles the file-drag state as native files drag over and leave the window', async () => {
