@@ -458,13 +458,15 @@ export default function ManageCategoriesDialog({
       // `submitted` and one terminal event) across both persistence calls.
       const operationId = newReorderOperationId()
       const startedAt = performance.now()
-      const itemType = imgItems.length > 0 ? 'mixed' : 'category'
+      // Only count the image half when it will actually be persisted.
+      const persistedImgCount = onReorderImages ? imgItems.length : 0
+      const itemType = persistedImgCount > 0 ? 'mixed' : 'category'
       emitReorderDiagnostic({
         operationId,
         state: 'submitted',
         itemType,
         categoryCount: catItems.length,
-        imageCount: imgItems.length,
+        imageCount: persistedImgCount,
         queueDepth: 0,
       })
       let failure: unknown
@@ -487,7 +489,7 @@ export default function ManageCategoriesDialog({
           state: 'committed',
           itemType,
           categoryCount: catItems.length,
-          imageCount: imgItems.length,
+          imageCount: persistedImgCount,
           durationMs: performance.now() - startedAt,
         })
       } else {
@@ -496,7 +498,7 @@ export default function ManageCategoriesDialog({
           state: 'failed',
           itemType,
           categoryCount: catItems.length,
-          imageCount: imgItems.length,
+          imageCount: persistedImgCount,
           durationMs: performance.now() - startedAt,
           errorCode: reorderErrorCode(failure),
         })

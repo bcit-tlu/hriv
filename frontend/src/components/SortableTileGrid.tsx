@@ -428,6 +428,9 @@ export default function SortableTileGrid({
         if (imgUpdates.length > 0) promises.push(reorderImages(imgUpdates, operationId))
 
         const results = await Promise.allSettled(promises)
+        // Persistence-only duration: terminal events measure the same interval
+        // on every path (the follow-up refresh is excluded).
+        const persistenceDurationMs = performance.now() - startedAt
         const failed = results.filter((r) => r.status === 'rejected')
 
         if (failed.length > 0) {
@@ -441,7 +444,7 @@ export default function SortableTileGrid({
             itemType,
             categoryCount: catUpdates.length,
             imageCount: imgUpdates.length,
-            durationMs: performance.now() - startedAt,
+            durationMs: persistenceDurationMs,
             errorCode: reorderErrorCode(err),
           })
           reorderInFlightRef.current = false
@@ -468,7 +471,7 @@ export default function SortableTileGrid({
           itemType,
           categoryCount: catUpdates.length,
           imageCount: imgUpdates.length,
-          durationMs: performance.now() - startedAt,
+          durationMs: persistenceDurationMs,
         })
         reorderInFlightRef.current = false
         activeOperationRef.current = null
