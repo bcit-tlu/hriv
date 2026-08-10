@@ -28,8 +28,9 @@ export function diffParentMoves(newCatList: FlatOption[], oldCatList: FlatOption
  * Re-derive the flat option list's sibling ordering from the coordinator's
  * per-scope display orders, so the dialog reflects optimistic/pending order
  * instead of snapping back to the last-loaded `sort_order` while a save is
- * in flight. Categories not present in a scope's display order keep their
- * relative position after the ordered ones.
+ * in flight. Categories not present in a scope's display order (e.g. a
+ * category whose parent move is still refreshing) keep their original slot
+ * so they do not visibly jump while the reload is in flight.
  */
 export function reorderFlatOptions(
   options: FlatOption[],
@@ -53,14 +54,11 @@ export function reorderFlatOptions(
       displayOrder.forEach((ref, i) => {
         if (ref.type === 'category') rank.set(ref.id, i)
       })
-      ordered = [...siblings].sort((a, b) => {
-        const ra = rank.get(a.id)
-        const rb = rank.get(b.id)
-        if (ra === undefined && rb === undefined) return 0
-        if (ra === undefined) return 1
-        if (rb === undefined) return -1
-        return ra - rb
-      })
+      const ranked = siblings
+        .filter((s) => rank.has(s.id))
+        .sort((a, b) => rank.get(a.id)! - rank.get(b.id)!)
+      let rankedIdx = 0
+      ordered = siblings.map((s) => (rank.has(s.id) ? ranked[rankedIdx++] : s))
     }
     for (const opt of ordered) {
       result.push(opt)

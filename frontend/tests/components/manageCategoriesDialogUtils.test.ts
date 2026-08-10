@@ -414,10 +414,30 @@ describe('reorderFlatOptions', () => {
     expect(result.map((o) => o.id)).toEqual([2, 1, 4, 3])
   })
 
-  it('places categories missing from the display order after the ordered ones', () => {
+  it('keeps categories missing from the display order in their original slot', () => {
     const result = reorderFlatOptions(options, (parentId) =>
       parentId === null ? [{ type: 'category', id: 2 }] : null,
     )
-    expect(result.map((o) => o.id)).toEqual([2, 1, 3, 4])
+    expect(result.map((o) => o.id)).toEqual([1, 3, 4, 2])
+  })
+
+  it('does not push a just-moved-away category to the end of its old parent', () => {
+    const opts = [
+      makeFlatOption({ id: 1, parentId: null, depth: 0 }),
+      makeFlatOption({ id: 2, parentId: null, depth: 0 }),
+      makeFlatOption({ id: 5, parentId: null, depth: 0 }),
+    ]
+    // Category 1 moved to another parent: the coordinator's display order for
+    // the old scope omits it (and reorders the remaining two), but the stale
+    // category tree still lists it first. It must keep its slot, not sink.
+    const result = reorderFlatOptions(opts, (parentId) =>
+      parentId === null
+        ? [
+            { type: 'category', id: 5 },
+            { type: 'category', id: 2 },
+          ]
+        : null,
+    )
+    expect(result.map((o) => o.id)).toEqual([1, 5, 2])
   })
 })

@@ -18,9 +18,9 @@ Every ordering operation gets a client-generated `operation_id`
    per lifecycle state transition, sent through the authenticated ingestion
    endpoint (`POST /api/telemetry/events`).
 2. **Persistence requests** — `PUT /api/tile-order` carries the operation ID
-   in its request body (`operation_id`); the legacy `PUT
-/api/categories/reorder` and `PUT /api/images/reorder` endpoints carry the
-   `X-Reorder-Operation-Id` header while they remain.
+   in its request body (`operation_id`); the legacy
+   `PUT /api/categories/reorder` and `PUT /api/images/reorder` endpoints
+   carry the `X-Reorder-Operation-Id` header while they remain.
 3. **Backend spans** — `category.reorder` / `image.reorder` spans carry the
    `reorder.operation_id`, `reorder.entity`, and `reorder.item_count`
    attributes.
