@@ -220,7 +220,11 @@ async def test_purge_removes_all_fixture_rows(db_session):
 
 @requires_db
 async def test_full_authoritative_order_round_trip(db_session):
-    """Reorder the 80-category flat scope and read the whole order back."""
+    """Reverse the flat scope's full mixed order and read it back.
+
+    The scope holds the 80 flat sibling categories plus any images seeded
+    into it; the round trip covers the whole interleaved order.
+    """
     spec = await seed_reorder_fixture(db_session)
     flat_parent = spec.categories[0].id
 
