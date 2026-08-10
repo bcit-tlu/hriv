@@ -236,6 +236,29 @@ describe('TileOrderingCoordinator', () => {
     expect(coordinator.hasFailedScopesOutside(null)).toBe(false)
   })
 
+  it('surfaces and resolves a conflicted scope from outside its scope', async () => {
+    const current = response(3, refs(3, 1, 2))
+    mockedPut.mockRejectedValueOnce(conflictError(current))
+
+    coordinator.reportOrder(7, refs(2, 1, 3))
+    await flushMicrotasks()
+    expect(coordinator.getScope(7).status).toBe('conflict')
+
+    // An unresolved conflict is visible from any other scope too — it arms
+    // the unload guard, so the user needs an affordance to settle it.
+    expect(coordinator.hasFailedScopesOutside(null)).toBe(true)
+    expect(coordinator.hasFailedScopesOutside(7)).toBe(false)
+
+    // …and resolving adopts the server's authoritative order.
+    coordinator.retryFailedScopes()
+    await flushMicrotasks()
+    const state = coordinator.getScope(7)
+    expect(state.status).toBe('saved')
+    expect(state.displayOrder).toEqual(refs(3, 1, 2))
+    expect(state.pending).toBeNull()
+    expect(coordinator.hasFailedScopesOutside(null)).toBe(false)
+  })
+
   it('a failure does not roll back newer local changes', async () => {
     const first = deferred<TileOrderResponse>()
     mockedPut.mockReturnValueOnce(first.promise)
