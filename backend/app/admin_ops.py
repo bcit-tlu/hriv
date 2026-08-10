@@ -1161,6 +1161,20 @@ async def run_db_import(task_id: int) -> None:
                     data_session.add(img)
                 await data_session.flush()
 
+                # Revision rows are created lazily, so the wholesale bump above
+                # misses scopes that have never been written through
+                # PUT /api/tile-order (clients read the implicit revision 1 for
+                # those). Materialize every restored scope at revision 2 so an
+                # implicit pre-restore revision can never pass the CAS check.
+                await data_session.execute(
+                    text(
+                        "INSERT INTO tile_order_revisions (scope_key, revision) "
+                        "SELECT s.scope_key, 2 FROM "
+                        "(SELECT 0 AS scope_key UNION SELECT id FROM categories) s "
+                        "ON CONFLICT (scope_key) DO NOTHING"
+                    )
+                )
+
                 # Import source images
                 await _update_task(status_session, task, log_line="Importing source images…", progress=65)
                 for s in dump.get("source_images", []):
