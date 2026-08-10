@@ -51,14 +51,24 @@ dashboards and later sub-issues (#978–#980) can emit them without another
 contract change; the current UI emits `ignored`, `submitted`, `committed`,
 `failed`, and `abandoned`. Both reorder surfaces are instrumented: the Browse
 grid (`SortableTileGrid`, full lifecycle) and the Manage Categories dialog
-(`useCategoryActions` inline reorders, `submitted`/`committed`/`failed`).
+(`submitted`/`committed`/`failed`). Every surface emits exactly one
+`submitted` and one terminal event per operation ID: a Manage Categories drag
+that persists both categories and images shares one operation ID across both
+requests, with the dialog owning the single lifecycle (the
+`useCategoryActions` inline helpers skip their own emission when the caller
+supplies an operation ID). A drag whose category half succeeded but whose
+image half failed is reported as one `failed` operation.
 
 Server-side, an event that omits `state` entirely is logged with
 `reorder.state: "missing"` and skipped by the client-operations counter, so
 the `other` bucket only ever means "unrecognized state" (vocabulary drift).
 Synthetic-monitor traffic is also excluded from
 `hriv_reorder_client_operations_total`; structured logs keep
-`event.synthetic` for both real and synthetic events.
+`event.synthetic` for both real and synthetic events. Note the asymmetry:
+the server-side `hriv_reorder_requests_total` and duration/item histograms
+still include synthetic journeys (consistent with the other server request
+metrics), so client-vs-server comparisons will show a gap proportional to
+synthetic reorder volume.
 
 ## Diagnostic event fields
 

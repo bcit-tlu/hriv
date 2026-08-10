@@ -23,7 +23,11 @@ import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import Visibility from '@mui/icons-material/Visibility'
 import type { Category, Group, ImageItem, Program } from '../types'
 import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
-import { newReorderOperationId } from '../reorderDiagnostics'
+import {
+  emitReorderDiagnostic,
+  newReorderOperationId,
+  reorderErrorCode,
+} from '../reorderDiagnostics'
 import { findCategoryPath } from '../treeUtils'
 import { getVisibilityColors } from '../theme'
 import { MAX_DEPTH } from '../types'
@@ -450,20 +454,52 @@ export default function ManageCategoriesDialog({
       setDragId(null)
       setDropTarget(null)
 
-      // One drag = one correlation ID across both persistence calls.
+      // One drag = one correlation ID and one lifecycle (exactly one
+      // `submitted` and one terminal event) across both persistence calls.
       const operationId = newReorderOperationId()
+      const startedAt = performance.now()
+      const itemType = imgItems.length > 0 ? 'mixed' : 'category'
+      emitReorderDiagnostic({
+        operationId,
+        state: 'submitted',
+        itemType,
+        categoryCount: catItems.length,
+        imageCount: imgItems.length,
+        queueDepth: 0,
+      })
+      let failure: unknown
       try {
         await onReorderCategories(catItems, operationId)
-      } catch {
-        await onReorderComplete?.()
-        return
-      }
-      if (imgItems.length > 0 && onReorderImages) {
-        try {
-          await onReorderImages(imgItems, operationId)
-        } catch {
-          /* error already surfaced by the wrapper */
+        if (imgItems.length > 0 && onReorderImages) {
+          try {
+            await onReorderImages(imgItems, operationId)
+          } catch (err) {
+            /* error already surfaced by the wrapper */
+            failure = err
+          }
         }
+      } catch (err) {
+        failure = err
+      }
+      if (failure === undefined) {
+        emitReorderDiagnostic({
+          operationId,
+          state: 'committed',
+          itemType,
+          categoryCount: catItems.length,
+          imageCount: imgItems.length,
+          durationMs: performance.now() - startedAt,
+        })
+      } else {
+        emitReorderDiagnostic({
+          operationId,
+          state: 'failed',
+          itemType,
+          categoryCount: catItems.length,
+          imageCount: imgItems.length,
+          durationMs: performance.now() - startedAt,
+          errorCode: reorderErrorCode(failure),
+        })
       }
       await onReorderComplete?.()
     },
