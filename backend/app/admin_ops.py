@@ -1006,6 +1006,13 @@ async def run_db_import(task_id: int) -> None:
                 await data_session.execute(text("DELETE FROM changelog_entries"))
                 await data_session.execute(text("DELETE FROM announcements"))
                 await data_session.execute(text("DELETE FROM programs"))
+                # The restore rewrites category/image sort_order wholesale, so
+                # invalidate every tile-order revision: clients holding a
+                # pre-restore revision must get a 409 from PUT /api/tile-order
+                # instead of silently overwriting the restored order.
+                await data_session.execute(
+                    text("UPDATE tile_order_revisions SET revision = revision + 1")
+                )
 
                 # Import programs
                 await _update_task(status_session, task, log_line="Importing programs…", progress=15, check_cancelled=True)

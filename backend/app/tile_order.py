@@ -209,13 +209,16 @@ async def normalize_scope(db: AsyncSession, parent_category_id: int | None) -> i
     """Rewrite one scope to canonical contiguous positions; return tile count.
 
     Duplicate positions are resolved with the canonical tie-breaker and the
-    scope's revision row is created (revision 1) if it does not exist yet.
-    Runs inside the caller's transaction.
+    scope's revision row is created if it does not exist yet. The revision is
+    bumped so clients holding a pre-normalization revision get a 409 instead
+    of silently overwriting the repaired order. Runs inside the caller's
+    transaction.
     """
     scope_key = scope_key_for(parent_category_id)
     await lock_scope_revision(db, scope_key)
     tiles = await load_scope_tiles(db, parent_category_id)
     await apply_positions(db, [(t.type, t.id) for t in tiles])
+    await bump_scope_revision(db, scope_key)
     return len(tiles)
 
 
