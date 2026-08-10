@@ -36,6 +36,7 @@ from .routers import (
     oidc,
     programs,
     telemetry,
+    tile_order,
     upload,
     users,
 )
@@ -234,6 +235,7 @@ app.include_router(images.router, prefix="/api")
 app.include_router(issues.router, prefix="/api")
 app.include_router(programs.router, prefix="/api")
 app.include_router(telemetry.router, prefix="/api")
+app.include_router(tile_order.router, prefix="/api")
 app.include_router(upload.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
 

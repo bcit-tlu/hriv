@@ -44,7 +44,6 @@ import {
   createCategory,
   updateCategory,
   deleteCategory,
-  reorderCategories,
   fetchImage,
   fetchImages,
   fetchUncategorizedImages,
@@ -52,7 +51,10 @@ import {
   deleteImage,
   bulkUpdateImages,
   bulkDeleteImages,
-  reorderImages,
+  getTileOrder,
+  putTileOrder,
+  tileOrderConflictCurrent,
+  type TileOrderResponse,
   fetchOidcEnabled,
   getOidcLoginUrl,
   fetchUsers,
@@ -620,17 +622,6 @@ describe('Category API', () => {
     expect(url).toBe('/api/categories/1')
     expect(init.method).toBe('DELETE')
   })
-
-  it('reorderCategories sends PUT with items array', async () => {
-    mockFetch.mockReturnValueOnce(noContentResponse())
-    await reorderCategories([{ id: 1, parent_id: null, sort_order: 0 }])
-    const [url, init] = mockFetch.mock.calls[0]
-    expect(url).toBe('/api/categories/reorder')
-    expect(init.method).toBe('PUT')
-    expect(JSON.parse(init.body)).toEqual({
-      items: [{ id: 1, parent_id: null, sort_order: 0 }],
-    })
-  })
 })
 
 // ── Images ───────────────────────────────────────────────────────────────
@@ -712,22 +703,92 @@ describe('Image API', () => {
     expect(url).toBe('/api/images/bulk')
     expect(init.method).toBe('DELETE')
   })
+})
 
-  it('reorderImages sends PUT with items array', async () => {
-    mockFetch.mockReturnValueOnce(noContentResponse())
-    await reorderImages([
-      { id: 1, sort_order: 0 },
-      { id: 2, sort_order: 1 },
-    ])
+// ── Tile order ───────────────────────────────────────────────────────────
+
+describe('Tile order API', () => {
+  const TILE_ORDER_FIXTURE: TileOrderResponse = {
+    scope: { parent_category_id: 5 },
+    revision: 3,
+    items: [
+      { type: 'category', id: 1, sort_order: 0 },
+      { type: 'image', id: 2, sort_order: 1 },
+    ],
+  }
+
+  beforeEach(() => {
+    mockFetch.mockReset()
+    setToken('jwt')
+  })
+  afterEach(() => setToken(null))
+
+  it('getTileOrder with a numeric scope appends parent_category_id query param', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(TILE_ORDER_FIXTURE))
+    const result = await getTileOrder(5)
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/tile-order?parent_category_id=5')
+    expect(result).toEqual(TILE_ORDER_FIXTURE)
+  })
+
+  it('getTileOrder with the root scope sends no query string', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(TILE_ORDER_FIXTURE))
+    await getTileOrder(null)
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/tile-order')
+  })
+
+  it('putTileOrder sends PUT with scope, expected_revision, operation_id, and items', async () => {
+    // The operation ID travels only in the body; the unused
+    // X-Reorder-Operation-Id header was removed in #998.
+    mockFetch.mockReturnValueOnce(jsonResponse(TILE_ORDER_FIXTURE))
+    await putTileOrder(
+      5,
+      3,
+      [
+        { type: 'category', id: 1 },
+        { type: 'image', id: 2 },
+      ],
+      'op-123',
+    )
     const [url, init] = mockFetch.mock.calls[0]
-    expect(url).toBe('/api/images/reorder')
+    expect(url).toBe('/api/tile-order')
     expect(init.method).toBe('PUT')
     expect(JSON.parse(init.body)).toEqual({
+      scope: { parent_category_id: 5 },
+      expected_revision: 3,
+      operation_id: 'op-123',
       items: [
-        { id: 1, sort_order: 0 },
-        { id: 2, sort_order: 1 },
+        { type: 'category', id: 1 },
+        { type: 'image', id: 2 },
       ],
     })
+    expect(init.headers?.['X-Reorder-Operation-Id']).toBeUndefined()
+  })
+
+  it('putTileOrder without an operationId sends null operation_id', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(TILE_ORDER_FIXTURE))
+    await putTileOrder(null, 0, [{ type: 'image', id: 9 }])
+    const [, init] = mockFetch.mock.calls[0]
+    expect(JSON.parse(init.body)).toEqual({
+      scope: { parent_category_id: null },
+      expected_revision: 0,
+      operation_id: null,
+      items: [{ type: 'image', id: 9 }],
+    })
+    expect(init.headers?.['X-Reorder-Operation-Id']).toBeUndefined()
+  })
+
+  it('tileOrderConflictCurrent returns the current payload for a 409 ApiError', () => {
+    const err = new ApiError(409, 'stale revision', { current: TILE_ORDER_FIXTURE })
+    expect(tileOrderConflictCurrent(err)).toEqual(TILE_ORDER_FIXTURE)
+  })
+
+  it('tileOrderConflictCurrent returns null for non-409 and non-ApiError values', () => {
+    expect(
+      tileOrderConflictCurrent(new ApiError(400, 'bad request', { current: TILE_ORDER_FIXTURE })),
+    ).toBeNull()
+    expect(tileOrderConflictCurrent(new ApiError(409, 'stale revision', {}))).toBeNull()
+    expect(tileOrderConflictCurrent(new Error('boom'))).toBeNull()
+    expect(tileOrderConflictCurrent(undefined)).toBeNull()
   })
 })
 
