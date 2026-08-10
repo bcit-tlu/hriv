@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -17,7 +17,7 @@ import Visibility from '@mui/icons-material/Visibility'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import AnnouncementBanner from './AnnouncementBanner'
 import ColorModeToggle from './ColorModeToggle'
-import { getOidcLoginUrl } from '../api'
+import { fetchOidcEnabled, getOidcLoginUrl } from '../api'
 import { useAuth } from '../useAuth'
 import { useIsMobile } from '../useIsMobile'
 import FooterBar from './FooterBar'
@@ -59,8 +59,22 @@ export default function LoginScreen({
   const [loading, setLoading] = useState(false)
   const [showLocalForm, setShowLocalForm] = useState(false)
   const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false)
+  // Whether the backend has OIDC/SSO configured. `null` = not yet known. We wait
+  // for this before choosing a layout so OIDC-disabled deployments never flash
+  // the "Sign in with BCIT" landing (whose button would 404).
+  const [oidcEnabled, setOidcEnabled] = useState<boolean | null>(null)
   const { oidcError, clearOidcError } = useAuth()
   const isMobile = useIsMobile()
+
+  useEffect(() => {
+    let active = true
+    fetchOidcEnabled()
+      .then((res) => active && setOidcEnabled(res.enabled))
+      .catch(() => active && setOidcEnabled(false))
+    return () => {
+      active = false
+    }
+  }, [])
 
   const oidcErrorMessage = oidcError
     ? (OIDC_ERROR_MESSAGES[oidcError] ?? 'Sign-in failed. Please try again.')
@@ -84,14 +98,15 @@ export default function LoginScreen({
     }
   }
 
-  // The sign-in landing ("Sign in with BCIT" + "Use a local user") is always
-  // the entry point; the local credential form is only reached by opting into
-  // it. This is deliberately independent of whether the backend reports OIDC
-  // as configured, so the landing never gets skipped.
-  const showOidcDefault = !showLocalForm
+  // When OIDC is configured, the sign-in landing ("Sign in with BCIT" + "Use a
+  // local user") is the entry point and the local form is opted into. When OIDC
+  // is disabled there is no working SSO button, so the local credential form is
+  // shown directly and there's no landing to return to.
+  const showOidcDefault = oidcEnabled === true && !showLocalForm
 
-  // A back arrow returns from the local form to the landing, on both layouts.
-  const showBackToLanding = showLocalForm
+  // A back arrow / link returns from the local form to the landing — only
+  // meaningful when a landing exists (OIDC enabled and the user opted in).
+  const showBackToLanding = oidcEnabled === true && showLocalForm
 
   // ── Field styling (design) ─────────────────────────────────────────────────
   // The design places the field label *above* a bordered, surface-filled input
@@ -289,7 +304,12 @@ export default function LoginScreen({
                 </Alert>
               )}
 
-              {showOidcDefault ? (
+              {oidcEnabled === null ? (
+                /* Probing the backend for OIDC status — avoid flashing a layout. */
+                <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}>
+                  <CircularProgress />
+                </Box>
+              ) : showOidcDefault ? (
                 /* ── OIDC-primary view ─────────────────── */
                 <Box
                   sx={{
@@ -451,18 +471,21 @@ export default function LoginScreen({
                   </Box>
 
                   {/* Route back to the landing. This is the only way back on
-                    desktop, where the mobile back arrow isn't rendered. */}
-                  <Box sx={{ textAlign: 'center', mt: 1 }}>
-                    <Link
-                      component="button"
-                      type="button"
-                      variant="body2"
-                      underline="hover"
-                      onClick={() => setShowLocalForm(false)}
-                    >
-                      Sign in with BCIT
-                    </Link>
-                  </Box>
+                    desktop, where the mobile back arrow isn't rendered. Hidden
+                    when OIDC is disabled — there's no landing to return to. */}
+                  {showBackToLanding && (
+                    <Box sx={{ textAlign: 'center', mt: 1 }}>
+                      <Link
+                        component="button"
+                        type="button"
+                        variant="body2"
+                        underline="hover"
+                        onClick={() => setShowLocalForm(false)}
+                      >
+                        Sign in with BCIT
+                      </Link>
+                    </Box>
+                  )}
                 </Box>
               )}
             </Box>

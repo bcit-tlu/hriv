@@ -599,7 +599,7 @@ export default function App() {
     setAnnError,
     openAnnModal,
     handleAnnSave,
-  } = useAnnouncementModal(currentUser?.id)
+  } = useAnnouncementModal()
 
   // User profile popover + edit modal state — extracted to useUserProfile hook
   const {
@@ -1521,9 +1521,10 @@ export default function App() {
                     </Link>
                     {imageBreadcrumb.hiddenCategories.length > 0 && (
                       <Tooltip title={imageSkippedCategoryLabels} enterTouchDelay={0}>
+                        {/* Not a button — it performs no action. The aria-label
+                            conveys the folded-away path to screen readers; the
+                            tooltip surfaces it on hover/touch for sighted users. */}
                         <Typography
-                          role="button"
-                          tabIndex={0}
                           aria-label={`Skipped categories: ${imageSkippedCategoryLabels}`}
                           variant="body2"
                           color="text.secondary"
@@ -1957,7 +1958,7 @@ export default function App() {
                       Home
                     </Link>
                     {categoryBreadcrumb.hiddenCategories.length > 0 && (
-                      <Tooltip title={categorySkippedCategoryLabels}>
+                      <Tooltip title={categorySkippedCategoryLabels} enterTouchDelay={0}>
                         <Typography
                           aria-label={`Skipped categories: ${categorySkippedCategoryLabels}`}
                           variant="body2"

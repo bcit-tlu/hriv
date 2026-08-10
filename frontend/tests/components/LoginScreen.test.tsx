@@ -1,11 +1,12 @@
 /**
  * Unit tests for the LoginScreen component.
  *
- * The sign-in landing ("Sign in with BCIT" + "Use a local user") is ALWAYS the
- * entry point — it is not gated on whether the backend reports OIDC as
- * configured. The local credential form is opt-in via "Use a local user", and
- * there are two routes back: the mobile-only back arrow, and the
- * "Sign in with BCIT" link (the only route on desktop).
+ * When the backend reports OIDC as configured, the sign-in landing
+ * ("Sign in with BCIT" + "Use a local user") is the entry point (shown after an
+ * async status probe). The local credential form is opt-in via "Use a local
+ * user", with two routes back: the mobile-only back arrow and the
+ * "Sign in with BCIT" link (the only route on desktop). When OIDC is disabled,
+ * the local form is shown directly — no landing, no dead SSO button.
  *
  * Covers:
  * 1. Landing renders on load, on both desktop and mobile
@@ -36,7 +37,12 @@ const mockUseMediaQuery = vi.mocked(useMediaQuery)
 
 vi.mock('../../src/api', () => ({
   getOidcLoginUrl: vi.fn(() => '/api/auth/oidc/login'),
+  // Default to OIDC configured, so the sign-in landing is the entry point.
+  // The OIDC-disabled test overrides this per-render.
+  fetchOidcEnabled: vi.fn(() => Promise.resolve({ enabled: true })),
 }))
+
+import { fetchOidcEnabled } from '../../src/api'
 
 // LoginScreen reads the OIDC error code from useAuth; stub the hook so
 // these tests don't need an AuthProvider wrapper. Individual tests that
@@ -88,9 +94,10 @@ function renderScreen(props: RenderProps = {}) {
   return { ...result, onLogin }
 }
 
-/** Opt into the local credential form from the landing. */
+/** Opt into the local credential form from the landing. Waits for the async
+ *  OIDC-status probe to resolve and reveal the landing first. */
 async function openLocalForm(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole('button', { name: /use a local user/i }))
+  await user.click(await screen.findByRole('button', { name: /use a local user/i }))
 }
 
 // ---------------------------------------------------------------------------
@@ -111,9 +118,9 @@ describe('LoginScreen', () => {
   // ─── Landing ───────────────────────────────────────────────────────
 
   describe('sign-in landing (default view)', () => {
-    it('renders the two sign-in options on load', () => {
+    it('renders the two sign-in options on load', async () => {
       renderScreen()
-      expect(screen.getByRole('button', { name: /sign in with bcit/i })).toBeInTheDocument()
+      expect(await screen.findByRole('button', { name: /sign in with bcit/i })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: /use a local user/i })).toBeInTheDocument()
     })
 
@@ -124,13 +131,25 @@ describe('LoginScreen', () => {
       expect(screen.queryByRole('button', { name: 'LOGIN' })).not.toBeInTheDocument()
     })
 
-    it('is the entry point on mobile as well', () => {
+    it('is the entry point on mobile as well', async () => {
       mockUseMediaQuery.mockReturnValue(true)
       renderScreen()
-      expect(screen.getByRole('button', { name: /sign in with bcit/i })).toBeInTheDocument()
+      expect(await screen.findByRole('button', { name: /sign in with bcit/i })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: /use a local user/i })).toBeInTheDocument()
       expect(queryUsernameField()).not.toBeInTheDocument()
       mockUseMediaQuery.mockReturnValue(false)
+    })
+
+    it('shows the local form directly when OIDC is disabled (no dead SSO button)', async () => {
+      vi.mocked(fetchOidcEnabled).mockResolvedValueOnce({ enabled: false })
+      renderScreen()
+
+      // The credential form is reached without a landing…
+      expect(await screen.findByPlaceholderText('username@example.ca')).toBeInTheDocument()
+      // …and the "Sign in with BCIT" button (which would 404) is never shown.
+      expect(screen.queryByRole('button', { name: /sign in with bcit/i })).not.toBeInTheDocument()
+      expect(screen.queryByText('Sign in with BCIT')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /use a local user/i })).not.toBeInTheDocument()
     })
   })
 

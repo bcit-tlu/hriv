@@ -1,10 +1,15 @@
 import { useState, useCallback, useRef } from 'react'
 import { fetchAnnouncement, updateAnnouncement, userMessage } from './api'
 
-const DISMISSED_PREFIX = 'dismissed_announcement'
+const DISMISSED_KEY = 'dismissed_announcement'
 
-export function useAnnouncementModal(userId?: number) {
-  const dismissedKey = userId ? `${DISMISSED_PREFIX}_${userId}` : DISMISSED_PREFIX
+export function useAnnouncementModal() {
+  // One dismissal key for everyone on this browser — not per-user. Dismissing
+  // the announcement before signing in therefore also suppresses it afterwards
+  // (and vice versa), matching what the one-time "dismiss" affordance implies.
+  // Previously this was suffixed with the user id, so a pre-login dismissal
+  // silently reappeared once signed in.
+  const dismissedKey = DISMISSED_KEY
   const [announcement, setAnnouncement] = useState('')
   const [annModalOpen, setAnnModalOpen] = useState(false)
   const [annMessage, setAnnMessage] = useState('')

@@ -78,6 +78,12 @@ simultaneously (e.g. both `Current_Employee` → student and
 
 ## How It Works
 
+0. On load, the frontend calls `GET /api/auth/oidc/enabled`. When it
+   reports `{"enabled": true}` the login page shows the SSO landing
+   (**"Sign in with ..."** plus a **"Use a local user"** link to the
+   local credential form). When it reports `{"enabled": false}` the
+   local credential form is shown directly — the SSO button (which would
+   `404` on `GET /api/auth/oidc/login`) is not rendered.
 1. User clicks **"Sign in with ..."** on the login page.
 2. The browser navigates to `GET /api/auth/oidc/login`, which redirects
    to the IdP authorization endpoint.
@@ -119,9 +125,10 @@ Keycloak instance or similar IdP. Make sure `OIDC_REDIRECT_URI` points
 to `http://localhost:8000/api/auth/oidc/callback` (or wherever the
 backend is running).
 
-The local email/password login form is always available below the OIDC
-button, so admin bootstrap accounts continue to work regardless of OIDC
-configuration.
+The local email/password login form is always reachable, so admin
+bootstrap accounts continue to work regardless of OIDC configuration:
+when OIDC is enabled it's behind the **"Use a local user"** link on the
+SSO landing; when OIDC is disabled the login page opens straight to it.
 
 ---
 

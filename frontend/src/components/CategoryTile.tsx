@@ -111,8 +111,7 @@ function CategoryTile({
   // font down a notch as the label grows so a very long name stays compact and
   // fully readable instead of ballooning the card height. Desktop is unaffected
   // (single-line, ellipsised).
-  const mobileLabelFontSize =
-    category.label.length > 40 ? 12 : category.label.length > 22 ? 13 : 14
+  const mobileLabelFontSize = category.label.length > 40 ? 12 : category.label.length > 22 ? 13 : 14
 
   const programChips = category.programIds
     .map((pid) => programs.find((p) => p.id === pid))
@@ -270,7 +269,7 @@ function CategoryTile({
           ) : (
             <Box
               sx={{
-                height: { xs: 88, sm: 140 },
+                height: isMobile ? 88 : 140,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -289,8 +288,8 @@ function CategoryTile({
           )}
           <CardContent
             sx={{
-              p: { xs: '8px 10px', sm: 2 },
-              '&:last-child': { pb: { xs: '8px', sm: 2 } },
+              p: isMobile ? '8px 10px' : 2,
+              '&:last-child': { pb: isMobile ? '8px' : 2 },
             }}
           >
             <Box

@@ -58,15 +58,15 @@ function ImageTile({ image, onClick, onEditDetails, categoryHidden = false }: Im
           component="img"
           image={image.thumb}
           alt={image.name}
-          sx={{ height: { xs: 88, sm: 160 }, objectFit: 'cover', objectPosition: 'center' }}
+          sx={{ height: isMobile ? 88 : 160, objectFit: 'cover', objectPosition: 'center' }}
         />
         <CardContent
           sx={{
             display: 'flex',
             flexDirection: 'column',
             flexGrow: 1,
-            p: { xs: '8px 10px', sm: 2 },
-            '&:last-child': { pb: { xs: '8px', sm: 2 } },
+            p: isMobile ? '8px 10px' : 2,
+            '&:last-child': { pb: isMobile ? '8px' : 2 },
           }}
         >
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>

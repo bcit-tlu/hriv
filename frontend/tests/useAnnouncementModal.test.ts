@@ -26,8 +26,9 @@ function makeAnnouncement(overrides: Partial<api.ApiAnnouncement> = {}): api.Api
   }
 }
 
-const TEST_USER_ID = 42
-const DISMISSED_KEY = `dismissed_announcement_${TEST_USER_ID}`
+// One dismissal key for everyone on the browser (no per-user suffix), so a
+// pre-login dismissal sticks after sign-in.
+const DISMISSED_KEY = 'dismissed_announcement'
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -58,7 +59,7 @@ describe('useAnnouncementModal', () => {
       mockFetchAnnouncement.mockResolvedValue(
         makeAnnouncement({ message: 'Hello world', enabled: true }),
       )
-      const { result } = renderHook(() => useAnnouncementModal(TEST_USER_ID))
+      const { result } = renderHook(() => useAnnouncementModal())
       await act(async () => {
         await result.current.loadAnnouncement()
       })
@@ -69,7 +70,7 @@ describe('useAnnouncementModal', () => {
       mockFetchAnnouncement.mockResolvedValue(
         makeAnnouncement({ message: 'Not visible', enabled: false }),
       )
-      const { result } = renderHook(() => useAnnouncementModal(TEST_USER_ID))
+      const { result } = renderHook(() => useAnnouncementModal())
       await act(async () => {
         await result.current.loadAnnouncement()
       })
@@ -78,7 +79,7 @@ describe('useAnnouncementModal', () => {
 
     it('silently ignores fetch errors', async () => {
       mockFetchAnnouncement.mockRejectedValue(new Error('Network error'))
-      const { result } = renderHook(() => useAnnouncementModal(TEST_USER_ID))
+      const { result } = renderHook(() => useAnnouncementModal())
       await act(async () => {
         await result.current.loadAnnouncement()
       })
@@ -91,7 +92,7 @@ describe('useAnnouncementModal', () => {
       mockFetchAnnouncement.mockResolvedValue(
         makeAnnouncement({ message: 'Current msg', enabled: true }),
       )
-      const { result } = renderHook(() => useAnnouncementModal(TEST_USER_ID))
+      const { result } = renderHook(() => useAnnouncementModal())
       await act(async () => {
         await result.current.loadAnnouncement()
       })
@@ -116,7 +117,7 @@ describe('useAnnouncementModal', () => {
         makeAnnouncement({ message: 'New msg', enabled: true }),
       )
 
-      const { result } = renderHook(() => useAnnouncementModal(TEST_USER_ID))
+      const { result } = renderHook(() => useAnnouncementModal())
       await act(async () => {
         await result.current.loadAnnouncement()
       })
@@ -157,7 +158,7 @@ describe('useAnnouncementModal', () => {
       )
       localStorage.setItem(DISMISSED_KEY, '2026-06-01T00:00:00Z')
 
-      const { result } = renderHook(() => useAnnouncementModal(TEST_USER_ID))
+      const { result } = renderHook(() => useAnnouncementModal())
       await act(async () => {
         await result.current.loadAnnouncement()
       })
@@ -186,7 +187,7 @@ describe('useAnnouncementModal', () => {
         makeAnnouncement({ message: 'Visible', enabled: false }),
       )
 
-      const { result } = renderHook(() => useAnnouncementModal(TEST_USER_ID))
+      const { result } = renderHook(() => useAnnouncementModal())
       await act(async () => {
         await result.current.loadAnnouncement()
       })
@@ -209,7 +210,7 @@ describe('useAnnouncementModal', () => {
       mockFetchAnnouncement.mockResolvedValue(makeAnnouncement())
       mockUpdateAnnouncement.mockRejectedValue(new Error('Server error'))
 
-      const { result } = renderHook(() => useAnnouncementModal(TEST_USER_ID))
+      const { result } = renderHook(() => useAnnouncementModal())
       await act(async () => {
         await result.current.loadAnnouncement()
       })
@@ -233,7 +234,7 @@ describe('useAnnouncementModal', () => {
       mockFetchAnnouncement.mockResolvedValue(
         makeAnnouncement({ message: 'Hello', enabled: true, updated_at: '2026-06-01T00:00:00Z' }),
       )
-      const { result } = renderHook(() => useAnnouncementModal(TEST_USER_ID))
+      const { result } = renderHook(() => useAnnouncementModal())
       await act(async () => {
         await result.current.loadAnnouncement()
       })
@@ -255,7 +256,7 @@ describe('useAnnouncementModal', () => {
       mockFetchAnnouncement.mockResolvedValue(ann)
       localStorage.setItem(DISMISSED_KEY, '2026-06-01T00:00:00Z')
 
-      const { result } = renderHook(() => useAnnouncementModal(TEST_USER_ID))
+      const { result } = renderHook(() => useAnnouncementModal())
       await act(async () => {
         await result.current.loadAnnouncement()
       })
@@ -269,7 +270,7 @@ describe('useAnnouncementModal', () => {
         makeAnnouncement({ message: 'New one', enabled: true, updated_at: '2026-06-02T00:00:00Z' }),
       )
 
-      const { result } = renderHook(() => useAnnouncementModal(TEST_USER_ID))
+      const { result } = renderHook(() => useAnnouncementModal())
       await act(async () => {
         await result.current.loadAnnouncement()
       })

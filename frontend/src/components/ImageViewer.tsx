@@ -25,6 +25,12 @@ import {
   type MeasurementConfig,
   type OverlayRect,
 } from './imageViewerUtils'
+import {
+  emitEvent,
+  emitEventNow,
+  emitFrontendError,
+  emitFrontendPerformance,
+} from '../observability'
 
 interface ImageViewerProps {
   tileSources: OpenSeadragon.TileSourceOptions | string
@@ -116,6 +122,17 @@ export default function ImageViewer({
   const selectionModeRef = useRef(false)
   const dragRef = useRef<DragState | null>(null)
   const overlaysRef = useRef<HTMLDivElement[]>([])
+  // When the viewer is rebuilt for a reason *other* than a new image — e.g.
+  // isMobile flips as a desktop window is resized across the phone threshold —
+  // OSD is torn down and recreated, which would otherwise discard the user's
+  // zoom/pan/rotation and any rectangles they've drawn. We snapshot that state
+  // on teardown (tagged with the current tileSources) and replay it on the next
+  // 'open', so only a genuine image change falls back to the share-link state.
+  const resumeRef = useRef<{
+    tileSources: OpenSeadragon.TileSourceOptions | string
+    viewport: ViewportState
+    overlays: OverlayRect[]
+  } | null>(null)
   const measurementRef = useRef(measurement)
   const onLockOverlaysRef = useRef(onLockOverlays)
   const onUnlockOverlaysRef = useRef(onUnlockOverlays)
@@ -827,16 +844,23 @@ export default function ImageViewer({
           categoryId: categoryIdRef.current,
         })
       }
-      if (initialViewport) {
-        viewer.viewport.zoomTo(initialViewport.zoom, undefined, true)
-        viewer.viewport.panTo(new OpenSeadragon.Point(initialViewport.x, initialViewport.y), true)
-        if (initialViewport.rotation) {
-          viewer.viewport.setRotation(initialViewport.rotation, true)
+      // Prefer a resume snapshot (same image, viewer just rebuilt) over the
+      // share-link props; a genuine image change leaves the snapshot's
+      // tileSources mismatched, so we fall back to the props.
+      const resume = resumeRef.current?.tileSources === tileSources ? resumeRef.current : null
+      resumeRef.current = null
+      const restoreViewport = resume?.viewport ?? initialViewport
+      const restoreOverlays = resume?.overlays ?? initialOverlays
+      if (restoreViewport) {
+        viewer.viewport.zoomTo(restoreViewport.zoom, undefined, true)
+        viewer.viewport.panTo(new OpenSeadragon.Point(restoreViewport.x, restoreViewport.y), true)
+        if (restoreViewport.rotation) {
+          viewer.viewport.setRotation(restoreViewport.rotation, true)
         }
       }
-      // Restore overlay rectangles from share link
-      if (initialOverlays?.length) {
-        for (const r of initialOverlays.slice(0, MAX_SHARE_OVERLAYS)) {
+      // Restore overlay rectangles (from a share link, or the resume snapshot).
+      if (restoreOverlays?.length) {
+        for (const r of restoreOverlays.slice(0, MAX_SHARE_OVERLAYS)) {
           addOverlayRect(r)
         }
         updateClearButtonState()
@@ -926,10 +950,7 @@ export default function ImageViewer({
           gp[0].currentPos.y - gp[1].currentPos.y,
           gp[0].currentPos.x - gp[1].currentPos.x,
         )
-        const a2 = Math.atan2(
-          gp[0].lastPos.y - gp[1].lastPos.y,
-          gp[0].lastPos.x - gp[1].lastPos.x,
-        )
+        const a2 = Math.atan2(gp[0].lastPos.y - gp[1].lastPos.y, gp[0].lastPos.x - gp[1].lastPos.x)
         let deltaDeg = ((a1 - a2) * 180) / Math.PI
         // Normalise so a ±360 wrap-around between samples doesn't spike.
         if (deltaDeg > 180) deltaDeg -= 360
@@ -962,6 +983,23 @@ export default function ImageViewer({
         image_id: imageIdRef.current,
         category_id: categoryIdRef.current,
       })
+      // Snapshot the live viewport + drawn rectangles so a rebuild (e.g. an
+      // isMobile flip on window resize) can replay them instead of resetting.
+      if (viewer.viewport) {
+        const center = viewer.viewport.getCenter()
+        resumeRef.current = {
+          tileSources,
+          viewport: {
+            zoom: viewer.viewport.getZoom(),
+            x: center.x,
+            y: center.y,
+            rotation: viewer.viewport.getRotation(),
+          },
+          overlays: labelPairs
+            .slice(0, MAX_SHARE_OVERLAYS)
+            .map((p) => ({ x: p.rect.x, y: p.rect.y, width: p.rect.width, height: p.rect.height })),
+        }
+      }
       selectionModeRef.current = false
       dragRef.current = null
       overlaysRef.current = []

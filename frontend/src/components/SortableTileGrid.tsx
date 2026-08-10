@@ -20,6 +20,7 @@ import type { DragEndEvent, DragStartEvent } from '@dnd-kit/react'
 import type { Category, Group, ImageItem, Program } from '../types'
 import type { TileOrderItemRef } from '../api'
 import type { ReorderDragContext } from '../tileOrdering'
+import { useIsMobile } from '../useIsMobile'
 import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
 import { getCategoryHiddenStateFromPath } from '../treeUtils'
 import CategoryTile from './CategoryTile'
@@ -56,6 +57,7 @@ interface SortableTileProps {
 // here" over a category tile) and the drag sits still over an image tile.
 // See docs/drag-and-drop.md.
 function SortableTile({ id, index, disabled, children }: SortableTileProps) {
+  const isMobile = useIsMobile()
   const { ref, isDragSource } = useSortable({
     id,
     index,
@@ -70,8 +72,9 @@ function SortableTile({ id, index, disabled, children }: SortableTileProps) {
       sx={{
         opacity: isDragSource ? 0.4 : 1,
         position: 'relative',
-        // Two-column folder grid on mobile; fixed 300px tiles on desktop.
-        width: { xs: 'calc(50% - 5px)', sm: 300 },
+        // Two-column folder grid on mobile (incl. landscape phones); fixed 300px
+        // tiles on desktop. Keyed on isMobile so it matches the tile styling.
+        width: isMobile ? 'calc(50% - 5px)' : 300,
         maxWidth: '100%',
         cursor: disabled ? undefined : isDragSource ? 'grabbing' : 'grab',
       }}
