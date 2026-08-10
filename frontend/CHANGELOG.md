@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.42.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.42.0...frontend-v0.42.1) (2026-08-10)
+
+
+### Bug Fixes
+
+* **frontend:** guard Add Images form against rapid double-submit ([#1010](https://github.com/bcit-tlu/hriv/issues/1010)) ([f70b761](https://github.com/bcit-tlu/hriv/commit/f70b761abccb915c1301d2211b2a7da6665dc307))
+* **frontend:** rename login link to 'Log in with a guest account' ([#1023](https://github.com/bcit-tlu/hriv/issues/1023)) ([c2696cb](https://github.com/bcit-tlu/hriv/commit/c2696cb6477df3cc05cb4dd0c8d47c33d3d85f94))
+
 ## [0.42.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.41.2...frontend-v0.42.0) (2026-08-10)
 
 
