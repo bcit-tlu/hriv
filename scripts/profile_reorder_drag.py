@@ -50,6 +50,8 @@ INSTRUMENT = """
     window.__prof.longtasks.length = 0;
     window.__prof.events.length = 0;
     window.__prof.frames = 0;
+    window.__prof.markFrames = undefined;
+    window.__prof.markTime = undefined;
     window.__prof.rafStart = performance.now();
     requestAnimationFrame(tick);
   };
