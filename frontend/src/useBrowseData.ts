@@ -89,6 +89,13 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
   // resolve with the freshest data instead of rejecting.
   const categoriesRef = useRef<Category[]>([])
   const uncategorizedRef = useRef<ImageItem[]>([])
+  // Newest in-flight authoritative refresh per data type: a superseded
+  // refresh chains onto this so its caller receives the data the winning
+  // refresh commits, not a possibly pre-mutation mirror.
+  const categoriesRefreshRef = useRef<{ gen: number; promise: Promise<Category[]> } | null>(null)
+  const uncategorizedRefreshRef = useRef<{ gen: number; promise: Promise<ImageItem[]> } | null>(
+    null,
+  )
   useEffect(() => {
     categoriesRef.current = categories
   }, [categories])
@@ -116,7 +123,7 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
       if (effectiveSignal?.aborted || gen !== categoriesReadGen.current) return
       setCategories(tree.map(apiTreeToCategory))
     } catch (err) {
-      if (effectiveSignal?.aborted || isAbortError(err)) return
+      if (effectiveSignal?.aborted || isAbortError(err) || gen !== categoriesReadGen.current) return
       console.error('Failed to load categories', err)
     } finally {
       // Only a newer visible load (which will clear the flag itself) may
@@ -143,7 +150,9 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
       setUncategorizedImages(imgs.map(apiImageToItem))
       uncategorizedLoaded.current = true
     } catch (err) {
-      if (effectiveSignal?.aborted || isAbortError(err)) return
+      if (effectiveSignal?.aborted || isAbortError(err) || gen !== uncategorizedReadGen.current) {
+        return
+      }
       console.error('Failed to load uncategorized images', err)
       uncategorizedLoaded.current = true
     }
@@ -187,17 +196,26 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
     // freshly-committed sort_order values after a reorder.  Without
     // this the browser may serve a stale 304-backed response whose
     // ETag was computed before the reorder transaction committed.
-    try {
-      const tree = await fetchCategoryTree({ cache: 'reload', signal: ac.signal })
-      const cats = tree.map(apiTreeToCategory)
-      if (gen === categoriesReadGen.current) setCategories(cats)
-      return cats
-    } catch (err) {
-      // A newer read superseded this refresh: expected control flow, not a
-      // failure — resolve with the freshest committed data.
-      if (isAbortError(err)) return categoriesRef.current
-      throw err
-    }
+    const run = (async (): Promise<Category[]> => {
+      try {
+        const tree = await fetchCategoryTree({ cache: 'reload', signal: ac.signal })
+        const cats = tree.map(apiTreeToCategory)
+        if (gen === categoriesReadGen.current) setCategories(cats)
+        return cats
+      } catch (err) {
+        if (isAbortError(err)) {
+          // A newer authoritative refresh superseded this one: expected
+          // control flow, not a failure — resolve with the winning
+          // refresh's data so callers never receive pre-mutation state.
+          const newest = categoriesRefreshRef.current
+          if (newest !== null && newest.gen > gen) return newest.promise
+          return categoriesRef.current
+        }
+        throw err
+      }
+    })()
+    categoriesRefreshRef.current = { gen, promise: run }
+    return run
   }, [])
 
   const refreshUncategorizedImages = useCallback(async (): Promise<ImageItem[]> => {
@@ -205,18 +223,26 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
     uncategorizedAbortRef.current?.abort()
     const ac = new AbortController()
     uncategorizedAbortRef.current = ac
-    try {
-      const imgs = await fetchUncategorizedImages({ cache: 'reload', signal: ac.signal })
-      const items = imgs.map(apiImageToItem)
-      if (gen === uncategorizedReadGen.current) {
-        setUncategorizedImages(items)
-        uncategorizedLoaded.current = true
+    const run = (async (): Promise<ImageItem[]> => {
+      try {
+        const imgs = await fetchUncategorizedImages({ cache: 'reload', signal: ac.signal })
+        const items = imgs.map(apiImageToItem)
+        if (gen === uncategorizedReadGen.current) {
+          setUncategorizedImages(items)
+          uncategorizedLoaded.current = true
+        }
+        return items
+      } catch (err) {
+        if (isAbortError(err)) {
+          const newest = uncategorizedRefreshRef.current
+          if (newest !== null && newest.gen > gen) return newest.promise
+          return uncategorizedRef.current
+        }
+        throw err
       }
-      return items
-    } catch (err) {
-      if (isAbortError(err)) return uncategorizedRef.current
-      throw err
-    }
+    })()
+    uncategorizedRefreshRef.current = { gen, promise: run }
+    return run
   }, [])
 
   // Background refresh: re-fetch categories and uncategorized images every
