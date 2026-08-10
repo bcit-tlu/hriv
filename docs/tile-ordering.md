@@ -131,6 +131,13 @@ DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv \
 
 Normalization is deterministic: running it twice yields the same order.
 
+Normalization runs as ONE transaction and locks every scope's revision row
+until it commits, so concurrent ordering writes (`PUT /api/tile-order` and
+the legacy reorder endpoints) block for the duration of the run. This is
+intentional — it is an operator-invoked repair tool and a single transaction
+guarantees an all-or-nothing repair — but schedule it outside peak editing
+hours on large libraries.
+
 ## Tests
 
 `backend/tests/test_tile_order.py` covers the canonical rule and validation

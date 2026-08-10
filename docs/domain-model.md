@@ -120,6 +120,18 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   (FK to User, `SET NULL`).
 - See [Admin import/export](admin-import-export.md) for the task lifecycle.
 
+### TileOrderRevision _(added in `0018_tile_order_revisions`)_
+
+- **Purpose:** durable compare-and-set ordering revision for one tile scope
+  (the root, or one parent category) used by `PUT /api/tile-order`.
+- **Key fields:** `scope_key` (PK; the parent category ID, or `0` for the
+  root scope — real category IDs start at 1); `revision` (CAS counter,
+  starts at 1); `updated_at`.
+- **No FK to `categories`:** rows are created lazily on first write and are
+  not removed when their category is deleted (serial IDs are never reused,
+  so orphan rows are harmless).
+- See [Tile ordering](tile-ordering.md) for the API contract.
+
 ## Junction tables
 
 | Table               | Composite PK                | FK behaviour   | Constraint                                                                         |

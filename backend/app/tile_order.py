@@ -236,6 +236,11 @@ def _resolve_database_url() -> str:
     url = os.environ.get("DATABASE_URL", "")
     if not url:
         raise SystemExit("DATABASE_URL is required to normalize tile ordering")
+    # Deployments hand the app a driverless ``postgresql://`` URL; rewrite it
+    # for the async engine the same way Settings._normalize_database_scheme
+    # does (backend/app/database.py).
+    if url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
     return url
 
 

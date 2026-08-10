@@ -139,7 +139,13 @@ async def put_tile_order(
             )
             await db.commit()
         except Exception as exc:
-            await db.rollback()
+            # Guard the rollback so a broken connection cannot replace the
+            # original error or skip the metrics below (matches the pattern in
+            # routers/admin.py).
+            try:
+                await db.rollback()
+            except Exception as rollback_exc:
+                logger.debug("Rollback after failed tile-order write: %s", rollback_exc)
             record_exception_if_server_error(span, exc)
             record_reorder_result(
                 entity="tile",
