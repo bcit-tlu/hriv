@@ -19,11 +19,10 @@ from app.routers.images import (
     update_image,
     bulk_update_images,
     bulk_delete_images,
-    reorder_images,
     delete_image,
     replace_image,
 )
-from app.schemas import ImageCreate, ImageUpdate, ImageBulkUpdate, ImageBulkDelete, ImageReorderItem, ImageReorderRequest
+from app.schemas import ImageCreate, ImageUpdate, ImageBulkUpdate, ImageBulkDelete
 
 
 def _make_image(
@@ -1086,53 +1085,3 @@ async def test_replace_image_reraises_non_enospc_oserror(
         )
 
     mock_unlink.assert_called_once()
-
-
-# ── Reorder images ────────────────────────────────────────
-
-
-async def test_reorder_images_success() -> None:
-    img1 = _make_image(id=1, sort_order=0)
-    img2 = _make_image(id=2, sort_order=1)
-
-    items = [
-        ImageReorderItem(id=1, sort_order=1),
-        ImageReorderItem(id=2, sort_order=0),
-    ]
-    body = ImageReorderRequest(items=items)
-
-    async def mock_get(model, id_):
-        lookup = {1: img1, 2: img2}
-        return lookup.get(id_)
-
-    db = AsyncMock()
-    db.get = AsyncMock(side_effect=mock_get)
-    db.commit = AsyncMock()
-
-    result = await reorder_images(body, MagicMock(), db=db)
-    assert result == {"status": "ok"}
-    assert img1.sort_order == 1
-    assert img2.sort_order == 0
-    db.commit.assert_awaited_once()
-
-
-async def test_reorder_images_missing_image() -> None:
-    items = [ImageReorderItem(id=999, sort_order=0)]
-    body = ImageReorderRequest(items=items)
-
-    db = AsyncMock()
-    db.get = AsyncMock(return_value=None)
-
-    with pytest.raises(HTTPException) as exc:
-        await reorder_images(body, MagicMock(), db=db)
-    assert exc.value.status_code == 404
-
-
-async def test_reorder_images_empty_list() -> None:
-    body = ImageReorderRequest(items=[])
-    db = AsyncMock()
-    db.commit = AsyncMock()
-
-    result = await reorder_images(body, MagicMock(), db=db)
-    assert result == {"status": "ok"}
-    db.commit.assert_awaited_once()

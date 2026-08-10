@@ -215,11 +215,12 @@ async def bump_scope_revision(db: AsyncSession, scope_key: int) -> int:
 async def bump_scopes(db: AsyncSession, scope_keys: set[int]) -> None:
     """Lock and increment the revision of each affected scope.
 
-    Used by the legacy per-entity reorder endpoints so ordering writes made
-    during the staged frontend migration still invalidate tile-order
-    revisions held by other clients. Locks are taken in sorted scope-key
-    order so concurrent transactions touching overlapping scope sets cannot
-    deadlock.
+    Used by the entity write endpoints (PATCH updates, bulk updates, and
+    the image replace/upload path) so ordering-relevant writes
+    (``sort_order``, ``category_id``/``parent_id`` changes) invalidate
+    tile-order revisions held by other clients. Locks are taken in sorted
+    scope-key order so concurrent transactions touching overlapping scope
+    sets cannot deadlock.
     """
     for scope_key in sorted(scope_keys):
         await lock_scope_revision(db, scope_key)

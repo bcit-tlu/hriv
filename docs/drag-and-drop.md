@@ -28,21 +28,17 @@ There is exactly one source being dragged (a `tile`) and two kinds of drop
 target. They must never both act on the same pointer position — the directional
 threshold makes them mutually exclusive inside any tile.
 
-| Gesture                | Trigger zone                                                           | Droppable                                           | Collision detector        | Priority                   | Result                                               |
-| ---------------------- | ---------------------------------------------------------------------- | --------------------------------------------------- | ------------------------- | -------------------------- | ---------------------------------------------------- |
-| **Move into category** | Pointer on the **near half** of a category tile (entry side of centre) | `DroppableCategoryZone`, id `drop-cat-<categoryId>` | `nearHalfMoveCollision`   | `CollisionPriority.High`   | `onDropImageOnCategory` / `onDropCategoryOnCategory` |
-| **Reorder**            | Pointer past a tile's **centre** (far half) along the drag axis        | the sibling tile's `useSortable`                    | `farHalfReorderCollision` | `CollisionPriority.Normal` | committed via `move()`; persisted per the mode below |
+| Gesture                | Trigger zone                                                           | Droppable                                           | Collision detector        | Priority                   | Result                                                           |
+| ---------------------- | ---------------------------------------------------------------------- | --------------------------------------------------- | ------------------------- | -------------------------- | ---------------------------------------------------------------- |
+| **Move into category** | Pointer on the **near half** of a category tile (entry side of centre) | `DroppableCategoryZone`, id `drop-cat-<categoryId>` | `nearHalfMoveCollision`   | `CollisionPriority.High`   | `onDropImageOnCategory` / `onDropCategoryOnCategory`             |
+| **Reorder**            | Pointer past a tile's **centre** (far half) along the drag axis        | the sibling tile's `useSortable`                    | `farHalfReorderCollision` | `CollisionPriority.Normal` | coordinator `reportOrder` → `PUT /api/tile-order` (via `move()`) |
 
-How a reorder persists depends on the grid's mode:
-
-- **Coordinator mode** (Browse — a `tileOrdering` prop is passed): the drop is
-  reported to the shared coordinator (`frontend/src/tileOrdering.ts`), which
-  persists the scope's full order atomically through `PUT /api/tile-order`
-  with compare-and-set revisions. Drops that land while a save is in flight
-  are **queued and coalesced** — never discarded. See
-  `docs/tile-ordering.md` for the save-state lifecycle.
-- **Legacy mode** (no `tileOrdering` prop): the grid calls `reorderImages` /
-  `reorderCategories` directly with per-item sort orders.
+Every reorder persists through the shared coordinator
+(`frontend/src/tileOrdering.ts`), which submits the scope's full order
+atomically through `PUT /api/tile-order` with compare-and-set revisions.
+Drops that land while a save is in flight are **queued and coalesced** —
+never discarded. See `docs/tile-ordering.md` for the save-state lifecycle.
+(The legacy non-coordinator grid mode was removed in #998.)
 
 The two detectors share one predicate, `isPastTileCenterAlongDrag`, and are
 exact complements inside a tile: for any pointer inside a tile, **exactly one**

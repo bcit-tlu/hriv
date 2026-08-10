@@ -2,8 +2,8 @@
  * Reorder operation diagnostics (epic #975, issue #977).
  *
  * Every ordering operation gets a client-generated `operation_id` that is:
- * - attached to the persistence requests via the `X-Reorder-Operation-Id`
- *   header (picked up by backend spans and structured logs);
+ * - attached to the `PUT /api/tile-order` request body as `operation_id`
+ *   (picked up by backend spans and structured logs);
  * - emitted with each lifecycle state transition as a structured
  *   `reorder.operation` telemetry event (backend-validated ingestion);
  * - mirrored to the console in dev for quick local debugging.
@@ -19,7 +19,7 @@ import type { TelemetryErrorCode } from './observability'
 
 /** Lifecycle states of one client-side reorder operation. */
 export const REORDER_OPERATION_STATES = [
-  /** A drop was accepted visually but discarded by the in-flight guard. */
+  /** A drop was accepted visually but discarded by the in-flight guard (legacy path, removed in #998; retained for dashboard continuity). */
   'ignored',
   /** A drop was accepted and is waiting behind an in-flight save. */
   'queued',
@@ -35,7 +35,7 @@ export const REORDER_OPERATION_STATES = [
   'failed',
   /** A queued snapshot or refresh response was discarded because it was superseded. */
   'stale_discarded',
-  /** The component unmounted (navigation) while the operation was active. */
+  /** The component unmounted (navigation) while the operation was active (legacy path, removed in #998; the coordinator survives unmounts). */
   'abandoned',
 ] as const
 

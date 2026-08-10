@@ -487,22 +487,6 @@ export function deleteCategory(id: number): Promise<void> {
   return request(`/categories/${id}`, { method: 'DELETE' })
 }
 
-export function reorderCategories(
-  items: Array<{ id: number; parent_id: number | null; sort_order: number }>,
-  /** Client-generated correlation ID for end-to-end reorder telemetry. */
-  operationId?: string,
-): Promise<void> {
-  const headers: Record<string, string> = {}
-  if (operationId !== undefined) {
-    headers['X-Reorder-Operation-Id'] = operationId
-  }
-  return request('/categories/reorder', {
-    method: 'PUT',
-    body: JSON.stringify({ items }),
-    headers,
-  })
-}
-
 // ── Tile order (atomic combined ordering; docs/tile-ordering.md) ──
 
 export interface TileOrderItemRef {
@@ -532,10 +516,6 @@ export function putTileOrder(
   /** Client-generated correlation ID for end-to-end reorder telemetry. */
   operationId?: string,
 ): Promise<TileOrderResponse> {
-  const headers: Record<string, string> = {}
-  if (operationId !== undefined) {
-    headers['X-Reorder-Operation-Id'] = operationId
-  }
   return request('/tile-order', {
     method: 'PUT',
     body: JSON.stringify({
@@ -544,7 +524,6 @@ export function putTileOrder(
       operation_id: operationId ?? null,
       items,
     }),
-    headers,
   })
 }
 
@@ -557,22 +536,6 @@ export function tileOrderConflictCurrent(err: unknown): TileOrderResponse | null
 }
 
 // ── Images ───────────────────────────────────────────────
-
-export function reorderImages(
-  items: Array<{ id: number; sort_order: number }>,
-  /** Client-generated correlation ID for end-to-end reorder telemetry. */
-  operationId?: string,
-): Promise<void> {
-  const headers: Record<string, string> = {}
-  if (operationId !== undefined) {
-    headers['X-Reorder-Operation-Id'] = operationId
-  }
-  return request('/images/reorder', {
-    method: 'PUT',
-    body: JSON.stringify({ items }),
-    headers,
-  })
-}
 
 export function fetchImage(imageId: number): Promise<ApiImage> {
   return request(`/images/${imageId}`)
