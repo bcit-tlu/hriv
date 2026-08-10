@@ -273,7 +273,21 @@ export function useCategoryActions({
         tileOrderingCoordinator.reportOrder(scope, order)
       }
       if (scopes.length > 0) {
-        setManageReorderScopes(scopes.map((s) => s.scope))
+        // Merge with previously tracked scopes that have not settled yet so
+        // an earlier failed/conflicted save stays reachable from the
+        // indicator; settled scopes are pruned by the clear-when-settled
+        // effect in App.
+        setManageReorderScopes((prev) => {
+          const next = scopes.map((s) => s.scope)
+          const nextKeys = new Set(next)
+          for (const scope of prev ?? []) {
+            const status = tileOrderingCoordinator.getScope(scope).status
+            if (!nextKeys.has(scope) && status !== 'saved' && status !== 'idle') {
+              next.push(scope)
+            }
+          }
+          return next
+        })
       }
     },
     [categories, setErrorSnack],
