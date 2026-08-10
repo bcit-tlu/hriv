@@ -26,7 +26,7 @@ export const REORDER_OPERATION_STATES = [
   'coalesced',
   /** Persistence requests were sent to the backend. */
   'submitted',
-  /** Persistence and the follow-up refresh completed successfully. */
+  /** Persistence completed successfully (a failed follow-up refresh is handled by the refresh callback, not reflected here). */
   'committed',
   /** The backend rejected the operation due to a revision conflict. */
   'conflicted',

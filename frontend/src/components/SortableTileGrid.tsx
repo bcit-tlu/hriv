@@ -241,6 +241,7 @@ export default function SortableTileGrid({
   )
   const [activeItem, setActiveItem] = useState<TileItem | null>(null)
   const reorderInFlightRef = useRef(false)
+  const discardedDropsRef = useRef(0)
   const activeOperationRef = useRef<string | null>(null)
   const pendingItemsRef = useRef<TileItem[] | null>(null)
   // Refs for async callback access (always reflect latest props)
@@ -332,6 +333,7 @@ export default function SortableTileGrid({
             inFlightReordered.length === inFlightIds.length &&
             inFlightReordered.every((id, i) => id === inFlightIds[i])
           if (isNoOp) return
+          discardedDropsRef.current += 1
           emitReorderDiagnostic({
             operationId: newReorderOperationId(),
             state: 'ignored',
@@ -340,7 +342,9 @@ export default function SortableTileGrid({
             itemId: Number(sourceId.slice(4)),
             categoryCount: currentCategoriesRef.current.length,
             imageCount: visibleImagesRef.current.length,
-            queueDepth: 1,
+            // Running count of drops discarded during the current save
+            // (nothing is actually queued until #979 lands).
+            queueDepth: discardedDropsRef.current,
           })
         }
         return
@@ -374,6 +378,7 @@ export default function SortableTileGrid({
       const operationId = newReorderOperationId()
       const startedAt = performance.now()
       reorderInFlightRef.current = true
+      discardedDropsRef.current = 0
       activeOperationRef.current = operationId
       setItems(reordered)
 

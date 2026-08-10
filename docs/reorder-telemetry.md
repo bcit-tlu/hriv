@@ -40,7 +40,7 @@ share this bounded vocabulary:
 | `queued`          | Drop accepted and waiting behind an in-flight save (future #979)                 |
 | `coalesced`       | Queued drop merged into a newer one before submission (future #979)              |
 | `submitted`       | Persistence requests sent to the backend                                         |
-| `committed`       | Persistence and follow-up refresh completed successfully                         |
+| `committed`       | Persistence completed successfully (refresh-callback failures are not reflected) |
 | `conflicted`      | Backend rejected the operation due to a revision conflict (future #978/#980)     |
 | `failed`          | Persistence failed (fully or partially) and the UI rolled back                   |
 | `stale_discarded` | Refresh response discarded because a newer operation superseded it (future #980) |
@@ -64,7 +64,7 @@ contract change; the current UI emits `ignored`, `submitted`, `committed`,
   display-name lookup)
 - `from_index`, `to_index` (original and projected indices)
 - `category_count`, `image_count` (items in the persisted scope)
-- `queue_depth` (drops waiting behind the in-flight save)
+- `queue_depth` (running count of drops discarded during the in-flight save; becomes a real queue depth once #979 lands)
 - `local_revision` (client ordering revision; populated once #978 lands)
 - `duration_ms` (for terminal states)
 - `error` / `error_code` (bounded category — `api_http_4xx`, `api_http_5xx`, or `api_network_error` — for `failed`; never free-text)

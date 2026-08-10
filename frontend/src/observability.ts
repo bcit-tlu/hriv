@@ -248,23 +248,29 @@ function shouldEmitDedupedError(key: string): boolean {
   return true
 }
 
+// Server-side batch cap (backend/app/routers/telemetry.py _MAX_EVENTS_PER_REQUEST);
+// larger batches are rejected wholesale with a 422.
+const MAX_EVENTS_PER_REQUEST = 10
+
 function postEvents(events: TelemetryPayload[]): void {
   if (events.length === 0) return
 
   const base = apiUrl()
   const url = base ? `${base}/api/telemetry/events` : '/api/telemetry/events'
 
-  fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeaders(),
-    },
-    body: JSON.stringify({ events }),
-    keepalive: true,
-  }).catch(() => {
-    // Telemetry delivery is best-effort; never block the UI.
-  })
+  for (let i = 0; i < events.length; i += MAX_EVENTS_PER_REQUEST) {
+    fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(),
+      },
+      body: JSON.stringify({ events: events.slice(i, i + MAX_EVENTS_PER_REQUEST) }),
+      keepalive: true,
+    }).catch(() => {
+      // Telemetry delivery is best-effort; never block the UI.
+    })
+  }
 }
 
 function flushPendingEvents(): void {
