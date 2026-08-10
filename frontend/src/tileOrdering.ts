@@ -270,9 +270,11 @@ export class TileOrderingCoordinator {
       const key = scopeKey(scope)
       const operationId = this.pendingOperationIds.get(key) ?? newReorderOperationId()
       this.pendingOperationIds.set(key, operationId)
+      // A conflict always retains pending intent, so the drop always
+      // coalesces with it.
       emitReorderDiagnostic({
         operationId,
-        state: state.pending !== null ? 'coalesced' : 'queued',
+        state: 'coalesced',
         scopeCategoryId: scope,
         queueDepth: 1,
       })
@@ -359,10 +361,16 @@ export class TileOrderingCoordinator {
    * Resolve every scope needing attention (see `hasFailedScopesOutside`):
    * failed saves are retried; conflicted scopes adopt the server's
    * authoritative order — the same resolution the browsed-scope conflict
-   * affordance offers.
+   * affordance offers. `excluding` (the browsed scope, mirroring
+   * `hasFailedScopesOutside`) is left untouched: it renders its own
+   * affordances, so the cross-scope action must never discard the local
+   * intent the user can still see and act on. Pass `undefined` to resolve
+   * every scope (note the root scope is `null`, not `undefined`).
    */
-  retryFailedScopes(): void {
+  retryFailedScopes(excluding?: ScopeId): void {
+    const exclude = excluding === undefined ? undefined : scopeKey(excluding)
     for (const [key, state] of [...this.scopes]) {
+      if (key === exclude) continue
       if (state.status === 'error') this.retry(scopeFromKey(key))
       else if (state.status === 'conflict') this.acceptServerOrder(scopeFromKey(key))
     }
@@ -406,11 +414,12 @@ export class TileOrderingCoordinator {
       this.acceptServerOrder(scope)
       return
     }
-    // A 400-style conflict means scope membership drifted: resubmitting the
-    // pending list verbatim would be rejected again forever. Reconcile it
-    // against the authoritative membership — keep the local relative order
-    // for surviving items, drop departed ones, append newcomers in server
-    // order.
+    // Reconcile the pending list against the authoritative membership —
+    // keep the local relative order for surviving items, drop departed
+    // ones, append newcomers in server order. This runs for every conflict:
+    // it is a no-op for a pure 409 revision clash (identical membership)
+    // and prevents a 400-style membership-drift conflict from being
+    // resubmitted verbatim and rejected forever.
     let pending = state.pending
     if (state.conflictOrder !== null) {
       const authoritative = new Set(state.conflictOrder.map(refKey))
