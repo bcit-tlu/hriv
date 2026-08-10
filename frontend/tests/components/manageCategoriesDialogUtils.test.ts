@@ -302,6 +302,28 @@ describe('interleavedTileOrders', () => {
     expect(interleavedTileOrders(newCats, oldCats, new Map(), () => displayOrder)).toEqual([])
   })
 
+  it('does not emit an untouched mixed scope when the display order is missing a member', () => {
+    // Scope members: C1(sort 0), C2(sort 1), image 10(sort 2). The
+    // coordinator's order does not know C2 yet but has image 10 ranked
+    // before C1. A ranked category must never be re-placed into an image
+    // slot: the category subsequence must match reorderFlatOptions, so
+    // this untouched scope must not diff as changed.
+    const oldCats = [
+      makeFlatOption({ id: 1, parentId: null }),
+      makeFlatOption({ id: 2, parentId: null }),
+    ]
+    const newCats = [
+      makeFlatOption({ id: 1, parentId: null }),
+      makeFlatOption({ id: 2, parentId: null }),
+    ]
+    const imagesByParent = new Map([['null', [makeImage({ id: 10, sortOrder: 2 })]]])
+    const displayOrder = [
+      { type: 'image' as const, id: 10 },
+      { type: 'category' as const, id: 1 },
+    ]
+    expect(interleavedTileOrders(newCats, oldCats, imagesByParent, () => displayOrder)).toEqual([])
+  })
+
   it('falls back to the sortOrder template when the display order is entirely stale', () => {
     const oldCats = [
       makeFlatOption({ id: 1, parentId: null }),
