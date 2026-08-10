@@ -193,12 +193,13 @@ order. Foreground reads and authoritative refreshes
 read for the same data via `AbortController`; aborted requests are treated
 as expected control flow (no error state, no console noise).
 
-Background polling (`useBackgroundRefresh`) is paused for reads while the
-tile-ordering coordinator reports unsaved work
-(`tileOrderingCoordinator.hasUnsavedChanges()` — dirty, saving, queued,
-conflicted, or awaiting retry), so a polling response can never replace a
-local pending order. Polling resumes automatically on the next tick once
-the coordinator is clean.
+Background polling is paused for reads while the tile-ordering coordinator
+reports unsaved work: the poll callback in `useBrowseData` returns early
+(`useBackgroundRefresh` itself keeps ticking and is coordinator-unaware)
+whenever `tileOrderingCoordinator.hasUnsavedChanges()` is true (dirty,
+saving, queued, conflicted, or awaiting retry), so a polling response can
+never replace a local pending order. Polling resumes automatically on the
+next tick once the coordinator is clean.
 
 Conflict recovery is explicit, never last-write-wins: on 409 the indicator
 offers both **Refresh** (adopt the server's authoritative order via
