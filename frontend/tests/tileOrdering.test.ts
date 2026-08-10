@@ -215,6 +215,30 @@ describe('TileOrderingCoordinator', () => {
     expect(state.revision).toBe(2)
   })
 
+  it('reports a coalesce when a new drag supersedes a queued snapshot after a failure', async () => {
+    const first = deferred<TileOrderResponse>()
+    mockedPut.mockReturnValueOnce(first.promise)
+    mockedPut.mockResolvedValueOnce(response(3, refs(1, 3, 2)))
+
+    coordinator.reportOrder(null, refs(2, 1, 3))
+    await flushMicrotasks()
+    // Queue a second snapshot behind the in-flight save, then fail the save.
+    coordinator.reportOrder(null, refs(3, 2, 1))
+    const queuedId = events.find((e) => e.state === 'queued')?.operationId
+    expect(queuedId).toBeDefined()
+    first.reject(new ApiError(500, 'boom'))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('error')
+
+    // A new drag supersedes the retained queued snapshot: same operation ID,
+    // reported as a coalesce.
+    coordinator.reportOrder(null, refs(1, 3, 2))
+    const coalesced = events.filter((e) => e.state === 'coalesced')
+    expect(coalesced.map((e) => e.operationId)).toContain(queuedId)
+    await flushMicrotasks()
+    expect(mockedPut).toHaveBeenLastCalledWith(null, 1, refs(1, 3, 2), queuedId)
+  })
+
   it('surfaces and retries a failed save from outside its scope', async () => {
     mockedPut.mockRejectedValueOnce(new ApiError(500, 'boom'))
     mockedPut.mockResolvedValueOnce(response(2, refs(2, 1, 3)))
