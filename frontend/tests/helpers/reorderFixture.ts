@@ -3,9 +3,7 @@
  *
  * Mirrors the backend fixture in `backend/app/reorder_fixture.py`:
  * deterministic IDs/names, 80 sibling categories, 600 sibling images,
- * a mixed root scope, and duplicate initial sortOrder values. Also provides
- * latency-injection helpers (deferreds) so tests can hold category and image
- * persistence — and background refreshes — open independently.
+ * a mixed root scope, and duplicate initial sortOrder values.
  */
 
 import type { Category, ImageItem } from '../../src/types'
