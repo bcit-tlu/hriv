@@ -101,6 +101,16 @@ export class TileOrderingCoordinator {
    * coalesced / submitted / terminal events of one operation correlate.
    */
   private pendingOperationIds = new Map<string, string>()
+  /**
+   * Bumped by `reset()`. In-flight `flush` continuations capture the epoch
+   * at entry and bail out if it changed, so a save that settles after a
+   * logout/user-switch reset can never recreate the previous user's state.
+   */
+  private epoch = 0
+  /** Monotonic write counter; stamps each scope write (see `marker`). */
+  private writeCounter = 0
+  /** Per-scope-key sequence of the most recent write. */
+  private lastWrite = new Map<string, number>()
 
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener)
@@ -133,19 +143,32 @@ export class TileOrderingCoordinator {
    * Scopes holding local intent (pending, in-flight, conflict, or a
    * retryable failure) are left untouched.
    */
-  releaseCleanScopes(): void {
+  releaseCleanScopes(marker?: number): void {
     let changed = false
     for (const [key, state] of this.scopes) {
+      // Skip scopes written after the caller's marker: their order is newer
+      // than whatever data the caller fetched, so it must not be discarded.
+      if (marker !== undefined && (this.lastWrite.get(key) ?? 0) > marker) continue
       if (
         state.pending === null &&
         state.inFlight === null &&
         (state.status === 'saved' || state.status === 'idle')
       ) {
         this.scopes.delete(key)
+        this.lastWrite.delete(key)
         changed = true
       }
     }
     if (changed) for (const listener of this.listeners) listener()
+  }
+
+  /**
+   * Snapshot of the write counter. Capture before starting a data refresh
+   * and pass to `releaseCleanScopes` so scopes saved while the refresh was
+   * in flight (whose order is newer than the fetched data) survive.
+   */
+  marker(): number {
+    return this.writeCounter
   }
 
   /**
@@ -154,9 +177,12 @@ export class TileOrderingCoordinator {
    * user on a shared browser.
    */
   reset(): void {
-    if (this.scopes.size === 0) return
+    this.epoch += 1
+    this.seeding.clear()
+    if (this.scopes.size === 0 && this.pendingOperationIds.size === 0) return
     this.scopes.clear()
     this.pendingOperationIds.clear()
+    this.lastWrite.clear()
     for (const listener of this.listeners) listener()
   }
 
@@ -182,7 +208,10 @@ export class TileOrderingCoordinator {
     const state = this.getScope(scope)
     if (state.displayOrder !== null && sameOrder(state.displayOrder, order)) return
 
-    if (state.inFlight !== null) {
+    // Treat revision seeding like an in-flight save: the drop is queued so
+    // the status stays 'saving'-family instead of flickering back to dirty,
+    // and queued/coalesced telemetry is emitted for it.
+    if (state.inFlight !== null || this.seeding.has(scopeKey(scope))) {
       const key = scopeKey(scope)
       if (state.pending !== null) {
         const operationId = this.pendingOperationIds.get(key) ?? newReorderOperationId()
@@ -249,14 +278,18 @@ export class TileOrderingCoordinator {
   }
 
   private setScope(scope: ScopeId, state: ScopeState): void {
-    this.scopes.set(scopeKey(scope), state)
+    const key = scopeKey(scope)
+    this.scopes.set(key, state)
+    this.lastWrite.set(key, ++this.writeCounter)
     for (const listener of this.listeners) listener()
   }
 
   private async flush(scope: ScopeId): Promise<void> {
+    const epoch = this.epoch
     // Persist snapshots until no newer local changes remain. Each iteration
     // submits the newest snapshot only (coalescing anything in between).
     for (;;) {
+      if (epoch !== this.epoch) return
       const state = this.getScope(scope)
       if (state.pending === null || state.inFlight !== null) return
       if (this.seeding.has(scopeKey(scope))) return
@@ -272,6 +305,7 @@ export class TileOrderingCoordinator {
           const current = await getTileOrder(scope)
           revision = current.revision
         } catch (err) {
+          if (epoch !== this.epoch) return
           emitReorderDiagnostic({
             operationId: seedOperationId,
             state: 'failed',
@@ -288,6 +322,7 @@ export class TileOrderingCoordinator {
         } finally {
           this.seeding.delete(scopeKey(scope))
         }
+        if (epoch !== this.epoch) return
         // A newer snapshot may have arrived while fetching the revision.
         const latest = this.getScope(scope)
         this.setScope(scope, { ...latest, revision })
@@ -318,6 +353,7 @@ export class TileOrderingCoordinator {
 
       try {
         const response = await putTileOrder(scope, revision, order, operationId)
+        if (epoch !== this.epoch) return
         emitReorderDiagnostic({
           operationId,
           state: 'committed',
@@ -339,6 +375,7 @@ export class TileOrderingCoordinator {
         if (stillNewest) return
         continue
       } catch (err) {
+        if (epoch !== this.epoch) return
         // 409: the CAS revision is stale. 400: scope membership changed
         // underneath the client (membership changes do not bump the
         // revision) — the tile-order contract says to treat it like 409 and
@@ -350,6 +387,7 @@ export class TileOrderingCoordinator {
           } catch {
             conflict = null
           }
+          if (epoch !== this.epoch) return
         }
         if (conflict !== null) {
           emitReorderDiagnostic({
