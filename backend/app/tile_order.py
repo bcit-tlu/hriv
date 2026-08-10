@@ -38,6 +38,13 @@ ROOT_SCOPE_KEY = 0
 # invalidation (``app/admin_ops.py``) materializes every scope at
 # ``INITIAL_SCOPE_REVISION + 1`` so an implicit pre-restore revision can never
 # pass the CAS check — keep the three sites in sync via this constant.
+#
+# INVARIANT: no committed row may exist at this revision. Every caller of
+# ``lock_scope_revision`` must call ``bump_scope_revision`` in the same
+# transaction (or roll back), so committed rows are always >= this value + 1.
+# Restore-time invalidation depends on it: a code path that commits a row at
+# this revision would let a client holding the implicit initial revision
+# survive a restore and silently overwrite the restored order.
 INITIAL_SCOPE_REVISION = 1
 
 _TYPE_PRIORITY = {"category": 0, "image": 1}

@@ -494,6 +494,81 @@ async def test_entity_patch_sort_order_bumps_scope_revision(db_session):
 
 
 @requires_db
+async def test_entity_patch_noop_metadata_edit_does_not_bump_revision(db_session):
+    """A PATCH that mentions ordering fields without changing their values
+    (e.g. the edit dialog resubmitting the current category_id alongside a
+    note change) must NOT invalidate the scope's tile-order revision."""
+    from fastapi import Request
+
+    from app.models import Category, Image
+    from app.routers.categories import update_category
+    from app.routers.images import update_image
+    from app.schemas import CategoryUpdate, ImageUpdate
+
+    parent_id, cats, imgs = await _mixed_scope(db_session)
+    before = await get_tile_order(_admin(), parent_id, db_session)
+    request = Request({"type": "http", "headers": []})
+
+    img = await db_session.get(Image, imgs[0])
+    await update_image(
+        imgs[0],
+        ImageUpdate(
+            note="new note",
+            category_id=img.category_id,
+            sort_order=img.sort_order,
+        ),
+        request,
+        _admin(),
+        db_session,
+    )
+    after_img = await get_tile_order(_admin(), parent_id, db_session)
+    assert after_img.revision == before.revision
+
+    cat = await db_session.get(Category, cats[0])
+    await update_category(
+        cats[0],
+        CategoryUpdate(
+            label="renamed",
+            parent_id=cat.parent_id,
+            sort_order=cat.sort_order,
+        ),
+        request,
+        _admin(),
+        db_session,
+    )
+    after_cat = await get_tile_order(_admin(), parent_id, db_session)
+    assert after_cat.revision == before.revision
+
+
+@requires_db
+async def test_bulk_update_same_category_does_not_bump_revision(db_session):
+    """A bulk edit that resubmits the images' current category_id (e.g. a
+    copyright change with the category picker untouched) must NOT invalidate
+    the scope's tile-order revision; an actual move must."""
+    from app.routers.images import bulk_update_images
+    from app.schemas import ImageBulkUpdate
+
+    parent_id, _cats, imgs = await _mixed_scope(db_session)
+    before = await get_tile_order(_admin(), parent_id, db_session)
+
+    await bulk_update_images(
+        ImageBulkUpdate(image_ids=imgs, category_id=parent_id, copyright="c"),
+        _admin(),
+        db_session,
+    )
+    after_noop = await get_tile_order(_admin(), parent_id, db_session)
+    assert after_noop.revision == before.revision
+
+    await bulk_update_images(
+        ImageBulkUpdate(image_ids=[imgs[0]], category_id=None),
+        _admin(),
+        db_session,
+    )
+    after_move = await get_tile_order(_admin(), parent_id, db_session)
+    assert after_move.revision > after_noop.revision
+
+
+@requires_db
 async def test_nonexistent_parent_scope_returns_404(db_session):
     missing_parent = 999_999_999
     with pytest.raises(HTTPException) as excinfo:
