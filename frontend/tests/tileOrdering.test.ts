@@ -763,6 +763,26 @@ describe('TileOrderingCoordinator', () => {
     })
   })
 
+  it('a contextless report clears a previously stored drag context', async () => {
+    mockedPut.mockResolvedValueOnce(response(2, refs(2, 1, 3)))
+    coordinator.reportOrder(null, refs(2, 1, 3), undefined, {
+      itemType: 'image',
+      itemId: 2,
+      fromIndex: 1,
+      toIndex: 0,
+    })
+    await flushMicrotasks()
+
+    mockedPut.mockResolvedValueOnce(response(3, refs(1, 2, 3)))
+    coordinator.reportOrder(null, refs(1, 2, 3))
+    await flushMicrotasks()
+
+    const submitted = events.filter((e) => e.state === 'submitted')
+    expect(submitted).toHaveLength(2)
+    expect(submitted[1].itemId).toBeUndefined()
+    expect(submitted[1].fromIndex).toBeUndefined()
+  })
+
   it('a stale seeding flush cannot clear a post-reset seeding mark', async () => {
     const staleSeed = deferred<TileOrderResponse>()
     mockedGet.mockReturnValueOnce(staleSeed.promise)
