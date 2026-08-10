@@ -126,22 +126,17 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
       // or it would silently invalidate a live read's commit.
       if (signal?.aborted) return false
       // An in-flight authoritative refresh holds the newest generation and
-      // bypasses the HTTP cache; superseding it with a plain (possibly
-      // ETag-cached) load could reinstall pre-mutation data. Reuse it.
+      // bypasses the HTTP cache. This load may follow a mutation the refresh
+      // predates, so it cannot simply await the refresh (that could commit
+      // pre-mutation data); instead it issues its own read, also bypassing
+      // the HTTP cache so a stale ETag-backed 304 cannot reinstall
+      // pre-refresh data either.
       const newestRefresh = categoriesRefreshRef.current
-      if (
+      const bypassHttpCache =
         !signal &&
         newestRefresh !== null &&
         !newestRefresh.settled &&
         newestRefresh.gen === categoriesReadGen.current
-      ) {
-        try {
-          await newestRefresh.promise
-          return true
-        } catch {
-          // The refresh failed — fall through to a normal load.
-        }
-      }
       const gen = ++categoriesReadGen.current
       let effectiveSignal = signal
       if (!signal) {
@@ -154,9 +149,10 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
       const visibleGen = silent ? 0 : ++visibleCategoriesLoadGen.current
       try {
         if (!silent) setCategoriesLoading(true)
-        const tree = await fetchCategoryTree(
-          effectiveSignal ? { signal: effectiveSignal } : undefined,
-        )
+        const tree = await fetchCategoryTree({
+          ...(bypassHttpCache ? { cache: 'reload' as const } : {}),
+          ...(effectiveSignal ? { signal: effectiveSignal } : {}),
+        })
         if (effectiveSignal?.aborted || gen !== categoriesReadGen.current) return false
         setCategories(tree.map(apiTreeToCategory))
         return true
@@ -181,21 +177,14 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
       // An already-cancelled read must not claim the newest-read generation,
       // or it would silently invalidate a live read's commit.
       if (signal?.aborted) return false
-      // Reuse an in-flight authoritative refresh (see loadCategories).
+      // Bypass the HTTP cache when superseding an in-flight authoritative
+      // refresh (see loadCategories).
       const newestRefresh = uncategorizedRefreshRef.current
-      if (
+      const bypassHttpCache =
         !signal &&
         newestRefresh !== null &&
         !newestRefresh.settled &&
         newestRefresh.gen === uncategorizedReadGen.current
-      ) {
-        try {
-          await newestRefresh.promise
-          return true
-        } catch {
-          // The refresh failed — fall through to a normal load.
-        }
-      }
       const gen = ++uncategorizedReadGen.current
       let effectiveSignal = signal
       if (!signal) {
@@ -205,9 +194,10 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
         effectiveSignal = ac.signal
       }
       try {
-        const imgs = await fetchUncategorizedImages(
-          effectiveSignal ? { signal: effectiveSignal } : undefined,
-        )
+        const imgs = await fetchUncategorizedImages({
+          ...(bypassHttpCache ? { cache: 'reload' as const } : {}),
+          ...(effectiveSignal ? { signal: effectiveSignal } : {}),
+        })
         if (effectiveSignal?.aborted || gen !== uncategorizedReadGen.current) return false
         setUncategorizedImages(imgs.map(apiImageToItem))
         uncategorizedLoaded.current = true
