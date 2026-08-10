@@ -493,7 +493,13 @@ export default function ManageCategoriesDialog({
         await onReorderComplete?.()
         return
       }
-      await onReorderComplete?.()
+      // Success path: when scope orders were reported, the coordinator
+      // persists asynchronously and triggers the authoritative refresh
+      // itself once the save commits (via its committed listener), so
+      // refreshing here would only re-fetch pre-save data. A pure parent
+      // move with no ordering delta produces no commit, so the awaited
+      // PATCH needs its refresh here.
+      if (scopes.length === 0) await onReorderComplete?.()
     },
     [
       dragId,
@@ -560,18 +566,20 @@ export default function ManageCategoriesDialog({
   return (
     <>
       <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-        <Box
+        {/* Keep DialogTitle a direct sibling of DialogContent so MUI's
+            `.MuiDialogTitle-root + .MuiDialogContent-root` padding rule
+            still applies. */}
+        <DialogTitle
           sx={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: 1,
-            pr: 3,
           }}
         >
-          <DialogTitle>Manage Categories</DialogTitle>
+          Manage Categories
           {reorderStatus}
-        </Box>
+        </DialogTitle>
         <DialogContent>
           <List
             dense

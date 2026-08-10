@@ -217,7 +217,7 @@ export class TileOrderingCoordinator {
     const key = scopeKey(scope)
     const state = this.scopes.get(key)
     if (!state || state.revision === null) return
-    this.scopes.set(key, { ...state, revision: null })
+    this.setScope(scope, { ...state, revision: null })
   }
 
   /**

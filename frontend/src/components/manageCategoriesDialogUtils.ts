@@ -31,6 +31,12 @@ export function diffParentMoves(newCatList: FlatOption[], oldCatList: FlatOption
  * in flight. Categories not present in a scope's display order (e.g. a
  * category whose parent move is still refreshing) keep their original slot
  * so they do not visibly jump while the reload is in flight.
+ *
+ * INVARIANT: this placement rule (unknown members keep their slot, known
+ * members re-ranked within slots of their own type) must stay in sync with
+ * the partial-coverage branch of `interleavedTileOrders` below — the drop
+ * handler diffs against what this function draws, so a divergence makes
+ * untouched scopes falsely diff as changed.
  */
 export function reorderFlatOptions(
   options: FlatOption[],
@@ -195,9 +201,9 @@ export function interleavedTileOrders(
         // Partial coverage (e.g. a cross-parent move's refresh window):
         // re-rank each type within its own slots so a ranked category can
         // never land in an image slot. This keeps the category subsequence
-        // identical to what reorderFlatOptions draws, so an untouched
-        // scope never diffs as changed merely because the coordinator's
-        // order is missing a member.
+        // identical to what reorderFlatOptions draws (see the INVARIANT on
+        // its doc comment), so an untouched scope never diffs as changed
+        // merely because the coordinator's order is missing a member.
         const rankedByType: Record<'category' | 'image', TileOrderItemRef[]> = {
           category: [],
           image: [],
