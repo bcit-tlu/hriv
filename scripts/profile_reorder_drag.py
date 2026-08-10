@@ -53,17 +53,27 @@ INSTRUMENT = """
     window.__prof.rafStart = performance.now();
     requestAnimationFrame(tick);
   };
+  // Marks the end of the pointer-movement phase: drag FPS is computed over
+  // movement only, while long tasks keep accumulating through drag end so
+  // the idle settle tail cannot inflate the FPS figure.
+  window.__profMark = () => {
+    window.__prof.markFrames = window.__prof.frames;
+    window.__prof.markTime = performance.now();
+  };
   window.__profStop = () => {
     window.__prof.running = false;
     window.__prof.rafStop = performance.now();
     const p = window.__prof;
     const wall = p.rafStop - p.rafStart;
+    const moveWall = (p.markTime ?? p.rafStop) - p.rafStart;
+    const moveFrames = p.markFrames ?? p.frames;
     const ltTotal = p.longtasks.reduce((a, b) => a + b.dur, 0);
     const ltMax = p.longtasks.reduce((a, b) => Math.max(a, b.dur), 0);
     return {
       wallMs: Math.round(wall),
+      moveMs: Math.round(moveWall),
       frames: p.frames,
-      fps: Math.round((p.frames / wall) * 1000),
+      fps: Math.round((moveFrames / moveWall) * 1000),
       longtaskCount: p.longtasks.length,
       longtaskTotalMs: Math.round(ltTotal),
       longtaskMaxMs: Math.round(ltMax),
@@ -104,9 +114,9 @@ def main() -> None:
 
         page.evaluate(INSTRUMENT)
 
-        # Direct children include the file drop zone (rendered last for
-        # edit-capable users, itself a region) — exclude it so tile_count
-        # and the source/destination picks only ever land on real tiles.
+        # Defensive: exclude any non-tile region children (the file drop
+        # zone mounts as a region during native file drags; it is absent
+        # during scripted pointer drags, so this normally filters nothing).
         tiles = grid.locator(':scope > div:not([role="region"])')
         tile_count = tiles.count()
         if tile_count < 4:
@@ -133,9 +143,10 @@ def main() -> None:
             f = i / STEPS
             page.mouse.move(x0 + (x1 - x0) * f, y0 + (y1 - y0) * f)
         drag_wall = time.time() - t0
-        # Keep the drag-end path (cancel + pointer release) inside the
-        # measured window: the docs attribute one of the two long-task
-        # clusters to drag end, so stop sampling only after it settles.
+        # End of the movement phase: FPS is computed up to here. Long-task
+        # sampling continues through the cancel + pointer release so the
+        # drag-end cluster is captured without diluting the FPS figure.
+        page.evaluate("window.__profMark()")
         page.keyboard.press("Escape")  # cancel: profiling only, no persistence
         page.mouse.up()
         page.wait_for_timeout(500)
