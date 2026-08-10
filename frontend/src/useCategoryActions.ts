@@ -282,8 +282,8 @@ export function useCategoryActions({
         }
         tileOrderingCoordinator.invalidateRevision(move.newParentId)
       }
-      for (const { scope, order } of scopes) {
-        tileOrderingCoordinator.reportOrder(scope, order)
+      for (const { scope, order, dragContext } of scopes) {
+        tileOrderingCoordinator.reportOrder(scope, order, undefined, dragContext)
       }
       if (scopes.length > 0) {
         // Merge with previously tracked scopes that have not settled yet so

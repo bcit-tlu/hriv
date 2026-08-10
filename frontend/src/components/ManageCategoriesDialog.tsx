@@ -480,6 +480,7 @@ export default function ManageCategoriesDialog({
         options,
         imagesByParent,
         (parentId) => tileOrderingCoordinator.getScope(parentId).displayOrder,
+        dragId,
       )
 
       setDragId(null)

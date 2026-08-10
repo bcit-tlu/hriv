@@ -512,6 +512,7 @@ describe('ManageCategoriesDialog — drop → onReorderTiles', () => {
             { type: 'category', id: 2 },
             { type: 'category', id: 1 },
           ],
+          dragContext: { itemType: 'category', itemId: 1, fromIndex: 0, toIndex: 1 },
         },
       ],
     )
