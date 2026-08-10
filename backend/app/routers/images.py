@@ -3,10 +3,11 @@ import errno
 import json
 import logging
 import os
+import time
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Header, HTTPException, Request, Response, UploadFile
 from opentelemetry import trace
 from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +26,12 @@ from ..schemas import (
     ImageUpdate,
     SourceImageOut,
     normalize_note_value,
+)
+from ..reorder_telemetry import (
+    annotate_reorder_span,
+    classify_reorder_exception,
+    record_reorder_result,
+    sanitize_reorder_operation_id,
 )
 from ..tracing import record_exception_if_server_error
 from ..visibility import get_student_excluded_category_ids, is_category_visible_to_student
@@ -408,20 +415,47 @@ async def reorder_images(
     body: ImageReorderRequest,
     _user: Annotated[User, Depends(require_role("admin", "instructor"))],
     db: AsyncSession = Depends(get_db),
+    x_reorder_operation_id: Annotated[
+        str | None, Header(alias="X-Reorder-Operation-Id")
+    ] = None,
 ):
+    operation_id = sanitize_reorder_operation_id(x_reorder_operation_id)
+    started = time.perf_counter()
     with tracer.start_as_current_span("image.reorder") as span:
         try:
             span.set_attribute("image.count", len(body.items))
+            annotate_reorder_span(
+                span,
+                entity="image",
+                operation_id=operation_id,
+                item_count=len(body.items),
+            )
             for item in body.items:
                 img = await db.get(Image, item.id)
                 if img is None:
                     raise HTTPException(status_code=404, detail=f"Image {item.id} not found")
                 img.sort_order = item.sort_order
             await db.commit()
-            return {"status": "ok"}
         except Exception as exc:
             record_exception_if_server_error(span, exc)
+            record_reorder_result(
+                entity="image",
+                operation_id=operation_id,
+                item_count=len(body.items),
+                duration_seconds=time.perf_counter() - started,
+                outcome=classify_reorder_exception(exc),
+            )
             raise
+        # Emitted while the span is still active so the success log carries
+        # trace context, matching the failure path.
+        record_reorder_result(
+            entity="image",
+            operation_id=operation_id,
+            item_count=len(body.items),
+            duration_seconds=time.perf_counter() - started,
+            outcome="success",
+        )
+    return {"status": "ok"}
 
 
 @router.delete("/{image_id}", status_code=204)

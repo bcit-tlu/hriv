@@ -383,7 +383,7 @@ describe('useCategoryActions', () => {
         await result.current.reorderCategoriesInline(items)
       })
 
-      expect(mockReorderCategories).toHaveBeenCalledWith(items)
+      expect(mockReorderCategories).toHaveBeenCalledWith(items, expect.any(String))
       expect(deps.loadCategories).not.toHaveBeenCalled()
     })
 
@@ -414,7 +414,7 @@ describe('useCategoryActions', () => {
         await result.current.reorderImagesInline(items)
       })
 
-      expect(mockReorderImages).toHaveBeenCalledWith(items)
+      expect(mockReorderImages).toHaveBeenCalledWith(items, expect.any(String))
       expect(deps.loadCategories).not.toHaveBeenCalled()
       expect(deps.loadUncategorizedImages).not.toHaveBeenCalled()
     })

@@ -51,6 +51,7 @@ export const TELEMETRY_EVENT_NAMES = [
   'image.view.ended',
   'image.view.failed',
   'navigation.page_changed',
+  'reorder.operation',
   'ui.toolbar_action',
 ] as const
 
@@ -112,6 +113,18 @@ interface TelemetryEventBase {
   unit?: TelemetryUnit
   upload_mode?: TelemetryUploadMode
   file_type?: TelemetryFileType
+  // Reorder operation diagnostics ('reorder.operation' events); the state
+  // vocabulary is kept in lockstep with backend/app/reorder_metrics.py.
+  operation_id?: string
+  state?: string
+  item_type?: 'category' | 'image' | 'mixed'
+  item_id?: number
+  from_index?: number
+  to_index?: number
+  category_count?: number
+  image_count?: number
+  queue_depth?: number
+  local_revision?: number
 }
 
 export type TelemetryEvent = TelemetryEventBase
@@ -235,23 +248,29 @@ function shouldEmitDedupedError(key: string): boolean {
   return true
 }
 
+// Server-side batch cap (backend/app/routers/telemetry.py _MAX_EVENTS_PER_REQUEST);
+// larger batches are rejected wholesale with a 422.
+const MAX_EVENTS_PER_REQUEST = 10
+
 function postEvents(events: TelemetryPayload[]): void {
   if (events.length === 0) return
 
   const base = apiUrl()
   const url = base ? `${base}/api/telemetry/events` : '/api/telemetry/events'
 
-  fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeaders(),
-    },
-    body: JSON.stringify({ events }),
-    keepalive: true,
-  }).catch(() => {
-    // Telemetry delivery is best-effort; never block the UI.
-  })
+  for (let i = 0; i < events.length; i += MAX_EVENTS_PER_REQUEST) {
+    fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(),
+      },
+      body: JSON.stringify({ events: events.slice(i, i + MAX_EVENTS_PER_REQUEST) }),
+      keepalive: true,
+    }).catch(() => {
+      // Telemetry delivery is best-effort; never block the UI.
+    })
+  }
 }
 
 function flushPendingEvents(): void {

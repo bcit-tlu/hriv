@@ -1,8 +1,9 @@
 import hashlib
 import json as _json
+import time
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from opentelemetry import trace
 from sqlalchemy import and_, select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +14,12 @@ from ..authz import (
     can_attach_program_to_category,
 )
 from ..database import get_db
+from ..reorder_telemetry import (
+    annotate_reorder_span,
+    classify_reorder_exception,
+    record_reorder_result,
+    sanitize_reorder_operation_id,
+)
 from ..tracing import record_exception_if_server_error
 from ..models import Category, Group, Image, Program, User
 from ..schemas import (
@@ -495,10 +502,21 @@ async def reorder_categories(
     body: CategoryReorderRequest,
     _user: Annotated[User, Depends(require_role("admin", "instructor"))],
     db: AsyncSession = Depends(get_db),
+    x_reorder_operation_id: Annotated[
+        str | None, Header(alias="X-Reorder-Operation-Id")
+    ] = None,
 ):
+    operation_id = sanitize_reorder_operation_id(x_reorder_operation_id)
+    started = time.perf_counter()
     with tracer.start_as_current_span("category.reorder") as span:
         try:
             span.set_attribute("category.count", len(body.items))
+            annotate_reorder_span(
+                span,
+                entity="category",
+                operation_id=operation_id,
+                item_count=len(body.items),
+            )
             # Build proposed parent graph and validate for cycles
             parent_map: dict[int, int | None] = {item.id: item.parent_id for item in body.items}
             for item in body.items:
@@ -531,10 +549,26 @@ async def reorder_categories(
                 cat.parent_id = item.parent_id
                 cat.sort_order = item.sort_order
             await db.commit()
-            return {"status": "ok"}
         except Exception as exc:
             record_exception_if_server_error(span, exc)
+            record_reorder_result(
+                entity="category",
+                operation_id=operation_id,
+                item_count=len(body.items),
+                duration_seconds=time.perf_counter() - started,
+                outcome=classify_reorder_exception(exc),
+            )
             raise
+        # Emitted while the span is still active so the success log carries
+        # trace context, matching the failure path.
+        record_reorder_result(
+            entity="category",
+            operation_id=operation_id,
+            item_count=len(body.items),
+            duration_seconds=time.perf_counter() - started,
+            outcome="success",
+        )
+    return {"status": "ok"}
 
 
 @router.delete("/{category_id}", status_code=204)

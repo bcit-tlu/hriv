@@ -10,6 +10,11 @@ import {
 } from './api'
 import { computeMoveRestrictionChange } from './categoryUtils'
 import { emitEvent } from './observability'
+import {
+  emitReorderDiagnostic,
+  newReorderOperationId,
+  reorderErrorCode,
+} from './reorderDiagnostics'
 import type { MoveRestrictionChange } from './categoryUtils'
 import { findImageInTree, findCategoryPath } from './treeUtils'
 import type { Category, ImageItem } from './types'
@@ -244,10 +249,51 @@ export function useCategoryActions({
         parent_id: number | null
         sort_order: number
       }>,
+      /**
+       * Correlation ID shared across all persistence calls of one drag.
+       * When supplied, the caller owns the operation's lifecycle diagnostics
+       * (exactly one `submitted` and one terminal event per operation ID);
+       * this helper then only forwards the ID to the persistence request.
+       */
+      existingOperationId?: string,
     ) => {
+      const callerOwnsLifecycle = existingOperationId !== undefined
+      const operationId = existingOperationId ?? newReorderOperationId()
+      const startedAt = performance.now()
+      if (!callerOwnsLifecycle) {
+        emitReorderDiagnostic({
+          operationId,
+          state: 'submitted',
+          itemType: 'category',
+          categoryCount: items.length,
+          imageCount: 0,
+          queueDepth: 0,
+        })
+      }
       try {
-        await apiReorderCategories(items)
+        await apiReorderCategories(items, operationId)
+        if (!callerOwnsLifecycle) {
+          emitReorderDiagnostic({
+            operationId,
+            state: 'committed',
+            itemType: 'category',
+            categoryCount: items.length,
+            imageCount: 0,
+            durationMs: performance.now() - startedAt,
+          })
+        }
       } catch (err) {
+        if (!callerOwnsLifecycle) {
+          emitReorderDiagnostic({
+            operationId,
+            state: 'failed',
+            itemType: 'category',
+            categoryCount: items.length,
+            imageCount: 0,
+            durationMs: performance.now() - startedAt,
+            errorCode: reorderErrorCode(err),
+          })
+        }
         console.error('Failed to reorder categories', err)
         setErrorSnack(userMessage(err, 'Failed to reorder categories.'))
         throw err
@@ -257,10 +303,53 @@ export function useCategoryActions({
   )
 
   const reorderImagesInline = useCallback(
-    async (items: Array<{ id: number; sort_order: number }>) => {
+    async (
+      items: Array<{ id: number; sort_order: number }>,
+      /**
+       * Correlation ID shared across all persistence calls of one drag.
+       * When supplied, the caller owns the operation's lifecycle diagnostics
+       * (exactly one `submitted` and one terminal event per operation ID);
+       * this helper then only forwards the ID to the persistence request.
+       */
+      existingOperationId?: string,
+    ) => {
+      const callerOwnsLifecycle = existingOperationId !== undefined
+      const operationId = existingOperationId ?? newReorderOperationId()
+      const startedAt = performance.now()
+      if (!callerOwnsLifecycle) {
+        emitReorderDiagnostic({
+          operationId,
+          state: 'submitted',
+          itemType: 'image',
+          categoryCount: 0,
+          imageCount: items.length,
+          queueDepth: 0,
+        })
+      }
       try {
-        await apiReorderImages(items)
+        await apiReorderImages(items, operationId)
+        if (!callerOwnsLifecycle) {
+          emitReorderDiagnostic({
+            operationId,
+            state: 'committed',
+            itemType: 'image',
+            categoryCount: 0,
+            imageCount: items.length,
+            durationMs: performance.now() - startedAt,
+          })
+        }
       } catch (err) {
+        if (!callerOwnsLifecycle) {
+          emitReorderDiagnostic({
+            operationId,
+            state: 'failed',
+            itemType: 'image',
+            categoryCount: 0,
+            imageCount: items.length,
+            durationMs: performance.now() - startedAt,
+            errorCode: reorderErrorCode(err),
+          })
+        }
         console.error('Failed to reorder images', err)
         setErrorSnack(userMessage(err, 'Failed to reorder images.'))
         throw err

@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
@@ -25,6 +25,11 @@ import ImageTile from './ImageTile'
 import FileDropZone from './FileDropZone'
 import { reorderCategories, reorderImages } from '../api'
 import {
+  emitReorderDiagnostic,
+  newReorderOperationId,
+  reorderErrorCode,
+} from '../reorderDiagnostics'
+import {
   buildTileItems,
   collectDescendantIds,
   DROP_PREFIX,
@@ -34,6 +39,18 @@ import {
   tileId,
 } from './sortableTileGridUtils'
 import type { TileItem } from './sortableTileGridUtils'
+
+// Shared by the real reorder path and the in-flight discarded-drop
+// accounting so the two order-change checks cannot drift apart.
+function computeReorderedIds(
+  items: TileItem[],
+  event: DragEndEvent,
+): { ids: string[]; reorderedIds: string[]; isNoOp: boolean } {
+  const ids = items.map(tileId)
+  const reorderedIds = move(ids, event)
+  const isNoOp = reorderedIds.length === ids.length && reorderedIds.every((id, i) => id === ids[i])
+  return { ids, reorderedIds, isNoOp }
+}
 
 interface SortableTileProps {
   id: string
@@ -230,6 +247,8 @@ export default function SortableTileGrid({
   )
   const [activeItem, setActiveItem] = useState<TileItem | null>(null)
   const reorderInFlightRef = useRef(false)
+  const discardedDropsRef = useRef(0)
+  const activeOperationRef = useRef<string | null>(null)
   const pendingItemsRef = useRef<TileItem[] | null>(null)
   // Refs for async callback access (always reflect latest props)
   const currentCategoriesRef = useRef(currentCategories)
@@ -258,6 +277,20 @@ export default function SortableTileGrid({
     pendingItemsRef.current = null
     setItems(nextItems)
   }, [currentCategories, visibleImages])
+
+  // Record navigation/unmount while a save is active: the operation's outcome
+  // becomes unobservable to this component, which is one of the failure modes
+  // tracked by epic #975.
+  useEffect(() => {
+    return () => {
+      if (reorderInFlightRef.current && activeOperationRef.current !== null) {
+        emitReorderDiagnostic({
+          operationId: activeOperationRef.current,
+          state: 'abandoned',
+        })
+      }
+    }
+  }, [])
 
   const blockedIdsMap = useMemo(() => {
     const map = new Map<number, Set<number>>()
@@ -289,10 +322,34 @@ export default function SortableTileGrid({
       const source = operation.source
       const target = operation.target
       if (!source || !target) return
-      if (reorderInFlightRef.current) return
 
       const sourceId = String(source.id)
       const targetId = String(target.id)
+
+      if (reorderInFlightRef.current) {
+        // Current behavior: a drop during an in-flight save is silently
+        // discarded (epic #975). Record reorder drops so they are observable;
+        // move-into-category drops are outside the reorder lifecycle and
+        // no-op drops (order unchanged, mirroring the idle-path filter) are
+        // not reported as reorder operations.
+        if (!targetId.startsWith(DROP_PREFIX)) {
+          if (computeReorderedIds(items, event).isNoOp) return
+          discardedDropsRef.current += 1
+          emitReorderDiagnostic({
+            operationId: newReorderOperationId(),
+            state: 'ignored',
+            scopeCategoryId: path.length > 0 ? path[path.length - 1].id : null,
+            itemType: sourceId.startsWith('img-') ? 'image' : 'category',
+            itemId: Number(sourceId.slice(4)),
+            categoryCount: currentCategoriesRef.current.length,
+            imageCount: visibleImagesRef.current.length,
+            // Running count of drops discarded during the current save
+            // (nothing is actually queued until #979 lands).
+            queueDepth: discardedDropsRef.current,
+          })
+        }
+        return
+      }
 
       if (targetId.startsWith(DROP_PREFIX)) {
         const targetCatId = Number(targetId.slice(DROP_PREFIX.length))
@@ -308,18 +365,19 @@ export default function SortableTileGrid({
       // The target is the sortable tile the pointer settled on. `move`
       // derives the new order from the source's reflowed sortable index,
       // so the committed order matches the on-screen preview exactly.
-      const ids = items.map(tileId)
-      const reorderedIds = move(ids, event)
-      if (reorderedIds.length === ids.length && reorderedIds.every((id, i) => id === ids[i])) {
-        return
-      }
+      const { ids, reorderedIds, isNoOp } = computeReorderedIds(items, event)
+      if (isNoOp) return
       const itemById = new Map(items.map((item) => [tileId(item), item] as const))
       const reordered = reorderedIds
         .map((id) => itemById.get(id))
         .filter((item): item is TileItem => item !== undefined)
       if (reordered.length !== items.length) return
 
+      const operationId = newReorderOperationId()
+      const startedAt = performance.now()
       reorderInFlightRef.current = true
+      discardedDropsRef.current = 0
+      activeOperationRef.current = operationId
       setItems(reordered)
 
       const parentId = path.length > 0 ? path[path.length - 1].id : null
@@ -345,19 +403,52 @@ export default function SortableTileGrid({
         }
       })
 
+      const itemType =
+        catUpdates.length > 0 && imgUpdates.length > 0
+          ? 'mixed'
+          : sourceId.startsWith('img-')
+            ? 'image'
+            : 'category'
+      emitReorderDiagnostic({
+        operationId,
+        state: 'submitted',
+        scopeCategoryId: parentId,
+        itemType,
+        itemId: Number(sourceId.slice(4)),
+        fromIndex: ids.indexOf(sourceId),
+        toIndex: reorderedIds.indexOf(sourceId),
+        categoryCount: catUpdates.length,
+        imageCount: imgUpdates.length,
+        queueDepth: 0,
+      })
+
       try {
         const promises: Promise<void>[] = []
-        if (catUpdates.length > 0) promises.push(reorderCategories(catUpdates))
-        if (imgUpdates.length > 0) promises.push(reorderImages(imgUpdates))
+        if (catUpdates.length > 0) promises.push(reorderCategories(catUpdates, operationId))
+        if (imgUpdates.length > 0) promises.push(reorderImages(imgUpdates, operationId))
 
         const results = await Promise.allSettled(promises)
+        // Persistence-only duration: terminal events measure the same interval
+        // on every path (the follow-up refresh is excluded).
+        const persistenceDurationMs = performance.now() - startedAt
         const failed = results.filter((r) => r.status === 'rejected')
 
         if (failed.length > 0) {
           const err =
             (failed[0] as PromiseRejectedResult).reason ?? new Error('Reorder partially failed')
           console.error('Reorder partially failed', failed)
+          emitReorderDiagnostic({
+            operationId,
+            state: 'failed',
+            scopeCategoryId: parentId,
+            itemType,
+            categoryCount: catUpdates.length,
+            imageCount: imgUpdates.length,
+            durationMs: persistenceDurationMs,
+            errorCode: reorderErrorCode(err),
+          })
           reorderInFlightRef.current = false
+          activeOperationRef.current = null
           pendingItemsRef.current = null
           setItems((current) => (current === reordered ? items : current))
           onReorderError?.(err)
@@ -373,7 +464,17 @@ export default function SortableTileGrid({
         } catch {
           /* handled inside the callback */
         }
+        emitReorderDiagnostic({
+          operationId,
+          state: 'committed',
+          scopeCategoryId: parentId,
+          itemType,
+          categoryCount: catUpdates.length,
+          imageCount: imgUpdates.length,
+          durationMs: persistenceDurationMs,
+        })
         reorderInFlightRef.current = false
+        activeOperationRef.current = null
         setItems(
           pendingItemsRef.current ??
             buildTileItems(currentCategoriesRef.current, visibleImagesRef.current),
@@ -381,7 +482,18 @@ export default function SortableTileGrid({
         pendingItemsRef.current = null
       } catch (err) {
         console.error('Failed to persist reorder', err)
+        emitReorderDiagnostic({
+          operationId,
+          state: 'failed',
+          scopeCategoryId: parentId,
+          itemType,
+          categoryCount: catUpdates.length,
+          imageCount: imgUpdates.length,
+          durationMs: performance.now() - startedAt,
+          errorCode: reorderErrorCode(err),
+        })
         reorderInFlightRef.current = false
+        activeOperationRef.current = null
         pendingItemsRef.current = null
         setItems((current) => (current === reordered ? items : current))
         onReorderError?.(err)
