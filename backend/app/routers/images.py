@@ -148,9 +148,12 @@ async def bulk_update_images(
             # mutation, matching PUT /api/tile-order's revision-then-rows
             # lock order (docs/tile-ordering.md).
             if "category_id" in update_data:
-                affected = {scope_key_for(img.category_id) for img in images}
-                affected.add(scope_key_for(update_data["category_id"]))
-                await bump_scopes(db, affected)
+                new_category_id = update_data["category_id"]
+                moved = [img for img in images if img.category_id != new_category_id]
+                if moved:
+                    affected = {scope_key_for(img.category_id) for img in moved}
+                    affected.add(scope_key_for(new_category_id))
+                    await bump_scopes(db, affected)
             for img in images:
                 for key, value in update_data.items():
                     setattr(img, key, value)
