@@ -817,7 +817,7 @@ async def test_replace_image_applies_metadata_updates(
     with patch.dict("sys.modules", {
         "app.processing": MagicMock(process_replace_image=MagicMock()),
         "app.worker": MagicMock(enqueue_replace_image=mock_enqueue),
-    }):
+    }), patch("app.routers.images.bump_scopes", new=AsyncMock()) as bump:
         result = await replace_image(
             image_id=1,
             file=file,
@@ -842,6 +842,46 @@ async def test_replace_image_applies_metadata_updates(
     assert result.name == "renamed"
     assert result.category_id is None
     assert result.active is False
+    # Category changed 7 -> None: both scopes' revisions must be bumped.
+    bump.assert_awaited_once()
+    assert bump.await_args.args[1] == {7, 0}
+
+
+@patch("os.path.getsize", return_value=1024)
+@patch("os.makedirs")
+@patch("builtins.open", new_callable=MagicMock)
+async def test_replace_image_unchanged_category_does_not_bump_scopes(
+    mock_open: MagicMock,
+    mock_makedirs: MagicMock,
+    mock_getsize: MagicMock,
+) -> None:
+    """Echoing the current category_id back on replace must not bump revisions."""
+    mock_enqueue = AsyncMock(return_value=True)
+    img = _make_image(category_id=7)
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.add = MagicMock()
+    db.refresh = AsyncMock()
+
+    background_tasks = MagicMock()
+    file = _make_upload_file()
+
+    with patch.dict("sys.modules", {
+        "app.processing": MagicMock(process_replace_image=MagicMock()),
+        "app.worker": MagicMock(enqueue_replace_image=mock_enqueue),
+    }), patch("app.routers.images.bump_scopes", new=AsyncMock()) as bump:
+        await replace_image(
+            image_id=1,
+            file=file,
+            background_tasks=background_tasks,
+            _user=_make_user(),
+            db=db,
+            category_id="7",
+        )
+
+    assert img.category_id == 7
+    bump.assert_not_awaited()
 
 
 async def test_replace_image_not_found() -> None:
