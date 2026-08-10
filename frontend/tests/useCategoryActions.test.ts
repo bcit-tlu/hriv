@@ -396,8 +396,8 @@ describe('useCategoryActions', () => {
       })
 
       expect(reportOrder).toHaveBeenCalledTimes(2)
-      expect(reportOrder).toHaveBeenNthCalledWith(1, null, scopes[0].order)
-      expect(reportOrder).toHaveBeenNthCalledWith(2, 1, scopes[1].order)
+      expect(reportOrder).toHaveBeenNthCalledWith(1, null, scopes[0].order, undefined, undefined)
+      expect(reportOrder).toHaveBeenNthCalledWith(2, 1, scopes[1].order, undefined, undefined)
       expect(result.current.manageReorderScopes).toEqual([null, 1])
     })
 
@@ -430,7 +430,12 @@ describe('useCategoryActions', () => {
       })
 
       expect(mockUpdateCategory).toHaveBeenCalledWith(2, { parent_id: 5 }, 7)
-      expect(reportOrder).toHaveBeenCalledWith(5, [{ type: 'category', id: 2 }])
+      expect(reportOrder).toHaveBeenCalledWith(
+        5,
+        [{ type: 'category', id: 2 }],
+        undefined,
+        undefined,
+      )
     })
 
     it('shows error snack, re-throws, and skips ordering when a move fails', async () => {
