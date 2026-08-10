@@ -382,6 +382,46 @@ async def test_bulk_update_images_success() -> None:
         assert img.copyright == "CC"
 
 
+async def test_bulk_update_images_category_move_bumps_scopes() -> None:
+    """A bulk category move must invalidate source and destination scopes."""
+    imgs = [_make_image(id=1, category_id=None), _make_image(id=2, category_id=3)]
+
+    async def mock_execute(stmt):
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = imgs
+        return mock_result
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=mock_execute)
+    db.commit = AsyncMock()
+
+    body = ImageBulkUpdate(image_ids=[1, 2], category_id=7)
+    with patch("app.routers.images.bump_scopes", new=AsyncMock()) as bump:
+        await bulk_update_images(body, _make_user(), db)
+
+    bump.assert_awaited_once()
+    assert bump.await_args.args[1] == {0, 3, 7}
+
+
+async def test_bulk_update_images_metadata_only_does_not_bump_scopes() -> None:
+    imgs = [_make_image(id=1)]
+
+    async def mock_execute(stmt):
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = imgs
+        return mock_result
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=mock_execute)
+    db.commit = AsyncMock()
+
+    body = ImageBulkUpdate(image_ids=[1], copyright="CC")
+    with patch("app.routers.images.bump_scopes", new=AsyncMock()) as bump:
+        await bulk_update_images(body, _make_user(), db)
+
+    bump.assert_not_awaited()
+
+
 async def test_bulk_update_images_not_found() -> None:
     imgs = [_make_image(id=1)]
     mock_result = MagicMock()

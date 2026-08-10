@@ -270,6 +270,49 @@ describe('TileOrderingCoordinator', () => {
     expect(mockedPut).toHaveBeenLastCalledWith(null, 4, refs(2, 1, 3), expect.any(String))
   })
 
+  it('keeps accept-server-order available when the reapply retry fails', async () => {
+    const current = response(4, refs(3, 1, 2))
+    mockedPut
+      .mockRejectedValueOnce(conflictError(current))
+      .mockRejectedValueOnce(new ApiError(500, 'boom'))
+
+    coordinator.reportOrder(null, refs(2, 1, 3))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('conflict')
+
+    coordinator.reapplyLocalOrder(null)
+    await flushMicrotasks()
+
+    let state = coordinator.getScope(null)
+    expect(state.status).toBe('error')
+    // The conflict's authoritative order survives the failed retry...
+    expect(state.conflictOrder).toEqual(refs(3, 1, 2))
+
+    // ...so the user can still fall back to the server's order.
+    coordinator.acceptServerOrder(null)
+    state = coordinator.getScope(null)
+    expect(state.status).toBe('saved')
+    expect(state.displayOrder).toEqual(refs(3, 1, 2))
+    expect(state.conflictOrder).toBeNull()
+    expect(state.pending).toBeNull()
+  })
+
+  it('clears the retained conflict order once a reapply retry commits', async () => {
+    const current = response(4, refs(3, 1, 2))
+    mockedPut
+      .mockRejectedValueOnce(conflictError(current))
+      .mockResolvedValueOnce(response(5, refs(2, 1, 3)))
+
+    coordinator.reportOrder(null, refs(2, 1, 3))
+    await flushMicrotasks()
+    coordinator.reapplyLocalOrder(null)
+    await flushMicrotasks()
+
+    const state = coordinator.getScope(null)
+    expect(state.status).toBe('saved')
+    expect(state.conflictOrder).toBeNull()
+  })
+
   it('treats a 400 membership change like a conflict and refreshes via GET', async () => {
     const current = response(4, refs(3, 1, 2))
     mockedPut.mockRejectedValueOnce(new ApiError(400, 'Images not in scope: [99]'))
@@ -471,6 +514,71 @@ describe('TileOrderingCoordinator', () => {
     const state = coordinator.getScope(null)
     expect(state.status).toBe('saved')
     expect(state.displayOrder).toEqual(refs(3, 2, 1))
+    expect(mockedPut).toHaveBeenCalledTimes(1)
+    expect(mockedPut).toHaveBeenCalledWith(null, 1, refs(3, 2, 1), expect.any(String))
+  })
+
+  it('notifies commit listeners after each successful save', async () => {
+    mockedPut.mockResolvedValue(response(2, refs(2, 1, 3)))
+    const committed: Array<number | null> = []
+    const off = coordinator.onCommitted((scope) => committed.push(scope))
+
+    coordinator.reportOrder(null, refs(2, 1, 3))
+    await flushMicrotasks()
+    expect(committed).toEqual([null])
+
+    off()
+    coordinator.reportOrder(null, refs(1, 2, 3))
+    await flushMicrotasks()
+    expect(committed).toEqual([null])
+  })
+
+  it('attaches the drag context to the submitted diagnostic', async () => {
+    mockedPut.mockResolvedValueOnce(response(2, refs(2, 1, 3)))
+
+    coordinator.reportOrder(null, refs(2, 1, 3), undefined, {
+      itemType: 'image',
+      itemId: 2,
+      fromIndex: 1,
+      toIndex: 0,
+    })
+    await flushMicrotasks()
+
+    const submitted = events.find((e) => e.state === 'submitted')
+    expect(submitted).toMatchObject({
+      itemType: 'image',
+      itemId: 2,
+      fromIndex: 1,
+      toIndex: 0,
+    })
+  })
+
+  it('a stale seeding flush cannot clear a post-reset seeding mark', async () => {
+    const staleSeed = deferred<TileOrderResponse>()
+    mockedGet.mockReturnValueOnce(staleSeed.promise)
+    coordinator.reportOrder(null, refs(2, 1, 3))
+    expect(coordinator.getScope(null).status).toBe('saving')
+
+    coordinator.reset()
+
+    // A new flush starts seeding the same scope after the reset.
+    const freshSeed = deferred<TileOrderResponse>()
+    mockedGet.mockReturnValueOnce(freshSeed.promise)
+    mockedPut.mockResolvedValueOnce(response(2, refs(3, 2, 1)))
+    coordinator.reportOrder(null, refs(2, 1, 3))
+    expect(coordinator.getScope(null).status).toBe('saving')
+
+    // The stale flush settles: it must not clear the new seeding mark, so a
+    // drop landing now still queues instead of starting a second flush loop.
+    staleSeed.resolve(response(9, refs(9)))
+    await flushMicrotasks()
+    coordinator.reportOrder(null, refs(3, 2, 1))
+    expect(coordinator.getScope(null).status).toBe('dirty-while-saving')
+    expect(mockedPut).not.toHaveBeenCalled()
+
+    freshSeed.resolve(response(1, refs(1, 2, 3)))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('saved')
     expect(mockedPut).toHaveBeenCalledTimes(1)
     expect(mockedPut).toHaveBeenCalledWith(null, 1, refs(3, 2, 1), expect.any(String))
   })

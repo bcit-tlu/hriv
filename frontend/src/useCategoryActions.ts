@@ -32,8 +32,8 @@ function moveDestinationLabel(parentId: number | null, ancestorPath: Category[])
 export interface UseCategoryActionsDeps {
   categories: Category[]
   uncategorizedImages: ImageItem[]
-  loadCategories: () => Promise<void>
-  loadUncategorizedImages: (opts?: { signal?: AbortSignal }) => Promise<void>
+  loadCategories: () => Promise<unknown>
+  loadUncategorizedImages: (opts?: { signal?: AbortSignal }) => Promise<unknown>
   currentCategories: Category[]
   ancestorProgramIds: number[]
   getPathRestriction: (depth?: number) => number[]
