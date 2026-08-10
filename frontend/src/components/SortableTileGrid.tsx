@@ -18,6 +18,8 @@ import type { Draggable } from '@dnd-kit/abstract'
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/react'
 
 import type { Category, Group, ImageItem, Program } from '../types'
+import type { TileOrderItemRef } from '../api'
+import type { ReorderDragContext } from '../tileOrdering'
 import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
 import { getCategoryHiddenStateFromPath } from '../treeUtils'
 import CategoryTile from './CategoryTile'
@@ -36,6 +38,7 @@ import {
   farHalfReorderCollision,
   findCategory,
   nearHalfMoveCollision,
+  orderTileItems,
   tileId,
 } from './sortableTileGridUtils'
 import type { TileItem } from './sortableTileGridUtils'
@@ -206,6 +209,24 @@ export interface SortableTileGridProps {
   onGridDrop?: React.DragEventHandler
   onReorderComplete?: () => Promise<void> | void
   onReorderError?: (err: unknown) => void
+
+  /**
+   * Coordinator-managed reordering (epic #975, issue #979). When provided,
+   * the grid applies every accepted drag locally and reports the new order
+   * to the coordinator; it never calls persistence APIs directly and never
+   * discards a drop. `displayOrder` is the coordinator's newest order for
+   * this scope (survives unmount/remount); `claimGeneration` guards against
+   * a stale grid instance overwriting a remounted one.
+   */
+  tileOrdering?: {
+    displayOrder: TileOrderItemRef[] | null
+    reportOrder: (
+      order: TileOrderItemRef[],
+      generation?: number,
+      dragContext?: ReorderDragContext,
+    ) => void
+    claimGeneration: () => number
+  }
 }
 
 export default function SortableTileGrid({
@@ -232,6 +253,7 @@ export default function SortableTileGrid({
   onGridDrop,
   onReorderComplete,
   onReorderError,
+  tileOrdering,
 }: SortableTileGridProps) {
   const visibleImages = useMemo(
     () => (path.length === 0 ? [...uncategorizedImages, ...currentImages] : currentImages),
@@ -242,10 +264,19 @@ export default function SortableTileGrid({
   const inheritedProgramIds = useMemo(() => narrowProgramIds(path), [path])
   const inheritedGroupIds = useMemo(() => narrowGroupIds(path), [path])
 
-  const [items, setItems] = useState<TileItem[]>(() =>
-    buildTileItems(currentCategories, visibleImages),
-  )
+  const parentId = path.length > 0 ? path[path.length - 1].id : null
+  const [items, setItems] = useState<TileItem[]>(() => {
+    const built = buildTileItems(currentCategories, visibleImages)
+    return tileOrdering?.displayOrder ? orderTileItems(built, tileOrdering.displayOrder) : built
+  })
   const [activeItem, setActiveItem] = useState<TileItem | null>(null)
+  const gridGenerationRef = useRef<number | null>(null)
+  const claimGeneration = tileOrdering?.claimGeneration
+  // Claim a fresh grid-instance generation per scope so callbacks from an
+  // unmounted grid (SPA navigation) cannot overwrite a remounted one.
+  useLayoutEffect(() => {
+    if (claimGeneration) gridGenerationRef.current = claimGeneration()
+  }, [claimGeneration, parentId])
   const reorderInFlightRef = useRef(false)
   const discardedDropsRef = useRef(0)
   const activeOperationRef = useRef<string | null>(null)
@@ -255,28 +286,36 @@ export default function SortableTileGrid({
   const visibleImagesRef = useRef(visibleImages)
   const syncedCategoriesRef = useRef(currentCategories)
   const syncedVisibleImagesRef = useRef(visibleImages)
+  const coordinatorOrder = tileOrdering?.displayOrder ?? null
+  const syncedCoordinatorOrderRef = useRef(coordinatorOrder)
 
   useLayoutEffect(() => {
     currentCategoriesRef.current = currentCategories
     visibleImagesRef.current = visibleImages
 
-    if (
-      syncedCategoriesRef.current === currentCategories &&
-      syncedVisibleImagesRef.current === visibleImages
-    ) {
+    const membershipChanged =
+      syncedCategoriesRef.current !== currentCategories ||
+      syncedVisibleImagesRef.current !== visibleImages
+    // Coordinator-authoritative order changes (saved responses or conflict
+    // refreshes) re-sort the current tiles without a full category-tree
+    // refresh.
+    const orderChanged = syncedCoordinatorOrderRef.current !== coordinatorOrder
+    if (!membershipChanged && !orderChanged) {
       return
     }
     syncedCategoriesRef.current = currentCategories
     syncedVisibleImagesRef.current = visibleImages
+    syncedCoordinatorOrderRef.current = coordinatorOrder
 
-    const nextItems = buildTileItems(currentCategories, visibleImages)
+    const built = buildTileItems(currentCategories, visibleImages)
+    const nextItems = coordinatorOrder !== null ? orderTileItems(built, coordinatorOrder) : built
     if (reorderInFlightRef.current) {
       pendingItemsRef.current = nextItems
       return
     }
     pendingItemsRef.current = null
     setItems(nextItems)
-  }, [currentCategories, visibleImages])
+  }, [currentCategories, visibleImages, coordinatorOrder])
 
   // Record navigation/unmount while a save is active: the operation's outcome
   // becomes unobservable to this component, which is one of the failure modes
@@ -327,11 +366,12 @@ export default function SortableTileGrid({
       const targetId = String(target.id)
 
       if (reorderInFlightRef.current) {
-        // Current behavior: a drop during an in-flight save is silently
-        // discarded (epic #975). Record reorder drops so they are observable;
-        // move-into-category drops are outside the reorder lifecycle and
-        // no-op drops (order unchanged, mirroring the idle-path filter) are
-        // not reported as reorder operations.
+        // Legacy (non-coordinator) path only — Browse uses the coordinator,
+        // which queues these drops instead. Here a drop during an in-flight
+        // save is silently discarded; record reorder drops so they are
+        // observable. Move-into-category drops are outside the reorder
+        // lifecycle and no-op drops (order unchanged, mirroring the
+        // idle-path filter) are not reported as reorder operations.
         if (!targetId.startsWith(DROP_PREFIX)) {
           if (computeReorderedIds(items, event).isNoOp) return
           discardedDropsRef.current += 1
@@ -344,7 +384,7 @@ export default function SortableTileGrid({
             categoryCount: currentCategoriesRef.current.length,
             imageCount: visibleImagesRef.current.length,
             // Running count of drops discarded during the current save
-            // (nothing is actually queued until #979 lands).
+            // (this legacy path has no queue).
             queueDepth: discardedDropsRef.current,
           })
         }
@@ -373,6 +413,26 @@ export default function SortableTileGrid({
         .filter((item): item is TileItem => item !== undefined)
       if (reordered.length !== items.length) return
 
+      if (tileOrdering) {
+        // Coordinator mode (issue #979): apply locally and report the new
+        // order. Queueing, coalescing, persistence, and save-state UX are
+        // owned above the grid; nothing is discarded here.
+        setItems(reordered)
+        tileOrdering.reportOrder(
+          reordered.map((item) => ({ type: item.type, id: item.data.id })),
+          gridGenerationRef.current ?? undefined,
+          // Drag detail rides along so lifecycle telemetry keeps per-drag
+          // context (which tile moved, from/to index) on this surface.
+          {
+            itemType: sourceId.startsWith('img-') ? 'image' : 'category',
+            itemId: Number(sourceId.slice(4)),
+            fromIndex: ids.indexOf(sourceId),
+            toIndex: reorderedIds.indexOf(sourceId),
+          },
+        )
+        return
+      }
+
       const operationId = newReorderOperationId()
       const startedAt = performance.now()
       reorderInFlightRef.current = true
@@ -380,7 +440,6 @@ export default function SortableTileGrid({
       activeOperationRef.current = operationId
       setItems(reordered)
 
-      const parentId = path.length > 0 ? path[path.length - 1].id : null
       const catUpdates: Array<{
         id: number
         parent_id: number | null
@@ -503,6 +562,8 @@ export default function SortableTileGrid({
     [
       items,
       path,
+      parentId,
+      tileOrdering,
       onDropCategoryOnCategory,
       onDropImageOnCategory,
       onReorderComplete,

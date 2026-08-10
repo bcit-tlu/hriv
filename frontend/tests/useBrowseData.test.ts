@@ -203,6 +203,44 @@ describe('useBrowseData', () => {
     })
   })
 
+  describe('backgroundRefresh coordinator release', () => {
+    async function runBackgroundRefresh() {
+      const { useBackgroundRefresh } = await import('../src/useBackgroundRefresh')
+      const calls = vi.mocked(useBackgroundRefresh).mock.calls
+      const refresh = calls[calls.length - 1][0]
+      await act(async () => {
+        await refresh(new AbortController().signal)
+      })
+    }
+
+    it('releases clean scopes only when both fetches applied fresh data', async () => {
+      const { tileOrderingCoordinator } = await import('../src/tileOrdering')
+      const release = vi
+        .spyOn(tileOrderingCoordinator, 'releaseCleanScopes')
+        .mockImplementation(() => {})
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      const deps = makeDeps({ currentUser: makeUser() })
+      renderHook(() => useBrowseData(deps))
+
+      await runBackgroundRefresh()
+      expect(release).toHaveBeenCalledTimes(1)
+
+      // A failed poll must not release: the coordinator's saved order would
+      // fall back to the stale pre-save tree.
+      mockFetchCategoryTree.mockRejectedValueOnce(new Error('network'))
+      await runBackgroundRefresh()
+      expect(release).toHaveBeenCalledTimes(1)
+
+      mockFetchUncategorizedImages.mockRejectedValueOnce(new Error('network'))
+      await runBackgroundRefresh()
+      expect(release).toHaveBeenCalledTimes(1)
+
+      release.mockRestore()
+      spy.mockRestore()
+    })
+  })
+
   describe('loadCategories options', () => {
     it('skips loading state toggle when silent is true', async () => {
       const deps = makeDeps({ currentUser: makeUser() })

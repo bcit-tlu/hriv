@@ -36,21 +36,25 @@ share this bounded vocabulary:
 
 | State             | Meaning                                                                          |
 | ----------------- | -------------------------------------------------------------------------------- |
-| `ignored`         | Drop accepted visually but discarded by the in-flight guard                      |
-| `queued`          | Drop accepted and waiting behind an in-flight save (future #979)                 |
-| `coalesced`       | Queued drop merged into a newer one before submission (future #979)              |
+| `ignored`         | Drop accepted visually but discarded by the in-flight guard (legacy path)        |
+| `queued`          | Drop accepted and waiting behind an in-flight save                               |
+| `coalesced`       | Queued drop merged into a newer one before submission                            |
 | `submitted`       | Persistence requests sent to the backend                                         |
 | `committed`       | Persistence completed successfully (refresh-callback failures are not reflected) |
-| `conflicted`      | Backend rejected the operation due to a revision conflict (future #978/#980)     |
+| `conflicted`      | Backend rejected the operation due to a revision conflict                        |
 | `failed`          | Persistence failed (fully or partially) and the UI rolled back                   |
 | `stale_discarded` | Refresh response discarded because a newer operation superseded it (future #980) |
-| `abandoned`       | Component unmounted (navigation) while the operation was active                  |
+| `abandoned`       | Component unmounted (navigation) while the operation was active (legacy path)    |
 
-`queued`, `coalesced`, `conflicted`, and `stale_discarded` are defined now so
-dashboards and later sub-issues (#978–#980) can emit them without another
-contract change; the current UI emits `ignored`, `submitted`, `committed`,
-`failed`, and `abandoned`. Both reorder surfaces are instrumented: the Browse
-grid (`SortableTileGrid`, full lifecycle) and the Manage Categories dialog
+As of #979 the Browse coordinator (`frontend/src/tileOrdering.ts`) emits
+`queued`, `coalesced`, `submitted`, `committed`, `conflicted`, and `failed`;
+`ignored` and `abandoned` remain emitted only by the legacy non-coordinator
+grid path (the coordinator survives navigation, so Browse no longer emits
+`abandoned` at all), and
+`stale_discarded` is defined for later sub-issues (#980) so dashboards can
+adopt it without another contract change. Both reorder surfaces are
+instrumented: the Browse grid (via the coordinator, full lifecycle) and the
+Manage Categories dialog
 (`submitted`/`committed`/`failed`). Every surface emits exactly one
 `submitted` and one terminal event per operation ID: a Manage Categories drag
 that persists both categories and images shares one operation ID across both
@@ -58,6 +62,19 @@ requests, with the dialog owning the single lifecycle (the
 `useCategoryActions` inline helpers skip their own emission when the caller
 supplies an operation ID). A drag whose category half succeeded but whose
 image half failed is reported as one `failed` operation.
+
+Two coordinator edge cases relax that pairing, both tied to revision seeding
+(the one-time `GET /api/tile-order` that fetches a scope's CAS token before
+its first save):
+
+- A seeding failure emits a terminal `failed` for a fresh operation ID with
+  no preceding `submitted` — nothing was ever submitted, so dashboards
+  pairing `submitted` with terminals should treat `failed` events whose ID
+  never appeared as `submitted` as pre-submission (seeding) failures.
+- A drop landing while its scope's very first snapshot is still seeding
+  coalesces into that snapshot and emits `coalesced` for an operation ID
+  that never emitted `queued` (the seeded snapshot itself was reported via
+  the dirty path, which does not mint a queue-time ID).
 
 Server-side, an event that omits `state` entirely is logged with
 `reorder.state: "missing"` and skipped by the client-operations counter, so
@@ -83,8 +100,8 @@ synthetic reorder volume.
   display-name lookup)
 - `from_index`, `to_index` (original and projected indices)
 - `category_count`, `image_count` (items in the persisted scope)
-- `queue_depth` (running count of drops discarded during the in-flight save; becomes a real queue depth once #979 lands)
-- `local_revision` (client ordering revision; populated once #978 lands)
+- `queue_depth` (depth of the coalescing queue behind the in-flight save; at most 1 because newer snapshots replace each other)
+- `local_revision` (the client's ordering revision for the scope)
 - `duration_ms` (for terminal states)
 - `error` / `error_code` (bounded category — `api_http_4xx`, `api_http_5xx`, or `api_network_error` — for `failed`; never free-text)
 

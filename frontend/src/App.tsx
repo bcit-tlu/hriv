@@ -30,6 +30,7 @@ import HomeIcon from '@mui/icons-material/Home'
 import LinkIcon from '@mui/icons-material/Link'
 import ImageViewer from './components/ImageViewer'
 import SortableTileGrid from './components/SortableTileGrid'
+import ReorderStatusIndicator from './components/ReorderStatusIndicator'
 import NoteDisplay from './components/NoteDisplay'
 import ManageCategoriesDialog from './components/ManageCategoriesDialog'
 import AdminPage from './components/AdminPage'
@@ -96,6 +97,8 @@ import { useCategoryActions } from './useCategoryActions'
 import { useImageActions } from './useImageActions'
 import { useAnnouncementModal } from './useAnnouncementModal'
 import { useUserProfile } from './useUserProfile'
+import { useTileOrdering } from './useTileOrdering'
+import { tileOrderingCoordinator } from './tileOrdering'
 
 const COLLAPSED_BREADCRUMB_CATEGORY_DEPTH = 2
 
@@ -251,6 +254,19 @@ export default function App() {
     ancestorGroupIds,
     currentCategories,
   } = useBrowseData({ path, currentUser })
+
+  // Navigation-safe reorder coordinator for the current Browse scope
+  // (epic #975, issue #979).
+  const browseScopeId = path.length > 0 ? path[path.length - 1].id : null
+  const tileOrdering = useTileOrdering(browseScopeId)
+  const browseTileOrderingProp = useMemo(
+    () => ({
+      displayOrder: tileOrdering.displayOrder,
+      reportOrder: tileOrdering.reportOrder,
+      claimGeneration: tileOrdering.claimGeneration,
+    }),
+    [tileOrdering.displayOrder, tileOrdering.reportOrder, tileOrdering.claimGeneration],
+  )
 
   const selectedImageCategoryHidden = useMemo(
     () => getCategoryHiddenStateInTree(categories, selectedImage?.categoryId),
@@ -1022,6 +1038,9 @@ export default function App() {
   }, [])
 
   const handleReorderComplete = useCallback(async () => {
+    // Capture before fetching: a save committing while these requests are in
+    // flight is newer than the fetched data and must survive the release.
+    const marker = tileOrderingCoordinator.marker()
     const [catResult, imgResult] = await Promise.allSettled([
       refreshCategories(),
       refreshUncategorizedImages(),
@@ -1032,7 +1051,31 @@ export default function App() {
     if (imgResult.status === 'rejected') {
       setWarnSnack('Could not refresh images after reorder.')
     }
+    // Once fresh authoritative data landed, drop the coordinator's cached
+    // order for clean scopes so order changes made elsewhere (e.g. Manage
+    // Categories) become visible immediately instead of on the next poll.
+    if (catResult.status === 'fulfilled' && imgResult.status === 'fulfilled') {
+      tileOrderingCoordinator.releaseCleanScopes(marker)
+    }
   }, [refreshCategories, refreshUncategorizedImages])
+
+  // Every successful coordinator save refreshes the shared category tree and
+  // uncategorized images so all consumers (e.g. Manage Categories, which can
+  // write orders back) see the just-saved positions instead of stale
+  // pre-save data.
+  useEffect(
+    () => tileOrderingCoordinator.onCommitted(() => void handleReorderComplete()),
+    [handleReorderComplete],
+  )
+
+  // Adopting the server's order can stem from membership drift (a 400
+  // conflict): reload the browse data too so tiles added or removed
+  // elsewhere appear alongside the adopted order.
+  const acceptServerOrder = tileOrdering.acceptServerOrder
+  const handleAcceptServerOrder = useCallback(() => {
+    acceptServerOrder()
+    void handleReorderComplete()
+  }, [acceptServerOrder, handleReorderComplete])
 
   const handleReorderError = useCallback((err: unknown) => {
     setErrorSnack(userMessage(err, 'Failed to reorder tiles.'))
@@ -1800,6 +1843,19 @@ export default function App() {
                   })()}
               </Box>
 
+              {canEditContent &&
+                (tileOrdering.status !== 'idle' || tileOrdering.otherScopesFailed) && (
+                  <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
+                    <ReorderStatusIndicator
+                      status={tileOrdering.status}
+                      onRetry={tileOrdering.retry}
+                      onAcceptServerOrder={handleAcceptServerOrder}
+                      otherScopesFailed={tileOrdering.otherScopesFailed}
+                      onRetryFailedScopes={tileOrdering.retryFailedScopes}
+                    />
+                  </Box>
+                )}
+
               {/* Tile grid */}
               <SortableTileGrid
                 allCategories={categories}
@@ -1844,6 +1900,7 @@ export default function App() {
                 }
                 onReorderComplete={handleReorderComplete}
                 onReorderError={handleReorderError}
+                tileOrdering={browseTileOrderingProp}
               />
 
               {categoriesLoading ? (
