@@ -45,7 +45,7 @@ import {
   bulkDeleteImages,
 } from '../api'
 import type { ApiBulkImportJob, ApiImage } from '../api'
-import { tileOrderingCoordinator } from '../tileOrdering'
+import { invalidateMovedImageScopes, tileOrderingCoordinator } from '../tileOrdering'
 import type { Category, Group, Program } from '../types'
 import { splitDirectAncestorGroupIds, splitDirectAncestorProgramIds } from '../categoryUtils'
 import { formatFileSize } from '../formatUtils'
@@ -925,6 +925,7 @@ export default function ManagePage({
     if (!editingImage) return
     try {
       await updateImage(editingImage.id, data)
+      invalidateMovedImageScopes(editingImage.category_id ?? null, data.category_id)
       setEditOpen(false)
       setEditingImage(null)
       await loadImages()
@@ -977,6 +978,7 @@ export default function ManagePage({
     if (!movingImage) return
     try {
       await updateImage(movingImage.id, { category_id: categoryId })
+      invalidateMovedImageScopes(movingImage.category_id ?? null, categoryId)
       setMoveOpen(false)
       setMovingImage(null)
       await loadImages()
