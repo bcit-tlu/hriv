@@ -88,6 +88,10 @@ function scopeKey(scope: ScopeId): string {
   return scope === null ? 'root' : String(scope)
 }
 
+function scopeFromKey(key: string): ScopeId {
+  return key === 'root' ? null : Number(key)
+}
+
 function sameOrder(a: TileOrderItemRef[], b: TileOrderItemRef[]): boolean {
   return a.length === b.length && a.every((ref, i) => ref.type === b[i].type && ref.id === b[i].id)
 }
@@ -167,14 +171,17 @@ export class TileOrderingCoordinator {
   }
 
   /**
-   * Drop the cached display order for every clean scope so freshly fetched
-   * authoritative data wins (order changes made elsewhere — another
-   * client or another surface — become visible on the next refresh).
-   * The scope's revision (CAS token) is kept: a follow-up save can reuse
-   * it without a seeding GET, and a genuinely stale token is safely
-   * rejected by the server's compare-and-set check. Scopes holding local
-   * intent (pending, in-flight, conflict, or a retryable failure) are
-   * left untouched.
+   * Drop cached order state — including the revision (CAS token) — for
+   * every clean scope so freshly fetched authoritative data wins (order
+   * changes made elsewhere — another client or another surface — become
+   * visible on the next refresh). The revision must not be kept: other
+   * operations bump a scope's revision server-side without going through
+   * the coordinator (entity PATCHes that move a tile between scopes,
+   * Manage Categories reorders), so a cached token could produce a false
+   * "order changed elsewhere" conflict on the next drag. The next save
+   * re-seeds the revision with a GET. Scopes holding local intent
+   * (pending, in-flight, conflict, or a retryable failure) are left
+   * untouched.
    */
   releaseCleanScopes(marker?: number): void {
     let changed = false
@@ -187,12 +194,8 @@ export class TileOrderingCoordinator {
         state.inFlight === null &&
         (state.status === 'saved' || state.status === 'idle')
       ) {
-        if (state.revision !== null) {
-          this.scopes.set(key, { ...state, displayOrder: null, conflictOrder: null })
-        } else {
-          this.scopes.delete(key)
-          this.lastWrite.delete(key)
-        }
+        this.scopes.delete(key)
+        this.lastWrite.delete(key)
         changed = true
       }
     }
@@ -305,6 +308,28 @@ export class TileOrderingCoordinator {
     if (state.status !== 'error' || state.pending === null || state.inFlight !== null) return
     this.setScope(scope, { ...state, status: 'dirty', error: null })
     void this.flush(scope)
+  }
+
+  /**
+   * True when a scope other than `scope` holds a failed save. Only the
+   * browsed scope renders a save-state indicator, so failures elsewhere
+   * (e.g. a category the user has navigated away from) need a cross-scope
+   * affordance — otherwise the order is never saved and the unload guard
+   * stays armed with nothing the user can act on.
+   */
+  hasFailedScopesOutside(scope: ScopeId): boolean {
+    const exclude = scopeKey(scope)
+    for (const [key, state] of this.scopes) {
+      if (key !== exclude && state.status === 'error') return true
+    }
+    return false
+  }
+
+  /** Retry every scope whose last save failed (see `hasFailedScopesOutside`). */
+  retryFailedScopes(): void {
+    for (const [key, state] of [...this.scopes]) {
+      if (state.status === 'error') this.retry(scopeFromKey(key))
+    }
   }
 
   /**

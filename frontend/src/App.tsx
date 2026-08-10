@@ -1843,17 +1843,20 @@ export default function App() {
                   })()}
               </Box>
 
-              {canEditContent && (
-                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
-                  <ReorderStatusIndicator
-                    status={tileOrdering.status}
-                    serverOrderAvailable={tileOrdering.serverOrderAvailable}
-                    onRetry={tileOrdering.retry}
-                    onAcceptServerOrder={handleAcceptServerOrder}
-                    onReapplyLocalOrder={tileOrdering.reapplyLocalOrder}
-                  />
-                </Box>
-              )}
+              {canEditContent &&
+                (tileOrdering.status !== 'idle' || tileOrdering.otherScopesFailed) && (
+                  <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
+                    <ReorderStatusIndicator
+                      status={tileOrdering.status}
+                      serverOrderAvailable={tileOrdering.serverOrderAvailable}
+                      onRetry={tileOrdering.retry}
+                      onAcceptServerOrder={handleAcceptServerOrder}
+                      onReapplyLocalOrder={tileOrdering.reapplyLocalOrder}
+                      otherScopesFailed={tileOrdering.otherScopesFailed}
+                      onRetryFailedScopes={tileOrdering.retryFailedScopes}
+                    />
+                  </Box>
+                )}
 
               {/* Tile grid */}
               <SortableTileGrid

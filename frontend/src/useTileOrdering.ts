@@ -29,6 +29,10 @@ export interface UseTileOrderingResult {
   claimGeneration: () => number
   /** Retry the newest local order after a failure. */
   retry: () => void
+  /** True when a scope other than this one holds a failed save. */
+  otherScopesFailed: boolean
+  /** Retry every scope whose last save failed. */
+  retryFailedScopes: () => void
   /** Adopt the server's order after a conflict. */
   acceptServerOrder: () => void
   /**
@@ -44,6 +48,11 @@ export function useTileOrdering(scope: ScopeId): UseTileOrderingResult {
   const state: ScopeState = useSyncExternalStore(
     useCallback((listener) => tileOrderingCoordinator.subscribe(listener), []),
     () => tileOrderingCoordinator.getScope(scope),
+  )
+
+  const otherScopesFailed = useSyncExternalStore(
+    useCallback((listener) => tileOrderingCoordinator.subscribe(listener), []),
+    () => tileOrderingCoordinator.hasFailedScopesOutside(scope),
   )
 
   // Warn before a full browser unload while order changes are unsaved.
@@ -70,6 +79,8 @@ export function useTileOrdering(scope: ScopeId): UseTileOrderingResult {
     ),
     claimGeneration: useCallback(() => tileOrderingCoordinator.claimGeneration(scope), [scope]),
     retry: useCallback(() => tileOrderingCoordinator.retry(scope), [scope]),
+    otherScopesFailed,
+    retryFailedScopes: useCallback(() => tileOrderingCoordinator.retryFailedScopes(), []),
     acceptServerOrder: useCallback(() => tileOrderingCoordinator.acceptServerOrder(scope), [scope]),
     reapplyLocalOrder: useCallback(() => tileOrderingCoordinator.reapplyLocalOrder(scope), [scope]),
   }
