@@ -37,26 +37,24 @@ export default function ReorderStatusIndicator({
 }: ReorderStatusIndicatorProps) {
   // A failed save or unresolved conflict in a category the user has
   // navigated away from is otherwise invisible and unrecoverable, while
-  // still arming the unload guard.
-  if (status === 'idle') {
-    if (!otherScopesFailed) return null
-    return (
-      <Box
-        role="status"
-        aria-label="Reorder save state"
-        sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, minHeight: 28 }}
-      >
-        <ErrorOutlineIcon color="error" sx={{ fontSize: 16 }} />
-        <Typography variant="caption">Unresolved order changes in another category</Typography>
-        <Button size="small" onClick={onRetryFailedScopes}>
-          Resolve
-        </Button>
-      </Box>
-    )
-  }
+  // still arming the unload guard. Rendered alongside the current scope's
+  // own readout so it stays reachable whatever the browsed scope is doing.
+  const crossScope = otherScopesFailed ? (
+    <>
+      <ErrorOutlineIcon color="error" sx={{ fontSize: 16 }} />
+      <Typography variant="caption">Unresolved order changes in another category</Typography>
+      <Button size="small" onClick={onRetryFailedScopes}>
+        Resolve
+      </Button>
+    </>
+  ) : null
+
+  if (status === 'idle' && crossScope === null) return null
 
   const content = (() => {
     switch (status) {
+      case 'idle':
+        return null
       case 'dirty':
         return <Typography variant="caption">Unsaved order</Typography>
       case 'saving':
@@ -112,6 +110,7 @@ export default function ReorderStatusIndicator({
       sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, minHeight: 28 }}
     >
       {content}
+      {crossScope}
     </Box>
   )
 }
