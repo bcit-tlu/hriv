@@ -516,10 +516,6 @@ export function putTileOrder(
   /** Client-generated correlation ID for end-to-end reorder telemetry. */
   operationId?: string,
 ): Promise<TileOrderResponse> {
-  const headers: Record<string, string> = {}
-  if (operationId !== undefined) {
-    headers['X-Reorder-Operation-Id'] = operationId
-  }
   return request('/tile-order', {
     method: 'PUT',
     body: JSON.stringify({
@@ -528,7 +524,6 @@ export function putTileOrder(
       operation_id: operationId ?? null,
       items,
     }),
-    headers,
   })
 }
 

@@ -112,8 +112,9 @@ only ordering write path.
 The endpoint participates in the reorder observability contract
 (`docs/reorder-telemetry.md`): `tile.reorder` spans, `reorder.persisted`
 structured logs, and `hriv_reorder_*` metrics with `entity="tile"`.
-`X-Reorder-Operation-Id` is superseded by the request-body `operation_id`
-for this endpoint.
+The correlation ID travels in the request body (`operation_id`); the
+`X-Reorder-Operation-Id` header used by the removed legacy endpoints is no
+longer sent.
 
 ## Ordering normalization
 

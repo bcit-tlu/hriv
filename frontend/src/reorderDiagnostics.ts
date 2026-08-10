@@ -2,8 +2,8 @@
  * Reorder operation diagnostics (epic #975, issue #977).
  *
  * Every ordering operation gets a client-generated `operation_id` that is:
- * - attached to the persistence requests via the `X-Reorder-Operation-Id`
- *   header (picked up by backend spans and structured logs);
+ * - attached to the `PUT /api/tile-order` request body as `operation_id`
+ *   (picked up by backend spans and structured logs);
  * - emitted with each lifecycle state transition as a structured
  *   `reorder.operation` telemetry event (backend-validated ingestion);
  * - mirrored to the console in dev for quick local debugging.
