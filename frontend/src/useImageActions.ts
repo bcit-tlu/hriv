@@ -18,8 +18,8 @@ export interface UseImageActionsDeps {
   selectedImage: ImageItem | null
   setSelectedImage: React.Dispatch<React.SetStateAction<ImageItem | null>>
   setPath: React.Dispatch<React.SetStateAction<Category[]>>
-  loadCategories: () => Promise<void>
-  loadUncategorizedImages: (opts?: { signal?: AbortSignal }) => Promise<void>
+  loadCategories: () => Promise<unknown>
+  loadUncategorizedImages: (opts?: { signal?: AbortSignal }) => Promise<unknown>
   refreshCategories: () => Promise<Category[]>
   setErrorSnack: React.Dispatch<React.SetStateAction<string | null>>
   clearImage: () => void

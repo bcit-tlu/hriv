@@ -32,6 +32,14 @@ from .models import Category, Image, TileOrderRevision
 # category IDs are serial and start at 1, so 0 can never collide.
 ROOT_SCOPE_KEY = 0
 
+# Revision reported for (and seeded into) a scope that has never been written:
+# ``lock_scope_revision`` inserts new rows at this value and
+# ``GET /api/tile-order`` reports it when no row exists. Restore-time
+# invalidation (``app/admin_ops.py``) materializes every scope at
+# ``INITIAL_SCOPE_REVISION + 1`` so an implicit pre-restore revision can never
+# pass the CAS check — keep the three sites in sync via this constant.
+INITIAL_SCOPE_REVISION = 1
+
 _TYPE_PRIORITY = {"category": 0, "image": 1}
 
 
@@ -138,10 +146,16 @@ async def lock_scope_revision(db: AsyncSession, scope_key: int) -> int:
     ``INSERT ... ON CONFLICT DO NOTHING`` then ``SELECT ... FOR UPDATE``
     serializes concurrent writers on the same scope so two requests carrying
     the same expected revision can never both succeed.
+
+    This relies on READ COMMITTED (the engine default): a concurrent insert
+    blocks the ON CONFLICT path until it commits, and the following SELECT
+    takes a fresh snapshot that sees the committed row. Under REPEATABLE
+    READ or SERIALIZABLE the SELECT could miss the row and raise
+    ``NoResultFound`` — revisit this if the isolation level ever changes.
     """
     await db.execute(
         pg_insert(TileOrderRevision)
-        .values(scope_key=scope_key, revision=1)
+        .values(scope_key=scope_key, revision=INITIAL_SCOPE_REVISION)
         .on_conflict_do_nothing(index_elements=["scope_key"])
     )
     result = await db.execute(
@@ -209,13 +223,16 @@ async def normalize_scope(db: AsyncSession, parent_category_id: int | None) -> i
     """Rewrite one scope to canonical contiguous positions; return tile count.
 
     Duplicate positions are resolved with the canonical tie-breaker and the
-    scope's revision row is created (revision 1) if it does not exist yet.
-    Runs inside the caller's transaction.
+    scope's revision row is created if it does not exist yet. The revision is
+    bumped so clients holding a pre-normalization revision get a 409 instead
+    of silently overwriting the repaired order. Runs inside the caller's
+    transaction.
     """
     scope_key = scope_key_for(parent_category_id)
     await lock_scope_revision(db, scope_key)
     tiles = await load_scope_tiles(db, parent_category_id)
     await apply_positions(db, [(t.type, t.id) for t in tiles])
+    await bump_scope_revision(db, scope_key)
     return len(tiles)
 
 

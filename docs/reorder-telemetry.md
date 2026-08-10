@@ -44,11 +44,13 @@ share this bounded vocabulary:
 | `conflicted`      | Backend rejected the operation due to a revision conflict                        |
 | `failed`          | Persistence failed (fully or partially) and the UI rolled back                   |
 | `stale_discarded` | Refresh response discarded because a newer operation superseded it (future #980) |
-| `abandoned`       | Component unmounted (navigation) while the operation was active                  |
+| `abandoned`       | Component unmounted (navigation) while the operation was active (legacy path)    |
 
 As of #979 the Browse coordinator (`frontend/src/tileOrdering.ts`) emits
 `queued`, `coalesced`, `submitted`, `committed`, `conflicted`, and `failed`;
-`ignored` remains emitted only by the legacy non-coordinator grid path, and
+`ignored` and `abandoned` remain emitted only by the legacy non-coordinator
+grid path (the coordinator survives navigation, so Browse no longer emits
+`abandoned` at all), and
 `stale_discarded` is defined for later sub-issues (#980) so dashboards can
 adopt it without another contract change. Both reorder surfaces are
 instrumented: the Browse grid (via the coordinator, full lifecycle) and the
@@ -60,6 +62,19 @@ requests, with the dialog owning the single lifecycle (the
 `useCategoryActions` inline helpers skip their own emission when the caller
 supplies an operation ID). A drag whose category half succeeded but whose
 image half failed is reported as one `failed` operation.
+
+Two coordinator edge cases relax that pairing, both tied to revision seeding
+(the one-time `GET /api/tile-order` that fetches a scope's CAS token before
+its first save):
+
+- A seeding failure emits a terminal `failed` for a fresh operation ID with
+  no preceding `submitted` — nothing was ever submitted, so dashboards
+  pairing `submitted` with terminals should treat `failed` events whose ID
+  never appeared as `submitted` as pre-submission (seeding) failures.
+- A drop landing while its scope's very first snapshot is still seeding
+  coalesces into that snapshot and emits `coalesced` for an operation ID
+  that never emitted `queued` (the seeded snapshot itself was reported via
+  the dirty path, which does not mint a queue-time ID).
 
 Server-side, an event that omits `state` entirely is logged with
 `reorder.state: "missing"` and skipped by the client-operations counter, so

@@ -41,6 +41,18 @@ export type TileOrderStatus =
 /** Ordering scope key: the parent category ID, or null for the root scope. */
 export type ScopeId = number | null
 
+/**
+ * Details of the drag that produced a reported order, forwarded into the
+ * lifecycle telemetry so operators keep per-drag detail (which tile moved,
+ * from where, to where) even though persistence submits the whole scope.
+ */
+export interface ReorderDragContext {
+  itemType: 'category' | 'image'
+  itemId: number
+  fromIndex: number
+  toIndex: number
+}
+
 export interface ScopeState {
   status: TileOrderStatus
   /** Last revision returned by the server for this scope (CAS token). */
@@ -111,10 +123,28 @@ export class TileOrderingCoordinator {
   private writeCounter = 0
   /** Per-scope-key sequence of the most recent write. */
   private lastWrite = new Map<string, number>()
+  /**
+   * Drag detail of the newest reported drop per scope, attached to the next
+   * `submitted` emission. Coalesced drops keep the latest drag's detail.
+   */
+  private dragContexts = new Map<string, ReorderDragContext>()
+  /** Notified after each successful commit (see `onCommitted`). */
+  private commitListeners = new Set<(scope: ScopeId) => void>()
 
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
+  }
+
+  /**
+   * Subscribe to successful commits. The app refreshes its shared category
+   * tree / uncategorized-image data on commit so every consumer of that data
+   * (e.g. Manage Categories) sees the just-saved order instead of stale
+   * pre-save positions it could silently write back. Returns an unsubscribe.
+   */
+  onCommitted(listener: (scope: ScopeId) => void): () => void {
+    this.commitListeners.add(listener)
+    return () => this.commitListeners.delete(listener)
   }
 
   getScope(scope: ScopeId): ScopeState {
@@ -179,10 +209,11 @@ export class TileOrderingCoordinator {
   reset(): void {
     this.epoch += 1
     this.seeding.clear()
+    this.dragContexts.clear()
+    this.lastWrite.clear()
     if (this.scopes.size === 0 && this.pendingOperationIds.size === 0) return
     this.scopes.clear()
     this.pendingOperationIds.clear()
-    this.lastWrite.clear()
     for (const listener of this.listeners) listener()
   }
 
@@ -203,10 +234,16 @@ export class TileOrderingCoordinator {
    * Every accepted drop lands here; drops during an active save are queued
    * (coalescing any previously queued snapshot) — never discarded.
    */
-  reportOrder(scope: ScopeId, order: TileOrderItemRef[], generation?: number): void {
+  reportOrder(
+    scope: ScopeId,
+    order: TileOrderItemRef[],
+    generation?: number,
+    dragContext?: ReorderDragContext,
+  ): void {
     if (generation !== undefined && !this.isCurrentGeneration(scope, generation)) return
     const state = this.getScope(scope)
     if (state.displayOrder !== null && sameOrder(state.displayOrder, order)) return
+    if (dragContext !== undefined) this.dragContexts.set(scopeKey(scope), dragContext)
 
     // Treat revision seeding like an in-flight save: the drop is queued so
     // the status stays 'saving'-family instead of flickering back to dirty,
@@ -266,7 +303,11 @@ export class TileOrderingCoordinator {
    */
   acceptServerOrder(scope: ScopeId): void {
     const state = this.getScope(scope)
-    if (state.status !== 'conflict') return
+    // Also honored from a failed "keep my order" retry: the conflict's
+    // authoritative order is retained through `reapplyLocalOrder`, so the
+    // user can still fall back to the server's order when the retry errors.
+    if (state.status !== 'conflict' && !(state.status === 'error' && state.conflictOrder !== null))
+      return
     this.setScope(scope, {
       ...state,
       status: 'saved',
@@ -289,10 +330,11 @@ export class TileOrderingCoordinator {
       this.acceptServerOrder(scope)
       return
     }
+    // The conflict's authoritative order is retained until a commit
+    // succeeds, keeping accept-server-order available if the retry fails.
     this.setScope(scope, {
       ...state,
       status: 'dirty',
-      conflictOrder: null,
       error: null,
     })
     void this.flush(scope)
@@ -341,7 +383,10 @@ export class TileOrderingCoordinator {
           })
           return
         } finally {
-          this.seeding.delete(scopeKey(scope))
+          // Epoch-guarded: after a reset() a new flush may have re-marked
+          // this scope as seeding; a stale flush must not clear that mark
+          // (it would allow two concurrent flush loops for one scope).
+          if (epoch === this.epoch) this.seeding.delete(scopeKey(scope))
         }
         if (epoch !== this.epoch) return
         // A newer snapshot may have arrived while fetching the revision.
@@ -354,6 +399,8 @@ export class TileOrderingCoordinator {
       // queued/coalesced events correlate with submission and completion.
       const queuedOperationId = this.pendingOperationIds.get(scopeKey(scope))
       this.pendingOperationIds.delete(scopeKey(scope))
+      const drag = this.dragContexts.get(scopeKey(scope))
+      this.dragContexts.delete(scopeKey(scope))
       const operationId = queuedOperationId ?? newReorderOperationId()
       const startedAt = performance.now()
       this.setScope(scope, {
@@ -362,12 +409,20 @@ export class TileOrderingCoordinator {
         pending: null,
         inFlight: order,
       })
+      const categoryCount = order.filter((r) => r.type === 'category').length
+      const imageCount = order.filter((r) => r.type === 'image').length
       emitReorderDiagnostic({
         operationId,
         state: 'submitted',
         scopeCategoryId: scope,
-        categoryCount: order.filter((r) => r.type === 'category').length,
-        imageCount: order.filter((r) => r.type === 'image').length,
+        // Persistence re-indexes the whole scope: 'mixed' when the scope
+        // holds both kinds, otherwise the dragged tile's type.
+        itemType: categoryCount > 0 && imageCount > 0 ? 'mixed' : drag?.itemType,
+        itemId: drag?.itemId,
+        fromIndex: drag?.fromIndex,
+        toIndex: drag?.toIndex,
+        categoryCount,
+        imageCount,
         queueDepth: 0,
         localRevision: revision,
       })
@@ -392,7 +447,15 @@ export class TileOrderingCoordinator {
           // Only adopt the authoritative order when no newer local intent
           // accumulated during the save — never roll back newer changes.
           displayOrder: stillNewest ? refsOf(response) : after.displayOrder,
+          conflictOrder: null,
         })
+        for (const listener of this.commitListeners) {
+          try {
+            listener(scope)
+          } catch {
+            /* a bad listener must never break the save loop */
+          }
+        }
         if (stillNewest) return
         continue
       } catch (err) {

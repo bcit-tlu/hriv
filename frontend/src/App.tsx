@@ -98,6 +98,7 @@ import { useImageActions } from './useImageActions'
 import { useAnnouncementModal } from './useAnnouncementModal'
 import { useUserProfile } from './useUserProfile'
 import { useTileOrdering } from './useTileOrdering'
+import { tileOrderingCoordinator } from './tileOrdering'
 
 const COLLAPSED_BREADCRUMB_CATEGORY_DEPTH = 2
 
@@ -1037,6 +1038,9 @@ export default function App() {
   }, [])
 
   const handleReorderComplete = useCallback(async () => {
+    // Capture before fetching: a save committing while these requests are in
+    // flight is newer than the fetched data and must survive the release.
+    const marker = tileOrderingCoordinator.marker()
     const [catResult, imgResult] = await Promise.allSettled([
       refreshCategories(),
       refreshUncategorizedImages(),
@@ -1047,7 +1051,22 @@ export default function App() {
     if (imgResult.status === 'rejected') {
       setWarnSnack('Could not refresh images after reorder.')
     }
+    // Once fresh authoritative data landed, drop the coordinator's cached
+    // order for clean scopes so order changes made elsewhere (e.g. Manage
+    // Categories) become visible immediately instead of on the next poll.
+    if (catResult.status === 'fulfilled' && imgResult.status === 'fulfilled') {
+      tileOrderingCoordinator.releaseCleanScopes(marker)
+    }
   }, [refreshCategories, refreshUncategorizedImages])
+
+  // Every successful coordinator save refreshes the shared category tree and
+  // uncategorized images so all consumers (e.g. Manage Categories, which can
+  // write orders back) see the just-saved positions instead of stale
+  // pre-save data.
+  useEffect(
+    () => tileOrderingCoordinator.onCommitted(() => void handleReorderComplete()),
+    [handleReorderComplete],
+  )
 
   // Adopting the server's order can stem from membership drift (a 400
   // conflict): reload the browse data too so tiles added or removed
@@ -1828,6 +1847,7 @@ export default function App() {
                 <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
                   <ReorderStatusIndicator
                     status={tileOrdering.status}
+                    serverOrderAvailable={tileOrdering.serverOrderAvailable}
                     onRetry={tileOrdering.retry}
                     onAcceptServerOrder={handleAcceptServerOrder}
                     onReapplyLocalOrder={tileOrdering.reapplyLocalOrder}
