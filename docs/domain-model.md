@@ -128,8 +128,11 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   root scope — real category IDs start at 1); `revision` (CAS counter,
   starts at 1); `updated_at`.
 - **No FK to `categories`:** rows are created lazily on first write and are
-  not removed when their category is deleted (serial IDs are never reused,
-  so orphan rows are harmless).
+  not removed when their category is deleted. Orphan rows are harmless for
+  correctness — the CAS counter only ever increases, so a reused scope key
+  simply starts at a revision > 1. A DB restore can reuse category IDs (the
+  ID sequence is reset to the restored `MAX(id)`), so the import deletes
+  revision rows for scope keys with no matching category.
 - See [Tile ordering](tile-ordering.md) for the API contract.
 
 ## Junction tables

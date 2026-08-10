@@ -138,6 +138,12 @@ async def lock_scope_revision(db: AsyncSession, scope_key: int) -> int:
     ``INSERT ... ON CONFLICT DO NOTHING`` then ``SELECT ... FOR UPDATE``
     serializes concurrent writers on the same scope so two requests carrying
     the same expected revision can never both succeed.
+
+    This relies on READ COMMITTED (the engine default): a concurrent insert
+    blocks the ON CONFLICT path until it commits, and the following SELECT
+    takes a fresh snapshot that sees the committed row. Under REPEATABLE
+    READ or SERIALIZABLE the SELECT could miss the row and raise
+    ``NoResultFound`` — revisit this if the isolation level ever changes.
     """
     await db.execute(
         pg_insert(TileOrderRevision)

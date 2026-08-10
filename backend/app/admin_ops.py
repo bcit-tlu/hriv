@@ -1161,6 +1161,16 @@ async def run_db_import(task_id: int) -> None:
                     data_session.add(img)
                 await data_session.flush()
 
+                # Drop revision rows for scopes that no longer exist after the
+                # restore. The ID sequence is reset to the restored MAX(id), so
+                # a later category could be assigned an ID that still has a
+                # leftover revision row (benign for CAS, but avoid the orphan).
+                await data_session.execute(
+                    text(
+                        "DELETE FROM tile_order_revisions WHERE scope_key <> 0 "
+                        "AND scope_key NOT IN (SELECT id FROM categories)"
+                    )
+                )
                 # Revision rows are created lazily, so the wholesale bump above
                 # misses scopes that have never been written through
                 # PUT /api/tile-order (clients read the implicit revision 1 for
