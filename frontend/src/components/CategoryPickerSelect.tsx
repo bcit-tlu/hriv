@@ -325,167 +325,166 @@ export default function CategoryPickerSelect({
               </ListItemText>
             </MenuItem>
           )}
-          {visibleOptions.map((opt) => (
-            <MenuItem key={opt.id} value={String(opt.id)} sx={{ pl: 2 + opt.depth * 3 }}>
-              <Box
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  width: '100%',
-                }}
-              >
-                <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0, flexGrow: 1 }}>
-                  {opt.childCount > 0 ? (
-                    <Tooltip title={isExpanded(opt.id) ? 'Collapse category' : 'Expand category'}>
-                      <IconButton
-                        size="small"
-                        aria-label={`${isExpanded(opt.id) ? 'Collapse' : 'Expand'} ${opt.label}`}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          e.preventDefault()
-                          toggleExpanded(opt.id)
-                        }}
-                        sx={{ mr: 0.5, p: 0.5 }}
-                      >
-                        {isExpanded(opt.id) ? (
-                          <ExpandMoreIcon fontSize="small" />
-                        ) : (
-                          <ChevronRightIcon fontSize="small" />
-                        )}
-                      </IconButton>
-                    </Tooltip>
-                  ) : (
-                    <Box sx={{ width: 30, flexShrink: 0 }} />
-                  )}
-                  <ListItemText>
-                    {opt.depth > 0 ? '\u2514 ' : ''}
-                    <Box
-                      component="span"
-                      sx={{
-                        color:
-                          opt.status === 'hidden' || ancestorHiddenIds.has(opt.id)
-                            ? visColors.inactive
-                            : undefined,
-                      }}
-                    >
-                      {opt.label}
-                    </Box>
-                    <Typography
-                      component="span"
-                      variant="body2"
-                      color="text.secondary"
-                      sx={{ ml: 0.5 }}
-                    >
-                      ({opt.imageCount})
-                    </Typography>
-                    <CategoryRestrictionIcons
-                      hasProgramRestriction={
-                        opt.programIds.length > 0 || opt.inheritedProgramRestriction
-                      }
-                      inheritedProgramRestriction={opt.inheritedProgramRestriction}
-                      hasGroupRestriction={opt.groupIds.length > 0 || opt.inheritedGroupRestriction}
-                      inheritedGroupRestriction={opt.inheritedGroupRestriction}
-                      hidden={opt.status === 'hidden'}
-                    />
-                  </ListItemText>
-                </Box>
-                {onToggleVisibility &&
-                  (() => {
-                    const inheritedHidden = ancestorHiddenIds.has(opt.id)
-                    if (inheritedHidden) {
-                      return (
-                        <Tooltip title="Hidden by parent category">
-                          <span role="img" aria-label="Hidden by parent category">
-                            <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
-                          </span>
-                        </Tooltip>
-                      )
-                    }
-                    return (
-                      <Tooltip
-                        title={
-                          opt.status === 'hidden'
-                            ? 'Visibility: Show category'
-                            : 'Visibility: Hide category'
-                        }
-                      >
+          {visibleOptions.map((opt) => {
+            const inheritedHidden = ancestorHiddenIds.has(opt.id)
+            const effectivelyHidden = opt.status === 'hidden' || inheritedHidden
+            return (
+              <MenuItem key={opt.id} value={String(opt.id)} sx={{ pl: 2 + opt.depth * 3 }}>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    width: '100%',
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0, flexGrow: 1 }}>
+                    {opt.childCount > 0 ? (
+                      <Tooltip title={isExpanded(opt.id) ? 'Collapse category' : 'Expand category'}>
                         <IconButton
                           size="small"
-                          aria-label={
-                            opt.status === 'hidden'
-                              ? 'Visibility: Show category'
-                              : 'Visibility: Hide category'
-                          }
+                          aria-label={`${isExpanded(opt.id) ? 'Collapse' : 'Expand'} ${opt.label}`}
                           onMouseDown={(e) => e.stopPropagation()}
                           onClick={(e) => {
                             e.stopPropagation()
                             e.preventDefault()
-                            onToggleVisibility(opt.id)
+                            toggleExpanded(opt.id)
                           }}
-                          sx={{ p: 0.5 }}
+                          sx={{ mr: 0.5, p: 0.5 }}
                         >
-                          {opt.status === 'hidden' ? (
-                            <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
+                          {isExpanded(opt.id) ? (
+                            <ExpandMoreIcon fontSize="small" />
                           ) : (
-                            <Visibility fontSize="small" sx={{ color: visColors.active }} />
+                            <ChevronRightIcon fontSize="small" />
                           )}
                         </IconButton>
                       </Tooltip>
-                    )
-                  })()}
-                {onEditCategory && (
-                  <Tooltip title="Edit category">
-                    <IconButton
-                      size="small"
-                      onMouseDown={(e) => e.stopPropagation()}
-                      onClick={(e) => handleEditClick(e, opt)}
-                      sx={{ p: 0.5 }}
-                    >
-                      <EditIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                )}
-                {onAddCategory && opt.depth + 1 < MAX_DEPTH && (
-                  <Tooltip title="Add child category">
-                    <IconButton
-                      size="small"
-                      onMouseDown={(e) => e.stopPropagation()}
-                      onClick={(e) => handleAddClick(e, opt.id, opt.label)}
-                      sx={{ ml: 1, p: 0.5 }}
-                    >
-                      <AddIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                )}
-                {onDeleteCategory && (
-                  <Tooltip title="Delete category">
-                    <IconButton
-                      size="small"
-                      onMouseDown={(e) => e.stopPropagation()}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        e.preventDefault()
-                        onDeleteCategory(opt.id)
-                      }}
-                      sx={{ p: 0.5 }}
-                    >
-                      <DeleteIcon
-                        fontSize="small"
+                    ) : (
+                      <Box sx={{ width: 30, flexShrink: 0 }} />
+                    )}
+                    <ListItemText>
+                      {opt.depth > 0 ? '\u2514 ' : ''}
+                      <Box
+                        component="span"
                         sx={{
-                          color:
-                            opt.status === 'hidden' || ancestorHiddenIds.has(opt.id)
-                              ? visColors.inactive
-                              : 'primary.main',
+                          color: effectivelyHidden ? visColors.inactive : undefined,
                         }}
+                      >
+                        {opt.label}
+                      </Box>
+                      <Typography
+                        component="span"
+                        variant="body2"
+                        color="text.secondary"
+                        sx={{ ml: 0.5 }}
+                      >
+                        ({opt.imageCount})
+                      </Typography>
+                      <CategoryRestrictionIcons
+                        hasProgramRestriction={
+                          opt.programIds.length > 0 || opt.inheritedProgramRestriction
+                        }
+                        inheritedProgramRestriction={opt.inheritedProgramRestriction}
+                        hasGroupRestriction={
+                          opt.groupIds.length > 0 || opt.inheritedGroupRestriction
+                        }
+                        inheritedGroupRestriction={opt.inheritedGroupRestriction}
+                        hidden={effectivelyHidden}
                       />
-                    </IconButton>
-                  </Tooltip>
-                )}
-              </Box>
-            </MenuItem>
-          ))}
+                    </ListItemText>
+                  </Box>
+                  {onToggleVisibility &&
+                    (() => {
+                      if (inheritedHidden) {
+                        return (
+                          <Tooltip title="Hidden by parent category">
+                            <span role="img" aria-label="Hidden by parent category">
+                              <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
+                            </span>
+                          </Tooltip>
+                        )
+                      }
+                      return (
+                        <Tooltip
+                          title={
+                            opt.status === 'hidden'
+                              ? 'Visibility: Show category'
+                              : 'Visibility: Hide category'
+                          }
+                        >
+                          <IconButton
+                            size="small"
+                            aria-label={
+                              opt.status === 'hidden'
+                                ? 'Visibility: Show category'
+                                : 'Visibility: Hide category'
+                            }
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              e.preventDefault()
+                              onToggleVisibility(opt.id)
+                            }}
+                            sx={{ p: 0.5 }}
+                          >
+                            {opt.status === 'hidden' ? (
+                              <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
+                            ) : (
+                              <Visibility fontSize="small" sx={{ color: visColors.active }} />
+                            )}
+                          </IconButton>
+                        </Tooltip>
+                      )
+                    })()}
+                  {onEditCategory && (
+                    <Tooltip title="Edit category">
+                      <IconButton
+                        size="small"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => handleEditClick(e, opt)}
+                        sx={{ p: 0.5 }}
+                      >
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  )}
+                  {onAddCategory && opt.depth + 1 < MAX_DEPTH && (
+                    <Tooltip title="Add child category">
+                      <IconButton
+                        size="small"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => handleAddClick(e, opt.id, opt.label)}
+                        sx={{ ml: 1, p: 0.5 }}
+                      >
+                        <AddIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  )}
+                  {onDeleteCategory && (
+                    <Tooltip title="Delete category">
+                      <IconButton
+                        size="small"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          e.preventDefault()
+                          onDeleteCategory(opt.id)
+                        }}
+                        sx={{ p: 0.5 }}
+                      >
+                        <DeleteIcon
+                          fontSize="small"
+                          sx={{
+                            color: effectivelyHidden ? visColors.inactive : 'primary.main',
+                          }}
+                        />
+                      </IconButton>
+                    </Tooltip>
+                  )}
+                </Box>
+              </MenuItem>
+            )
+          })}
         </Select>
       </FormControl>
 

@@ -151,6 +151,10 @@ emphasis rules:
   chips, buttons, and inherited-hidden indicators should stay at the same
   opacity as the hidden parent element. This keeps hidden-state styling separate
   from inherited restriction emphasis.
+- Components that render category option rows, such as `CategoryPickerSelect`
+  and `ManageCategoriesDialog`, should pass the **effective** hidden state
+  (direct hidden or hidden by ancestor) to shared stateful affordances so child
+  rows hidden by a parent do not render as active categories.
 
 In the Add/Edit category dialogs, program chips also respect the current
 instructor's membership: chips outside the instructor's programs are disabled,
