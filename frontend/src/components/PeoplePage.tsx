@@ -615,7 +615,7 @@ export default function PeoplePage({
         const shownReasons = distinctReasons.slice(0, MAX_REASONS_SHOWN)
         const hiddenCount = distinctReasons.length - shownReasons.length
         const reasonsText =
-          shownReasons.join(' ') +
+          shownReasons.join(' • ') +
           (hiddenCount > 0
             ? ` (and ${hiddenCount} more distinct ${hiddenCount === 1 ? 'error' : 'errors'})`
             : '')
