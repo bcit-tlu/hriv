@@ -313,8 +313,11 @@ committed on Save) in the edit modals.
   **Then** the `Changelog` sub-tab is selected by default so changelog
   management appears without scrolling.
 - **Given** the admin switches to the `Backups` sub-tab, **Then** the page
-  groups backup tools in this order: export cards first, `Recent Tasks` in a
-  collapsible accordion, and destructive import cards at the bottom.
+  groups backup tools in this order: a data-transfer card grid first (export
+  cards, then the destructive import cards, then Rebuild Tiles), the
+  `Restore individual file` panel, `Recent Tasks` in a collapsible accordion,
+  and finally the archive-history panels (`Stored export archives` and
+  `Previously uploaded import archives`) side by side.
 - Active task alerts remain visible above the tab strip so background export or
   import progress is not hidden while the admin is working in either sub-tab.
 

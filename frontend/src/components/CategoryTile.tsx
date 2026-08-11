@@ -180,6 +180,7 @@ function CategoryTile({
   return (
     <>
       <Card
+        data-testid="category-tile"
         elevation={dragOver ? 8 : 2}
         onDragEnter={isDropTarget ? handleDragEnter : undefined}
         onDragLeave={isDropTarget ? handleDragLeave : undefined}
@@ -233,6 +234,7 @@ function CategoryTile({
           </Box>
         )}
         <CardActionArea
+          data-testid="category-tile-action-area"
           onClick={() => onClick(category)}
           sx={{
             filter: tileHidden ? 'grayscale(100%)' : 'none',
@@ -261,7 +263,10 @@ function CategoryTile({
             </Box>
           )}
           <CardContent>
-            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}>
+            <Box
+              data-testid="category-tile-title-row"
+              sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}
+            >
               <FolderOutlinedIcon fontSize="small" color="primary" sx={{ flexShrink: 0 }} />
               <Tooltip title={category.label}>
                 <Typography
@@ -311,7 +316,13 @@ function CategoryTile({
             {programChips.length > 0 && (
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
                 {programChips.map((p) => (
-                  <Chip key={p.id} label={p.name} size="small" color="primary" />
+                  <Chip
+                    key={p.id}
+                    data-testid="program-chip"
+                    label={p.name}
+                    size="small"
+                    color="primary"
+                  />
                 ))}
               </Box>
             )}
@@ -320,6 +331,7 @@ function CategoryTile({
                 {inheritedProgramChips.map((p) => (
                   <Chip
                     key={p.id}
+                    data-testid="program-chip"
                     label={p.name}
                     size="small"
                     color="primary"
@@ -331,7 +343,13 @@ function CategoryTile({
             {groupChips.length > 0 && (
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
                 {groupChips.map((g) => (
-                  <Chip key={g.id} label={g.name} size="small" color="secondary" />
+                  <Chip
+                    key={g.id}
+                    data-testid="group-chip"
+                    label={g.name}
+                    size="small"
+                    color="secondary"
+                  />
                 ))}
               </Box>
             )}
@@ -340,6 +358,7 @@ function CategoryTile({
                 {inheritedGroupChips.map((g) => (
                   <Chip
                     key={g.id}
+                    data-testid="group-chip"
                     label={g.name}
                     size="small"
                     color="secondary"

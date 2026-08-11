@@ -26,8 +26,13 @@ function ImageTile({ image, onClick, onEditDetails, categoryHidden = false }: Im
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
   return (
-    <Card elevation={2} sx={{ width: '100%', maxWidth: 300, position: 'relative' }}>
+    <Card
+      data-testid="image-tile"
+      elevation={2}
+      sx={{ width: '100%', maxWidth: 300, position: 'relative' }}
+    >
       <CardActionArea
+        data-testid="image-tile-action-area"
         onClick={() => onClick(image)}
         sx={{
           display: 'flex',
@@ -45,7 +50,10 @@ function ImageTile({ image, onClick, onEditDetails, categoryHidden = false }: Im
           sx={{ objectFit: 'cover', objectPosition: 'center' }}
         />
         <CardContent sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
-          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}>
+          <Box
+            data-testid="image-tile-title-row"
+            sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}
+          >
             <Tooltip title={image.name}>
               <Typography
                 variant="h6"

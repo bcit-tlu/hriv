@@ -12,11 +12,12 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AuthContext } from '../../src/authContextValue'
 import type { AuthContextValue } from '../../src/authContextValue'
 import AddCategoryDialog from '../../src/components/AddCategoryDialog'
+import { ApiError } from '../../src/api'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -114,6 +115,40 @@ describe('AddCategoryDialog', () => {
 
     expect(onAdd).toHaveBeenCalledWith('Histology', [], [])
     expect(onClose).toHaveBeenCalled()
+  })
+
+  it('shows the backend detail on 409 duplicate-name conflict', async () => {
+    const user = userEvent.setup()
+    const onAdd = vi
+      .fn()
+      .mockRejectedValue(
+        new ApiError(409, 'A category with this name already exists at this level'),
+      )
+
+    renderDialog({ onAdd })
+
+    await user.type(getCategoryInput(), 'Duplicate')
+    await user.click(getCreateButton())
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('A category with this name already exists at this level'),
+      ).toBeInTheDocument()
+    })
+  })
+
+  it('shows generic error for non-409 failures', async () => {
+    const user = userEvent.setup()
+    const onAdd = vi.fn().mockRejectedValue(new Error('Server error'))
+
+    renderDialog({ onAdd })
+
+    await user.type(getCategoryInput(), 'Histology')
+    await user.click(getCreateButton())
+
+    await waitFor(() => {
+      expect(screen.getByText('Failed to add category.')).toBeInTheDocument()
+    })
   })
 
   it('disables Create button when input is empty', () => {
@@ -243,8 +278,12 @@ describe('AddCategoryDialog', () => {
     renderDialog({ programs }, authValue)
     await user.click(screen.getByLabelText('Specific programs'))
 
-    expect(screen.getByText('Nursing').closest('.MuiChip-root')).not.toHaveClass('Mui-disabled')
-    expect(screen.getByText('Dental').closest('.MuiChip-root')).toHaveClass('Mui-disabled')
+    expect(screen.getByText('Nursing').closest('[data-testid="program-chip"]')).not.toHaveClass(
+      'Mui-disabled',
+    )
+    expect(screen.getByText('Dental').closest('[data-testid="program-chip"]')).toHaveClass(
+      'Mui-disabled',
+    )
     expect(screen.getByText('You can only restrict to programs you belong to.')).toBeInTheDocument()
   })
 

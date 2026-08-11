@@ -63,6 +63,24 @@ import {
   updateUser,
   deleteUser as apiDeleteUser,
   bulkUpdateUserProgram,
+  fetchUsersPaged,
+  bulkUpdateUserRole,
+  bulkDeleteUsers,
+  addGroupMembersBulk,
+  removeGroupMembersBulk,
+  addGroupInstructorsBulk,
+  removeGroupInstructorsBulk,
+  fetchFilesImportArchives,
+  rerunFilesImportArchive,
+  deleteFilesImportArchive,
+  listExportArchives,
+  purgeExportArchive,
+  startRebuildTiles,
+  getUploadStatus,
+  finalizeUpload,
+  type FilesImportArchive,
+  type FilesImportArchiveDeleteResponse,
+  type ExportArchive,
   fetchPrograms,
   createProgram,
   updateProgram,
@@ -540,6 +558,56 @@ describe('request helper (via wrapper functions)', () => {
         category_ids: [1],
       },
     })
+  })
+
+  it('never surfaces "[object Object]" for structured detail without a message field', async () => {
+    const body = JSON.stringify({ detail: { category_ids: [1] } })
+    mockFetch.mockReturnValueOnce(
+      Promise.resolve({
+        ok: false,
+        status: 400,
+        statusText: 'Bad Request',
+        headers: { get: () => null },
+        json: () => Promise.resolve({ detail: { category_ids: [1] } }),
+        text: () => Promise.resolve(body),
+      }),
+    )
+
+    try {
+      await createGroup({ name: 'New Group' })
+      expect.unreachable('createGroup should have thrown')
+    } catch (e) {
+      expect(e).toBeInstanceOf(ApiError)
+      const err = e as ApiError
+      expect(err.status).toBe(400)
+      expect(err.detail).toBe('')
+      expect(err.data).toEqual({ category_ids: [1] })
+      expect(userMessage(err, 'fallback')).toBe('fallback')
+    }
+  })
+
+  it('never surfaces "null" for a null detail', async () => {
+    const body = JSON.stringify({ detail: null })
+    mockFetch.mockReturnValueOnce(
+      Promise.resolve({
+        ok: false,
+        status: 400,
+        statusText: 'Bad Request',
+        headers: { get: () => null },
+        json: () => Promise.resolve({ detail: null }),
+        text: () => Promise.resolve(body),
+      }),
+    )
+
+    try {
+      await createGroup({ name: 'New Group' })
+      expect.unreachable('createGroup should have thrown')
+    } catch (e) {
+      expect(e).toBeInstanceOf(ApiError)
+      const err = e as ApiError
+      expect(err.detail).toBe('')
+      expect(userMessage(err, 'fallback')).toBe('fallback')
+    }
   })
 })
 
@@ -1499,5 +1567,266 @@ describe('XHR upload abort support', () => {
     // Rejects directly without calling xhr.abort() (abort before send
     // doesn't fire the abort event per XHR spec).
     expect(xhrInstances[0].send).not.toHaveBeenCalled()
+  })
+})
+
+// ── Paginated users (#125) ───────────────────────────────────────────────
+
+describe('fetchUsersPaged', () => {
+  beforeEach(() => {
+    mockFetch.mockReset()
+    setToken('jwt')
+  })
+  afterEach(() => setToken(null))
+
+  function pagedResponse(items: unknown[], totalHeader: string | null) {
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: (key: string) => (key === 'X-Total-Count' ? totalHeader : null) },
+      json: () => Promise.resolve(items),
+      text: () => Promise.resolve(JSON.stringify(items)),
+    })
+  }
+
+  it('builds the query string from all params and reads X-Total-Count', async () => {
+    mockFetch.mockReturnValueOnce(pagedResponse([USER_FIXTURE], '42'))
+    const result = await fetchUsersPaged({
+      role: 'student',
+      programIds: [1, 2],
+      q: '  smith  ',
+      page: 3,
+      pageSize: 25,
+    })
+    const [url] = mockFetch.mock.calls[0]
+    expect(url).toBe(
+      '/api/users/?role=student&program_id=1&program_id=2&q=smith&page=3&page_size=25',
+    )
+    expect(result).toEqual({ items: [USER_FIXTURE], total: 42 })
+  })
+
+  it('omits the query string entirely when no params are set', async () => {
+    mockFetch.mockReturnValueOnce(pagedResponse([], null))
+    const result = await fetchUsersPaged({})
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/users/')
+    expect(result).toEqual({ items: [], total: 0 })
+  })
+
+  it('falls back to the item count when X-Total-Count is absent', async () => {
+    mockFetch.mockReturnValueOnce(pagedResponse([USER_FIXTURE, USER_FIXTURE], null))
+    const result = await fetchUsersPaged({ page: 1 })
+    expect(result.total).toBe(2)
+  })
+
+  it('ignores a blank q filter', async () => {
+    mockFetch.mockReturnValueOnce(pagedResponse([], null))
+    await fetchUsersPaged({ q: '   ' })
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/users/')
+  })
+
+  it('throws ApiError with parsed detail on failure', async () => {
+    mockFetch.mockReturnValueOnce(errorResponse(403, JSON.stringify({ detail: 'Forbidden' })))
+    const err = await fetchUsersPaged({ role: 'student' }).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(ApiError)
+    expect((err as ApiError).status).toBe(403)
+    expect((err as ApiError).detail).toBe('Forbidden')
+  })
+})
+
+// ── Bulk user operations (#125) ──────────────────────────────────────────
+
+describe('Bulk user API', () => {
+  beforeEach(() => {
+    mockFetch.mockReset()
+    setToken('jwt')
+  })
+  afterEach(() => setToken(null))
+
+  it('bulkUpdateUserRole sends PATCH to /api/users/bulk/role', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse([USER_FIXTURE]))
+    await bulkUpdateUserRole({ user_ids: [1, 2], role: 'instructor' })
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/users/bulk/role')
+    expect(init.method).toBe('PATCH')
+    expect(JSON.parse(init.body)).toEqual({ user_ids: [1, 2], role: 'instructor' })
+  })
+
+  it('bulkDeleteUsers sends DELETE to /api/users/bulk', async () => {
+    mockFetch.mockReturnValueOnce(noContentResponse())
+    await bulkDeleteUsers({ user_ids: [1, 2, 3] })
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/users/bulk')
+    expect(init.method).toBe('DELETE')
+    expect(JSON.parse(init.body)).toEqual({ user_ids: [1, 2, 3] })
+  })
+})
+
+// ── Bulk group membership operations (#125) ──────────────────────────────
+
+describe('Bulk group membership API', () => {
+  const GROUP = { id: 7, name: 'Cohort A', description: null }
+
+  beforeEach(() => {
+    mockFetch.mockReset()
+    setToken('jwt')
+  })
+  afterEach(() => setToken(null))
+
+  it('addGroupMembersBulk sends POST to /groups/:id/members/bulk', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(GROUP))
+    await addGroupMembersBulk(7, [1, 2])
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/groups/7/members/bulk')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body)).toEqual({ user_ids: [1, 2] })
+  })
+
+  it('removeGroupMembersBulk sends DELETE to /groups/:id/members/bulk', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(GROUP))
+    await removeGroupMembersBulk(7, [3])
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/groups/7/members/bulk')
+    expect(init.method).toBe('DELETE')
+    expect(JSON.parse(init.body)).toEqual({ user_ids: [3] })
+  })
+
+  it('addGroupInstructorsBulk sends POST to /groups/:id/instructors/bulk', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(GROUP))
+    await addGroupInstructorsBulk(7, [4, 5])
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/groups/7/instructors/bulk')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body)).toEqual({ user_ids: [4, 5] })
+  })
+
+  it('removeGroupInstructorsBulk sends DELETE to /groups/:id/instructors/bulk', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(GROUP))
+    await removeGroupInstructorsBulk(7, [6])
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/groups/7/instructors/bulk')
+    expect(init.method).toBe('DELETE')
+    expect(JSON.parse(init.body)).toEqual({ user_ids: [6] })
+  })
+})
+
+// ── Admin archive management (#125) ──────────────────────────────────────
+
+describe('Admin archive API', () => {
+  beforeEach(() => {
+    mockFetch.mockReset()
+    setToken('jwt')
+  })
+  afterEach(() => setToken(null))
+
+  const ARCHIVE: FilesImportArchive = {
+    archive_task_id: 9,
+    original_filename: 'import.tar.gz',
+    size_bytes: 1024,
+    created_at: '2026-01-01T00:00:00Z',
+    last_status: 'completed',
+  }
+
+  const EXPORT_ARCHIVE: ExportArchive = {
+    task_id: 5,
+    task_type: 'files_export',
+    artifact_role: 'result',
+    filename: 'export.tar.gz',
+    size_bytes: 2048,
+    status: 'completed',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:01:00Z',
+    purgeable: true,
+  }
+
+  it('fetchFilesImportArchives sends GET to the archives listing', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse([ARCHIVE]))
+    const result = await fetchFilesImportArchives()
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/admin/tasks/files-import/archives')
+    expect(result).toEqual([ARCHIVE])
+  })
+
+  it('rerunFilesImportArchive sends POST with the archive task id', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse({ id: 10, status: 'pending' }))
+    await rerunFilesImportArchive(9)
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/admin/tasks/files-import/rerun')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body)).toEqual({ archive_task_id: 9 })
+  })
+
+  it('deleteFilesImportArchive sends DELETE to the archive path', async () => {
+    const resp: FilesImportArchiveDeleteResponse = {
+      archive_task_id: 9,
+      deleted: true,
+      path: '/data/import-archives/9.tar.gz',
+    }
+    mockFetch.mockReturnValueOnce(jsonResponse(resp))
+    const result = await deleteFilesImportArchive(9)
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/admin/tasks/files-import/archives/9')
+    expect(init.method).toBe('DELETE')
+    expect(result).toEqual(resp)
+  })
+
+  it('listExportArchives sends GET to /admin/tasks/backup-archives', async () => {
+    const resp = { archives: [EXPORT_ARCHIVE], total_size_bytes: 2048 }
+    mockFetch.mockReturnValueOnce(jsonResponse(resp))
+    const result = await listExportArchives()
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/admin/tasks/backup-archives')
+    expect(result).toEqual(resp)
+  })
+
+  it('purgeExportArchive sends DELETE to the archive artifact path', async () => {
+    const resp = { deleted: true, task_id: 5, artifact_role: 'result', size_bytes: 100 }
+    mockFetch.mockReturnValueOnce(jsonResponse(resp))
+    const result = await purgeExportArchive(5, 'result')
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/admin/tasks/backup-archives/5/result')
+    expect(init.method).toBe('DELETE')
+    expect(result).toEqual(resp)
+  })
+
+  it('startRebuildTiles defaults to the missing_stale scope', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse({ id: 11, status: 'pending' }))
+    await startRebuildTiles()
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/admin/tasks/rebuild-tiles')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body)).toEqual({ scope: 'missing_stale' })
+  })
+
+  it('startRebuildTiles forwards an explicit scope and image ids', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse({ id: 12, status: 'pending' }))
+    await startRebuildTiles({ scope: 'all', image_ids: [1, 2] })
+    const [, init] = mockFetch.mock.calls[0]
+    expect(JSON.parse(init.body)).toEqual({ scope: 'all', image_ids: [1, 2] })
+  })
+})
+
+// ── Chunked upload status helpers (#125) ─────────────────────────────────
+
+describe('Upload status API', () => {
+  beforeEach(() => {
+    mockFetch.mockReset()
+    setToken('jwt')
+  })
+  afterEach(() => setToken(null))
+
+  it('getUploadStatus sends GET to /admin/tasks/:id/upload', async () => {
+    const resp = { bytes_received: 2048, status: 'uploading' }
+    mockFetch.mockReturnValueOnce(jsonResponse(resp))
+    const result = await getUploadStatus(3)
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/admin/tasks/3/upload')
+    expect(result).toEqual(resp)
+  })
+
+  it('finalizeUpload sends POST with the total byte count', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse({ id: 3, status: 'pending' }))
+    await finalizeUpload(3, 4096)
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/admin/tasks/3/upload/finalize')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body)).toEqual({ total_bytes: 4096 })
   })
 })

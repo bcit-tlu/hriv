@@ -47,6 +47,16 @@ const groups: Group[] = [
     createdAt: '',
     updatedAt: '',
   },
+  {
+    id: 8,
+    name: 'Lab B1',
+    description: null,
+    createdByUserId: null,
+    memberIds: [],
+    instructorIds: [],
+    createdAt: '',
+    updatedAt: '',
+  },
 ]
 
 const USERS = [
@@ -203,9 +213,14 @@ describe('PeoplePage', () => {
       expect(screen.getAllByText('Medical Lab').length).toBeGreaterThan(0)
     })
 
-    // Program name rendered as a MUI Chip (filter panel + table row)
-    const chips = screen.getAllByText('Medical Lab').map((el) => el.closest('.MuiChip-root'))
-    expect(chips.some(Boolean)).toBe(true)
+    // Program name rendered as a chip in the student's table row
+    const studentRow = screen.getByText('Test Student').closest('tr')
+    expect(studentRow).not.toBeNull()
+    expect(
+      within(studentRow as HTMLElement)
+        .getByText('Medical Lab')
+        .closest('[data-testid="program-chip"]'),
+    ).toBeInTheDocument()
   })
 
   it('shows the configured default visible columns', async () => {
@@ -724,7 +739,7 @@ describe('PeoplePage', () => {
     expect(
       within(studentRow as HTMLElement)
         .getByText('Lab A2')
-        .closest('.MuiChip-root'),
+        .closest('[data-testid="group-chip"]'),
     ).toBeInTheDocument()
   })
 
@@ -787,8 +802,56 @@ describe('PeoplePage', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Bulk Add to Groups')).toBeInTheDocument()
-      expect(screen.getByText(/Failed to add person to 1 of 1 group/i)).toBeInTheDocument()
+      expect(screen.getByText(/Failed to add 1 person to 1 of 1 group/i)).toBeInTheDocument()
       expect(screen.getByText(/Group add failed/i)).toBeInTheDocument()
     })
+  })
+
+  it('prunes succeeded groups and aggregates distinct failure reasons on partial failure', async () => {
+    const user = userEvent.setup()
+    const apiGroup: ApiGroup = {
+      id: 7,
+      name: 'Lab A2',
+      description: null,
+      created_by_user_id: null,
+      member_ids: [1],
+      instructor_ids: [],
+      created_at: '',
+      updated_at: '',
+    }
+    vi.mocked(addGroupMembersBulk).mockImplementation((groupId: number) =>
+      groupId === 7
+        ? Promise.resolve(apiGroup)
+        : Promise.reject(new ApiError(422, 'Lab B1 add failed')),
+    )
+    render(<PeoplePage programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    const checkboxes = screen.getAllByRole('checkbox')
+    await user.click(checkboxes[1])
+
+    await user.click(screen.getByText('Bulk Groups (1)'))
+    expect(screen.getByText('Bulk Add to Groups')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('combobox'))
+    await user.click(screen.getByRole('option', { name: 'Lab A2' }))
+    await user.click(screen.getByRole('option', { name: 'Lab B1' }))
+    await user.keyboard('{Escape}')
+    await user.click(screen.getByRole('button', { name: 'Add to Groups' }))
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Added to 1 group, but failed to add 1 person to 1 of 2 groups/i),
+      ).toBeInTheDocument()
+      expect(screen.getByText(/Lab B1 add failed/i)).toBeInTheDocument()
+    })
+
+    // Succeeded group is pruned from the selection; only the failed one remains
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('Lab B1')).toBeInTheDocument()
+    expect(within(dialog).queryByText('Lab A2')).not.toBeInTheDocument()
   })
 })

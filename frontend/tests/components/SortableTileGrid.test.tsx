@@ -128,8 +128,12 @@ describe('SortableTileGrid', () => {
       canEditContent: false,
     })
 
-    expect(screen.getByText('Pathology').closest('.MuiChip-root')).toHaveStyle({ opacity: '0.6' })
-    expect(screen.getByText('Lab A2').closest('.MuiChip-root')).toHaveStyle({ opacity: '0.6' })
+    expect(screen.getByText('Pathology').closest('[data-testid="program-chip"]')).toHaveStyle({
+      opacity: '0.6',
+    })
+    expect(screen.getByText('Lab A2').closest('[data-testid="group-chip"]')).toHaveStyle({
+      opacity: '0.6',
+    })
   })
 
   it('does not reduce child tile opacity when browsing inside a hidden category', () => {

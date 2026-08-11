@@ -2,6 +2,7 @@ import { createRef, useEffect, type ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import App from '../src/App'
+import { fetchVersions, fetchFrontendVersion } from '../src/api'
 
 const expectEffectiveOpacity = (element: Element | null, opacity: string) => {
   expect(element).toBeInTheDocument()
@@ -326,6 +327,15 @@ vi.mock('../src/useAuth', () => ({
   useAuth: () => authState,
 }))
 
+vi.mock('../src/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/api')>()
+  return {
+    ...actual,
+    fetchVersions: vi.fn().mockResolvedValue({ backend: '1.0.0', backup: '1.0.1' }),
+    fetchFrontendVersion: vi.fn().mockResolvedValue({ frontend: '1.0.2' }),
+  }
+})
+
 vi.mock('../src/useColorMode', () => ({
   useColorMode: () => ({ mode: 'light' }),
 }))
@@ -463,10 +473,10 @@ describe('App breadcrumbs', () => {
 
     const programChip = within(imageBreadcrumb as HTMLElement)
       .getByText('Pathology')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="program-chip"]')
     const groupChip = within(imageBreadcrumb as HTMLElement)
       .getByText('Lab A2')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="group-chip"]')
     const editButton = screen.getByRole('button', { name: 'Edit Details' })
     const shareButton = screen.getByText('Share View').closest('button')
 
@@ -554,10 +564,10 @@ describe('App breadcrumbs', () => {
 
     const programChip = within(imageBreadcrumb as HTMLElement)
       .getByText('Pathology')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="program-chip"]')
     const groupChip = within(imageBreadcrumb as HTMLElement)
       .getByText('Lab A2')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="group-chip"]')
     const hiddenButton = screen.getByRole('button', { name: 'Visibility: Hidden by category' })
     const editButton = screen.getByRole('button', { name: 'Edit Details' })
     const shareButton = screen.getByText('Share View').closest('button')
@@ -615,10 +625,10 @@ describe('App breadcrumbs', () => {
 
     const categoryProgramChip = within(categoryBreadcrumb as HTMLElement)
       .getByText('Pathology')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="program-chip"]')
     const categoryGroupChip = within(categoryBreadcrumb as HTMLElement)
       .getByText('Lab A2')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="group-chip"]')
 
     expect(categoryProgramChip).toHaveStyle({ opacity: '0.6' })
     expect(categoryGroupChip).toHaveStyle({ opacity: '0.6' })
@@ -630,10 +640,10 @@ describe('App breadcrumbs', () => {
 
     const imageProgramChip = within(imageBreadcrumb as HTMLElement)
       .getByText('Pathology')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="program-chip"]')
     const imageGroupChip = within(imageBreadcrumb as HTMLElement)
       .getByText('Lab A2')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="group-chip"]')
 
     expect(imageProgramChip).toHaveStyle({ opacity: '0.6' })
     expect(imageGroupChip).toHaveStyle({ opacity: '0.6' })
@@ -723,5 +733,25 @@ describe('App breadcrumbs', () => {
 
     await screen.findByRole('progressbar')
     expect(announcementModalMock.loadAnnouncement).not.toHaveBeenCalled()
+  })
+
+  it('fetches component versions for instructors (canEditContent)', async () => {
+    render(<App />)
+
+    expect(vi.mocked(fetchVersions)).toHaveBeenCalledOnce()
+    expect(vi.mocked(fetchFrontendVersion)).toHaveBeenCalledOnce()
+  })
+
+  it('does not fetch component versions for students', async () => {
+    authState = {
+      ...authState,
+      currentUser: { ...mockCurrentUser, role: 'student' as const },
+      canEditContent: false,
+    }
+
+    render(<App />)
+
+    expect(vi.mocked(fetchVersions)).not.toHaveBeenCalled()
+    expect(vi.mocked(fetchFrontendVersion)).not.toHaveBeenCalled()
   })
 })

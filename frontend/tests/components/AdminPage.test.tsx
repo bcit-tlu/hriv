@@ -215,7 +215,7 @@ describe('AdminPage', () => {
     await waitFor(() => expect(mockFetchAdminTasks).toHaveBeenCalledTimes(1))
   })
 
-  it('shows export actions first and keeps recent tasks collapsed on the backups tab', async () => {
+  it('groups data-transfer cards together and keeps recent tasks collapsed on the backups tab', async () => {
     const user = userEvent.setup()
     mockFetchAdminTasks.mockResolvedValue([
       {
@@ -236,13 +236,28 @@ describe('AdminPage', () => {
 
     await user.click(screen.getByRole('tab', { name: 'Backups' }))
 
-    expect(screen.getByRole('heading', { name: 'Export' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Import' })).toBeInTheDocument()
     expect(screen.getByText('Export Database')).toBeInTheDocument()
     expect(screen.getByText('Export Files')).toBeInTheDocument()
     expect(screen.getByText('Import Database')).toBeInTheDocument()
     expect(screen.getByText('Import Files')).toBeInTheDocument()
     const recentTasksToggle = screen.getByRole('button', { name: /Recent Tasks/i })
+
+    // Documented layout order: transfer cards, restore panel, recent tasks,
+    // then the archive-history panels (docs/ui-behaviour-spec.md).
+    const precedes = (a: Node, b: Node) =>
+      (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+    const restoreHeading = screen.getByRole('heading', { name: 'Restore individual file' })
+    expect(precedes(screen.getByText('Import Files'), restoreHeading)).toBe(true)
+    expect(precedes(restoreHeading, recentTasksToggle)).toBe(true)
+    expect(
+      precedes(recentTasksToggle, screen.getByRole('heading', { name: 'Stored export archives' })),
+    ).toBe(true)
+    expect(
+      precedes(
+        screen.getByRole('heading', { name: 'Stored export archives' }),
+        screen.getByRole('heading', { name: 'Previously uploaded import archives' }),
+      ),
+    ).toBe(true)
     expect(recentTasksToggle).toHaveAttribute('aria-expanded', 'false')
 
     await user.click(recentTasksToggle)

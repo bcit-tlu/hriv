@@ -1134,6 +1134,7 @@ export default function ManagePage({
                   return getFilterTerms(value).map((term) => (
                     <Chip
                       key={`${key}:${term}`}
+                      data-testid="filter-chip"
                       label={`${labels[key] ?? key}: ${term}`}
                       size="small"
                       onDelete={() => handleRemoveFilterTerm(key, term)}
@@ -1155,6 +1156,7 @@ export default function ManagePage({
               {selectedCategoryOptions.map((category) => (
                 <Chip
                   key={`category:${category.id}`}
+                  data-testid="filter-chip"
                   label={`Category: ${category.label}`}
                   size="small"
                   onDelete={() => {
@@ -1182,6 +1184,7 @@ export default function ManagePage({
               {selectedProgramOptions.map((program) => (
                 <Chip
                   key={`program:${program.id}`}
+                  data-testid="filter-chip"
                   label={`Program: ${program.name}`}
                   size="small"
                   onDelete={() => {
@@ -1209,6 +1212,7 @@ export default function ManagePage({
               {selectedGroupOptions.map((group) => (
                 <Chip
                   key={`group:${group.id}`}
+                  data-testid="filter-chip"
                   label={`Group: ${group.name}`}
                   size="small"
                   onDelete={() => {
@@ -1236,6 +1240,7 @@ export default function ManagePage({
               {selectedVisibilityValues.map((value) => (
                 <Chip
                   key={`visibility:${value}`}
+                  data-testid="filter-chip"
                   label={`Visibility: ${value === 'active' ? 'Visible' : 'Hidden'}`}
                   size="small"
                   onDelete={() => {
@@ -1696,6 +1701,7 @@ export default function ManagePage({
                                 .map((p) => (
                                   <Chip
                                     key={p.id}
+                                    data-testid="program-chip"
                                     label={p.name}
                                     size="small"
                                     onClick={() => chipClick(p.id)}
@@ -1716,6 +1722,7 @@ export default function ManagePage({
                                 .map((p) => (
                                   <Chip
                                     key={p.id}
+                                    data-testid="program-chip"
                                     label={p.name}
                                     size="small"
                                     onClick={() => chipClick(p.id)}
@@ -1757,6 +1764,7 @@ export default function ManagePage({
                                 .map((g) => (
                                   <Chip
                                     key={g.id}
+                                    data-testid="group-chip"
                                     label={g.name}
                                     size="small"
                                     color="secondary"
@@ -1778,6 +1786,7 @@ export default function ManagePage({
                                 .map((g) => (
                                   <Chip
                                     key={g.id}
+                                    data-testid="group-chip"
                                     label={g.name}
                                     size="small"
                                     color="secondary"

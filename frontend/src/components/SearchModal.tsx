@@ -647,6 +647,7 @@ export default function SearchModal({
             ).map((f) => (
               <Tooltip key={f.key} title={f.tooltip}>
                 <Chip
+                  data-testid="type-filter-chip"
                   icon={f.icon}
                   label={f.label}
                   size="small"
@@ -668,6 +669,7 @@ export default function SearchModal({
             {FIELD_FILTERS.filter((f) => !(isStudent && f.key === 'Role')).map((f) => (
               <Tooltip key={f.key} title={f.tooltip}>
                 <Chip
+                  data-testid="field-filter-chip"
                   icon={f.icon}
                   label={f.label}
                   size="small"
@@ -724,6 +726,7 @@ export default function SearchModal({
                 return (
                   <Card key={`${result.kind}-${result.entityId}`} variant="outlined">
                     <CardActionArea
+                      data-testid="search-result-action-area"
                       onClick={() => handleSelect(result)}
                       sx={{ p: 2, display: 'flex', alignItems: 'flex-start', gap: 2 }}
                     >
@@ -754,7 +757,11 @@ export default function SearchModal({
                           }}
                         >
                           {result.kind === 'program' ? (
-                            <Chip label={result.label} size="small" />
+                            <Chip
+                              data-testid="program-result-chip"
+                              label={result.label}
+                              size="small"
+                            />
                           ) : (
                             <Typography variant="subtitle2" noWrap>
                               {result.label}
@@ -783,7 +790,13 @@ export default function SearchModal({
                               }}
                             >
                               {chipNames.map((name) => (
-                                <Chip key={name} label={name} size="small" color="primary" />
+                                <Chip
+                                  key={name}
+                                  data-testid="program-chip"
+                                  label={name}
+                                  size="small"
+                                  color="primary"
+                                />
                               ))}
                             </Box>
                           )}
