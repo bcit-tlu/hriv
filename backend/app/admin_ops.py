@@ -7,6 +7,7 @@ with progress, log output, and results.
 """
 
 import asyncio
+import hashlib
 import io
 import json
 import logging
@@ -70,6 +71,28 @@ _IMPORT_STAGING_MIN_FREE_BYTES = int(
     os.environ.get("IMPORT_STAGING_MIN_FREE_BYTES", str(1024 * 1024 * 1024))
 )
 _IMPORT_STAGING_FREE_SPACE_CHECK_INTERVAL_BYTES = 512 * 1024 * 1024
+
+
+# ── Retained import archive integrity ──────────────────────
+#
+# The SHA-256 of an import archive is recorded on its AdminTask the first
+# time the archive is imported.  Reruns of a retained archive inherit the
+# recorded checksum and verify the on-disk file still matches before any
+# extraction, so corrupted or modified retained archives are rejected.
+
+FILES_IMPORT_CHECKSUM_MISMATCH_MESSAGE = (
+    "The retained archive no longer matches the originally uploaded file "
+    "and cannot be reused. Please upload a new archive."
+)
+
+
+def compute_archive_sha256(path: str | Path) -> str:
+    """Return the hex SHA-256 digest of *path*, read in chunks."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(_CHUNK_SIZE), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 # ── Filesystem export/import archive manifest ──────────────
@@ -666,6 +689,7 @@ async def _create_rerun_files_import_task(
     *,
     input_path: str,
     original_filename: str | None,
+    input_checksum: str | None,
 ) -> AdminTask:
     existing = (
         await session.execute(
@@ -688,6 +712,7 @@ async def _create_rerun_files_import_task(
         created_by=user.id,
         input_path=input_path,
         original_filename=original_filename,
+        input_checksum=input_checksum,
     )
     session.add(task)
     await session.commit()
@@ -742,6 +767,7 @@ async def rerun_files_import_archive(
         user,
         input_path=str(archive_path),
         original_filename=_extract_files_import_original_filename(archive_task),
+        input_checksum=archive_task.input_checksum,
     )
     task.log = (
         (task.log or "")
@@ -2558,6 +2584,42 @@ async def run_files_import(
                     "staging and extraction, "
                     f"have {format_bytes(free_bytes)}"
                 )
+
+            await _update_task(
+                session, task, progress=2,
+                log_line="Computing archive SHA-256 for integrity verification…",
+                check_cancelled=True,
+            )
+            checksum = await asyncio.to_thread(
+                compute_archive_sha256, input_path
+            )
+            if task.input_checksum:
+                if checksum != task.input_checksum:
+                    raise ValueError(FILES_IMPORT_CHECKSUM_MISMATCH_MESSAGE)
+                checksum_note = (
+                    "Archive integrity verified: SHA-256 matches the "
+                    "original upload."
+                )
+            else:
+                task.input_checksum = checksum
+                # Backfill tasks sharing this retained archive (e.g. the
+                # pre-checksum task a rerun was launched from) so future
+                # reruns from any of them verify against this baseline.
+                await session.execute(
+                    update(AdminTask)
+                    .where(
+                        AdminTask.task_type == "files_import",
+                        AdminTask.input_path == input_path,
+                        AdminTask.input_checksum.is_(None),
+                    )
+                    .values(input_checksum=checksum)
+                )
+                checksum_note = f"Archive SHA-256 recorded: {checksum}."
+            await _update_task(
+                session, task, progress=3,
+                log_line=checksum_note,
+                check_cancelled=True,
+            )
 
             await _update_task(
                 session, task, progress=5,

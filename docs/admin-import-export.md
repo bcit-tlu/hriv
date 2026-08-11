@@ -256,6 +256,29 @@ single archive. The active policy is exposed at
 UI next to the cumulative-usage summary whenever a non-zero policy is
 configured.
 
+### Retained archive integrity verification
+
+The SHA-256 checksum of an import archive is recorded on its `AdminTask`
+(`admin_tasks.input_checksum`) the first time the archive is imported.
+Re-running a retained archive creates a new task that inherits the recorded
+checksum; `run_files_import` recomputes the archive's SHA-256 before any
+extraction or `/data` mutation and rejects the rerun if the on-disk file no
+longer matches:
+
+> The retained archive no longer matches the originally uploaded file and
+> cannot be reused. Please upload a new archive.
+
+This detects accidental filesystem corruption or manual modification of
+retained archives and makes reruns reproducible. It is an integrity check,
+not a security feature — it complements (and does not replace) the archive
+path validation and manifest validation above. Archives retained before this
+feature have no recorded checksum; their next import records a baseline
+checksum (backfilled onto every task sharing that archive's `input_path`, so
+reruns launched from any of those tasks verify against it). The task log shows
+either `Archive SHA-256 recorded: <hex>.` (baseline) or
+`Archive integrity verified: SHA-256 matches the original upload.` (verified
+rerun).
+
 ## Stored export archives
 
 Completed `db_export` and `files_export` tasks leave their result archive on the

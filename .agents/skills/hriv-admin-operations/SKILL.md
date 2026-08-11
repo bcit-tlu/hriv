@@ -48,6 +48,11 @@ Use this skill for administrator-facing operations and long-running task flows.
   unsupported format versions with a clear error, while manifest-less legacy
   archives (e.g. previously retained ones) still import as format v0 with a
   warning. See `docs/admin-import-export.md#archive-manifest-and-format-versioning`.
+  The SHA-256 of an import archive is recorded on its `AdminTask`
+  (`admin_tasks.input_checksum`) on first import; reruns of a retained archive
+  inherit the checksum and are rejected before extraction if the on-disk file
+  no longer matches. See
+  `docs/admin-import-export.md#retained-archive-integrity-verification`.
   The import also uses a
   coarse compressed-size preflight plus a runtime free-space floor so highly
   compressible archives still fail before the swap if the staging volume runs
