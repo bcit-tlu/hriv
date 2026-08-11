@@ -168,6 +168,17 @@ hidden through group narrowing; the warning does not block saving.
 | Group API wrappers / types (`ApiGroup`, `fetchUsersPaged`, `addGroupMembersBulk`, …) | `api.ts`                                                                |
 | Group chip colours                                                                   | `theme.ts` (`getGroupChipColors`)                                       |
 
+### Bulk add-to-groups partial failure
+
+Bulk add from the People table fires one `addGroupMembersBulk` call per
+selected group. On partial failure the modal stays open with only the
+**failed** groups still selected (succeeded groups are pruned so a retry does
+not redundantly re-hit them), and the error snackbar aggregates distinct
+failure reasons (showing at most three, with an "and N more distinct errors"
+suffix) rather than only the first one. The group selector is disabled while a
+save is in flight. The endpoint skips already-added members, so retries are
+idempotent.
+
 ### Manage Groups modal
 
 The Manage Groups workflow is a master-detail modal: a left rail lists groups

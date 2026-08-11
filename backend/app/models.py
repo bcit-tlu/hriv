@@ -439,6 +439,7 @@ class AdminTask(Base):
     original_filename: Mapped[str | None] = mapped_column(
         String(500), nullable=True,
     )
+    input_checksum: Mapped[str | None] = mapped_column(String(64), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True,

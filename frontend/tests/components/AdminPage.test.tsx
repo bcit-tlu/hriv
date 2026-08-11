@@ -21,6 +21,7 @@ vi.mock('../../src/api', async () => {
     listBackupSnapshots: vi.fn(),
     fetchBackupSnapshotManifest: vi.fn(),
     fetchFilesImportArchives: vi.fn(),
+    fetchFilesImportArchiveRetention: vi.fn(),
     listExportArchives: vi.fn(),
     purgeExportArchive: vi.fn(),
     startFileRestore: vi.fn(),
@@ -52,6 +53,7 @@ const mockStartRebuildTiles = vi.mocked(api.startRebuildTiles)
 const mockListBackupSnapshots = vi.mocked(api.listBackupSnapshots)
 const mockFetchBackupSnapshotManifest = vi.mocked(api.fetchBackupSnapshotManifest)
 const mockFetchFilesImportArchives = vi.mocked(api.fetchFilesImportArchives)
+const mockFetchFilesImportArchiveRetention = vi.mocked(api.fetchFilesImportArchiveRetention)
 const mockListExportArchives = vi.mocked(api.listExportArchives)
 const mockPurgeExportArchive = vi.mocked(api.purgeExportArchive)
 const mockStartFileRestore = vi.mocked(api.startFileRestore)
@@ -68,6 +70,10 @@ describe('AdminPage', () => {
     mockFetchAdminTasks.mockResolvedValue([])
     mockListBackupSnapshots.mockResolvedValue([])
     mockFetchFilesImportArchives.mockResolvedValue([])
+    mockFetchFilesImportArchiveRetention.mockResolvedValue({
+      retention_count: 0,
+      retention_days: 0,
+    })
     mockListExportArchives.mockResolvedValue({ archives: [], total_size_bytes: 0 })
     mockPurgeExportArchive.mockResolvedValue({
       deleted: true,
@@ -209,7 +215,7 @@ describe('AdminPage', () => {
     await waitFor(() => expect(mockFetchAdminTasks).toHaveBeenCalledTimes(1))
   })
 
-  it('shows export actions first and keeps recent tasks collapsed on the backups tab', async () => {
+  it('groups data-transfer cards together and keeps recent tasks collapsed on the backups tab', async () => {
     const user = userEvent.setup()
     mockFetchAdminTasks.mockResolvedValue([
       {
@@ -230,13 +236,28 @@ describe('AdminPage', () => {
 
     await user.click(screen.getByRole('tab', { name: 'Backups' }))
 
-    expect(screen.getByRole('heading', { name: 'Export' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Import' })).toBeInTheDocument()
     expect(screen.getByText('Export Database')).toBeInTheDocument()
     expect(screen.getByText('Export Files')).toBeInTheDocument()
     expect(screen.getByText('Import Database')).toBeInTheDocument()
     expect(screen.getByText('Import Files')).toBeInTheDocument()
     const recentTasksToggle = screen.getByRole('button', { name: /Recent Tasks/i })
+
+    // Documented layout order: transfer cards, restore panel, recent tasks,
+    // then the archive-history panels (docs/ui-behaviour-spec.md).
+    const precedes = (a: Node, b: Node) =>
+      (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+    const restoreHeading = screen.getByRole('heading', { name: 'Restore individual file' })
+    expect(precedes(screen.getByText('Import Files'), restoreHeading)).toBe(true)
+    expect(precedes(restoreHeading, recentTasksToggle)).toBe(true)
+    expect(
+      precedes(recentTasksToggle, screen.getByRole('heading', { name: 'Stored export archives' })),
+    ).toBe(true)
+    expect(
+      precedes(
+        screen.getByRole('heading', { name: 'Stored export archives' }),
+        screen.getByRole('heading', { name: 'Previously uploaded import archives' }),
+      ),
+    ).toBe(true)
     expect(recentTasksToggle).toHaveAttribute('aria-expanded', 'false')
 
     await user.click(recentTasksToggle)
@@ -529,6 +550,31 @@ describe('AdminPage', () => {
     await user.click(screen.getByRole('tab', { name: 'Backups' }))
 
     expect(await screen.findByText('2 retained archives using 15.0 GiB')).toBeInTheDocument()
+  })
+
+  it('shows the active archive retention policy when configured', async () => {
+    const user = userEvent.setup()
+    mockFetchFilesImportArchiveRetention.mockResolvedValue({
+      retention_count: 3,
+      retention_days: 30,
+    })
+
+    render(<AdminPage />)
+    await user.click(screen.getByRole('tab', { name: 'Backups' }))
+
+    const alert = await screen.findByTestId('import-archive-retention')
+    expect(alert).toHaveTextContent('beyond the newest 3')
+    expect(alert).toHaveTextContent('after 30 days')
+  })
+
+  it('hides the retention notice when the policy is disabled', async () => {
+    const user = userEvent.setup()
+
+    render(<AdminPage />)
+    await user.click(screen.getByRole('tab', { name: 'Backups' }))
+
+    expect(await screen.findByText('Previously uploaded import archives')).toBeInTheDocument()
+    expect(screen.queryByTestId('import-archive-retention')).not.toBeInTheDocument()
   })
 
   it('lists stored export archives with cumulative usage and purges one', async () => {

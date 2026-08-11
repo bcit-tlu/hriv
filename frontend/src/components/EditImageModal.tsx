@@ -549,6 +549,7 @@ function EditImageForm({
       </DialogContent>
       {confirmViewImage && (
         <Box
+          data-testid="unsaved-changes-bar"
           sx={{
             px: 3,
             py: 1.5,

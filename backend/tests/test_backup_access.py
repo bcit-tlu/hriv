@@ -348,6 +348,50 @@ def test_restore_snapshot_file_happy_path(monkeypatch, tmp_path) -> None:
     assert result["member_path"] == "data/source_images/a.jpg"
 
 
+def test_restore_snapshot_file_uses_cached_manifest_entry(monkeypatch, tmp_path) -> None:
+    snapshot_name = "hriv-backup-20260102-020000"
+    file_payload = b"restored payload"
+    sha256 = hashlib.sha256(file_payload).hexdigest()
+    manifest = _snapshot_manifest(
+        snapshot_name,
+        {"data/source_images/a.jpg": (file_payload, sha256)},
+    )
+    tar_payload = _tar_bytes(snapshot_name, manifest, {"data/source_images/a.jpg": file_payload})
+    fake_container = _FakeContainer(
+        [],
+        {f"hriv-backups/{snapshot_name}.tar.gz": tar_payload},
+    )
+    _configure(monkeypatch, tmp_path, fake_container)
+
+    def _fail_fetch(_name: str) -> dict:
+        raise AssertionError("manifest should not be fetched when an entry is cached")
+
+    monkeypatch.setattr(backup_access, "get_snapshot_manifest", _fail_fetch)
+
+    result = restore_snapshot_file(
+        snapshot_name,
+        "data/source_images/a.jpg",
+        manifest_entry={"size": len(file_payload), "sha256": sha256},
+    )
+
+    restored = Path(backup_access.settings.data_dir) / "source_images" / "a.jpg"
+    assert restored.read_bytes() == file_payload
+    assert result["sha256"] == sha256
+
+
+def test_restore_snapshot_file_cached_entry_missing_fields_raises(monkeypatch, tmp_path) -> None:
+    snapshot_name = "hriv-backup-20260102-020000"
+    fake_container = _FakeContainer([], {})
+    _configure(monkeypatch, tmp_path, fake_container)
+
+    with pytest.raises(BackupSnapshotManifestError, match="missing sha256"):
+        restore_snapshot_file(
+            snapshot_name,
+            "data/source_images/a.jpg",
+            manifest_entry={"size": 3},
+        )
+
+
 def test_restore_snapshot_file_missing_archive_raises_not_found(monkeypatch, tmp_path) -> None:
     snapshot_name = "hriv-backup-20260102-020000"
     file_payload = b"restored payload"

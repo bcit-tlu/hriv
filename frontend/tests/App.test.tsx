@@ -626,10 +626,10 @@ describe('App breadcrumbs', () => {
 
     const programChip = within(imageBreadcrumb as HTMLElement)
       .getByText('Pathology')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="program-chip"]')
     const groupChip = within(imageBreadcrumb as HTMLElement)
       .getByText('Lab A2')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="group-chip"]')
     const editButton = screen.getByRole('button', { name: 'Edit Details' })
     const shareButton = screen.getByText('Share View').closest('button')
 
@@ -717,10 +717,10 @@ describe('App breadcrumbs', () => {
 
     const programChip = within(imageBreadcrumb as HTMLElement)
       .getByText('Pathology')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="program-chip"]')
     const groupChip = within(imageBreadcrumb as HTMLElement)
       .getByText('Lab A2')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="group-chip"]')
     const hiddenButton = screen.getByRole('button', { name: 'Visibility: Hidden by category' })
     const editButton = screen.getByRole('button', { name: 'Edit Details' })
     const shareButton = screen.getByText('Share View').closest('button')
@@ -778,10 +778,10 @@ describe('App breadcrumbs', () => {
 
     const categoryProgramChip = within(categoryBreadcrumb as HTMLElement)
       .getByText('Pathology')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="program-chip"]')
     const categoryGroupChip = within(categoryBreadcrumb as HTMLElement)
       .getByText('Lab A2')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="group-chip"]')
 
     expect(categoryProgramChip).toHaveStyle({ opacity: '0.6' })
     expect(categoryGroupChip).toHaveStyle({ opacity: '0.6' })
@@ -793,10 +793,10 @@ describe('App breadcrumbs', () => {
 
     const imageProgramChip = within(imageBreadcrumb as HTMLElement)
       .getByText('Pathology')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="program-chip"]')
     const imageGroupChip = within(imageBreadcrumb as HTMLElement)
       .getByText('Lab A2')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="group-chip"]')
 
     expect(imageProgramChip).toHaveStyle({ opacity: '0.6' })
     expect(imageGroupChip).toHaveStyle({ opacity: '0.6' })
@@ -830,6 +830,26 @@ describe('App breadcrumbs', () => {
 
     await screen.findByRole('progressbar')
     expect(announcementModalMock.loadAnnouncement).not.toHaveBeenCalled()
+  })
+
+  it('fetches component versions for instructors (canEditContent)', async () => {
+    render(<App />)
+
+    expect(vi.mocked(fetchVersions)).toHaveBeenCalledOnce()
+    expect(vi.mocked(fetchFrontendVersion)).toHaveBeenCalledOnce()
+  })
+
+  it('does not fetch component versions for students', async () => {
+    authState = {
+      ...authState,
+      currentUser: { ...mockCurrentUser, role: 'student' as const },
+      canEditContent: false,
+    }
+
+    render(<App />)
+
+    expect(vi.mocked(fetchVersions)).not.toHaveBeenCalled()
+    expect(vi.mocked(fetchFrontendVersion)).not.toHaveBeenCalled()
   })
 })
 
@@ -884,7 +904,7 @@ describe('App shell interactions', () => {
   })
 
   it('fetches deployed component versions for admins', async () => {
-    authState = { ...authState, canManageUsers: true }
+    authState = { ...authState, canEditContent: true }
     render(<App />)
 
     expect(await screen.findByText('versions: 1.0.0/1.0.0')).toBeInTheDocument()
@@ -897,13 +917,13 @@ describe('App shell interactions', () => {
     const { rerender } = render(<App />)
     expect(await screen.findByText('versions: 1.0.0/1.0.0')).toBeInTheDocument()
 
-    authState = { ...authState, canManageUsers: false }
+    authState = { ...authState, canEditContent: false }
     rerender(<App />)
     expect(await screen.findByText('versions: null/null')).toBeInTheDocument()
 
     vi.mocked(fetchVersions).mockRejectedValueOnce(new Error('down'))
     vi.mocked(fetchFrontendVersion).mockRejectedValueOnce(new Error('down'))
-    authState = { ...authState, canManageUsers: true }
+    authState = { ...authState, canEditContent: true }
     rerender(<App />)
     await waitFor(() => expect(fetchVersions).toHaveBeenCalledTimes(2))
     expect(screen.getByText('versions: null/null')).toBeInTheDocument()

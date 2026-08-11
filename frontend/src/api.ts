@@ -290,6 +290,11 @@ function parseError(text: string): { message: string; data?: unknown } {
           )
           .join('; ')
       else if (isMessageDetail(bodyDetail)) message = bodyDetail.message
+      // An object detail without a `message` field would stringify to
+      // "[object Object]" (and null to "null"); leave the message empty so
+      // userMessage falls back to the caller's message while `data` keeps
+      // the structured payload.
+      else if (bodyDetail === null || isRecord(bodyDetail)) message = ''
       else if (bodyDetail !== undefined) message = String(bodyDetail)
     }
   } catch {
@@ -1307,6 +1312,16 @@ export function startFilesExport(): Promise<AdminTask> {
 
 export function fetchFilesImportArchives(): Promise<FilesImportArchive[]> {
   return request('/admin/tasks/files-import/archives')
+}
+
+/** Active retention policy for retained import archives (0 = disabled). */
+export interface FilesImportArchiveRetentionPolicy {
+  retention_count: number
+  retention_days: number
+}
+
+export function fetchFilesImportArchiveRetention(): Promise<FilesImportArchiveRetentionPolicy> {
+  return request('/admin/tasks/files-import/archive-retention')
 }
 
 export interface RebuildTilesRequest {

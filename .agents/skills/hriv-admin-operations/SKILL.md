@@ -33,8 +33,27 @@ Use this skill for administrator-facing operations and long-running task flows.
 - Filesystem import stages on the data volume via `IMPORT_STAGING_DIR` (default
   `<data_dir>/.import-staging`) and swaps exported top-level entries into `/data`
   one by one; do not reintroduce `/tmp` staging or whole-directory restore/copy
-  behavior. Retained filesystem-import archives stay on disk for reruns; add a
-  cleanup path when operators need to reclaim space. The import also uses a
+  behavior. Retained filesystem-import archives stay on disk for reruns; an
+  optional retention policy (`FILES_IMPORT_ARCHIVE_RETENTION_COUNT` /
+  `FILES_IMPORT_ARCHIVE_RETENTION_DAYS`, both `0` = keep forever) prunes them
+  after each successful import and at startup via
+  `enforce_files_import_archive_retention`, which reuses the safe
+  `delete_files_import_archive` path so active archives are never removed.
+  The active policy is exposed at
+  `GET /admin/tasks/files-import/archive-retention` and surfaced in the admin
+  UI beside the cumulative-usage summary.
+  Filesystem exports embed a JSON manifest (`hriv-manifest.json`,
+  `format_version`/`hriv_version`/`export_type`/`created_at`) at the archive
+  root; imports validate it before swapping entries into `/data` and reject
+  unsupported format versions with a clear error, while manifest-less legacy
+  archives (e.g. previously retained ones) still import as format v0 with a
+  warning. See `docs/admin-import-export.md#archive-manifest-and-format-versioning`.
+  The SHA-256 of an import archive is recorded on its `AdminTask`
+  (`admin_tasks.input_checksum`) on first import; reruns of a retained archive
+  inherit the checksum and are rejected before extraction if the on-disk file
+  no longer matches. See
+  `docs/admin-import-export.md#retained-archive-integrity-verification`.
+  The import also uses a
   coarse compressed-size preflight plus a runtime free-space floor so highly
   compressible archives still fail before the swap if the staging volume runs
   low. Because entries are moved with `os.rename`, `IMPORT_STAGING_DIR` must be

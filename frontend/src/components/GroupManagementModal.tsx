@@ -485,6 +485,7 @@ export default function GroupManagementModal({
             {user.program_ids.map((programId) => (
               <Chip
                 key={programId}
+                data-testid="program-chip"
                 label={programNameById.get(programId) ?? `#${programId}`}
                 size="small"
                 color="primary"
@@ -577,6 +578,7 @@ export default function GroupManagementModal({
                   return (
                     <ListItemButton
                       key={group.id}
+                      data-testid="group-list-item"
                       selected={isSelected}
                       onClick={() => selectGroup(group.id)}
                       sx={{

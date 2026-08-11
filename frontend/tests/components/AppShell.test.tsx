@@ -84,7 +84,7 @@ describe('AppShell', () => {
       )
 
       expect(
-        screen.getByText('Maintenance tonight').closest('.MuiContainer-root')?.parentElement,
+        screen.getByText('Maintenance tonight').closest('[data-testid="announcement-banner"]'),
       ).toHaveStyle({
         backgroundColor: '#DAC7B5',
       })
@@ -390,7 +390,7 @@ describe('AppShell', () => {
         />,
       )
 
-      expect(screen.getByText('stu@example.com').closest('.MuiCard-root')).toHaveStyle({
+      expect(screen.getByText('stu@example.com').closest('[data-testid="user-card"]')).toHaveStyle({
         maxWidth: '280px',
       })
     })
