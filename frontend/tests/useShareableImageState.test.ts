@@ -286,9 +286,7 @@ describe('useShareableImageState', () => {
 
       const { rerender } = renderHook(
         (props: { categories: ReturnType<typeof makeCategory>[]; categoriesLoading: boolean }) =>
-          useShareableImageState(
-            makeDeps({ setPath, categories: props.categories, ...props }),
-          ),
+          useShareableImageState(makeDeps({ setPath, categories: props.categories, ...props })),
         { initialProps: { categories: [], categoriesLoading: true } },
       )
 

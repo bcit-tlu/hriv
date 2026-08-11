@@ -1012,9 +1012,11 @@ export default function ImageViewer({
     measure()
 
     if (typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver()
+    // The callback is REQUIRED by the DOM type (`new(callback): ResizeObserver`);
+    // omitting it fails the build (TS2554). A code-quality bot flags it as a
+    // "superfluous argument" — that's a false positive; dismiss that finding.
+    const observer = new ResizeObserver(() => measure())
     observer.observe(row)
-    measure()
     return () => observer.disconnect()
   }, [isMobile, viewerInstance])
 

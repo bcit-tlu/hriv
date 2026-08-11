@@ -1,5 +1,8 @@
 .git
 
+# Local Python virtualenv at the repo root (git-ignored; not part of the project)
+.venv
+
 frontend/node_modules
 frontend/dist
 frontend/coverage
