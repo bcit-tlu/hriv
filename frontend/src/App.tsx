@@ -273,8 +273,6 @@ export default function App() {
     [categories, selectedImage?.categoryId],
   )
   const currentCategoryHiddenState = useMemo(() => getCategoryHiddenStateFromPath(path), [path])
-  const currentCategoryInheritedHidden =
-    currentCategoryHiddenState.hiddenByAncestor && !currentCategoryHiddenState.directlyHidden
   const imageViewerHiddenByCategory = useMemo(
     () => selectedImageCategoryHidden.hidden || currentCategoryHiddenState.hidden,
     [selectedImageCategoryHidden.hidden, currentCategoryHiddenState.hidden],
@@ -284,10 +282,9 @@ export default function App() {
       currentCategoryHiddenState.hidden
         ? {
             filter: 'grayscale(100%)',
-            ...(currentCategoryInheritedHidden ? { opacity: 0.5 } : {}),
           }
         : undefined,
-    [currentCategoryHiddenState.hidden, currentCategoryInheritedHidden],
+    [currentCategoryHiddenState.hidden],
   )
   const inactiveViewerActionSx = useMemo(
     () =>
@@ -295,7 +292,6 @@ export default function App() {
         ? undefined
         : {
             filter: 'grayscale(100%)',
-            ...(imageViewerHiddenByCategory ? { opacity: 0.5 } : {}),
           },
     [selectedImage?.active, imageViewerHiddenByCategory],
   )
@@ -304,7 +300,6 @@ export default function App() {
       imageViewerHiddenByCategory
         ? {
             filter: 'grayscale(100%)',
-            opacity: 0.5,
           }
         : undefined,
     [imageViewerHiddenByCategory],

@@ -135,12 +135,22 @@ The tree endpoint also supports **conditional requests**:
 | Tree → camelCase mapping                               | `frontend/src/useBrowseData.ts`                                                                                                                                                                                                           |
 | Tests                                                  | `backend/tests/test_visibility.py`, `test_categories.py`, `test_router_groups.py`, `test_router_images.py`; `frontend/tests/.../categoryUtils.test.ts`, `useBrowseData.test.ts`, `EditImageModal.test.tsx`, `EditCategoryDialog.test.tsx` |
 
-Across the frontend, restriction affordances follow a shared emphasis rule:
-program or group restrictions attached **directly** to the current category/path
-segment render at full strength, while restrictions **inherited** from an
-ancestor render using the same visual treatment at **0.6 opacity**. This is
-used in breadcrumb chips, browse tile chips, ManagePage restriction chips,
-inherited-only category dialog chips, and category restriction lock icons.
+Across the frontend, restriction and visibility affordances follow two separate
+emphasis rules:
+
+- Program or group restrictions attached **directly** to the current
+  category/path segment render at full strength, while restrictions
+  **inherited** from an ancestor render using the same visual treatment at
+  **0.6 opacity**. This is used in breadcrumb chips, browse tile chips,
+  ManagePage restriction chips, inherited-only category dialog chips, and
+  category restriction lock icons. Use `frontend/src/restrictionStyles.ts` for
+  this shared opacity so inherited restriction treatment stays consistent.
+- Hidden or inactive category/image state does **not** add whole-element opacity
+  reduction. It may be indicated with grayscale treatment, inactive colors,
+  disabled/read-only controls, and visibility icons, but child tiles, breadcrumb
+  chips, buttons, and inherited-hidden indicators should stay at the same
+  opacity as the hidden parent element. This keeps hidden-state styling separate
+  from inherited restriction emphasis.
 
 In the Add/Edit category dialogs, program chips also respect the current
 instructor's membership: chips outside the instructor's programs are disabled,

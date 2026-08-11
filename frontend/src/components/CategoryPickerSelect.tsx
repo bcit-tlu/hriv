@@ -398,10 +398,7 @@ export default function CategoryPickerSelect({
                       return (
                         <Tooltip title="Hidden by parent category">
                           <span role="img" aria-label="Hidden by parent category">
-                            <VisibilityOff
-                              fontSize="small"
-                              sx={{ color: visColors.inactive, opacity: 0.5 }}
-                            />
+                            <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
                           </span>
                         </Tooltip>
                       )

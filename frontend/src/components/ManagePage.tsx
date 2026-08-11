@@ -157,7 +157,6 @@ function CategoryBreadcrumb({
               sx={{
                 fontSize: 14,
                 color: hiddenColor,
-                opacity: hiddenState.hiddenByAncestor && !hiddenState.directlyHidden ? 0.55 : 1,
               }}
             />
           </span>

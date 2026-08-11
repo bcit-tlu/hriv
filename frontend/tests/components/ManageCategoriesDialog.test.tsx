@@ -419,7 +419,7 @@ describe('ManageCategoriesDialog — visibility toggle', () => {
     expect(screen.getByLabelText('Visibility: Show category')).toBeInTheDocument()
   })
 
-  it('dims inherited-hidden child rows and shows the inherited hidden icon', () => {
+  it('keeps inherited-hidden child rows fully opaque and shows the inherited hidden icon', () => {
     const categories = [
       makeCategory({
         id: 1,
@@ -433,7 +433,7 @@ describe('ManageCategoriesDialog — visibility toggle', () => {
     const childRow = screen.getByText('Child').closest('li')
     const inheritedButton = screen.getByLabelText('Visibility: Hidden by parent category')
 
-    expect(childRow).toHaveStyle({ opacity: '0.5' })
+    expect(childRow).not.toHaveStyle({ opacity: '0.5' })
     expect(inheritedButton.querySelector('[data-testid="VisibilityOffIcon"]')).toBeInTheDocument()
   })
 

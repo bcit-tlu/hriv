@@ -502,7 +502,7 @@ describe('App breadcrumbs', () => {
     ).toBeInTheDocument()
   })
 
-  it('reduces opacity for image-view controls when category hidden state is inherited', () => {
+  it('keeps image-view controls fully opaque when category hidden state is inherited', () => {
     mockCategories.splice(0, mockCategories.length, {
       id: 1,
       label: 'Italian',
@@ -551,15 +551,15 @@ describe('App breadcrumbs', () => {
     const shareButton = screen.getByText('Share View').closest('button')
 
     expect(programChip).toHaveStyle({ filter: 'grayscale(100%)' })
-    expect(programChip).toHaveStyle({ opacity: '0.5' })
+    expect(programChip).not.toHaveStyle({ opacity: '0.5' })
     expect(groupChip).toHaveStyle({ filter: 'grayscale(100%)' })
-    expect(groupChip).toHaveStyle({ opacity: '0.5' })
+    expect(groupChip).not.toHaveStyle({ opacity: '0.5' })
     expect(hiddenButton).toHaveStyle({ filter: 'grayscale(100%)' })
-    expect(hiddenButton).toHaveStyle({ opacity: '0.5' })
+    expect(hiddenButton).not.toHaveStyle({ opacity: '0.5' })
     expect(editButton).toHaveStyle({ filter: 'grayscale(100%)' })
-    expect(editButton).toHaveStyle({ opacity: '0.5' })
+    expect(editButton).not.toHaveStyle({ opacity: '0.5' })
     expect(shareButton).toHaveStyle({ filter: 'grayscale(100%)' })
-    expect(shareButton).toHaveStyle({ opacity: '0.5' })
+    expect(shareButton).not.toHaveStyle({ opacity: '0.5' })
   })
 
   it('applies inherited shading to breadcrumb program and group chips for child categories', () => {
