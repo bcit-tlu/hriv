@@ -33,6 +33,14 @@ class Settings(BaseSettings):
     # extend the list per deployment by setting the AUDIT_EXCLUDE_PREFIXES env var.
     audit_exclude_prefixes: str = "/api/health,/api/tiles/,/api/metrics"
 
+    # Retention policy for retained filesystem-import archives. Applied after
+    # a successful files import and once at startup. Count keeps only the
+    # newest N distinct archives; days deletes archives older than the given
+    # age. 0 (the default) disables that dimension, so archives are retained
+    # indefinitely unless an operator opts in.
+    files_import_archive_retention_count: int = Field(default=0, ge=0)
+    files_import_archive_retention_days: int = Field(default=0, ge=0)
+
     # Login rate limiting (Phase 5)
     rate_limit_login_max: int = 5
     rate_limit_login_window: int = 60  # seconds
