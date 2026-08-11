@@ -143,8 +143,11 @@ never widen access an ancestor restricts:
 
 - `narrowProgramIds(ancestors)` / `narrowGroupIds(ancestors)` compute the
   effective allowed set walking top-down.
-- `splitDirectAncestorProgramIds(fullPath)` separates **direct** (editable on
-  this category) from **ancestor-inherited** (shown disabled) program ids.
+- `splitDirectAncestorProgramIds(fullPath)` is a display helper: **direct**
+  program ids come from the leaf category, while **ancestor-inherited** program
+  ids come from the narrowed ancestor path above the leaf and exclude ids already
+  set directly on the leaf. Full-path narrowing, including the leaf category, is
+  still used for backend enforcement and move/change validation.
 - **Given** a child category whose ancestor restricts to programs {A, B}, **When**
   the editor opens the program picker, **Then** inherited chips {A, B} render
   disabled and only a subset can be selected — selecting outside the inherited
@@ -229,8 +232,9 @@ committed on Save) in the edit modals.
 
 - Categories inherit visibility from ancestors. **Given** a child category
   whose ancestor is hidden, **When** the dropdown renders, **Then**:
-  - `CategoryPickerSelect`: disabled `VisibilityOff` icon at 0.5 opacity,
-    dimmed text, dimmed delete icon.
+  - `CategoryPickerSelect`: disabled `VisibilityOff` icon, dimmed text, dimmed
+    delete icon. Hidden-state indicators do not use whole-element opacity
+    reduction.
   - `ManageCategoriesDialog`: disabled `VisibilityOff` icon with "Hidden by
     parent category" tooltip, dimmed text, dimmed delete icon.
 

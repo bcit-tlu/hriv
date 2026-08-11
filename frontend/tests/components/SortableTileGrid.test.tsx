@@ -7,6 +7,11 @@ import { DROP_PREFIX } from '../../src/components/sortableTileGridUtils'
 import { makeCategory, makeImage } from '../helpers/fixtures'
 import type { TileOrderItemRef } from '../../src/api'
 
+const expectEffectiveOpacity = (element: Element | null, opacity: string) => {
+  expect(element).toBeInTheDocument()
+  expect(window.getComputedStyle(element as Element).opacity || '1').toBe(opacity)
+}
+
 // Capture onDragEnd from DragDropProvider for direct invocation.
 // Real @dnd-kit Sortable sources/targets carry their projected sortable index
 // (`index`/`initialIndex`/`group`); `move()` commits using the source's
@@ -142,8 +147,8 @@ describe('SortableTileGrid', () => {
     const childImageCard = screen.getByText('Child Image').closest('.MuiCard-root')
     const childImageAction = screen.getByText('Child Image').closest('.MuiCardActionArea-root')
 
-    expect(childCategoryCard).not.toHaveStyle({ opacity: '0.5' })
-    expect(childImageCard).not.toHaveStyle({ opacity: '0.5' })
+    expectEffectiveOpacity(childCategoryCard, '1')
+    expectEffectiveOpacity(childImageCard, '1')
     expect(childCategoryAction).toHaveStyle({ filter: 'grayscale(100%)' })
     expect(childImageAction).toHaveStyle({ filter: 'grayscale(100%)' })
   })

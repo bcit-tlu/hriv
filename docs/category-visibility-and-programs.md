@@ -93,10 +93,14 @@ These are two different concerns and use different code:
     subsequent ancestor with `programIds` intersects (narrows) it.
   - `narrowGroupIds(ancestors)` — the group analogue, with identical semantics
     on the independent group dimension.
-  - `splitDirectAncestorProgramIds(fullPath)` — splits the effective set into
-    "direct" IDs (present on the leaf category itself) and "ancestor" IDs
-    (inherited from above but not on the leaf), so the dialog can show inherited
-    restrictions distinctly from ones set on the category.
+  - `splitDirectAncestorProgramIds(fullPath)` — a display helper that returns
+    "direct" IDs from the leaf category and "ancestor" IDs from the narrowed
+    ancestor path above the leaf, excluding duplicates already set on the leaf.
+    This keeps inherited pills visible even when the leaf category narrows the
+    actual effective visibility set.
+  - `splitDirectAncestorGroupIds(fullPath)` — the group analogue for displaying
+    direct and inherited group pills. These split helpers do not decide backend
+    visibility; use the full-path narrowing helpers for enforcement semantics.
 
 Used by `App.tsx`, `ManageCategoriesDialog`, `CategoryPickerSelect`, and
 `ManagePage`.

@@ -16,6 +16,11 @@ import userEvent from '@testing-library/user-event'
 import ImageTile from '../../src/components/ImageTile'
 import { makeImage } from '../helpers/fixtures'
 
+const expectEffectiveOpacity = (element: Element | null, opacity: string) => {
+  expect(element).toBeInTheDocument()
+  expect(window.getComputedStyle(element as Element).opacity || '1').toBe(opacity)
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -135,7 +140,7 @@ describe('ImageTile', () => {
       const card = title.closest('.MuiCard-root')
       const actionArea = title.closest('.MuiCardActionArea-root')
 
-      expect(card).not.toHaveStyle({ opacity: '0.5' })
+      expectEffectiveOpacity(card, '1')
       expect(actionArea).toHaveStyle({ filter: 'grayscale(100%)' })
     })
   })

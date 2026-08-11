@@ -65,9 +65,13 @@ export function narrowGroupIds(ancestors: ReadonlyArray<{ groupIds: number[] }>)
 
 /**
  * Given an ordered top-down category path (ancestors followed by the leaf
- * category), compute the effective program restriction via narrowing and split
- * the result into "direct" IDs (present on the leaf category itself) and
- * "ancestor" IDs (inherited from above but not on the leaf).
+ * category), split program restrictions for display: "direct" IDs are present
+ * on the leaf category itself, while "ancestor" IDs are inherited from the
+ * narrowed ancestor path above the leaf and not duplicated on the leaf.
+ *
+ * This is intentionally display-oriented. Backend visibility and move checks
+ * use the full-path narrowing helpers, where the leaf can narrow the effective
+ * visibility set.
  */
 export function splitDirectAncestorProgramIds(fullPath: ReadonlyArray<{ programIds: number[] }>): {
   direct: number[]
@@ -75,18 +79,21 @@ export function splitDirectAncestorProgramIds(fullPath: ReadonlyArray<{ programI
 } {
   if (fullPath.length === 0) return { direct: [], ancestor: [] }
   const ownCategory = fullPath[fullPath.length - 1]
-  const effective = narrowProgramIds(fullPath)
-  const directIds = new Set(ownCategory.programIds)
-  const direct = effective.filter((pid) => directIds.has(pid))
-  const ancestor = effective.filter((pid) => !directIds.has(pid))
+  const direct = [...ownCategory.programIds]
+  const directIds = new Set(direct)
+  const ancestor = narrowProgramIds(fullPath.slice(0, -1)).filter((pid) => !directIds.has(pid))
   return { direct, ancestor }
 }
 
 /**
  * Given an ordered top-down category path (ancestors followed by the leaf
- * category), compute the effective group restriction via narrowing and split
- * the result into "direct" IDs (present on the leaf category itself) and
- * "ancestor" IDs (inherited from above but not on the leaf).
+ * category), split group restrictions for display: "direct" IDs are present
+ * on the leaf category itself, while "ancestor" IDs are inherited from the
+ * narrowed ancestor path above the leaf and not duplicated on the leaf.
+ *
+ * This is intentionally display-oriented. Backend visibility and move checks
+ * use the full-path narrowing helpers, where the leaf can narrow the effective
+ * visibility set.
  */
 export function splitDirectAncestorGroupIds(fullPath: ReadonlyArray<{ groupIds: number[] }>): {
   direct: number[]
@@ -94,10 +101,9 @@ export function splitDirectAncestorGroupIds(fullPath: ReadonlyArray<{ groupIds: 
 } {
   if (fullPath.length === 0) return { direct: [], ancestor: [] }
   const ownCategory = fullPath[fullPath.length - 1]
-  const effective = narrowGroupIds(fullPath)
-  const directIds = new Set(ownCategory.groupIds)
-  const direct = effective.filter((gid) => directIds.has(gid))
-  const ancestor = effective.filter((gid) => !directIds.has(gid))
+  const direct = [...ownCategory.groupIds]
+  const directIds = new Set(direct)
+  const ancestor = narrowGroupIds(fullPath.slice(0, -1)).filter((gid) => !directIds.has(gid))
   return { direct, ancestor }
 }
 
