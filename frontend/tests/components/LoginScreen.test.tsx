@@ -395,8 +395,8 @@ describe('LoginScreen', () => {
         onDismissAnnouncement,
       })
 
-      // Visible without any user action…
-      expect(screen.getByText("What's New")).toBeInTheDocument()
+      // Visible without any user action (info icon is the strip's indicator)…
+      expect(screen.getByTestId('InfoOutlinedIcon')).toBeInTheDocument()
       expect(screen.getByText('ZIP uploads are here')).toBeInTheDocument()
 
       // …and closable.

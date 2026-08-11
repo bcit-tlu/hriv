@@ -44,14 +44,16 @@ const lightPalette = {
    * at 0.7 alpha (#3E3C3Ab3) giving ≈ 4.7 : 1 contrast on white — WCAG-AA.
    */
   visibility: { active: 'rgba(0,0,0,0.45)', inactive: '#3E3C3Ab3', inactiveChipBg: '#6B6966' },
-  /** Mobile "What's New" announcement banner colours (light mode). */
+  /** Mobile "What's New" announcement banner colours (light mode). A clearly
+   *  tinted (not near-white) blue surface with a defined border and deep,
+   *  saturated accents so the strip reads crisply instead of washed out. */
   announce: {
-    bg: '#DDEEFF',
-    border: '#93C0E8',
-    fg: '#0D3660',
-    icon: '#1A6BBF',
-    btn: '#1A5CA8',
-    dismiss: '#2A6ABF',
+    bg: '#D6E8FB',
+    border: '#7DB2E4',
+    fg: '#0B335C',
+    icon: '#0A548F',
+    btn: '#0A548F',
+    dismiss: '#2C68A8',
   },
 }
 
@@ -97,14 +99,16 @@ const darkPalette = {
     inactive: '#E0DDD999',
     inactiveChipBg: '#6B6966',
   },
-  /** Mobile "What's New" announcement banner colours (dark mode). */
+  /** Mobile "What's New" announcement banner colours (dark mode). A deep navy
+   *  surface with a defined border, brighter body text and a vivid accent so it
+   *  stays legible and lively on dark paper. */
   announce: {
-    bg: '#0C2340',
-    border: '#1A4A7A',
-    fg: '#C2DFF7',
-    icon: '#5AABF0',
-    btn: '#5AABF0',
-    dismiss: '#4A90C8',
+    bg: '#0F2C4C',
+    border: '#2E6099',
+    fg: '#DCEBFB',
+    icon: '#79BAF3',
+    btn: '#79BAF3',
+    dismiss: '#5EA3D9',
   },
 }
 

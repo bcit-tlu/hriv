@@ -43,15 +43,18 @@ describe('AnnouncementBanner', () => {
   })
 
   // The login screen follows the mobile design language at every width, so the
-  // login variant renders the compact "What's New" strip (with its own dismiss
-  // control) rather than the desktop filled Alert.
+  // login variant renders the compact info strip (info icon + message, with its
+  // own dismiss control) rather than the desktop filled Alert.
   it('renders the compact strip for the login variant even on desktop', () => {
     const onDismiss = vi.fn()
     renderWithTheme(
       <AnnouncementBanner message="Login msg" variant="login" onDismiss={onDismiss} />,
     )
-    expect(screen.getByText("What's New")).toBeInTheDocument()
+    // The info icon is the strip's sole "What's New" indicator (no text label).
+    expect(screen.getByTestId('InfoOutlinedIcon')).toBeInTheDocument()
     expect(screen.getByText('Login msg')).toBeInTheDocument()
+    // Compact strip, not the desktop filled Alert.
+    expect(document.querySelector('.MuiAlert-root')).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
     expect(onDismiss).toHaveBeenCalledTimes(1)
@@ -60,8 +63,8 @@ describe('AnnouncementBanner', () => {
   it('keeps the filled Alert for the app variant on desktop', () => {
     renderWithTheme(<AnnouncementBanner message="App msg" variant="app" />)
     expect(screen.getByText('App msg')).toBeInTheDocument()
-    // The compact strip's "What's New" label is mobile/login only.
-    expect(screen.queryByText("What's New")).not.toBeInTheDocument()
+    // App variant renders the desktop filled Alert, not the compact strip.
+    expect(document.querySelector('.MuiAlert-root')).not.toBeNull()
   })
 
   it('renders in dark mode without errors', () => {
@@ -84,10 +87,11 @@ describe('AnnouncementBanner', () => {
       mockUseMediaQuery.mockReturnValue(false)
     })
 
-    it('renders the "What\'s New" strip with the message and a dismiss button', () => {
+    it('renders the info strip with the message and a dismiss button', () => {
       const onDismiss = vi.fn()
       renderWithTheme(<AnnouncementBanner message="ZIP uploads are here" onDismiss={onDismiss} />)
-      expect(screen.getByText("What's New")).toBeInTheDocument()
+      // The info icon is the strip's indicator (no "What's New" text label).
+      expect(screen.getByTestId('InfoOutlinedIcon')).toBeInTheDocument()
       expect(screen.getByText('ZIP uploads are here')).toBeInTheDocument()
       fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
       expect(onDismiss).toHaveBeenCalledTimes(1)
@@ -128,7 +132,7 @@ describe('AnnouncementBanner', () => {
 
     it('renders the strip for the login variant too', () => {
       renderWithTheme(<AnnouncementBanner message="Login whats new" variant="login" />)
-      expect(screen.getByText("What's New")).toBeInTheDocument()
+      expect(screen.getByTestId('InfoOutlinedIcon')).toBeInTheDocument()
       expect(screen.getByText('Login whats new')).toBeInTheDocument()
     })
   })

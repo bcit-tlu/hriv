@@ -59,30 +59,18 @@ function MobileAnnouncement({ message, onDismiss }: { message: string; onDismiss
         gap: 1.25,
       }}
     >
-      <InfoOutlinedIcon sx={{ fontSize: 16, color: c.icon, mt: '1px', flexShrink: 0 }} />
+      {/* The info icon is the sole "What's New" indicator now — a bit larger so
+          it reads as the primary marker without a text label. */}
+      <InfoOutlinedIcon sx={{ fontSize: 19, color: c.icon, mt: '2px', flexShrink: 0 }} />
       <Box sx={{ flex: 1, minWidth: 0 }}>
-        <Typography
-          component="p"
-          sx={{
-            m: 0,
-            mb: '3px',
-            fontSize: 11,
-            fontWeight: 700,
-            color: c.icon,
-            letterSpacing: '0.06em',
-            textTransform: 'uppercase',
-          }}
-        >
-          What's New
-        </Typography>
         <Typography
           component="p"
           ref={textRef}
           sx={{
             m: 0,
-            fontSize: 12,
+            fontSize: 14,
             color: c.fg,
-            lineHeight: 1.55,
+            lineHeight: 1.5,
             ...(expanded
               ? {}
               : {
