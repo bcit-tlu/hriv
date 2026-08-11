@@ -123,7 +123,7 @@ describe('ImageTile', () => {
       expect(titleRow).toHaveStyle({ alignItems: 'flex-start' })
     })
 
-    it('reduces tile opacity when visibility is inherited from category state', () => {
+    it('keeps category-hidden images at full opacity while greyscaling the tile', () => {
       render(
         <ImageTile
           image={makeImage({ active: true, name: 'Inherited Hidden Image' })}
@@ -135,7 +135,7 @@ describe('ImageTile', () => {
       const card = title.closest('.MuiCard-root')
       const actionArea = title.closest('.MuiCardActionArea-root')
 
-      expect(card).toHaveStyle({ opacity: '0.5' })
+      expect(card).not.toHaveStyle({ opacity: '0.5' })
       expect(actionArea).toHaveStyle({ filter: 'grayscale(100%)' })
     })
   })

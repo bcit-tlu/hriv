@@ -26,10 +26,7 @@ function ImageTile({ image, onClick, onEditDetails, categoryHidden = false }: Im
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
   return (
-    <Card
-      elevation={2}
-      sx={{ width: '100%', maxWidth: 300, position: 'relative', opacity: categoryHidden ? 0.5 : 1 }}
-    >
+    <Card elevation={2} sx={{ width: '100%', maxWidth: 300, position: 'relative' }}>
       <CardActionArea
         onClick={() => onClick(image)}
         sx={{

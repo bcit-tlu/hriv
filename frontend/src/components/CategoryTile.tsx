@@ -65,8 +65,6 @@ interface CategoryTileProps {
   inheritedGroupIds?: number[]
   /** When true the parent category (or an ancestor) is hidden, so this tile is desaturated. */
   parentHidden?: boolean
-  /** When true the hidden state is inherited from an ancestor, so dim hidden UI. */
-  inheritedHidden?: boolean
   /** Called when native files are dropped onto this category tile. */
   onDropFiles?: (categoryId: number, files: File[]) => void
 }
@@ -82,7 +80,6 @@ function CategoryTile({
   groups = [],
   inheritedGroupIds = [],
   parentHidden = false,
-  inheritedHidden = false,
   onDropFiles,
 }: CategoryTileProps) {
   const { mode } = useColorMode()
@@ -192,12 +189,11 @@ function CategoryTile({
           width: '100%',
           maxWidth: 300,
           position: 'relative',
-          transition: 'box-shadow 0.15s, outline-color 0.2s, transform 0.15s, opacity 0.15s',
+          transition: 'box-shadow 0.15s, outline-color 0.2s, transform 0.15s',
           outline: '3px dashed',
           outlineColor: dragOver ? 'primary.main' : 'transparent',
           outlineOffset: 3,
           transform: dragOver ? 'scale(1.03)' : 'scale(1)',
-          opacity: inheritedHidden ? 0.5 : 1,
         }}
       >
         {/* Drag-over overlay indicating drop target */}

@@ -174,7 +174,7 @@ describe('CategoryTile', () => {
       expect(title.closest('.MuiCardActionArea-root')).toHaveStyle({ filter: 'none' })
     })
 
-    it('reduces tile opacity when hidden state is inherited from a parent page', () => {
+    it('keeps inherited hidden categories at full opacity while greyscaling the tile', () => {
       render(
         <CategoryTile
           category={makeCategory({
@@ -184,14 +184,13 @@ describe('CategoryTile', () => {
           onClick={vi.fn()}
           programs={samplePrograms}
           parentHidden
-          inheritedHidden
         />,
       )
       const title = screen.getByText('Inherited Hidden Cat')
       const card = title.closest('.MuiCard-root')
       const actionArea = title.closest('.MuiCardActionArea-root')
 
-      expect(card).toHaveStyle({ opacity: '0.5' })
+      expect(card).not.toHaveStyle({ opacity: '0.5' })
       expect(actionArea).toHaveStyle({ filter: 'grayscale(100%)' })
     })
   })

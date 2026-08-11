@@ -127,6 +127,27 @@ describe('SortableTileGrid', () => {
     expect(screen.getByText('Lab A2').closest('.MuiChip-root')).toHaveStyle({ opacity: '0.6' })
   })
 
+  it('does not reduce child tile opacity when browsing inside a hidden category', () => {
+    renderGrid({
+      path: [makeCategory({ id: 10, label: 'Hidden Parent', status: 'hidden' })],
+      currentCategories: [makeCategory({ id: 11, label: 'Child Category', parentId: 10 })],
+      currentImages: [makeImage({ id: 12, name: 'Child Image', categoryId: 10 })],
+      canEditContent: false,
+    })
+
+    const childCategoryCard = screen.getByText('Child Category').closest('.MuiCard-root')
+    const childCategoryAction = screen
+      .getByText('Child Category')
+      .closest('.MuiCardActionArea-root')
+    const childImageCard = screen.getByText('Child Image').closest('.MuiCard-root')
+    const childImageAction = screen.getByText('Child Image').closest('.MuiCardActionArea-root')
+
+    expect(childCategoryCard).not.toHaveStyle({ opacity: '0.5' })
+    expect(childImageCard).not.toHaveStyle({ opacity: '0.5' })
+    expect(childCategoryAction).toHaveStyle({ filter: 'grayscale(100%)' })
+    expect(childImageAction).toHaveStyle({ filter: 'grayscale(100%)' })
+  })
+
   it('renders a move zone per category tile', () => {
     renderGrid({
       currentCategories: [
