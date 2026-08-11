@@ -1009,7 +1009,13 @@ export default function PeoplePage({
                       {user.program_names.length > 0 ? (
                         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                           {user.program_names.map((name) => (
-                            <Chip key={name} label={name} size="small" color="primary" />
+                            <Chip
+                              key={name}
+                              data-testid="program-chip"
+                              label={name}
+                              size="small"
+                              color="primary"
+                            />
                           ))}
                         </Box>
                       ) : (
@@ -1022,7 +1028,13 @@ export default function PeoplePage({
                       {user.group_names.length > 0 ? (
                         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                           {user.group_names.map((name) => (
-                            <Chip key={name} label={name} size="small" color="secondary" />
+                            <Chip
+                              key={name}
+                              data-testid="group-chip"
+                              label={name}
+                              size="small"
+                              color="secondary"
+                            />
                           ))}
                         </Box>
                       ) : (

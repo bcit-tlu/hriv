@@ -243,8 +243,12 @@ describe('AddCategoryDialog', () => {
     renderDialog({ programs }, authValue)
     await user.click(screen.getByLabelText('Specific programs'))
 
-    expect(screen.getByText('Nursing').closest('.MuiChip-root')).not.toHaveClass('Mui-disabled')
-    expect(screen.getByText('Dental').closest('.MuiChip-root')).toHaveClass('Mui-disabled')
+    expect(screen.getByText('Nursing').closest('[data-testid="program-chip"]')).not.toHaveClass(
+      'Mui-disabled',
+    )
+    expect(screen.getByText('Dental').closest('[data-testid="program-chip"]')).toHaveClass(
+      'Mui-disabled',
+    )
     expect(screen.getByText('You can only restrict to programs you belong to.')).toBeInTheDocument()
   })
 

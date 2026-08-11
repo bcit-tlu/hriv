@@ -216,9 +216,9 @@ describe('EditCategoryDialog', () => {
       })
       // "Specific programs" is auto-selected when inheritedProgramIds exist
 
-      const chipA = screen.getByText('Program A').closest('.MuiChip-root')!
-      const chipB = screen.getByText('Program B').closest('.MuiChip-root')!
-      const chipC = screen.getByText('Program C').closest('.MuiChip-root')!
+      const chipA = screen.getByText('Program A').closest('[data-testid="program-chip"]')!
+      const chipB = screen.getByText('Program B').closest('[data-testid="program-chip"]')!
+      const chipC = screen.getByText('Program C').closest('[data-testid="program-chip"]')!
 
       expect(chipA).not.toHaveClass('Mui-disabled')
       expect(chipB).not.toHaveClass('Mui-disabled')
@@ -233,8 +233,8 @@ describe('EditCategoryDialog', () => {
         inheritedProgramIds: [1, 2],
       })
       // "Specific programs" should be pre-selected since currentProgramIds is non-empty
-      const chipA = screen.getByText('Program A').closest('.MuiChip-root')!
-      const chipC = screen.getByText('Program C').closest('.MuiChip-root')!
+      const chipA = screen.getByText('Program A').closest('[data-testid="program-chip"]')!
+      const chipC = screen.getByText('Program C').closest('[data-testid="program-chip"]')!
 
       // Program A (id=1) is valid and should be selected (filled)
       expect(chipA).toHaveClass('MuiChip-filled')
@@ -252,7 +252,7 @@ describe('EditCategoryDialog', () => {
         inheritedProgramIds: [1, 2],
       })
 
-      const chipB = screen.getByText('Program B').closest('.MuiChip-root')!
+      const chipB = screen.getByText('Program B').closest('[data-testid="program-chip"]')!
       await user.click(chipB)
 
       // After clicking, Program B should now be selected (filled)
@@ -274,7 +274,7 @@ describe('EditCategoryDialog', () => {
       // "Specific programs" is auto-selected when inheritedProgramIds exist
 
       // Program C should be disabled (pointer-events: none prevents clicks)
-      const chipC = screen.getByText('Program C').closest('.MuiChip-root')!
+      const chipC = screen.getByText('Program C').closest('[data-testid="program-chip"]')!
       expect(chipC).toHaveClass('Mui-disabled')
       expect(chipC).not.toHaveClass('MuiChip-filled')
     })
@@ -344,9 +344,9 @@ describe('EditCategoryDialog', () => {
         authValue,
       )
 
-      const chipA = screen.getByText('Program A').closest('.MuiChip-root')!
-      const chipB = screen.getByText('Program B').closest('.MuiChip-root')!
-      const chipC = screen.getByText('Program C').closest('.MuiChip-root')!
+      const chipA = screen.getByText('Program A').closest('[data-testid="program-chip"]')!
+      const chipB = screen.getByText('Program B').closest('[data-testid="program-chip"]')!
+      const chipC = screen.getByText('Program C').closest('[data-testid="program-chip"]')!
 
       expect(chipA).not.toHaveClass('Mui-disabled')
       expect(chipB).not.toHaveClass('Mui-disabled')
@@ -370,9 +370,9 @@ describe('EditCategoryDialog', () => {
       )
       screen.getByLabelText('Specific programs').click()
 
-      const chipA = screen.getByText('Program A').closest('.MuiChip-root')!
-      const chipB = screen.getByText('Program B').closest('.MuiChip-root')!
-      const chipC = screen.getByText('Program C').closest('.MuiChip-root')!
+      const chipA = screen.getByText('Program A').closest('[data-testid="program-chip"]')!
+      const chipB = screen.getByText('Program B').closest('[data-testid="program-chip"]')!
+      const chipC = screen.getByText('Program C').closest('[data-testid="program-chip"]')!
 
       expect(chipA).not.toHaveClass('Mui-disabled')
       expect(chipB).not.toHaveClass('Mui-disabled')
@@ -395,8 +395,8 @@ describe('EditCategoryDialog', () => {
       expect(screen.getByLabelText('Specific programs')).toBeChecked()
 
       // Inherited programs should render with reduced opacity (not selected as own)
-      const chipA = screen.getByText('Program A').closest('.MuiChip-root')!
-      const chipB = screen.getByText('Program B').closest('.MuiChip-root')!
+      const chipA = screen.getByText('Program A').closest('[data-testid="program-chip"]')!
+      const chipB = screen.getByText('Program B').closest('[data-testid="program-chip"]')!
       expect(chipA).toHaveStyle({ opacity: '0.6' })
       expect(chipB).toHaveStyle({ opacity: '0.6' })
       // Both should be filled primary
@@ -573,7 +573,9 @@ describe('EditCategoryDialog', () => {
         />,
       )
 
-      expect(screen.getByText('Cohort A').closest('.MuiChip-root')).toHaveStyle({ opacity: '0.6' })
+      expect(screen.getByText('Cohort A').closest('[data-testid="group-chip"]')).toHaveStyle({
+        opacity: '0.6',
+      })
     })
 
     it('shows a warning when a child has groups disjoint from the selected parent groups', async () => {

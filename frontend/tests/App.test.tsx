@@ -451,10 +451,10 @@ describe('App breadcrumbs', () => {
 
     const programChip = within(imageBreadcrumb as HTMLElement)
       .getByText('Pathology')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="program-chip"]')
     const groupChip = within(imageBreadcrumb as HTMLElement)
       .getByText('Lab A2')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="group-chip"]')
     const editButton = screen.getByRole('button', { name: 'Edit Details' })
     const shareButton = screen.getByText('Share View').closest('button')
 
@@ -542,10 +542,10 @@ describe('App breadcrumbs', () => {
 
     const programChip = within(imageBreadcrumb as HTMLElement)
       .getByText('Pathology')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="program-chip"]')
     const groupChip = within(imageBreadcrumb as HTMLElement)
       .getByText('Lab A2')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="group-chip"]')
     const hiddenButton = screen.getByRole('button', { name: 'Visibility: Hidden by category' })
     const editButton = screen.getByRole('button', { name: 'Edit Details' })
     const shareButton = screen.getByText('Share View').closest('button')
@@ -603,10 +603,10 @@ describe('App breadcrumbs', () => {
 
     const categoryProgramChip = within(categoryBreadcrumb as HTMLElement)
       .getByText('Pathology')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="program-chip"]')
     const categoryGroupChip = within(categoryBreadcrumb as HTMLElement)
       .getByText('Lab A2')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="group-chip"]')
 
     expect(categoryProgramChip).toHaveStyle({ opacity: '0.6' })
     expect(categoryGroupChip).toHaveStyle({ opacity: '0.6' })
@@ -618,10 +618,10 @@ describe('App breadcrumbs', () => {
 
     const imageProgramChip = within(imageBreadcrumb as HTMLElement)
       .getByText('Pathology')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="program-chip"]')
     const imageGroupChip = within(imageBreadcrumb as HTMLElement)
       .getByText('Lab A2')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="group-chip"]')
 
     expect(imageProgramChip).toHaveStyle({ opacity: '0.6' })
     expect(imageGroupChip).toHaveStyle({ opacity: '0.6' })

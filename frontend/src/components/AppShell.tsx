@@ -504,7 +504,7 @@ export default function AppShell(props: AppShellProps) {
                 horizontal: 'right',
               }}
             >
-              <Card sx={{ minWidth: 240, maxWidth: 280 }}>
+              <Card data-testid="user-card" sx={{ minWidth: 240, maxWidth: 280 }}>
                 <CardContent sx={{ '&:last-child': { pb: 1 } }}>
                   <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
                     {currentUser.name}
@@ -609,6 +609,7 @@ export default function AppShell(props: AppShellProps) {
       {announcement && (
         <Collapse in={!annCollapsed} onExited={onDismissAnnouncement}>
           <Box
+            data-testid="announcement-banner"
             sx={{
               bgcolor: contentBg,
               pt: 2.5,

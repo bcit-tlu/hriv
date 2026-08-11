@@ -387,7 +387,9 @@ describe('EditImageModal – View Image', () => {
     expect(screen.getByText(/unsaved changes/i)).toBeInTheDocument()
 
     // Scope to the warning bar so we click its Cancel, not the dialog-actions Cancel
-    const warningBar = screen.getByText(/unsaved changes/i).closest('div[class*="MuiBox"]')!
+    const warningBar = screen
+      .getByText(/unsaved changes/i)
+      .closest('[data-testid="unsaved-changes-bar"]')!
     await user.click(within(warningBar as HTMLElement).getByRole('button', { name: /cancel/i }))
 
     await waitFor(() => {
