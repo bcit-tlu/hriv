@@ -614,7 +614,7 @@ describe('AppShell', () => {
         />,
       )
 
-      expect(screen.getByText('stu@example.com').closest('.MuiCard-root')).toHaveStyle({
+      expect(screen.getByText('stu@example.com').closest('[data-testid="user-card"]')).toHaveStyle({
         maxWidth: '280px',
       })
     })

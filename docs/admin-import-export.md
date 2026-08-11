@@ -136,7 +136,47 @@ For a full cross-environment clone, follow this order:
 
 > HRIV is **not** in production and has no legacy export archives. Imports do not
 > need to support older export formats — backward-compat code can be removed
-> rather than maintained.
+> rather than maintained. The one deliberate exception is manifest-less
+> archives: retained filesystem-import archives already sitting on deployed
+> data volumes predate the manifest, so they stay importable as legacy
+> format v0 (see below) to keep their reruns working.
+
+### Archive manifest and format versioning
+
+Every filesystem export embeds a small JSON manifest, `hriv-manifest.json`, at
+the archive root (next to the `data/` payload):
+
+```json
+{
+  "format_version": 1,
+  "hriv_version": "1.2.0",
+  "export_type": "filesystem",
+  "created_at": "2026-07-28T18:42:00Z"
+}
+```
+
+- `format_version` is the archive layout version this release writes
+  (`FILES_EXPORT_FORMAT_VERSION` in `admin_ops.py`).
+- `hriv_version` is taken from the `APP_VERSION` env var (`unknown` when unset).
+
+During import, the manifest is validated after extraction and **before** any
+entry is swapped into `/data`, so a rejected archive never modifies the data
+directory:
+
+- An unsupported `format_version` is rejected with a clear operator-facing
+  error naming the supported versions and the exporting HRIV version
+  (`SUPPORTED_FILES_IMPORT_FORMAT_VERSIONS` leaves room for future migration
+  logic when older formats gain upgrade paths).
+- A manifest with `export_type` other than `filesystem`, or one that is not
+  valid JSON, is rejected.
+- Archives without a manifest (created before manifests existed — e.g.
+  previously retained archives being rerun) are accepted as legacy
+  **format v0** with a logged warning; the task log records which path was
+  taken (`Archive manifest format v1 validated.` vs
+  `Legacy archive (no manifest); imported as format v0.`).
+
+The manifest never appears in `/data`: it is consumed and removed from the
+staging directory during validation.
 
 ## Filesystem import upload phase
 
@@ -191,6 +231,53 @@ The admin UI's "Previously uploaded import archives" list shows cumulative
 storage usage (for example, "3 retained archives using 87.4 GiB") so operators
 can see at a glance how much persistent space retained archives consume before
 deciding what to reclaim.
+
+### Automatic retention policy
+
+Operators can bound retained-archive storage with two env-driven settings
+(both default to `0` = retain indefinitely, preserving the original behavior):
+
+| Env var                                | Meaning                                                           |
+| -------------------------------------- | ----------------------------------------------------------------- |
+| `FILES_IMPORT_ARCHIVE_RETENTION_COUNT` | Keep only the newest N distinct archives; older ones are deleted. |
+| `FILES_IMPORT_ARCHIVE_RETENTION_DAYS`  | Delete archives older than N days.                                |
+
+Both dimensions can be combined; an archive is deleted when it violates
+either one. An archive's age is measured from its most recent import task, so
+re-running a retained archive resets its age — an archive that is actively
+being reused is treated as fresh. Enforcement runs after each successful
+filesystem import and once
+at backend startup (so age-based limits apply even when no import runs).
+Deletions reuse the same safe cleanup as the manual Delete action
+(`delete_files_import_archive`), so an archive referenced by an active files
+import is never removed, and rerun tasks sharing one on-disk file count as a
+single archive. The active policy is exposed at
+`GET /api/admin/tasks/files-import/archive-retention` and shown in the admin
+UI next to the cumulative-usage summary whenever a non-zero policy is
+configured.
+
+### Retained archive integrity verification
+
+The SHA-256 checksum of an import archive is recorded on its `AdminTask`
+(`admin_tasks.input_checksum`) the first time the archive is imported.
+Re-running a retained archive creates a new task that inherits the recorded
+checksum; `run_files_import` recomputes the archive's SHA-256 before any
+extraction or `/data` mutation and rejects the rerun if the on-disk file no
+longer matches:
+
+> The retained archive no longer matches the originally uploaded file and
+> cannot be reused. Please upload a new archive.
+
+This detects accidental filesystem corruption or manual modification of
+retained archives and makes reruns reproducible. It is an integrity check,
+not a security feature — it complements (and does not replace) the archive
+path validation and manifest validation above. Archives retained before this
+feature have no recorded checksum; their next import records a baseline
+checksum (backfilled onto every task sharing that archive's `input_path`, so
+reruns launched from any of those tasks verify against it). The task log shows
+either `Archive SHA-256 recorded: <hex>.` (baseline) or
+`Archive integrity verified: SHA-256 matches the original upload.` (verified
+rerun).
 
 ## Stored export archives
 

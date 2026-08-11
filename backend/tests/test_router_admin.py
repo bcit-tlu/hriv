@@ -458,7 +458,23 @@ async def test_start_file_restore_creates_task(tmp_path) -> None:
     assert params == {
         "snapshot_name": request.snapshot_name,
         "member_path": request.member_path,
+        "manifest_entry": {"size": 3, "sha256": "abc"},
     }
+
+
+async def test_start_file_restore_rejects_invalid_path() -> None:
+    user = SimpleNamespace(id=1)
+    bg = MagicMock()
+    db = AsyncMock()
+
+    request = FileRestoreRequest(
+        snapshot_name="hriv-backup-20260102-020000",
+        member_path="data/../db.sql",
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await start_file_restore(user, bg, request=request, db=db)
+    assert exc.value.status_code == 400
 
 
 async def test_list_backup_snapshots_disabled_returns_400() -> None:
@@ -597,6 +613,22 @@ async def test_list_files_import_archives_endpoint_response_model_validation() -
             "last_status": "completed",
         }
     ]
+
+
+async def test_get_files_import_archive_retention_endpoint() -> None:
+    app = FastAPI()
+    app.include_router(admin_router.router, prefix="/api")
+    app.dependency_overrides[admin_router._admin] = lambda: SimpleNamespace(id=1, role="admin")
+
+    with patch(
+        "app.routers.admin.files_import_archive_retention_policy",
+        return_value={"retention_count": 3, "retention_days": 30},
+    ):
+        with TestClient(app) as client:
+            response = client.get("/api/admin/tasks/files-import/archive-retention")
+
+    assert response.status_code == 200
+    assert response.json() == {"retention_count": 3, "retention_days": 30}
 
 
 async def test_list_files_import_archives_endpoint() -> None:

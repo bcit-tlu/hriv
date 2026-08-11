@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
+import CircularProgress from '@mui/material/CircularProgress'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
@@ -18,7 +19,7 @@ import type { Program } from '../types'
 interface BulkEditModalProps {
   open: boolean
   onClose: () => void
-  onSave: (programIds: number[]) => void
+  onSave: (programIds: number[]) => void | Promise<void>
   programs: Program[]
   selectedCount: number
 }
@@ -31,18 +32,38 @@ export default function BulkEditModal({
   selectedCount,
 }: BulkEditModalProps) {
   const [programIds, setProgramIds] = useState<number[]>([])
+  const [saving, setSaving] = useState(false)
 
   const handleProgramChange = (e: SelectChangeEvent<number[]>) => {
     const val = e.target.value
     setProgramIds(typeof val === 'string' ? [] : val)
   }
 
-  const handleSave = () => {
-    onSave(programIds)
-    setProgramIds([])
+  // Identifies the latest save so a stale in-flight completion (after the
+  // dialog was dismissed and reopened) cannot clobber newer state.
+  const saveTokenRef = useRef(0)
+
+  const handleSave = async () => {
+    if (saving) return
+    const token = ++saveTokenRef.current
+    setSaving(true)
+    try {
+      await onSave(programIds)
+      if (saveTokenRef.current === token) {
+        setProgramIds([])
+      }
+    } catch {
+      return
+    } finally {
+      if (saveTokenRef.current === token) {
+        setSaving(false)
+      }
+    }
   }
 
   const handleClose = () => {
+    saveTokenRef.current++
+    setSaving(false)
     setProgramIds([])
     onClose()
   }
@@ -85,8 +106,15 @@ export default function BulkEditModal({
       </DialogContent>
       <DialogActions>
         <Button onClick={handleClose}>Cancel</Button>
-        <Button onClick={handleSave} variant="contained">
-          Save
+        <Button
+          onClick={handleSave}
+          variant="contained"
+          disabled={saving}
+          startIcon={
+            saving ? <CircularProgress size={16} color="inherit" aria-hidden /> : undefined
+          }
+        >
+          {saving ? 'Saving…' : 'Save'}
         </Button>
       </DialogActions>
     </Dialog>

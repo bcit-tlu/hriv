@@ -29,6 +29,7 @@ function ImageTile({ image, onClick, onEditDetails, categoryHidden = false }: Im
   const isMobile = useIsMobile()
   return (
     <Card
+      data-testid="image-tile"
       elevation={2}
       sx={{
         width: '100%',
@@ -45,6 +46,7 @@ function ImageTile({ image, onClick, onEditDetails, categoryHidden = false }: Im
       }}
     >
       <CardActionArea
+        data-testid="image-tile-action-area"
         onClick={() => onClick(image)}
         sx={{
           display: 'flex',
