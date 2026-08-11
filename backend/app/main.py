@@ -15,7 +15,11 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.sessions import SessionMiddleware
 
-from .admin_ops import _ensure_tasks_dir, reconcile_stale_tasks
+from .admin_ops import (
+    _ensure_tasks_dir,
+    enforce_files_import_archive_retention,
+    reconcile_stale_tasks,
+)
 from .auth import auth_settings
 from .database import get_async_session, get_db, settings
 from .logging_config import setup_logging
@@ -36,6 +40,7 @@ from .routers import (
     oidc,
     programs,
     telemetry,
+    tile_order,
     upload,
     users,
 )
@@ -177,6 +182,22 @@ async def lifespan(app: FastAPI):
             extra={"event": "admin_task.reconcile_failed", "error": str(exc)},
         )
 
+    # Apply the retained files-import archive retention policy so age-based
+    # limits take effect even when no new import runs (no-op unless the
+    # FILES_IMPORT_ARCHIVE_RETENTION_* settings opt in).
+    try:
+        async with get_async_session()() as session:
+            await enforce_files_import_archive_retention(session)
+    except Exception as exc:  # pragma: no cover - best effort on startup
+        logger.warning(
+            "Files-import archive retention enforcement failed: %s",
+            exc,
+            extra={
+                "event": "admin_task.archive_retention_failed",
+                "error": str(exc),
+            },
+        )
+
     # Reconcile SourceImages orphaned by a previous pod crash/rollout
     # so they don't appear stuck in "processing" in the UI forever.
     try:
@@ -234,6 +255,7 @@ app.include_router(images.router, prefix="/api")
 app.include_router(issues.router, prefix="/api")
 app.include_router(programs.router, prefix="/api")
 app.include_router(telemetry.router, prefix="/api")
+app.include_router(tile_order.router, prefix="/api")
 app.include_router(upload.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
 

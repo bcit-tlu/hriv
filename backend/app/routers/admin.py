@@ -38,6 +38,7 @@ from ..admin_ops import (
     _ensure_tasks_dir,
     format_bytes,
     delete_files_import_archive,
+    files_import_archive_retention_policy,
     list_files_import_archives,
     run_file_restore,
     run_db_export,
@@ -61,6 +62,7 @@ from ..models import ACTIVE_TASK_STATUSES, AdminTask, User
 from ..schemas import (
     FileRestoreRequest,
     FilesImportArchiveOut,
+    FilesImportArchiveRetentionPolicyOut,
     FilesImportRerunRequest,
     RebuildTilesRequest,
     UploadChunkResponse,
@@ -808,6 +810,17 @@ async def list_files_import_archives_endpoint(
 ):
     """List retained filesystem-import archives available for rerun."""
     return await list_files_import_archives(db)
+
+
+@router.get(
+    "/tasks/files-import/archive-retention",
+    response_model=FilesImportArchiveRetentionPolicyOut,
+)
+async def get_files_import_archive_retention(
+    _user: Annotated[User, Depends(_admin)],
+):
+    """Return the active retention policy for retained import archives."""
+    return files_import_archive_retention_policy()
 
 
 @router.post("/tasks/files-import/rerun")

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -258,14 +258,30 @@ class CategoryUpdate(BaseModel):
     _validate_label = field_validator("label", mode="before")(normalize_optional_nonblank_value)
 
 
-class CategoryReorderItem(BaseModel):
+class TileOrderScope(BaseModel):
+    parent_category_id: int | None = None
+
+
+class TileOrderItemRef(BaseModel):
+    type: Literal["category", "image"]
     id: int
-    parent_id: int | None = None
+
+
+class TileOrderRequest(BaseModel):
+    scope: TileOrderScope
+    expected_revision: int
+    operation_id: str | None = Field(None, max_length=64)
+    items: list[TileOrderItemRef]
+
+
+class TileOrderItemOut(TileOrderItemRef):
     sort_order: int
 
 
-class CategoryReorderRequest(BaseModel):
-    items: list[CategoryReorderItem]
+class TileOrderResponse(BaseModel):
+    scope: TileOrderScope
+    revision: int
+    items: list[TileOrderItemOut]
 
 
 class CategoryOut(CategoryBase):
@@ -350,15 +366,6 @@ class ImageUpdate(BaseModel):
         return self
 
 
-class ImageReorderItem(BaseModel):
-    id: int
-    sort_order: int
-
-
-class ImageReorderRequest(BaseModel):
-    items: list[ImageReorderItem]
-
-
 class ImageOut(ImageBase):
     id: int
     version: int = 1
@@ -437,6 +444,16 @@ class FilesImportArchiveOut(BaseModel):
     size_bytes: int
     created_at: datetime
     last_status: str
+
+
+class FilesImportArchiveRetentionPolicyOut(BaseModel):
+    """Active retention policy for retained files-import archives.
+
+    ``0`` means that dimension is disabled (retain indefinitely).
+    """
+
+    retention_count: int
+    retention_days: int
 
 
 class FilesImportRerunRequest(BaseModel):

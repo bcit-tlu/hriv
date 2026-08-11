@@ -3,22 +3,27 @@
 import asyncio
 import builtins
 import gzip
+import hashlib
 import io
 import json
 import os
 import tarfile
 import tempfile
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy.sql.dml import Update
 
+from app.database import settings
 from app.models import AdminTask
 
 from app.admin_ops import (
+    FILES_EXPORT_FORMAT_VERSION,
+    FILES_EXPORT_MANIFEST_NAME,
     TaskCancelled,
     _create_tar_file,
     _ensure_import_staging_same_device,
@@ -31,6 +36,8 @@ from app.admin_ops import (
     _update_task,
     _write_file,
     delete_files_import_archive,
+    enforce_files_import_archive_retention,
+    files_import_archive_retention_policy,
     list_files_import_archives,
     reconcile_stale_tasks,
     run_db_export,
@@ -43,6 +50,8 @@ from app.admin_ops import (
     _validate_retained_files_import_archive_path,
     _swap_imported_entries,
     _queue_rebuild_tiles_after_import,
+    build_files_export_manifest,
+    compute_archive_sha256,
 )
 
 
@@ -169,6 +178,201 @@ def test_extract_and_restore_rolls_back_on_entry_failure(tmp_path, monkeypatch) 
     assert not (source_dir / "new.tiff").exists()
     assert (tiles_dir / "tile1.jpeg").read_text() == "tile"
     assert (tasks_dir / "keep.json").read_text() == "keep"
+
+
+def _make_manifest_archive(tmp_path, manifest) -> str:
+    """Build a filesystem-import archive with *manifest* at the root."""
+    payload_dir = tmp_path / "payload"
+    payload_source = payload_dir / "source_images"
+    payload_source.mkdir(parents=True, exist_ok=True)
+    (payload_source / "new.tiff").write_text("new")
+    archive = str(tmp_path / "manifest-test.tar.gz")
+    with tarfile.open(archive, "w:gz") as tar:
+        if manifest is not None:
+            data = (
+                manifest
+                if isinstance(manifest, bytes)
+                else json.dumps(manifest).encode("utf-8")
+            )
+            info = tarfile.TarInfo(FILES_EXPORT_MANIFEST_NAME)
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+        tar.add(str(payload_dir), arcname="data")
+    return archive
+
+
+def _restore_dirs(tmp_path):
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(exist_ok=True)
+    tiles_dir = data_dir / "tiles"
+    tiles_dir.mkdir(exist_ok=True)
+    source_dir = data_dir / "source_images"
+    source_dir.mkdir(exist_ok=True)
+    return data_dir, tiles_dir, source_dir
+
+
+def test_extract_and_restore_accepts_current_manifest(tmp_path) -> None:
+    data_dir, tiles_dir, source_dir = _restore_dirs(tmp_path)
+    archive = _make_manifest_archive(tmp_path, build_files_export_manifest())
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        result = _extract_and_restore(
+            archive, tmpdir, str(data_dir), str(tiles_dir), str(source_dir),
+        )
+
+    assert result["manifest_format_version"] == FILES_EXPORT_FORMAT_VERSION
+    assert (source_dir / "new.tiff").read_text() == "new"
+    # The manifest must never be swapped into the data directory.
+    assert not (data_dir / FILES_EXPORT_MANIFEST_NAME).exists()
+
+
+def test_extract_and_restore_legacy_archive_without_manifest(tmp_path) -> None:
+    data_dir, tiles_dir, source_dir = _restore_dirs(tmp_path)
+    archive = _make_manifest_archive(tmp_path, None)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        result = _extract_and_restore(
+            archive, tmpdir, str(data_dir), str(tiles_dir), str(source_dir),
+        )
+
+    assert result["manifest_format_version"] == 0
+    assert (source_dir / "new.tiff").read_text() == "new"
+
+
+def test_extract_and_restore_rejects_manifest_only_archive(tmp_path) -> None:
+    data_dir, tiles_dir, source_dir = _restore_dirs(tmp_path)
+    manifest = json.dumps(build_files_export_manifest()).encode("utf-8")
+    archive = str(tmp_path / "manifest-only.tar.gz")
+    with tarfile.open(archive, "w:gz") as tar:
+        info = tarfile.TarInfo(FILES_EXPORT_MANIFEST_NAME)
+        info.size = len(manifest)
+        tar.addfile(info, io.BytesIO(manifest))
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with pytest.raises(ValueError, match="no data entries"):
+            _extract_and_restore(
+                archive, tmpdir, str(data_dir), str(tiles_dir), str(source_dir),
+            )
+
+
+def test_extract_and_restore_rejects_unsupported_format_version(tmp_path) -> None:
+    data_dir, tiles_dir, source_dir = _restore_dirs(tmp_path)
+    manifest = build_files_export_manifest()
+    manifest["format_version"] = 999
+    archive = _make_manifest_archive(tmp_path, manifest)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with pytest.raises(ValueError, match="format version 999 is not supported"):
+            _extract_and_restore(
+                archive, tmpdir, str(data_dir), str(tiles_dir), str(source_dir),
+            )
+
+    # Nothing was swapped into the data directory.
+    assert not (source_dir / "new.tiff").exists()
+
+
+def test_extract_and_restore_rejects_wrong_export_type(tmp_path) -> None:
+    data_dir, tiles_dir, source_dir = _restore_dirs(tmp_path)
+    manifest = build_files_export_manifest()
+    manifest["export_type"] = "database"
+    archive = _make_manifest_archive(tmp_path, manifest)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with pytest.raises(ValueError, match="export_type 'database'"):
+            _extract_and_restore(
+                archive, tmpdir, str(data_dir), str(tiles_dir), str(source_dir),
+            )
+
+
+def test_extract_and_restore_rejects_invalid_manifest_json(tmp_path) -> None:
+    data_dir, tiles_dir, source_dir = _restore_dirs(tmp_path)
+    archive = _make_manifest_archive(tmp_path, b"{not json")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with pytest.raises(ValueError, match="not valid JSON"):
+            _extract_and_restore(
+                archive, tmpdir, str(data_dir), str(tiles_dir), str(source_dir),
+            )
+
+
+def test_extract_and_restore_rejects_non_utf8_manifest(tmp_path) -> None:
+    data_dir, tiles_dir, source_dir = _restore_dirs(tmp_path)
+    archive = _make_manifest_archive(tmp_path, b"\xff\xfe\x00binary")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with pytest.raises(ValueError, match="not valid JSON"):
+            _extract_and_restore(
+                archive, tmpdir, str(data_dir), str(tiles_dir), str(source_dir),
+            )
+
+
+def test_extract_and_restore_rejects_directory_named_like_manifest(tmp_path) -> None:
+    data_dir, tiles_dir, source_dir = _restore_dirs(tmp_path)
+    payload_dir = tmp_path / "payload"
+    payload_source = payload_dir / "source_images"
+    payload_source.mkdir(parents=True)
+    (payload_source / "new.tiff").write_text("new")
+    fake_manifest_dir = tmp_path / FILES_EXPORT_MANIFEST_NAME
+    fake_manifest_dir.mkdir()
+    (fake_manifest_dir / "sneaky.txt").write_text("sneaky")
+    archive = str(tmp_path / "dir-manifest.tar.gz")
+    with tarfile.open(archive, "w:gz") as tar:
+        tar.add(str(fake_manifest_dir), arcname=FILES_EXPORT_MANIFEST_NAME)
+        tar.add(str(payload_dir), arcname="data")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with pytest.raises(ValueError, match="must be a regular file"):
+            _extract_and_restore(
+                archive, tmpdir, str(data_dir), str(tiles_dir), str(source_dir),
+            )
+
+    assert not (data_dir / FILES_EXPORT_MANIFEST_NAME).exists()
+    assert not (source_dir / "new.tiff").exists()
+
+
+def test_extract_and_restore_rejects_non_integer_format_version(tmp_path) -> None:
+    data_dir, tiles_dir, source_dir = _restore_dirs(tmp_path)
+    manifest = build_files_export_manifest()
+    manifest["format_version"] = "one"
+    archive = _make_manifest_archive(tmp_path, manifest)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with pytest.raises(ValueError, match="missing or invalid format_version"):
+            _extract_and_restore(
+                archive, tmpdir, str(data_dir), str(tiles_dir), str(source_dir),
+            )
+
+
+def test_create_tar_file_embeds_manifest(tmp_path) -> None:
+    data_dir, tiles_dir, tasks_dir = _make_source_only_tree(tmp_path)
+    dest = str(tmp_path / "manifest.tar.gz")
+
+    with (
+        patch("app.admin_ops._TASKS_DIR", str(tasks_dir)),
+        patch("app.admin_ops.settings") as mock_settings,
+        patch("app.admin_ops.shutil.which", return_value=None),
+    ):
+        mock_settings.tiles_dir = str(tiles_dir)
+        _create_tar_file(str(data_dir), dest)
+
+    with tarfile.open(dest, "r:gz") as tar:
+        names = tar.getnames()
+        assert names[0] == FILES_EXPORT_MANIFEST_NAME
+        member = tar.extractfile(FILES_EXPORT_MANIFEST_NAME)
+        assert member is not None
+        manifest = json.loads(member.read().decode("utf-8"))
+
+    assert manifest["format_version"] == FILES_EXPORT_FORMAT_VERSION
+    assert manifest["export_type"] == "filesystem"
+    assert "hriv_version" in manifest
+    assert "created_at" in manifest
+
+
+def test_build_files_export_manifest_uses_app_version_env(monkeypatch) -> None:
+    monkeypatch.setenv("APP_VERSION", "1.2.3")
+    assert build_files_export_manifest()["hriv_version"] == "1.2.3"
+    monkeypatch.delenv("APP_VERSION")
+    assert build_files_export_manifest()["hriv_version"] == "unknown"
 
 
 def test_extract_and_restore_empty_archive(tmp_path) -> None:
@@ -1628,7 +1832,7 @@ async def test_run_files_import_missing_archive() -> None:
     task = SimpleNamespace(
         id=1, task_type="files_import", status="pending", progress=0, log="",
         result_filename=None, result_path=None, input_path="/nonexistent/file.tar.gz",
-        error_message=None,
+        input_checksum=None, error_message=None,
     )
 
     mock_session = AsyncMock()
@@ -1669,7 +1873,7 @@ async def test_run_files_import_uses_import_staging_dir_and_preserves_data(tmp_p
     task = SimpleNamespace(
         id=1, task_type="files_import", status="pending", progress=0, log="",
         result_filename=None, result_path=None, input_path=archive,
-        error_message=None,
+        input_checksum=None, error_message=None,
     )
 
     mock_session = AsyncMock()
@@ -1705,6 +1909,15 @@ async def test_run_files_import_uses_import_staging_dir_and_preserves_data(tmp_p
 
     assert captured_tmpdir["dir"] == str(data_dir / ".import-staging")
     assert task.status == "completed"
+    assert task.input_checksum == compute_archive_sha256(archive)
+    assert "Archive SHA-256 recorded:" in task.log
+    backfill_updates = [
+        call.args[0]
+        for call in mock_session.execute.call_args_list
+        if isinstance(call.args[0], Update)
+    ]
+    assert len(backfill_updates) == 1
+    assert backfill_updates[0].table.name == "admin_tasks"
     assert task.progress == 100
     assert "Tile rebuild task #99" in task.log
     assert (source_dir / "new.tiff").read_text() == "new"
@@ -1725,7 +1938,7 @@ async def test_run_files_import_rejects_insufficient_staging_space(tmp_path) -> 
     task = SimpleNamespace(
         id=1, task_type="files_import", status="pending", progress=0, log="",
         result_filename=None, result_path=None, input_path=str(archive),
-        error_message=None,
+        input_checksum=None, error_message=None,
     )
 
     mock_session = AsyncMock()
@@ -1793,7 +2006,7 @@ async def test_run_files_import_rejects_cross_device_staging(tmp_path) -> None:
     task = SimpleNamespace(
         id=1, task_type="files_import", status="pending", progress=0, log="",
         result_filename=None, result_path=None, input_path=str(archive),
-        error_message=None,
+        input_checksum=None, error_message=None,
     )
 
     mock_session = AsyncMock()
@@ -1854,6 +2067,7 @@ async def test_run_files_import_trips_runtime_free_space_floor_and_cleans_up(
         result_filename=None,
         result_path=None,
         input_path=str(archive),
+        input_checksum=None,
         error_message=None,
     )
 
@@ -1940,6 +2154,93 @@ def test_swap_imported_entries_keeps_success_on_backup_cleanup_failure(
     assert not (data_source / "old.tiff").exists()
 
 
+def test_compute_archive_sha256(tmp_path) -> None:
+    payload = b"archive-bytes" * 1000
+    archive = tmp_path / "a.tar.gz"
+    archive.write_bytes(payload)
+    assert compute_archive_sha256(archive) == hashlib.sha256(payload).hexdigest()
+
+
+def _files_import_task_env(tmp_path):
+    """Build dirs, a valid archive, and a runnable files_import task env."""
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    tiles_dir = data_dir / "tiles"
+    tiles_dir.mkdir()
+    source_dir = data_dir / "source_images"
+    source_dir.mkdir()
+    tasks_dir = data_dir / "admin_tasks"
+    tasks_dir.mkdir()
+
+    payload_dir = tmp_path / "payload"
+    payload_source = payload_dir / "source_images"
+    payload_source.mkdir(parents=True)
+    (payload_source / "new.tiff").write_text("new")
+    archive = str(tmp_path / "upload.tar.gz")
+    with tarfile.open(archive, "w:gz") as tar:
+        tar.add(str(payload_dir), arcname="data")
+    return data_dir, tiles_dir, source_dir, tasks_dir, archive
+
+
+async def _run_files_import_with_checksum(tmp_path, checksum_for):
+    data_dir, tiles_dir, source_dir, tasks_dir, archive = _files_import_task_env(
+        tmp_path
+    )
+    input_checksum = checksum_for(archive) if callable(checksum_for) else checksum_for
+    task = SimpleNamespace(
+        id=1, task_type="files_import", status="pending", progress=0, log="",
+        result_filename=None, result_path=None, input_path=archive,
+        input_checksum=input_checksum, error_message=None,
+    )
+
+    mock_session = AsyncMock()
+    mock_session.get = AsyncMock(return_value=task)
+    mock_session.commit = AsyncMock()
+    exec_result = MagicMock()
+    exec_result.scalar.return_value = 99
+    exec_result.scalars.return_value.first.return_value = None
+    mock_session.execute.return_value = exec_result
+    mock_session_factory = MagicMock()
+    mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=mock_session_factory),
+        patch("app.admin_ops.settings") as mock_settings,
+        patch("app.admin_ops._IMPORT_STAGING_DIR", str(data_dir / ".import-staging")),
+        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=True),
+        patch("app.admin_ops._ensure_tasks_dir", return_value=str(tasks_dir)),
+    ):
+        mock_settings.data_dir = str(data_dir)
+        mock_settings.tiles_dir = str(tiles_dir)
+        mock_settings.source_images_dir = str(source_dir)
+        await run_files_import(1)
+    return task, archive, source_dir
+
+
+async def test_run_files_import_verifies_matching_checksum(tmp_path) -> None:
+    task, archive, source_dir = await _run_files_import_with_checksum(
+        tmp_path, compute_archive_sha256
+    )
+
+    assert task.status == "completed"
+    assert task.input_checksum == compute_archive_sha256(archive)
+    assert "Archive integrity verified" in task.log
+    assert (source_dir / "new.tiff").read_text() == "new"
+
+
+async def test_run_files_import_rejects_checksum_mismatch(tmp_path) -> None:
+    task, archive, source_dir = await _run_files_import_with_checksum(
+        tmp_path, "0" * 64
+    )
+
+    assert task.status == "failed"
+    assert "no longer matches the originally uploaded file" in (
+        task.error_message or ""
+    )
+    assert not (source_dir / "new.tiff").exists()
+
+
 async def test_list_files_import_archives_returns_retained_uploads(tmp_path) -> None:
     tasks_dir = tmp_path / "admin_tasks"
     tasks_dir.mkdir()
@@ -1997,6 +2298,7 @@ async def test_rerun_files_import_archive_reuses_retained_file(tmp_path) -> None
         result_path=None,
         input_path=str(archive),
         original_filename="archive.tar.gz",
+        input_checksum="c" * 64,
         error_message=None,
         created_by=1,
         created_at=datetime.now(timezone.utc),
@@ -2020,6 +2322,7 @@ async def test_rerun_files_import_archive_reuses_retained_file(tmp_path) -> None
     assert result.status == "pending"
     assert result.input_path == str(archive)
     assert result.original_filename == "archive.tar.gz"
+    assert result.input_checksum == "c" * 64
     assert "Re-running retained archive" in result.log
     session.add.assert_called_once()
     session.commit.assert_awaited()
@@ -2059,6 +2362,128 @@ async def test_delete_files_import_archive_removes_retained_file(tmp_path) -> No
     assert result["deleted"] is True
     assert result["archive_task_id"] == 7
     assert not archive.exists()
+
+
+def _retention_archive(task_id: int, path: str, created_at: datetime) -> dict[str, object]:
+    return {
+        "archive_task_id": task_id,
+        "original_filename": f"archive-{task_id}.tar.gz",
+        "size_bytes": 10,
+        "created_at": created_at,
+        "last_status": "completed",
+    }
+
+
+def test_files_import_archive_retention_policy_defaults() -> None:
+    policy = files_import_archive_retention_policy()
+    assert policy == {"retention_count": 0, "retention_days": 0}
+
+
+async def test_enforce_retention_noop_when_policy_disabled(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "files_import_archive_retention_count", 0)
+    monkeypatch.setattr(settings, "files_import_archive_retention_days", 0)
+    session = AsyncMock()
+    with patch("app.admin_ops.list_files_import_archives") as mock_list:
+        assert await enforce_files_import_archive_retention(session) == []
+    mock_list.assert_not_called()
+
+
+async def test_enforce_retention_keeps_newest_count(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "files_import_archive_retention_count", 1)
+    monkeypatch.setattr(settings, "files_import_archive_retention_days", 0)
+    now = datetime.now(timezone.utc)
+    archives = [
+        _retention_archive(3, "/tasks/c.tar.gz", now),
+        _retention_archive(2, "/tasks/b.tar.gz", now - timedelta(days=1)),
+        _retention_archive(1, "/tasks/a.tar.gz", now - timedelta(days=2)),
+    ]
+    tasks = {
+        1: SimpleNamespace(input_path="/tasks/a.tar.gz"),
+        2: SimpleNamespace(input_path="/tasks/b.tar.gz"),
+        3: SimpleNamespace(input_path="/tasks/c.tar.gz"),
+    }
+    session = AsyncMock()
+    session.get = AsyncMock(side_effect=lambda _model, task_id: tasks.get(task_id))
+    with (
+        patch("app.admin_ops.list_files_import_archives", AsyncMock(return_value=archives)),
+        patch("app.admin_ops.delete_files_import_archive", AsyncMock()) as mock_delete,
+    ):
+        deleted = await enforce_files_import_archive_retention(session)
+    assert deleted == [2, 1]
+    assert mock_delete.await_count == 2
+
+
+async def test_enforce_retention_deletes_older_than_max_age(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "files_import_archive_retention_count", 0)
+    monkeypatch.setattr(settings, "files_import_archive_retention_days", 7)
+    now = datetime.now(timezone.utc)
+    archives = [
+        _retention_archive(2, "/tasks/b.tar.gz", now - timedelta(days=1)),
+        _retention_archive(1, "/tasks/a.tar.gz", now - timedelta(days=30)),
+    ]
+    tasks = {
+        1: SimpleNamespace(input_path="/tasks/a.tar.gz"),
+        2: SimpleNamespace(input_path="/tasks/b.tar.gz"),
+    }
+    session = AsyncMock()
+    session.get = AsyncMock(side_effect=lambda _model, task_id: tasks.get(task_id))
+    with (
+        patch("app.admin_ops.list_files_import_archives", AsyncMock(return_value=archives)),
+        patch("app.admin_ops.delete_files_import_archive", AsyncMock()) as mock_delete,
+    ):
+        deleted = await enforce_files_import_archive_retention(session)
+    assert deleted == [1]
+    mock_delete.assert_awaited_once_with(session, 1)
+
+
+async def test_enforce_retention_dedupes_rerun_tasks_sharing_archive(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "files_import_archive_retention_count", 1)
+    monkeypatch.setattr(settings, "files_import_archive_retention_days", 0)
+    now = datetime.now(timezone.utc)
+    # Task 5 is a rerun of task 4 — both reference the same on-disk file, so
+    # the shared archive counts once and survives a keep-newest-1 policy.
+    archives = [
+        _retention_archive(5, "/tasks/a.tar.gz", now),
+        _retention_archive(4, "/tasks/a.tar.gz", now - timedelta(days=1)),
+    ]
+    tasks = {
+        4: SimpleNamespace(input_path="/tasks/a.tar.gz"),
+        5: SimpleNamespace(input_path="/tasks/a.tar.gz"),
+    }
+    session = AsyncMock()
+    session.get = AsyncMock(side_effect=lambda _model, task_id: tasks.get(task_id))
+    with (
+        patch("app.admin_ops.list_files_import_archives", AsyncMock(return_value=archives)),
+        patch("app.admin_ops.delete_files_import_archive", AsyncMock()) as mock_delete,
+    ):
+        deleted = await enforce_files_import_archive_retention(session)
+    assert deleted == []
+    mock_delete.assert_not_awaited()
+
+
+async def test_enforce_retention_keeps_archives_in_active_use(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "files_import_archive_retention_count", 1)
+    monkeypatch.setattr(settings, "files_import_archive_retention_days", 0)
+    now = datetime.now(timezone.utc)
+    archives = [
+        _retention_archive(2, "/tasks/b.tar.gz", now),
+        _retention_archive(1, "/tasks/a.tar.gz", now - timedelta(days=1)),
+    ]
+    tasks = {
+        1: SimpleNamespace(input_path="/tasks/a.tar.gz"),
+        2: SimpleNamespace(input_path="/tasks/b.tar.gz"),
+    }
+    session = AsyncMock()
+    session.get = AsyncMock(side_effect=lambda _model, task_id: tasks.get(task_id))
+    with (
+        patch("app.admin_ops.list_files_import_archives", AsyncMock(return_value=archives)),
+        patch(
+            "app.admin_ops.delete_files_import_archive",
+            AsyncMock(side_effect=RuntimeError("Archive is currently in use")),
+        ),
+    ):
+        deleted = await enforce_files_import_archive_retention(session)
+    assert deleted == []
 
 
 def test_validate_retained_files_import_archive_path_rejects_traversal(tmp_path) -> None:

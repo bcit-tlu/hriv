@@ -38,6 +38,7 @@ import {
   ApiError,
   deleteFilesImportArchive,
   fetchBackupSnapshotManifest,
+  fetchFilesImportArchiveRetention,
   fetchFilesImportArchives,
   listExportArchives,
   purgeExportArchive,
@@ -62,6 +63,7 @@ import type {
   BackupSnapshotSummary,
   ExportArchive,
   FilesImportArchive,
+  FilesImportArchiveRetentionPolicy,
 } from '../api'
 import { useAuth } from '../useAuth'
 import ConfirmImportDialog, { type ConfirmImportKind } from './ConfirmImportDialog'
@@ -183,6 +185,8 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
   const [filesImportArchives, setFilesImportArchives] = useState<FilesImportArchive[]>([])
   const [filesImportArchivesLoading, setFilesImportArchivesLoading] = useState(false)
   const [filesImportArchivesError, setFilesImportArchivesError] = useState<string | null>(null)
+  const [filesImportArchiveRetention, setFilesImportArchiveRetention] =
+    useState<FilesImportArchiveRetentionPolicy | null>(null)
   const [exportArchives, setExportArchives] = useState<ExportArchive[]>([])
   const [exportArchivesTotalBytes, setExportArchivesTotalBytes] = useState(0)
   const [exportArchivesLoading, setExportArchivesLoading] = useState(false)
@@ -488,6 +492,12 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
     try {
       const archives = await fetchFilesImportArchives()
       setFilesImportArchives(archives)
+      try {
+        setFilesImportArchiveRetention(await fetchFilesImportArchiveRetention())
+      } catch {
+        // Policy display is informational only; keep the archive list usable.
+        setFilesImportArchiveRetention(null)
+      }
     } catch (err) {
       setFilesImportArchivesError(userMessage(err, 'Failed to load import archives'))
     } finally {
@@ -1388,6 +1398,23 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
                   )}
                 </Typography>
               )}
+              {filesImportArchiveRetention &&
+                (filesImportArchiveRetention.retention_count > 0 ||
+                  filesImportArchiveRetention.retention_days > 0) && (
+                  <Alert severity="info" sx={{ mb: 2 }} data-testid="import-archive-retention">
+                    Automatic retention is active: older archives are deleted
+                    {filesImportArchiveRetention.retention_count > 0 &&
+                      ` beyond the newest ${filesImportArchiveRetention.retention_count}`}
+                    {filesImportArchiveRetention.retention_count > 0 &&
+                      filesImportArchiveRetention.retention_days > 0 &&
+                      ' and'}
+                    {filesImportArchiveRetention.retention_days > 0 &&
+                      ` after ${filesImportArchiveRetention.retention_days} day${
+                        filesImportArchiveRetention.retention_days === 1 ? '' : 's'
+                      }`}
+                    . Archives used by a running import are never removed.
+                  </Alert>
+                )}
               {filesImportArchivesError && (
                 <Alert severity="error" sx={{ mb: 2 }}>
                   {filesImportArchivesError}

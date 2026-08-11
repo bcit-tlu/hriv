@@ -599,6 +599,22 @@ async def test_list_files_import_archives_endpoint_response_model_validation() -
     ]
 
 
+async def test_get_files_import_archive_retention_endpoint() -> None:
+    app = FastAPI()
+    app.include_router(admin_router.router, prefix="/api")
+    app.dependency_overrides[admin_router._admin] = lambda: SimpleNamespace(id=1, role="admin")
+
+    with patch(
+        "app.routers.admin.files_import_archive_retention_policy",
+        return_value={"retention_count": 3, "retention_days": 30},
+    ):
+        with TestClient(app) as client:
+            response = client.get("/api/admin/tasks/files-import/archive-retention")
+
+    assert response.status_code == 200
+    assert response.json() == {"retention_count": 3, "retention_days": 30}
+
+
 async def test_list_files_import_archives_endpoint() -> None:
     user = SimpleNamespace(id=1)
     archives = [

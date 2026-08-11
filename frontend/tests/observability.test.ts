@@ -401,6 +401,7 @@ describe('observability', () => {
       'image.view.ended',
       'image.view.failed',
       'navigation.page_changed',
+      'reorder.operation',
       'ui.toolbar_action',
     ])
   })

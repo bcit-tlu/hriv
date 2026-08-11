@@ -27,6 +27,24 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    # Real PostgreSQL for reorder-fixture integration tests (epic #975);
+    # tests that need it skip automatically when the URL is absent.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: hriv_test
+          POSTGRES_USER: hriv
+          POSTGRES_PASSWORD: hriv
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hriv"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      REORDER_FIXTURE_DATABASE_URL: postgresql+asyncpg://hriv:hriv@localhost:5432/hriv_test
     steps:
       - uses: actions/checkout@v6
 
@@ -48,6 +66,11 @@ jobs:
 
       - name: Install dependencies
         run: poetry install --with dev
+
+      # Alembic is the sole source of truth for the schema; bring the
+      # fixture database to head before the integration tests touch it.
+      - name: Apply migrations to fixture database
+        run: DATABASE_URL="$REORDER_FIXTURE_DATABASE_URL" poetry run python -m app.migrations_bootstrap
 
       # Coverage gate (≥ 80 %) enforced via addopts in pyproject.toml.
       - name: Run pytest with coverage

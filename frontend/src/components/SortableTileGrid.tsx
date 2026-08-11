@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
@@ -18,12 +18,13 @@ import type { Draggable } from '@dnd-kit/abstract'
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/react'
 
 import type { Category, Group, ImageItem, Program } from '../types'
+import type { TileOrderItemRef } from '../api'
+import type { ReorderDragContext } from '../tileOrdering'
 import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
 import { getCategoryHiddenStateFromPath } from '../treeUtils'
 import CategoryTile from './CategoryTile'
 import ImageTile from './ImageTile'
 import FileDropZone from './FileDropZone'
-import { reorderCategories, reorderImages } from '../api'
 import {
   buildTileItems,
   collectDescendantIds,
@@ -31,9 +32,14 @@ import {
   farHalfReorderCollision,
   findCategory,
   nearHalfMoveCollision,
+  orderTileItems,
   tileId,
 } from './sortableTileGridUtils'
 import type { TileItem } from './sortableTileGridUtils'
+
+// Stable default so omitting `groups` cannot produce a fresh array on every
+// render and defeat the render-callback memoization below.
+const NO_GROUPS: Group[] = []
 
 interface SortableTileProps {
   id: string
@@ -74,6 +80,35 @@ function SortableTile({ id, index, disabled, children }: SortableTileProps) {
     </Box>
   )
 }
+
+interface GridTileProps {
+  item: TileItem
+  index: number
+  disabled: boolean
+  renderCategoryTile: (cat: Category, wrapDroppable?: boolean) => React.ReactNode
+  renderImageTile: (img: ImageItem) => React.ReactNode
+}
+
+// Memoized: grid-level state changes (drag start/end sets `activeItem`) must
+// not re-render every mounted tile — at production scale (600+ tiles) that
+// re-render is a main-thread stall at the start and end of every drag. The
+// render callbacks are stable (useCallback), so a tile only re-renders when
+// its own item, index, or disabled state changes.
+const GridTile = memo(function GridTile({
+  item,
+  index,
+  disabled,
+  renderCategoryTile,
+  renderImageTile,
+}: GridTileProps) {
+  return (
+    <SortableTile id={tileId(item)} index={index} disabled={disabled}>
+      {item.type === 'category'
+        ? renderCategoryTile(item.data, true)
+        : renderImageTile(item.data as ImageItem)}
+    </SortableTile>
+  )
+})
 
 interface DroppableCategoryZoneProps {
   categoryId: number
@@ -187,8 +222,24 @@ export interface SortableTileGridProps {
   onFilesDrop: (files: File[]) => void
   onGridDragOver?: React.DragEventHandler
   onGridDrop?: React.DragEventHandler
-  onReorderComplete?: () => Promise<void> | void
-  onReorderError?: (err: unknown) => void
+
+  /**
+   * Coordinator-managed reordering (epic #975, issue #979). The grid applies
+   * every accepted drag locally and reports the new order to the
+   * coordinator; it never calls persistence APIs directly and never
+   * discards a drop. `displayOrder` is the coordinator's newest order for
+   * this scope (survives unmount/remount); `claimGeneration` guards against
+   * a stale grid instance overwriting a remounted one.
+   */
+  tileOrdering: {
+    displayOrder: TileOrderItemRef[] | null
+    reportOrder: (
+      order: TileOrderItemRef[],
+      generation?: number,
+      dragContext?: ReorderDragContext,
+    ) => void
+    claimGeneration: () => number
+  }
 }
 
 export default function SortableTileGrid({
@@ -200,7 +251,7 @@ export default function SortableTileGrid({
   canEditContent,
   fileDragActive,
   programs,
-  groups = [],
+  groups = NO_GROUPS,
   onCategoryClick,
   onMoveCategory,
   onSetCardImage,
@@ -213,8 +264,7 @@ export default function SortableTileGrid({
   onFilesDrop,
   onGridDragOver,
   onGridDrop,
-  onReorderComplete,
-  onReorderError,
+  tileOrdering,
 }: SortableTileGridProps) {
   const visibleImages = useMemo(
     () => (path.length === 0 ? [...uncategorizedImages, ...currentImages] : currentImages),
@@ -225,39 +275,42 @@ export default function SortableTileGrid({
   const inheritedProgramIds = useMemo(() => narrowProgramIds(path), [path])
   const inheritedGroupIds = useMemo(() => narrowGroupIds(path), [path])
 
-  const [items, setItems] = useState<TileItem[]>(() =>
-    buildTileItems(currentCategories, visibleImages),
-  )
+  const parentId = path.length > 0 ? path[path.length - 1].id : null
+  const [items, setItems] = useState<TileItem[]>(() => {
+    const built = buildTileItems(currentCategories, visibleImages)
+    return tileOrdering.displayOrder ? orderTileItems(built, tileOrdering.displayOrder) : built
+  })
   const [activeItem, setActiveItem] = useState<TileItem | null>(null)
-  const reorderInFlightRef = useRef(false)
-  const pendingItemsRef = useRef<TileItem[] | null>(null)
-  // Refs for async callback access (always reflect latest props)
-  const currentCategoriesRef = useRef(currentCategories)
-  const visibleImagesRef = useRef(visibleImages)
+  const gridGenerationRef = useRef<number | null>(null)
+  const claimGeneration = tileOrdering.claimGeneration
+  // Claim a fresh grid-instance generation per scope so callbacks from an
+  // unmounted grid (SPA navigation) cannot overwrite a remounted one.
+  useLayoutEffect(() => {
+    gridGenerationRef.current = claimGeneration()
+  }, [claimGeneration, parentId])
   const syncedCategoriesRef = useRef(currentCategories)
   const syncedVisibleImagesRef = useRef(visibleImages)
+  const coordinatorOrder = tileOrdering.displayOrder
+  const syncedCoordinatorOrderRef = useRef(coordinatorOrder)
 
   useLayoutEffect(() => {
-    currentCategoriesRef.current = currentCategories
-    visibleImagesRef.current = visibleImages
-
-    if (
-      syncedCategoriesRef.current === currentCategories &&
-      syncedVisibleImagesRef.current === visibleImages
-    ) {
+    const membershipChanged =
+      syncedCategoriesRef.current !== currentCategories ||
+      syncedVisibleImagesRef.current !== visibleImages
+    // Coordinator-authoritative order changes (saved responses or conflict
+    // refreshes) re-sort the current tiles without a full category-tree
+    // refresh.
+    const orderChanged = syncedCoordinatorOrderRef.current !== coordinatorOrder
+    if (!membershipChanged && !orderChanged) {
       return
     }
     syncedCategoriesRef.current = currentCategories
     syncedVisibleImagesRef.current = visibleImages
+    syncedCoordinatorOrderRef.current = coordinatorOrder
 
-    const nextItems = buildTileItems(currentCategories, visibleImages)
-    if (reorderInFlightRef.current) {
-      pendingItemsRef.current = nextItems
-      return
-    }
-    pendingItemsRef.current = null
-    setItems(nextItems)
-  }, [currentCategories, visibleImages])
+    const built = buildTileItems(currentCategories, visibleImages)
+    setItems(coordinatorOrder !== null ? orderTileItems(built, coordinatorOrder) : built)
+  }, [currentCategories, visibleImages, coordinatorOrder])
 
   const blockedIdsMap = useMemo(() => {
     const map = new Map<number, Set<number>>()
@@ -280,7 +333,7 @@ export default function SortableTileGrid({
   )
 
   const handleDragEnd = useCallback(
-    async (event: DragEndEvent) => {
+    (event: DragEndEvent) => {
       setActiveItem(null)
 
       const { operation } = event
@@ -289,7 +342,6 @@ export default function SortableTileGrid({
       const source = operation.source
       const target = operation.target
       if (!source || !target) return
-      if (reorderInFlightRef.current) return
 
       const sourceId = String(source.id)
       const targetId = String(target.id)
@@ -319,123 +371,83 @@ export default function SortableTileGrid({
         .filter((item): item is TileItem => item !== undefined)
       if (reordered.length !== items.length) return
 
-      reorderInFlightRef.current = true
+      // Coordinator mode (issue #979): apply locally and report the new
+      // order. Queueing, coalescing, persistence, and save-state UX are
+      // owned above the grid; nothing is discarded here.
       setItems(reordered)
+      tileOrdering.reportOrder(
+        reordered.map((item) => ({ type: item.type, id: item.data.id })),
+        gridGenerationRef.current ?? undefined,
+        // Drag detail rides along so lifecycle telemetry keeps per-drag
+        // context (which tile moved, from/to index) on this surface.
+        {
+          itemType: sourceId.startsWith('img-') ? 'image' : 'category',
+          itemId: Number(sourceId.slice(4)),
+          fromIndex: ids.indexOf(sourceId),
+          toIndex: reorderedIds.indexOf(sourceId),
+        },
+      )
+    },
+    [items, tileOrdering, onDropCategoryOnCategory, onDropImageOnCategory],
+  )
 
-      const parentId = path.length > 0 ? path[path.length - 1].id : null
-      const catUpdates: Array<{
-        id: number
-        parent_id: number | null
-        sort_order: number
-      }> = []
-      const imgUpdates: Array<{ id: number; sort_order: number }> = []
+  const renderCategoryTile = useCallback(
+    (cat: Category, wrapDroppable = false) => {
+      const tile = (
+        <CategoryTile
+          category={cat}
+          onClick={onCategoryClick}
+          onMove={canEditContent ? onMoveCategory : undefined}
+          onSetCardImage={canEditContent ? onSetCardImage : undefined}
+          onEditName={canEditContent ? onEditCategoryName : undefined}
+          programs={programs}
+          inheritedProgramIds={inheritedProgramIds}
+          groups={groups}
+          inheritedGroupIds={inheritedGroupIds}
+          parentHidden={pathHiddenState.hidden}
+          inheritedHidden={pathHiddenState.hidden}
+          onDropFiles={canEditContent ? onDropFilesOnCategory : undefined}
+        />
+      )
 
-      reordered.forEach((item, index) => {
-        if (item.type === 'category') {
-          catUpdates.push({
-            id: item.data.id,
-            parent_id: parentId,
-            sort_order: index,
-          })
-        } else {
-          imgUpdates.push({
-            id: item.data.id,
-            sort_order: index,
-          })
-        }
-      })
+      if (!wrapDroppable) return tile
 
-      try {
-        const promises: Promise<void>[] = []
-        if (catUpdates.length > 0) promises.push(reorderCategories(catUpdates))
-        if (imgUpdates.length > 0) promises.push(reorderImages(imgUpdates))
-
-        const results = await Promise.allSettled(promises)
-        const failed = results.filter((r) => r.status === 'rejected')
-
-        if (failed.length > 0) {
-          const err =
-            (failed[0] as PromiseRejectedResult).reason ?? new Error('Reorder partially failed')
-          console.error('Reorder partially failed', failed)
-          reorderInFlightRef.current = false
-          pendingItemsRef.current = null
-          setItems((current) => (current === reordered ? items : current))
-          onReorderError?.(err)
-          onReorderComplete?.()
-          return
-        }
-
-        // Keep the in-flight flag raised until the caller
-        // refreshes categories so the render-time guard
-        // doesn't rebuild items from stale sort_order.
-        try {
-          await onReorderComplete?.()
-        } catch {
-          /* handled inside the callback */
-        }
-        reorderInFlightRef.current = false
-        setItems(
-          pendingItemsRef.current ??
-            buildTileItems(currentCategoriesRef.current, visibleImagesRef.current),
-        )
-        pendingItemsRef.current = null
-      } catch (err) {
-        console.error('Failed to persist reorder', err)
-        reorderInFlightRef.current = false
-        pendingItemsRef.current = null
-        setItems((current) => (current === reordered ? items : current))
-        onReorderError?.(err)
-        onReorderComplete?.()
-      }
+      return (
+        <DroppableCategoryZone
+          categoryId={cat.id}
+          disabled={!canEditContent}
+          blockedIdsMap={blockedIdsMap}
+        >
+          {tile}
+        </DroppableCategoryZone>
+      )
     },
     [
-      items,
-      path,
-      onDropCategoryOnCategory,
-      onDropImageOnCategory,
-      onReorderComplete,
-      onReorderError,
+      canEditContent,
+      blockedIdsMap,
+      programs,
+      groups,
+      inheritedProgramIds,
+      inheritedGroupIds,
+      pathHiddenState,
+      onCategoryClick,
+      onMoveCategory,
+      onSetCardImage,
+      onEditCategoryName,
+      onDropFilesOnCategory,
     ],
   )
 
-  const renderCategoryTile = (cat: Category, wrapDroppable = false) => {
-    const tile = (
-      <CategoryTile
-        category={cat}
-        onClick={onCategoryClick}
-        onMove={canEditContent ? onMoveCategory : undefined}
-        onSetCardImage={canEditContent ? onSetCardImage : undefined}
-        onEditName={canEditContent ? onEditCategoryName : undefined}
-        programs={programs}
-        inheritedProgramIds={inheritedProgramIds}
-        groups={groups}
-        inheritedGroupIds={inheritedGroupIds}
-        parentHidden={pathHiddenState.hidden}
-        inheritedHidden={pathHiddenState.hidden}
-        onDropFiles={canEditContent ? onDropFilesOnCategory : undefined}
+  const renderImageTile = useCallback(
+    (img: ImageItem) => (
+      <ImageTile
+        image={img}
+        onClick={onImageClick}
+        onEditDetails={canEditContent ? onEditImageDetails : undefined}
+        categoryHidden={pathHiddenState.hidden}
       />
-    )
-
-    if (!wrapDroppable) return tile
-
-    return (
-      <DroppableCategoryZone
-        categoryId={cat.id}
-        disabled={!canEditContent}
-        blockedIdsMap={blockedIdsMap}
-      >
-        {tile}
-      </DroppableCategoryZone>
-    )
-  }
-
-  const renderImageTile = (img: ImageItem) => (
-    <ImageTile
-      image={img}
-      onClick={onImageClick}
-      onEditDetails={canEditContent ? onEditImageDetails : undefined}
-      categoryHidden={pathHiddenState.hidden}
-    />
+    ),
+    [canEditContent, pathHiddenState, onImageClick, onEditImageDetails],
   )
 
   const sensors = useMemo(
@@ -476,16 +488,16 @@ export default function SortableTileGrid({
         onDragOver={onGridDragOver}
         onDrop={onGridDrop}
       >
-        {items.map((item, index) => {
-          const id = tileId(item)
-          return (
-            <SortableTile key={id} id={id} index={index} disabled={!canEditContent}>
-              {item.type === 'category'
-                ? renderCategoryTile(item.data, true)
-                : renderImageTile(item.data as ImageItem)}
-            </SortableTile>
-          )
-        })}
+        {items.map((item, index) => (
+          <GridTile
+            key={tileId(item)}
+            item={item}
+            index={index}
+            disabled={!canEditContent}
+            renderCategoryTile={renderCategoryTile}
+            renderImageTile={renderImageTile}
+          />
+        ))}
         {canEditContent && <FileDropZone isDragActive={fileDragActive} onDrop={onFilesDrop} />}
       </Box>
 
