@@ -7,6 +7,7 @@ with progress, log output, and results.
 """
 
 import asyncio
+import io
 import json
 import logging
 import os
@@ -32,6 +33,7 @@ from .backup_access import (
     BackupSnapshotCancelledError,
     restore_snapshot_file,
 )
+from .component_versions import get_app_version
 from .database import get_async_session, settings
 from .tile_order import INITIAL_SCOPE_REVISION
 from .worker import enqueue_admin_task
@@ -68,6 +70,115 @@ _IMPORT_STAGING_MIN_FREE_BYTES = int(
     os.environ.get("IMPORT_STAGING_MIN_FREE_BYTES", str(1024 * 1024 * 1024))
 )
 _IMPORT_STAGING_FREE_SPACE_CHECK_INTERVAL_BYTES = 512 * 1024 * 1024
+
+
+# ── Filesystem export/import archive manifest ──────────────
+#
+# Every filesystem export embeds a small JSON manifest at the archive
+# root (next to the ``data/`` payload) so future releases can evolve the
+# archive layout safely.  Imports validate the manifest when present;
+# archives created before manifests existed are accepted as legacy
+# format-version 0 archives to keep previously retained archives usable.
+
+FILES_EXPORT_MANIFEST_NAME = "hriv-manifest.json"
+FILES_EXPORT_FORMAT_VERSION = 1
+SUPPORTED_FILES_IMPORT_FORMAT_VERSIONS = frozenset({FILES_EXPORT_FORMAT_VERSION})
+
+
+def build_files_export_manifest() -> dict[str, object]:
+    """Build the manifest embedded at the root of filesystem exports."""
+    return {
+        "format_version": FILES_EXPORT_FORMAT_VERSION,
+        "hriv_version": get_app_version(),
+        "export_type": "filesystem",
+        "created_at": datetime.now(timezone.utc)
+        .isoformat()
+        .replace("+00:00", "Z"),
+    }
+
+
+def _add_manifest_member(tar: tarfile.TarFile) -> int:
+    """Append the export manifest as the first member of *tar*.
+
+    Returns the manifest payload size in bytes.
+    """
+    payload = json.dumps(build_files_export_manifest(), indent=2).encode("utf-8")
+    info = tarfile.TarInfo(FILES_EXPORT_MANIFEST_NAME)
+    info.size = len(payload)
+    info.mtime = int(datetime.now(timezone.utc).timestamp())
+    tar.addfile(info, io.BytesIO(payload))
+    return len(payload)
+
+
+def _validate_files_import_manifest(staging_root: Path) -> int:
+    """Validate the archive manifest extracted into *staging_root*.
+
+    Returns the archive's ``format_version``, or ``0`` for legacy
+    archives that predate manifests (still importable).  Raises
+    :class:`ValueError` with an operator-facing message when the
+    manifest is unreadable, is for a different export type, or declares
+    an unsupported format version.  The manifest file is removed from
+    the staging root after validation so it is never swapped into the
+    data directory.
+    """
+    manifest_path = staging_root / FILES_EXPORT_MANIFEST_NAME
+    if not manifest_path.exists() and not manifest_path.is_symlink():
+        logger.warning(
+            "Filesystem import archive has no manifest; treating as legacy format",
+            extra={"event": "admin_task.files_import_legacy_archive"},
+        )
+        return 0
+    if manifest_path.is_symlink() or not manifest_path.is_file():
+        raise ValueError(
+            f"Archive manifest ({FILES_EXPORT_MANIFEST_NAME}) must be a "
+            "regular file"
+        )
+    try:
+        raw = manifest_path.read_bytes().decode("utf-8", errors="replace")
+    except OSError as exc:
+        raise ValueError(
+            f"Could not read archive manifest ({FILES_EXPORT_MANIFEST_NAME}) "
+            f"from the staging directory: {exc}"
+        ) from exc
+    finally:
+        try:
+            manifest_path.unlink()
+        except OSError:
+            logger.warning("Failed to remove staged manifest", exc_info=True)
+    try:
+        manifest = json.loads(raw)
+    except ValueError as exc:
+        raise ValueError(
+            f"Archive manifest ({FILES_EXPORT_MANIFEST_NAME}) is not valid JSON: {exc}"
+        ) from exc
+    if not isinstance(manifest, dict):
+        raise ValueError(
+            f"Archive manifest ({FILES_EXPORT_MANIFEST_NAME}) must be a JSON object"
+        )
+    export_type = manifest.get("export_type")
+    if export_type != "filesystem":
+        raise ValueError(
+            "Archive manifest declares export_type "
+            f"{export_type!r}; expected 'filesystem'. This archive is not a "
+            "filesystem export."
+        )
+    format_version = manifest.get("format_version")
+    if not isinstance(format_version, int) or isinstance(format_version, bool):
+        raise ValueError(
+            "Archive manifest has a missing or invalid format_version; "
+            "expected an integer."
+        )
+    if format_version not in SUPPORTED_FILES_IMPORT_FORMAT_VERSIONS:
+        supported = ", ".join(
+            str(v) for v in sorted(SUPPORTED_FILES_IMPORT_FORMAT_VERSIONS)
+        )
+        raise ValueError(
+            f"Archive format version {format_version} is not supported by this "
+            f"release (supported: {supported}). The archive was created by "
+            f"HRIV {manifest.get('hriv_version', 'unknown')}; upgrade this "
+            "deployment or re-export from a compatible release."
+        )
+    return format_version
 
 
 def _ensure_tasks_dir() -> str:
@@ -1919,6 +2030,9 @@ def _create_tar_file(
     pigz_path = shutil.which("pigz")
     if pigz_path is None:
         with tarfile.open(dest, mode="w:gz") as tar:
+            manifest_size = _add_manifest_member(tar)
+            if on_entry is not None:
+                on_entry(FILES_EXPORT_MANIFEST_NAME, manifest_size)
             for arcname, path, size, is_dir in _iter_export_entries(
                 data_dir,
                 cancel_event=cancel_event,
@@ -1956,6 +2070,9 @@ def _create_tar_file(
     try:
         assert proc.stdin is not None
         with tarfile.open(fileobj=proc.stdin, mode="w|") as tar:
+            manifest_size = _add_manifest_member(tar)
+            if on_entry is not None:
+                on_entry(FILES_EXPORT_MANIFEST_NAME, manifest_size)
             for arcname, path, size, is_dir in _iter_export_entries(
                 data_dir,
                 cancel_event=cancel_event,
@@ -2357,6 +2474,8 @@ def _extract_and_restore(
     if extracted_member_count == 0:
         raise ValueError("Archive is empty")
 
+    format_version = _validate_files_import_manifest(staging_root)
+
     extracted_dir = staging_root / "data"
     if not extracted_dir.exists():
         entries = list(staging_root.iterdir())
@@ -2366,17 +2485,22 @@ def _extract_and_restore(
             else staging_root
         )
 
+    if not extracted_dir.is_dir() or not any(extracted_dir.iterdir()):
+        raise ValueError("Archive contains no data entries to restore")
+
     _check_cancel()
     if on_progress:
         on_progress("finalize", 0, 0)
 
-    return _swap_imported_entries(
+    result = _swap_imported_entries(
         extracted_dir,
         Path(data_dir),
         tiles_dir,
         source_images_dir,
         cancel_event=cancel_event,
     )
+    result["manifest_format_version"] = format_version
+    return result
 
 
 async def run_files_import(
@@ -2593,9 +2717,15 @@ async def run_files_import(
                     "Could not queue automatic tile rebuild. "
                     "Run Rebuild Tiles manually if needed."
                 )
+            manifest_version = restored.get("manifest_format_version", 0)
+            manifest_note = (
+                f"Archive manifest format v{manifest_version} validated. "
+                if manifest_version > 0
+                else "Legacy archive (no manifest); imported as format v0. "
+            )
             summary = (
                 f"Restored {restored['source_files']} source file(s). "
-                f"{rebuild_log}"
+                f"{manifest_note}{rebuild_log}"
             )
             await _update_task(
                 session, task,
