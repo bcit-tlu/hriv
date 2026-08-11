@@ -38,6 +38,7 @@ All seed users share the password `password`.
 | Restrict categories to groups   | Yes   | Yes\*      | No      |
 | Manage announcement             | Yes   | Yes        | No      |
 | View changelog notifications    | Yes   | Yes        | No      |
+| View component versions (About) | Yes   | Yes        | No      |
 | Manage changelog entries        | Yes   | No         | No      |
 | Admin tab (changelog + backups) | Yes   | No         | No      |
 | User management (add/delete)    | Yes   | No         | No      |

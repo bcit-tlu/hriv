@@ -328,6 +328,15 @@ vi.mock('../src/useAuth', () => ({
   useAuth: () => authState,
 }))
 
+vi.mock('../src/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/api')>()
+  return {
+    ...actual,
+    fetchVersions: vi.fn().mockResolvedValue({ backend: '1.0.0', backup: '1.0.1' }),
+    fetchFrontendVersion: vi.fn().mockResolvedValue({ frontend: '1.0.2' }),
+  }
+})
+
 vi.mock('../src/useColorMode', () => ({
   useColorMode: () => ({ mode: 'light' }),
 }))
@@ -731,5 +740,25 @@ describe('App breadcrumbs', () => {
 
     await screen.findByRole('progressbar')
     expect(announcementModalMock.loadAnnouncement).not.toHaveBeenCalled()
+  })
+
+  it('fetches component versions for instructors (canEditContent)', async () => {
+    render(<App />)
+
+    expect(vi.mocked(fetchVersions)).toHaveBeenCalledOnce()
+    expect(vi.mocked(fetchFrontendVersion)).toHaveBeenCalledOnce()
+  })
+
+  it('does not fetch component versions for students', async () => {
+    authState = {
+      ...authState,
+      currentUser: { ...mockCurrentUser, role: 'student' as const },
+      canEditContent: false,
+    }
+
+    render(<App />)
+
+    expect(vi.mocked(fetchVersions)).not.toHaveBeenCalled()
+    expect(vi.mocked(fetchFrontendVersion)).not.toHaveBeenCalled()
   })
 })
