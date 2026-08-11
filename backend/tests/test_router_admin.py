@@ -458,7 +458,23 @@ async def test_start_file_restore_creates_task(tmp_path) -> None:
     assert params == {
         "snapshot_name": request.snapshot_name,
         "member_path": request.member_path,
+        "manifest_entry": {"size": 3, "sha256": "abc"},
     }
+
+
+async def test_start_file_restore_rejects_invalid_path() -> None:
+    user = SimpleNamespace(id=1)
+    bg = MagicMock()
+    db = AsyncMock()
+
+    request = FileRestoreRequest(
+        snapshot_name="hriv-backup-20260102-020000",
+        member_path="data/../db.sql",
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await start_file_restore(user, bg, request=request, db=db)
+    assert exc.value.status_code == 400
 
 
 async def test_list_backup_snapshots_disabled_returns_400() -> None:

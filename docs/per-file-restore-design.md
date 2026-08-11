@@ -76,6 +76,12 @@ Manifest browsing prefers the sidecar blob written alongside each snapshot:
 If the sidecar is missing, the backend falls back to streaming the combined
 `.tar.gz` and extracting `<snapshot_name>/manifest.json` from the archive.
 
+The restore endpoint validates the requested member against the manifest
+before queuing the task and caches the validated `{size, sha256}` entry in
+the task's input JSON, so the background runner reuses it instead of
+fetching the manifest a second time. Requests without a cached entry (older
+queued tasks) fall back to fetching the manifest in the runner.
+
 The restore task only allows `data/` members, rejects `db.sql` and path
 traversal, verifies the SHA-256 checksum from the manifest, and restores the
 file atomically via a temp path and rename. The final task log notes that

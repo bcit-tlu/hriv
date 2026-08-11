@@ -2873,6 +2873,12 @@ async def run_file_restore(task_id: int) -> None:
             if not isinstance(member_path, str) or not member_path.strip():
                 raise ValueError("Restore request is missing member_path")
 
+            cached_entry = params.get("manifest_entry")
+            if not isinstance(cached_entry, dict):
+                # Older restore requests predate the cached entry; the
+                # restore falls back to fetching the manifest itself.
+                cached_entry = None
+
             await _update_task(
                 session,
                 task,
@@ -2899,6 +2905,7 @@ async def run_file_restore(task_id: int) -> None:
                     snapshot_name,
                     member_path,
                     cancel_event=cancel_event,
+                    manifest_entry=cached_entry,
                 )
             )
             poll_future = asyncio.ensure_future(_poll_cancel_only())

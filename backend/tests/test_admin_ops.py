@@ -2501,6 +2501,7 @@ async def test_run_file_restore_success(tmp_path) -> None:
             {
                 "snapshot_name": "hriv-backup-20260102-020000",
                 "member_path": "data/source_images/a.jpg",
+                "manifest_entry": {"size": 3, "sha256": "abc"},
             }
         )
     )
@@ -2535,10 +2536,14 @@ async def test_run_file_restore_success(tmp_path) -> None:
                 "size": 3,
                 "sha256": "abc",
             },
-        ),
+        ) as mock_restore,
     ):
         await run_file_restore(1)
 
+    assert mock_restore.call_args.kwargs["manifest_entry"] == {
+        "size": 3,
+        "sha256": "abc",
+    }
     assert task.status == "completed"
     assert task.progress == 100
     assert "Rebuild Tiles" in task.log
