@@ -2731,54 +2731,17 @@ async def run_files_import(
                 poll_future = asyncio.ensure_future(_poll_progress())
 
                 try:
-                    done, _pending = await asyncio.wait(
-                        [extract_future, poll_future],
-                        return_when=asyncio.FIRST_COMPLETED,
+                    restored = await _run_with_cancel_poll(
+                        extract_future,
+                        poll_future,
+                        cancel_event=cancel_event,
+                        grace_timeout_log=(
+                            "Timed out waiting for filesystem import "
+                            "to settle after cancel"
+                        ),
+                        shutdown_grace=120,
+                        return_result_on_cancel=True,
                     )
-
-                    if extract_future in done:
-                        poll_future.cancel()
-                        restored = extract_future.result()
-                    else:
-                        poll_exc = (
-                            poll_future.exception()
-                            if poll_future.done()
-                            else None
-                        )
-                        if poll_exc is not None:
-                            cancel_event.set()
-                            try:
-                                await asyncio.wait_for(
-                                    extract_future, timeout=120,
-                                )
-                            except asyncio.TimeoutError:
-                                logger.debug(
-                                    "Timed out waiting for filesystem import to settle after cancel"
-                                )
-                            if not extract_future.done():
-                                extract_future.cancel()
-                            raise poll_exc
-                        cancel_event.set()
-
-                        try:
-                            await asyncio.wait_for(
-                                extract_future, timeout=120,
-                            )
-                        except asyncio.TimeoutError:
-                            logger.debug(
-                                "Timed out waiting for filesystem import to settle after cancel"
-                            )
-
-                        if extract_future.done():
-                            try:
-                                restored = extract_future.result()
-                            except TaskCancelled:
-                                raise
-                            except Exception:
-                                raise
-                        else:
-                            extract_future.cancel()
-                            raise TaskCancelled("Task cancelled by admin")
                 finally:
                     remaining: list[tuple[str, int, int]] = []
                     while not progress_queue.empty():
@@ -2941,51 +2904,18 @@ async def run_file_restore(task_id: int) -> None:
             poll_future = asyncio.ensure_future(_poll_cancel_only())
 
             try:
-                done, _pending = await asyncio.wait(
-                    [restore_future, poll_future],
-                    return_when=asyncio.FIRST_COMPLETED,
+                restored = await _run_with_cancel_poll(
+                    restore_future,
+                    poll_future,
+                    cancel_event=cancel_event,
+                    grace_timeout_log=(
+                        "File restore did not finish within the "
+                        "shutdown grace period; cancelling task"
+                    ),
+                    return_result_on_cancel=True,
                 )
-                if restore_future in done:
-                    poll_future.cancel()
-                    try:
-                        restored = restore_future.result()
-                    except BackupSnapshotCancelledError as exc:
-                        raise TaskCancelled(str(exc)) from exc
-                else:
-                    poll_exc = poll_future.exception() if poll_future.done() else None
-                    if poll_exc is not None:
-                        cancel_event.set()
-                        try:
-                            await asyncio.wait_for(restore_future, timeout=5)
-                        except asyncio.TimeoutError:
-                            # Best-effort shutdown timeout; fall through to cancel the restore task.
-                            logger.debug(
-                                "File restore did not finish within the shutdown grace period; cancelling task",
-                            )
-                        if not restore_future.done():
-                            restore_future.cancel()
-                        raise poll_exc
-                    cancel_event.set()
-                    try:
-                        await asyncio.wait_for(restore_future, timeout=5)
-                    except asyncio.TimeoutError:
-                        # Best-effort shutdown timeout; fall through to cancel the restore task.
-                        logger.debug(
-                            "File restore did not finish within the shutdown grace period; cancelling task",
-                        )
-                    if restore_future.done():
-                        try:
-                            restored = restore_future.result()
-                        except BackupSnapshotCancelledError as exc:
-                            raise TaskCancelled(str(exc)) from exc
-                    else:
-                        restore_future.cancel()
-                        raise TaskCancelled("Task cancelled by admin")
-            finally:
-                if not restore_future.done():
-                    restore_future.cancel()
-                if not poll_future.done():
-                    poll_future.cancel()
+            except BackupSnapshotCancelledError as exc:
+                raise TaskCancelled(str(exc)) from exc
 
             await _update_task(
                 session,
