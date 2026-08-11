@@ -51,7 +51,6 @@ function MobileAnnouncement({ message, onDismiss }: { message: string; onDismiss
     <Box
       sx={{
         bgcolor: c.bg,
-        border: `1px solid ${c.border}`,
         px: '14px',
         py: '8px',
         display: 'flex',
@@ -94,7 +93,7 @@ function MobileAnnouncement({ message, onDismiss }: { message: string; onDismiss
               border: 'none',
               cursor: 'pointer',
               color: c.btn,
-              fontSize: 11,
+              fontSize: 13,
               fontWeight: 500,
               display: 'inline-flex',
               alignItems: 'center',

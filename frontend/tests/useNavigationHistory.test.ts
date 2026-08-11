@@ -4,8 +4,13 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useNavigationHistory, buildNavHistoryState } from '../src/useNavigationHistory'
+import {
+  useNavigationHistory,
+  buildNavHistoryState,
+  isRealUserSwitch,
+} from '../src/useNavigationHistory'
 import type { NavHistoryState } from '../src/useNavigationHistory'
+import type { User } from '../src/types'
 
 describe('buildNavHistoryState', () => {
   it('returns an object with _hriv marker', () => {
@@ -18,6 +23,44 @@ describe('buildNavHistoryState', () => {
     expect(state.page).toBe('manage')
     expect(state.catIds).toEqual([1, 2, 3])
     expect(state.imageId).toBe(42)
+  })
+})
+
+describe('isRealUserSwitch', () => {
+  const makeUser = (id: number): User => ({
+    id,
+    name: `User ${id}`,
+    email: `user${id}@example.com`,
+    role: 'student',
+    program_ids: [],
+    program_names: [],
+    group_ids: [],
+    group_names: [],
+  })
+
+  it('is not a switch on the initial null→user bootstrap (session restore)', () => {
+    expect(isRealUserSwitch(null, makeUser(1))).toBe(false)
+  })
+
+  it('is not a switch on the mount-time null→null render', () => {
+    expect(isRealUserSwitch(null, null)).toBe(false)
+  })
+
+  it('is not a switch when the same account is re-fetched as a new object (StrictMode double-fetch, #770)', () => {
+    // Two distinct User objects, same id — must NOT reset navigation or strip
+    // the shareable ?cat= URL after a reload.
+    const first = makeUser(1)
+    const second = makeUser(1)
+    expect(first).not.toBe(second)
+    expect(isRealUserSwitch(first, second)).toBe(false)
+  })
+
+  it('is a switch when the account id changes', () => {
+    expect(isRealUserSwitch(makeUser(1), makeUser(2))).toBe(true)
+  })
+
+  it('is a switch on logout (user→null)', () => {
+    expect(isRealUserSwitch(makeUser(1), null)).toBe(true)
   })
 })
 

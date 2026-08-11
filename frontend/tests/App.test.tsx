@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import App from '../src/App'
+import { fetchVersions, fetchFrontendVersion } from '../src/api'
 import { contentMaxWidth } from '../src/theme'
 
 // Default to desktop so the existing expectations are unchanged; the mobile
@@ -361,7 +362,8 @@ vi.mock('../src/useBrowseData', () => ({
   }),
 }))
 
-vi.mock('../src/useNavigationHistory', () => ({
+vi.mock('../src/useNavigationHistory', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/useNavigationHistory')>()),
   useNavigationHistory: () => ({ pushNavState: vi.fn() }),
   buildNavHistoryState: vi.fn(),
 }))

@@ -95,7 +95,11 @@ import type { TelemetryNavDirection } from './observability'
 import { splitDirectAncestorGroupIds, splitDirectAncestorProgramIds } from './categoryUtils'
 import { getInheritedRestrictionSx } from './restrictionStyles'
 import { cappedRowSx, getSurfaceVariant, getVisibilityColors } from './theme'
-import { useNavigationHistory, buildNavHistoryState } from './useNavigationHistory'
+import {
+  useNavigationHistory,
+  buildNavHistoryState,
+  isRealUserSwitch,
+} from './useNavigationHistory'
 import { useShareableImageState } from './useShareableImageState'
 import { useCanvasAnnotations } from './useCanvasAnnotations'
 import { useOverlayPersistence } from './useOverlayPersistence'
@@ -654,18 +658,18 @@ export default function App() {
   })
 
   // Reset navigation state when user identity changes (login/logout/switch).
-  // Track previous user so we only reset on actual user switches — NOT on
-  // the initial null→user auth transition (session restore after refresh)
-  // or the mount-time null→null render.  This preserves the URL-derived
-  // page state (initialised from the query string by useState) so that
-  // refreshing a non-browse page keeps the user where they were (#577).
+  // Track the previous user so we only reset on a genuine switch — see
+  // isRealUserSwitch(): NOT on the initial null→user bootstrap (session restore
+  // after refresh), the mount-time null→null render, or a same-id re-fetch that
+  // yields a new object reference (StrictMode double-fetch). This preserves the
+  // URL-derived page/`?cat=` state so refreshing keeps the user where they were
+  // (#577, #770).
   const prevUserRef = useRef(currentUser)
   useEffect(() => {
     const prevUser = prevUserRef.current
     prevUserRef.current = currentUser
 
-    const isRealUserSwitch = prevUser != null && prevUser !== currentUser
-    if (isRealUserSwitch) {
+    if (isRealUserSwitch(prevUser, currentUser)) {
       lastEmittedPageRef.current = null
       lastEmittedCategoryRef.current = null
       lastEmittedPathIdsRef.current = []

@@ -1,4 +1,29 @@
 import { useCallback, useEffect, useRef } from 'react'
+import type { User } from './types'
+
+/**
+ * Decide whether an auth-state transition is a *real* user switch — i.e. one
+ * that should reset navigation (page/path/selected image) and strip the
+ * shareable URL to prevent cross-account leakage.
+ *
+ * It returns false for:
+ *  - the initial `null → user` auth bootstrap after a page reload (session
+ *    restore), so the URL-derived page/`?cat=` state survives (#577), and
+ *  - a same-identity re-fetch that yields a *new* `User` object with the same
+ *    `id`. React StrictMode double-invokes the token-validation effect in dev,
+ *    firing `/api/auth/me` twice and producing two distinct `User` objects for
+ *    the same account; comparing by object reference (`prevUser !== currentUser`)
+ *    would treat the second as a switch and wipe the just-restored `?cat=` URL,
+ *    dumping the student back at the browse root on every reload (#770).
+ *
+ * It returns true for a genuine account change (different `id`) and for logout
+ * (`user → null`).
+ */
+export function isRealUserSwitch(prevUser: User | null, currentUser: User | null): boolean {
+  if (prevUser == null) return false
+  if (currentUser == null) return true
+  return prevUser.id !== currentUser.id
+}
 
 /** Navigation state stored in `history.state` for back/forward support. */
 export interface NavHistoryState {
