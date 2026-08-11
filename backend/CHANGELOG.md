@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.43.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.42.0...backend-v0.43.0) (2026-08-11)
+
+
+### Features
+
+* **admin:** add archive manifest and format-version validation to filesystem export/import ([#1003](https://github.com/bcit-tlu/hriv/issues/1003)) ([e1f365d](https://github.com/bcit-tlu/hriv/commit/e1f365d601259850fc2a74e041f2f544b7c5a005))
+* **admin:** configurable retention policy for retained files-import archives ([#1001](https://github.com/bcit-tlu/hriv/issues/1001)) ([c6070e1](https://github.com/bcit-tlu/hriv/commit/c6070e110bb8386ca5dc05d851bea5c4a57ecef7))
+* **admin:** verify retained import archive integrity with recorded SHA-256 checksums ([#1004](https://github.com/bcit-tlu/hriv/issues/1004)) ([60622df](https://github.com/bcit-tlu/hriv/commit/60622df8dcafc89e1e84cf937894ca711d8d8e8e))
+
+
+### Performance Improvements
+
+* **admin:** cache validated manifest entry to avoid double fetch on per-file restore ([#1009](https://github.com/bcit-tlu/hriv/issues/1009)) ([7882a68](https://github.com/bcit-tlu/hriv/commit/7882a68da6453b52de752391f1eb8482833b3fef))
+
 ## [0.42.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.41.2...backend-v0.42.0) (2026-08-10)
 
 
