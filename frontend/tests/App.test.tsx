@@ -903,7 +903,7 @@ describe('App shell interactions', () => {
     expect(await screen.findByText('search users: 0')).toBeInTheDocument()
   })
 
-  it('fetches deployed component versions for admins', async () => {
+  it('fetches deployed component versions when content editing is allowed', async () => {
     authState = { ...authState, canEditContent: true }
     render(<App />)
 
@@ -913,7 +913,7 @@ describe('App shell interactions', () => {
   it('clears versions when the version fetches fail', async () => {
     // Seed successful versions first so the null state is attributable to
     // the catch handlers rather than the initial render state.
-    authState = { ...authState, canManageUsers: true }
+    authState = { ...authState, canEditContent: true }
     const { rerender } = render(<App />)
     expect(await screen.findByText('versions: 1.0.0/1.0.0')).toBeInTheDocument()
 
