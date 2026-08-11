@@ -586,36 +586,57 @@ export default function PeoplePage({
     }
   }
 
-  // Bulk add-to-group handler
-  const handleBulkGroupSave = async (groupIds: number[]) => {
+  // Bulk add-to-group handler. Resolves with the group ids that failed so the
+  // modal can prune succeeded groups from the selection for retry.
+  const handleBulkGroupSave = async (groupIds: number[]): Promise<number[]> => {
     try {
       const results = await Promise.allSettled(
         groupIds.map((groupId) => addGroupMembersBulk(groupId, Array.from(selected))),
       )
+      const failedGroupIds = groupIds.filter((_, i) => results[i]?.status === 'rejected')
+
+      // loadData swallows its own errors, so the reporting below always runs
       await loadData()
 
-      const failures = results.filter(
-        (result): result is PromiseRejectedResult => result.status === 'rejected',
-      )
-
-      if (failures.length > 0) {
-        const failure = failures[0]?.reason
-        const failureMessage = userMessage(
-          failure,
-          'Failed to add selected people to groups. Please try again.',
-        )
-        const groupWord = failures.length === 1 ? 'group' : 'groups'
-        const selectionWord = selected.size === 1 ? 'person' : 'people'
+      if (failedGroupIds.length > 0) {
+        const distinctReasons = [
+          ...new Set(
+            results
+              .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+              .map((failure) =>
+                userMessage(
+                  failure.reason,
+                  'Failed to add selected people to groups. Please try again.',
+                ),
+              ),
+          ),
+        ]
+        const MAX_REASONS_SHOWN = 3
+        const shownReasons = distinctReasons.slice(0, MAX_REASONS_SHOWN)
+        const hiddenCount = distinctReasons.length - shownReasons.length
+        const reasonsText =
+          shownReasons.join(' • ') +
+          (hiddenCount > 0
+            ? ` (and ${hiddenCount} more distinct ${hiddenCount === 1 ? 'error' : 'errors'})`
+            : '')
+        const succeededCount = groupIds.length - failedGroupIds.length
+        const groupWord = groupIds.length === 1 ? 'group' : 'groups'
+        const selectionWord = `${selected.size} ${selected.size === 1 ? 'person' : 'people'}`
+        const successPrefix =
+          succeededCount > 0
+            ? `Added to ${succeededCount} ${succeededCount === 1 ? 'group' : 'groups'}, but failed`
+            : 'Failed'
         setErrorSnack(
-          `Failed to add ${selectionWord} to ${failures.length} of ${groupIds.length} ${groupWord}. ${failureMessage}`,
+          `${successPrefix} to add ${selectionWord} to ${failedGroupIds.length} of ${groupIds.length} ${groupWord}. ${reasonsText}`,
         )
-        throw failure
+        return failedGroupIds
       }
 
       setBulkGroupOpen(false)
       setSelected(new Set())
       setErrorSnack(null)
       setSuccessSnack('Added to group(s).')
+      return []
     } catch (err) {
       console.error('Failed to bulk add to groups', err)
       throw err
@@ -1121,7 +1142,10 @@ export default function PeoplePage({
 
       <BulkGroupModal
         open={bulkGroupOpen}
-        onClose={() => setBulkGroupOpen(false)}
+        onClose={() => {
+          setBulkGroupOpen(false)
+          setErrorSnack(null)
+        }}
         onSave={handleBulkGroupSave}
         groups={groups}
         selectedCount={selected.size}
