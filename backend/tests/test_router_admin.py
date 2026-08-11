@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 import json
 import pytest
 
+import app.auth as auth
 from app.backup_access import (
     BackupRestoreNotConfiguredError,
     BackupSnapshotManifestError,
@@ -214,6 +215,30 @@ async def test_get_version_falls_back_to_env_when_mount_missing(tmp_path) -> Non
         result = await get_version(_user=SimpleNamespace(id=1, role="admin"))
     assert result["backend"] == "0.6.0"
     assert result["backup"] == "0.3.0"
+
+
+def _version_test_client(user_role: str) -> TestClient:
+    app = FastAPI()
+    app.include_router(admin_router.router, prefix="/api")
+    app.dependency_overrides[auth.get_current_user] = lambda: SimpleNamespace(
+        id=1, role=user_role, email="u@example.com"
+    )
+    return TestClient(app)
+
+
+def test_get_version_endpoint_allows_instructor() -> None:
+    with patch.dict(os.environ, _version_env(APP_VERSION="0.6.0"), clear=True), patch(
+        "app.routers.admin.load_stored_synthetic_result_state", return_value=None
+    ), _version_test_client("instructor") as client:
+        response = client.get("/api/admin/version")
+    assert response.status_code == 200
+    assert response.json()["backend"] == "0.6.0"
+
+
+def test_get_version_endpoint_rejects_student() -> None:
+    with _version_test_client("student") as client:
+        response = client.get("/api/admin/version")
+    assert response.status_code == 403
 
 
 async def test_get_version_falls_back_to_env_when_mount_empty(tmp_path) -> None:
