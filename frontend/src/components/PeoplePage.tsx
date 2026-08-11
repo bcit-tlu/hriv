@@ -621,7 +621,7 @@ export default function PeoplePage({
             : '')
         const succeededCount = groupIds.length - failedGroupIds.length
         const groupWord = groupIds.length === 1 ? 'group' : 'groups'
-        const selectionWord = selected.size === 1 ? 'person' : 'people'
+        const selectionWord = `${selected.size} ${selected.size === 1 ? 'person' : 'people'}`
         const successPrefix =
           succeededCount > 0
             ? `Added to ${succeededCount} ${succeededCount === 1 ? 'group' : 'groups'}, but failed`
