@@ -295,6 +295,7 @@ function CategoryTile({
             }}
           >
             <Box
+              data-testid="category-tile-title-row"
               sx={{
                 display: 'flex',
                 // Top-align so the icon sits with the first line of a multi-line title.

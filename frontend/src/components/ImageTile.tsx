@@ -71,7 +71,10 @@ function ImageTile({ image, onClick, onEditDetails, categoryHidden = false }: Im
             '&:last-child': { pb: isMobile ? '8px' : 2 },
           }}
         >
-          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}>
+          <Box
+            data-testid="image-tile-title-row"
+            sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}
+          >
             <Tooltip title={image.name}>
               <Typography
                 variant="h6"

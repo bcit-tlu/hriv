@@ -612,7 +612,7 @@ export default function AppShell(props: AppShellProps) {
                 horizontal: 'right',
               }}
             >
-              <Card sx={{ minWidth: 240, maxWidth: 280 }}>
+              <Card data-testid="user-card" sx={{ minWidth: 240, maxWidth: 280 }}>
                 <CardContent sx={{ '&:last-child': { pb: profileMenuPb } }}>
                   <Typography sx={{ fontWeight: 600, fontSize: 17, lineHeight: 1.35 }}>
                     {currentUser.name}
