@@ -22,6 +22,7 @@ import uuid
 from collections.abc import Callable, Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import TypeVar
 
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
@@ -2145,6 +2146,86 @@ def _create_tar_file(
 
 _LOG_FLUSH_INTERVAL = 2  # seconds between verbose-log DB flushes
 
+_T = TypeVar("_T")
+
+
+async def _run_with_cancel_poll(
+    worker_task: "asyncio.Task[_T]",
+    poll_task: "asyncio.Task[None]",
+    *,
+    cancel_event: threading.Event,
+    grace_timeout_log: str,
+    shutdown_grace: float = 5.0,
+    return_result_on_cancel: bool = False,
+) -> _T:
+    """Run a cancellable worker future alongside a status cancel-poller.
+
+    Whichever finishes first wins. If the worker finishes first, the poller
+    is cancelled and the worker's result is returned. If the poller raises
+    (e.g. a DB error), the worker is signalled via *cancel_event*, given
+    *shutdown_grace* seconds to settle, and the poller's exception is
+    re-raised. If the poller returns normally (cancellation detected), the
+    worker is given the same grace period; a worker that finished in time
+    either has its result returned (``return_result_on_cancel=True``) or its
+    exceptions propagated before ``TaskCancelled`` is raised.
+    """
+    try:
+        done, _pending = await asyncio.wait(
+            [worker_task, poll_task], return_when=asyncio.FIRST_COMPLETED,
+        )
+        if worker_task in done:
+            # The poller may have finished in the same wait cycle; retrieve
+            # its exception (if any) so it is not silently dropped.
+            if poll_task in done and not poll_task.cancelled():
+                stray_poll_exc = poll_task.exception()
+                if stray_poll_exc is not None:
+                    logger.warning(
+                        "Cancel poller failed while the worker was finishing",
+                        exc_info=stray_poll_exc,
+                    )
+            else:
+                poll_task.cancel()
+            return worker_task.result()
+        poll_exc = poll_task.exception() if poll_task.done() else None
+        if poll_exc is not None:
+            cancel_event.set()  # stop the worker thread
+            # Plain asyncio.wait does not cancel the task on timeout (unlike
+            # wait_for), so a slow worker is left to be cancelled explicitly.
+            await asyncio.wait([worker_task], timeout=shutdown_grace)
+            if worker_task.done() and not worker_task.cancelled():
+                worker_exc = worker_task.exception()
+                if worker_exc is not None:
+                    logger.warning(
+                        "Worker failed while shutting down after a cancel-"
+                        "poller error",
+                        exc_info=worker_exc,
+                    )
+            elif not worker_task.done():
+                logger.debug(grace_timeout_log)
+                worker_task.cancel()
+            raise poll_exc
+        # Poll returned normally → cancellation detected. The poller sets
+        # the event itself, but set it here too so the worker is guaranteed
+        # to be signalled, then wait briefly for it to notice.
+        cancel_event.set()
+        await asyncio.wait([worker_task], timeout=shutdown_grace)
+        if worker_task.done() and not worker_task.cancelled():
+            if return_result_on_cancel:
+                return worker_task.result()
+            worker_task.result()  # propagate worker exceptions
+        elif not worker_task.done():
+            logger.debug(grace_timeout_log)
+            worker_task.cancel()
+        raise TaskCancelled("Task cancelled by admin")
+    finally:
+        if not worker_task.done():
+            worker_task.cancel()
+        if not poll_task.done():
+            poll_task.cancel()
+        # The poller shares the caller's AsyncSession; make sure it has fully
+        # stopped before the caller resumes issuing its own queries.
+        await asyncio.gather(poll_task, return_exceptions=True)
+
 
 async def run_files_export(task_id: int) -> None:
     """Create a tar.gz archive of the data directory in the background."""
@@ -2220,45 +2301,16 @@ async def run_files_export(task_id: int) -> None:
                 )
             )
             scan_poll_task = asyncio.ensure_future(_poll_cancel_only())
-            try:
-                done, _pending = await asyncio.wait(
-                    [scan_task, scan_poll_task],
-                    return_when=asyncio.FIRST_COMPLETED,
-                )
-                if scan_task in done:
-                    scan_poll_task.cancel()
-                    file_count, total_bytes = scan_task.result()
-                else:
-                    poll_exc = scan_poll_task.exception() if scan_poll_task.done() else None
-                    if poll_exc is not None:
-                        cancel_event.set()
-                        try:
-                            await asyncio.wait_for(scan_task, timeout=5)
-                        except asyncio.TimeoutError:
-                            # Best-effort shutdown timeout; fall through to cancel the scan task.
-                            logger.debug(
-                                "Filesystem export scan did not finish within the shutdown grace period; cancelling task"
-                            )
-                        if not scan_task.done():
-                            scan_task.cancel()
-                        raise poll_exc
-                    try:
-                        await asyncio.wait_for(scan_task, timeout=5)
-                    except asyncio.TimeoutError:
-                        # Best-effort shutdown timeout; fall through to cancel the scan task.
-                        logger.debug(
-                            "Filesystem export scan did not finish within the shutdown grace period; cancelling task"
-                        )
-                    if scan_task.done():
-                        file_count, total_bytes = scan_task.result()
-                    else:
-                        scan_task.cancel()
-                        raise TaskCancelled("Task cancelled by admin")
-            finally:
-                if not scan_task.done():
-                    scan_task.cancel()
-                if not scan_poll_task.done():
-                    scan_poll_task.cancel()
+            file_count, total_bytes = await _run_with_cancel_poll(
+                scan_task,
+                scan_poll_task,
+                cancel_event=cancel_event,
+                grace_timeout_log=(
+                    "Filesystem export scan did not finish within the "
+                    "shutdown grace period; cancelling task"
+                ),
+                return_result_on_cancel=True,
+            )
 
             total_mb = total_bytes / (1024 * 1024)
             await _update_task(
@@ -2335,39 +2387,15 @@ async def run_files_export(task_id: int) -> None:
             poll_task = asyncio.ensure_future(_flush_and_poll())
 
             try:
-                done, _pending = await asyncio.wait(
-                    [tar_task, poll_task], return_when=asyncio.FIRST_COMPLETED,
+                await _run_with_cancel_poll(
+                    tar_task,
+                    poll_task,
+                    cancel_event=cancel_event,
+                    grace_timeout_log=(
+                        "Timed out waiting for the filesystem export archive "
+                        "to settle after cancel"
+                    ),
                 )
-                # If tar finished first, cancel the poll loop
-                if tar_task in done:
-                    poll_task.cancel()
-                    tar_task.result()  # propagate exceptions
-                else:
-                    # Poll exited first — distinguish DB error from
-                    # genuine cancellation detection.
-                    poll_exc = poll_task.exception() if poll_task.done() else None
-                    if poll_exc is not None:
-                        cancel_event.set()  # stop the tar thread
-                        try:
-                            await asyncio.wait_for(tar_task, timeout=5)
-                        except asyncio.TimeoutError:
-                            logger.debug(
-                                "Timed out waiting for filesystem import to settle after cancel"
-                            )
-                        if not tar_task.done():
-                            tar_task.cancel()
-                        raise poll_exc
-                    # Poll returned normally → cancellation detected.
-                    # Wait briefly for tar thread to notice the event.
-                    try:
-                        await asyncio.wait_for(tar_task, timeout=5)
-                    except asyncio.TimeoutError:
-                        pass
-                    if tar_task.done():
-                        tar_task.result()
-                    else:
-                        tar_task.cancel()
-                    raise TaskCancelled("Task cancelled by admin")
             finally:
                 # Flush any remaining queued entries
                 remaining: list[tuple[str, int]] = []
