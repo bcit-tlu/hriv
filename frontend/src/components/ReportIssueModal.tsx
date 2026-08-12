@@ -7,6 +7,7 @@ import DialogTitle from '@mui/material/DialogTitle'
 import TextField from '@mui/material/TextField'
 import Alert from '@mui/material/Alert'
 import CircularProgress from '@mui/material/CircularProgress'
+import Link from '@mui/material/Link'
 import { reportIssue, userMessage } from '../api'
 import type { FrontendPage } from '../observability'
 import { emitEvent } from '../observability'
@@ -19,11 +20,22 @@ interface ReportIssueModalProps {
 
 export const AUTO_CLOSE_DELAY_MS = 2000
 
+function safeTrackingUrl(raw: string | null): string | null {
+  if (!raw) return null
+  try {
+    const url = new URL(raw)
+    return url.protocol === 'https:' || url.protocol === 'http:' ? raw : null
+  } catch {
+    return null
+  }
+}
+
 export default function ReportIssueModal({ open, onClose, page }: ReportIssueModalProps) {
   const [description, setDescription] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [trackingUrl, setTrackingUrl] = useState<string | null>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hasEmittedOpenRef = useRef(false)
 
@@ -58,6 +70,7 @@ export default function ReportIssueModal({ open, onClose, page }: ReportIssueMod
     setDescription('')
     setError('')
     setSuccess('')
+    setTrackingUrl(null)
     onClose()
   }
 
@@ -71,6 +84,7 @@ export default function ReportIssueModal({ open, onClose, page }: ReportIssueMod
     setSubmitting(true)
     setError('')
     setSuccess('')
+    setTrackingUrl(null)
     const startedAt = performance.now()
 
     try {
@@ -87,13 +101,18 @@ export default function ReportIssueModal({ open, onClose, page }: ReportIssueMod
       })
       setSuccess('Your feedback was received successfully. Thanks!')
       setDescription('')
-      // Auto-close after a short delay
-      timerRef.current = setTimeout(() => {
-        timerRef.current = null
-        setSuccess('')
-        handleClose()
-      }, AUTO_CLOSE_DELAY_MS)
-      void result
+      const safeUrl = safeTrackingUrl(result.tracking_url)
+      if (safeUrl) {
+        // Keep the dialog open so the user can follow the tracking link.
+        setTrackingUrl(safeUrl)
+      } else {
+        // Auto-close after a short delay
+        timerRef.current = setTimeout(() => {
+          timerRef.current = null
+          setSuccess('')
+          handleClose()
+        }, AUTO_CLOSE_DELAY_MS)
+      }
     } catch (err) {
       emitEvent({
         event: 'feedback.report_issue_submitted',
@@ -120,6 +139,14 @@ export default function ReportIssueModal({ open, onClose, page }: ReportIssueMod
         {success && (
           <Alert severity="success" sx={{ mb: 2 }}>
             {success}
+            {trackingUrl && (
+              <>
+                {' '}
+                <Link href={trackingUrl} target="_blank" rel="noopener noreferrer">
+                  Track your report
+                </Link>
+              </>
+            )}
           </Alert>
         )}
         <TextField
@@ -141,7 +168,7 @@ export default function ReportIssueModal({ open, onClose, page }: ReportIssueMod
       </DialogContent>
       <DialogActions>
         <Button onClick={handleClose} disabled={submitting}>
-          Cancel
+          {trackingUrl ? 'Close' : 'Cancel'}
         </Button>
         <Button
           onClick={handleSubmit}
