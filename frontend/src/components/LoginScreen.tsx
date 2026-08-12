@@ -25,6 +25,8 @@ import FooterBar from './FooterBar'
 interface LoginScreenProps {
   onLogin: (email: string, password: string) => Promise<void>
   announcement?: string
+  /** Dismiss the announcement (persists via the shared dismissed key). */
+  onDismissAnnouncement?: () => void
 }
 
 // Map short, stable error codes returned by the backend OIDC callback
@@ -45,7 +47,11 @@ const OIDC_ERROR_MESSAGES: Record<string, string> = {
     'This email is already linked to a different identity. Please contact an administrator.',
 }
 
-export default function LoginScreen({ onLogin, announcement }: LoginScreenProps) {
+export default function LoginScreen({
+  onLogin,
+  announcement,
+  onDismissAnnouncement,
+}: LoginScreenProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -132,7 +138,11 @@ export default function LoginScreen({ onLogin, announcement }: LoginScreenProps)
   return (
     <Box
       sx={{
-        minHeight: '100vh',
+        // Mobile: `100dvh` (dynamic viewport height) sizes the page to the
+        // *visible* viewport so the footer isn't pushed under the browser
+        // chrome — `100vh` targets the largest (address-bar-hidden) viewport
+        // and forces a scroll on phones. Desktop keeps `100vh`.
+        minHeight: isMobile ? '100dvh' : '100vh',
         display: 'flex',
         flexDirection: 'column',
         bgcolor: 'background.paper',
@@ -176,12 +186,22 @@ export default function LoginScreen({ onLogin, announcement }: LoginScreenProps)
             alignItems: isMobile ? 'flex-start' : 'center',
             justifyContent: 'center',
             px: { xs: 2, sm: 6, md: 8 },
-            ...(isMobile && { pt: 6 }),
+            // Mobile: modest top padding (was 6) so the full page — brand,
+            // form and footer — fits the viewport without vertical scrolling.
+            ...(isMobile && { pt: 3 }),
           }}
         >
           {/* On mobile the content spans the full column (no 400px cap). */}
           <Box sx={{ width: '100%', maxWidth: isMobile ? 'none' : 400 }}>
-            {announcement && <AnnouncementBanner message={announcement} variant="login" />}
+            {/* Desktop keeps the announcement at the top; on mobile it moves to
+                below the divider (rendered further down). */}
+            {announcement && !isMobile && (
+              <AnnouncementBanner
+                message={announcement}
+                variant="login"
+                onDismiss={onDismissAnnouncement}
+              />
+            )}
 
             {/* BCIT logo + heading. Mobile: an enlarged logo stacked ON TOP of a
                 single-line title; desktop keeps the original inline row. */}
@@ -194,14 +214,15 @@ export default function LoginScreen({ onLogin, announcement }: LoginScreenProps)
                 // Mobile: more space below the (stacked) logo; desktop keeps the
                 // tight inline gap.
                 gap: isMobile ? 3 : 1.5,
-                mb: 5,
+                // Mobile: tighter space below the brand (down to the divider).
+                mb: isMobile ? 3 : 5,
               }}
             >
               <Box
                 component="img"
                 src="/bcit-logo.svg"
                 alt="BCIT"
-                sx={{ height: isMobile ? 88 : 48 }}
+                sx={{ height: isMobile ? 64 : 48 }}
               />
               <Typography
                 variant="h5"
@@ -223,7 +244,18 @@ export default function LoginScreen({ onLogin, announcement }: LoginScreenProps)
             {/* scaleY(0.5) renders the 1px line as a ~0.5px hairline on hi-DPI
                 mobile screens — the thinnest a divider can practically get. The
                 mb (spacing) is unaffected by the transform. */}
-            {isMobile && <Divider sx={{ mb: 5, transform: 'scaleY(0.5)' }} />}
+            {isMobile && <Divider sx={{ mb: announcement ? 2 : 3, transform: 'scaleY(0.5)' }} />}
+
+            {/* Mobile: the site announcement sits below the divider and above the
+                login form (desktop shows it at the top instead). The login-variant
+                banner carries its own bottom margin, so no wrapper spacing here. */}
+            {announcement && isMobile && (
+              <AnnouncementBanner
+                message={announcement}
+                variant="login"
+                onDismiss={onDismissAnnouncement}
+              />
+            )}
 
             {oidcErrorMessage && (
               <Alert severity="error" onClose={clearOidcError} sx={{ mb: 2 }}>

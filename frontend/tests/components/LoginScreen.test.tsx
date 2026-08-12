@@ -237,6 +237,19 @@ describe('LoginScreen', () => {
       await renderOidcDisabled()
       expect(screen.queryByText('System maintenance tonight')).not.toBeInTheDocument()
     })
+
+    it('places the announcement below the divider and above the form on mobile', async () => {
+      vi.mocked(useMediaQuery).mockReturnValue(true)
+      await renderOidcDisabled({ announcement: 'System maintenance tonight' })
+      const banner = screen.getByText('System maintenance tonight')
+      const divider = document.querySelector('.MuiDivider-root')
+      const form = document.querySelector('form')
+      expect(divider).not.toBeNull()
+      const FOLLOWING = Node.DOCUMENT_POSITION_FOLLOWING
+      // DOM order must be: divider → banner → form
+      expect(divider!.compareDocumentPosition(banner) & FOLLOWING).toBeTruthy()
+      expect(banner.compareDocumentPosition(form!) & FOLLOWING).toBeTruthy()
+    })
   })
 
   // ─── Forgot Password dialog ───────────────────────────────────────
