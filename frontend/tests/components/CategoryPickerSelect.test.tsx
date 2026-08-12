@@ -441,6 +441,30 @@ describe('CategoryPickerSelect — action buttons', () => {
     expect(screen.getByLabelText('Visibility: Show category')).toBeInTheDocument()
   })
 
+  it('shows an inherited-hidden indicator instead of a toggle for children of hidden parents', async () => {
+    const user = userEvent.setup()
+    const categories = [
+      makeCategory({
+        id: 1,
+        label: 'Hidden parent',
+        status: 'hidden',
+        children: [makeCategory({ id: 2, label: 'Child', parentId: 1 })],
+      }),
+    ]
+    render(
+      <CategoryPickerSelect
+        categories={categories}
+        value={null}
+        onChange={vi.fn()}
+        onToggleVisibility={vi.fn()}
+      />,
+    )
+    await user.click(screen.getByRole('combobox'))
+    expect(screen.getByLabelText('Hidden by parent category')).toBeInTheDocument()
+    // The parent itself still gets a real toggle
+    expect(screen.getByLabelText('Visibility: Show category')).toBeInTheDocument()
+  })
+
   it('renders image count next to category name', async () => {
     const user = userEvent.setup()
     const categories = [
