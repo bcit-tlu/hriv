@@ -142,13 +142,17 @@ The tree endpoint also supports **conditional requests**:
 Across the frontend, restriction and visibility affordances follow two separate
 emphasis rules:
 
-- Program or group restrictions attached **directly** to the current
-  category/path segment render at full strength, while restrictions
-  **inherited** from an ancestor render using the same visual treatment at
-  **0.6 opacity**. This is used in breadcrumb chips, browse tile chips,
+- Breadcrumb/header chips show the **effective** program/group restriction for
+  the current category or image, computed with full-path narrowing. A restriction
+  ID in that effective set renders at full strength when it is attached directly
+  to the current category/path segment, or at **0.6 opacity** when it is only
+  inherited from an ancestor. Ancestor IDs narrowed away by the current category
+  do not render in the breadcrumb/header chips.
+- Other surfaces that need restriction provenance, such as browse tile chips,
   ManagePage restriction chips, inherited-only category dialog chips, and
-  category restriction lock icons. Use `frontend/src/restrictionStyles.ts` for
-  this shared opacity so inherited restriction treatment stays consistent.
+  category restriction lock icons, may show direct vs inherited restrictions
+  distinctly. Use `frontend/src/restrictionStyles.ts` for inherited restriction
+  opacity so this treatment stays consistent.
 - Hidden or inactive category/image state does **not** add whole-element opacity
   reduction. It may be indicated with grayscale treatment, inactive colors,
   disabled/read-only controls, and visibility icons, but child tiles, breadcrumb

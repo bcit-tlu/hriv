@@ -156,17 +156,22 @@ never widen access an ancestor restricts:
 
 #### Direct vs inherited restriction emphasis
 
-Anywhere the UI renders **program** or **group** restrictions as chips or lock
-icons, the same emphasis rule applies:
+Breadcrumb/header chips render the **effective** program/group restriction for
+the current category or image. They use full-path narrowing, including the leaf
+category, so ancestor IDs narrowed away by the current category do not render.
+
+For effective IDs shown in the breadcrumb/header and for other surfaces that
+render **program** or **group** restrictions as chips or lock icons, the same
+emphasis rule applies:
 
 - **Direct restriction** on the current entity/path segment = normal full-strength
   primary/secondary treatment.
 - **Inherited restriction** from an ancestor = the same visual treatment at
   **0.6 opacity**.
 
-This applies to breadcrumb chips, browse tile chips, ManagePage restriction
-chips, inherited-only category dialog chips, and restriction lock icons in
-category pickers / category-management lists.
+This applies to breadcrumb chips for IDs that remain in the effective set, browse
+tile chips, ManagePage restriction chips, inherited-only category dialog chips,
+and restriction lock icons in category pickers / category-management lists.
 
 ### Visibility cascade & indicators (`EditCategoryDialog.test.tsx`, `EditImageModal.test.tsx`, `CategoryPickerSelect.test.tsx`, `ManageCategoriesDialog.test.tsx`)
 

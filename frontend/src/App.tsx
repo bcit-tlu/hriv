@@ -86,7 +86,7 @@ import { useColorMode } from './useColorMode'
 import { useBrowseData } from './useBrowseData'
 import { emitEvent, emitSessionStartedOnce } from './observability'
 import type { TelemetryNavDirection } from './observability'
-import { splitDirectAncestorGroupIds, splitDirectAncestorProgramIds } from './categoryUtils'
+import { narrowGroupIds, narrowProgramIds } from './categoryUtils'
 import { getInheritedRestrictionSx } from './restrictionStyles'
 import { getSurfaceVariant, getVisibilityColors } from './theme'
 import { useNavigationHistory, buildNavHistoryState } from './useNavigationHistory'
@@ -305,14 +305,11 @@ export default function App() {
     [imageViewerHiddenByCategory],
   )
   const breadcrumbProgramItems = useMemo(() => {
-    const split =
-      path.length > 0
-        ? splitDirectAncestorProgramIds(path)
-        : { direct: ancestorProgramIds, ancestor: [] }
-    return [
-      ...split.direct.map((id) => ({ id, inherited: false })),
-      ...split.ancestor.map((id) => ({ id, inherited: true })),
-    ]
+    const leafProgramIds = path[path.length - 1]?.programIds ?? []
+    const leafProgramIdSet = new Set(leafProgramIds)
+    const effectiveProgramIds = path.length > 0 ? narrowProgramIds(path) : ancestorProgramIds
+    return effectiveProgramIds
+      .map((id) => ({ id, inherited: path.length > 0 && !leafProgramIdSet.has(id) }))
       .map((item) => {
         const program = programs.find((p) => p.id === item.id)
         return program ? { ...item, name: program.name } : null
@@ -321,14 +318,11 @@ export default function App() {
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [ancestorProgramIds, path, programs])
   const breadcrumbGroupItems = useMemo(() => {
-    const split =
-      path.length > 0
-        ? splitDirectAncestorGroupIds(path)
-        : { direct: ancestorGroupIds, ancestor: [] }
-    return [
-      ...split.direct.map((id) => ({ id, inherited: false })),
-      ...split.ancestor.map((id) => ({ id, inherited: true })),
-    ]
+    const leafGroupIds = path[path.length - 1]?.groupIds ?? []
+    const leafGroupIdSet = new Set(leafGroupIds)
+    const effectiveGroupIds = path.length > 0 ? narrowGroupIds(path) : ancestorGroupIds
+    return effectiveGroupIds
+      .map((id) => ({ id, inherited: path.length > 0 && !leafGroupIdSet.has(id) }))
       .map((item) => {
         const group = groups.find((g) => g.id === item.id)
         return group ? { ...item, name: group.name } : null

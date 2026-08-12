@@ -649,7 +649,7 @@ describe('App breadcrumbs', () => {
     expect(imageGroupChip).toHaveStyle({ opacity: '0.6' })
   })
 
-  it('keeps ancestor program pills visible when a child category narrows direct programs', () => {
+  it('shows only effective program pills when a child category narrows direct programs', () => {
     mockPrograms.push({
       id: 2,
       name: 'Radiology',
@@ -696,13 +696,24 @@ describe('App breadcrumbs', () => {
 
     const directProgramChip = within(categoryBreadcrumb as HTMLElement)
       .getByText('Pathology')
-      .closest('.MuiChip-root')
-    const inheritedProgramChip = within(categoryBreadcrumb as HTMLElement)
-      .getByText('Radiology')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="program-chip"]')
 
     expectEffectiveOpacity(directProgramChip, '1')
-    expectEffectiveOpacity(inheritedProgramChip, '0.6')
+    expect(
+      within(categoryBreadcrumb as HTMLElement).queryByText('Radiology'),
+    ).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+
+    const imageBreadcrumb = screen.getByLabelText('image breadcrumb').closest('div')
+    expect(imageBreadcrumb).not.toBeNull()
+
+    const imageProgramChip = within(imageBreadcrumb as HTMLElement)
+      .getByText('Pathology')
+      .closest('[data-testid="program-chip"]')
+
+    expectEffectiveOpacity(imageProgramChip, '1')
+    expect(within(imageBreadcrumb as HTMLElement).queryByText('Radiology')).not.toBeInTheDocument()
   })
 
   it('resets expanded note state when selecting another image', () => {
