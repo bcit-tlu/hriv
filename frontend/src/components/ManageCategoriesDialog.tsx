@@ -626,7 +626,7 @@ export default function ManageCategoriesDialog({
                   sx={{
                     pl: 2 + opt.depth * 3,
                     pr: 18,
-                    opacity: dragId === opt.id ? 0.4 : inheritedHidden ? 0.5 : 1,
+                    opacity: dragId === opt.id ? 0.4 : 1,
                     transition: 'opacity 0.15s',
                   }}
                   secondaryAction={
@@ -644,7 +644,7 @@ export default function ManageCategoriesDialog({
                                     >
                                       <VisibilityOff
                                         fontSize="small"
-                                        sx={{ color: visColors.inactive, opacity: 0.5 }}
+                                        sx={{ color: visColors.inactive }}
                                       />
                                     </span>
                                   </Tooltip>

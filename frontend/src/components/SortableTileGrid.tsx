@@ -405,7 +405,6 @@ export default function SortableTileGrid({
           groups={groups}
           inheritedGroupIds={inheritedGroupIds}
           parentHidden={pathHiddenState.hidden}
-          inheritedHidden={pathHiddenState.hidden}
           onDropFiles={canEditContent ? onDropFilesOnCategory : undefined}
         />
       )

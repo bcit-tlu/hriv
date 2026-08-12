@@ -143,8 +143,11 @@ never widen access an ancestor restricts:
 
 - `narrowProgramIds(ancestors)` / `narrowGroupIds(ancestors)` compute the
   effective allowed set walking top-down.
-- `splitDirectAncestorProgramIds(fullPath)` separates **direct** (editable on
-  this category) from **ancestor-inherited** (shown disabled) program ids.
+- `splitDirectAncestorProgramIds(fullPath)` is a display helper: **direct**
+  program ids come from the leaf category, while **ancestor-inherited** program
+  ids come from the narrowed ancestor path above the leaf and exclude ids already
+  set directly on the leaf. Full-path narrowing, including the leaf category, is
+  still used for backend enforcement and move/change validation.
 - **Given** a child category whose ancestor restricts to programs {A, B}, **When**
   the editor opens the program picker, **Then** inherited chips {A, B} render
   disabled and only a subset can be selected — selecting outside the inherited
@@ -153,17 +156,22 @@ never widen access an ancestor restricts:
 
 #### Direct vs inherited restriction emphasis
 
-Anywhere the UI renders **program** or **group** restrictions as chips or lock
-icons, the same emphasis rule applies:
+Breadcrumb/header chips render the **effective** program/group restriction for
+the current category or image. They use full-path narrowing, including the leaf
+category, so ancestor IDs narrowed away by the current category do not render.
+
+For effective IDs shown in the breadcrumb/header and for other surfaces that
+render **program** or **group** restrictions as chips or lock icons, the same
+emphasis rule applies:
 
 - **Direct restriction** on the current entity/path segment = normal full-strength
   primary/secondary treatment.
 - **Inherited restriction** from an ancestor = the same visual treatment at
   **0.6 opacity**.
 
-This applies to breadcrumb chips, browse tile chips, ManagePage restriction
-chips, inherited-only category dialog chips, and restriction lock icons in
-category pickers / category-management lists.
+This applies to breadcrumb chips for IDs that remain in the effective set, browse
+tile chips, ManagePage restriction chips, inherited-only category dialog chips,
+and restriction lock icons in category pickers / category-management lists.
 
 ### Visibility cascade & indicators (`EditCategoryDialog.test.tsx`, `EditImageModal.test.tsx`, `CategoryPickerSelect.test.tsx`, `ManageCategoriesDialog.test.tsx`)
 
@@ -229,8 +237,9 @@ committed on Save) in the edit modals.
 
 - Categories inherit visibility from ancestors. **Given** a child category
   whose ancestor is hidden, **When** the dropdown renders, **Then**:
-  - `CategoryPickerSelect`: disabled `VisibilityOff` icon at 0.5 opacity,
-    dimmed text, dimmed delete icon.
+  - `CategoryPickerSelect`: disabled `VisibilityOff` icon, dimmed text, dimmed
+    delete icon. Hidden-state indicators do not use whole-element opacity
+    reduction.
   - `ManageCategoriesDialog`: disabled `VisibilityOff` icon with "Hidden by
     parent category" tooltip, dimmed text, dimmed delete icon.
 
@@ -285,6 +294,11 @@ committed on Save) in the edit modals.
   users can change page or rows-per-page without scrolling to the end of a long
   list. Both controls are bound to the same page / rows-per-page state, so a
   change made in one is reflected in the other.
+- The rows-per-page selection persists per user between logins using
+  localStorage (`useRowsPerPagePreference`), in the same style as table column
+  visibility and filter preferences, so navigating away to an image and back
+  keeps the chosen page size. The People page table persists its rows-per-page
+  the same way.
 - **Auto-refresh:** `ManagePage` reloads (`loadImages`) whenever the
   `imagesVersion` prop changes. **Given** a bulk import job completes, **When**
   the app bumps `imagesVersion`, **Then** the table re-fetches so newly imported

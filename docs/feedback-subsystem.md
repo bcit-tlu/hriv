@@ -10,9 +10,10 @@ differently by environment.
 Issue [#757](https://github.com/bcit-tlu/hriv/issues/757) defines the redesign
 goal: decouple the in-app submission flow from the downstream destination so
 pre-production and production can use different triage workflows without a UI
-rewrite. Issue [#713](https://github.com/bcit-tlu/hriv/issues/713) remains a
-separate UX follow-up because the current modal still does not show the returned
-tracking link.
+rewrite. Issue [#713](https://github.com/bcit-tlu/hriv/issues/713) and issue
+[#789](https://github.com/bcit-tlu/hriv/issues/789) added the submission-outcome
+UX: when the provider returns a tracking URL, the modal shows a "Track your
+report" link after submission.
 
 ## Current Architecture
 
@@ -109,10 +110,26 @@ feedback:
 The referenced secret must expose key `url`, which becomes
 `FEEDBACK_TEAMS_WEBHOOK_URL` in the backend pod.
 
-This implementation targets a Teams channel webhook endpoint. It does not yet
-create a user-visible tracking link, so the frontend still behaves the same as
-before; issue `#789` remains the UI follow-up and issue `#713` is still only
-fully satisfied for destinations that return a safe tracking URL.
+This implementation targets a Teams channel webhook endpoint. It does not
+create a user-visible tracking link (`tracking_url` is `null`), so the modal
+shows a plain success confirmation and auto-closes as before.
+
+## Submission Outcome UX
+
+Issue `#789` (with `#713`) defines the provider-aware outcome behavior of the
+"Report Issue" modal:
+
+- Every successful submission shows a success confirmation.
+- When the response includes a `tracking_url` (e.g. the GitHub provider), the
+  modal additionally shows a "Track your report" link that opens in a new tab,
+  and stays open (no auto-close) so the user can follow the link. The dismiss
+  button reads "Close" in this state.
+- When no tracking URL is returned (e.g. the Teams provider), the modal shows
+  the plain success state and auto-closes after a short delay.
+- Only absolute `http(s)` tracking URLs are surfaced. Any other value
+  (non-http(s) scheme, relative path, or unparseable URL) is discarded and the
+  modal falls back to the no-link auto-close behavior — provider authors must
+  return absolute `http(s)` URLs for the link to appear.
 
 ## Notes For Future Providers
 

@@ -7,6 +7,11 @@ import { DROP_PREFIX } from '../../src/components/sortableTileGridUtils'
 import { makeCategory, makeImage } from '../helpers/fixtures'
 import type { TileOrderItemRef } from '../../src/api'
 
+const expectEffectiveOpacity = (element: Element | null, opacity: string) => {
+  expect(element).toBeInTheDocument()
+  expect(window.getComputedStyle(element as Element).opacity || '1').toBe(opacity)
+}
+
 // Capture onDragEnd from DragDropProvider for direct invocation.
 // Real @dnd-kit Sortable sources/targets carry their projected sortable index
 // (`index`/`initialIndex`/`group`); `move()` commits using the source's
@@ -129,6 +134,27 @@ describe('SortableTileGrid', () => {
     expect(screen.getByText('Lab A2').closest('[data-testid="group-chip"]')).toHaveStyle({
       opacity: '0.6',
     })
+  })
+
+  it('does not reduce child tile opacity when browsing inside a hidden category', () => {
+    renderGrid({
+      path: [makeCategory({ id: 10, label: 'Hidden Parent', status: 'hidden' })],
+      currentCategories: [makeCategory({ id: 11, label: 'Child Category', parentId: 10 })],
+      currentImages: [makeImage({ id: 12, name: 'Child Image', categoryId: 10 })],
+      canEditContent: false,
+    })
+
+    const childCategoryCard = screen.getByText('Child Category').closest('.MuiCard-root')
+    const childCategoryAction = screen
+      .getByText('Child Category')
+      .closest('.MuiCardActionArea-root')
+    const childImageCard = screen.getByText('Child Image').closest('.MuiCard-root')
+    const childImageAction = screen.getByText('Child Image').closest('.MuiCardActionArea-root')
+
+    expectEffectiveOpacity(childCategoryCard, '1')
+    expectEffectiveOpacity(childImageCard, '1')
+    expect(childCategoryAction).toHaveStyle({ filter: 'grayscale(100%)' })
+    expect(childImageAction).toHaveStyle({ filter: 'grayscale(100%)' })
   })
 
   it('renders a move zone per category tile', () => {

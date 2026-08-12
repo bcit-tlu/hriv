@@ -45,6 +45,11 @@ afterEach(() => {
 // Helpers
 // ---------------------------------------------------------------------------
 
+const expectEffectiveOpacity = (element: Element | null, opacity: string) => {
+  expect(element).toBeInTheDocument()
+  expect(window.getComputedStyle(element as Element).opacity || '1').toBe(opacity)
+}
+
 const programs: Program[] = [
   { id: 10, name: 'Pathology', oidc_group: null, created_at: '', updated_at: '' },
 ]
@@ -419,7 +424,7 @@ describe('ManageCategoriesDialog — visibility toggle', () => {
     expect(screen.getByLabelText('Visibility: Show category')).toBeInTheDocument()
   })
 
-  it('dims inherited-hidden child rows and shows the inherited hidden icon', () => {
+  it('keeps inherited-hidden child rows fully opaque and shows the inherited hidden icon', () => {
     const categories = [
       makeCategory({
         id: 1,
@@ -433,7 +438,7 @@ describe('ManageCategoriesDialog — visibility toggle', () => {
     const childRow = screen.getByText('Child').closest('li')
     const inheritedButton = screen.getByLabelText('Visibility: Hidden by parent category')
 
-    expect(childRow).toHaveStyle({ opacity: '0.5' })
+    expectEffectiveOpacity(childRow, '1')
     expect(inheritedButton.querySelector('[data-testid="VisibilityOffIcon"]')).toBeInTheDocument()
   })
 

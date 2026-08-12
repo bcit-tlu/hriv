@@ -80,8 +80,8 @@ describe('splitDirectAncestorProgramIds', () => {
 
   it('splits programs into direct and ancestor', () => {
     const path = [{ programIds: [1, 2, 3] }, { programIds: [2, 3] }]
-    // effective = [2,3] (intersection); leaf has [2,3] → all direct
-    expect(splitDirectAncestorProgramIds(path)).toEqual({ direct: [2, 3], ancestor: [] })
+    // leaf has [2,3]; parent-only [1] remains inherited for display
+    expect(splitDirectAncestorProgramIds(path)).toEqual({ direct: [2, 3], ancestor: [1] })
   })
 
   it('classifies ancestor-only IDs as ancestor', () => {
@@ -93,9 +93,8 @@ describe('splitDirectAncestorProgramIds', () => {
 
   it('splits when leaf has partial overlap with effective set', () => {
     const path = [{ programIds: [1, 2, 3, 4] }, { programIds: [2, 3] }]
-    // effective = intersection of [1,2,3,4] and [2,3] = [2,3]
-    // leaf.programIds = [2,3] → direct = [2,3], ancestor = []
-    expect(splitDirectAncestorProgramIds(path)).toEqual({ direct: [2, 3], ancestor: [] })
+    // leaf.programIds = [2,3]; parent-only [1,4] remains inherited for display
+    expect(splitDirectAncestorProgramIds(path)).toEqual({ direct: [2, 3], ancestor: [1, 4] })
   })
 
   it('handles three-level path with mixed restrictions', () => {
@@ -104,29 +103,20 @@ describe('splitDirectAncestorProgramIds', () => {
       { programIds: [2, 3, 4] },
       { programIds: [3, 6] },
     ]
-    // level 0: effective = [1,2,3,4,5]
-    // level 1: intersect → [2,3,4]
-    // level 2: intersect → [3] (only 3 is in both [2,3,4] and [3,6])
-    // leaf.programIds = [3,6]; directIds = {3,6}
-    // direct = [3]; ancestor = []
-    expect(splitDirectAncestorProgramIds(path)).toEqual({ direct: [3], ancestor: [] })
+    // ancestor path narrows to [2,3,4]; leaf has [3,6], so [2,4] are inherited
+    expect(splitDirectAncestorProgramIds(path)).toEqual({ direct: [3, 6], ancestor: [2, 4] })
   })
 
-  it('returns ancestor IDs when leaf has none of the effective set', () => {
+  it('preserves ancestor IDs when leaf narrows to non-overlapping direct IDs', () => {
     const path = [{ programIds: [1, 2, 3] }, { programIds: [1, 2] }, { programIds: [10, 20] }]
-    // level 0: effective = [1,2,3]
-    // level 1: intersect → [1,2]
-    // level 2: intersect → [] (no overlap between [1,2] and [10,20])
-    expect(splitDirectAncestorProgramIds(path)).toEqual({ direct: [], ancestor: [] })
+    // ancestor path narrows to [1,2]; leaf has [10,20], which are direct display chips
+    expect(splitDirectAncestorProgramIds(path)).toEqual({ direct: [10, 20], ancestor: [1, 2] })
   })
 
   it('handles leaf inheriting from grandparent when parent has no programs', () => {
     const path = [{ programIds: [1, 2, 3] }, { programIds: [] }, { programIds: [2] }]
-    // level 0: effective = [1,2,3]
-    // level 1: skip (empty)
-    // level 2: intersect → [2]
-    // leaf.programIds = [2]; direct = [2], ancestor = []
-    expect(splitDirectAncestorProgramIds(path)).toEqual({ direct: [2], ancestor: [] })
+    // leaf.programIds = [2]; grandparent-only [1,3] remains inherited
+    expect(splitDirectAncestorProgramIds(path)).toEqual({ direct: [2], ancestor: [1, 3] })
   })
 
   it('produces ancestor IDs when leaf does not declare any of its own', () => {
@@ -200,12 +190,12 @@ describe('splitDirectAncestorGroupIds', () => {
 
   it('splits a narrowed set into direct and inherited groups', () => {
     const path = [{ groupIds: [10, 20, 30] }, { groupIds: [20, 30] }]
-    expect(splitDirectAncestorGroupIds(path)).toEqual({ direct: [20, 30], ancestor: [] })
+    expect(splitDirectAncestorGroupIds(path)).toEqual({ direct: [20, 30], ancestor: [10] })
   })
 
-  it('returns empty arrays when narrowing removes every group', () => {
+  it('preserves ancestor groups when leaf narrows to non-overlapping direct groups', () => {
     const path = [{ groupIds: [10, 20] }, { groupIds: [30, 40] }]
-    expect(splitDirectAncestorGroupIds(path)).toEqual({ direct: [], ancestor: [] })
+    expect(splitDirectAncestorGroupIds(path)).toEqual({ direct: [30, 40], ancestor: [10, 20] })
   })
 })
 

@@ -52,6 +52,7 @@ import { formatFileSize } from '../formatUtils'
 import { getVisibilityColors } from '../theme'
 import { getInheritedRestrictionSx } from '../restrictionStyles'
 import { getCategoryHiddenStateFromPath } from '../treeUtils'
+import { ROWS_PER_PAGE_OPTIONS, useRowsPerPagePreference } from '../useRowsPerPagePreference'
 import { useTableColumnPreferences } from '../useTableColumnPreferences'
 import { useColorMode } from '../useColorMode'
 import BulkEditImagesModal from './BulkEditImagesModal'
@@ -157,7 +158,6 @@ function CategoryBreadcrumb({
               sx={{
                 fontSize: 14,
                 color: hiddenColor,
-                opacity: hiddenState.hiddenByAncestor && !hiddenState.directlyHidden ? 0.55 : 1,
               }}
             />
           </span>
@@ -422,8 +422,8 @@ export default function ManagePage({
     [visibleColumns],
   )
 
-  // Pagination state
-  const [rowsPerPage, setRowsPerPage] = useState(25)
+  // Pagination state (rows-per-page persists per user via localStorage)
+  const [rowsPerPage, setRowsPerPage] = useRowsPerPagePreference('manage-images')
   const [currentPage, setCurrentPage] = useState(0)
 
   // Apply initial program filter from external navigation (e.g. search)
@@ -817,7 +817,7 @@ export default function ManagePage({
 
   const renderPagination = (position: 'top' | 'bottom') => (
     <TablePagination
-      rowsPerPageOptions={[5, 10, 25, 50]}
+      rowsPerPageOptions={ROWS_PER_PAGE_OPTIONS}
       component="div"
       count={sortedImages.length}
       rowsPerPage={rowsPerPage}
