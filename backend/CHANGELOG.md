@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.44.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.43.0...backend-v0.44.0) (2026-08-12)
+
+
+### Features
+
+* expose component versions to instructors in About dialog ([#1021](https://github.com/bcit-tlu/hriv/issues/1021)) ([945f105](https://github.com/bcit-tlu/hriv/commit/945f10570c75a737b1940eb8b666e397c9348beb))
+
 ## [0.43.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.42.0...backend-v0.43.0) (2026-08-11)
 
 
