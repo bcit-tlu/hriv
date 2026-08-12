@@ -16,6 +16,7 @@ import useMediaQuery from '@mui/material/useMediaQuery'
 import { useTheme } from '@mui/material/styles'
 import Visibility from '@mui/icons-material/Visibility'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
+import CloseIcon from '@mui/icons-material/Close'
 import AnnouncementBanner from './AnnouncementBanner'
 import ColorModeToggle from './ColorModeToggle'
 import { fetchOidcEnabled, getOidcLoginUrl } from '../api'
@@ -440,7 +441,19 @@ export default function LoginScreen({
           onClose={() => setForgotPasswordOpen(false)}
           aria-labelledby="forgot-password-dialog-title"
         >
-          <DialogTitle id="forgot-password-dialog-title">Forgot Password</DialogTitle>
+          {/* Close (X) in the top-right corner. Positioned against the dialog
+              paper (which is `position: relative`), so it sits at the corner
+              regardless of the title/content size. */}
+          <IconButton
+            aria-label="close"
+            onClick={() => setForgotPasswordOpen(false)}
+            sx={{ position: 'absolute', right: 8, top: 8, color: 'text.secondary' }}
+          >
+            <CloseIcon />
+          </IconButton>
+          <DialogTitle id="forgot-password-dialog-title" sx={{ pr: 6 }}>
+            Forgot Password
+          </DialogTitle>
           <DialogContent>
             <Typography>Please contact the TLU Lab via Teams to reset your password.</Typography>
           </DialogContent>

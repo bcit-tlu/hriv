@@ -265,6 +265,21 @@ describe('LoginScreen', () => {
         expect(screen.getByText(/contact the TLU Lab via Teams/i)).toBeInTheDocument()
       })
     })
+
+    it('closes the dialog via the top-right close (X) button', async () => {
+      const user = userEvent.setup()
+      await renderOidcDisabled()
+
+      await user.click(screen.getByRole('button', { name: /Forgot Password/i }))
+      await waitFor(() => {
+        expect(screen.getByText(/contact the TLU Lab via Teams/i)).toBeInTheDocument()
+      })
+
+      await user.click(screen.getByRole('button', { name: /close/i }))
+      await waitFor(() => {
+        expect(screen.queryByText(/contact the TLU Lab via Teams/i)).not.toBeInTheDocument()
+      })
+    })
   })
 
   // ─── fetchOidcEnabled failure ─────────────────────────────────────
