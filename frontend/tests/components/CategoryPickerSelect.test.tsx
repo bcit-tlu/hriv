@@ -154,6 +154,40 @@ describe('CategoryPickerSelect — LockIcon', () => {
     expect(screen.getByLabelText('Program restriction inherited from parent')).toBeInTheDocument()
   })
 
+  it('uses effective hidden state for inherited child restriction locks', async () => {
+    const user = userEvent.setup()
+    const parent = makeCategory({
+      id: 1,
+      label: 'Architecture',
+      status: 'hidden',
+      programIds: [10],
+      children: [makeCategory({ id: 2, label: 'American', parentId: 1, programIds: [] })],
+    })
+
+    render(
+      <CategoryPickerSelect
+        categories={[parent]}
+        value={2}
+        onChange={vi.fn()}
+        onToggleVisibility={vi.fn()}
+      />,
+    )
+    await user.click(screen.getByRole('combobox'))
+
+    const parentLock = screen.getByLabelText('Restricted to specific programs').querySelector('svg')
+    const childLock = screen
+      .getByLabelText('Program restriction inherited from parent')
+      .querySelector('svg')
+
+    expect(screen.getByLabelText('Hidden by parent category')).toBeInTheDocument()
+    expect(parentLock).not.toBeNull()
+    expect(childLock).not.toBeNull()
+    expect(getComputedStyle(childLock as SVGElement).opacity).toBe('0.6')
+    expect(getComputedStyle(childLock as SVGElement).color).toBe(
+      getComputedStyle(parentLock as SVGElement).color,
+    )
+  })
+
   it('renders a secondary lock icon for direct group restrictions', async () => {
     const user = userEvent.setup()
     const categories = [makeCategory({ id: 1, label: 'Grouped', groupIds: [20] })]

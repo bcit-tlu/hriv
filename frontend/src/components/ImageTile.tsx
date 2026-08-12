@@ -29,7 +29,7 @@ function ImageTile({ image, onClick, onEditDetails, categoryHidden = false }: Im
     <Card
       data-testid="image-tile"
       elevation={2}
-      sx={{ width: '100%', maxWidth: 300, position: 'relative', opacity: categoryHidden ? 0.5 : 1 }}
+      sx={{ width: '100%', maxWidth: 300, position: 'relative' }}
     >
       <CardActionArea
         data-testid="image-tile-action-area"

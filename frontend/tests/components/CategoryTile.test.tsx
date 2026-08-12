@@ -22,6 +22,11 @@ import { makeCategory } from '../helpers/fixtures'
 // Helpers
 // ---------------------------------------------------------------------------
 
+const expectEffectiveOpacity = (element: Element | null, opacity: string) => {
+  expect(element).toBeInTheDocument()
+  expect(window.getComputedStyle(element as Element).opacity || '1').toBe(opacity)
+}
+
 const samplePrograms: Program[] = [
   {
     id: 10,
@@ -178,7 +183,7 @@ describe('CategoryTile', () => {
       })
     })
 
-    it('reduces tile opacity when hidden state is inherited from a parent page', () => {
+    it('keeps inherited hidden categories at full opacity while greyscaling the tile', () => {
       render(
         <CategoryTile
           category={makeCategory({
@@ -188,14 +193,13 @@ describe('CategoryTile', () => {
           onClick={vi.fn()}
           programs={samplePrograms}
           parentHidden
-          inheritedHidden
         />,
       )
       const title = screen.getByText('Inherited Hidden Cat')
       const card = title.closest('[data-testid="category-tile"]')
       const actionArea = title.closest('[data-testid="category-tile-action-area"]')
 
-      expect(card).toHaveStyle({ opacity: '0.5' })
+      expectEffectiveOpacity(card, '1')
       expect(actionArea).toHaveStyle({ filter: 'grayscale(100%)' })
     })
   })
