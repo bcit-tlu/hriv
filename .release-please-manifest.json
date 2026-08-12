@@ -1,6 +1,6 @@
 {
   "frontend": "0.43.0",
-  "backend": "0.43.0",
+  "backend": "0.44.0",
   "backup": "0.12.2",
   "synthetic-monitoring": "1.2.3"
 }
