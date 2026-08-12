@@ -27,6 +27,10 @@ vi.mock('../../src/api', () => ({
   getOidcLoginUrl: vi.fn(() => '/api/auth/oidc/login'),
 }))
 
+// Control the mobile/desktop breakpoint. Defaults to desktop (false) so the
+// existing suite is unchanged; the mobile block opts in via mockReturnValue.
+vi.mock('@mui/material/useMediaQuery', () => ({ default: vi.fn(() => false) }))
+
 // LoginScreen reads the OIDC error code from useAuth; stub the hook so
 // these tests don't need an AuthProvider wrapper. Individual tests that
 // care about the error path override the return value before rendering.
@@ -40,6 +44,7 @@ vi.mock('../../src/useAuth', () => ({
 
 import { fetchOidcEnabled } from '../../src/api'
 import { useAuth } from '../../src/useAuth'
+import useMediaQuery from '@mui/material/useMediaQuery'
 
 // ---------------------------------------------------------------------------
 // Helpers — use placeholders to find MUI TextFields since MUI required labels
@@ -92,6 +97,9 @@ async function renderOidcEnabled(
 describe('LoginScreen', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Default every test to the desktop breakpoint; the mobile block opts in.
+    // (clearAllMocks keeps implementations, so reset explicitly to avoid leaks.)
+    vi.mocked(useMediaQuery).mockReturnValue(false)
     // Reset useAuth to its default (no error) between tests so the
     // OIDC error branch is opt-in per test.
     vi.mocked(useAuth).mockReturnValue({
@@ -303,6 +311,54 @@ describe('LoginScreen', () => {
         expect(fetchOidcEnabled).toHaveBeenCalled()
       })
       expect(screen.queryByText(/already linked to a different identity/i)).not.toBeInTheDocument()
+    })
+  })
+
+  // ─── Mobile (small form factor) layout ─────────────────────────────
+  describe('mobile layout', () => {
+    async function renderMobileOidcDisabled() {
+      vi.mocked(useMediaQuery).mockReturnValue(true)
+      return renderOidcDisabled()
+    }
+
+    it('shows the theme toggle on desktop', async () => {
+      await renderOidcDisabled() // desktop (default breakpoint)
+      expect(screen.getByRole('button', { name: /toggle theme/i })).toBeInTheDocument()
+    })
+
+    it('hides the theme toggle on mobile (relocated to the profile menu post-auth)', async () => {
+      await renderMobileOidcDisabled()
+      expect(screen.queryByRole('button', { name: /toggle theme/i })).not.toBeInTheDocument()
+    })
+
+    it('renders a divider under the brand lockup on mobile', async () => {
+      await renderMobileOidcDisabled()
+      expect(screen.getByRole('separator')).toBeInTheDocument()
+    })
+
+    it('drops "(HRIV)" and "Login" from the brand heading on mobile', async () => {
+      await renderMobileOidcDisabled()
+      // Heading (h5) is unique by role; footer shares the plain text.
+      expect(
+        screen.getByRole('heading', { name: 'High Resolution Image Viewer' }),
+      ).toBeInTheDocument()
+      expect(screen.queryByText(/\(HRIV\)/)).not.toBeInTheDocument()
+    })
+
+    it('renders outlined (bordered, rounded) credential fields on mobile', async () => {
+      await renderMobileOidcDisabled()
+      expect(getUsernameField().closest('.MuiOutlinedInput-root')).not.toBeNull()
+      expect(getPasswordField().closest('.MuiOutlinedInput-root')).not.toBeNull()
+    })
+
+    it('renders field labels as standalone <label>s above the inputs on mobile', async () => {
+      await renderMobileOidcDisabled()
+      const usernameLabel = screen.getByText('Username *')
+      expect(usernameLabel.tagName).toBe('LABEL')
+      expect(usernameLabel).toHaveAttribute('for', 'login-username')
+      const passwordLabel = screen.getByText('Password *')
+      expect(passwordLabel.tagName).toBe('LABEL')
+      expect(passwordLabel).toHaveAttribute('for', 'login-password')
     })
   })
 })
