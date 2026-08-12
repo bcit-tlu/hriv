@@ -16,6 +16,11 @@ import userEvent from '@testing-library/user-event'
 import ImageTile from '../../src/components/ImageTile'
 import { makeImage } from '../helpers/fixtures'
 
+const expectEffectiveOpacity = (element: Element | null, opacity: string) => {
+  expect(element).toBeInTheDocument()
+  expect(window.getComputedStyle(element as Element).opacity || '1').toBe(opacity)
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -63,7 +68,7 @@ describe('ImageTile', () => {
         />,
       )
       const title = screen.getByText('Inactive Slide')
-      expect(title.closest('.MuiCardActionArea-root')).toHaveStyle({
+      expect(title.closest('[data-testid="image-tile-action-area"]')).toHaveStyle({
         filter: 'grayscale(100%)',
       })
     })
@@ -78,7 +83,7 @@ describe('ImageTile', () => {
         <ImageTile image={makeImage({ active: true, name: 'Active Slide' })} onClick={vi.fn()} />,
       )
       const title = screen.getByText('Active Slide')
-      expect(title.closest('.MuiCardActionArea-root')).toHaveStyle({
+      expect(title.closest('[data-testid="image-tile-action-area"]')).toHaveStyle({
         filter: 'none',
       })
     })
@@ -111,7 +116,7 @@ describe('ImageTile', () => {
       const title = screen.getByText(
         'A very long image title that should wrap across multiple lines',
       )
-      const titleRow = title.closest('.MuiBox-root')
+      const titleRow = title.closest('[data-testid="image-tile-title-row"]')
 
       expect(title).toHaveStyle({
         display: '-webkit-box',
@@ -123,7 +128,7 @@ describe('ImageTile', () => {
       expect(titleRow).toHaveStyle({ alignItems: 'flex-start' })
     })
 
-    it('reduces tile opacity when visibility is inherited from category state', () => {
+    it('keeps category-hidden images at full opacity while greyscaling the tile', () => {
       render(
         <ImageTile
           image={makeImage({ active: true, name: 'Inherited Hidden Image' })}
@@ -132,10 +137,10 @@ describe('ImageTile', () => {
         />,
       )
       const title = screen.getByText('Inherited Hidden Image')
-      const card = title.closest('.MuiCard-root')
-      const actionArea = title.closest('.MuiCardActionArea-root')
+      const card = title.closest('[data-testid="image-tile"]')
+      const actionArea = title.closest('[data-testid="image-tile-action-area"]')
 
-      expect(card).toHaveStyle({ opacity: '0.5' })
+      expectEffectiveOpacity(card, '1')
       expect(actionArea).toHaveStyle({ filter: 'grayscale(100%)' })
     })
   })

@@ -205,6 +205,62 @@ describe('useCanvasAnnotations', () => {
       )
     })
 
+    it('keeps a stable identity across rerenders', () => {
+      const image = makeImage({ id: 1 })
+      const { result, rerender } = renderHook(
+        (deps: UseCanvasAnnotationsDeps) => useCanvasAnnotations(deps),
+        { initialProps: makeDeps({ selectedImage: image }) },
+      )
+      const firstIdentity = result.current.handleCanvasAnnotationsChange
+
+      rerender(makeDeps({ selectedImage: image }))
+
+      expect(result.current.handleCanvasAnnotationsChange).toBe(firstIdentity)
+    })
+
+    it('fires the latest save closure when deps change during the debounce window', async () => {
+      const image = makeImage({ id: 1 })
+      mockUpdateImage.mockResolvedValue({
+        id: 1,
+        name: 'img-1',
+        thumb: '/thumb/1.jpg',
+        tile_sources: '/tiles/1',
+        category_id: null,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 0,
+        version: 2,
+        metadata_extra: null,
+        created_at: '2024-01-01',
+        updated_at: '2024-01-01',
+        width: null,
+        height: null,
+        file_size: null,
+      })
+      const staleLoadCategories = vi.fn().mockResolvedValue(undefined)
+      const freshLoadCategories = vi.fn().mockResolvedValue(undefined)
+      const { result, rerender } = renderHook(
+        (deps: UseCanvasAnnotationsDeps) => useCanvasAnnotations(deps),
+        { initialProps: makeDeps({ selectedImage: image, loadCategories: staleLoadCategories }) },
+      )
+
+      act(() => {
+        result.current.handleCanvasAnnotationsChange([makeAnnotation()])
+      })
+
+      // Recreate saveCanvasAnnotations mid-debounce (same image, so the timer survives)
+      rerender(makeDeps({ selectedImage: image, loadCategories: freshLoadCategories }))
+
+      await act(async () => {
+        vi.advanceTimersByTime(600)
+      })
+
+      expect(mockUpdateImage).toHaveBeenCalledOnce()
+      expect(staleLoadCategories).not.toHaveBeenCalled()
+      expect(freshLoadCategories).toHaveBeenCalledOnce()
+    })
+
     it('queues data when a save is in-flight', async () => {
       const image = makeImage({ id: 1 })
       let resolveFirst!: (value: unknown) => void

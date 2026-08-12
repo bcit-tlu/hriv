@@ -215,7 +215,7 @@ curl -s http://localhost:8000/api/categories/ -H "Authorization: Bearer $TOKEN"
 1. Login as `admin@example.ca` / `password` (admin).
 2. Navigate to the Admin tab.
 3. Click the `Backups` sub-tab.
-4. **Assert:** Export cards are shown above the `Recent Tasks` accordion, and import cards are at the bottom.
+4. **Assert:** The export and import cards are grouped in a single card grid above the `Recent Tasks` accordion, and the archive-history panels are at the bottom.
 5. Click "Export" on the database export card to download the database as JSON.
 6. **Assert:** JSON file downloads containing categories, images, and users.
 7. Navigate to Browse, create a new test category (to dirty the database).
@@ -291,6 +291,7 @@ All endpoints except login require a valid JWT bearer token in the `Authorizatio
 | POST   | /api/changelog/mark-read                                                                                  | Yes           | instructor   |
 | PATCH  | /api/changelog/{id}                                                                                       | Yes           | admin        |
 | DELETE | /api/changelog/{id}                                                                                       | Yes           | admin        |
+| GET    | /api/admin/version                                                                                        | Yes           | instructor   |
 | GET    | /api/admin/export                                                                                         | Yes           | admin        |
 | POST   | /api/admin/import                                                                                         | Yes           | admin        |
 | POST   | /api/admin/tasks/rebuild-tiles                                                                            | Yes           | admin        |
@@ -301,6 +302,10 @@ All endpoints except login require a valid JWT bearer token in the `Authorizatio
 | PUT    | /api/admin/tasks/{task_id}/upload (raw `application/octet-stream`; multipart/form-data rejected with 415) | Yes           | admin        |
 | PATCH  | /api/admin/tasks/{task_id}/upload (raw chunk; `Upload-Offset` + `Upload-Length` headers)                  | Yes           | admin        |
 | POST   | /api/admin/tasks/{task_id}/upload/finalize (finalize chunked upload)                                      | Yes           | admin        |
+| GET    | /api/admin/tasks/files-import/archives                                                                    | Yes           | admin        |
+| GET    | /api/admin/tasks/files-import/archive-retention                                                           | Yes           | admin        |
+| POST   | /api/admin/tasks/files-import/rerun                                                                       | Yes           | admin        |
+| DELETE | /api/admin/tasks/files-import/archives/{archive_task_id}                                                  | Yes           | admin        |
 | GET    | /api/admin/tasks/backup-archives                                                                          | Yes           | admin        |
 | DELETE | /api/admin/tasks/backup-archives/{task_id}/{artifact_role}                                                | Yes           | admin        |
 

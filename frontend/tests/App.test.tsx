@@ -2,6 +2,12 @@ import { createRef, useEffect, type ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import App from '../src/App'
+import { fetchVersions, fetchFrontendVersion } from '../src/api'
+
+const expectEffectiveOpacity = (element: Element | null, opacity: string) => {
+  expect(element).toBeInTheDocument()
+  expect(window.getComputedStyle(element as Element).opacity || '1').toBe(opacity)
+}
 
 const mockImage = {
   id: 101,
@@ -321,6 +327,15 @@ vi.mock('../src/useAuth', () => ({
   useAuth: () => authState,
 }))
 
+vi.mock('../src/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/api')>()
+  return {
+    ...actual,
+    fetchVersions: vi.fn().mockResolvedValue({ backend: '1.0.0', backup: '1.0.1' }),
+    fetchFrontendVersion: vi.fn().mockResolvedValue({ frontend: '1.0.2' }),
+  }
+})
+
 vi.mock('../src/useColorMode', () => ({
   useColorMode: () => ({ mode: 'light' }),
 }))
@@ -392,6 +407,13 @@ vi.mock('../src/useCategoryActions', () => ({
 describe('App breadcrumbs', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockPrograms.splice(0, mockPrograms.length, {
+      id: 1,
+      name: 'Pathology',
+      oidc_group: null,
+      created_at: '',
+      updated_at: '',
+    })
     mockImage.active = true
     mockImage.categoryId = 1
     mockImage.note = null
@@ -451,10 +473,10 @@ describe('App breadcrumbs', () => {
 
     const programChip = within(imageBreadcrumb as HTMLElement)
       .getByText('Pathology')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="program-chip"]')
     const groupChip = within(imageBreadcrumb as HTMLElement)
       .getByText('Lab A2')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="group-chip"]')
     const editButton = screen.getByRole('button', { name: 'Edit Details' })
     const shareButton = screen.getByText('Share View').closest('button')
 
@@ -502,7 +524,7 @@ describe('App breadcrumbs', () => {
     ).toBeInTheDocument()
   })
 
-  it('reduces opacity for image-view controls when category hidden state is inherited', () => {
+  it('keeps image-view controls fully opaque when category hidden state is inherited', () => {
     mockCategories.splice(0, mockCategories.length, {
       id: 1,
       label: 'Italian',
@@ -542,24 +564,24 @@ describe('App breadcrumbs', () => {
 
     const programChip = within(imageBreadcrumb as HTMLElement)
       .getByText('Pathology')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="program-chip"]')
     const groupChip = within(imageBreadcrumb as HTMLElement)
       .getByText('Lab A2')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="group-chip"]')
     const hiddenButton = screen.getByRole('button', { name: 'Visibility: Hidden by category' })
     const editButton = screen.getByRole('button', { name: 'Edit Details' })
     const shareButton = screen.getByText('Share View').closest('button')
 
     expect(programChip).toHaveStyle({ filter: 'grayscale(100%)' })
-    expect(programChip).toHaveStyle({ opacity: '0.5' })
+    expectEffectiveOpacity(programChip, '1')
     expect(groupChip).toHaveStyle({ filter: 'grayscale(100%)' })
-    expect(groupChip).toHaveStyle({ opacity: '0.5' })
+    expectEffectiveOpacity(groupChip, '1')
     expect(hiddenButton).toHaveStyle({ filter: 'grayscale(100%)' })
-    expect(hiddenButton).toHaveStyle({ opacity: '0.5' })
+    expectEffectiveOpacity(hiddenButton, '1')
     expect(editButton).toHaveStyle({ filter: 'grayscale(100%)' })
-    expect(editButton).toHaveStyle({ opacity: '0.5' })
+    expectEffectiveOpacity(editButton, '1')
     expect(shareButton).toHaveStyle({ filter: 'grayscale(100%)' })
-    expect(shareButton).toHaveStyle({ opacity: '0.5' })
+    expectEffectiveOpacity(shareButton, '1')
   })
 
   it('applies inherited shading to breadcrumb program and group chips for child categories', () => {
@@ -603,10 +625,10 @@ describe('App breadcrumbs', () => {
 
     const categoryProgramChip = within(categoryBreadcrumb as HTMLElement)
       .getByText('Pathology')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="program-chip"]')
     const categoryGroupChip = within(categoryBreadcrumb as HTMLElement)
       .getByText('Lab A2')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="group-chip"]')
 
     expect(categoryProgramChip).toHaveStyle({ opacity: '0.6' })
     expect(categoryGroupChip).toHaveStyle({ opacity: '0.6' })
@@ -618,13 +640,80 @@ describe('App breadcrumbs', () => {
 
     const imageProgramChip = within(imageBreadcrumb as HTMLElement)
       .getByText('Pathology')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="program-chip"]')
     const imageGroupChip = within(imageBreadcrumb as HTMLElement)
       .getByText('Lab A2')
-      .closest('.MuiChip-root')
+      .closest('[data-testid="group-chip"]')
 
     expect(imageProgramChip).toHaveStyle({ opacity: '0.6' })
     expect(imageGroupChip).toHaveStyle({ opacity: '0.6' })
+  })
+
+  it('shows only effective program pills when a child category narrows direct programs', () => {
+    mockPrograms.push({
+      id: 2,
+      name: 'Radiology',
+      oidc_group: null,
+      created_at: '',
+      updated_at: '',
+    })
+    mockCategories.splice(0, mockCategories.length, {
+      id: 1,
+      label: 'Parent',
+      parentId: null,
+      children: [
+        {
+          id: 2,
+          label: 'Child',
+          parentId: 1,
+          children: [],
+          images: [],
+          programIds: [1],
+          groupIds: [],
+          status: 'active',
+          sortOrder: 0,
+          version: 1,
+          cardImageId: null,
+          metadataExtra: null,
+        },
+      ],
+      images: [],
+      programIds: [1, 2],
+      groupIds: [],
+      status: 'active',
+      sortOrder: 0,
+      version: 1,
+      cardImageId: null,
+      metadataExtra: null,
+    })
+
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open category' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open child category' }))
+
+    const categoryBreadcrumb = screen.getByLabelText('category breadcrumb').closest('div')
+    expect(categoryBreadcrumb).not.toBeNull()
+
+    const directProgramChip = within(categoryBreadcrumb as HTMLElement)
+      .getByText('Pathology')
+      .closest('[data-testid="program-chip"]')
+
+    expectEffectiveOpacity(directProgramChip, '1')
+    expect(
+      within(categoryBreadcrumb as HTMLElement).queryByText('Radiology'),
+    ).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+
+    const imageBreadcrumb = screen.getByLabelText('image breadcrumb').closest('div')
+    expect(imageBreadcrumb).not.toBeNull()
+
+    const imageProgramChip = within(imageBreadcrumb as HTMLElement)
+      .getByText('Pathology')
+      .closest('[data-testid="program-chip"]')
+
+    expectEffectiveOpacity(imageProgramChip, '1')
+    expect(within(imageBreadcrumb as HTMLElement).queryByText('Radiology')).not.toBeInTheDocument()
   })
 
   it('resets expanded note state when selecting another image', () => {
@@ -655,5 +744,25 @@ describe('App breadcrumbs', () => {
 
     await screen.findByRole('progressbar')
     expect(announcementModalMock.loadAnnouncement).not.toHaveBeenCalled()
+  })
+
+  it('fetches component versions for instructors (canEditContent)', async () => {
+    render(<App />)
+
+    expect(vi.mocked(fetchVersions)).toHaveBeenCalledOnce()
+    expect(vi.mocked(fetchFrontendVersion)).toHaveBeenCalledOnce()
+  })
+
+  it('does not fetch component versions for students', async () => {
+    authState = {
+      ...authState,
+      currentUser: { ...mockCurrentUser, role: 'student' as const },
+      canEditContent: false,
+    }
+
+    render(<App />)
+
+    expect(vi.mocked(fetchVersions)).not.toHaveBeenCalled()
+    expect(vi.mocked(fetchFrontendVersion)).not.toHaveBeenCalled()
   })
 })

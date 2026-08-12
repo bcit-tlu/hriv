@@ -38,6 +38,7 @@ All seed users share the password `password`.
 | Restrict categories to groups   | Yes   | Yes\*      | No      |
 | Manage announcement             | Yes   | Yes        | No      |
 | View changelog notifications    | Yes   | Yes        | No      |
+| View component versions (About) | Yes   | Yes        | No      |
 | Manage changelog entries        | Yes   | No         | No      |
 | Admin tab (changelog + backups) | Yes   | No         | No      |
 | User management (add/delete)    | Yes   | No         | No      |
@@ -132,6 +133,8 @@ reconciliation model for both environments.
 | [docs/observability-operations.md](docs/observability-operations.md)                 | Alert catalogue, routing policy, validation drills, and readiness checklist     |
 | [docs/observability-runbooks.md](docs/observability-runbooks.md)                     | Alert-linked operator runbooks for availability, storage, backups, and load     |
 | [docs/synthetic-monitoring.md](docs/synthetic-monitoring.md)                         | Synthetic Playwright journey, configuration, and operator runbook               |
+| [docs/per-file-restore-design.md](docs/per-file-restore-design.md)                   | Per-file restore design and implemented backend/UI shape                        |
+| [docs/rebuild-architecture-design.md](docs/rebuild-architecture-design.md)           | Design plan for scalable, parallel tile rebuilds after backup restores          |
 | [AGENTS.md](AGENTS.md)                                                               | Contributor setup, workflow, and **Critical Invariants**                        |
 
 ## License

@@ -560,6 +560,56 @@ describe('request helper (via wrapper functions)', () => {
       },
     })
   })
+
+  it('never surfaces "[object Object]" for structured detail without a message field', async () => {
+    const body = JSON.stringify({ detail: { category_ids: [1] } })
+    mockFetch.mockReturnValueOnce(
+      Promise.resolve({
+        ok: false,
+        status: 400,
+        statusText: 'Bad Request',
+        headers: { get: () => null },
+        json: () => Promise.resolve({ detail: { category_ids: [1] } }),
+        text: () => Promise.resolve(body),
+      }),
+    )
+
+    try {
+      await createGroup({ name: 'New Group' })
+      expect.unreachable('createGroup should have thrown')
+    } catch (e) {
+      expect(e).toBeInstanceOf(ApiError)
+      const err = e as ApiError
+      expect(err.status).toBe(400)
+      expect(err.detail).toBe('')
+      expect(err.data).toEqual({ category_ids: [1] })
+      expect(userMessage(err, 'fallback')).toBe('fallback')
+    }
+  })
+
+  it('never surfaces "null" for a null detail', async () => {
+    const body = JSON.stringify({ detail: null })
+    mockFetch.mockReturnValueOnce(
+      Promise.resolve({
+        ok: false,
+        status: 400,
+        statusText: 'Bad Request',
+        headers: { get: () => null },
+        json: () => Promise.resolve({ detail: null }),
+        text: () => Promise.resolve(body),
+      }),
+    )
+
+    try {
+      await createGroup({ name: 'New Group' })
+      expect.unreachable('createGroup should have thrown')
+    } catch (e) {
+      expect(e).toBeInstanceOf(ApiError)
+      const err = e as ApiError
+      expect(err.detail).toBe('')
+      expect(userMessage(err, 'fallback')).toBe('fallback')
+    }
+  })
 })
 
 // ── Status ───────────────────────────────────────────────────────────────

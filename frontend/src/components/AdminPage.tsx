@@ -13,7 +13,6 @@ import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
-import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
 import LinearProgress from '@mui/material/LinearProgress'
 import Link from '@mui/material/Link'
@@ -39,6 +38,7 @@ import {
   ApiError,
   deleteFilesImportArchive,
   fetchBackupSnapshotManifest,
+  fetchFilesImportArchiveRetention,
   fetchFilesImportArchives,
   listExportArchives,
   purgeExportArchive,
@@ -63,6 +63,7 @@ import type {
   BackupSnapshotSummary,
   ExportArchive,
   FilesImportArchive,
+  FilesImportArchiveRetentionPolicy,
 } from '../api'
 import { useAuth } from '../useAuth'
 import ConfirmImportDialog, { type ConfirmImportKind } from './ConfirmImportDialog'
@@ -184,6 +185,8 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
   const [filesImportArchives, setFilesImportArchives] = useState<FilesImportArchive[]>([])
   const [filesImportArchivesLoading, setFilesImportArchivesLoading] = useState(false)
   const [filesImportArchivesError, setFilesImportArchivesError] = useState<string | null>(null)
+  const [filesImportArchiveRetention, setFilesImportArchiveRetention] =
+    useState<FilesImportArchiveRetentionPolicy | null>(null)
   const [exportArchives, setExportArchives] = useState<ExportArchive[]>([])
   const [exportArchivesTotalBytes, setExportArchivesTotalBytes] = useState(0)
   const [exportArchivesLoading, setExportArchivesLoading] = useState(false)
@@ -489,6 +492,12 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
     try {
       const archives = await fetchFilesImportArchives()
       setFilesImportArchives(archives)
+      try {
+        setFilesImportArchiveRetention(await fetchFilesImportArchiveRetention())
+      } catch {
+        // Policy display is informational only; keep the archive list usable.
+        setFilesImportArchiveRetention(null)
+      }
     } catch (err) {
       setFilesImportArchivesError(userMessage(err, 'Failed to load import archives'))
     } finally {
@@ -887,229 +896,168 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
 
       <AdminTabPanel value="backups" currentValue={activeTab}>
         <Stack spacing={3}>
-          <Box>
-            <Typography variant="h6" sx={{ mb: 2 }}>
-              Export
-            </Typography>
-            <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-              <Card
-                sx={{
-                  minWidth: 300,
-                  maxWidth: 400,
-                  flex: '1 1 300px',
-                  bgcolor: 'background.paper',
-                }}
-              >
-                <CardContent>
-                  <Typography variant="h6" gutterBottom>
-                    Export Database
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    Download a JSON snapshot of all categories, images, users, and source image
-                    records. The export runs in the background — you will be notified when it is
-                    ready to download.
-                  </Typography>
-                  <Button
-                    variant="contained"
-                    startIcon={
-                      starting === 'db_export' ? (
-                        <CircularProgress size={18} color="inherit" />
-                      ) : (
-                        <DownloadIcon />
-                      )
-                    }
-                    onClick={handleExport}
-                    disabled={busy}
-                  >
-                    {starting === 'db_export' ? 'Starting…' : 'Export'}
-                  </Button>
-                </CardContent>
-              </Card>
+          {/* Data transfer — export/import/maintenance cards */}
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+              gap: 2,
+              alignItems: 'stretch',
+            }}
+          >
+            <Card sx={{ bgcolor: 'background.paper' }}>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  Export Database
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  Download a JSON snapshot of all categories, images, users, and source image
+                  records. The export runs in the background — you will be notified when it is ready
+                  to download.
+                </Typography>
+                <Button
+                  variant="contained"
+                  startIcon={
+                    starting === 'db_export' ? (
+                      <CircularProgress size={18} color="inherit" />
+                    ) : (
+                      <DownloadIcon />
+                    )
+                  }
+                  onClick={handleExport}
+                  disabled={busy}
+                >
+                  {starting === 'db_export' ? 'Starting…' : 'Export'}
+                </Button>
+              </CardContent>
+            </Card>
 
-              <Card
-                sx={{
-                  minWidth: 300,
-                  maxWidth: 400,
-                  flex: '1 1 300px',
-                  bgcolor: 'background.paper',
-                }}
-              >
-                <CardContent>
-                  <Typography variant="h6" gutterBottom>
-                    Export Files
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    Create a source-images-only compressed archive (.tar.gz) of the filesystem.
-                    Generated tiles are excluded and will be rebuilt after import. The archive is
-                    built in the background — you will be notified when it is ready to download.
-                  </Typography>
-                  <Button
-                    variant="contained"
-                    startIcon={
-                      starting === 'files_export' ? (
-                        <CircularProgress size={18} color="inherit" />
-                      ) : (
-                        <FolderZipIcon />
-                      )
-                    }
-                    onClick={handleExportFiles}
-                    disabled={busy}
-                  >
-                    {starting === 'files_export' ? 'Starting…' : 'Export'}
-                  </Button>
-                </CardContent>
-              </Card>
-            </Box>
-          </Box>
+            <Card sx={{ bgcolor: 'background.paper' }}>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  Export Files
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  Create a source-images-only compressed archive (.tar.gz) of the filesystem.
+                  Generated tiles are excluded and will be rebuilt after import. The archive is
+                  built in the background — you will be notified when it is ready to download.
+                </Typography>
+                <Button
+                  variant="contained"
+                  startIcon={
+                    starting === 'files_export' ? (
+                      <CircularProgress size={18} color="inherit" />
+                    ) : (
+                      <FolderZipIcon />
+                    )
+                  }
+                  onClick={handleExportFiles}
+                  disabled={busy}
+                >
+                  {starting === 'files_export' ? 'Starting…' : 'Export'}
+                </Button>
+              </CardContent>
+            </Card>
+            <Card sx={{ bgcolor: 'background.paper' }}>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  Import Database
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  Upload a previously exported JSON file to replace all current data. This action is
+                  destructive — existing records will be overwritten. The import runs in the
+                  background.
+                </Typography>
+                <Button
+                  variant="contained"
+                  color="warning"
+                  startIcon={
+                    starting === 'db_import' ? (
+                      <CircularProgress size={18} color="inherit" />
+                    ) : (
+                      <UploadFileIcon />
+                    )
+                  }
+                  onClick={handleImportClick}
+                  disabled={busy}
+                >
+                  {starting === 'db_import' ? 'Starting…' : 'Import'}
+                </Button>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".json"
+                  hidden
+                  onChange={handleFileChange}
+                />
+              </CardContent>
+            </Card>
 
-          <Box>
-            <Typography variant="h6" sx={{ mb: 2 }}>
-              Stored export archives
-            </Typography>
-            {exportArchives.length > 0 && (
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                {exportArchives.length} {exportArchives.length === 1 ? 'archive' : 'archives'} using{' '}
-                {formatBytes(exportArchivesTotalBytes)}
-              </Typography>
-            )}
-            {exportArchivesError && (
-              <Alert severity="error" sx={{ mb: 2 }}>
-                {exportArchivesError}
-              </Alert>
-            )}
-            {exportArchivesLoading ? (
-              <Box sx={{ py: 2 }}>
-                <LinearProgress />
-              </Box>
-            ) : exportArchives.length === 0 ? (
-              <Typography color="text.secondary">No stored export archives found.</Typography>
-            ) : (
-              <List disablePadding>
-                {exportArchives.map((archive) => (
-                  <Box
-                    key={`${archive.task_id}-${archive.artifact_role}`}
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      gap: 2,
-                      py: 1.5,
-                      px: 2,
-                      borderBottom: '1px solid',
-                      borderColor: 'divider',
-                    }}
-                  >
-                    <ListItemText
-                      primary={archive.filename}
-                      secondary={
-                        <>
-                          <Typography component="span" variant="body2" color="text.secondary">
-                            Task #{archive.task_id} · {archive.task_type} ·{' '}
-                            {formatBytes(archive.size_bytes)} ·{' '}
-                            {archive.created_at
-                              ? new Date(archive.created_at).toLocaleString()
-                              : ''}{' '}
-                            · {archive.status}
-                          </Typography>
-                        </>
-                      }
-                    />
-                    <Button
-                      size="small"
-                      color="error"
-                      variant="outlined"
-                      disabled={!archive.purgeable}
-                      onClick={() => void handlePurgeExportArchive(archive)}
-                      data-testid={`export-archive-delete-${archive.task_id}`}
-                      sx={{ flexShrink: 0 }}
-                    >
-                      Delete
-                    </Button>
-                  </Box>
-                ))}
-              </List>
-            )}
-          </Box>
+            <Card sx={{ bgcolor: 'background.paper' }}>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  Import Files
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  Upload a source-images-only .tar.gz file to replace the filesystem on disk. This
+                  action is destructive — existing files will be overwritten. Generated tiles are
+                  not included, but a tile rebuild is queued automatically after the import
+                  completes. Rebuild Tiles can also be triggered manually if needed.
+                </Typography>
+                <Button
+                  variant="contained"
+                  color="warning"
+                  startIcon={
+                    starting === 'files_import' ? (
+                      <CircularProgress size={18} color="inherit" />
+                    ) : (
+                      <UploadFileIcon />
+                    )
+                  }
+                  onClick={handleImportFilesClick}
+                  disabled={busy}
+                >
+                  {starting === 'files_import' ? 'Starting…' : 'Import'}
+                </Button>
+                <input
+                  ref={filesRef}
+                  type="file"
+                  accept=".tar.gz,.tgz,application/gzip,application/x-gzip,application/x-tar,application/x-compressed-tar"
+                  hidden
+                  data-testid="files-import-input"
+                  onChange={handleFilesChange}
+                />
+              </CardContent>
+            </Card>
 
-          <Box>
-            <Typography variant="h6" sx={{ mb: 2 }}>
-              Previously uploaded import archives
-            </Typography>
-            {filesImportArchives.length > 0 && (
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                {filesImportArchives.length} retained{' '}
-                {filesImportArchives.length === 1 ? 'archive' : 'archives'} using{' '}
-                {formatBytes(
-                  filesImportArchives.reduce(
-                    (total, archive) => total + (archive.size_bytes ?? 0),
-                    0,
-                  ),
-                )}
-              </Typography>
-            )}
-            {filesImportArchivesError && (
-              <Alert severity="error" sx={{ mb: 2 }}>
-                {filesImportArchivesError}
-              </Alert>
-            )}
-            {filesImportArchivesLoading ? (
-              <Box sx={{ py: 2 }}>
-                <LinearProgress />
-              </Box>
-            ) : filesImportArchives.length === 0 ? (
-              <Typography color="text.secondary">
-                No retained filesystem-import archives found.
-              </Typography>
-            ) : (
-              <List disablePadding>
-                {filesImportArchives.map((archive) => (
-                  <Box
-                    key={archive.archive_task_id}
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      gap: 2,
-                      py: 1.5,
-                      px: 2,
-                      borderBottom: '1px solid',
-                      borderColor: 'divider',
-                    }}
-                  >
-                    <ListItemText
-                      primary={archive.original_filename ?? `Archive #${archive.archive_task_id}`}
-                      secondary={
-                        <>
-                          <Typography component="span" variant="body2" color="text.secondary">
-                            Task #{archive.archive_task_id} ·{' '}
-                            {archive.size_bytes ? formatBytes(archive.size_bytes) : '0 B'} ·{' '}
-                            {archive.created_at
-                              ? new Date(archive.created_at).toLocaleString()
-                              : ''}{' '}
-                            · {archive.last_status}
-                          </Typography>
-                        </>
-                      }
-                    />
-                    <Stack direction="row" spacing={1} sx={{ flexShrink: 0 }}>
-                      <Button
-                        size="small"
-                        variant="contained"
-                        onClick={() => void handleRerunFilesImportArchive(archive.archive_task_id)}
-                      >
-                        Re-run import
-                      </Button>
-                      <Button
-                        size="small"
-                        color="error"
-                        variant="outlined"
-                        onClick={() => void handleDeleteFilesImportArchive(archive.archive_task_id)}
-                      >
-                        Delete
-                      </Button>
-                    </Stack>
-                  </Box>
-                ))}
-              </List>
-            )}
+            <Card sx={{ bgcolor: 'background.paper', gridColumn: { sm: '1 / -1' } }}>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  Rebuild Tiles
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  Regenerate missing or stale DZI tile pyramids from the preserved source images.
+                  This is run automatically after a filesystem import, but can also be triggered
+                  manually to recover from a cancelled rebuild, a single-file restore, or stale
+                  tiles. The operation is idempotent and non-destructive.
+                </Typography>
+                <Button
+                  variant="contained"
+                  startIcon={
+                    starting === 'rebuild_tiles' ? (
+                      <CircularProgress size={18} color="inherit" />
+                    ) : (
+                      <RefreshIcon />
+                    )
+                  }
+                  onClick={handleRebuildTiles}
+                  disabled={busy}
+                  data-testid="rebuild-tiles-button"
+                >
+                  {starting === 'rebuild_tiles' ? 'Starting…' : 'Rebuild Tiles'}
+                </Button>
+              </CardContent>
+            </Card>
           </Box>
 
           <Box>
@@ -1357,134 +1305,184 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
             </AccordionDetails>
           </Accordion>
 
-          <Divider />
+          {/* Archive history */}
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
+              gap: 2,
+              alignItems: 'start',
+            }}
+          >
+            <Box>
+              <Typography variant="h6" sx={{ mb: 2 }}>
+                Stored export archives
+              </Typography>
+              {exportArchives.length > 0 && (
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  {exportArchives.length} {exportArchives.length === 1 ? 'archive' : 'archives'}{' '}
+                  using {formatBytes(exportArchivesTotalBytes)}
+                </Typography>
+              )}
+              {exportArchivesError && (
+                <Alert severity="error" sx={{ mb: 2 }}>
+                  {exportArchivesError}
+                </Alert>
+              )}
+              {exportArchivesLoading ? (
+                <Box sx={{ py: 2 }}>
+                  <LinearProgress />
+                </Box>
+              ) : exportArchives.length === 0 ? (
+                <Typography color="text.secondary">No stored export archives found.</Typography>
+              ) : (
+                <List disablePadding>
+                  {exportArchives.map((archive) => (
+                    <Box
+                      key={`${archive.task_id}-${archive.artifact_role}`}
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 2,
+                        py: 1.5,
+                        px: 2,
+                        borderBottom: '1px solid',
+                        borderColor: 'divider',
+                      }}
+                    >
+                      <ListItemText
+                        primary={archive.filename}
+                        secondary={
+                          <>
+                            <Typography component="span" variant="body2" color="text.secondary">
+                              Task #{archive.task_id} · {archive.task_type} ·{' '}
+                              {formatBytes(archive.size_bytes)} ·{' '}
+                              {archive.created_at
+                                ? new Date(archive.created_at).toLocaleString()
+                                : ''}{' '}
+                              · {archive.status}
+                            </Typography>
+                          </>
+                        }
+                      />
+                      <Button
+                        size="small"
+                        color="error"
+                        variant="outlined"
+                        disabled={!archive.purgeable}
+                        onClick={() => void handlePurgeExportArchive(archive)}
+                        data-testid={`export-archive-delete-${archive.task_id}`}
+                        sx={{ flexShrink: 0 }}
+                      >
+                        Delete
+                      </Button>
+                    </Box>
+                  ))}
+                </List>
+              )}
+            </Box>
 
-          <Box>
-            <Typography variant="h6" sx={{ mb: 2 }}>
-              Import
-            </Typography>
-            <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-              <Card
-                sx={{
-                  minWidth: 300,
-                  maxWidth: 400,
-                  flex: '1 1 300px',
-                  bgcolor: 'background.paper',
-                }}
-              >
-                <CardContent>
-                  <Typography variant="h6" gutterBottom>
-                    Import Database
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    Upload a previously exported JSON file to replace all current data. This action
-                    is destructive — existing records will be overwritten. The import runs in the
-                    background.
-                  </Typography>
-                  <Button
-                    variant="contained"
-                    color="warning"
-                    startIcon={
-                      starting === 'db_import' ? (
-                        <CircularProgress size={18} color="inherit" />
-                      ) : (
-                        <UploadFileIcon />
-                      )
-                    }
-                    onClick={handleImportClick}
-                    disabled={busy}
-                  >
-                    {starting === 'db_import' ? 'Starting…' : 'Import'}
-                  </Button>
-                  <input
-                    ref={fileRef}
-                    type="file"
-                    accept=".json"
-                    hidden
-                    onChange={handleFileChange}
-                  />
-                </CardContent>
-              </Card>
-
-              <Card
-                sx={{
-                  minWidth: 300,
-                  maxWidth: 400,
-                  flex: '1 1 300px',
-                  bgcolor: 'background.paper',
-                }}
-              >
-                <CardContent>
-                  <Typography variant="h6" gutterBottom>
-                    Import Files
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    Upload a source-images-only .tar.gz file to replace the filesystem on disk. This
-                    action is destructive — existing files will be overwritten. Generated tiles are
-                    not included, but a tile rebuild is queued automatically after the import
-                    completes. Rebuild Tiles can also be triggered manually if needed.
-                  </Typography>
-                  <Button
-                    variant="contained"
-                    color="warning"
-                    startIcon={
-                      starting === 'files_import' ? (
-                        <CircularProgress size={18} color="inherit" />
-                      ) : (
-                        <UploadFileIcon />
-                      )
-                    }
-                    onClick={handleImportFilesClick}
-                    disabled={busy}
-                  >
-                    {starting === 'files_import' ? 'Starting…' : 'Import'}
-                  </Button>
-                  <input
-                    ref={filesRef}
-                    type="file"
-                    accept=".tar.gz,.tgz,application/gzip,application/x-gzip,application/x-tar,application/x-compressed-tar"
-                    hidden
-                    data-testid="files-import-input"
-                    onChange={handleFilesChange}
-                  />
-                </CardContent>
-              </Card>
-
-              <Card
-                sx={{
-                  minWidth: 300,
-                  maxWidth: 400,
-                  flex: '1 1 300px',
-                  bgcolor: 'background.paper',
-                }}
-              >
-                <CardContent>
-                  <Typography variant="h6" gutterBottom>
-                    Rebuild Tiles
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    Regenerate missing or stale DZI tile pyramids from the preserved source images.
-                    This is run automatically after a filesystem import, but can also be triggered
-                    manually to recover from a cancelled rebuild, a single-file restore, or stale
-                    tiles. The operation is idempotent and non-destructive.
-                  </Typography>
-                  <Button
-                    variant="contained"
-                    startIcon={
-                      starting === 'rebuild_tiles' ? (
-                        <CircularProgress size={18} color="inherit" />
-                      ) : (
-                        <RefreshIcon />
-                      )
-                    }
-                    onClick={handleRebuildTiles}
-                    disabled={busy}
-                    data-testid="rebuild-tiles-button"
-                  >
-                    {starting === 'rebuild_tiles' ? 'Starting…' : 'Rebuild Tiles'}
-                  </Button>
-                </CardContent>
-              </Card>
+            <Box>
+              <Typography variant="h6" sx={{ mb: 2 }}>
+                Previously uploaded import archives
+              </Typography>
+              {filesImportArchives.length > 0 && (
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  {filesImportArchives.length} retained{' '}
+                  {filesImportArchives.length === 1 ? 'archive' : 'archives'} using{' '}
+                  {formatBytes(
+                    filesImportArchives.reduce(
+                      (total, archive) => total + (archive.size_bytes ?? 0),
+                      0,
+                    ),
+                  )}
+                </Typography>
+              )}
+              {filesImportArchiveRetention &&
+                (filesImportArchiveRetention.retention_count > 0 ||
+                  filesImportArchiveRetention.retention_days > 0) && (
+                  <Alert severity="info" sx={{ mb: 2 }} data-testid="import-archive-retention">
+                    Automatic retention is active: older archives are deleted
+                    {filesImportArchiveRetention.retention_count > 0 &&
+                      ` beyond the newest ${filesImportArchiveRetention.retention_count}`}
+                    {filesImportArchiveRetention.retention_count > 0 &&
+                      filesImportArchiveRetention.retention_days > 0 &&
+                      ' and'}
+                    {filesImportArchiveRetention.retention_days > 0 &&
+                      ` after ${filesImportArchiveRetention.retention_days} day${
+                        filesImportArchiveRetention.retention_days === 1 ? '' : 's'
+                      }`}
+                    . Archives used by a running import are never removed.
+                  </Alert>
+                )}
+              {filesImportArchivesError && (
+                <Alert severity="error" sx={{ mb: 2 }}>
+                  {filesImportArchivesError}
+                </Alert>
+              )}
+              {filesImportArchivesLoading ? (
+                <Box sx={{ py: 2 }}>
+                  <LinearProgress />
+                </Box>
+              ) : filesImportArchives.length === 0 ? (
+                <Typography color="text.secondary">
+                  No retained filesystem-import archives found.
+                </Typography>
+              ) : (
+                <List disablePadding>
+                  {filesImportArchives.map((archive) => (
+                    <Box
+                      key={archive.archive_task_id}
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 2,
+                        py: 1.5,
+                        px: 2,
+                        borderBottom: '1px solid',
+                        borderColor: 'divider',
+                      }}
+                    >
+                      <ListItemText
+                        primary={archive.original_filename ?? `Archive #${archive.archive_task_id}`}
+                        secondary={
+                          <>
+                            <Typography component="span" variant="body2" color="text.secondary">
+                              Task #{archive.archive_task_id} ·{' '}
+                              {archive.size_bytes ? formatBytes(archive.size_bytes) : '0 B'} ·{' '}
+                              {archive.created_at
+                                ? new Date(archive.created_at).toLocaleString()
+                                : ''}{' '}
+                              · {archive.last_status}
+                            </Typography>
+                          </>
+                        }
+                      />
+                      <Stack direction="row" spacing={1} sx={{ flexShrink: 0 }}>
+                        <Button
+                          size="small"
+                          variant="contained"
+                          onClick={() =>
+                            void handleRerunFilesImportArchive(archive.archive_task_id)
+                          }
+                        >
+                          Re-run import
+                        </Button>
+                        <Button
+                          size="small"
+                          color="error"
+                          variant="outlined"
+                          onClick={() =>
+                            void handleDeleteFilesImportArchive(archive.archive_task_id)
+                          }
+                        >
+                          Delete
+                        </Button>
+                      </Stack>
+                    </Box>
+                  ))}
+                </List>
+              )}
             </Box>
           </Box>
         </Stack>

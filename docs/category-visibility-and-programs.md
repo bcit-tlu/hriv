@@ -93,10 +93,14 @@ These are two different concerns and use different code:
     subsequent ancestor with `programIds` intersects (narrows) it.
   - `narrowGroupIds(ancestors)` — the group analogue, with identical semantics
     on the independent group dimension.
-  - `splitDirectAncestorProgramIds(fullPath)` — splits the effective set into
-    "direct" IDs (present on the leaf category itself) and "ancestor" IDs
-    (inherited from above but not on the leaf), so the dialog can show inherited
-    restrictions distinctly from ones set on the category.
+  - `splitDirectAncestorProgramIds(fullPath)` — a display helper that returns
+    "direct" IDs from the leaf category and "ancestor" IDs from the narrowed
+    ancestor path above the leaf, excluding duplicates already set on the leaf.
+    This keeps inherited pills visible even when the leaf category narrows the
+    actual effective visibility set.
+  - `splitDirectAncestorGroupIds(fullPath)` — the group analogue for displaying
+    direct and inherited group pills. These split helpers do not decide backend
+    visibility; use the full-path narrowing helpers for enforcement semantics.
 
 Used by `App.tsx`, `ManageCategoriesDialog`, `CategoryPickerSelect`, and
 `ManagePage`.
@@ -135,12 +139,30 @@ The tree endpoint also supports **conditional requests**:
 | Tree → camelCase mapping                               | `frontend/src/useBrowseData.ts`                                                                                                                                                                                                           |
 | Tests                                                  | `backend/tests/test_visibility.py`, `test_categories.py`, `test_router_groups.py`, `test_router_images.py`; `frontend/tests/.../categoryUtils.test.ts`, `useBrowseData.test.ts`, `EditImageModal.test.tsx`, `EditCategoryDialog.test.tsx` |
 
-Across the frontend, restriction affordances follow a shared emphasis rule:
-program or group restrictions attached **directly** to the current category/path
-segment render at full strength, while restrictions **inherited** from an
-ancestor render using the same visual treatment at **0.6 opacity**. This is
-used in breadcrumb chips, browse tile chips, ManagePage restriction chips,
-inherited-only category dialog chips, and category restriction lock icons.
+Across the frontend, restriction and visibility affordances follow two separate
+emphasis rules:
+
+- Breadcrumb/header chips show the **effective** program/group restriction for
+  the current category or image, computed with full-path narrowing. A restriction
+  ID in that effective set renders at full strength when it is attached directly
+  to the current category/path segment, or at **0.6 opacity** when it is only
+  inherited from an ancestor. Ancestor IDs narrowed away by the current category
+  do not render in the breadcrumb/header chips.
+- Other surfaces that need restriction provenance, such as browse tile chips,
+  ManagePage restriction chips, inherited-only category dialog chips, and
+  category restriction lock icons, may show direct vs inherited restrictions
+  distinctly. Use `frontend/src/restrictionStyles.ts` for inherited restriction
+  opacity so this treatment stays consistent.
+- Hidden or inactive category/image state does **not** add whole-element opacity
+  reduction. It may be indicated with grayscale treatment, inactive colors,
+  disabled/read-only controls, and visibility icons, but child tiles, breadcrumb
+  chips, buttons, and inherited-hidden indicators should stay at the same
+  opacity as the hidden parent element. This keeps hidden-state styling separate
+  from inherited restriction emphasis.
+- Components that render category option rows, such as `CategoryPickerSelect`
+  and `ManageCategoriesDialog`, should pass the **effective** hidden state
+  (direct hidden or hidden by ancestor) to shared stateful affordances so child
+  rows hidden by a parent do not render as active categories.
 
 In the Add/Edit category dialogs, program chips also respect the current
 instructor's membership: chips outside the instructor's programs are disabled,

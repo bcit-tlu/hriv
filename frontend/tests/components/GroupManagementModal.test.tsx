@@ -220,7 +220,9 @@ describe('GroupManagementModal', () => {
 
     expect(await screen.findByText('CURRENT MEMBERS')).toBeInTheDocument()
 
-    const selectedGroupRow = screen.getAllByText('Cohort A')[0].closest('.MuiListItemButton-root')
+    const selectedGroupRow = screen
+      .getAllByText('Cohort A')[0]
+      .closest('[data-testid="group-list-item"]')
     expect(selectedGroupRow).not.toBeNull()
     expect(selectedGroupRow).toHaveStyle({
       backgroundColor: 'rgba(127, 102, 93, 0.16)',
@@ -248,7 +250,7 @@ describe('GroupManagementModal', () => {
     expect(studentRow).not.toBeNull()
 
     const programChip = within(studentRow as HTMLElement).getByText('Program A')
-    expect(programChip.closest('.MuiChip-root')).toHaveClass('MuiChip-filledPrimary')
+    expect(programChip.closest('[data-testid="program-chip"]')).toHaveClass('MuiChip-filledPrimary')
   })
 
   it('shows an empty state when there are no groups', () => {

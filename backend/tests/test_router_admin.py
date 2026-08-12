@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 import json
 import pytest
 
+import app.auth as auth
 from app.backup_access import (
     BackupRestoreNotConfiguredError,
     BackupSnapshotManifestError,
@@ -214,6 +215,30 @@ async def test_get_version_falls_back_to_env_when_mount_missing(tmp_path) -> Non
         result = await get_version(_user=SimpleNamespace(id=1, role="admin"))
     assert result["backend"] == "0.6.0"
     assert result["backup"] == "0.3.0"
+
+
+def _version_test_client(user_role: str) -> TestClient:
+    app = FastAPI()
+    app.include_router(admin_router.router, prefix="/api")
+    app.dependency_overrides[auth.get_current_user] = lambda: SimpleNamespace(
+        id=1, role=user_role, email="u@example.com"
+    )
+    return TestClient(app)
+
+
+def test_get_version_endpoint_allows_instructor() -> None:
+    with patch.dict(os.environ, _version_env(APP_VERSION="0.6.0"), clear=True), patch(
+        "app.routers.admin.load_stored_synthetic_result_state", return_value=None
+    ), _version_test_client("instructor") as client:
+        response = client.get("/api/admin/version")
+    assert response.status_code == 200
+    assert response.json()["backend"] == "0.6.0"
+
+
+def test_get_version_endpoint_rejects_student() -> None:
+    with _version_test_client("student") as client:
+        response = client.get("/api/admin/version")
+    assert response.status_code == 403
 
 
 async def test_get_version_falls_back_to_env_when_mount_empty(tmp_path) -> None:
@@ -458,7 +483,23 @@ async def test_start_file_restore_creates_task(tmp_path) -> None:
     assert params == {
         "snapshot_name": request.snapshot_name,
         "member_path": request.member_path,
+        "manifest_entry": {"size": 3, "sha256": "abc"},
     }
+
+
+async def test_start_file_restore_rejects_invalid_path() -> None:
+    user = SimpleNamespace(id=1)
+    bg = MagicMock()
+    db = AsyncMock()
+
+    request = FileRestoreRequest(
+        snapshot_name="hriv-backup-20260102-020000",
+        member_path="data/../db.sql",
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await start_file_restore(user, bg, request=request, db=db)
+    assert exc.value.status_code == 400
 
 
 async def test_list_backup_snapshots_disabled_returns_400() -> None:
@@ -597,6 +638,22 @@ async def test_list_files_import_archives_endpoint_response_model_validation() -
             "last_status": "completed",
         }
     ]
+
+
+async def test_get_files_import_archive_retention_endpoint() -> None:
+    app = FastAPI()
+    app.include_router(admin_router.router, prefix="/api")
+    app.dependency_overrides[admin_router._admin] = lambda: SimpleNamespace(id=1, role="admin")
+
+    with patch(
+        "app.routers.admin.files_import_archive_retention_policy",
+        return_value={"retention_count": 3, "retention_days": 30},
+    ):
+        with TestClient(app) as client:
+            response = client.get("/api/admin/tasks/files-import/archive-retention")
+
+    assert response.status_code == 200
+    assert response.json() == {"retention_count": 3, "retention_days": 30}
 
 
 async def test_list_files_import_archives_endpoint() -> None:

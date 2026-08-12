@@ -388,7 +388,7 @@ def get_snapshot_manifest(snapshot_name: str) -> dict:
     raise BackupSnapshotManifestError(f"Manifest {member_name} was not found in snapshot {snapshot_stem}")
 
 
-def _normalize_restore_path(member_path: str) -> str:
+def normalize_restore_path(member_path: str) -> str:
     candidate = member_path.strip()
     if not candidate:
         raise BackupSnapshotMemberError("Restore path must not be empty")
@@ -419,12 +419,21 @@ def restore_snapshot_file(
     *,
     cancel_event=None,
     on_progress: Callable[[str], None] | None = None,
+    manifest_entry: dict | None = None,
 ) -> dict:
-    """Restore a single file from a snapshot into the shared data volume."""
+    """Restore a single file from a snapshot into the shared data volume.
+
+    *manifest_entry* is an already-validated manifest ``files`` entry for
+    *member_path* (e.g. cached at enqueue time); when provided the manifest
+    is not re-fetched.
+    """
     snapshot_stem = _snapshot_stem(snapshot_name)
-    manifest = get_snapshot_manifest(snapshot_stem)
-    member_path = _normalize_restore_path(member_path)
-    entry = _manifest_file_entry(manifest, member_path)
+    member_path = normalize_restore_path(member_path)
+    if manifest_entry is not None:
+        entry = manifest_entry
+    else:
+        manifest = get_snapshot_manifest(snapshot_stem)
+        entry = _manifest_file_entry(manifest, member_path)
 
     expected_sha256 = entry.get("sha256")
     expected_size = entry.get("size")

@@ -22,6 +22,11 @@ import { makeCategory } from '../helpers/fixtures'
 // Helpers
 // ---------------------------------------------------------------------------
 
+const expectEffectiveOpacity = (element: Element | null, opacity: string) => {
+  expect(element).toBeInTheDocument()
+  expect(window.getComputedStyle(element as Element).opacity || '1').toBe(opacity)
+}
+
 const samplePrograms: Program[] = [
   {
     id: 10,
@@ -106,7 +111,7 @@ describe('CategoryTile', () => {
       const title = screen.getByText(
         'A very long category title that should wrap across multiple lines',
       )
-      const titleRow = title.closest('.MuiBox-root')
+      const titleRow = title.closest('[data-testid="category-tile-title-row"]')
 
       expect(title).toHaveStyle({
         display: '-webkit-box',
@@ -147,7 +152,9 @@ describe('CategoryTile', () => {
         />,
       )
       const title = screen.getByText('Hidden Cat')
-      expect(title.closest('.MuiCardActionArea-root')).toHaveStyle({ filter: 'grayscale(100%)' })
+      expect(title.closest('[data-testid="category-tile-action-area"]')).toHaveStyle({
+        filter: 'grayscale(100%)',
+      })
     })
 
     it('shows the hidden icon when category is directly hidden', () => {
@@ -171,10 +178,12 @@ describe('CategoryTile', () => {
         />,
       )
       const title = screen.getByText('Visible Cat')
-      expect(title.closest('.MuiCardActionArea-root')).toHaveStyle({ filter: 'none' })
+      expect(title.closest('[data-testid="category-tile-action-area"]')).toHaveStyle({
+        filter: 'none',
+      })
     })
 
-    it('reduces tile opacity when hidden state is inherited from a parent page', () => {
+    it('keeps inherited hidden categories at full opacity while greyscaling the tile', () => {
       render(
         <CategoryTile
           category={makeCategory({
@@ -184,14 +193,13 @@ describe('CategoryTile', () => {
           onClick={vi.fn()}
           programs={samplePrograms}
           parentHidden
-          inheritedHidden
         />,
       )
       const title = screen.getByText('Inherited Hidden Cat')
-      const card = title.closest('.MuiCard-root')
-      const actionArea = title.closest('.MuiCardActionArea-root')
+      const card = title.closest('[data-testid="category-tile"]')
+      const actionArea = title.closest('[data-testid="category-tile-action-area"]')
 
-      expect(card).toHaveStyle({ opacity: '0.5' })
+      expectEffectiveOpacity(card, '1')
       expect(actionArea).toHaveStyle({ filter: 'grayscale(100%)' })
     })
   })
@@ -398,7 +406,7 @@ describe('CategoryTile', () => {
         />,
       )
 
-      const chip = screen.getByText('Pathology').closest('.MuiChip-root')
+      const chip = screen.getByText('Pathology').closest('[data-testid="program-chip"]')
       expect(chip).toBeInTheDocument()
       expect(chip).toHaveStyle({ opacity: '0.6' })
     })
@@ -429,7 +437,7 @@ describe('CategoryTile', () => {
         />,
       )
 
-      const chip = screen.getByText('Lab A2').closest('.MuiChip-root')
+      const chip = screen.getByText('Lab A2').closest('[data-testid="group-chip"]')
       expect(chip).toBeInTheDocument()
       expect(chip).toHaveStyle({ opacity: '0.6' })
     })
@@ -508,7 +516,7 @@ describe('CategoryTile', () => {
           onDropFiles={onDropFiles}
         />,
       )
-      const card = container.querySelector('.MuiCard-root')!
+      const card = container.querySelector('[data-testid="category-tile"]')!
       const fakeFile = new File(['data'], 'photo.png', { type: 'image/png' })
       const event = new Event('drop', { bubbles: true })
       Object.assign(event, {

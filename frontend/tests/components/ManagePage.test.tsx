@@ -92,7 +92,7 @@ describe('ManagePage', () => {
     })
 
     expect(screen.getByRole('columnheader', { name: 'Groups' })).toBeInTheDocument()
-    const groupChip = screen.getByText('Lab A2').closest('.MuiChip-root')
+    const groupChip = screen.getByText('Lab A2').closest('[data-testid="group-chip"]')
     expect(groupChip).toBeInTheDocument()
   })
 
@@ -177,8 +177,12 @@ describe('ManagePage', () => {
 
     await screen.findByText('Blood Smear')
 
-    expect(screen.getByText('Medical Lab').closest('.MuiChip-root')).toHaveStyle({ opacity: '0.6' })
-    expect(screen.getByText('Lab A2').closest('.MuiChip-root')).toHaveStyle({ opacity: '0.6' })
+    expect(screen.getByText('Medical Lab').closest('[data-testid="program-chip"]')).toHaveStyle({
+      opacity: '0.6',
+    })
+    expect(screen.getByText('Lab A2').closest('[data-testid="group-chip"]')).toHaveStyle({
+      opacity: '0.6',
+    })
   })
 
   it('shows the configured default visible columns', async () => {
@@ -718,7 +722,9 @@ describe('ManagePage', () => {
       expect(screen.getByText('4 of 4 images')).toBeInTheDocument()
     })
 
-    const architectureChip = screen.getByText('Category: Architecture').closest('.MuiChip-root')
+    const architectureChip = screen
+      .getByText('Category: Architecture')
+      .closest('[data-testid="filter-chip"]')
     expect(architectureChip).not.toBeNull()
     fireEvent.click(within(architectureChip as HTMLElement).getByTestId('CancelIcon'))
 
@@ -796,7 +802,9 @@ describe('ManagePage', () => {
     expect(within(filterBar).queryByText('Name: Blood, Smear')).not.toBeInTheDocument()
     expect(screen.getByText('1 of 2 images')).toBeInTheDocument()
 
-    const bloodChip = within(filterBar).getByText('Name: Blood').closest('.MuiChip-root')
+    const bloodChip = within(filterBar)
+      .getByText('Name: Blood')
+      .closest('[data-testid="filter-chip"]')
     expect(bloodChip).not.toBeNull()
     fireEvent.click(within(bloodChip as HTMLElement).getByTestId('CancelIcon'))
 

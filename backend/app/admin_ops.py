@@ -7,6 +7,8 @@ with progress, log output, and results.
 """
 
 import asyncio
+import hashlib
+import io
 import json
 import logging
 import os
@@ -20,6 +22,7 @@ import uuid
 from collections.abc import Callable, Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import TypeVar
 
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
@@ -32,6 +35,7 @@ from .backup_access import (
     BackupSnapshotCancelledError,
     restore_snapshot_file,
 )
+from .component_versions import get_app_version
 from .database import get_async_session, settings
 from .tile_order import INITIAL_SCOPE_REVISION
 from .worker import enqueue_admin_task
@@ -68,6 +72,137 @@ _IMPORT_STAGING_MIN_FREE_BYTES = int(
     os.environ.get("IMPORT_STAGING_MIN_FREE_BYTES", str(1024 * 1024 * 1024))
 )
 _IMPORT_STAGING_FREE_SPACE_CHECK_INTERVAL_BYTES = 512 * 1024 * 1024
+
+
+# ── Retained import archive integrity ──────────────────────
+#
+# The SHA-256 of an import archive is recorded on its AdminTask the first
+# time the archive is imported.  Reruns of a retained archive inherit the
+# recorded checksum and verify the on-disk file still matches before any
+# extraction, so corrupted or modified retained archives are rejected.
+
+FILES_IMPORT_CHECKSUM_MISMATCH_MESSAGE = (
+    "The retained archive no longer matches the originally uploaded file "
+    "and cannot be reused. Please upload a new archive."
+)
+
+
+def compute_archive_sha256(path: str | Path) -> str:
+    """Return the hex SHA-256 digest of *path*, read in chunks."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(_CHUNK_SIZE), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+# ── Filesystem export/import archive manifest ──────────────
+#
+# Every filesystem export embeds a small JSON manifest at the archive
+# root (next to the ``data/`` payload) so future releases can evolve the
+# archive layout safely.  Imports validate the manifest when present;
+# archives created before manifests existed are accepted as legacy
+# format-version 0 archives to keep previously retained archives usable.
+
+FILES_EXPORT_MANIFEST_NAME = "hriv-manifest.json"
+FILES_EXPORT_FORMAT_VERSION = 1
+SUPPORTED_FILES_IMPORT_FORMAT_VERSIONS = frozenset({FILES_EXPORT_FORMAT_VERSION})
+
+
+def build_files_export_manifest() -> dict[str, object]:
+    """Build the manifest embedded at the root of filesystem exports."""
+    return {
+        "format_version": FILES_EXPORT_FORMAT_VERSION,
+        "hriv_version": get_app_version(),
+        "export_type": "filesystem",
+        "created_at": datetime.now(timezone.utc)
+        .isoformat()
+        .replace("+00:00", "Z"),
+    }
+
+
+def _add_manifest_member(tar: tarfile.TarFile) -> int:
+    """Append the export manifest as the first member of *tar*.
+
+    Returns the manifest payload size in bytes.
+    """
+    payload = json.dumps(build_files_export_manifest(), indent=2).encode("utf-8")
+    info = tarfile.TarInfo(FILES_EXPORT_MANIFEST_NAME)
+    info.size = len(payload)
+    info.mtime = int(datetime.now(timezone.utc).timestamp())
+    tar.addfile(info, io.BytesIO(payload))
+    return len(payload)
+
+
+def _validate_files_import_manifest(staging_root: Path) -> int:
+    """Validate the archive manifest extracted into *staging_root*.
+
+    Returns the archive's ``format_version``, or ``0`` for legacy
+    archives that predate manifests (still importable).  Raises
+    :class:`ValueError` with an operator-facing message when the
+    manifest is unreadable, is for a different export type, or declares
+    an unsupported format version.  The manifest file is removed from
+    the staging root after validation so it is never swapped into the
+    data directory.
+    """
+    manifest_path = staging_root / FILES_EXPORT_MANIFEST_NAME
+    if not manifest_path.exists() and not manifest_path.is_symlink():
+        logger.warning(
+            "Filesystem import archive has no manifest; treating as legacy format",
+            extra={"event": "admin_task.files_import_legacy_archive"},
+        )
+        return 0
+    if manifest_path.is_symlink() or not manifest_path.is_file():
+        raise ValueError(
+            f"Archive manifest ({FILES_EXPORT_MANIFEST_NAME}) must be a "
+            "regular file"
+        )
+    try:
+        raw = manifest_path.read_bytes().decode("utf-8", errors="replace")
+    except OSError as exc:
+        raise ValueError(
+            f"Could not read archive manifest ({FILES_EXPORT_MANIFEST_NAME}) "
+            f"from the staging directory: {exc}"
+        ) from exc
+    finally:
+        try:
+            manifest_path.unlink()
+        except OSError:
+            logger.warning("Failed to remove staged manifest", exc_info=True)
+    try:
+        manifest = json.loads(raw)
+    except ValueError as exc:
+        raise ValueError(
+            f"Archive manifest ({FILES_EXPORT_MANIFEST_NAME}) is not valid JSON: {exc}"
+        ) from exc
+    if not isinstance(manifest, dict):
+        raise ValueError(
+            f"Archive manifest ({FILES_EXPORT_MANIFEST_NAME}) must be a JSON object"
+        )
+    export_type = manifest.get("export_type")
+    if export_type != "filesystem":
+        raise ValueError(
+            "Archive manifest declares export_type "
+            f"{export_type!r}; expected 'filesystem'. This archive is not a "
+            "filesystem export."
+        )
+    format_version = manifest.get("format_version")
+    if not isinstance(format_version, int) or isinstance(format_version, bool):
+        raise ValueError(
+            "Archive manifest has a missing or invalid format_version; "
+            "expected an integer."
+        )
+    if format_version not in SUPPORTED_FILES_IMPORT_FORMAT_VERSIONS:
+        supported = ", ".join(
+            str(v) for v in sorted(SUPPORTED_FILES_IMPORT_FORMAT_VERSIONS)
+        )
+        raise ValueError(
+            f"Archive format version {format_version} is not supported by this "
+            f"release (supported: {supported}). The archive was created by "
+            f"HRIV {manifest.get('hriv_version', 'unknown')}; upgrade this "
+            "deployment or re-export from a compatible release."
+        )
+    return format_version
 
 
 def _ensure_tasks_dir() -> str:
@@ -555,6 +690,7 @@ async def _create_rerun_files_import_task(
     *,
     input_path: str,
     original_filename: str | None,
+    input_checksum: str | None,
 ) -> AdminTask:
     existing = (
         await session.execute(
@@ -577,6 +713,7 @@ async def _create_rerun_files_import_task(
         created_by=user.id,
         input_path=input_path,
         original_filename=original_filename,
+        input_checksum=input_checksum,
     )
     session.add(task)
     await session.commit()
@@ -631,6 +768,7 @@ async def rerun_files_import_archive(
         user,
         input_path=str(archive_path),
         original_filename=_extract_files_import_original_filename(archive_task),
+        input_checksum=archive_task.input_checksum,
     )
     task.log = (
         (task.log or "")
@@ -639,6 +777,81 @@ async def rerun_files_import_archive(
     await session.commit()
     await session.refresh(task)
     return task
+
+
+def files_import_archive_retention_policy() -> dict[str, int]:
+    """Return the active retention policy for retained import archives."""
+    return {
+        "retention_count": settings.files_import_archive_retention_count,
+        "retention_days": settings.files_import_archive_retention_days,
+    }
+
+
+async def enforce_files_import_archive_retention(
+    session: AsyncSession,
+) -> list[int]:
+    """Delete retained import archives that fall outside the retention policy.
+
+    Keeps only the newest ``files_import_archive_retention_count`` distinct
+    archives and/or deletes archives older than
+    ``files_import_archive_retention_days``. A value of ``0`` disables that
+    dimension. Deletion goes through :func:`delete_files_import_archive`, so
+    archives referenced by an active files import are never removed.
+
+    Returns the archive task ids whose files were deleted.
+    """
+    count_limit = settings.files_import_archive_retention_count
+    max_age_days = settings.files_import_archive_retention_days
+    if count_limit <= 0 and max_age_days <= 0:
+        return []
+
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(days=max_age_days)
+        if max_age_days > 0
+        else None
+    )
+
+    # list_files_import_archives is newest-first; reruns share the same
+    # input_path, so dedupe by on-disk file before counting.
+    seen_paths: set[str] = set()
+    deleted: list[int] = []
+    kept = 0
+    for archive in await list_files_import_archives(session):
+        archive_task_id = archive["archive_task_id"]
+        assert isinstance(archive_task_id, int)
+        task = await session.get(AdminTask, archive_task_id)
+        if task is None or not task.input_path or task.input_path in seen_paths:
+            continue
+        seen_paths.add(task.input_path)
+
+        over_count = count_limit > 0 and kept >= count_limit
+        created_at = archive["created_at"]
+        assert isinstance(created_at, datetime)
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        too_old = cutoff is not None and created_at < cutoff
+        if not (over_count or too_old):
+            kept += 1
+            continue
+
+        try:
+            await delete_files_import_archive(session, archive_task_id)
+        except (LookupError, FileNotFoundError, ValueError, RuntimeError, OSError):
+            # In use by an active import, already gone, or not deletable —
+            # keep it and move on.
+            kept += 1
+            continue
+        deleted.append(archive_task_id)
+        logger.info(
+            "Deleted retained files-import archive per retention policy",
+            extra={
+                "event": "admin_task.files_import_archive_retention_deleted",
+                "archive_task_id": archive_task_id,
+                "retention_count": count_limit,
+                "retention_days": max_age_days,
+            },
+        )
+    return deleted
 
 
 async def delete_files_import_archive(
@@ -1844,6 +2057,9 @@ def _create_tar_file(
     pigz_path = shutil.which("pigz")
     if pigz_path is None:
         with tarfile.open(dest, mode="w:gz") as tar:
+            manifest_size = _add_manifest_member(tar)
+            if on_entry is not None:
+                on_entry(FILES_EXPORT_MANIFEST_NAME, manifest_size)
             for arcname, path, size, is_dir in _iter_export_entries(
                 data_dir,
                 cancel_event=cancel_event,
@@ -1881,6 +2097,9 @@ def _create_tar_file(
     try:
         assert proc.stdin is not None
         with tarfile.open(fileobj=proc.stdin, mode="w|") as tar:
+            manifest_size = _add_manifest_member(tar)
+            if on_entry is not None:
+                on_entry(FILES_EXPORT_MANIFEST_NAME, manifest_size)
             for arcname, path, size, is_dir in _iter_export_entries(
                 data_dir,
                 cancel_event=cancel_event,
@@ -1926,6 +2145,86 @@ def _create_tar_file(
 
 
 _LOG_FLUSH_INTERVAL = 2  # seconds between verbose-log DB flushes
+
+_T = TypeVar("_T")
+
+
+async def _run_with_cancel_poll(
+    worker_task: "asyncio.Task[_T]",
+    poll_task: "asyncio.Task[None]",
+    *,
+    cancel_event: threading.Event,
+    grace_timeout_log: str,
+    shutdown_grace: float = 5.0,
+    return_result_on_cancel: bool = False,
+) -> _T:
+    """Run a cancellable worker future alongside a status cancel-poller.
+
+    Whichever finishes first wins. If the worker finishes first, the poller
+    is cancelled and the worker's result is returned. If the poller raises
+    (e.g. a DB error), the worker is signalled via *cancel_event*, given
+    *shutdown_grace* seconds to settle, and the poller's exception is
+    re-raised. If the poller returns normally (cancellation detected), the
+    worker is given the same grace period; a worker that finished in time
+    either has its result returned (``return_result_on_cancel=True``) or its
+    exceptions propagated before ``TaskCancelled`` is raised.
+    """
+    try:
+        done, _pending = await asyncio.wait(
+            [worker_task, poll_task], return_when=asyncio.FIRST_COMPLETED,
+        )
+        if worker_task in done:
+            # The poller may have finished in the same wait cycle; retrieve
+            # its exception (if any) so it is not silently dropped.
+            if poll_task in done and not poll_task.cancelled():
+                stray_poll_exc = poll_task.exception()
+                if stray_poll_exc is not None:
+                    logger.warning(
+                        "Cancel poller failed while the worker was finishing",
+                        exc_info=stray_poll_exc,
+                    )
+            else:
+                poll_task.cancel()
+            return worker_task.result()
+        poll_exc = poll_task.exception() if poll_task.done() else None
+        if poll_exc is not None:
+            cancel_event.set()  # stop the worker thread
+            # Plain asyncio.wait does not cancel the task on timeout (unlike
+            # wait_for), so a slow worker is left to be cancelled explicitly.
+            await asyncio.wait([worker_task], timeout=shutdown_grace)
+            if worker_task.done() and not worker_task.cancelled():
+                worker_exc = worker_task.exception()
+                if worker_exc is not None:
+                    logger.warning(
+                        "Worker failed while shutting down after a cancel-"
+                        "poller error",
+                        exc_info=worker_exc,
+                    )
+            elif not worker_task.done():
+                logger.debug(grace_timeout_log)
+                worker_task.cancel()
+            raise poll_exc
+        # Poll returned normally → cancellation detected. The poller sets
+        # the event itself, but set it here too so the worker is guaranteed
+        # to be signalled, then wait briefly for it to notice.
+        cancel_event.set()
+        await asyncio.wait([worker_task], timeout=shutdown_grace)
+        if worker_task.done() and not worker_task.cancelled():
+            if return_result_on_cancel:
+                return worker_task.result()
+            worker_task.result()  # propagate worker exceptions
+        elif not worker_task.done():
+            logger.debug(grace_timeout_log)
+            worker_task.cancel()
+        raise TaskCancelled("Task cancelled by admin")
+    finally:
+        if not worker_task.done():
+            worker_task.cancel()
+        if not poll_task.done():
+            poll_task.cancel()
+        # The poller shares the caller's AsyncSession; make sure it has fully
+        # stopped before the caller resumes issuing its own queries.
+        await asyncio.gather(poll_task, return_exceptions=True)
 
 
 async def run_files_export(task_id: int) -> None:
@@ -2002,45 +2301,16 @@ async def run_files_export(task_id: int) -> None:
                 )
             )
             scan_poll_task = asyncio.ensure_future(_poll_cancel_only())
-            try:
-                done, _pending = await asyncio.wait(
-                    [scan_task, scan_poll_task],
-                    return_when=asyncio.FIRST_COMPLETED,
-                )
-                if scan_task in done:
-                    scan_poll_task.cancel()
-                    file_count, total_bytes = scan_task.result()
-                else:
-                    poll_exc = scan_poll_task.exception() if scan_poll_task.done() else None
-                    if poll_exc is not None:
-                        cancel_event.set()
-                        try:
-                            await asyncio.wait_for(scan_task, timeout=5)
-                        except asyncio.TimeoutError:
-                            # Best-effort shutdown timeout; fall through to cancel the scan task.
-                            logger.debug(
-                                "Filesystem export scan did not finish within the shutdown grace period; cancelling task"
-                            )
-                        if not scan_task.done():
-                            scan_task.cancel()
-                        raise poll_exc
-                    try:
-                        await asyncio.wait_for(scan_task, timeout=5)
-                    except asyncio.TimeoutError:
-                        # Best-effort shutdown timeout; fall through to cancel the scan task.
-                        logger.debug(
-                            "Filesystem export scan did not finish within the shutdown grace period; cancelling task"
-                        )
-                    if scan_task.done():
-                        file_count, total_bytes = scan_task.result()
-                    else:
-                        scan_task.cancel()
-                        raise TaskCancelled("Task cancelled by admin")
-            finally:
-                if not scan_task.done():
-                    scan_task.cancel()
-                if not scan_poll_task.done():
-                    scan_poll_task.cancel()
+            file_count, total_bytes = await _run_with_cancel_poll(
+                scan_task,
+                scan_poll_task,
+                cancel_event=cancel_event,
+                grace_timeout_log=(
+                    "Filesystem export scan did not finish within the "
+                    "shutdown grace period; cancelling task"
+                ),
+                return_result_on_cancel=True,
+            )
 
             total_mb = total_bytes / (1024 * 1024)
             await _update_task(
@@ -2117,39 +2387,15 @@ async def run_files_export(task_id: int) -> None:
             poll_task = asyncio.ensure_future(_flush_and_poll())
 
             try:
-                done, _pending = await asyncio.wait(
-                    [tar_task, poll_task], return_when=asyncio.FIRST_COMPLETED,
+                await _run_with_cancel_poll(
+                    tar_task,
+                    poll_task,
+                    cancel_event=cancel_event,
+                    grace_timeout_log=(
+                        "Timed out waiting for the filesystem export archive "
+                        "to settle after cancel"
+                    ),
                 )
-                # If tar finished first, cancel the poll loop
-                if tar_task in done:
-                    poll_task.cancel()
-                    tar_task.result()  # propagate exceptions
-                else:
-                    # Poll exited first — distinguish DB error from
-                    # genuine cancellation detection.
-                    poll_exc = poll_task.exception() if poll_task.done() else None
-                    if poll_exc is not None:
-                        cancel_event.set()  # stop the tar thread
-                        try:
-                            await asyncio.wait_for(tar_task, timeout=5)
-                        except asyncio.TimeoutError:
-                            logger.debug(
-                                "Timed out waiting for filesystem import to settle after cancel"
-                            )
-                        if not tar_task.done():
-                            tar_task.cancel()
-                        raise poll_exc
-                    # Poll returned normally → cancellation detected.
-                    # Wait briefly for tar thread to notice the event.
-                    try:
-                        await asyncio.wait_for(tar_task, timeout=5)
-                    except asyncio.TimeoutError:
-                        pass
-                    if tar_task.done():
-                        tar_task.result()
-                    else:
-                        tar_task.cancel()
-                    raise TaskCancelled("Task cancelled by admin")
             finally:
                 # Flush any remaining queued entries
                 remaining: list[tuple[str, int]] = []
@@ -2282,6 +2528,8 @@ def _extract_and_restore(
     if extracted_member_count == 0:
         raise ValueError("Archive is empty")
 
+    format_version = _validate_files_import_manifest(staging_root)
+
     extracted_dir = staging_root / "data"
     if not extracted_dir.exists():
         entries = list(staging_root.iterdir())
@@ -2291,17 +2539,22 @@ def _extract_and_restore(
             else staging_root
         )
 
+    if not extracted_dir.is_dir() or not any(extracted_dir.iterdir()):
+        raise ValueError("Archive contains no data entries to restore")
+
     _check_cancel()
     if on_progress:
         on_progress("finalize", 0, 0)
 
-    return _swap_imported_entries(
+    result = _swap_imported_entries(
         extracted_dir,
         Path(data_dir),
         tiles_dir,
         source_images_dir,
         cancel_event=cancel_event,
     )
+    result["manifest_format_version"] = format_version
+    return result
 
 
 async def run_files_import(
@@ -2359,6 +2612,42 @@ async def run_files_import(
                     "staging and extraction, "
                     f"have {format_bytes(free_bytes)}"
                 )
+
+            await _update_task(
+                session, task, progress=2,
+                log_line="Computing archive SHA-256 for integrity verification…",
+                check_cancelled=True,
+            )
+            checksum = await asyncio.to_thread(
+                compute_archive_sha256, input_path
+            )
+            if task.input_checksum:
+                if checksum != task.input_checksum:
+                    raise ValueError(FILES_IMPORT_CHECKSUM_MISMATCH_MESSAGE)
+                checksum_note = (
+                    "Archive integrity verified: SHA-256 matches the "
+                    "original upload."
+                )
+            else:
+                task.input_checksum = checksum
+                # Backfill tasks sharing this retained archive (e.g. the
+                # pre-checksum task a rerun was launched from) so future
+                # reruns from any of them verify against this baseline.
+                await session.execute(
+                    update(AdminTask)
+                    .where(
+                        AdminTask.task_type == "files_import",
+                        AdminTask.input_path == input_path,
+                        AdminTask.input_checksum.is_(None),
+                    )
+                    .values(input_checksum=checksum)
+                )
+                checksum_note = f"Archive SHA-256 recorded: {checksum}."
+            await _update_task(
+                session, task, progress=3,
+                log_line=checksum_note,
+                check_cancelled=True,
+            )
 
             await _update_task(
                 session, task, progress=5,
@@ -2442,54 +2731,17 @@ async def run_files_import(
                 poll_future = asyncio.ensure_future(_poll_progress())
 
                 try:
-                    done, _pending = await asyncio.wait(
-                        [extract_future, poll_future],
-                        return_when=asyncio.FIRST_COMPLETED,
+                    restored = await _run_with_cancel_poll(
+                        extract_future,
+                        poll_future,
+                        cancel_event=cancel_event,
+                        grace_timeout_log=(
+                            "Timed out waiting for filesystem import "
+                            "to settle after cancel"
+                        ),
+                        shutdown_grace=120,
+                        return_result_on_cancel=True,
                     )
-
-                    if extract_future in done:
-                        poll_future.cancel()
-                        restored = extract_future.result()
-                    else:
-                        poll_exc = (
-                            poll_future.exception()
-                            if poll_future.done()
-                            else None
-                        )
-                        if poll_exc is not None:
-                            cancel_event.set()
-                            try:
-                                await asyncio.wait_for(
-                                    extract_future, timeout=120,
-                                )
-                            except asyncio.TimeoutError:
-                                logger.debug(
-                                    "Timed out waiting for filesystem import to settle after cancel"
-                                )
-                            if not extract_future.done():
-                                extract_future.cancel()
-                            raise poll_exc
-                        cancel_event.set()
-
-                        try:
-                            await asyncio.wait_for(
-                                extract_future, timeout=120,
-                            )
-                        except asyncio.TimeoutError:
-                            logger.debug(
-                                "Timed out waiting for filesystem import to settle after cancel"
-                            )
-
-                        if extract_future.done():
-                            try:
-                                restored = extract_future.result()
-                            except TaskCancelled:
-                                raise
-                            except Exception:
-                                raise
-                        else:
-                            extract_future.cancel()
-                            raise TaskCancelled("Task cancelled by admin")
                 finally:
                     remaining: list[tuple[str, int, int]] = []
                     while not progress_queue.empty():
@@ -2518,15 +2770,35 @@ async def run_files_import(
                     "Could not queue automatic tile rebuild. "
                     "Run Rebuild Tiles manually if needed."
                 )
+            manifest_version = restored.get("manifest_format_version", 0)
+            manifest_note = (
+                f"Archive manifest format v{manifest_version} validated. "
+                if manifest_version > 0
+                else "Legacy archive (no manifest); imported as format v0. "
+            )
             summary = (
                 f"Restored {restored['source_files']} source file(s). "
-                f"{rebuild_log}"
+                f"{manifest_note}{rebuild_log}"
             )
             await _update_task(
                 session, task,
                 status="completed", progress=100,
                 log_line=f"Import complete. {summary}",
             )
+            try:
+                pruned = await enforce_files_import_archive_retention(session)
+                if pruned:
+                    await _update_task(
+                        session, task,
+                        log_line=(
+                            "Retention policy removed "
+                            f"{len(pruned)} older retained archive(s)."
+                        ),
+                    )
+            except Exception:
+                logger.exception(
+                    "Retention enforcement after files import failed",
+                )
             logger.info(
                 "Background files import completed",
                 extra={
@@ -2601,6 +2873,12 @@ async def run_file_restore(task_id: int) -> None:
             if not isinstance(member_path, str) or not member_path.strip():
                 raise ValueError("Restore request is missing member_path")
 
+            cached_entry = params.get("manifest_entry")
+            if not isinstance(cached_entry, dict):
+                # Older restore requests predate the cached entry; the
+                # restore falls back to fetching the manifest itself.
+                cached_entry = None
+
             await _update_task(
                 session,
                 task,
@@ -2627,56 +2905,24 @@ async def run_file_restore(task_id: int) -> None:
                     snapshot_name,
                     member_path,
                     cancel_event=cancel_event,
+                    manifest_entry=cached_entry,
                 )
             )
             poll_future = asyncio.ensure_future(_poll_cancel_only())
 
             try:
-                done, _pending = await asyncio.wait(
-                    [restore_future, poll_future],
-                    return_when=asyncio.FIRST_COMPLETED,
+                restored = await _run_with_cancel_poll(
+                    restore_future,
+                    poll_future,
+                    cancel_event=cancel_event,
+                    grace_timeout_log=(
+                        "File restore did not finish within the "
+                        "shutdown grace period; cancelling task"
+                    ),
+                    return_result_on_cancel=True,
                 )
-                if restore_future in done:
-                    poll_future.cancel()
-                    try:
-                        restored = restore_future.result()
-                    except BackupSnapshotCancelledError as exc:
-                        raise TaskCancelled(str(exc)) from exc
-                else:
-                    poll_exc = poll_future.exception() if poll_future.done() else None
-                    if poll_exc is not None:
-                        cancel_event.set()
-                        try:
-                            await asyncio.wait_for(restore_future, timeout=5)
-                        except asyncio.TimeoutError:
-                            # Best-effort shutdown timeout; fall through to cancel the restore task.
-                            logger.debug(
-                                "File restore did not finish within the shutdown grace period; cancelling task",
-                            )
-                        if not restore_future.done():
-                            restore_future.cancel()
-                        raise poll_exc
-                    cancel_event.set()
-                    try:
-                        await asyncio.wait_for(restore_future, timeout=5)
-                    except asyncio.TimeoutError:
-                        # Best-effort shutdown timeout; fall through to cancel the restore task.
-                        logger.debug(
-                            "File restore did not finish within the shutdown grace period; cancelling task",
-                        )
-                    if restore_future.done():
-                        try:
-                            restored = restore_future.result()
-                        except BackupSnapshotCancelledError as exc:
-                            raise TaskCancelled(str(exc)) from exc
-                    else:
-                        restore_future.cancel()
-                        raise TaskCancelled("Task cancelled by admin")
-            finally:
-                if not restore_future.done():
-                    restore_future.cancel()
-                if not poll_future.done():
-                    poll_future.cancel()
+            except BackupSnapshotCancelledError as exc:
+                raise TaskCancelled(str(exc)) from exc
 
             await _update_task(
                 session,

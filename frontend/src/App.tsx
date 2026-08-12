@@ -86,7 +86,7 @@ import { useColorMode } from './useColorMode'
 import { useBrowseData } from './useBrowseData'
 import { emitEvent, emitSessionStartedOnce } from './observability'
 import type { TelemetryNavDirection } from './observability'
-import { splitDirectAncestorGroupIds, splitDirectAncestorProgramIds } from './categoryUtils'
+import { narrowGroupIds, narrowProgramIds } from './categoryUtils'
 import { getInheritedRestrictionSx } from './restrictionStyles'
 import { getSurfaceVariant, getVisibilityColors } from './theme'
 import { useNavigationHistory, buildNavHistoryState } from './useNavigationHistory'
@@ -273,8 +273,6 @@ export default function App() {
     [categories, selectedImage?.categoryId],
   )
   const currentCategoryHiddenState = useMemo(() => getCategoryHiddenStateFromPath(path), [path])
-  const currentCategoryInheritedHidden =
-    currentCategoryHiddenState.hiddenByAncestor && !currentCategoryHiddenState.directlyHidden
   const imageViewerHiddenByCategory = useMemo(
     () => selectedImageCategoryHidden.hidden || currentCategoryHiddenState.hidden,
     [selectedImageCategoryHidden.hidden, currentCategoryHiddenState.hidden],
@@ -284,10 +282,9 @@ export default function App() {
       currentCategoryHiddenState.hidden
         ? {
             filter: 'grayscale(100%)',
-            ...(currentCategoryInheritedHidden ? { opacity: 0.5 } : {}),
           }
         : undefined,
-    [currentCategoryHiddenState.hidden, currentCategoryInheritedHidden],
+    [currentCategoryHiddenState.hidden],
   )
   const inactiveViewerActionSx = useMemo(
     () =>
@@ -295,7 +292,6 @@ export default function App() {
         ? undefined
         : {
             filter: 'grayscale(100%)',
-            ...(imageViewerHiddenByCategory ? { opacity: 0.5 } : {}),
           },
     [selectedImage?.active, imageViewerHiddenByCategory],
   )
@@ -304,20 +300,16 @@ export default function App() {
       imageViewerHiddenByCategory
         ? {
             filter: 'grayscale(100%)',
-            opacity: 0.5,
           }
         : undefined,
     [imageViewerHiddenByCategory],
   )
   const breadcrumbProgramItems = useMemo(() => {
-    const split =
-      path.length > 0
-        ? splitDirectAncestorProgramIds(path)
-        : { direct: ancestorProgramIds, ancestor: [] }
-    return [
-      ...split.direct.map((id) => ({ id, inherited: false })),
-      ...split.ancestor.map((id) => ({ id, inherited: true })),
-    ]
+    const leafProgramIds = path[path.length - 1]?.programIds ?? []
+    const leafProgramIdSet = new Set(leafProgramIds)
+    const effectiveProgramIds = path.length > 0 ? narrowProgramIds(path) : ancestorProgramIds
+    return effectiveProgramIds
+      .map((id) => ({ id, inherited: path.length > 0 && !leafProgramIdSet.has(id) }))
       .map((item) => {
         const program = programs.find((p) => p.id === item.id)
         return program ? { ...item, name: program.name } : null
@@ -326,14 +318,11 @@ export default function App() {
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [ancestorProgramIds, path, programs])
   const breadcrumbGroupItems = useMemo(() => {
-    const split =
-      path.length > 0
-        ? splitDirectAncestorGroupIds(path)
-        : { direct: ancestorGroupIds, ancestor: [] }
-    return [
-      ...split.direct.map((id) => ({ id, inherited: false })),
-      ...split.ancestor.map((id) => ({ id, inherited: true })),
-    ]
+    const leafGroupIds = path[path.length - 1]?.groupIds ?? []
+    const leafGroupIdSet = new Set(leafGroupIds)
+    const effectiveGroupIds = path.length > 0 ? narrowGroupIds(path) : ancestorGroupIds
+    return effectiveGroupIds
+      .map((id) => ({ id, inherited: path.length > 0 && !leafGroupIdSet.has(id) }))
       .map((item) => {
         const group = groups.find((g) => g.id === item.id)
         return group ? { ...item, name: group.name } : null
@@ -366,6 +355,7 @@ export default function App() {
         {inline.map((item) => (
           <Chip
             key={item.id}
+            data-testid={`${kind}-chip`}
             label={item.name}
             size="small"
             color={color}
@@ -406,6 +396,7 @@ export default function App() {
                 {items.map((item) => (
                   <Chip
                     key={item.id}
+                    data-testid={`${kind}-chip`}
                     label={item.name}
                     size="small"
                     color={color}
@@ -727,17 +718,17 @@ export default function App() {
     }
   }, [searchOpen, canEditContent])
 
-  // Load deployed component versions for the footer (admin only).
-  // Backend+backup come from ``/api/admin/version`` (admin-guarded on
-  // the backend; non-admins never see those strings). The frontend
-  // version is served by its own nginx and is not strictly admin-
-  // guarded at the transport layer, but we only fetch it in the admin
-  // path to match the footer's gating behaviour — the displayed
-  // version string carries the same info as the image-tag filenames
-  // already visible in the public JS bundle, so there is no new
-  // information leak.
+  // Load deployed component versions for the footer and About dialog
+  // (admin and instructor). Backend+backup come from
+  // ``/api/admin/version`` (guarded to admin/instructor on the
+  // backend; students never see those strings). The frontend version
+  // is served by its own nginx and is not strictly role-guarded at
+  // the transport layer, but we only fetch it alongside the guarded
+  // versions — the displayed version string carries the same info as
+  // the image-tag filenames already visible in the public JS bundle,
+  // so there is no new information leak.
   useEffect(() => {
-    if (!canManageUsers) {
+    if (!canEditContent) {
       /* eslint-disable react-hooks/set-state-in-effect -- early-return cleanup in conditional fetch effect */
       setBackendVersion(null)
       setBackupVersion(null)
@@ -766,7 +757,7 @@ export default function App() {
         // time.
         setFrontendVersion(null)
       })
-  }, [canManageUsers])
+  }, [canEditContent])
 
   // Program management handlers (for Manage menu)
   const handleAddProgram = useCallback(
