@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.43.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.42.2...frontend-v0.43.0) (2026-08-12)
+
+
+### Features
+
+* **admin:** configurable retention policy for retained files-import archives ([#1001](https://github.com/bcit-tlu/hriv/issues/1001)) ([c6070e1](https://github.com/bcit-tlu/hriv/commit/c6070e110bb8386ca5dc05d851bea5c4a57ecef7))
+* expose component versions to instructors in About dialog ([#1021](https://github.com/bcit-tlu/hriv/issues/1021)) ([945f105](https://github.com/bcit-tlu/hriv/commit/945f10570c75a737b1940eb8b666e397c9348beb))
+* **frontend:** add saving/disabled state to bulk-edit modals to prevent double-submit ([#1011](https://github.com/bcit-tlu/hriv/issues/1011)) ([eee8623](https://github.com/bcit-tlu/hriv/commit/eee8623220e30992fb2b35b162e6d5b09177ffc3))
+* **frontend:** persist table rows-per-page selection per user ([#1022](https://github.com/bcit-tlu/hriv/issues/1022)) ([7ec2e5c](https://github.com/bcit-tlu/hriv/commit/7ec2e5cda3c740d42b8d8ce74730ed6c21fe3c53))
+* **frontend:** prune succeeded groups and aggregate failure reasons on partial bulk add ([#1012](https://github.com/bcit-tlu/hriv/issues/1012)) ([8a260a9](https://github.com/bcit-tlu/hriv/commit/8a260a924a5dd8fbd10f318dbaf747a82c6634ed))
+* **frontend:** reorganize admin Backups tab into grouped card layout ([#1025](https://github.com/bcit-tlu/hriv/issues/1025)) ([d3587be](https://github.com/bcit-tlu/hriv/commit/d3587be8e753c63086a2f358c0ccd4d082e4e18a))
+* **frontend:** show tracking link after feedback submission ([#1020](https://github.com/bcit-tlu/hriv/issues/1020)) ([d91e2be](https://github.com/bcit-tlu/hriv/commit/d91e2be581258928d2157983bef4d2253def5fa4))
+
+
+### Bug Fixes
+
+* **frontend:** avoid surfacing [object Object] for structured error detail without message ([#1015](https://github.com/bcit-tlu/hriv/issues/1015)) ([ee0dd2d](https://github.com/bcit-tlu/hriv/commit/ee0dd2d87db6aec78b9cb51c0213ad63644aa7b6))
+* **frontend:** keep hidden browse tiles at full opacity ([#1050](https://github.com/bcit-tlu/hriv/issues/1050)) ([e6c707b](https://github.com/bcit-tlu/hriv/commit/e6c707b6e1ca5d14b5492c321ca1620e710f6e91))
+
 ## [0.42.2](https://github.com/bcit-tlu/hriv/compare/frontend-v0.42.1...frontend-v0.42.2) (2026-08-10)
 
 
