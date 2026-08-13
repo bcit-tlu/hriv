@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.43.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.43.0...frontend-v0.43.1) (2026-08-13)
+
+
+### Bug Fixes
+
+* provides more horizontal room to titles on the category modal ([#1075](https://github.com/bcit-tlu/hriv/issues/1075)) ([9f2fdd0](https://github.com/bcit-tlu/hriv/commit/9f2fdd03c1361e87514a3cc213504662501d1bc7))
+
 ## [0.43.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.42.2...frontend-v0.43.0) (2026-08-12)
 
 
