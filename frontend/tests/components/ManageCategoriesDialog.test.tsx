@@ -100,6 +100,20 @@ describe('ManageCategoriesDialog — basics', () => {
     expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument()
   })
 
+  it('uses the medium full-width dialog so long category labels have more room before wrapping', () => {
+    renderDialog({
+      categories: [
+        makeCategory({
+          label: 'A category title long enough to benefit from the wider management dialog',
+        }),
+      ],
+    })
+
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toHaveClass('MuiDialog-paperWidthMd')
+    expect(dialog).toHaveClass('MuiDialog-paperFullWidth')
+  })
+
   it('calls onClose when Close button is clicked', async () => {
     const user = userEvent.setup()
     const { onClose } = renderDialog()

@@ -568,7 +568,7 @@ export default function ManageCategoriesDialog({
 
   return (
     <>
-      <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
         {/* The save-state indicator (a live region with buttons) must not
             live inside DialogTitle's <h2>, so it sits in a flex row beside
             it. That breaks MUI's `.MuiDialogTitle-root +

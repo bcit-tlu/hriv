@@ -132,7 +132,10 @@ Two capability flags in `AuthContext.tsx` drive all gating:
   the current browser user. Collapsing a branch in one surface keeps it
   collapsed in the others until it is re-expanded.
 - **Manage Categories dialog:** the list also renders each category label as a
-  link that navigates the app to that category in Browse.
+  link that navigates the app to that category in Browse. The dialog uses the
+  medium desktop width so longer category titles use the available horizontal
+  space before wrapping, while the category rows retain enough right-side space
+  for their action icons.
 - **Delete:** confirmation required; deleting a category cascades to children and
   detaches images (`category_id → NULL`). See [domain-model.md](domain-model.md).
 
