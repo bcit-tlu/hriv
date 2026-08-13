@@ -65,7 +65,9 @@ function ClampableMessage({ message }: { message: string }) {
             p: 0,
             mt: 0.5,
             minWidth: 0,
+            fontSize: 14,
             fontWeight: 600,
+            fontStyle: 'italic',
             textTransform: 'none',
             textDecoration: 'underline',
             '&:hover': { textDecoration: 'underline', bgcolor: 'transparent' },
@@ -92,9 +94,24 @@ export default function AnnouncementBanner({
   // corner (the MUI action slot is top-aligned by default).
   const closeIcon = onDismiss ? (
     <IconButton aria-label="Dismiss announcement" color="inherit" size="small" onClick={onDismiss}>
-      <CloseIcon fontSize="small" />
+      <CloseIcon sx={{ fontSize: 24 }} />
     </IconButton>
   ) : undefined
+
+  // Colour combo tuned for readability on the blue banner in both modes.
+  // Deep, saturated blue + pure white text: ~8.6:1 (light) and ~5.9:1 (dark),
+  // both comfortably above WCAG-AA. Dark mode uses a slightly lighter blue so
+  // the banner reads as a distinct surface on the near-black page.
+  const onInfo = '#FFFFFF'
+  const infoBg = theme.palette.mode === 'dark' ? '#1565C0' : '#0D47A1'
+  const alertSx = {
+    borderRadius: isMobile ? 2 : undefined,
+    backgroundColor: infoBg,
+    color: onInfo,
+    '& .MuiAlert-icon': { color: onInfo, fontSize: 26 },
+    '& .MuiAlert-message': { color: onInfo, fontSize: '1rem', fontWeight: 400 },
+    '& .MuiAlert-action': { mr: 0 },
+  }
 
   if (variant === 'login') {
     return (
@@ -103,8 +120,7 @@ export default function AnnouncementBanner({
           severity="info"
           variant="filled"
           action={isMobile ? closeIcon : undefined}
-          // Mobile: round the corners to match the login form field (8px).
-          sx={{ borderRadius: isMobile ? 2 : undefined, '& .MuiAlert-action': { mr: 0 } }}
+          sx={alertSx}
         >
           <ClampableMessage message={message} />
         </Alert>
@@ -126,8 +142,7 @@ export default function AnnouncementBanner({
           </Button>
         ) : undefined
       }
-      // Mobile: round the corners to match the login form field (8px).
-      sx={{ borderRadius: isMobile ? 2 : undefined, '& .MuiAlert-action': { mr: 0 } }}
+      sx={alertSx}
     >
       <ClampableMessage message={message} />
     </Alert>
