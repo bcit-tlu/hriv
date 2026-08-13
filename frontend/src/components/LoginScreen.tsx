@@ -26,6 +26,7 @@ import FooterBar from './FooterBar'
 interface LoginScreenProps {
   onLogin: (email: string, password: string) => Promise<void>
   announcement?: string
+  onDismissAnnouncement?: () => void
 }
 
 // Map short, stable error codes returned by the backend OIDC callback
@@ -46,7 +47,11 @@ const OIDC_ERROR_MESSAGES: Record<string, string> = {
     'This email is already linked to a different identity. Please contact an administrator.',
 }
 
-export default function LoginScreen({ onLogin, announcement = '' }: LoginScreenProps) {
+export default function LoginScreen({
+  onLogin,
+  announcement = '',
+  onDismissAnnouncement,
+}: LoginScreenProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -233,7 +238,11 @@ export default function LoginScreen({ onLogin, announcement = '' }: LoginScreenP
 
             {/* Announcement banner (same section shown in the authenticated app),
                 placed under the divider and above the login form. */}
-            <AnnouncementBanner message={announcement} variant="login" />
+            <AnnouncementBanner
+              message={announcement}
+              variant="login"
+              onDismiss={onDismissAnnouncement}
+            />
 
             {oidcErrorMessage && (
               <Alert severity="error" onClose={clearOidcError} sx={{ mb: 2 }}>
