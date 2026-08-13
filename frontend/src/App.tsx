@@ -1218,7 +1218,7 @@ export default function App() {
 
   // Show login screen when no user is authenticated
   if (!currentUser) {
-    return <LoginScreen onLogin={login} announcement={announcement} />
+    return <LoginScreen onLogin={login} />
   }
 
   const viewerReplaceUploadProgress = getReplaceUploadProgress('viewer')
