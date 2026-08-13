@@ -17,7 +17,7 @@ export default function AnnouncementBanner({
 
   if (variant === 'login') {
     return (
-      <Box sx={{ width: '100%', maxWidth: 400, mb: 3 }}>
+      <Box sx={{ width: '100%', mb: 3 }}>
         <Alert severity="info" variant="filled">
           {message}
         </Alert>

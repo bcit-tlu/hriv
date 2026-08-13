@@ -17,6 +17,7 @@ import { useTheme } from '@mui/material/styles'
 import Visibility from '@mui/icons-material/Visibility'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import CloseIcon from '@mui/icons-material/Close'
+import AnnouncementBanner from './AnnouncementBanner'
 import ColorModeToggle from './ColorModeToggle'
 import { fetchOidcEnabled, getOidcLoginUrl } from '../api'
 import { useAuth } from '../useAuth'
@@ -24,6 +25,7 @@ import FooterBar from './FooterBar'
 
 interface LoginScreenProps {
   onLogin: (email: string, password: string) => Promise<void>
+  announcement?: string
 }
 
 // Map short, stable error codes returned by the backend OIDC callback
@@ -44,7 +46,7 @@ const OIDC_ERROR_MESSAGES: Record<string, string> = {
     'This email is already linked to a different identity. Please contact an administrator.',
 }
 
-export default function LoginScreen({ onLogin }: LoginScreenProps) {
+export default function LoginScreen({ onLogin, announcement = '' }: LoginScreenProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -228,6 +230,10 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
                 mobile screens — the thinnest a divider can practically get. The
                 mb (spacing) is unaffected by the transform. */}
             {isMobile && <Divider sx={{ mb: 3, transform: 'scaleY(0.5)' }} />}
+
+            {/* Announcement banner (same section shown in the authenticated app),
+                placed under the divider and above the login form. */}
+            <AnnouncementBanner message={announcement} variant="login" />
 
             {oidcErrorMessage && (
               <Alert severity="error" onClose={clearOidcError} sx={{ mb: 2 }}>
