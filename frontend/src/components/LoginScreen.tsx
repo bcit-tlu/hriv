@@ -17,7 +17,6 @@ import { useTheme } from '@mui/material/styles'
 import Visibility from '@mui/icons-material/Visibility'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import CloseIcon from '@mui/icons-material/Close'
-import AnnouncementBanner from './AnnouncementBanner'
 import ColorModeToggle from './ColorModeToggle'
 import { fetchOidcEnabled, getOidcLoginUrl } from '../api'
 import { useAuth } from '../useAuth'
@@ -25,9 +24,6 @@ import FooterBar from './FooterBar'
 
 interface LoginScreenProps {
   onLogin: (email: string, password: string) => Promise<void>
-  announcement?: string
-  /** Dismiss the announcement (persists via the shared dismissed key). */
-  onDismissAnnouncement?: () => void
 }
 
 // Map short, stable error codes returned by the backend OIDC callback
@@ -48,11 +44,7 @@ const OIDC_ERROR_MESSAGES: Record<string, string> = {
     'This email is already linked to a different identity. Please contact an administrator.',
 }
 
-export default function LoginScreen({
-  onLogin,
-  announcement,
-  onDismissAnnouncement,
-}: LoginScreenProps) {
+export default function LoginScreen({ onLogin }: LoginScreenProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -194,16 +186,6 @@ export default function LoginScreen({
         >
           {/* On mobile the content spans the full column (no 400px cap). */}
           <Box sx={{ width: '100%', maxWidth: isMobile ? 'none' : 400 }}>
-            {/* Desktop keeps the announcement at the top; on mobile it moves to
-                below the divider (rendered further down). */}
-            {announcement && !isMobile && (
-              <AnnouncementBanner
-                message={announcement}
-                variant="login"
-                onDismiss={onDismissAnnouncement}
-              />
-            )}
-
             {/* BCIT logo + heading. Mobile: an enlarged logo stacked ON TOP of a
                 single-line title; desktop keeps the original inline row. */}
             <Box
@@ -245,18 +227,7 @@ export default function LoginScreen({
             {/* scaleY(0.5) renders the 1px line as a ~0.5px hairline on hi-DPI
                 mobile screens — the thinnest a divider can practically get. The
                 mb (spacing) is unaffected by the transform. */}
-            {isMobile && <Divider sx={{ mb: announcement ? 2 : 3, transform: 'scaleY(0.5)' }} />}
-
-            {/* Mobile: the site announcement sits below the divider and above the
-                login form (desktop shows it at the top instead). The login-variant
-                banner carries its own bottom margin, so no wrapper spacing here. */}
-            {announcement && isMobile && (
-              <AnnouncementBanner
-                message={announcement}
-                variant="login"
-                onDismiss={onDismissAnnouncement}
-              />
-            )}
+            {isMobile && <Divider sx={{ mb: 3, transform: 'scaleY(0.5)' }} />}
 
             {oidcErrorMessage && (
               <Alert severity="error" onClose={clearOidcError} sx={{ mb: 2 }}>

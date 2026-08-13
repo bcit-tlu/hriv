@@ -8,9 +8,8 @@
  * 4. Toggle back: clicking "Sign in with BCIT" returns to OIDC view
  * 5. Local form submission calls onLogin with email & password
  * 6. Login error displays an alert
- * 7. Announcement banner renders when provided
- * 8. Forgot Password dialog opens on button click
- * 9. Graceful fallback when fetchOidcEnabled fails
+ * 7. Forgot Password dialog opens on button click
+ * 8. Graceful fallback when fetchOidcEnabled fails
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -64,12 +63,10 @@ function queryUsernameField() {
 }
 
 /** Render with OIDC disabled */
-async function renderOidcDisabled(
-  props: { onLogin?: () => Promise<void>; announcement?: string } = {},
-) {
+async function renderOidcDisabled(props: { onLogin?: () => Promise<void> } = {}) {
   const onLogin = props.onLogin ?? vi.fn()
   vi.mocked(fetchOidcEnabled).mockResolvedValue({ enabled: false })
-  const result = render(<LoginScreen onLogin={onLogin} announcement={props.announcement} />)
+  const result = render(<LoginScreen onLogin={onLogin} />)
   // Wait for the useEffect that calls fetchOidcEnabled to settle
   await waitFor(() => {
     expect(fetchOidcEnabled).toHaveBeenCalled()
@@ -78,12 +75,10 @@ async function renderOidcDisabled(
 }
 
 /** Helper: render with OIDC enabled */
-async function renderOidcEnabled(
-  props: { onLogin?: () => Promise<void>; announcement?: string } = {},
-) {
+async function renderOidcEnabled(props: { onLogin?: () => Promise<void> } = {}) {
   const onLogin = props.onLogin ?? vi.fn()
   vi.mocked(fetchOidcEnabled).mockResolvedValue({ enabled: true })
-  const result = render(<LoginScreen onLogin={onLogin} announcement={props.announcement} />)
+  const result = render(<LoginScreen onLogin={onLogin} />)
   await waitFor(() => {
     expect(fetchOidcEnabled).toHaveBeenCalled()
   })
@@ -220,35 +215,6 @@ describe('LoginScreen', () => {
     it('disables the LOGIN button when fields are empty', async () => {
       await renderOidcDisabled()
       expect(screen.getByRole('button', { name: 'LOGIN' })).toBeDisabled()
-    })
-  })
-
-  // ─── Announcement banner ──────────────────────────────────────────
-
-  describe('announcement banner', () => {
-    it('renders the announcement when provided', async () => {
-      await renderOidcDisabled({
-        announcement: 'System maintenance tonight',
-      })
-      expect(screen.getByText('System maintenance tonight')).toBeInTheDocument()
-    })
-
-    it('does not render the announcement when not provided', async () => {
-      await renderOidcDisabled()
-      expect(screen.queryByText('System maintenance tonight')).not.toBeInTheDocument()
-    })
-
-    it('places the announcement below the divider and above the form on mobile', async () => {
-      vi.mocked(useMediaQuery).mockReturnValue(true)
-      await renderOidcDisabled({ announcement: 'System maintenance tonight' })
-      const banner = screen.getByText('System maintenance tonight')
-      const divider = document.querySelector('.MuiDivider-root')
-      const form = document.querySelector('form')
-      expect(divider).not.toBeNull()
-      const FOLLOWING = Node.DOCUMENT_POSITION_FOLLOWING
-      // DOM order must be: divider → banner → form
-      expect(divider!.compareDocumentPosition(banner) & FOLLOWING).toBeTruthy()
-      expect(banner.compareDocumentPosition(form!) & FOLLOWING).toBeTruthy()
     })
   })
 

@@ -166,14 +166,14 @@ export const appBarIconButtonSx = {
   p: 0.5,
   minWidth: 40,
   minHeight: 40,
-  '& .MuiSvgIcon-root': { fontSize: { xs: 22, sm: 24, md: 24 } },
+  '& .MuiSvgIcon-root': { fontSize: { xs: 26, sm: 24, md: 24 } },
 } as const
 
 /** Responsive avatar dimensions matching {@link appBarIconButtonSx}. */
 export const appBarAvatarSx = {
-  width: { xs: 28, sm: 32, md: 34 },
-  height: { xs: 28, sm: 32, md: 34 },
-  fontSize: { xs: 12, sm: 13, md: 14 },
+  width: { xs: 30, sm: 32, md: 34 },
+  height: { xs: 30, sm: 32, md: 34 },
+  fontSize: { xs: 13, sm: 13, md: 14 },
 } as const
 
 /** Responsive gap between the app-bar's right-hand controls. */

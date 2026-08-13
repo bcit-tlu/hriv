@@ -52,12 +52,6 @@ describe('AppShell', () => {
       expect(screen.getByRole('heading', { name: 'HRIV' })).toBeInTheDocument()
     })
 
-    it('shows the favicon next to the HRIV title on desktop', () => {
-      render(<AppShell {...makeProps()} />)
-      expect(screen.getByRole('img', { name: 'HRIV' })).toBeInTheDocument()
-      expect(screen.getByRole('heading', { name: 'HRIV' })).toBeInTheDocument()
-    })
-
     it('renders children', () => {
       render(<AppShell {...makeProps()} />)
       expect(screen.getByTestId('main-content')).toBeInTheDocument()
@@ -339,14 +333,6 @@ describe('AppShell', () => {
       expect(screen.queryByRole('menuitem', { name: /Theme:/ })).not.toBeInTheDocument()
     })
 
-    it('renders profile menu rows without icons so labels align flush-left', () => {
-      render(<AppShell {...makeProps({ profileOpen: true })} />)
-      for (const name of ['Update', 'Logout']) {
-        const item = screen.getByRole('menuitem', { name })
-        expect(item.querySelector('.MuiListItemIcon-root')).toBeNull()
-      }
-    })
-
     it('shows user info when profileOpen is true', () => {
       const ref = createRef<HTMLButtonElement>()
       render(
@@ -557,49 +543,8 @@ describe('AppShell', () => {
       expect(screen.queryByRole('button', { name: 'Toggle theme' })).not.toBeInTheDocument()
     })
 
-    it('drops the favicon but keeps the HRIV brand on mobile', () => {
-      render(<AppShell {...makeProps({ profileOpen: false })} />)
-      expect(screen.queryByRole('img', { name: 'HRIV' })).not.toBeInTheDocument()
-      expect(screen.getByRole('heading', { name: 'HRIV' })).toBeInTheDocument()
-    })
-
     it('shows a theme row in the profile menu on compact viewports', () => {
       render(<AppShell {...makeProps({ profileOpen: true })} />)
-      expect(screen.getByRole('menuitem', { name: /Theme:/ })).toBeInTheDocument()
-    })
-
-    it('places the theme row directly above Logout in the profile menu', () => {
-      render(<AppShell {...makeProps({ profileOpen: true })} />)
-      const items = screen.getAllByRole('menuitem').map((el) => el.textContent ?? '')
-      const themeIdx = items.findIndex((t) => /Theme:/.test(t))
-      const logoutIdx = items.findIndex((t) => /Logout/.test(t))
-      expect(themeIdx).toBeGreaterThanOrEqual(0)
-      expect(logoutIdx).toBe(themeIdx + 1)
-    })
-
-    it('relocates the theme control into the profile menu for a single-tab (student) phone', () => {
-      // A phone viewport reports both md-down and sm-down as true (mock returns
-      // true for every query). A student has one tab, so the nav does NOT
-      // collapse to a hamburger — but the bar is still too tight, so the theme
-      // control moves into the profile menu rather than staying in the bar.
-      render(
-        <AppShell
-          {...makeProps({
-            profileOpen: true,
-            canEditContent: false,
-            canManageUsers: false,
-            currentUser: {
-              name: 'Stu Dent',
-              email: 'stu@example.com',
-              role: 'student',
-              program_names: [],
-              group_names: [],
-            },
-          })}
-        />,
-      )
-      expect(screen.queryByRole('button', { name: 'Toggle theme' })).not.toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: 'Open navigation menu' })).not.toBeInTheDocument()
       expect(screen.getByRole('menuitem', { name: /Theme:/ })).toBeInTheDocument()
     })
 
@@ -623,13 +568,10 @@ describe('AppShell', () => {
       expect(screen.getByText('Administration')).toBeInTheDocument()
     })
 
-    it('shows no inline nav (no Home tab, no hamburger) for students on mobile', () => {
-      // The single-tab student layout drops the inline Home tab on mobile for a
-      // cleaner bar, and does not collapse to a hamburger either.
+    it('keeps a single Home tab inline for students instead of collapsing', () => {
       render(<AppShell {...makeProps({ canEditContent: false, canManageUsers: false })} />)
       expect(screen.queryByRole('button', { name: 'Open navigation menu' })).not.toBeInTheDocument()
-      expect(screen.queryByRole('tab', { name: 'Home' })).not.toBeInTheDocument()
-      expect(screen.getByRole('heading', { name: 'HRIV' })).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: 'Home' })).toBeInTheDocument()
     })
 
     it('closes the drawer when the close button is clicked', () => {

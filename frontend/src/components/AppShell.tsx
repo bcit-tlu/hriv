@@ -48,6 +48,11 @@ import GroupsIcon from '@mui/icons-material/Groups'
 import CampaignIcon from '@mui/icons-material/Campaign'
 import PeopleIcon from '@mui/icons-material/People'
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings'
+import LightModeIcon from '@mui/icons-material/LightMode'
+import DarkModeIcon from '@mui/icons-material/DarkMode'
+import BrightnessAutoIcon from '@mui/icons-material/BrightnessAuto'
+import ManageAccountsIcon from '@mui/icons-material/ManageAccounts'
+import LogoutIcon from '@mui/icons-material/Logout'
 import ColorModeToggle from './ColorModeToggle'
 import FooterBar from './FooterBar'
 import AnnouncementBanner from './AnnouncementBanner'
@@ -143,12 +148,6 @@ export default function AppShell(props: AppShellProps) {
   const isCompactViewport = useMediaQuery(theme.breakpoints.down('md'))
   const navTabCount = 1 + (canEditContent ? 2 : 0) + (canManageUsers ? 2 : 0)
   const collapseNav = isCompactViewport && navTabCount > 1
-  // The theme control lives in exactly one place: the app-bar icon on roomy
-  // layouts, or the profile menu when the bar is tight. That happens when the
-  // nav collapses to a hamburger (multi-tab roles) OR on phones — where even a
-  // single-tab (student) bar has no room to spare. Never both, never neither.
-  const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
-  const showThemeInMenu = collapseNav || isMobile
   // Reset the breakpoint-specific menus on a viewport transition so a resize
   // round-trip doesn't leave one open against an unmounted trigger:
   //  - desktop → the drawer can't apply, so close it;
@@ -180,6 +179,11 @@ export default function AppShell(props: AppShellProps) {
   const contentBg = page === 'people' || page === 'admin' ? getSurfaceVariant(mode) : undefined
   const groupColors = getGroupChipColors(mode)
   const { preference: themePreference, toggleMode } = useColorMode()
+  const themeIcon = useMemo(() => {
+    if (themePreference === 'light') return <LightModeIcon fontSize="small" />
+    if (themePreference === 'dark') return <DarkModeIcon fontSize="small" />
+    return <BrightnessAutoIcon fontSize="small" />
+  }, [themePreference])
   const themeLabel = useMemo(() => {
     if (themePreference === 'light') return 'Theme: Light'
     if (themePreference === 'dark') return 'Theme: Dark'
@@ -303,81 +307,35 @@ export default function AppShell(props: AppShellProps) {
     >
       {/* App bar */}
       <AppBar position="static" elevation={1}>
-        <Toolbar
-          sx={{
-            position: 'relative',
-            // Mobile: a shorter bar (default is 56px) now that it carries no
-            // inline tabs. Override the responsive min-heights MUI sets.
-            ...(isMobile && { minHeight: 48, '@media (min-width:600px)': { minHeight: 48 } }),
-          }}
-        >
-          {/* Left cluster. On mobile the favicon + brand are removed (the brand
-              is centered instead, below), so this only renders when there's a
-              hamburger to show or on desktop where the brand lives here. */}
-          {(collapseNav || !isMobile) && (
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 0.75,
-                mr: 2,
-              }}
-            >
-              {collapseNav && (
-                <Tooltip title="Menu">
-                  <IconButton
-                    edge="start"
-                    onClick={() => setNavDrawerOpen(true)}
-                    sx={{ color: 'inherit', mr: -1, ...appBarIconButtonSx }}
-                    aria-label="Open navigation menu"
-                    aria-haspopup="true"
-                    aria-expanded={navDrawerOpen}
-                  >
-                    <MenuIcon />
-                  </IconButton>
-                </Tooltip>
-              )}
-              {!isMobile && (
-                <>
-                  <Box
-                    component="img"
-                    src="/favicon.svg"
-                    alt="HRIV"
-                    sx={{ height: 32, width: 32 }}
-                  />
-                  <Typography variant="h6" component="h1">
-                    HRIV
-                  </Typography>
-                </>
-              )}
-            </Box>
-          )}
-
-          {/* Mobile: brand centered in the bar (favicon dropped, smaller type).
-              Absolutely positioned so it stays centered regardless of the
-              flanking Home tab / action widths; inert so it never intercepts
-              taps on whatever sits beneath it. */}
-          {isMobile && (
-            <Typography
-              variant="h6"
-              component="h1"
-              sx={{
-                position: 'absolute',
-                left: '50%',
-                top: '50%',
-                transform: 'translate(-50%, -50%)',
-                pointerEvents: 'none',
-                fontSize: '1.35rem',
-                fontWeight: 600,
-              }}
-            >
+        <Toolbar>
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.75,
+              mr: 2,
+            }}
+          >
+            {collapseNav && (
+              <Tooltip title="Menu">
+                <IconButton
+                  edge="start"
+                  onClick={() => setNavDrawerOpen(true)}
+                  sx={{ color: 'inherit', mr: -1, ...appBarIconButtonSx }}
+                  aria-label="Open navigation menu"
+                  aria-haspopup="true"
+                  aria-expanded={navDrawerOpen}
+                >
+                  <MenuIcon />
+                </IconButton>
+              </Tooltip>
+            )}
+            <Box component="img" src="/favicon.svg" alt="HRIV" sx={{ height: 32, width: 32 }} />
+            <Typography variant="h6" component="h1">
               HRIV
             </Typography>
-          )}
-          {/* Mobile shows no inline nav tabs: multi-tab roles use the ☰ drawer,
-              and the single-tab (student) Home tab is dropped for a cleaner bar
-              (the app opens on Home anyway). Desktop keeps the inline tabs. */}
-          {collapseNav || isMobile ? (
+          </Box>
+          {collapseNav ? (
             <Box sx={{ flexGrow: 1 }} />
           ) : (
             <Tabs
@@ -499,7 +457,7 @@ export default function AppShell(props: AppShellProps) {
             </Drawer>
           )}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: appBarClusterGap }}>
-            {!showThemeInMenu && (
+            {!collapseNav && (
               <ColorModeToggle iconButtonSx={{ color: 'inherit', ...appBarIconButtonSx }} />
             )}
             <Tooltip title="Search">
@@ -598,12 +556,18 @@ export default function AppShell(props: AppShellProps) {
                     </Box>
                   )}
                   <Divider sx={{ mt: 1.5, mx: -2 }} />
-                  {/* Icon-less rows so every label sits flush-left, aligned with
-                      the name / email / role text above (icons in a left gutter
-                      pushed the labels out of alignment). */}
                   <MenuList sx={{ mx: -2, py: 0 }}>
+                    {collapseNav && (
+                      <MenuItem sx={{ py: 1.25 }} onClick={() => toggleMode()}>
+                        <ListItemIcon sx={{ minWidth: 0, mr: 1.25 }}>{themeIcon}</ListItemIcon>
+                        <ListItemText>{themeLabel}</ListItemText>
+                      </MenuItem>
+                    )}
                     {canManageUsers && (
                       <MenuItem sx={{ py: 1.25 }} onClick={() => openEditProfile()}>
+                        <ListItemIcon sx={{ minWidth: 0, mr: 1.25 }}>
+                          <ManageAccountsIcon fontSize="small" />
+                        </ListItemIcon>
                         <ListItemText>Update</ListItemText>
                       </MenuItem>
                     )}
@@ -615,16 +579,10 @@ export default function AppShell(props: AppShellProps) {
                           setViewAnnOpen(true)
                         }}
                       >
+                        <ListItemIcon sx={{ minWidth: 0, mr: 1.25 }}>
+                          <CampaignIcon fontSize="small" />
+                        </ListItemIcon>
                         <ListItemText>View Announcement</ListItemText>
-                      </MenuItem>
-                    )}
-                    {/* Theme control relocated here from the app bar on tight
-                        layouts (collapsed nav / phones), directly above Logout.
-                        Cycles Light → Dark → Auto and keeps the popover open so
-                        the label updates in place. */}
-                    {showThemeInMenu && (
-                      <MenuItem sx={{ py: 1.25 }} onClick={() => toggleMode()}>
-                        <ListItemText>{themeLabel}</ListItemText>
                       </MenuItem>
                     )}
                     <MenuItem
@@ -634,6 +592,9 @@ export default function AppShell(props: AppShellProps) {
                         logout()
                       }}
                     >
+                      <ListItemIcon sx={{ minWidth: 0, mr: 1.25, color: 'primary.main' }}>
+                        <LogoutIcon fontSize="small" />
+                      </ListItemIcon>
                       <ListItemText>Logout</ListItemText>
                     </MenuItem>
                   </MenuList>
