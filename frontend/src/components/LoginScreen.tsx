@@ -211,8 +211,11 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
                 variant="h5"
                 sx={{
                   fontWeight: 400,
-                  // Mobile: larger + bold, no-wrap so the title stays on one line.
-                  ...(isMobile && { fontSize: 21, fontWeight: 700, whiteSpace: 'nowrap' }),
+                  // Mobile: larger + bold, centered. Allowed to wrap (no nowrap) so
+                  // the long title never overflows horizontally on ~320px-wide
+                  // phones — it stays on one line where it fits and wraps only on
+                  // the very narrowest screens.
+                  ...(isMobile && { fontSize: 21, fontWeight: 700, textAlign: 'center' }),
                 }}
               >
                 {isMobile
