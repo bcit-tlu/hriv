@@ -355,4 +355,62 @@ describe('LoginScreen', () => {
       expect(passwordLabel).toHaveAttribute('for', 'login-password')
     })
   })
+
+  // ─── Announcement banner integration ───────────────────────────────
+  describe('announcement banner', () => {
+    it('renders the announcement message when one is provided', async () => {
+      vi.mocked(fetchOidcEnabled).mockResolvedValue({ enabled: false })
+      render(<LoginScreen onLogin={vi.fn()} announcement="Scheduled maintenance tonight" />)
+      expect(await screen.findByText('Scheduled maintenance tonight')).toBeInTheDocument()
+    })
+
+    it('renders no banner when there is no announcement', async () => {
+      vi.mocked(fetchOidcEnabled).mockResolvedValue({ enabled: false })
+      render(<LoginScreen onLogin={vi.fn()} announcement="" />)
+      await waitFor(() => expect(fetchOidcEnabled).toHaveBeenCalled())
+      // The announcement banner is the only element with role="alert" here
+      // (no OIDC error is set in this test).
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+
+    it('positions the banner below the divider and above the form on mobile', async () => {
+      vi.mocked(useMediaQuery).mockReturnValue(true)
+      vi.mocked(fetchOidcEnabled).mockResolvedValue({ enabled: false })
+      render(<LoginScreen onLogin={vi.fn()} announcement="Heads up" />)
+
+      const banner = await screen.findByText('Heads up')
+      const divider = screen.getByRole('separator')
+      const username = getUsernameField()
+      const FOLLOWING = Node.DOCUMENT_POSITION_FOLLOWING
+
+      // divider → banner → form field, in document order.
+      expect(divider.compareDocumentPosition(banner) & FOLLOWING).toBeTruthy()
+      expect(banner.compareDocumentPosition(username) & FOLLOWING).toBeTruthy()
+    })
+
+    it('exposes an X dismiss on mobile that calls onDismissAnnouncement', async () => {
+      vi.mocked(useMediaQuery).mockReturnValue(true)
+      vi.mocked(fetchOidcEnabled).mockResolvedValue({ enabled: false })
+      const onDismiss = vi.fn()
+      const user = userEvent.setup()
+      render(
+        <LoginScreen onLogin={vi.fn()} announcement="Heads up" onDismissAnnouncement={onDismiss} />,
+      )
+
+      const closeBtn = await screen.findByRole('button', { name: /dismiss announcement/i })
+      await user.click(closeBtn)
+      expect(onDismiss).toHaveBeenCalledTimes(1)
+    })
+
+    it('shows no dismiss control on desktop even when a handler is passed', async () => {
+      vi.mocked(fetchOidcEnabled).mockResolvedValue({ enabled: false })
+      render(
+        <LoginScreen onLogin={vi.fn()} announcement="Heads up" onDismissAnnouncement={vi.fn()} />,
+      )
+      expect(await screen.findByText('Heads up')).toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: /dismiss announcement/i }),
+      ).not.toBeInTheDocument()
+    })
+  })
 })
