@@ -52,6 +52,9 @@ _MAX_CONCURRENCY = settings.worker_max_jobs
 _ZIP_EXTRACT_CHUNK_SIZE = 1024 * 1024
 _SOURCE_IMAGE_POLL_INTERVAL_SECONDS = 2
 _SOURCE_IMAGE_STALE_SECONDS = int(os.environ.get("SOURCE_IMAGE_STALE_SECONDS", "900"))
+_SOURCE_IMAGE_PENDING_TIMEOUT_SECONDS = int(
+    os.environ.get("SOURCE_IMAGE_PENDING_TIMEOUT_SECONDS", "3600")
+)
 
 
 def _is_image_filename(filename: str) -> bool:
@@ -95,6 +98,7 @@ async def _wait_for_source_image_terminal_state(
     source_image_id: int,
     original_filename: str,
     stale_after_seconds: int = _SOURCE_IMAGE_STALE_SECONDS,
+    pending_timeout_seconds: int = _SOURCE_IMAGE_PENDING_TIMEOUT_SECONDS,
 ) -> _SourceImageTerminalState:
     """Wait for queued processing to reach a terminal source-image state."""
     while True:
@@ -124,6 +128,28 @@ async def _wait_for_source_image_terminal_state(
                         "source_image_id": source_image_id,
                         "original_filename": original_filename,
                         "stale_after_seconds": stale_after_seconds,
+                    },
+                )
+                return _source_image_terminal_state(src)
+            pending_cutoff = datetime.now(timezone.utc) - timedelta(
+                seconds=pending_timeout_seconds,
+            )
+            if src.status == "pending" and updated_at < pending_cutoff:
+                src.status = "failed"
+                src.error_message = (
+                    "Tile generation never started during bulk import. "
+                    f"The image remained queued for more than "
+                    f"{pending_timeout_seconds}s."
+                )
+                src.status_message = "Failed"
+                await db.commit()
+                logger.error(
+                    "Bulk import source image never started processing",
+                    extra={
+                        "event": "bulk_import.source_pending_timeout",
+                        "source_image_id": source_image_id,
+                        "original_filename": original_filename,
+                        "pending_timeout_seconds": pending_timeout_seconds,
                     },
                 )
                 return _source_image_terminal_state(src)

@@ -5,7 +5,6 @@ import logging
 import os
 import uuid
 from contextlib import asynccontextmanager
-from typing import Annotated
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, status as http_status
@@ -21,7 +20,7 @@ from .admin_ops import (
     enforce_files_import_archive_retention,
     reconcile_stale_tasks,
 )
-from .auth import auth_settings, get_optional_current_user
+from .auth import auth_settings
 from .database import get_async_session, get_db, settings
 from .logging_config import setup_logging
 from .metrics import render_metrics
@@ -29,7 +28,6 @@ from .queue_metrics import queue_health
 from .worker import TaskQueueUnavailableError, get_pool
 from .maintenance import is_maintenance_mode
 from .middleware import AuditMiddleware, MaintenanceMiddleware
-from .models import User
 from .processing import reconcile_stale_source_images
 from .routers import (
     admin,
@@ -293,25 +291,15 @@ async def health():
 
 
 @app.get("/api/health/queue")
-async def queue_health_endpoint(
-    current_user: Annotated[User | None, Depends(get_optional_current_user)] = None,
-):
+async def queue_health_endpoint():
     """Report Redis reachability and dedicated-worker liveness."""
     state = await queue_health()
-    if current_user is None or current_user.role != "admin":
-        public_state = {"status": "degraded" if state["degraded"] else "ok"}
-        if settings.task_execution_mode == "required" and state["degraded"]:
-            raise HTTPException(
-                status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=public_state,
-            )
-        return public_state
     if settings.task_execution_mode == "required" and state["degraded"]:
         raise HTTPException(
             status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=state,
+            detail={"status": "degraded"},
         )
-    return state
+    return {"status": "degraded" if state["degraded"] else "ok"}
 
 
 @app.get("/api/health/ready")

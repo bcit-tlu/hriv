@@ -8,6 +8,7 @@ from typing import Any
 from arq.constants import default_queue_name, health_check_key_suffix
 from opentelemetry import metrics
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Gauge, generate_latest
+from redis.exceptions import RedisError
 
 from .database import settings
 
@@ -53,7 +54,7 @@ def record_enqueue(job_type: str, outcome: str, reason: str) -> None:
 
 async def collect_queue_state() -> dict[str, Any]:
     """Read queue depth and worker heartbeat without breaking a scrape."""
-    from .worker import get_pool
+    from .worker import WorkerSettings, _invalidate_pool, get_pool
 
     pool = await get_pool()
     state: dict[str, Any] = {
@@ -66,6 +67,7 @@ async def collect_queue_state() -> dict[str, Any]:
         return state
     try:
         now_ms = time.time() * 1000
+        health_check_interval = WorkerSettings.health_check_interval
         state["depth"] = await pool.zcard(ARQ_QUEUE_NAME)
         oldest = await pool.zrange(ARQ_QUEUE_NAME, 0, 0, withscores=True)
         if oldest:
@@ -78,9 +80,12 @@ async def collect_queue_state() -> dict[str, Any]:
                 if remaining_ttl == -1
                 else max(
                     0.0,
-                    HEALTH_CHECK_INTERVAL_SECONDS + 1 - float(remaining_ttl),
+                    health_check_interval + 1 - float(remaining_ttl),
                 )
             )
+    except RedisError:
+        _invalidate_pool()
+        state["queue_up"] = False
     except Exception:
         state["queue_up"] = False
     return state

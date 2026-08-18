@@ -247,7 +247,7 @@ All endpoints except login require a valid JWT bearer token in the `Authorizatio
 | GET    | /api/health                                                                                               | No            | —                                                     |
 | GET    | /api/health/ready                                                                                         | No            | —                                                     |
 | GET    | /api/health/storage                                                                                       | No            | —                                                     |
-| GET    | /api/health/queue                                                                                         | No            | — (503 when degraded in required task-execution mode) |
+| GET    | /api/health/queue                                                                                         | No            | — (minimal status only; 503 when degraded in required task-execution mode; details at /api/metrics) |
 | GET    | /api/categories/                                                                                          | Yes           | student                                               |
 | POST   | /api/categories/                                                                                          | Yes           | instructor                                            |
 | GET    | /api/categories/tree                                                                                      | Yes           | student                                               |

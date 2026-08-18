@@ -761,11 +761,13 @@ The backend exposes `hriv_task_queue_up`,
 `hriv_task_queue_depth`,
 `hriv_task_queue_oldest_pending_age_seconds`, and
 `hriv_task_queue_worker_heartbeat_age_seconds` on `/api/metrics`. The queue
-health endpoint (`/api/health/queue`) separates Redis reachability from worker
-liveness; in `required` execution mode it returns HTTP 503 when either is
-degraded. The worker heartbeat age is derived from the remaining TTL of
-arq's `arq:queue:health-check` key; the worker's arq main loop refreshes that
-key independently of job slots. Kubernetes checks the same contract with
+health endpoint (`/api/health/queue`) is an unauthenticated minimal status
+check; use `/api/metrics` for queue depth, heartbeat age, and execution-mode
+details. In `required` execution mode, `/api/health/queue` returns HTTP 503
+when Redis or the dedicated worker is degraded. The worker heartbeat age is
+derived from the remaining TTL of arq's `arq:queue:health-check` key; the
+worker's arq main loop refreshes that key independently of job slots.
+Kubernetes checks the same contract with
 `arq app.worker.WorkerSettings --check`.
 
 Queue depth, oldest-pending age, and worker-heartbeat age intentionally render

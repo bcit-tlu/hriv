@@ -197,7 +197,14 @@ async def test_required_mode_call_site_matrix_rejects_without_runners(tmp_path) 
     assert source.status == "failed"
     assert not staged.exists()
 
-    admin_task = SimpleNamespace(id=6, task_type="db_export", log="")
+    retained_input = tmp_path / "retained.tar.gz"
+    retained_input.write_bytes(b"retained archive")
+    admin_task = SimpleNamespace(
+        id=6,
+        task_type="db_export",
+        log="",
+        input_path=str(retained_input),
+    )
     admin_bg = MagicMock()
     admin_session = MagicMock()
     admin_session.execute = AsyncMock()
@@ -222,6 +229,7 @@ async def test_required_mode_call_site_matrix_rejects_without_runners(tmp_path) 
             raise AssertionError("admin kickoff accepted a rejected submission")
     admin_bg.add_task.assert_not_called()
     assert admin_session.execute.await_count == 1
+    assert retained_input.exists()
 
     rebuild_session = MagicMock()
     existing_result = MagicMock()

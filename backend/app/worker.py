@@ -129,6 +129,13 @@ class EnqueueResult:
         return self.outcome == "queued"
 
 
+def _invalidate_pool() -> None:
+    """Discard the cached pool and defer reconnect attempts briefly."""
+    global _pool, _last_pool_failure
+    _pool = None
+    _last_pool_failure = time.time()
+
+
 async def get_pool() -> ArqRedis | None:
     """Return a shared arq connection pool, or ``None`` if Redis is down."""
     global _pool, _last_pool_failure
@@ -153,8 +160,7 @@ async def get_pool() -> ArqRedis | None:
                     extra={"event": "worker.pool_cleanup_failed"},
                     exc_info=True,
                 )
-        _last_pool_failure = time.time()
-        _pool = None
+        _invalidate_pool()
         logger.warning(
             "Task queue unavailable; enqueue fallback/rejection will apply",
             extra={"event": "worker.queue_unavailable"},
@@ -193,9 +199,7 @@ async def _enqueue(
         inject(carrier)
         await pool.enqueue_job(job_name, *args, carrier)
     except RedisError as exc:
-        global _pool, _last_pool_failure
-        _pool = None
-        _last_pool_failure = time.time()
+        _invalidate_pool()
         logger.warning(
             "Task queue submission failed",
             extra={"event": "worker.submission_failed", "job_type": job_type},

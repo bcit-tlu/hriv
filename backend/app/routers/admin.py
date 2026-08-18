@@ -1,5 +1,4 @@
 import asyncio
-import contextlib
 import errno
 import json
 import logging
@@ -24,7 +23,7 @@ from fastapi import (
 )
 from fastapi.responses import StreamingResponse
 from jose import JWTError, jwt
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..backup_access import (
@@ -180,13 +179,10 @@ async def _kick_off(
                 .values(
                     status="failed",
                     error_message=detail,
-                    log=(task.log or "") + f"ERROR: {detail}\n",
+                    log=func.coalesce(AdminTask.log, "") + f"ERROR: {detail}\n",
                 )
             )
             await db.commit()
-        if getattr(task, "input_path", None):
-            with contextlib.suppress(OSError):
-                os.unlink(task.input_path)
         raise
     if not enqueue_result.queued:
         # Redis unavailable — run in-process

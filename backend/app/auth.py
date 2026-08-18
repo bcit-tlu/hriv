@@ -114,10 +114,6 @@ class _LazyAuthSettings:
 auth_settings = _LazyAuthSettings()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
-optional_oauth2_scheme = OAuth2PasswordBearer(
-    tokenUrl="/api/auth/login",
-    auto_error=False,
-)
 
 
 # ── Password helpers ─────────────────────────────────────
@@ -186,16 +182,6 @@ async def get_current_user(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> User:
     """Dependency: require a valid JWT and return the authenticated User."""
-    return await _get_user_from_token(token, db)
-
-
-async def get_optional_current_user(
-    token: Annotated[str | None, Depends(optional_oauth2_scheme)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> User | None:
-    """Dependency returning an authenticated user when a token is supplied."""
-    if token is None:
-        return None
     return await _get_user_from_token(token, db)
 
 

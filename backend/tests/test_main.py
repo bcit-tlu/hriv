@@ -39,7 +39,7 @@ async def test_health_endpoint() -> None:
     assert result == {"status": "ok", "version": app.version}
 
 
-async def test_queue_health_hides_details_from_unauthenticated_callers(monkeypatch) -> None:
+async def test_queue_health_returns_minimal_status(monkeypatch) -> None:
     from app.main import queue_health_endpoint
     from app.database import settings
 
@@ -60,29 +60,6 @@ async def test_queue_health_hides_details_from_unauthenticated_callers(monkeypat
     monkeypatch.setattr(settings, "task_execution_mode", "required")
 
     assert await queue_health_endpoint() == {"status": "ok"}
-
-
-async def test_queue_health_returns_details_to_admins(monkeypatch) -> None:
-    from app.main import queue_health_endpoint
-    from app.database import settings
-
-    state = {
-        "queue_up": True,
-        "depth": 4,
-        "oldest_pending_age_seconds": 3.0,
-        "worker_heartbeat_age_seconds": 1.0,
-        "worker_up": True,
-        "degraded": False,
-        "mode": "required",
-    }
-    monkeypatch.setattr("app.main.queue_health", AsyncMock(return_value=state))
-    monkeypatch.setattr(settings, "task_execution_mode", "required")
-
-    result = await queue_health_endpoint(
-        current_user=MagicMock(role="admin"),
-    )
-
-    assert result == state
 
 
 async def test_queue_health_returns_minimal_503_when_required_mode_is_degraded(

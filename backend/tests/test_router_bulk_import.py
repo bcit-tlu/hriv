@@ -26,6 +26,7 @@ if "pyvips" not in sys.modules:
 from app.routers.bulk_import import (
     _is_image_filename,
     _process_bulk_import,
+    _SOURCE_IMAGE_PENDING_TIMEOUT_SECONDS,
     _wait_for_source_image_terminal_state,
     bulk_import_images,
     get_bulk_import_job,
@@ -836,7 +837,9 @@ async def test_process_bulk_import_uses_queued_processing_when_available(tmp_pat
     assert job.status == "completed"
 
 
-async def test_wait_for_source_image_terminal_state_marks_stale_source_failed() -> None:
+async def test_wait_for_source_image_terminal_state_marks_stale_source_failed(
+    caplog,
+) -> None:
     """A queued child image that stops updating should be marked failed."""
     stale_time = datetime.now(timezone.utc) - timedelta(seconds=901)
     src = SimpleNamespace(
@@ -859,6 +862,10 @@ async def test_wait_for_source_image_terminal_state_marks_stale_source_failed() 
     assert "stalled during bulk import" in result.error_message
     assert result.status_message == "Failed"
     db.commit.assert_awaited_once()
+    assert any(
+        record.event == "bulk_import.source_stalled"
+        for record in caplog.records
+    )
 
 
 async def test_wait_for_source_image_terminal_state_does_not_stale_queued_source() -> None:
@@ -894,6 +901,43 @@ async def test_wait_for_source_image_terminal_state_does_not_stale_queued_source
 
     assert result.status == "completed"
     db.commit.assert_not_awaited()
+
+
+async def test_wait_for_source_image_terminal_state_times_out_pending_source(
+    caplog,
+) -> None:
+    """A pending image that never starts should eventually fail distinctly."""
+    pending_time = datetime.now(timezone.utc) - timedelta(seconds=3601)
+    src = SimpleNamespace(
+        id=13,
+        status="pending",
+        updated_at=pending_time,
+        error_message=None,
+        status_message="Queued",
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=src)
+    db.commit = AsyncMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.routers.bulk_import.async_session", return_value=db):
+        result = await _wait_for_source_image_terminal_state(
+            13,
+            "never-started.jpg",
+            pending_timeout_seconds=3600,
+        )
+
+    assert result.status == "failed"
+    assert "never started" in result.error_message
+    assert "stalled during bulk import" not in result.error_message
+    assert result.status_message == "Failed"
+    db.commit.assert_awaited_once()
+    assert _SOURCE_IMAGE_PENDING_TIMEOUT_SECONDS == 3600
+    assert any(
+        record.event == "bulk_import.source_pending_timeout"
+        for record in caplog.records
+    )
 
 
 async def test_wait_for_source_image_terminal_state_handles_naive_updated_at() -> None:
