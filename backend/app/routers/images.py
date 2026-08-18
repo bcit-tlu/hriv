@@ -449,35 +449,45 @@ async def replace_image(
                 src.error_message = "Task queue unavailable; image replacement was not started."
                 await db.commit()
                 if has_metadata:
-                    restore_result = await db.execute(
-                        sql_update(Image)
-                        .where(
-                            Image.id == image_id,
-                            Image.version == metadata_snapshot["version"] + 1,
+                    try:
+                        restore_result = await db.execute(
+                            sql_update(Image)
+                            .where(
+                                Image.id == image_id,
+                                Image.version == metadata_snapshot["version"] + 1,
+                            )
+                            .values(
+                                name=metadata_snapshot["name"],
+                                category_id=metadata_snapshot["category_id"],
+                                copyright=metadata_snapshot["copyright"],
+                                note=metadata_snapshot["note"],
+                                active=metadata_snapshot["active"],
+                                metadata_=metadata_snapshot["metadata_"],
+                                version=metadata_snapshot["version"],
+                            )
                         )
-                        .values(
-                            name=metadata_snapshot["name"],
-                            category_id=metadata_snapshot["category_id"],
-                            copyright=metadata_snapshot["copyright"],
-                            note=metadata_snapshot["note"],
-                            active=metadata_snapshot["active"],
-                            metadata_=metadata_snapshot["metadata_"],
-                            version=metadata_snapshot["version"],
-                        )
-                    )
-                    if restore_result.rowcount == 1:
-                        for field, value in metadata_snapshot.items():
-                            setattr(img, field, value)
-                        await db.commit()
-                    else:
-                        await db.rollback()
-                        logger.warning(
-                            "Skipped replacement metadata restore after a concurrent update",
+                        if restore_result.rowcount == 1:
+                            for field, value in metadata_snapshot.items():
+                                setattr(img, field, value)
+                            await db.commit()
+                        else:
+                            await db.rollback()
+                            logger.warning(
+                                "Skipped replacement metadata restore after a concurrent update",
+                                extra={
+                                    "event": "replace.metadata_restore_skipped",
+                                    "source_image_id": src.id,
+                                    "target_image_id": image_id,
+                                    "expected_version": metadata_snapshot["version"] + 1,
+                                },
+                            )
+                    except Exception:
+                        logger.exception(
+                            "Replacement metadata restore failed after queue rejection",
                             extra={
-                                "event": "replace.metadata_restore_skipped",
+                                "event": "replace.metadata_restore_failed",
                                 "source_image_id": src.id,
                                 "target_image_id": image_id,
-                                "expected_version": metadata_snapshot["version"] + 1,
                             },
                         )
                 with contextlib.suppress(OSError):
