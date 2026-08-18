@@ -175,7 +175,10 @@ async def _kick_off(
         async with async_session() as db:
             await db.execute(
                 update(AdminTask)
-                .where(AdminTask.id == task.id)
+                .where(
+                    AdminTask.id == task.id,
+                    AdminTask.status.in_(_ACTIVE_STATUSES),
+                )
                 .values(
                     status="failed",
                     error_message=detail,

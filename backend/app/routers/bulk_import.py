@@ -38,6 +38,7 @@ from ..tracing import record_exception_if_server_error
 from ..worker import (
     EnqueueResult,
     TaskQueueUnavailableError,
+    WorkerSettings,
     enqueue_bulk_import,
     enqueue_process_source_image,
 )
@@ -57,6 +58,7 @@ _SOURCE_IMAGE_POLL_INTERVAL_SECONDS = 2
 _SOURCE_IMAGE_STALE_SECONDS = int(os.environ.get("SOURCE_IMAGE_STALE_SECONDS", "900"))
 _SOURCE_IMAGE_PENDING_GRACE_SECONDS = 10
 _SOURCE_IMAGE_LOST_OBSERVATIONS = 2
+_SOURCE_IMAGE_WAIT_SAFETY_CAP_SECONDS = WorkerSettings.job_timeout - 60
 
 
 def _is_image_filename(filename: str) -> bool:
@@ -103,9 +105,11 @@ async def _wait_for_source_image_terminal_state(
     enqueue_result: EnqueueResult | None = None,
     pending_grace_seconds: int = _SOURCE_IMAGE_PENDING_GRACE_SECONDS,
     lost_observations: int = _SOURCE_IMAGE_LOST_OBSERVATIONS,
+    wait_safety_cap_seconds: int = _SOURCE_IMAGE_WAIT_SAFETY_CAP_SECONDS,
 ) -> _SourceImageTerminalState:
     """Wait for queued processing to reach a terminal source-image state."""
     not_found_count = 0
+    wait_started_at = time.monotonic()
     queued_at = (
         enqueue_result.queued_at
         if enqueue_result is not None and enqueue_result.queued_at is not None
@@ -149,11 +153,37 @@ async def _wait_for_source_image_terminal_state(
             ):
                 try:
                     job_status = await enqueue_result.job.status()
-                except Exception:
+                except Exception as exc:
+                    logger.debug(
+                        "Bulk import source image job status probe failed",
+                        extra={
+                            "event": "bulk_import.source_job_status_probe_failed",
+                            "source_image_id": source_image_id,
+                            "original_filename": original_filename,
+                        },
+                        exc_info=exc,
+                    )
                     job_status = None
                 if job_status == JobStatus.not_found:
                     not_found_count += 1
-                else:
+                elif job_status == JobStatus.complete:
+                    src.status = "failed"
+                    src.error_message = (
+                        "Tile generation finished during bulk import, "
+                        "but did not record a terminal source-image result."
+                    )
+                    src.status_message = "Failed"
+                    await db.commit()
+                    logger.error(
+                        "Bulk import source image job completed without a result",
+                        extra={
+                            "event": "bulk_import.source_job_completed_without_result",
+                            "source_image_id": source_image_id,
+                            "original_filename": original_filename,
+                        },
+                    )
+                    return _source_image_terminal_state(src)
+                elif job_status is not None:
                     not_found_count = 0
                 if not_found_count >= lost_observations:
                     src.status = "failed"
@@ -173,6 +203,24 @@ async def _wait_for_source_image_terminal_state(
                         },
                     )
                     return _source_image_terminal_state(src)
+            if time.monotonic() - wait_started_at >= wait_safety_cap_seconds:
+                src.status = "failed"
+                src.error_message = (
+                    "Tile generation did not finish during bulk import "
+                    "before the worker job timeout."
+                )
+                src.status_message = "Failed"
+                await db.commit()
+                logger.error(
+                    "Bulk import source image wait exceeded safety cap",
+                    extra={
+                        "event": "bulk_import.source_wait_timeout",
+                        "source_image_id": source_image_id,
+                        "original_filename": original_filename,
+                        "wait_safety_cap_seconds": wait_safety_cap_seconds,
+                    },
+                )
+                return _source_image_terminal_state(src)
 
         await asyncio.sleep(_SOURCE_IMAGE_POLL_INTERVAL_SECONDS)
 
@@ -240,10 +288,7 @@ async def _process_bulk_import(
                                 )
                             terminal_state = _source_image_terminal_state(src_check)
                 except TaskQueueUnavailableError as exc:
-                    src.status = "failed"
-                    src.status_message = "Failed"
                     detail = "Task queue unavailable; image processing was not started."
-                    src.error_message = detail
                     with contextlib.suppress(OSError):
                         os.unlink(stored_path)
                     async with async_session() as db:

@@ -147,6 +147,10 @@ as unreasonable for microscopy.
 4. Re-derives pyramid metadata from the new file
 5. Removes old tile directory from disk **after** the DB commit succeeds
 
+In `required` task-execution mode, a queue rejection marks the replacement
+source as failed and removes its staged file, but applies no metadata or
+version changes to the target image.
+
 See [image-metadata-and-versioning.md](image-metadata-and-versioning.md)
 for the full metadata preservation/clearing rules.
 

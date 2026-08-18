@@ -45,7 +45,6 @@ from .queue_metrics import (
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
 _pool: ArqRedis | None = None
-_last_pool_failure: float = 0.0
 
 
 # ── Shared helpers ────────────────────────────────────────
@@ -116,9 +115,6 @@ def _parse_redis_settings(*, api_pool: bool = False) -> RedisSettings:
 
 # ── Enqueue helper (used by FastAPI routers) ──────────────
 
-_RETRY_BACKOFF_SECS = 30.0
-
-
 class TaskQueueUnavailableError(RuntimeError):
     """Raised when required queue execution cannot submit a task."""
 
@@ -141,13 +137,11 @@ class EnqueueResult:
         return self.outcome == "queued"
 
 
-async def _discard_pool(*, arm_backoff: bool) -> None:
-    """Discard and close the cached pool, optionally arming reconnect backoff."""
-    global _pool, _last_pool_failure
+async def _discard_pool() -> None:
+    """Discard and close the cached pool."""
+    global _pool
     pool = _pool
     _pool = None
-    if arm_backoff:
-        _last_pool_failure = time.time()
     if pool is not None:
         try:
             await pool.aclose()
@@ -159,28 +153,16 @@ async def _discard_pool(*, arm_backoff: bool) -> None:
             )
 
 
-async def _invalidate_pool() -> None:
-    """Discard the cached pool and defer reconnect attempts briefly."""
-    await _discard_pool(arm_backoff=True)
-
-
-async def get_pool(*, bypass_backoff: bool = False) -> ArqRedis | None:
+async def get_pool() -> ArqRedis | None:
     """Return a shared arq connection pool, or ``None`` if Redis is down."""
-    global _pool, _last_pool_failure
+    global _pool
     if _pool is not None:
         return _pool
-    if (
-        not bypass_backoff
-        and _last_pool_failure
-        and time.time() - _last_pool_failure < _RETRY_BACKOFF_SECS
-    ):
-        return None
     pool: ArqRedis | None = None
     try:
         pool = await create_pool(_parse_redis_settings(api_pool=True))
         await pool.ping()
         _pool = pool
-        _last_pool_failure = 0.0
         return pool
     except Exception:
         if pool is not None:
@@ -192,7 +174,6 @@ async def get_pool(*, bypass_backoff: bool = False) -> ArqRedis | None:
                     extra={"event": "worker.pool_cleanup_failed"},
                     exc_info=True,
                 )
-        await _invalidate_pool()
         logger.warning(
             "Task queue unavailable; enqueue fallback/rejection will apply",
             extra={"event": "worker.queue_unavailable"},
@@ -223,7 +204,7 @@ async def _enqueue(
             raise error
         return EnqueueResult("fallback", reason)
 
-    pool = await get_pool(bypass_backoff=True)
+    pool = await get_pool()
     if pool is None:
         return _fallback_or_reject("queue_unavailable")
     try:
@@ -231,7 +212,7 @@ async def _enqueue(
         inject(carrier)
         job = await pool.enqueue_job(job_name, *args, carrier)
     except RedisError as exc:
-        await _invalidate_pool()
+        await _discard_pool()
         logger.warning(
             "Task queue submission failed",
             extra={"event": "worker.submission_failed", "job_type": job_type},

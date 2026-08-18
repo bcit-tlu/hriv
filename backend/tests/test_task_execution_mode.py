@@ -169,12 +169,19 @@ async def test_required_mode_call_site_matrix_rejects_without_runners(tmp_path) 
         status_message=None,
         error_message=None,
     )
+    persisted_source = SimpleNamespace(
+        id=5,
+        category_id=None,
+        status="pending",
+        status_message=None,
+        error_message=None,
+    )
     session = MagicMock()
     session.commit = AsyncMock()
     session.execute = AsyncMock()
     session.get = AsyncMock(
         side_effect=lambda model, _id: (
-            job if model is bulk_import.BulkImportJob else source
+            job if model is bulk_import.BulkImportJob else persisted_source
         ),
     )
     session.refresh = AsyncMock(side_effect=lambda obj: setattr(obj, "id", 5))
@@ -195,7 +202,10 @@ async def test_required_mode_call_site_matrix_rejects_without_runners(tmp_path) 
         ),
     ):
         await bulk_import._process_bulk_import(4, [("per-file.jpg", str(staged))])
-    assert source.status == "failed"
+    assert persisted_source.status == "failed"
+    assert persisted_source.error_message == (
+        "Task queue unavailable; image processing was not started."
+    )
     assert not staged.exists()
 
     retained_input = tmp_path / "retained.tar.gz"

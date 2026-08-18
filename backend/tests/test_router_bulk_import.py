@@ -1087,6 +1087,106 @@ async def test_wait_for_source_image_terminal_state_resets_lost_observations() -
     assert job.status.await_count == 4
 
 
+async def test_wait_for_source_image_terminal_state_keeps_count_on_probe_error() -> None:
+    """A status probe error is inconclusive and does not erase prior evidence."""
+    job = MagicMock()
+    job.status = AsyncMock(
+        side_effect=[JobStatus.not_found, RuntimeError("redis unavailable"), JobStatus.not_found],
+    )
+    src = SimpleNamespace(
+        id=17,
+        status="pending",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message="Queued",
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=src)
+    db.commit = AsyncMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.routers.bulk_import.async_session", return_value=db):
+        result = await _wait_for_source_image_terminal_state(
+            17,
+            "probe-error.jpg",
+            enqueue_result=EnqueueResult(
+                "queued",
+                "submitted",
+                job=job,
+                queued_at=time.monotonic() - 60,
+            ),
+            pending_grace_seconds=0,
+            lost_observations=2,
+        )
+
+    assert result.status == "failed"
+    assert job.status.await_count == 3
+
+
+async def test_wait_for_source_image_terminal_state_fails_complete_job_without_result() -> None:
+    """A completed arq job with a pending row reports a missing result."""
+    job = MagicMock()
+    job.status = AsyncMock(return_value=JobStatus.complete)
+    src = SimpleNamespace(
+        id=18,
+        status="pending",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message="Queued",
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=src)
+    db.commit = AsyncMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.routers.bulk_import.async_session", return_value=db):
+        result = await _wait_for_source_image_terminal_state(
+            18,
+            "complete-without-result.jpg",
+            enqueue_result=EnqueueResult(
+                "queued",
+                "submitted",
+                job=job,
+                queued_at=time.monotonic() - 60,
+            ),
+            pending_grace_seconds=0,
+        )
+
+    assert result.status == "failed"
+    assert "did not record a terminal" in result.error_message
+    assert "never started" not in result.error_message
+    db.commit.assert_awaited_once()
+
+
+async def test_wait_for_source_image_terminal_state_has_safety_cap() -> None:
+    """The waiter has a final bound below the worker job timeout."""
+    src = SimpleNamespace(
+        id=19,
+        status="pending",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message="Queued",
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=src)
+    db.commit = AsyncMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.routers.bulk_import.async_session", return_value=db):
+        result = await _wait_for_source_image_terminal_state(
+            19,
+            "safety-cap.jpg",
+            wait_safety_cap_seconds=0,
+        )
+
+    assert result.status == "failed"
+    assert "worker job timeout" in result.error_message
+    db.commit.assert_awaited_once()
+
+
 async def test_wait_for_source_image_terminal_state_handles_naive_updated_at() -> None:
     """Naive datetimes should be coerced to UTC for stale cutoff checks."""
     stale_time_naive = datetime.now() - timedelta(seconds=901)

@@ -369,36 +369,6 @@ async def replace_image(
 
             file_size = os.path.getsize(stored_path)
 
-            # ── Apply optional metadata updates atomically ──────────
-            # Done after the upload loop so the revision lock below is
-            # held only for the short transaction, never across client
-            # I/O; and before any row mutation so the session is clean
-            # while the lock is taken, preserving the revision-then-rows
-            # lock order (docs/tile-ordering.md).
-            if has_metadata:
-                if category_id is not None and parsed_cat != img.category_id:
-                    # A category move changes scope membership: invalidate
-                    # both scopes' tile-order revisions so clients holding
-                    # older revisions get a 409 instead of silently
-                    # overwriting (same rule as PATCH /images/{id}).
-                    await bump_scopes(
-                        db,
-                        {scope_key_for(img.category_id), scope_key_for(parsed_cat)},
-                    )
-                if category_id is not None:
-                    img.category_id = parsed_cat
-                if name is not None:
-                    img.name = name
-                if copyright is not None:
-                    img.copyright = copyright if copyright != "" else None
-                if note is not None:
-                    img.note = parsed_note
-                if active is not None:
-                    img.active = active.lower() in ("true", "1")
-                if metadata_extra is not None:
-                    img.metadata_ = parsed_metadata
-                img.version = img.version + 1
-
             src = SourceImage(
                 original_filename=file.filename,
                 stored_path=stored_path,
@@ -441,6 +411,39 @@ async def replace_image(
                 with contextlib.suppress(OSError):
                     os.unlink(stored_path)
                 raise
+            if has_metadata:
+                # Keep the target image untouched until the queue accepts the
+                # replacement. A required-mode rejection must preserve the
+                # caller's optimistic-concurrency version and all metadata.
+                await db.refresh(img)
+                if category_id is not None and parsed_cat != img.category_id:
+                    # A category move changes scope membership: invalidate
+                    # both scopes' tile-order revisions so clients holding
+                    # older revisions get a 409 instead of silently
+                    # overwriting (same rule as PATCH /images/{id}).
+                    await bump_scopes(
+                        db,
+                        {scope_key_for(img.category_id), scope_key_for(parsed_cat)},
+                    )
+                if category_id is not None:
+                    img.category_id = parsed_cat
+                if name is not None:
+                    img.name = name
+                if copyright is not None:
+                    img.copyright = copyright if copyright != "" else None
+                if note is not None:
+                    img.note = parsed_note
+                if active is not None:
+                    img.active = active.lower() in ("true", "1")
+                if metadata_extra is not None:
+                    img.metadata_ = parsed_metadata
+                img.version = img.version + 1
+                src.name = img.name
+                src.category_id = img.category_id
+                src.copyright = img.copyright
+                src.note = img.note
+                src.active = img.active
+                await db.commit()
             span.set_attribute("image.enqueued", enqueue_result.queued)
             if not enqueue_result.queued:
                 background_tasks.add_task(process_replace_image, src.id, image_id)

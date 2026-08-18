@@ -80,9 +80,7 @@ async def test_enqueue_payload_error_does_not_invalidate_pool() -> None:
     mock_pool = AsyncMock()
     mock_pool.enqueue_job = AsyncMock(side_effect=ValueError("bad payload"))
     original_pool = worker_module._pool
-    original_failure = worker_module._last_pool_failure
     worker_module._pool = sentinel_pool
-    worker_module._last_pool_failure = 0.0
     try:
         with patch(
             "app.worker.get_pool",
@@ -93,20 +91,18 @@ async def test_enqueue_payload_error_does_not_invalidate_pool() -> None:
 
         assert result == EnqueueResult("fallback", "submission_failed")
         assert worker_module._pool is sentinel_pool
-        assert worker_module._last_pool_failure == 0.0
     finally:
         worker_module._pool = original_pool
-        worker_module._last_pool_failure = original_failure
 
 
-async def test_enqueue_bypasses_pool_backoff() -> None:
-    """Task submissions retry Redis instead of inheriting read-only backoff."""
+async def test_enqueue_uses_shared_pool() -> None:
+    """Task submissions use the shared API pool without a reconnect gate."""
     mock_pool = AsyncMock()
     with patch("app.worker.get_pool", new_callable=AsyncMock, return_value=mock_pool) as get_pool_mock:
         result = await enqueue_process_source_image(42)
 
     assert result.queued
-    get_pool_mock.assert_awaited_once_with(bypass_backoff=True)
+    get_pool_mock.assert_awaited_once_with()
 
 
 async def test_discard_pool_closes_cached_pool() -> None:
@@ -114,29 +110,23 @@ async def test_discard_pool_closes_cached_pool() -> None:
     import app.worker as worker_module
 
     original_pool = worker_module._pool
-    original_failure = worker_module._last_pool_failure
     pool = AsyncMock()
     worker_module._pool = pool
-    worker_module._last_pool_failure = 0.0
     try:
-        await _discard_pool(arm_backoff=False)
+        await _discard_pool()
         assert worker_module._pool is None
         pool.aclose.assert_awaited_once()
-        assert worker_module._last_pool_failure == 0.0
     finally:
         worker_module._pool = original_pool
-        worker_module._last_pool_failure = original_failure
 
 
 async def test_get_pool_publishes_only_after_successful_ping() -> None:
     """An unverified pool is closed and never published globally."""
     worker_module = sys.modules["app.worker"]
     original_pool = worker_module._pool
-    original_failure = worker_module._last_pool_failure
     pool = AsyncMock()
     pool.ping = AsyncMock(side_effect=RuntimeError("ping failed"))
     worker_module._pool = None
-    worker_module._last_pool_failure = 0.0
     try:
         with patch("app.worker.create_pool", new_callable=AsyncMock, return_value=pool):
             result = await get_pool()
@@ -146,7 +136,6 @@ async def test_get_pool_publishes_only_after_successful_ping() -> None:
         pool.aclose.assert_awaited_once()
     finally:
         worker_module._pool = original_pool
-        worker_module._last_pool_failure = original_failure
 
 
 async def test_enqueue_rejects_in_required_mode() -> None:
