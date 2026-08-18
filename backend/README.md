@@ -173,10 +173,10 @@ re-creating any tables.
 
 ### Task execution and worker settings
 
-| Environment variable | Default | Purpose |
-| --- | --- | --- |
+| Environment variable  | Default | Purpose                                                                                                                    |
+| --------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------- |
 | `TASK_EXECUTION_MODE` | `local` | `local` permits in-process fallback when Redis is unavailable; `required` rejects queue-backed work with HTTP 503 instead. |
-| `WORKER_MAX_JOBS` | `2` | Maximum concurrent arq jobs per dedicated worker. |
+| `WORKER_MAX_JOBS`     | `2`     | Maximum concurrent arq jobs per dedicated worker.                                                                          |
 
 The dedicated worker uses arq's built-in health key
 (`arq:queue:health-check`), refreshed independently of job slots every 30

@@ -39,6 +39,8 @@ from .queue_metrics import ARQ_QUEUE_NAME, HEALTH_CHECK_KEY
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
+_pool: ArqRedis | None = None
+_last_pool_failure: float = 0.0
 
 
 # ── Shared helpers ────────────────────────────────────────
@@ -100,8 +102,6 @@ def _parse_redis_settings() -> RedisSettings:
 
 # ── Enqueue helper (used by FastAPI routers) ──────────────
 
-_pool: ArqRedis | None = None
-_last_pool_failure = 0.0
 _RETRY_BACKOFF_SECS = 30.0
 
 

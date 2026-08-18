@@ -58,7 +58,7 @@ async def test_enqueue_returns_fallback_on_enqueue_failure() -> None:
 
 async def test_enqueue_payload_error_does_not_invalidate_pool() -> None:
     """Serialization failures must not back off unrelated queue submissions."""
-    import app.worker as worker_module
+    worker_module = sys.modules["app.worker"]
 
     sentinel_pool = object()
     mock_pool = AsyncMock()
