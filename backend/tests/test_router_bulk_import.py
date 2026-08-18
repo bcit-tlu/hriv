@@ -31,17 +31,18 @@ from app.routers.bulk_import import (
     get_bulk_import_job,
     list_bulk_import_jobs,
 )
+from app.worker import EnqueueResult
 
 
 # ── Global fixture: default enqueue_bulk_import to False (no Redis) ───────
-# The endpoint now prefers arq; patch it to return False by default so
+# The endpoint now prefers arq; patch it to return a fallback result by default so
 # the BackgroundTasks fallback path (tested by existing tests) is exercised.
 
 @pytest.fixture(autouse=True)
 def _patch_enqueue_bulk_import():
     with (
-        patch("app.routers.bulk_import.enqueue_bulk_import", new_callable=AsyncMock, return_value=False),
-        patch("app.routers.bulk_import.enqueue_process_source_image", new_callable=AsyncMock, return_value=False),
+        patch("app.routers.bulk_import.enqueue_bulk_import", new_callable=AsyncMock, return_value=EnqueueResult("fallback", "queue_unavailable")),
+        patch("app.routers.bulk_import.enqueue_process_source_image", new_callable=AsyncMock, return_value=EnqueueResult("fallback", "queue_unavailable")),
     ):
         yield
 
@@ -820,7 +821,7 @@ async def test_process_bulk_import_uses_queued_processing_when_available(tmp_pat
 
     with (
         patch("app.routers.bulk_import.async_session", _make_async_session_factory(db)),
-        patch("app.routers.bulk_import.enqueue_process_source_image", new_callable=AsyncMock, return_value=True) as enqueue_mock,
+        patch("app.routers.bulk_import.enqueue_process_source_image", new_callable=AsyncMock, return_value=EnqueueResult("queued", "submitted")) as enqueue_mock,
         patch("app.routers.bulk_import._wait_for_source_image_terminal_state", new_callable=AsyncMock, return_value=src) as wait_mock,
         patch("app.routers.bulk_import.process_source_image", new_callable=AsyncMock) as direct_mock,
     ):
@@ -964,7 +965,7 @@ async def test_bulk_import_uses_arq_when_redis_available(tmp_path) -> None:
     db.refresh = AsyncMock(side_effect=_refresh)
     bg = MagicMock()
 
-    mock_enqueue = AsyncMock(return_value=True)
+    mock_enqueue = AsyncMock(return_value=EnqueueResult("queued", "submitted"))
     with patch("app.routers.bulk_import.enqueue_bulk_import", mock_enqueue):
         with patch("app.routers.bulk_import.settings") as mock_settings:
             mock_settings.source_images_dir = str(tmp_path)
@@ -996,7 +997,7 @@ async def test_bulk_import_falls_back_to_background_tasks(tmp_path) -> None:
     db.refresh = AsyncMock(side_effect=_refresh)
     bg = MagicMock()
 
-    mock_enqueue = AsyncMock(return_value=False)
+    mock_enqueue = AsyncMock(return_value=EnqueueResult("fallback", "queue_unavailable"))
     with patch("app.routers.bulk_import.enqueue_bulk_import", mock_enqueue):
         with patch("app.routers.bulk_import.settings") as mock_settings:
             mock_settings.source_images_dir = str(tmp_path)

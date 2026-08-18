@@ -23,6 +23,7 @@ from app.routers.images import (
     replace_image,
 )
 from app.schemas import ImageCreate, ImageUpdate, ImageBulkUpdate, ImageBulkDelete
+from app.worker import EnqueueResult
 
 
 def _make_image(
@@ -725,7 +726,7 @@ async def test_replace_image_success(
     mock_getsize: MagicMock,
 ) -> None:
     """Replacement endpoint creates SourceImage and enqueues processing."""
-    mock_enqueue = AsyncMock(return_value=True)
+    mock_enqueue = AsyncMock(return_value=EnqueueResult("queued", "submitted"))
     mock_process = MagicMock()
 
     img = _make_image()
@@ -767,7 +768,7 @@ async def test_replace_image_fallback_to_background_tasks(
     mock_getsize: MagicMock,
 ) -> None:
     """When arq enqueue fails, replacement falls back to BackgroundTasks."""
-    mock_enqueue = AsyncMock(return_value=False)
+    mock_enqueue = AsyncMock(return_value=EnqueueResult("fallback", "queue_unavailable"))
     mock_process = MagicMock()
 
     img = _make_image()
@@ -803,7 +804,7 @@ async def test_replace_image_applies_metadata_updates(
     mock_getsize: MagicMock,
 ) -> None:
     """Multipart metadata updates are applied before creating the SourceImage."""
-    mock_enqueue = AsyncMock(return_value=True)
+    mock_enqueue = AsyncMock(return_value=EnqueueResult("queued", "submitted"))
     img = _make_image(name="old-name", category_id=7, active=True)
 
     db = AsyncMock()
@@ -869,7 +870,7 @@ async def test_replace_image_unchanged_category_does_not_bump_scopes(
     mock_getsize: MagicMock,
 ) -> None:
     """Echoing the current category_id back on replace must not bump revisions."""
-    mock_enqueue = AsyncMock(return_value=True)
+    mock_enqueue = AsyncMock(return_value=EnqueueResult("queued", "submitted"))
     img = _make_image(category_id=7)
 
     db = AsyncMock()
@@ -906,7 +907,7 @@ async def test_replace_image_empty_note_clears_note(
     mock_getsize: MagicMock,
 ) -> None:
     """An explicit note="" on replace must erase the stored note."""
-    mock_enqueue = AsyncMock(return_value=True)
+    mock_enqueue = AsyncMock(return_value=EnqueueResult("queued", "submitted"))
     img = _make_image()
     img.note = "existing note"
 

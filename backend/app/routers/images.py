@@ -28,6 +28,7 @@ from ..schemas import (
 from ..tile_order import bump_scopes, scope_key_for
 from ..tracing import record_exception_if_server_error
 from ..visibility import get_student_excluded_category_ids, is_category_visible_to_student
+from ..worker import TaskQueueUnavailableError
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -430,9 +431,18 @@ async def replace_image(
             from ..processing import process_replace_image
             from ..worker import enqueue_replace_image
 
-            enqueued = await enqueue_replace_image(src.id, image_id)
-            span.set_attribute("image.enqueued", enqueued)
-            if not enqueued:
+            try:
+                enqueue_result = await enqueue_replace_image(src.id, image_id)
+            except TaskQueueUnavailableError:
+                src.status = "failed"
+                src.status_message = "Failed"
+                src.error_message = "Task queue unavailable; image replacement was not started."
+                await db.commit()
+                with contextlib.suppress(OSError):
+                    os.unlink(stored_path)
+                raise
+            span.set_attribute("image.enqueued", enqueue_result.queued)
+            if not enqueue_result.queued:
                 background_tasks.add_task(process_replace_image, src.id, image_id)
 
             return src

@@ -58,7 +58,7 @@ from ..component_versions import (
     get_synthetic_version,
     get_worker_version,
 )
-from ..database import get_db
+from ..database import async_session, get_db
 from ..maintenance import disable_maintenance_mode, enable_maintenance_mode, is_maintenance_mode
 from ..models import ACTIVE_TASK_STATUSES, AdminTask, User
 from ..schemas import (
@@ -72,7 +72,7 @@ from ..schemas import (
     UploadStatusResponse,
 )
 from ..synthetic_result import load_stored_synthetic_result_state
-from ..worker import enqueue_admin_task
+from ..worker import TaskQueueUnavailableError, enqueue_admin_task
 
 logger = logging.getLogger(__name__)
 
@@ -168,8 +168,23 @@ async def _kick_off(
     bg: BackgroundTasks,
 ) -> None:
     """Enqueue the task via arq, falling back to BackgroundTasks."""
-    enqueued = await enqueue_admin_task(task.id, task.task_type)
-    if not enqueued:
+    try:
+        enqueue_result = await enqueue_admin_task(task.id, task.task_type)
+    except TaskQueueUnavailableError:
+        detail = "Task queue unavailable; task was not started."
+        async with async_session() as db:
+            await db.execute(
+                update(AdminTask)
+                .where(AdminTask.id == task.id)
+                .values(
+                    status="failed",
+                    error_message=detail,
+                    log=(task.log or "") + f"ERROR: {detail}\n",
+                )
+            )
+            await db.commit()
+        raise
+    if not enqueue_result.queued:
         # Redis unavailable — run in-process
         if task.task_type == "files_import":
             # Pass the BackgroundTasks object so the import can schedule the

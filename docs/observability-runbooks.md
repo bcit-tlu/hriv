@@ -754,3 +754,26 @@ coincide with user-visible outage alerts.
 
 **Resolution verification:** Restart count stops climbing and the workload stays
 healthy across at least one alerting interval.
+
+## Task Queue Unavailable or Worker Stale
+
+The backend exposes `hriv_task_queue_up`,
+`hriv_task_queue_depth`,
+`hriv_task_queue_oldest_pending_age_seconds`, and
+`hriv_task_queue_worker_heartbeat_age_seconds` on `/api/metrics`. The queue
+health endpoint (`/api/health/queue`) separates Redis reachability from worker
+liveness; in `required` execution mode it returns HTTP 503 when either is
+degraded. A heartbeat older than 90 seconds is stale.
+
+Distinguish the four failure classes in structured logs:
+
+- `worker.queue_unavailable`: Redis could not be reached.
+- `worker.submission_failed`: Redis was reachable but enqueue failed.
+- `worker.unavailable`: the dedicated worker is not reporting a heartbeat.
+- task execution failure: inspect the task-specific worker error event and
+  trace for the runner exception.
+
+For required-mode enqueue failures, verify the API returned HTTP 503 with
+`Retry-After: 30`, then confirm the corresponding `SourceImage` or
+`AdminTask` is terminal rather than pending. Bulk imports record the rejection
+in the job's `errors` list and mark the job failed.

@@ -19,7 +19,7 @@ from ..models import SourceImage, User
 from ..processing import process_source_image
 from ..schemas import MAX_NOTE_LENGTH, SourceImageOut, normalize_note_value
 from ..tracing import record_exception_if_server_error
-from ..worker import enqueue_process_source_image
+from ..worker import TaskQueueUnavailableError, enqueue_process_source_image
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -126,9 +126,18 @@ async def upload_source_image(
 
             # Prefer the arq task queue; fall back to in-process BackgroundTasks
             # when Redis is unavailable (e.g. local development without Redis).
-            enqueued = await enqueue_process_source_image(src.id)
-            span.set_attribute("source_image.enqueued", enqueued)
-            if not enqueued:
+            try:
+                enqueue_result = await enqueue_process_source_image(src.id)
+            except TaskQueueUnavailableError:
+                src.status = "failed"
+                src.status_message = "Failed"
+                src.error_message = "Task queue unavailable; image processing was not started."
+                await db.commit()
+                with contextlib.suppress(OSError):
+                    os.unlink(stored_path)
+                raise
+            span.set_attribute("source_image.enqueued", enqueue_result.queued)
+            if not enqueue_result.queued:
                 background_tasks.add_task(process_source_image, src.id)
 
             return src

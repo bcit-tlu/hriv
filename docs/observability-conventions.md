@@ -68,6 +68,8 @@ Allowed for aggregate metrics:
 - `entity` (reorder metrics: `tile`; `category` / `image` are historical, and unknown values are coerced to `other`)
 - `state` (reorder client-operation lifecycle states; bounded, coerced server-side)
 - `job_type`
+- `mode`
+- `reason`
 - `backup_type`
 - `restore_type`
 - `purpose`

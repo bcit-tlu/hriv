@@ -2,13 +2,17 @@
 
 import asyncio
 import sys
+from pathlib import Path
 from types import ModuleType
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 from opentelemetry.trace import StatusCode
 
+from app.database import settings
 from app.worker import (
+    EnqueueResult,
+    TaskQueueUnavailableError,
     WorkerSettings,
     admin_task_runner,
     bulk_import_task,
@@ -21,11 +25,11 @@ from app.worker import (
 
 
 async def test_enqueue_falls_back_when_redis_unavailable() -> None:
-    """When get_pool returns None, enqueue returns False (fallback)."""
+    """When get_pool returns None, local mode returns an explicit fallback."""
     with patch("app.worker.get_pool", new_callable=AsyncMock, return_value=None):
         result = await enqueue_process_source_image(42)
 
-    assert result is False
+    assert result == EnqueueResult("fallback", "queue_unavailable")
 
 
 async def test_enqueue_succeeds_when_redis_available() -> None:
@@ -36,21 +40,47 @@ async def test_enqueue_succeeds_when_redis_available() -> None:
     with patch("app.worker.get_pool", new_callable=AsyncMock, return_value=mock_pool):
         result = await enqueue_process_source_image(42)
 
-    assert result is True
+    assert result.queued
     mock_pool.enqueue_job.assert_awaited_once_with(
         "process_source_image_task", 42, ANY,
     )
 
 
-async def test_enqueue_returns_false_on_enqueue_failure() -> None:
-    """If enqueue_job raises, return False for fallback."""
+async def test_enqueue_returns_fallback_on_enqueue_failure() -> None:
+    """If enqueue_job raises, local mode returns an explicit fallback."""
     mock_pool = AsyncMock()
     mock_pool.enqueue_job = AsyncMock(side_effect=Exception("connection lost"))
 
     with patch("app.worker.get_pool", new_callable=AsyncMock, return_value=mock_pool):
         result = await enqueue_process_source_image(99)
 
-    assert result is False
+    assert result == EnqueueResult("fallback", "submission_failed")
+
+
+async def test_enqueue_rejects_in_required_mode() -> None:
+    """Required mode raises instead of allowing in-process execution."""
+    with (
+        patch("app.worker.get_pool", new_callable=AsyncMock, return_value=None),
+        patch.object(settings, "task_execution_mode", "required"),
+    ):
+        with pytest.raises(TaskQueueUnavailableError) as exc_info:
+            await enqueue_process_source_image(42)
+
+    assert exc_info.value.reason == "queue_unavailable"
+
+
+async def test_enqueue_submission_rejects_in_required_mode() -> None:
+    """Required mode rejects submission errors without a fallback."""
+    mock_pool = AsyncMock()
+    mock_pool.enqueue_job = AsyncMock(side_effect=ConnectionError("lost"))
+    with (
+        patch("app.worker.get_pool", new_callable=AsyncMock, return_value=mock_pool),
+        patch.object(settings, "task_execution_mode", "required"),
+    ):
+        with pytest.raises(TaskQueueUnavailableError) as exc_info:
+            await enqueue_process_source_image(42)
+
+    assert exc_info.value.reason == "submission_failed"
 
 
 async def test_process_source_image_task_calls_processing() -> None:
@@ -93,9 +123,23 @@ async def test_on_startup_logs_worker_identity() -> None:
     )
 
 
+async def test_worker_heartbeat_writes_redis_and_file(tmp_path: Path) -> None:
+    """Heartbeat updates both liveness stores."""
+    from app.worker import worker_heartbeat
+
+    redis = AsyncMock()
+    path = tmp_path / "heartbeat"
+    with patch.object(settings, "worker_heartbeat_path", str(path)):
+        await worker_heartbeat({"redis": redis})
+
+    redis.set.assert_awaited_once()
+    assert path.read_text(encoding="utf-8")
+
+
 def test_worker_settings_only_extend_timeout_for_admin_tasks() -> None:
     """Long timeout should apply to admin tasks without widening all jobs."""
     assert WorkerSettings.job_timeout == 7200
+    assert WorkerSettings.max_jobs == 2
     assert WorkerSettings.functions[:3] == [
         process_source_image_task,
         replace_image_task,
@@ -114,7 +158,7 @@ async def test_enqueue_admin_task_redis_unavailable() -> None:
     with patch("app.worker.get_pool", new_callable=AsyncMock, return_value=None):
         result = await enqueue_admin_task(1, "db_export")
 
-    assert result is False
+    assert result == EnqueueResult("fallback", "queue_unavailable")
 
 
 async def test_enqueue_admin_task_succeeds() -> None:
@@ -125,7 +169,7 @@ async def test_enqueue_admin_task_succeeds() -> None:
     with patch("app.worker.get_pool", new_callable=AsyncMock, return_value=mock_pool):
         result = await enqueue_admin_task(1, "db_export")
 
-    assert result is True
+    assert result.queued
     mock_pool.enqueue_job.assert_awaited_once_with(
         "admin_task_runner", 1, "db_export", ANY,
     )
@@ -139,7 +183,7 @@ async def test_enqueue_admin_task_failure() -> None:
     with patch("app.worker.get_pool", new_callable=AsyncMock, return_value=mock_pool):
         result = await enqueue_admin_task(1, "files_export")
 
-    assert result is False
+    assert result == EnqueueResult("fallback", "submission_failed")
 
 
 # ── Admin task runner tests ───────────────────────────────

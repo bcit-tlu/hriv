@@ -1900,23 +1900,23 @@ async def _queue_rebuild_tiles_after_import(
                 "Run Rebuild Tiles manually if needed."
             )
 
-        enqueued = False
         try:
-            enqueued = await enqueue_admin_task(task_id, "rebuild_tiles")
+            enqueue_result = await enqueue_admin_task(task_id, "rebuild_tiles")
         except Exception:
             logger.warning("Failed to enqueue rebuild task %d", task_id, exc_info=True)
+            enqueue_result = None
 
-        if enqueued:
+        if enqueue_result is not None and enqueue_result.queued:
             return (
                 f"Tile rebuild task #{task_id} was queued automatically. "
                 "Run Rebuild Tiles manually if you need to re-run it."
             )
 
-        # Redis is unavailable. The import task itself must not be blocked for
+        # Redis is unavailable in local mode. The import task itself must not be blocked for
         # the potentially hours-long rebuild, so schedule the rebuild to run
         # in-process via BackgroundTasks if we have access to one, otherwise
         # start it as an orphan asyncio task (e.g. inside an arq worker).
-        if bg is not None:
+        if bg is not None and settings.task_execution_mode == "local":
             bg.add_task(run_rebuild_tiles, task_id)
             return (
                 f"Tile rebuild task #{task_id} was scheduled to run automatically. "

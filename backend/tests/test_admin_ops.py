@@ -20,6 +20,7 @@ from sqlalchemy.sql.dml import Update
 
 from app.database import settings
 from app.models import AdminTask
+from app.worker import EnqueueResult
 
 from app.admin_ops import (
     FILES_EXPORT_FORMAT_VERSION,
@@ -1900,7 +1901,7 @@ async def test_run_files_import_uses_import_staging_dir_and_preserves_data(tmp_p
         patch("app.admin_ops.settings") as mock_settings,
         patch("app.admin_ops._IMPORT_STAGING_DIR", str(data_dir / ".import-staging")),
         patch("app.admin_ops.tempfile.TemporaryDirectory", side_effect=_recording_tempdir),
-        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=True),
+        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=EnqueueResult("queued", "submitted")),
         patch("app.admin_ops._ensure_tasks_dir", return_value=str(tasks_dir)),
     ):
         mock_settings.data_dir = str(data_dir)
@@ -2209,7 +2210,7 @@ async def _run_files_import_with_checksum(tmp_path, checksum_for):
         patch("app.admin_ops.get_async_session", return_value=mock_session_factory),
         patch("app.admin_ops.settings") as mock_settings,
         patch("app.admin_ops._IMPORT_STAGING_DIR", str(data_dir / ".import-staging")),
-        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=True),
+        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=EnqueueResult("queued", "submitted")),
         patch("app.admin_ops._ensure_tasks_dir", return_value=str(tasks_dir)),
     ):
         mock_settings.data_dir = str(data_dir)
@@ -2901,7 +2902,7 @@ async def test_queue_rebuild_tiles_after_import_marks_failed_on_enqueue_error(tm
 
     with (
         patch("app.admin_ops.get_async_session", return_value=session_factory),
-        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=False),
+        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=EnqueueResult("fallback", "queue_unavailable")),
         patch("app.admin_ops._ensure_tasks_dir", return_value=str(tmp_path)),
     ):
         message = await _queue_rebuild_tiles_after_import(import_task)
@@ -2922,7 +2923,7 @@ async def test_queue_rebuild_tiles_after_import_queues_on_success(tmp_path) -> N
 
     with (
         patch("app.admin_ops.get_async_session", return_value=session_factory),
-        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=True),
+        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=EnqueueResult("queued", "submitted")),
         patch("app.admin_ops._ensure_tasks_dir", return_value=str(tmp_path)),
     ):
         message = await _queue_rebuild_tiles_after_import(import_task)
@@ -2947,7 +2948,7 @@ async def test_queue_rebuild_tiles_after_import_falls_back_to_background_tasks(t
 
     with (
         patch("app.admin_ops.get_async_session", return_value=session_factory),
-        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=False),
+        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=EnqueueResult("fallback", "queue_unavailable")),
         patch("app.admin_ops._ensure_tasks_dir", return_value=str(tmp_path)),
     ):
         message = await _queue_rebuild_tiles_after_import(import_task, bg)

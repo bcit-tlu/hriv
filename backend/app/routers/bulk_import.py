@@ -33,7 +33,11 @@ from ..models import BulkImportJob, Category, SourceImage, User
 from ..processing import process_source_image
 from ..schemas import MAX_NOTE_LENGTH, BulkImportJobOut, normalize_note_value
 from ..tracing import record_exception_if_server_error
-from ..worker import enqueue_bulk_import, enqueue_process_source_image
+from ..worker import (
+    TaskQueueUnavailableError,
+    enqueue_bulk_import,
+    enqueue_process_source_image,
+)
 
 router = APIRouter(prefix="/admin/bulk-import", tags=["admin"])
 
@@ -173,8 +177,8 @@ async def _process_bulk_import(
             # per-job counters synchronously.
             async with semaphore:
                 try:
-                    enqueued = await enqueue_process_source_image(src.id)
-                    if enqueued:
+                    enqueue_result = await enqueue_process_source_image(src.id)
+                    if enqueue_result.queued:
                         terminal_state = await _wait_for_source_image_terminal_state(
                             src.id, original_filename,
                         )
@@ -187,6 +191,36 @@ async def _process_bulk_import(
                                     f"Source image {src.id} disappeared after processing"
                                 )
                             terminal_state = _source_image_terminal_state(src_check)
+                except TaskQueueUnavailableError as exc:
+                    src.status = "failed"
+                    src.status_message = "Failed"
+                    src.error_message = (
+                        "Task queue unavailable; image processing was not started."
+                    )
+                    with contextlib.suppress(OSError):
+                        os.unlink(stored_path)
+                    async with async_session() as db:
+                        src_check = await db.get(SourceImage, src.id)
+                        if src_check is not None:
+                            src_check.status = "failed"
+                            src_check.status_message = "Failed"
+                            src_check.error_message = src.error_message
+                            await db.commit()
+                    span = trace.get_current_span()
+                    span.record_exception(exc)
+                    span.set_status(StatusCode.ERROR, str(exc))
+                    error_entry = [{"filename": original_filename, "error": str(exc)}]
+                    async with async_session() as db:
+                        await db.execute(
+                            update(BulkImportJob)
+                            .where(BulkImportJob.id == job_id)
+                            .values(
+                                failed_count=BulkImportJob.failed_count + 1,
+                                errors=func.coalesce(BulkImportJob.errors, cast([], JSONB_type)) + cast(error_entry, JSONB_type),
+                            )
+                        )
+                        await db.commit()
+                    return
                 except Exception as exc:
                     span = trace.get_current_span()
                     span.record_exception(exc)
@@ -504,15 +538,25 @@ async def bulk_import_images(
             # Prefer the arq task queue for resource isolation and job
             # persistence; fall back to in-process BackgroundTasks when Redis
             # is unavailable (e.g. local development without Redis).
-            enqueued = await enqueue_bulk_import(
-                job.id,
-                file_entries,
-                copyright=copyright,
-                note=note,
-                active=active,
-            )
-            span.set_attribute("bulk_import.enqueued", enqueued)
-            if not enqueued:
+            try:
+                enqueue_result = await enqueue_bulk_import(
+                    job.id,
+                    file_entries,
+                    copyright=copyright,
+                    note=note,
+                    active=active,
+                )
+            except TaskQueueUnavailableError:
+                error_entry = [{
+                    "error": "Task queue unavailable; bulk import was not started.",
+                }]
+                job.status = "failed"
+                job.failed_count = job.total_count
+                job.errors = list(job.errors or []) + error_entry
+                await db.commit()
+                raise
+            span.set_attribute("bulk_import.enqueued", enqueue_result.queued)
+            if not enqueue_result.queued:
                 background_tasks.add_task(
                     _process_bulk_import,
                     job.id,

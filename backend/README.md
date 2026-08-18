@@ -171,6 +171,14 @@ re-creating any tables.
 
 ## Persistent data directories
 
+### Task execution and worker settings
+
+| Environment variable | Default | Purpose |
+| --- | --- | --- |
+| `TASK_EXECUTION_MODE` | `local` | `local` permits in-process fallback when Redis is unavailable; `required` rejects queue-backed work with HTTP 503 instead. |
+| `WORKER_MAX_JOBS` | `2` | Maximum concurrent arq jobs per dedicated worker. |
+| `WORKER_HEARTBEAT_PATH` | `/tmp/worker-heartbeat` | Local worker heartbeat file updated at startup and every 30 seconds. |
+
 The backend reads uploaded source files and generated tile trees from
 two settings-backed directories:
 

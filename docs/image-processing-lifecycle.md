@@ -13,9 +13,9 @@ Upload (API pod)
   │  File validated → streamed to disk → SourceImage(status="pending")
   ▼
 Enqueue
-  │  arq/Redis job, or BackgroundTasks fallback if Redis unavailable
+  │  arq/Redis job, or BackgroundTasks fallback in local execution mode
   ▼
-Process (worker or in-process)
+Process (dedicated worker, or in-process only in local execution mode)
   │  pending → processing (5%) → tiles (10-78%) → thumbnail (80-85%)
   │  → saving record (90%) → completed (100%)
   ▼
@@ -45,7 +45,7 @@ without blocking tile generation.
 
 | Setting       | Value | Rationale                                         |
 | ------------- | ----- | ------------------------------------------------- |
-| `max_jobs`    | 4     | Concurrent processing slots per worker pod        |
+| `max_jobs`    | 2     | Concurrent processing slots per worker pod        |
 | `job_timeout` | 7200s | 2 hours — large filesystem archives need headroom |
 
 Task types registered on the worker:
@@ -54,12 +54,20 @@ Task types registered on the worker:
 - `replace_image_task` — image replacement
 - `bulk_import_task` — multi-file / ZIP ingestion
 
-### Redis fallback
+### Task execution modes and Redis fallback
 
-When Redis is unavailable (`get_pool()` returns `None`), the API pod
-falls back to FastAPI's `BackgroundTasks`. This makes processing
-synchronous from the upload handler's perspective but keeps the app
-fully functional in development without Redis.
+`TASK_EXECUTION_MODE=local` preserves the development behavior: a Redis
+reachability or submission failure returns a fallback result and the caller
+may use FastAPI's `BackgroundTasks`. `TASK_EXECUTION_MODE=required` never
+runs image processing in the API process. A queue failure returns HTTP 503
+with `Retry-After: 30`; rows created before submission are marked failed and
+staged files are removed.
+
+The dedicated worker writes a Redis heartbeat and updates
+`WORKER_HEARTBEAT_PATH` every 30 seconds. Operators should treat a heartbeat
+older than 90 seconds as stale. The queue health endpoint reports Redis
+reachability separately from worker liveness, and is intentionally not part of
+the readiness probe.
 
 ### Trace context propagation
 
