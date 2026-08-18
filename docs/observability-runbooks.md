@@ -763,7 +763,16 @@ The backend exposes `hriv_task_queue_up`,
 `hriv_task_queue_worker_heartbeat_age_seconds` on `/api/metrics`. The queue
 health endpoint (`/api/health/queue`) separates Redis reachability from worker
 liveness; in `required` execution mode it returns HTTP 503 when either is
-degraded. A heartbeat older than 90 seconds is stale.
+degraded. The worker heartbeat age is derived from the remaining TTL of
+arq's `arq:queue:health-check` key; the worker's arq main loop refreshes that
+key independently of job slots. Kubernetes checks the same contract with
+`arq app.worker.WorkerSettings --check`.
+
+Queue depth, oldest-pending age, and worker-heartbeat age intentionally render
+as `NaN` while Redis is unavailable. PromQL comparisons against `NaN` are
+false, so alerts based on those gauges remain silent during an outage;
+`hriv_task_queue_up` is the explicit availability signal and should drive
+Redis-outage alerting.
 
 Distinguish the four failure classes in structured logs:
 

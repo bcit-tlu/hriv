@@ -3,21 +3,29 @@
 from unittest.mock import AsyncMock, patch
 
 from app.database import settings
-from app.queue_metrics import collect_queue_state, queue_health, render_queue_metrics
+from app.queue_metrics import (
+    ARQ_QUEUE_NAME,
+    HEALTH_CHECK_KEY,
+    collect_queue_state,
+    queue_health,
+    render_queue_metrics,
+)
 
 
 async def test_collect_queue_state_reads_depth_and_heartbeat() -> None:
     pool = AsyncMock()
     pool.zcard.return_value = 3
     pool.zrange.return_value = [(b"job", 1_000.0)]
-    pool.get.return_value = str(1_000.0)
+    pool.ttl.return_value = 25
     with patch("app.worker.get_pool", new_callable=AsyncMock, return_value=pool):
         state = await collect_queue_state()
 
     assert state["queue_up"] is True
     assert state["depth"] == 3
     assert state["oldest_pending_age_seconds"] is not None
-    assert state["worker_heartbeat_age_seconds"] is not None
+    assert state["worker_heartbeat_age_seconds"] == 6
+    pool.zcard.assert_awaited_once_with(ARQ_QUEUE_NAME)
+    pool.ttl.assert_awaited_once_with(HEALTH_CHECK_KEY)
 
 
 async def test_queue_metrics_render_contains_execution_mode() -> None:
@@ -41,7 +49,7 @@ async def test_queue_health_marks_stale_worker_degraded() -> None:
         "queue_up": True,
         "depth": 0,
         "oldest_pending_age_seconds": None,
-        "worker_heartbeat_age_seconds": 120,
+        "worker_heartbeat_age_seconds": None,
     }):
         state = await queue_health()
 

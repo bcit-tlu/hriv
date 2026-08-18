@@ -2,7 +2,6 @@
 
 import asyncio
 import sys
-from pathlib import Path
 from types import ModuleType
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
@@ -55,6 +54,33 @@ async def test_enqueue_returns_fallback_on_enqueue_failure() -> None:
         result = await enqueue_process_source_image(99)
 
     assert result == EnqueueResult("fallback", "submission_failed")
+
+
+async def test_enqueue_payload_error_does_not_invalidate_pool() -> None:
+    """Serialization failures must not back off unrelated queue submissions."""
+    import app.worker as worker_module
+
+    sentinel_pool = object()
+    mock_pool = AsyncMock()
+    mock_pool.enqueue_job = AsyncMock(side_effect=ValueError("bad payload"))
+    original_pool = worker_module._pool
+    original_failure = worker_module._last_pool_failure
+    worker_module._pool = sentinel_pool
+    worker_module._last_pool_failure = 0.0
+    try:
+        with patch(
+            "app.worker.get_pool",
+            new_callable=AsyncMock,
+            return_value=mock_pool,
+        ):
+            result = await enqueue_process_source_image(99)
+
+        assert result == EnqueueResult("fallback", "submission_failed")
+        assert worker_module._pool is sentinel_pool
+        assert worker_module._last_pool_failure == 0.0
+    finally:
+        worker_module._pool = original_pool
+        worker_module._last_pool_failure = original_failure
 
 
 async def test_enqueue_rejects_in_required_mode() -> None:
@@ -123,23 +149,13 @@ async def test_on_startup_logs_worker_identity() -> None:
     )
 
 
-async def test_worker_heartbeat_writes_redis_and_file(tmp_path: Path) -> None:
-    """Heartbeat updates both liveness stores."""
-    from app.worker import worker_heartbeat
-
-    redis = AsyncMock()
-    path = tmp_path / "heartbeat"
-    with patch.object(settings, "worker_heartbeat_path", str(path)):
-        await worker_heartbeat({"redis": redis})
-
-    redis.set.assert_awaited_once()
-    assert path.read_text(encoding="utf-8")
-
-
 def test_worker_settings_only_extend_timeout_for_admin_tasks() -> None:
     """Long timeout should apply to admin tasks without widening all jobs."""
     assert WorkerSettings.job_timeout == 7200
     assert WorkerSettings.max_jobs == 2
+    assert WorkerSettings.health_check_interval == 30
+    assert WorkerSettings.health_check_key == "arq:queue:health-check"
+    assert not hasattr(WorkerSettings, "cron_jobs")
     assert WorkerSettings.functions[:3] == [
         process_source_image_task,
         replace_image_task,

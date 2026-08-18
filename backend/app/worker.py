@@ -24,17 +24,18 @@ from urllib.parse import urlparse
 
 from arq import create_pool
 from arq.connections import ArqRedis, RedisSettings
-from arq.cron import cron
 from arq.worker import func
 from opentelemetry import trace
 from opentelemetry.context import attach, detach
 from opentelemetry.propagate import extract, inject
 from opentelemetry.trace import Status, StatusCode
+from redis.exceptions import RedisError
 
 from .component_versions import get_worker_version
 from .database import async_session, settings
 from .logging_config import setup_logging
 from .models import ACTIVE_TASK_STATUSES, AdminTask
+from .queue_metrics import ARQ_QUEUE_NAME, HEALTH_CHECK_KEY
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -152,18 +153,31 @@ async def _enqueue(
     job_type: str,
 ) -> EnqueueResult:
     """Apply the single queue-vs-fallback policy for all task submissions."""
+    def _fallback_or_reject(
+        reason: str,
+        exc: BaseException | None = None,
+    ) -> EnqueueResult:
+        outcome = (
+            "rejected"
+            if settings.task_execution_mode == "required"
+            else "fallback"
+        )
+        _record_enqueue(job_type, outcome, reason)
+        if settings.task_execution_mode == "required":
+            error = TaskQueueUnavailableError(reason)
+            if exc is not None:
+                raise error from exc
+            raise error
+        return EnqueueResult("fallback", reason)
+
     pool = await get_pool()
     if pool is None:
-        reason = "queue_unavailable"
-        _record_enqueue(job_type, "rejected" if settings.task_execution_mode == "required" else "fallback", reason)
-        if settings.task_execution_mode == "required":
-            raise TaskQueueUnavailableError(reason)
-        return EnqueueResult("fallback", reason)
+        return _fallback_or_reject("queue_unavailable")
     try:
         carrier: dict[str, str] = {}
         inject(carrier)
         await pool.enqueue_job(job_name, *args, carrier)
-    except Exception as exc:
+    except RedisError as exc:
         global _pool, _last_pool_failure
         _pool = None
         _last_pool_failure = time.time()
@@ -172,11 +186,14 @@ async def _enqueue(
             extra={"event": "worker.submission_failed", "job_type": job_type},
             exc_info=True,
         )
-        reason = "submission_failed"
-        _record_enqueue(job_type, "rejected" if settings.task_execution_mode == "required" else "fallback", reason)
-        if settings.task_execution_mode == "required":
-            raise TaskQueueUnavailableError(reason) from exc
-        return EnqueueResult("fallback", reason)
+        return _fallback_or_reject("submission_failed", exc)
+    except Exception as exc:
+        logger.warning(
+            "Task queue submission failed",
+            extra={"event": "worker.submission_failed", "job_type": job_type},
+            exc_info=True,
+        )
+        return _fallback_or_reject("submission_failed", exc)
     _record_enqueue(job_type, "queued", "submitted")
     return EnqueueResult("queued", "submitted")
 
@@ -430,29 +447,6 @@ async def on_startup(ctx: dict[str, Any]) -> None:
     )
 
 
-async def worker_heartbeat(ctx: dict[str, Any]) -> None:
-    """Publish worker liveness to Redis and the local probe file."""
-    heartbeat = time.time()
-    redis = ctx.get("redis")
-    if redis is not None:
-        await redis.set("hriv:worker:heartbeat", str(heartbeat))
-    path = settings.worker_heartbeat_path
-    try:
-        parent = os.path.dirname(path)
-        if parent:
-            os.makedirs(parent, exist_ok=True)
-        temp_path = f"{path}.tmp"
-        with open(temp_path, "w", encoding="utf-8") as heartbeat_file:
-            heartbeat_file.write(str(heartbeat))
-        os.replace(temp_path, path)
-    except OSError:
-        logger.error(
-            "Worker heartbeat file update failed",
-            extra={"event": "worker.heartbeat_failed", "path": path},
-            exc_info=True,
-        )
-
-
 # ── arq WorkerSettings ───────────────────────────────────
 
 class WorkerSettings:
@@ -464,8 +458,10 @@ class WorkerSettings:
         bulk_import_task,
         func(admin_task_runner, timeout=86400),
     ]
-    cron_jobs = [cron(worker_heartbeat, second={0, 30}, run_at_startup=True)]
     redis_settings = _parse_redis_settings()
+    queue_name = ARQ_QUEUE_NAME
+    health_check_key = HEALTH_CHECK_KEY
+    health_check_interval = 30
     on_startup = on_startup
     max_jobs = settings.worker_max_jobs
     job_timeout = 7200  # 2 hours — default bound for short-lived worker jobs

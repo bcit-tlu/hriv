@@ -177,7 +177,12 @@ re-creating any tables.
 | --- | --- | --- |
 | `TASK_EXECUTION_MODE` | `local` | `local` permits in-process fallback when Redis is unavailable; `required` rejects queue-backed work with HTTP 503 instead. |
 | `WORKER_MAX_JOBS` | `2` | Maximum concurrent arq jobs per dedicated worker. |
-| `WORKER_HEARTBEAT_PATH` | `/tmp/worker-heartbeat` | Local worker heartbeat file updated at startup and every 30 seconds. |
+
+The dedicated worker uses arq's built-in health key
+(`arq:queue:health-check`), refreshed independently of job slots every 30
+seconds. Kubernetes liveness should run
+`arq app.worker.WorkerSettings --check`, which exits non-zero when the key is
+missing or expired.
 
 The backend reads uploaded source files and generated tile trees from
 two settings-backed directories:

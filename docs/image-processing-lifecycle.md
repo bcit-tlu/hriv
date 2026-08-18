@@ -63,11 +63,12 @@ runs image processing in the API process. A queue failure returns HTTP 503
 with `Retry-After: 30`; rows created before submission are marked failed and
 staged files are removed.
 
-The dedicated worker writes a Redis heartbeat and updates
-`WORKER_HEARTBEAT_PATH` every 30 seconds. Operators should treat a heartbeat
-older than 90 seconds as stale. The queue health endpoint reports Redis
-reachability separately from worker liveness, and is intentionally not part of
-the readiness probe.
+The dedicated worker uses arq's built-in `arq:queue:health-check` key,
+refreshed independently of job slots every 30 seconds. Kubernetes liveness
+should run `arq app.worker.WorkerSettings --check`; arq returns a non-zero
+exit code when the key is missing or expired. The queue health endpoint
+reports Redis reachability separately from worker liveness, and is
+intentionally not part of the readiness probe.
 
 ### Trace context propagation
 

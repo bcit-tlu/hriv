@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from arq.constants import default_queue_name, health_check_key_suffix
 from opentelemetry import metrics
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Gauge, generate_latest
 
@@ -37,8 +38,9 @@ _execution_mode = Gauge(
     registry=_registry,
 )
 
-HEARTBEAT_KEY = "hriv:worker:heartbeat"
-HEARTBEAT_STALE_SECONDS = 90.0
+ARQ_QUEUE_NAME = default_queue_name
+HEALTH_CHECK_KEY = ARQ_QUEUE_NAME + health_check_key_suffix
+HEALTH_CHECK_INTERVAL_SECONDS = 30.0
 
 
 def record_enqueue(job_type: str, outcome: str, reason: str) -> None:
@@ -64,16 +66,21 @@ async def collect_queue_state() -> dict[str, Any]:
         return state
     try:
         now_ms = time.time() * 1000
-        state["depth"] = await pool.zcard("arq:queue")
-        oldest = await pool.zrange("arq:queue", 0, 0, withscores=True)
+        state["depth"] = await pool.zcard(ARQ_QUEUE_NAME)
+        oldest = await pool.zrange(ARQ_QUEUE_NAME, 0, 0, withscores=True)
         if oldest:
             score = oldest[0][1] if isinstance(oldest[0], tuple) else oldest[0]
             state["oldest_pending_age_seconds"] = max(0.0, (now_ms - float(score)) / 1000)
-        heartbeat = await pool.get(HEARTBEAT_KEY)
-        if heartbeat is not None:
-            if isinstance(heartbeat, bytes):
-                heartbeat = heartbeat.decode()
-            state["worker_heartbeat_age_seconds"] = max(0.0, time.time() - float(heartbeat))
+        remaining_ttl = await pool.ttl(HEALTH_CHECK_KEY)
+        if remaining_ttl != -2:
+            state["worker_heartbeat_age_seconds"] = (
+                0.0
+                if remaining_ttl == -1
+                else max(
+                    0.0,
+                    HEALTH_CHECK_INTERVAL_SECONDS + 1 - float(remaining_ttl),
+                )
+            )
     except Exception:
         state["queue_up"] = False
     return state
@@ -102,9 +109,6 @@ async def queue_health() -> dict[str, Any]:
     """Return the queue and worker liveness state for the health endpoint."""
     state = await collect_queue_state()
     state["mode"] = settings.task_execution_mode
-    heartbeat_age = state["worker_heartbeat_age_seconds"]
-    state["worker_up"] = (
-        heartbeat_age is not None and heartbeat_age <= HEARTBEAT_STALE_SECONDS
-    )
+    state["worker_up"] = state["worker_heartbeat_age_seconds"] is not None
     state["degraded"] = not state["queue_up"] or not state["worker_up"]
     return state
