@@ -169,20 +169,25 @@ re-creating any tables.
 
 ---
 
-## Persistent data directories
-
-### Task execution and worker settings
+## Task execution and worker settings
 
 | Environment variable  | Default | Purpose                                                                                                                    |
 | --------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------- |
 | `TASK_EXECUTION_MODE` | `local` | `local` permits in-process fallback when Redis is unavailable; `required` rejects queue-backed work with HTTP 503 instead. |
-| `WORKER_MAX_JOBS`     | `4`     | Maximum concurrent arq jobs per dedicated worker.                                                                          |
+| `WORKER_MAX_JOBS`     | `4`     | Maximum concurrent arq jobs per dedicated worker; also bounds in-process vips concurrency during local-mode fallback.      |
 
 The dedicated worker uses arq's built-in health key
 (`arq:queue:health-check`), refreshed independently of job slots every 30
 seconds. Kubernetes liveness should run
 `arq app.worker.WorkerSettings --check`, which exits non-zero when the key is
 missing or expired.
+
+`WORKER_MAX_JOBS` also controls the bulk-import concurrency used by the
+in-process fallback in a local-mode API pod. Increasing it for a dedicated
+worker therefore increases concurrent vips work in that API pod as well; tune
+it with the API pod's more constrained resource envelope in mind.
+
+## Persistent data directories
 
 The backend reads uploaded source files and generated tile trees from
 two settings-backed directories:

@@ -48,7 +48,7 @@ from app.routers.admin import (
     create_task_download_token,
     download_task_result,
 )
-from app.worker import EnqueueResult
+from app.worker import EnqueueResult, TaskQueueUnavailableError
 from app.schemas import FileRestoreRequest, FilesImportRerunRequest, RebuildTilesRequest, UploadFinalizeRequest
 
 
@@ -372,6 +372,37 @@ async def test_kick_off_redis_unavailable() -> None:
 
     # Falls back to BackgroundTasks
     bg.add_task.assert_called_once()
+
+
+@pytest.mark.parametrize("task_type", ["db_import", "rebuild_tiles", "file_restore", "files_import"])
+async def test_kick_off_rejection_cleans_generated_inputs_but_retains_archives(
+    task_type,
+    tmp_path,
+) -> None:
+    suffix = ".tar.gz" if task_type == "files_import" else ".json"
+    input_path = tmp_path / f"{task_type}{suffix}"
+    input_path.write_text("payload")
+    task = _make_admin_task(task_type=task_type, input_path=str(input_path))
+    bg = MagicMock()
+    db = AsyncMock()
+    db.execute = AsyncMock()
+    db.commit = AsyncMock()
+    db_context = MagicMock()
+    db_context.__aenter__ = AsyncMock(return_value=db)
+    db_context.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("app.routers.admin.async_session", return_value=db_context),
+        patch(
+            "app.routers.admin.enqueue_admin_task",
+            new_callable=AsyncMock,
+            side_effect=TaskQueueUnavailableError("queue_unavailable"),
+        ),
+    ):
+        with pytest.raises(TaskQueueUnavailableError):
+            await _kick_off(task, bg)
+
+    assert input_path.exists() is (task_type == "files_import")
 
 
 async def test_start_db_export() -> None:

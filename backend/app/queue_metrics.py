@@ -54,7 +54,7 @@ def record_enqueue(job_type: str, outcome: str, reason: str) -> None:
 
 async def collect_queue_state() -> dict[str, Any]:
     """Read queue depth and worker heartbeat without breaking a scrape."""
-    from .worker import WorkerSettings, _invalidate_pool, get_pool
+    from .worker import WorkerSettings, _discard_pool, get_pool
 
     pool = await get_pool()
     state: dict[str, Any] = {
@@ -84,7 +84,7 @@ async def collect_queue_state() -> dict[str, Any]:
                 )
             )
     except RedisError:
-        _invalidate_pool()
+        await _discard_pool(arm_backoff=False)
         state["queue_up"] = False
     except Exception:
         state["queue_up"] = False

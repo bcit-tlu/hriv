@@ -587,6 +587,7 @@ async def bulk_import_images(
                     with contextlib.suppress(OSError):
                         os.unlink(stored_path)
                 error_entry = [{
+                    "filename": None,
                     "error": "Task queue unavailable; bulk import was not started.",
                 }]
                 job.status = "failed"

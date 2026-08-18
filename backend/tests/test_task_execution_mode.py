@@ -152,6 +152,7 @@ async def test_required_mode_call_site_matrix_rejects_without_runners(tmp_path) 
     bulk_job = bulk_db.add.call_args.args[0]
     assert bulk_job.status == "failed"
     assert bulk_job.failed_count == bulk_job.total_count
+    assert bulk_job.errors[-1]["filename"] is None
     bulk_bg.add_task.assert_not_called()
 
     job = SimpleNamespace(

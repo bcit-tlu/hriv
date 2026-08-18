@@ -183,6 +183,15 @@ async def _kick_off(
                 )
             )
             await db.commit()
+        if task.task_type in {"db_import", "rebuild_tiles", "file_restore"}:
+            try:
+                os.unlink(task.input_path)
+            except OSError as cleanup_exc:
+                logger.debug(
+                    "Failed to remove rejected admin task input %s: %s",
+                    task.input_path,
+                    cleanup_exc,
+                )
         raise
     if not enqueue_result.queued:
         # Redis unavailable — run in-process
