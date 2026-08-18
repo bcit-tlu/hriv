@@ -897,12 +897,16 @@ async def test_replace_image_rejection_preserves_metadata_and_version(
     db.get = AsyncMock(return_value=img)
     db.add = MagicMock()
     db.refresh = AsyncMock(side_effect=lambda obj: setattr(obj, "id", 2))
+    db.execute = AsyncMock(return_value=SimpleNamespace(rowcount=1))
     background_tasks = MagicMock()
 
     with patch.dict("sys.modules", {
         "app.processing": MagicMock(process_replace_image=MagicMock()),
         "app.worker": MagicMock(enqueue_replace_image=mock_enqueue),
-    }):
+    }), patch(
+        "app.routers.images.bump_scopes",
+        new=AsyncMock(),
+    ):
         with pytest.raises(TaskQueueUnavailableError):
             await replace_image(
                 image_id=1,

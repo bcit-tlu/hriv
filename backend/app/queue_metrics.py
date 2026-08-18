@@ -21,10 +21,14 @@ _enqueue_counter = _meter.create_counter(
 
 _registry = CollectorRegistry()
 _queue_up = Gauge("hriv_task_queue_up", "Whether Redis is reachable", registry=_registry)
-_queue_depth = Gauge("hriv_task_queue_depth", "Number of pending arq jobs", registry=_registry)
+_queue_depth = Gauge(
+    "hriv_task_queue_depth",
+    "Number of queued or executing arq jobs",
+    registry=_registry,
+)
 _oldest_pending_age = Gauge(
     "hriv_task_queue_oldest_pending_age_seconds",
-    "Age of the oldest pending arq job",
+    "Age of the oldest queued or executing arq job",
     registry=_registry,
 )
 _heartbeat_age = Gauge(

@@ -236,6 +236,15 @@ Rules:
 - Count response bytes from streamed ASGI body chunks; do not buffer the body
   solely for observability.
 
+## Task Queue Metrics
+
+The task queue gauges are read from arq's queue sorted set. arq retains a job
+there until it finishes, so `hriv_task_queue_depth` measures the number of
+queued **or actively executing** jobs, not only workers waiting for a slot.
+Likewise, `hriv_task_queue_oldest_pending_age_seconds` measures the age of the
+oldest queued-or-executing job, not pure queue latency. Do not use either
+gauge as a backlog-only alert without accounting for actively running work.
+
 ## Privacy, Access, and Retention
 
 Observability data serves two different uses and must be treated differently:

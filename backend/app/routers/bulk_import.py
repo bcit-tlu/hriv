@@ -109,7 +109,7 @@ async def _wait_for_source_image_terminal_state(
 ) -> _SourceImageTerminalState:
     """Wait for queued processing to reach a terminal source-image state."""
     not_found_count = 0
-    wait_started_at = time.monotonic()
+    processing_started_at: float | None = None
     queued_at = (
         enqueue_result.queued_at
         if enqueue_result is not None and enqueue_result.queued_at is not None
@@ -124,6 +124,9 @@ async def _wait_for_source_image_terminal_state(
                 )
             if src.status in {"completed", "failed"}:
                 return _source_image_terminal_state(src)
+
+            if src.status == "processing" and processing_started_at is None:
+                processing_started_at = time.monotonic()
 
             cutoff = datetime.now(timezone.utc) - timedelta(seconds=stale_after_seconds)
             updated_at = _coerce_utc_aware(src.updated_at, source_image_id=source_image_id)
@@ -151,6 +154,12 @@ async def _wait_for_source_image_terminal_state(
                 and enqueue_result.job is not None
                 and time.monotonic() - queued_at >= pending_grace_seconds
             ):
+                # arq reports ``not_found`` only after the job id is gone from
+                # the queue zset and its result key has expired. This detector
+                # therefore covers Redis data loss; ``complete`` while the
+                # row is pending covers a finished job that recorded no
+                # source-image result during the retention window. With
+                # ``keep_result=0``, both cases collapse into "lost".
                 try:
                     job_status = await enqueue_result.job.status()
                 except Exception as exc:
@@ -161,7 +170,7 @@ async def _wait_for_source_image_terminal_state(
                             "source_image_id": source_image_id,
                             "original_filename": original_filename,
                         },
-                        exc_info=exc,
+                        exc_info=True,
                     )
                     job_status = None
                 if job_status == JobStatus.not_found:
@@ -203,7 +212,11 @@ async def _wait_for_source_image_terminal_state(
                         },
                     )
                     return _source_image_terminal_state(src)
-            if time.monotonic() - wait_started_at >= wait_safety_cap_seconds:
+            if (
+                src.status == "processing"
+                and processing_started_at is not None
+                and time.monotonic() - processing_started_at >= wait_safety_cap_seconds
+            ):
                 src.status = "failed"
                 src.error_message = (
                     "Tile generation did not finish during bulk import "

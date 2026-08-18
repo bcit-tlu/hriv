@@ -948,6 +948,7 @@ async def test_wait_for_source_image_terminal_state_does_not_fail_deep_queued_so
                 queued_at=time.monotonic() - 3600,
             ),
             pending_grace_seconds=0,
+            wait_safety_cap_seconds=0,
         )
 
     assert result.status == "completed"
@@ -1161,16 +1162,23 @@ async def test_wait_for_source_image_terminal_state_fails_complete_job_without_r
 
 
 async def test_wait_for_source_image_terminal_state_has_safety_cap() -> None:
-    """The waiter has a final bound below the worker job timeout."""
-    src = SimpleNamespace(
+    """The safety cap starts when processing begins, not while pending."""
+    pending = SimpleNamespace(
         id=19,
         status="pending",
         updated_at=datetime.now(timezone.utc),
         error_message=None,
         status_message="Queued",
     )
+    processing = SimpleNamespace(
+        id=19,
+        status="processing",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message="Generating tiles",
+    )
     db = AsyncMock()
-    db.get = AsyncMock(return_value=src)
+    db.get = AsyncMock(side_effect=[pending, processing])
     db.commit = AsyncMock()
     db.__aenter__ = AsyncMock(return_value=db)
     db.__aexit__ = AsyncMock(return_value=False)

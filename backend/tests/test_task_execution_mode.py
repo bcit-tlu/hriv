@@ -92,6 +92,7 @@ async def test_required_mode_call_site_matrix_rejects_without_runners(tmp_path) 
         copyright=None,
         note=None,
         active=True,
+        metadata_=None,
         version=1,
     )
     replace_db = MagicMock()

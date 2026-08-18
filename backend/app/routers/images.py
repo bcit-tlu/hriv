@@ -1,4 +1,5 @@
 import contextlib
+from copy import deepcopy
 import errno
 import json
 import logging
@@ -289,6 +290,9 @@ async def replace_image(
     When metadata fields are included in the multipart form, the image record
     is updated in the same transaction as the source-image creation, ensuring
     both succeed or both fail.
+
+    In required task-execution mode, a rejected enqueue restores the target
+    metadata and version when no concurrent image update has superseded it.
     """
     with tracer.start_as_current_span("image.replace") as span:
         try:
@@ -369,6 +373,42 @@ async def replace_image(
 
             file_size = os.path.getsize(stored_path)
 
+            metadata_snapshot = {
+                "name": img.name,
+                "category_id": img.category_id,
+                "copyright": img.copyright,
+                "note": img.note,
+                "active": img.active,
+                "metadata_": deepcopy(img.metadata_),
+                "version": img.version,
+            }
+
+            # Apply metadata before creating the SourceImage so the target
+            # update and source-image insert remain one transaction.
+            if has_metadata:
+                if category_id is not None and parsed_cat != img.category_id:
+                    # A category move changes scope membership: invalidate
+                    # both scopes' tile-order revisions so clients holding
+                    # older revisions get a 409 instead of silently
+                    # overwriting (same rule as PATCH /images/{id}).
+                    await bump_scopes(
+                        db,
+                        {scope_key_for(img.category_id), scope_key_for(parsed_cat)},
+                    )
+                if category_id is not None:
+                    img.category_id = parsed_cat
+                if name is not None:
+                    img.name = name
+                if copyright is not None:
+                    img.copyright = copyright if copyright != "" else None
+                if note is not None:
+                    img.note = parsed_note
+                if active is not None:
+                    img.active = active.lower() in ("true", "1")
+                if metadata_extra is not None:
+                    img.metadata_ = parsed_metadata
+                img.version = img.version + 1
+
             src = SourceImage(
                 original_filename=file.filename,
                 stored_path=stored_path,
@@ -408,42 +448,41 @@ async def replace_image(
                 src.status_message = "Failed"
                 src.error_message = "Task queue unavailable; image replacement was not started."
                 await db.commit()
+                if has_metadata:
+                    restore_result = await db.execute(
+                        sql_update(Image)
+                        .where(
+                            Image.id == image_id,
+                            Image.version == metadata_snapshot["version"] + 1,
+                        )
+                        .values(
+                            name=metadata_snapshot["name"],
+                            category_id=metadata_snapshot["category_id"],
+                            copyright=metadata_snapshot["copyright"],
+                            note=metadata_snapshot["note"],
+                            active=metadata_snapshot["active"],
+                            metadata_=metadata_snapshot["metadata_"],
+                            version=metadata_snapshot["version"],
+                        )
+                    )
+                    if restore_result.rowcount == 1:
+                        for field, value in metadata_snapshot.items():
+                            setattr(img, field, value)
+                        await db.commit()
+                    else:
+                        await db.rollback()
+                        logger.warning(
+                            "Skipped replacement metadata restore after a concurrent update",
+                            extra={
+                                "event": "replace.metadata_restore_skipped",
+                                "source_image_id": src.id,
+                                "target_image_id": image_id,
+                                "expected_version": metadata_snapshot["version"] + 1,
+                            },
+                        )
                 with contextlib.suppress(OSError):
                     os.unlink(stored_path)
                 raise
-            if has_metadata:
-                # Keep the target image untouched until the queue accepts the
-                # replacement. A required-mode rejection must preserve the
-                # caller's optimistic-concurrency version and all metadata.
-                await db.refresh(img)
-                if category_id is not None and parsed_cat != img.category_id:
-                    # A category move changes scope membership: invalidate
-                    # both scopes' tile-order revisions so clients holding
-                    # older revisions get a 409 instead of silently
-                    # overwriting (same rule as PATCH /images/{id}).
-                    await bump_scopes(
-                        db,
-                        {scope_key_for(img.category_id), scope_key_for(parsed_cat)},
-                    )
-                if category_id is not None:
-                    img.category_id = parsed_cat
-                if name is not None:
-                    img.name = name
-                if copyright is not None:
-                    img.copyright = copyright if copyright != "" else None
-                if note is not None:
-                    img.note = parsed_note
-                if active is not None:
-                    img.active = active.lower() in ("true", "1")
-                if metadata_extra is not None:
-                    img.metadata_ = parsed_metadata
-                img.version = img.version + 1
-                src.name = img.name
-                src.category_id = img.category_id
-                src.copyright = img.copyright
-                src.note = img.note
-                src.active = img.active
-                await db.commit()
             span.set_attribute("image.enqueued", enqueue_result.queued)
             if not enqueue_result.queued:
                 background_tasks.add_task(process_replace_image, src.id, image_id)
