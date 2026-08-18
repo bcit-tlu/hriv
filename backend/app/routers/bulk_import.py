@@ -11,6 +11,7 @@ import logging
 import os
 import shutil
 import tempfile
+import time
 import uuid
 import zipfile
 from dataclasses import dataclass
@@ -18,6 +19,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated
 
+from arq.jobs import JobStatus
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
@@ -34,6 +36,7 @@ from ..processing import process_source_image
 from ..schemas import MAX_NOTE_LENGTH, BulkImportJobOut, normalize_note_value
 from ..tracing import record_exception_if_server_error
 from ..worker import (
+    EnqueueResult,
     TaskQueueUnavailableError,
     enqueue_bulk_import,
     enqueue_process_source_image,
@@ -52,9 +55,8 @@ _MAX_CONCURRENCY = settings.worker_max_jobs
 _ZIP_EXTRACT_CHUNK_SIZE = 1024 * 1024
 _SOURCE_IMAGE_POLL_INTERVAL_SECONDS = 2
 _SOURCE_IMAGE_STALE_SECONDS = int(os.environ.get("SOURCE_IMAGE_STALE_SECONDS", "900"))
-_SOURCE_IMAGE_PENDING_TIMEOUT_SECONDS = int(
-    os.environ.get("SOURCE_IMAGE_PENDING_TIMEOUT_SECONDS", "3600")
-)
+_SOURCE_IMAGE_PENDING_GRACE_SECONDS = 10
+_SOURCE_IMAGE_LOST_OBSERVATIONS = 2
 
 
 def _is_image_filename(filename: str) -> bool:
@@ -98,9 +100,17 @@ async def _wait_for_source_image_terminal_state(
     source_image_id: int,
     original_filename: str,
     stale_after_seconds: int = _SOURCE_IMAGE_STALE_SECONDS,
-    pending_timeout_seconds: int = _SOURCE_IMAGE_PENDING_TIMEOUT_SECONDS,
+    enqueue_result: EnqueueResult | None = None,
+    pending_grace_seconds: int = _SOURCE_IMAGE_PENDING_GRACE_SECONDS,
+    lost_observations: int = _SOURCE_IMAGE_LOST_OBSERVATIONS,
 ) -> _SourceImageTerminalState:
     """Wait for queued processing to reach a terminal source-image state."""
+    not_found_count = 0
+    queued_at = (
+        enqueue_result.queued_at
+        if enqueue_result is not None and enqueue_result.queued_at is not None
+        else time.monotonic()
+    )
     while True:
         async with async_session() as db:
             src = await db.get(SourceImage, source_image_id)
@@ -131,28 +141,38 @@ async def _wait_for_source_image_terminal_state(
                     },
                 )
                 return _source_image_terminal_state(src)
-            pending_cutoff = datetime.now(timezone.utc) - timedelta(
-                seconds=pending_timeout_seconds,
-            )
-            if src.status == "pending" and updated_at < pending_cutoff:
-                src.status = "failed"
-                src.error_message = (
-                    "Tile generation never started during bulk import. "
-                    f"The image remained queued for more than "
-                    f"{pending_timeout_seconds}s."
-                )
-                src.status_message = "Failed"
-                await db.commit()
-                logger.error(
-                    "Bulk import source image never started processing",
-                    extra={
-                        "event": "bulk_import.source_pending_timeout",
-                        "source_image_id": source_image_id,
-                        "original_filename": original_filename,
-                        "pending_timeout_seconds": pending_timeout_seconds,
-                    },
-                )
-                return _source_image_terminal_state(src)
+            if (
+                src.status == "pending"
+                and enqueue_result is not None
+                and enqueue_result.job is not None
+                and time.monotonic() - queued_at >= pending_grace_seconds
+            ):
+                try:
+                    job_status = await enqueue_result.job.status()
+                except Exception:
+                    job_status = None
+                if job_status == JobStatus.not_found:
+                    not_found_count += 1
+                else:
+                    not_found_count = 0
+                if not_found_count >= lost_observations:
+                    src.status = "failed"
+                    src.error_message = (
+                        "Tile generation never started during bulk import. "
+                        "The queued processing job was lost before it started."
+                    )
+                    src.status_message = "Failed"
+                    await db.commit()
+                    logger.error(
+                        "Bulk import source image processing job was lost",
+                        extra={
+                            "event": "bulk_import.source_job_lost",
+                            "source_image_id": source_image_id,
+                            "original_filename": original_filename,
+                            "not_found_observations": not_found_count,
+                        },
+                    )
+                    return _source_image_terminal_state(src)
 
         await asyncio.sleep(_SOURCE_IMAGE_POLL_INTERVAL_SECONDS)
 
@@ -206,7 +226,9 @@ async def _process_bulk_import(
                     enqueue_result = await enqueue_process_source_image(src.id)
                     if enqueue_result.queued:
                         terminal_state = await _wait_for_source_image_terminal_state(
-                            src.id, original_filename,
+                            src.id,
+                            original_filename,
+                            enqueue_result=enqueue_result,
                         )
                     else:
                         await process_source_image(src.id)
@@ -220,9 +242,8 @@ async def _process_bulk_import(
                 except TaskQueueUnavailableError as exc:
                     src.status = "failed"
                     src.status_message = "Failed"
-                    src.error_message = (
-                        "Task queue unavailable; image processing was not started."
-                    )
+                    detail = "Task queue unavailable; image processing was not started."
+                    src.error_message = detail
                     with contextlib.suppress(OSError):
                         os.unlink(stored_path)
                     async with async_session() as db:
@@ -230,7 +251,7 @@ async def _process_bulk_import(
                         if src_check is not None:
                             src_check.status = "failed"
                             src_check.status_message = "Failed"
-                            src_check.error_message = src.error_message
+                            src_check.error_message = detail
                             await db.commit()
                     span = trace.get_current_span()
                     span.record_exception(exc)
@@ -245,7 +266,7 @@ async def _process_bulk_import(
                         },
                         exc_info=True,
                     )
-                    error_entry = [{"filename": original_filename, "error": str(exc)}]
+                    error_entry = [{"filename": original_filename, "error": detail}]
                     async with async_session() as db:
                         await db.execute(
                             update(BulkImportJob)

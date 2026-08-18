@@ -183,7 +183,10 @@ async def _kick_off(
                 )
             )
             await db.commit()
-        if task.task_type in {"db_import", "rebuild_tiles", "file_restore"}:
+        if (
+            task.task_type in {"db_import", "rebuild_tiles", "file_restore"}
+            and task.input_path
+        ):
             try:
                 os.unlink(task.input_path)
             except OSError as cleanup_exc:

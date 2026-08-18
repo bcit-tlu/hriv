@@ -10,12 +10,14 @@ import errno
 import io
 import os
 import sys
+import time
 import zipfile
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from arq.jobs import JobStatus
 from fastapi import HTTPException
 
 # Ensure pyvips can be imported even when libvips is not installed (CI)
@@ -26,7 +28,6 @@ if "pyvips" not in sys.modules:
 from app.routers.bulk_import import (
     _is_image_filename,
     _process_bulk_import,
-    _SOURCE_IMAGE_PENDING_TIMEOUT_SECONDS,
     _wait_for_source_image_terminal_state,
     bulk_import_images,
     get_bulk_import_job,
@@ -832,7 +833,11 @@ async def test_process_bulk_import_uses_queued_processing_when_available(tmp_pat
         )
 
     enqueue_mock.assert_awaited_once_with(10)
-    wait_mock.assert_awaited_once_with(10, "queued.png")
+    wait_mock.assert_awaited_once_with(
+        10,
+        "queued.png",
+        enqueue_result=EnqueueResult("queued", "submitted"),
+    )
     direct_mock.assert_not_awaited()
     assert job.status == "completed"
 
@@ -903,15 +908,112 @@ async def test_wait_for_source_image_terminal_state_does_not_stale_queued_source
     db.commit.assert_not_awaited()
 
 
-async def test_wait_for_source_image_terminal_state_times_out_pending_source(
+async def test_wait_for_source_image_terminal_state_does_not_fail_deep_queued_source(
     caplog,
 ) -> None:
-    """A pending image that never starts should eventually fail distinctly."""
-    pending_time = datetime.now(timezone.utc) - timedelta(seconds=3601)
+    """A queued job remains valid regardless of how long it waits."""
+    job = MagicMock()
+    job.status = AsyncMock(return_value=JobStatus.queued)
+    pending_time = datetime.now(timezone.utc) - timedelta(days=2)
     src = SimpleNamespace(
         id=13,
         status="pending",
         updated_at=pending_time,
+        error_message=None,
+        status_message="Queued",
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=[src, SimpleNamespace(
+        id=13,
+        status="completed",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message=None,
+    )])
+    db.commit = AsyncMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("app.routers.bulk_import.async_session", return_value=db),
+        patch("app.routers.bulk_import.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        result = await _wait_for_source_image_terminal_state(
+            13,
+            "deep-queue.jpg",
+            enqueue_result=EnqueueResult(
+                "queued",
+                "submitted",
+                job=job,
+                queued_at=time.monotonic() - 3600,
+            ),
+            pending_grace_seconds=0,
+        )
+
+    assert result.status == "completed"
+    db.commit.assert_not_awaited()
+    job.status.assert_awaited_once()
+
+
+async def test_wait_for_source_image_terminal_state_respects_lost_job_grace(
+    caplog,
+) -> None:
+    """A not-found job is ignored during the enqueue visibility grace period."""
+    job = MagicMock()
+    job.status = AsyncMock(return_value=JobStatus.not_found)
+    src = SimpleNamespace(
+        id=14,
+        status="pending",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message="Queued",
+    )
+    completed = SimpleNamespace(
+        id=14,
+        status="completed",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message=None,
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=[src, completed])
+    db.commit = AsyncMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("app.routers.bulk_import.async_session", return_value=db),
+        patch("app.routers.bulk_import.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        result = await _wait_for_source_image_terminal_state(
+            14,
+            "grace.jpg",
+            enqueue_result=EnqueueResult(
+                "queued",
+                "submitted",
+                job=job,
+                queued_at=time.monotonic(),
+            ),
+            pending_grace_seconds=60,
+        )
+
+    assert result.status == "completed"
+    job.status.assert_not_awaited()
+    db.commit.assert_not_awaited()
+
+
+async def test_wait_for_source_image_terminal_state_fails_repeatedly_lost_job(
+    caplog,
+) -> None:
+    """A lost child is failed only after consecutive not-found observations."""
+    job = MagicMock()
+    job.status = AsyncMock(
+        side_effect=[JobStatus.not_found, JobStatus.not_found],
+    )
+    src = SimpleNamespace(
+        id=15,
+        status="pending",
+        updated_at=datetime.now(timezone.utc),
         error_message=None,
         status_message="Queued",
     )
@@ -923,21 +1025,66 @@ async def test_wait_for_source_image_terminal_state_times_out_pending_source(
 
     with patch("app.routers.bulk_import.async_session", return_value=db):
         result = await _wait_for_source_image_terminal_state(
-            13,
-            "never-started.jpg",
-            pending_timeout_seconds=3600,
+            15,
+            "lost.jpg",
+            enqueue_result=EnqueueResult(
+                "queued",
+                "submitted",
+                job=job,
+                queued_at=time.monotonic() - 60,
+            ),
+            pending_grace_seconds=0,
+            lost_observations=2,
         )
 
     assert result.status == "failed"
     assert "never started" in result.error_message
-    assert "stalled during bulk import" not in result.error_message
+    assert "lost" in result.error_message
     assert result.status_message == "Failed"
     db.commit.assert_awaited_once()
-    assert _SOURCE_IMAGE_PENDING_TIMEOUT_SECONDS == 3600
-    assert any(
-        record.event == "bulk_import.source_pending_timeout"
-        for record in caplog.records
+    assert any(record.event == "bulk_import.source_job_lost" for record in caplog.records)
+
+
+async def test_wait_for_source_image_terminal_state_resets_lost_observations() -> None:
+    """A visible queued child interrupts consecutive lost-job observations."""
+    job = MagicMock()
+    job.status = AsyncMock(
+        side_effect=[
+            JobStatus.not_found,
+            JobStatus.queued,
+            JobStatus.not_found,
+            JobStatus.not_found,
+        ],
     )
+    src = SimpleNamespace(
+        id=16,
+        status="pending",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message="Queued",
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=src)
+    db.commit = AsyncMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.routers.bulk_import.async_session", return_value=db):
+        result = await _wait_for_source_image_terminal_state(
+            16,
+            "reset.jpg",
+            enqueue_result=EnqueueResult(
+                "queued",
+                "submitted",
+                job=job,
+                queued_at=time.monotonic() - 60,
+            ),
+            pending_grace_seconds=0,
+            lost_observations=2,
+        )
+
+    assert result.status == "failed"
+    assert job.status.await_count == 4
 
 
 async def test_wait_for_source_image_terminal_state_handles_naive_updated_at() -> None:

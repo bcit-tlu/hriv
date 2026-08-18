@@ -18,6 +18,7 @@ from app.worker import (
     enqueue_admin_task,
     enqueue_process_source_image,
     get_pool,
+    _parse_redis_settings,
     _discard_pool,
     on_startup,
     process_source_image_task,
@@ -42,9 +43,22 @@ async def test_enqueue_succeeds_when_redis_available() -> None:
         result = await enqueue_process_source_image(42)
 
     assert result.queued
+    assert result.job is mock_pool.enqueue_job.return_value
+    assert result.queued_at is not None
     mock_pool.enqueue_job.assert_awaited_once_with(
         "process_source_image_task", 42, ANY,
     )
+
+
+def test_api_redis_settings_use_low_retry_budget() -> None:
+    """API submissions fail fast while worker settings retain arq defaults."""
+    api_settings = _parse_redis_settings(api_pool=True)
+    worker_settings = _parse_redis_settings()
+
+    assert api_settings.conn_retries == 0
+    assert api_settings.conn_retry_delay == 0
+    assert worker_settings.conn_retries == 5
+    assert worker_settings.conn_retry_delay == 1
 
 
 async def test_enqueue_returns_fallback_on_enqueue_failure() -> None:

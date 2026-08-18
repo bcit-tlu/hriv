@@ -54,7 +54,7 @@ def record_enqueue(job_type: str, outcome: str, reason: str) -> None:
 
 async def collect_queue_state() -> dict[str, Any]:
     """Read queue depth and worker heartbeat without breaking a scrape."""
-    from .worker import WorkerSettings, _discard_pool, get_pool
+    from .worker import WorkerSettings, get_pool
 
     pool = await get_pool()
     state: dict[str, Any] = {
@@ -75,6 +75,8 @@ async def collect_queue_state() -> dict[str, Any]:
             state["oldest_pending_age_seconds"] = max(0.0, (now_ms - float(score)) / 1000)
         remaining_ttl = await pool.ttl(HEALTH_CHECK_KEY)
         if remaining_ttl != -2:
+            # arq.record_health() sets health_check_interval + 1 TTL; this
+            # reads the API pod's interval, so worker overrides skew this age.
             state["worker_heartbeat_age_seconds"] = (
                 0.0
                 if remaining_ttl == -1
@@ -84,7 +86,6 @@ async def collect_queue_state() -> dict[str, Any]:
                 )
             )
     except RedisError:
-        await _discard_pool(arm_backoff=False)
         state["queue_up"] = False
     except Exception:
         state["queue_up"] = False

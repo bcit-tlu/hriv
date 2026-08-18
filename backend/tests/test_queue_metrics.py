@@ -62,11 +62,7 @@ async def test_queue_health_marks_stale_worker_degraded() -> None:
 async def test_collect_queue_state_invalidates_pool_on_redis_error() -> None:
     pool = AsyncMock()
     pool.zcard.side_effect = ConnectionError("redis disconnected")
-    with (
-        patch("app.worker.get_pool", new_callable=AsyncMock, return_value=pool),
-        patch("app.worker._discard_pool", new_callable=AsyncMock) as discard_pool,
-    ):
+    with patch("app.worker.get_pool", new_callable=AsyncMock, return_value=pool):
         state = await collect_queue_state()
 
     assert state["queue_up"] is False
-    discard_pool.assert_awaited_once_with(arm_backoff=False)

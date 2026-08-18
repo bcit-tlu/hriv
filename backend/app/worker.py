@@ -24,6 +24,7 @@ from urllib.parse import urlparse
 
 from arq import create_pool
 from arq.connections import ArqRedis, RedisSettings
+from arq.jobs import Job
 from arq.worker import func
 from opentelemetry import trace
 from opentelemetry.context import attach, detach
@@ -83,14 +84,14 @@ async def _finalize_interrupted_admin_task(task_id: int, task_type: str) -> None
         )
 
 
-def _parse_redis_settings() -> RedisSettings:
+def _parse_redis_settings(*, api_pool: bool = False) -> RedisSettings:
     """Convert the ``REDIS_URL`` env-var into arq ``RedisSettings``.
 
     Handles full Redis URLs including auth and database, e.g.
     ``redis://:password@host:6379/1``.
     """
     global _redis_settings
-    if _redis_settings is not None:
+    if not api_pool and _redis_settings is not None:
         return _redis_settings
     parsed = urlparse(settings.redis_url)
     host = parsed.hostname or "localhost"
@@ -98,10 +99,19 @@ def _parse_redis_settings() -> RedisSettings:
     password = parsed.password
     # Database number is the first path segment (e.g. /1 → 1)
     database = int(parsed.path.lstrip("/")) if parsed.path.strip("/") else 0
-    _redis_settings = RedisSettings(
-        host=host, port=port, password=password, database=database,
+    parsed_settings = RedisSettings(
+        host=host,
+        port=port,
+        password=password,
+        database=database,
+        # API submissions fail promptly; the dedicated worker keeps arq's
+        # normal retry budget for startup and task processing.
+        conn_retries=0 if api_pool else 5,
+        conn_retry_delay=0 if api_pool else 1,
     )
-    return _redis_settings
+    if not api_pool:
+        _redis_settings = parsed_settings
+    return parsed_settings
 
 
 # ── Enqueue helper (used by FastAPI routers) ──────────────
@@ -123,6 +133,8 @@ class EnqueueResult:
 
     outcome: str
     reason: str
+    job: Job | None = None
+    queued_at: float | None = None
 
     @property
     def queued(self) -> bool:
@@ -165,7 +177,7 @@ async def get_pool(*, bypass_backoff: bool = False) -> ArqRedis | None:
         return None
     pool: ArqRedis | None = None
     try:
-        pool = await create_pool(_parse_redis_settings())
+        pool = await create_pool(_parse_redis_settings(api_pool=True))
         await pool.ping()
         _pool = pool
         _last_pool_failure = 0.0
@@ -217,7 +229,7 @@ async def _enqueue(
     try:
         carrier: dict[str, str] = {}
         inject(carrier)
-        await pool.enqueue_job(job_name, *args, carrier)
+        job = await pool.enqueue_job(job_name, *args, carrier)
     except RedisError as exc:
         await _invalidate_pool()
         logger.warning(
@@ -234,7 +246,12 @@ async def _enqueue(
         )
         return _fallback_or_reject("submission_failed", exc)
     _record_enqueue(job_type, "queued", "submitted")
-    return EnqueueResult("queued", "submitted")
+    return EnqueueResult(
+        "queued",
+        "submitted",
+        job=job,
+        queued_at=time.monotonic(),
+    )
 
 
 def _record_enqueue(job_type: str, outcome: str, reason: str) -> None:
