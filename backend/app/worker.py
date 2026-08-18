@@ -35,7 +35,11 @@ from .component_versions import get_worker_version
 from .database import async_session, settings
 from .logging_config import setup_logging
 from .models import ACTIVE_TASK_STATUSES, AdminTask
-from .queue_metrics import ARQ_QUEUE_NAME, HEALTH_CHECK_KEY
+from .queue_metrics import (
+    ARQ_QUEUE_NAME,
+    HEALTH_CHECK_INTERVAL_SECONDS,
+    HEALTH_CHECK_KEY,
+)
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -132,12 +136,23 @@ async def get_pool() -> ArqRedis | None:
         return _pool
     if _last_pool_failure and time.time() - _last_pool_failure < _RETRY_BACKOFF_SECS:
         return None
+    pool: ArqRedis | None = None
     try:
-        _pool = await create_pool(_parse_redis_settings())
-        await _pool.ping()
+        pool = await create_pool(_parse_redis_settings())
+        await pool.ping()
+        _pool = pool
         _last_pool_failure = 0.0
-        return _pool
+        return pool
     except Exception:
+        if pool is not None:
+            try:
+                await pool.aclose()
+            except Exception:
+                logger.debug(
+                    "Failed to close unverified task queue pool",
+                    extra={"event": "worker.pool_cleanup_failed"},
+                    exc_info=True,
+                )
         _last_pool_failure = time.time()
         _pool = None
         logger.warning(
@@ -461,7 +476,7 @@ class WorkerSettings:
     redis_settings = _parse_redis_settings()
     queue_name = ARQ_QUEUE_NAME
     health_check_key = HEALTH_CHECK_KEY
-    health_check_interval = 30
+    health_check_interval = int(HEALTH_CHECK_INTERVAL_SECONDS)
     on_startup = on_startup
     max_jobs = settings.worker_max_jobs
     job_timeout = 7200  # 2 hours — default bound for short-lived worker jobs

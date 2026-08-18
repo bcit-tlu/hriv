@@ -45,7 +45,7 @@ without blocking tile generation.
 
 | Setting       | Value | Rationale                                         |
 | ------------- | ----- | ------------------------------------------------- |
-| `max_jobs`    | 2     | Concurrent processing slots per worker pod        |
+| `max_jobs`    | 4     | Concurrent processing slots per worker pod        |
 | `job_timeout` | 7200s | 2 hours — large filesystem archives need headroom |
 
 Task types registered on the worker:

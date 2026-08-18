@@ -48,7 +48,7 @@ tracer = trace.get_tracer(__name__)
 
 # Maximum in-flight source-image processing tasks per bulk import.
 # Keep this aligned with worker.max_jobs to avoid surprising throughput shifts.
-_MAX_CONCURRENCY = 4
+_MAX_CONCURRENCY = settings.worker_max_jobs
 _ZIP_EXTRACT_CHUNK_SIZE = 1024 * 1024
 _SOURCE_IMAGE_POLL_INTERVAL_SECONDS = 2
 _SOURCE_IMAGE_STALE_SECONDS = int(os.environ.get("SOURCE_IMAGE_STALE_SECONDS", "900"))
@@ -109,7 +109,7 @@ async def _wait_for_source_image_terminal_state(
 
             cutoff = datetime.now(timezone.utc) - timedelta(seconds=stale_after_seconds)
             updated_at = _coerce_utc_aware(src.updated_at, source_image_id=source_image_id)
-            if updated_at < cutoff:
+            if src.status == "processing" and updated_at < cutoff:
                 src.status = "failed"
                 src.error_message = (
                     "Tile generation stalled during bulk import. "
@@ -209,6 +209,16 @@ async def _process_bulk_import(
                     span = trace.get_current_span()
                     span.record_exception(exc)
                     span.set_status(StatusCode.ERROR, str(exc))
+                    logger.warning(
+                        "Bulk import image enqueue rejected",
+                        extra={
+                            "event": "worker.queue_unavailable",
+                            "job_id": job_id,
+                            "source_image_id": src.id,
+                            "original_filename": original_filename,
+                        },
+                        exc_info=True,
+                    )
                     error_entry = [{"filename": original_filename, "error": str(exc)}]
                     async with async_session() as db:
                         await db.execute(
@@ -547,6 +557,9 @@ async def bulk_import_images(
                     active=active,
                 )
             except TaskQueueUnavailableError:
+                for _, stored_path in file_entries:
+                    with contextlib.suppress(OSError):
+                        os.unlink(stored_path)
                 error_entry = [{
                     "error": "Task queue unavailable; bulk import was not started.",
                 }]

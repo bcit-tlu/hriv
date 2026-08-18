@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import errno
 import json
 import logging
@@ -183,6 +184,9 @@ async def _kick_off(
                 )
             )
             await db.commit()
+        if getattr(task, "input_path", None):
+            with contextlib.suppress(OSError):
+                os.unlink(task.input_path)
         raise
     if not enqueue_result.queued:
         # Redis unavailable — run in-process

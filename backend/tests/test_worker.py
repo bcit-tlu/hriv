@@ -17,6 +17,7 @@ from app.worker import (
     bulk_import_task,
     enqueue_admin_task,
     enqueue_process_source_image,
+    get_pool,
     on_startup,
     process_source_image_task,
     replace_image_task,
@@ -78,6 +79,27 @@ async def test_enqueue_payload_error_does_not_invalidate_pool() -> None:
         assert result == EnqueueResult("fallback", "submission_failed")
         assert worker_module._pool is sentinel_pool
         assert worker_module._last_pool_failure == 0.0
+    finally:
+        worker_module._pool = original_pool
+        worker_module._last_pool_failure = original_failure
+
+
+async def test_get_pool_publishes_only_after_successful_ping() -> None:
+    """An unverified pool is closed and never published globally."""
+    worker_module = sys.modules["app.worker"]
+    original_pool = worker_module._pool
+    original_failure = worker_module._last_pool_failure
+    pool = AsyncMock()
+    pool.ping = AsyncMock(side_effect=RuntimeError("ping failed"))
+    worker_module._pool = None
+    worker_module._last_pool_failure = 0.0
+    try:
+        with patch("app.worker.create_pool", new_callable=AsyncMock, return_value=pool):
+            result = await get_pool()
+
+        assert result is None
+        assert worker_module._pool is None
+        pool.aclose.assert_awaited_once()
     finally:
         worker_module._pool = original_pool
         worker_module._last_pool_failure = original_failure
@@ -152,7 +174,7 @@ async def test_on_startup_logs_worker_identity() -> None:
 def test_worker_settings_only_extend_timeout_for_admin_tasks() -> None:
     """Long timeout should apply to admin tasks without widening all jobs."""
     assert WorkerSettings.job_timeout == 7200
-    assert WorkerSettings.max_jobs == 2
+    assert WorkerSettings.max_jobs == 4
     assert WorkerSettings.health_check_interval == 30
     assert WorkerSettings.health_check_key == "arq:queue:health-check"
     assert not hasattr(WorkerSettings, "cron_jobs")

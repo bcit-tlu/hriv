@@ -40,7 +40,7 @@ _execution_mode = Gauge(
 
 ARQ_QUEUE_NAME = default_queue_name
 HEALTH_CHECK_KEY = ARQ_QUEUE_NAME + health_check_key_suffix
-HEALTH_CHECK_INTERVAL_SECONDS = 30.0
+HEALTH_CHECK_INTERVAL_SECONDS = 30
 
 
 def record_enqueue(job_type: str, outcome: str, reason: str) -> None:

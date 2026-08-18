@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # Redis URL for task queue (Phase 5 — arq worker) and rate limiting
     redis_url: str = "redis://redis:6379"
     task_execution_mode: Literal["local", "required"] = "local"
-    worker_max_jobs: int = Field(default=2, ge=1)
+    worker_max_jobs: int = Field(default=4, ge=1)
 
     # Audit middleware: comma-separated list of URL paths whose request logs are
     # emitted at DEBUG instead of INFO. Entries without a trailing slash match

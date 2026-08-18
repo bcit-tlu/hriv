@@ -861,6 +861,41 @@ async def test_wait_for_source_image_terminal_state_marks_stale_source_failed() 
     db.commit.assert_awaited_once()
 
 
+async def test_wait_for_source_image_terminal_state_does_not_stale_queued_source() -> None:
+    """Queued images may wait for a worker slot without being marked failed."""
+    stale_time = datetime.now(timezone.utc) - timedelta(seconds=901)
+    src = SimpleNamespace(
+        id=12,
+        status="pending",
+        updated_at=stale_time,
+        error_message=None,
+        status_message="Queued",
+    )
+    completed = SimpleNamespace(
+        id=12,
+        status="completed",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message=None,
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=[src, completed])
+    db.commit = AsyncMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("app.routers.bulk_import.async_session", return_value=db),
+        patch("app.routers.bulk_import.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        result = await _wait_for_source_image_terminal_state(
+            12, "queued.jpg", stale_after_seconds=900,
+        )
+
+    assert result.status == "completed"
+    db.commit.assert_not_awaited()
+
+
 async def test_wait_for_source_image_terminal_state_handles_naive_updated_at() -> None:
     """Naive datetimes should be coerced to UTC for stale cutoff checks."""
     stale_time_naive = datetime.now() - timedelta(seconds=901)
