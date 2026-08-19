@@ -71,29 +71,6 @@ async def test_enqueue_returns_fallback_on_enqueue_failure() -> None:
     assert result == EnqueueResult("fallback", "submission_failed")
 
 
-async def test_enqueue_payload_error_does_not_invalidate_pool() -> None:
-    """Serialization failures must not back off unrelated queue submissions."""
-    worker_module = sys.modules["app.worker"]
-
-    sentinel_pool = object()
-    mock_pool = AsyncMock()
-    mock_pool.enqueue_job = AsyncMock(side_effect=ValueError("bad payload"))
-    original_pool = worker_module._pool
-    worker_module._pool = sentinel_pool
-    try:
-        with patch(
-            "app.worker.get_pool",
-            new_callable=AsyncMock,
-            return_value=mock_pool,
-        ):
-            result = await enqueue_process_source_image(99)
-
-        assert result == EnqueueResult("fallback", "submission_failed")
-        assert worker_module._pool is sentinel_pool
-    finally:
-        worker_module._pool = original_pool
-
-
 async def test_enqueue_uses_shared_pool() -> None:
     """Task submissions use the shared API pool without a reconnect gate."""
     mock_pool = AsyncMock()

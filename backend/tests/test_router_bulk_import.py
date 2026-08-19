@@ -1179,8 +1179,11 @@ async def test_wait_for_source_image_terminal_state_rereads_after_complete_probe
         error_message=None,
         status_message=None,
     )
+    async def get_source(_model, _source_id, **kwargs):
+        return completed if kwargs.get("populate_existing") else pending
+
     db = AsyncMock()
-    db.get = AsyncMock(side_effect=[pending, completed])
+    db.get = AsyncMock(side_effect=get_source)
     db.commit = AsyncMock()
     db.__aenter__ = AsyncMock(return_value=db)
     db.__aexit__ = AsyncMock(return_value=False)

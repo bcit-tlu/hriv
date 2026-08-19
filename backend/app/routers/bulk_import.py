@@ -176,7 +176,11 @@ async def _wait_for_source_image_terminal_state(
                 if job_status == JobStatus.not_found:
                     not_found_count += 1
                 elif job_status == JobStatus.complete:
-                    latest_src = await db.get(SourceImage, source_image_id)
+                    latest_src = await db.get(
+                        SourceImage,
+                        source_image_id,
+                        populate_existing=True,
+                    )
                     if latest_src is None:
                         raise RuntimeError(
                             f"Queued source image {source_image_id} disappeared before completion"

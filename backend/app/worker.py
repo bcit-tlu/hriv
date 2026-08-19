@@ -30,8 +30,6 @@ from opentelemetry import trace
 from opentelemetry.context import attach, detach
 from opentelemetry.propagate import extract, inject
 from opentelemetry.trace import Status, StatusCode
-from redis.exceptions import RedisError
-
 from .component_versions import get_worker_version
 from .database import async_session, settings
 from .logging_config import setup_logging
@@ -197,13 +195,6 @@ async def _enqueue(
         carrier: dict[str, str] = {}
         inject(carrier)
         job = await pool.enqueue_job(job_name, *args, carrier)
-    except RedisError as exc:
-        logger.warning(
-            "Task queue submission failed",
-            extra={"event": "worker.submission_failed", "job_type": job_type},
-            exc_info=True,
-        )
-        return _fallback_or_reject("submission_failed", exc)
     except Exception as exc:
         logger.warning(
             "Task queue submission failed",
