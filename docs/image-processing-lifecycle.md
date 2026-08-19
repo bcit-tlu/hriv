@@ -193,7 +193,10 @@ returns HTTP 409 (`A bulk import is already in progress`) while another
 pending or processing import is active, preventing coordinators from
 consuming every worker slot. This serialization is intentionally temporary
 until issue [#1078](https://github.com/bcit-tlu/hriv/issues/1078) provides a
-safe concurrent-coordinator model.
+safe concurrent-coordinator model. A pending row blocks only while its
+coordinator has a live registration; if the enqueue or coordinator is lost,
+the missing registration lets a later request proceed rather than making
+imports permanently un-startable.
 When a queued child observes an absent worker heartbeat for the configured
 wall-clock window, it writes arq's abort latch before marking the `SourceImage`
 failed. The latch narrows the race window; the processor's terminal-row guard
@@ -236,7 +239,8 @@ failing healthy queued work.
 moved past the configured stale threshold and it has no live worker-hosted
 coordinator registration. A live registration keeps a long-running import
 untouched; unavailable Redis or unreadable liveness data leaves all rows
-untouched. API-hosted local fallbacks do not register and therefore use the
+untouched. API-hosted local fallbacks register in the general coordinator
+liveness set and therefore use the
 same conservative abandoned-row path on startup. Existing per-file `errors`
 and `failed_count` accounting is preserved. This finalises coordinator rows
 left behind by a cancelled or killed arq job; the coordinator uses

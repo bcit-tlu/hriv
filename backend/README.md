@@ -175,6 +175,7 @@ re-creating any tables.
 | --------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `TASK_EXECUTION_MODE` | `local` | `local` permits in-process fallback when Redis is unavailable; `required` rejects queue-backed work with HTTP 503 instead.                                                                                                                                            |
 | `WORKER_MAX_JOBS`     | `4`     | Maximum concurrent arq jobs per dedicated worker (minimum `2`); also bounds in-process vips concurrency during local-mode fallback. A bulk-import coordinator occupies one worker slot while it waits, so capacity must exceed the number of concurrent bulk imports. |
+| `WORKER_TOTAL_SLOTS`  | unset   | Cluster-wide worker-slot capacity used by bulk-import starvation detection; when unset, defaults to `WORKER_MAX_JOBS`. Set it to the configured worker replica count multiplied by `WORKER_MAX_JOBS`.                                                                 |
 
 The dedicated worker uses arq's built-in health key
 (`arq:queue:health-check`), refreshed independently of job slots every 30

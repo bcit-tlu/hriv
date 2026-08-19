@@ -312,7 +312,7 @@ async def _bulk_import_has_capacity_starvation(
             },
         )
         return False
-    return live_count >= settings.worker_total_slots
+    return live_count >= settings.effective_worker_total_slots
 
 
 async def _register_bulk_import_coordinator(
@@ -566,6 +566,7 @@ async def _wait_for_source_image_terminal_state(
                             extra={
                                 "event": "bulk_import.source_job_completed_without_result",
                                 "source_image_id": source_image_id,
+                                "bulk_import_job_id": bulk_import_job_id,
                                 "original_filename": original_filename,
                             },
                         )
@@ -591,7 +592,8 @@ async def _wait_for_source_image_terminal_state(
                                 and queue_state["worker_up"] is False
                             ):
                                 no_worker_count += 1
-                                no_worker_since = no_worker_since or sampled_at
+                                if no_worker_since is None:
+                                    no_worker_since = sampled_at
                             else:
                                 no_worker_count = 0
                                 no_worker_since = None
@@ -629,6 +631,7 @@ async def _wait_for_source_image_terminal_state(
                             extra={
                                 "event": "bulk_import.source_job_lost",
                                 "source_image_id": source_image_id,
+                                "bulk_import_job_id": bulk_import_job_id,
                                 "original_filename": original_filename,
                                 "not_found_observations": not_found_count,
                             },
@@ -662,6 +665,7 @@ async def _wait_for_source_image_terminal_state(
                                 extra={
                                     "event": "bulk_import.source_job_worker_recovered",
                                     "source_image_id": source_image_id,
+                                    "bulk_import_job_id": bulk_import_job_id,
                                     "original_filename": original_filename,
                                     "latch_removed": latch_removed,
                                 },
@@ -687,6 +691,7 @@ async def _wait_for_source_image_terminal_state(
                                 extra={
                                     "event": "bulk_import.source_job_no_worker",
                                     "source_image_id": source_image_id,
+                                    "bulk_import_job_id": bulk_import_job_id,
                                     "original_filename": original_filename,
                                     "no_worker_samples": no_worker_count,
                                     "no_worker_window_seconds": no_worker_window_seconds,
@@ -725,6 +730,7 @@ async def _wait_for_source_image_terminal_state(
                             extra={
                                 "event": "bulk_import.source_job_pending_recovered",
                                 "source_image_id": source_image_id,
+                                "bulk_import_job_id": bulk_import_job_id,
                                 "original_filename": original_filename,
                                 "latch_removed": latch_removed,
                             },
@@ -738,6 +744,7 @@ async def _wait_for_source_image_terminal_state(
                             extra={
                                 "event": "bulk_import.source_job_pending_timeout",
                                 "source_image_id": source_image_id,
+                                "bulk_import_job_id": bulk_import_job_id,
                                 "original_filename": original_filename,
                                 "pending_wait_safety_cap_seconds": (
                                     pending_wait_safety_cap_seconds
@@ -791,6 +798,7 @@ async def _wait_for_source_image_terminal_state(
                             extra={
                                 "event": "bulk_import.source_job_capacity_recovered",
                                 "source_image_id": source_image_id,
+                                "bulk_import_job_id": bulk_import_job_id,
                                 "original_filename": original_filename,
                                 "latch_removed": latch_removed,
                             },
@@ -821,7 +829,7 @@ async def _wait_for_source_image_terminal_state(
                                 "event": "bulk_import.source_job_capacity_starvation",
                                 "source_image_id": source_image_id,
                                 "original_filename": original_filename,
-                                "worker_total_slots": settings.worker_total_slots,
+                                "worker_total_slots": settings.effective_worker_total_slots,
                                 "queue_worker_healthy": True,
                                 "child_status": "queued",
                                 "stale_after_seconds": stale_after_seconds,
@@ -858,6 +866,7 @@ async def _wait_for_source_image_terminal_state(
                             extra={
                                 "event": "bulk_import.source_job_processing_recovered",
                                 "source_image_id": source_image_id,
+                                "bulk_import_job_id": bulk_import_job_id,
                                 "original_filename": original_filename,
                                 "latch_removed": latch_removed,
                             },
@@ -1306,26 +1315,6 @@ async def bulk_import_images(
     active) are applied uniformly to every image in the batch.  Omitted
     fields fall back to sensible defaults.
     """
-    # Each coordinator occupies a worker slot for its whole batch. Keep
-    # imports serialized until #1078 provides a safe coordinator model.
-    active_query = db.execute(
-        select(func.count())
-        .select_from(BulkImportJob)
-        .where(BulkImportJob.status.in_(("pending", "processing")))
-    )
-    active_result = (
-        await active_query
-        if asyncio.iscoroutine(active_query)
-        else active_query
-    )
-    active_count = active_result.scalar_one()
-    if asyncio.iscoroutine(active_count):
-        active_count = await active_count
-    if isinstance(active_count, int) and active_count > 0:
-        raise HTTPException(
-            status_code=409,
-            detail="A bulk import is already in progress",
-        )
     if not files:
         raise HTTPException(status_code=400, detail="No files provided")
 
@@ -1334,6 +1323,41 @@ async def bulk_import_images(
         category = await db.get(Category, category_id)
         if category is None:
             raise HTTPException(status_code=400, detail="Category not found")
+
+    # Each coordinator occupies a worker slot for its whole batch. Keep
+    # imports serialized until #1078 provides a safe coordinator model.
+    active_result = await db.execute(
+        select(func.count())
+        .select_from(BulkImportJob)
+        .where(BulkImportJob.status == "processing")
+    )
+    if active_result.scalar_one() > 0:
+        raise HTTPException(
+            status_code=409,
+            detail="A bulk import is already in progress",
+        )
+    pending_result = await db.execute(
+        select(BulkImportJob.id).where(BulkImportJob.status == "pending")
+    )
+    pending_ids = {row[0] for row in pending_result.all()}
+    if pending_ids:
+        pool = await get_pool()
+        if pool is not None:
+            live_since = timestamp_ms() - (
+                _BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS * 1000
+            )
+            live_members = await pool.zrangebyscore(
+                _BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
+                live_since,
+                "+inf",
+            )
+            if pending_ids.intersection(
+                int(member) for member in live_members
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail="A bulk import is already in progress",
+                )
 
     with tracer.start_as_current_span("bulk_import.enqueue") as span:
         try:

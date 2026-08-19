@@ -1036,6 +1036,26 @@ _STALE_SOURCE_IMAGE_SECONDS = int(
     os.environ.get("SOURCE_IMAGE_STALE_SECONDS", "900")
 )
 _STALE_PENDING_SOURCE_IMAGE_SECONDS = SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS
+_BULK_IMPORT_COORDINATOR_LIVENESS_KEY = "hriv:bulk_import:coordinators"
+_BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS = 90
+
+
+async def _live_bulk_import_coordinator_count() -> int | None:
+    """Return live coordinator count, or None when Redis is unavailable."""
+    from .worker import get_pool
+
+    pool = await get_pool()
+    if pool is None:
+        return None
+    live_since = (
+        time.time() * 1000
+        - _BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS * 1000
+    )
+    return await pool.zcount(
+        _BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
+        live_since,
+        "+inf",
+    )
 
 
 async def reconcile_stale_source_images(
@@ -1081,6 +1101,7 @@ async def reconcile_stale_source_images(
         and queue_state["worker_up"] is True
         and queue_state["depth"] == 0
     ):
+        live_coordinator_count = await _live_bulk_import_coordinator_count()
         # arq keeps queued and executing job IDs in its queue zset until the
         # job finishes, so a live coordinator (or executing child) keeps
         # depth >= 1. Do not change this to a backlog-only metric: that would
@@ -1106,7 +1127,7 @@ async def reconcile_stale_source_images(
     processing_result = await session.execute(processing_stmt)
     processing_ids = [row[0] for row in processing_result.all()]
     pending_ids: list[int] = []
-    if pending_stmt is not None:
+    if pending_stmt is not None and live_coordinator_count == 0:
         pending_result = await session.execute(pending_stmt)
         pending_ids = [row[0] for row in pending_result.all()]
     ids = processing_ids + pending_ids

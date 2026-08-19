@@ -127,6 +127,10 @@ async def test_required_mode_call_site_matrix_rejects_without_runners(tmp_path) 
     replace_bg.add_task.assert_not_called()
 
     bulk_db = MagicMock()
+    bulk_result = MagicMock()
+    bulk_result.scalar_one.return_value = 0
+    bulk_result.all.return_value = []
+    bulk_db.execute = AsyncMock(return_value=bulk_result)
     bulk_db.commit = AsyncMock()
     bulk_db.refresh = AsyncMock(side_effect=lambda obj: setattr(obj, "id", 3))
     bulk_bg = MagicMock()

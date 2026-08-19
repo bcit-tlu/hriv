@@ -394,6 +394,10 @@ async def test_reconcile_stale_source_images_updates_stale() -> None:
         "app.processing.collect_queue_state",
         new_callable=AsyncMock,
         return_value={"queue_up": True, "worker_up": True, "depth": 0},
+    ), patch(
+        "app.worker.get_pool",
+        new_callable=AsyncMock,
+        return_value=AsyncMock(zcount=AsyncMock(return_value=0)),
     ):
         count = await reconcile_stale_source_images(
             session,
@@ -420,6 +424,10 @@ async def test_reconcile_pending_cutoff_is_longer_than_processing() -> None:
         "app.processing.collect_queue_state",
         new_callable=AsyncMock,
         return_value={"queue_up": True, "worker_up": True, "depth": 0},
+    ), patch(
+        "app.worker.get_pool",
+        new_callable=AsyncMock,
+        return_value=AsyncMock(zcount=AsyncMock(return_value=0)),
     ):
         await reconcile_stale_source_images(
             session,
@@ -453,6 +461,10 @@ async def test_reconcile_stale_source_images_no_stale() -> None:
         "app.processing.collect_queue_state",
         new_callable=AsyncMock,
         return_value={"queue_up": True, "worker_up": True, "depth": 0},
+    ), patch(
+        "app.worker.get_pool",
+        new_callable=AsyncMock,
+        return_value=AsyncMock(zcount=AsyncMock(return_value=0)),
     ):
         count = await reconcile_stale_source_images(
             session,

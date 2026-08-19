@@ -313,6 +313,7 @@ async def test_bulk_import_images_rejects_when_no_valid_images(tmp_path) -> None
     """Non-image files in the upload are silently skipped, so a payload
     consisting entirely of non-images results in a 400."""
     db = AsyncMock()
+    db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
     db.get = AsyncMock(return_value=SimpleNamespace(id=1))  # Category exists
     bg = MagicMock()
 
@@ -339,6 +340,7 @@ async def test_bulk_import_images_accepts_plain_image(tmp_path) -> None:
         category_id=1,
     )
     db = AsyncMock()
+    db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
     db.get = AsyncMock(return_value=category)
     db.add = MagicMock()
     db.commit = AsyncMock()
@@ -380,6 +382,7 @@ async def test_bulk_import_images_accepts_no_category(tmp_path) -> None:
         category_id=None,
     )
     db = AsyncMock()
+    db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
     # category_id=None means db.get for Category is never called
     db.add = MagicMock()
     db.commit = AsyncMock()
@@ -411,6 +414,7 @@ async def test_bulk_import_images_accepts_no_category(tmp_path) -> None:
 async def test_bulk_import_images_silently_skips_non_image_files(tmp_path) -> None:
     category = SimpleNamespace(id=1)
     db = AsyncMock()
+    db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
     db.get = AsyncMock(return_value=category)
     db.add = MagicMock()
     db.commit = AsyncMock()
@@ -443,6 +447,7 @@ async def test_bulk_import_images_silently_skips_non_image_files(tmp_path) -> No
 async def test_bulk_import_images_extracts_zip_entries(tmp_path) -> None:
     category = SimpleNamespace(id=1)
     db = AsyncMock()
+    db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
     db.get = AsyncMock(return_value=category)
     db.add = MagicMock()
     db.commit = AsyncMock()
@@ -487,6 +492,7 @@ async def test_bulk_import_images_streams_zip_extraction(tmp_path) -> None:
     """ZIP entries are copied incrementally instead of loaded in one read."""
     category = SimpleNamespace(id=1)
     db = AsyncMock()
+    db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
     db.get = AsyncMock(return_value=category)
     db.add = MagicMock()
     db.commit = AsyncMock()
@@ -518,6 +524,7 @@ async def test_bulk_import_images_streams_zip_extraction(tmp_path) -> None:
 async def test_bulk_import_images_rejects_corrupt_zip(tmp_path) -> None:
     category = SimpleNamespace(id=1)
     db = AsyncMock()
+    db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
     db.get = AsyncMock(return_value=category)
     bg = MagicMock()
 
@@ -541,6 +548,7 @@ async def test_bulk_import_images_skips_uploads_without_filename(tmp_path) -> No
     """An UploadFile with an empty filename is skipped silently."""
     category = SimpleNamespace(id=1)
     db = AsyncMock()
+    db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
     db.get = AsyncMock(return_value=category)
     db.add = MagicMock()
     db.commit = AsyncMock()
@@ -1422,6 +1430,8 @@ async def test_capacity_starvation_latch_rechecks_current_coordinator_capacity()
 async def test_capacity_starvation_ignores_api_hosted_coordinator() -> None:
     """API-hosted local fallback coordinators do not occupy arq slots."""
     progress = _BulkImportProgress(time.monotonic() - 901)
+    coordinator_pool = AsyncMock()
+    coordinator_pool.zcount.return_value = 0
 
     assert not await _bulk_import_has_capacity_starvation(
         batch_progress=progress,
@@ -1429,8 +1439,9 @@ async def test_capacity_starvation_ignores_api_hosted_coordinator() -> None:
         last_queue_confirmed_at=time.monotonic(),
         last_queue_worker_up=True,
         job_status=JobStatus.queued,
-        coordinator_pool=None,
+        coordinator_pool=coordinator_pool,
     )
+    coordinator_pool.zcount.assert_awaited_once()
 
 
 async def test_wait_for_source_image_refreshes_queue_evidence_for_in_progress_job() -> None:
@@ -2615,6 +2626,7 @@ async def test_bulk_import_images_strips_directory_prefix_from_zip(tmp_path) -> 
     basename.  Internal directory markers (entries ending in ``/``) are skipped."""
     category = SimpleNamespace(id=1)
     db = AsyncMock()
+    db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
     db.get = AsyncMock(return_value=category)
     db.add = MagicMock()
     db.commit = AsyncMock()
@@ -2659,6 +2671,7 @@ async def test_bulk_import_uses_arq_when_redis_available(tmp_path) -> None:
     """When enqueue_bulk_import returns True, BackgroundTasks is NOT used."""
     category = SimpleNamespace(id=1)
     db = AsyncMock()
+    db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
     db.get = AsyncMock(return_value=category)
     db.add = MagicMock()
     db.commit = AsyncMock()
@@ -2691,6 +2704,7 @@ async def test_bulk_import_falls_back_to_background_tasks(tmp_path) -> None:
     """When enqueue_bulk_import returns False, BackgroundTasks IS used."""
     category = SimpleNamespace(id=1)
     db = AsyncMock()
+    db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
     db.get = AsyncMock(return_value=category)
     db.add = MagicMock()
     db.commit = AsyncMock()
@@ -2727,6 +2741,7 @@ async def test_bulk_import_rejection_unlinks_only_after_bookkeeping(
     """Queue rejection retains staged files when terminal bookkeeping fails."""
     category = SimpleNamespace(id=1)
     db = AsyncMock()
+    db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
     db.get = AsyncMock(return_value=category)
     db.add = MagicMock()
     db.refresh = AsyncMock(side_effect=lambda obj: setattr(obj, "id", 88))
@@ -2773,6 +2788,7 @@ async def test_bulk_import_enospc_plain_image(tmp_path) -> None:
     """ENOSPC during plain image write returns 507 and cleans up files."""
     category = SimpleNamespace(id=1)
     db = AsyncMock()
+    db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
     db.get = AsyncMock(return_value=category)
     bg = MagicMock()
 
@@ -2802,6 +2818,7 @@ async def test_bulk_import_enospc_zip_extraction(tmp_path) -> None:
     """ENOSPC during zip entry extraction returns 507."""
     category = SimpleNamespace(id=1)
     db = AsyncMock()
+    db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
     db.get = AsyncMock(return_value=category)
     bg = MagicMock()
 
