@@ -88,6 +88,7 @@ _SOURCE_IMAGE_QUEUE_CONFIRMATION_MAX_AGE_SECONDS = (
 )
 _BULK_IMPORT_COORDINATOR_LIVENESS_KEY = "hriv:bulk_import:coordinators"
 _BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS = HEALTH_CHECK_INTERVAL_SECONDS * 3
+_SOURCE_IMAGE_ABORT_LATCH_RETENTION_SECONDS = WorkerSettings.job_timeout * 2
 _SOURCE_IMAGE_NO_WORKER_WINDOW_SECONDS = (
     _SOURCE_IMAGE_NO_WORKER_OBSERVATIONS * _SOURCE_IMAGE_POLL_INTERVAL_SECONDS
 )
@@ -164,7 +165,22 @@ async def _write_source_image_abort_latch(
         )
         return False
     try:
-        await pool.zadd(abort_jobs_ss, {job_id: timestamp_ms()})
+        now_ms = timestamp_ms()
+        try:
+            await pool.zremrangebyscore(
+                abort_jobs_ss,
+                "-inf",
+                now_ms - (_SOURCE_IMAGE_ABORT_LATCH_RETENTION_SECONDS * 1000),
+            )
+        except Exception:
+            logger.debug(
+                "Could not prune old bulk import source image abort latches",
+                extra={
+                    "event": "bulk_import.source_job_abort_latch_prune_failed",
+                },
+                exc_info=True,
+            )
+        await pool.zadd(abort_jobs_ss, {job_id: now_ms})
     except Exception:
         logger.exception(
             "Could not write bulk import source image abort latch",
@@ -853,13 +869,37 @@ async def reconcile_stale_bulk_import_jobs(
     stale_after_seconds: int = _STALE_BULK_IMPORT_SECONDS,
 ) -> int:
     """Mark abandoned bulk-import coordinators as failed on startup."""
+    pool = await get_pool()
+    if pool is None:
+        return 0
+    try:
+        live_since = timestamp_ms() - (
+            _BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS * 1000
+        )
+        live_members = await pool.zrange(
+            _BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
+            live_since,
+            "+inf",
+            byscore=True,
+        )
+        live_ids = {int(member) for member in live_members}
+    except Exception:
+        logger.warning(
+            "Could not read bulk-import coordinator liveness on startup",
+            extra={"event": "bulk_import.reconcile_liveness_unavailable"},
+            exc_info=True,
+        )
+        return 0
     cutoff = datetime.now(timezone.utc) - timedelta(seconds=stale_after_seconds)
+    filters = [
+        BulkImportJob.status == "processing",
+        BulkImportJob.updated_at < cutoff,
+    ]
+    if live_ids:
+        filters.append(BulkImportJob.id.not_in(live_ids))
     stmt = (
         update(BulkImportJob)
-        .where(
-            BulkImportJob.status == "processing",
-            BulkImportJob.updated_at < cutoff,
-        )
+        .where(*filters)
         .values(
             status="failed",
             updated_at=func.now(),

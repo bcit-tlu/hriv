@@ -32,6 +32,7 @@ from app.routers.bulk_import import (
     _bulk_import_has_capacity_starvation,
     _is_image_filename,
     _process_bulk_import,
+    _write_source_image_abort_latch,
     _wait_for_source_image_terminal_state,
     bulk_import_images,
     get_bulk_import_job,
@@ -92,11 +93,18 @@ async def test_reconcile_stale_bulk_import_jobs_marks_processing_stale() -> None
     result.all.return_value = [row]
     session = AsyncMock()
     session.execute = AsyncMock(return_value=result)
+    pool = MagicMock()
+    pool.zrange = AsyncMock(return_value=[])
 
-    count = await reconcile_stale_bulk_import_jobs(
-        session,
-        stale_after_seconds=900,
-    )
+    with patch(
+        "app.routers.bulk_import.get_pool",
+        new_callable=AsyncMock,
+        return_value=pool,
+    ):
+        count = await reconcile_stale_bulk_import_jobs(
+            session,
+            stale_after_seconds=900,
+        )
 
     assert count == 1
     session.commit.assert_awaited_once()
@@ -105,6 +113,62 @@ async def test_reconcile_stale_bulk_import_jobs_marks_processing_stale() -> None
     sql = str(stmt.compile())
     assert "errors" not in sql
     assert "failed_count" not in sql
+
+
+async def test_reconcile_stale_bulk_import_jobs_keeps_live_coordinator() -> None:
+    session = AsyncMock()
+    pool = MagicMock()
+    pool.zrange = AsyncMock(return_value=[b"27"])
+    result = MagicMock()
+    result.all.return_value = []
+    session.execute = AsyncMock(return_value=result)
+
+    with patch(
+        "app.routers.bulk_import.get_pool",
+        new_callable=AsyncMock,
+        return_value=pool,
+    ):
+        count = await reconcile_stale_bulk_import_jobs(
+            session,
+            stale_after_seconds=900,
+        )
+
+    assert count == 0
+    session.commit.assert_awaited_once()
+
+
+async def test_reconcile_stale_bulk_import_jobs_skips_when_redis_unavailable() -> None:
+    session = AsyncMock()
+
+    with patch(
+        "app.routers.bulk_import.get_pool",
+        new_callable=AsyncMock,
+        return_value=None,
+    ):
+        count = await reconcile_stale_bulk_import_jobs(
+            session,
+            stale_after_seconds=900,
+        )
+
+    assert count == 0
+    session.execute.assert_not_awaited()
+    session.commit.assert_not_awaited()
+
+
+async def test_write_abort_latch_prunes_old_markers() -> None:
+    pool = MagicMock()
+    pool.zremrangebyscore = AsyncMock()
+    pool.zadd = AsyncMock()
+
+    with patch(
+        "app.routers.bulk_import.get_pool",
+        new_callable=AsyncMock,
+        return_value=pool,
+    ):
+        assert await _write_source_image_abort_latch(12, "slide.svs", "job-12")
+
+    pool.zremrangebyscore.assert_awaited_once()
+    pool.zadd.assert_awaited_once()
 
 
 def test_is_image_filename_valid() -> None:

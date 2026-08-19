@@ -206,6 +206,13 @@ covered by
 `test_abort_latch_survives_pruning_and_is_consumed_before_job_start` in
 `backend/tests/test_worker.py`.
 
+Every source-image processor also refuses to start when its row is already
+terminal, regardless of whether startup reconciliation, a bulk-import
+detector, or another failure path recorded that terminal state. This prevents
+late queued jobs from overwriting a recorded failure; arq retries remain
+valid because retryable rows stay in `processing` rather than becoming
+terminal.
+
 ## Stale SourceImage reconciliation
 
 `reconcile_stale_source_images()` runs on **backend (API pod) startup** and marks
@@ -219,10 +226,15 @@ genuinely lost jobs without failing healthy queued work.
 
 `reconcile_stale_bulk_import_jobs()` also runs at startup. It marks a
 `processing` bulk-import coordinator as `failed` when its counters have not
-moved past the configured stale threshold, preserving the existing per-file
-`errors` and `failed_count` accounting. This finalises coordinator rows left
-behind by a cancelled or killed arq job; the coordinator uses `max_tries=1`
-because retrying its non-idempotent batch would duplicate `SourceImage` rows.
+moved past the configured stale threshold and it has no live worker-hosted
+coordinator registration. A live registration keeps a long-running import
+untouched; unavailable Redis or unreadable liveness data leaves all rows
+untouched. API-hosted local fallbacks do not register and therefore use the
+same conservative abandoned-row path on startup. Existing per-file `errors`
+and `failed_count` accounting is preserved. This finalises coordinator rows
+left behind by a cancelled or killed arq job; the coordinator uses
+`max_tries=1` because retrying its non-idempotent batch would duplicate
+`SourceImage` rows.
 
 ## Related code
 

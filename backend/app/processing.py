@@ -1081,6 +1081,10 @@ async def reconcile_stale_source_images(
         and queue_state["worker_up"] is True
         and queue_state["depth"] == 0
     ):
+        # arq keeps queued and executing job IDs in its queue zset until the
+        # job finishes, so a live coordinator (or executing child) keeps
+        # depth >= 1. Do not change this to a backlog-only metric: that would
+        # mass-fail rows committed before _process_one acquires its semaphore.
         pending_stmt = (
             update(SourceImage)
             .where(
