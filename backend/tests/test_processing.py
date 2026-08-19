@@ -381,7 +381,7 @@ async def test_best_effort_source_checksum_swallows_dispatch_error() -> None:
 
 
 async def test_reconcile_stale_source_images_updates_stale() -> None:
-    """Stale source images in processing/pending are marked failed."""
+    """Stale processing and pending source images are marked failed."""
     mock_row = MagicMock()
     mock_row.__getitem__ = lambda self, i: 42  # id=42
     mock_result = MagicMock()
@@ -391,20 +391,49 @@ async def test_reconcile_stale_source_images_updates_stale() -> None:
     session.execute = AsyncMock(return_value=mock_result)
 
     count = await reconcile_stale_source_images(session, stale_after_seconds=900)
-    assert count == 1
+    assert count == 2
+    assert session.execute.await_count == 2
     session.commit.assert_awaited_once()
+
+
+async def test_reconcile_pending_cutoff_is_longer_than_processing() -> None:
+    """Pending queue wait uses the coordinator's longer safety bound."""
+    processing_result = MagicMock()
+    processing_result.all.return_value = []
+    pending_result = MagicMock()
+    pending_result.all.return_value = []
+    session = AsyncMock()
+    session.execute = AsyncMock(
+        side_effect=[processing_result, pending_result],
+    )
+
+    await reconcile_stale_source_images(session, stale_after_seconds=900)
+
+    processing_stmt = session.execute.await_args_list[0].args[0]
+    pending_stmt = session.execute.await_args_list[1].args[0]
+    processing_sql = str(processing_stmt.compile())
+    pending_sql = str(pending_stmt.compile())
+    assert "source_images.status = :status_1" in processing_sql
+    assert "source_images.status = :status_1" in pending_sql
+    assert processing_stmt.compile().params["status_1"] == "processing"
+    assert pending_stmt.compile().params["status_1"] == "pending"
+    assert pending_stmt.compile().params["updated_at_1"] < processing_stmt.compile().params["updated_at_1"]
+    assert "processing task likely crashed" in processing_stmt.compile().params["error_message"]
+    assert "processing never started" in pending_stmt.compile().params["error_message"]
 
 
 async def test_reconcile_stale_source_images_no_stale() -> None:
     """When no source images are stale, nothing is updated."""
-    mock_result = MagicMock()
-    mock_result.all.return_value = []
+    mock_results = [MagicMock(), MagicMock()]
+    for mock_result in mock_results:
+        mock_result.all.return_value = []
 
     session = AsyncMock()
-    session.execute = AsyncMock(return_value=mock_result)
+    session.execute = AsyncMock(side_effect=mock_results)
 
     count = await reconcile_stale_source_images(session, stale_after_seconds=900)
     assert count == 0
+    assert session.execute.await_count == 2
     session.commit.assert_awaited_once()
 
 

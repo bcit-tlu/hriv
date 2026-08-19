@@ -20,7 +20,7 @@ from sqlalchemy.sql.dml import Update
 
 from app.database import settings
 from app.models import AdminTask
-from app.worker import EnqueueResult
+from app.worker import EnqueueResult, TaskQueueUnavailableError
 
 from app.admin_ops import (
     FILES_EXPORT_FORMAT_VERSION,
@@ -2911,6 +2911,42 @@ async def test_queue_rebuild_tiles_after_import_marks_failed_on_enqueue_error(tm
     assert not any(tmp_path.glob("rebuild-after-import-*.json"))
     assert session.execute.await_count == 3  # select, insert, update
     session.commit.assert_awaited()
+
+
+async def test_queue_rebuild_tiles_after_import_logs_expected_rejection_without_traceback(
+    tmp_path,
+    caplog,
+) -> None:
+    """Required-mode queue rejection is warning-level without a traceback."""
+    import logging
+
+    import_task = SimpleNamespace(
+        input_path=str(tmp_path / "import.tar.gz"),
+        created_by=1,
+    )
+    session, session_factory = _queue_session_factory(insert_id=99)
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=session_factory),
+        patch(
+            "app.admin_ops.enqueue_admin_task",
+            new_callable=AsyncMock,
+            side_effect=TaskQueueUnavailableError("queue_unavailable"),
+        ),
+        patch("app.admin_ops._ensure_tasks_dir", return_value=str(tmp_path)),
+        caplog.at_level(logging.WARNING, logger="app.admin_ops"),
+    ):
+        message = await _queue_rebuild_tiles_after_import(import_task)
+
+    assert "Could not queue automatic tile rebuild" in message
+    rejection_records = [
+        record
+        for record in caplog.records
+        if record.message.startswith("Failed to enqueue rebuild task")
+    ]
+    assert rejection_records
+    assert all(record.exc_info is None for record in rejection_records)
+    assert session.execute.await_count == 3
 
 
 async def test_queue_rebuild_tiles_after_import_queues_on_success(tmp_path) -> None:

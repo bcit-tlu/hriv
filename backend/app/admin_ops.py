@@ -38,7 +38,7 @@ from .backup_access import (
 from .component_versions import get_app_version
 from .database import get_async_session, settings
 from .tile_order import INITIAL_SCOPE_REVISION
-from .worker import enqueue_admin_task
+from .worker import TaskQueueUnavailableError, enqueue_admin_task
 from .models import (
     ACTIVE_TASK_STATUSES,
     AdminTask,
@@ -1902,6 +1902,13 @@ async def _queue_rebuild_tiles_after_import(
 
         try:
             enqueue_result = await enqueue_admin_task(task_id, "rebuild_tiles")
+        except TaskQueueUnavailableError as exc:
+            logger.warning(
+                "Failed to enqueue rebuild task %d: %s",
+                task_id,
+                exc,
+            )
+            enqueue_result = None
         except Exception:
             logger.warning("Failed to enqueue rebuild task %d", task_id, exc_info=True)
             enqueue_result = None

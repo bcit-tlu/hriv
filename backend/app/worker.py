@@ -491,6 +491,13 @@ async def on_startup(ctx: dict[str, Any]) -> None:
 
 # ── arq WorkerSettings ───────────────────────────────────
 
+WORKER_JOB_TIMEOUT_SECONDS = 7200
+SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS = max(
+    WORKER_JOB_TIMEOUT_SECONDS // 2,
+    1,
+)
+
+
 class WorkerSettings:
     """Configuration class consumed by ``arq worker``."""
 
@@ -506,5 +513,6 @@ class WorkerSettings:
     health_check_interval = int(HEALTH_CHECK_INTERVAL_SECONDS)
     on_startup = on_startup
     max_jobs = settings.worker_max_jobs
-    job_timeout = 7200  # 2 hours — default bound for short-lived worker jobs
+    # 2 hours — default bound for short-lived worker jobs
+    job_timeout = WORKER_JOB_TIMEOUT_SECONDS
     allow_abort_jobs = True

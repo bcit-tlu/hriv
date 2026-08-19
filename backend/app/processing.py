@@ -33,6 +33,7 @@ from .tile_provenance import (
     compute_source_checksum,
     current_tile_settings_hash,
 )
+from .worker import SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -1033,6 +1034,7 @@ async def process_replace_image(
 _STALE_SOURCE_IMAGE_SECONDS = int(
     os.environ.get("SOURCE_IMAGE_STALE_SECONDS", "900")
 )
+_STALE_PENDING_SOURCE_IMAGE_SECONDS = SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS
 
 
 async def reconcile_stale_source_images(
@@ -1041,20 +1043,24 @@ async def reconcile_stale_source_images(
 ) -> int:
     """Mark orphaned in-flight SourceImages as ``failed``.
 
-    A SourceImage is considered stale when its status is ``pending`` or
-    ``processing`` but its ``updated_at`` timestamp is older than
-    *stale_after_seconds*.  This runs on backend startup so images whose
-    processing task died (pod crash, OOM kill, rollout) are cleaned up
-    rather than appearing stuck in the UI forever.
+    Processing rows use *stale_after_seconds* as their no-progress cutoff.
+    Pending rows use the longer coordinator pending-wait bound so queue wait
+    is not mistaken for a crashed task. This runs on backend startup so
+    genuinely orphaned images are cleaned up rather than appearing stuck in
+    the UI forever.
 
     Returns the number of rows updated.
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(seconds=stale_after_seconds)
-    stmt = (
+    now = datetime.now(timezone.utc)
+    processing_cutoff = now - timedelta(seconds=stale_after_seconds)
+    pending_cutoff = now - timedelta(
+        seconds=_STALE_PENDING_SOURCE_IMAGE_SECONDS
+    )
+    processing_stmt = (
         update(SourceImage)
         .where(
-            SourceImage.status.in_(["pending", "processing"]),
-            SourceImage.updated_at < cutoff,
+            SourceImage.status == "processing",
+            SourceImage.updated_at < processing_cutoff,
         )
         .values(
             status="failed",
@@ -1068,8 +1074,30 @@ async def reconcile_stale_source_images(
         )
         .returning(SourceImage.id)
     )
-    result = await session.execute(stmt)
-    ids = [row[0] for row in result.all()]
+    pending_stmt = (
+        update(SourceImage)
+        .where(
+            SourceImage.status == "pending",
+            SourceImage.updated_at < pending_cutoff,
+        )
+        .values(
+            status="failed",
+            error_message=(
+                "Marked as failed on backend startup — processing never "
+                f"started within {_STALE_PENDING_SOURCE_IMAGE_SECONDS}s."
+            ),
+            status_message="Failed",
+            updated_at=func.now(),
+        )
+        .returning(SourceImage.id)
+    )
+    processing_result = await session.execute(processing_stmt)
+    pending_result = await session.execute(pending_stmt)
+    ids = [
+        row[0]
+        for result in (processing_result, pending_result)
+        for row in result.all()
+    ]
     await session.commit()
     if ids:
         logger.warning(

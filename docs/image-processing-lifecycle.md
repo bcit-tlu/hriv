@@ -206,9 +206,11 @@ covered by
 ## Stale SourceImage reconciliation
 
 `reconcile_stale_source_images()` runs on **backend (API pod) startup** and marks
-SourceImages as `failed` if they have been stuck in `pending` or
-`processing` for longer than a threshold (default: `job_timeout` plus
-a buffer). This handles cases where the worker crashed mid-processing.
+SourceImages as `failed` when they exceed status-specific cutoffs. `processing`
+rows use the 900-second no-progress cutoff because they have started work;
+`pending` rows use the longer `job_timeout // 2` pending-wait bound (1 hour by
+default) so time spent waiting in the arq queue is not mistaken for a crash.
+This handles genuinely orphaned rows without failing healthy queued work.
 
 ## Related code
 

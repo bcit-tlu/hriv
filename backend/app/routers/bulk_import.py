@@ -40,6 +40,7 @@ from ..schemas import MAX_NOTE_LENGTH, BulkImportJobOut, normalize_note_value
 from ..tracing import record_exception_if_server_error
 from ..worker import (
     EnqueueResult,
+    SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS,
     TaskQueueUnavailableError,
     WorkerSettings,
     enqueue_bulk_import,
@@ -64,14 +65,13 @@ _SOURCE_IMAGE_STALE_SECONDS = int(os.environ.get("SOURCE_IMAGE_STALE_SECONDS", "
 _SOURCE_IMAGE_PENDING_GRACE_SECONDS = 10
 _SOURCE_IMAGE_LOST_OBSERVATIONS = 2
 _SOURCE_IMAGE_NO_WORKER_OBSERVATIONS = 60
+_SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS = (
+    SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS
+)
 # Keep the pending ceiling below the coordinator's timeout so late-enqueued
 # children still leave time for terminal bookkeeping before it is killed.
 # The ceiling is only a backstop when queue evidence has gone stale; a child
 # repeatedly confirmed queued behind a healthy worker must never hit it.
-_SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS = max(
-    WorkerSettings.job_timeout // 2,
-    1,
-)
 # Worker-hosted coordinators rely on the stale-progress detector because arq
 # can kill the coordinator before this cap. API-hosted coordinators do not have
 # that outer arq timeout, so this cap backstops a child stalled in processing.
