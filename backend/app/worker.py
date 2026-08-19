@@ -40,6 +40,7 @@ from .queue_metrics import (
     HEALTH_CHECK_INTERVAL_SECONDS,
     HEALTH_CHECK_KEY,
 )
+from .task_constants import WORKER_JOB_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -490,21 +491,13 @@ async def on_startup(ctx: dict[str, Any]) -> None:
 
 
 # ── arq WorkerSettings ───────────────────────────────────
-
-WORKER_JOB_TIMEOUT_SECONDS = 7200
-SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS = max(
-    WORKER_JOB_TIMEOUT_SECONDS // 2,
-    1,
-)
-
-
 class WorkerSettings:
     """Configuration class consumed by ``arq worker``."""
 
     functions = [
         process_source_image_task,
         replace_image_task,
-        bulk_import_task,
+        func(bulk_import_task, max_tries=1),
         func(admin_task_runner, timeout=86400),
     ]
     redis_settings = _parse_redis_settings()

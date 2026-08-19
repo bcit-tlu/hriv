@@ -182,6 +182,9 @@ settings hash. See [tile-cache-provenance.md](tile-cache-provenance.md) for the
 staleness rules and API surface.
 
 Bulk-import coordinators distinguish a lost child job from a stopped worker.
+The coordinator itself is registered with arq using `max_tries=1`: arq does not
+retry a timed-out coordinator because rerunning the non-idempotent coordinator
+would create duplicate `SourceImage` rows for the same files.
 Worker-hosted coordinators register their arq worker-slot occupancy in Redis
 while API-hosted local fallbacks do not; capacity starvation counts only those
 live registrations.

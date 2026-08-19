@@ -1,0 +1,7 @@
+"""Shared task timing constants."""
+
+WORKER_JOB_TIMEOUT_SECONDS = 7200
+SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS = max(
+    WORKER_JOB_TIMEOUT_SECONDS // 2,
+    1,
+)

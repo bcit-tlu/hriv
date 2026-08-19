@@ -37,10 +37,10 @@ from ..image_validation import IMAGE_EXTENSIONS, UPLOAD_CHUNK_SIZE
 from ..models import BulkImportJob, Category, SourceImage, User
 from ..processing import process_source_image
 from ..schemas import MAX_NOTE_LENGTH, BulkImportJobOut, normalize_note_value
+from ..task_constants import SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS
 from ..tracing import record_exception_if_server_error
 from ..worker import (
     EnqueueResult,
-    SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS,
     TaskQueueUnavailableError,
     WorkerSettings,
     enqueue_bulk_import,
@@ -298,9 +298,15 @@ async def _register_bulk_import_coordinator(
     if pool is None:
         return None
     try:
+        now_ms = timestamp_ms()
+        await pool.zremrangebyscore(
+            _BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
+            "-inf",
+            now_ms - (_BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS * 1000),
+        )
         await pool.zadd(
             _BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
-            {str(bulk_import_job_id): timestamp_ms()},
+            {str(bulk_import_job_id): now_ms},
         )
     except Exception:
         logger.exception(

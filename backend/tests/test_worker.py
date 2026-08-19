@@ -245,11 +245,13 @@ def test_worker_settings_only_extend_timeout_for_admin_tasks() -> None:
     assert WorkerSettings.health_check_interval == 30
     assert WorkerSettings.health_check_key == "arq:queue:health-check"
     assert not hasattr(WorkerSettings, "cron_jobs")
-    assert WorkerSettings.functions[:3] == [
+    assert WorkerSettings.functions[:2] == [
         process_source_image_task,
         replace_image_task,
-        bulk_import_task,
     ]
+    bulk_import_fn = WorkerSettings.functions[2]
+    assert bulk_import_fn.coroutine == bulk_import_task
+    assert bulk_import_fn.max_tries == 1
     admin_fn = WorkerSettings.functions[3]
     assert admin_fn.name == "admin_task_runner"
     assert admin_fn.timeout_s == 86400

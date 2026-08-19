@@ -26,6 +26,7 @@ from sqlalchemy.sql import func
 
 from .database import async_session, settings
 from .models import Image, SourceImage
+from .task_constants import SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS
 from .tile_provenance import (
     DZI_OVERLAP,
     DZI_TILE_SIZE,
@@ -33,7 +34,6 @@ from .tile_provenance import (
     compute_source_checksum,
     current_tile_settings_hash,
 )
-from .worker import SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -1040,6 +1040,7 @@ _STALE_PENDING_SOURCE_IMAGE_SECONDS = SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECON
 async def reconcile_stale_source_images(
     session: AsyncSession,
     stale_after_seconds: int = _STALE_SOURCE_IMAGE_SECONDS,
+    pending_stale_after_seconds: int = _STALE_PENDING_SOURCE_IMAGE_SECONDS,
 ) -> int:
     """Mark orphaned in-flight SourceImages as ``failed``.
 
@@ -1053,9 +1054,7 @@ async def reconcile_stale_source_images(
     """
     now = datetime.now(timezone.utc)
     processing_cutoff = now - timedelta(seconds=stale_after_seconds)
-    pending_cutoff = now - timedelta(
-        seconds=_STALE_PENDING_SOURCE_IMAGE_SECONDS
-    )
+    pending_cutoff = now - timedelta(seconds=pending_stale_after_seconds)
     processing_stmt = (
         update(SourceImage)
         .where(
@@ -1084,7 +1083,7 @@ async def reconcile_stale_source_images(
             status="failed",
             error_message=(
                 "Marked as failed on backend startup — processing never "
-                f"started within {_STALE_PENDING_SOURCE_IMAGE_SECONDS}s."
+                f"started within {pending_stale_after_seconds}s."
             ),
             status_message="Failed",
             updated_at=func.now(),
@@ -1093,11 +1092,9 @@ async def reconcile_stale_source_images(
     )
     processing_result = await session.execute(processing_stmt)
     pending_result = await session.execute(pending_stmt)
-    ids = [
-        row[0]
-        for result in (processing_result, pending_result)
-        for row in result.all()
-    ]
+    processing_ids = [row[0] for row in processing_result.all()]
+    pending_ids = [row[0] for row in pending_result.all()]
+    ids = processing_ids + pending_ids
     await session.commit()
     if ids:
         logger.warning(
@@ -1107,6 +1104,9 @@ async def reconcile_stale_source_images(
                 "event": "processing.reconciled_stale",
                 "source_image_ids": ids,
                 "stale_after_seconds": stale_after_seconds,
+                "pending_stale_after_seconds": pending_stale_after_seconds,
+                "processing_source_image_ids": processing_ids,
+                "pending_source_image_ids": pending_ids,
             },
         )
     return len(ids)

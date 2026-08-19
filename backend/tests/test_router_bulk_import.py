@@ -547,6 +547,7 @@ async def test_worker_hosted_bulk_import_registers_and_cleans_up_slot() -> None:
     pool = MagicMock()
     pool.zadd = AsyncMock()
     pool.zrem = AsyncMock()
+    pool.zremrangebyscore = AsyncMock()
 
     with (
         patch("app.routers.bulk_import.get_pool", new_callable=AsyncMock, return_value=pool),
@@ -564,6 +565,11 @@ async def test_worker_hosted_bulk_import_registers_and_cleans_up_slot() -> None:
     process_impl.assert_awaited_once()
     pool.zadd.assert_awaited_once()
     pool.zrem.assert_awaited_once()
+    pool.zremrangebyscore.assert_awaited_once()
+    assert pool.zremrangebyscore.await_args.args[0] == (
+        "hriv:bulk_import:coordinators"
+    )
+    assert pool.zremrangebyscore.await_args.args[1] == "-inf"
 
 
 async def test_process_bulk_import_normalizes_empty_note(tmp_path) -> None:

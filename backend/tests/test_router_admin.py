@@ -374,6 +374,31 @@ async def test_kick_off_redis_unavailable() -> None:
     bg.add_task.assert_called_once()
 
 
+async def test_kick_off_rejection_retains_input_when_bookkeeping_fails(tmp_path) -> None:
+    input_path = tmp_path / "import.json"
+    input_path.write_text("payload")
+    task = _make_admin_task(task_type="db_import", input_path=str(input_path))
+    db = AsyncMock()
+    db.execute = AsyncMock()
+    db.commit = AsyncMock(side_effect=RuntimeError("database unavailable"))
+    db_context = MagicMock()
+    db_context.__aenter__ = AsyncMock(return_value=db)
+    db_context.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("app.routers.admin.async_session", return_value=db_context),
+        patch(
+            "app.routers.admin.enqueue_admin_task",
+            new_callable=AsyncMock,
+            side_effect=TaskQueueUnavailableError("queue_unavailable"),
+        ),
+    ):
+        with pytest.raises(TaskQueueUnavailableError):
+            await _kick_off(task, MagicMock())
+
+    assert input_path.exists()
+
+
 @pytest.mark.parametrize("task_type", ["db_import", "rebuild_tiles", "file_restore", "files_import"])
 async def test_kick_off_rejection_cleans_generated_inputs_but_retains_archives(
     task_type,
