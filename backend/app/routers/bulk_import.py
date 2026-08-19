@@ -65,16 +65,22 @@ _SOURCE_IMAGE_LOST_OBSERVATIONS = 2
 _SOURCE_IMAGE_NO_WORKER_OBSERVATIONS = 60
 # Keep the pending ceiling below the coordinator's timeout so late-enqueued
 # children still leave time for terminal bookkeeping before it is killed.
+# The ceiling is only a backstop when queue evidence has gone stale; a child
+# repeatedly confirmed queued behind a healthy worker must never hit it.
 _SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS = max(
     WorkerSettings.job_timeout // 2,
     1,
 )
-# The processing cap is measured after the child starts, so it must outlast
-# the child's timeout rather than the coordinator's pending-wait deadline.
+# Worker-hosted coordinators rely on the stale-progress detector because arq
+# can kill the coordinator before this cap. API-hosted coordinators do not have
+# that outer arq timeout, so this cap backstops a child stalled in processing.
 _SOURCE_IMAGE_PROCESSING_WAIT_SAFETY_CAP_SECONDS = WorkerSettings.job_timeout + 60
 _SOURCE_IMAGE_QUEUE_STATE_SAMPLE_POLLS = max(
     HEALTH_CHECK_INTERVAL_SECONDS // _SOURCE_IMAGE_POLL_INTERVAL_SECONDS,
     1,
+)
+_SOURCE_IMAGE_QUEUE_CONFIRMATION_MAX_AGE_SECONDS = (
+    HEALTH_CHECK_INTERVAL_SECONDS * 2
 )
 _SOURCE_IMAGE_NO_WORKER_WINDOW_SECONDS = (
     _SOURCE_IMAGE_NO_WORKER_OBSERVATIONS * _SOURCE_IMAGE_POLL_INTERVAL_SECONDS
@@ -238,6 +244,7 @@ async def _wait_for_source_image_terminal_state(
     not_found_count = 0
     no_worker_count = 0
     no_worker_since: float | None = None
+    last_queue_confirmed_at: float | None = None
     poll_count = 0
     processing_started_at: float | None = None
     queued_at = (
@@ -345,15 +352,19 @@ async def _wait_for_source_image_terminal_state(
                         or poll_count % _SOURCE_IMAGE_QUEUE_STATE_SAMPLE_POLLS == 0
                     ):
                         queue_state = await collect_queue_state()
-                        if queue_state["queue_up"] and queue_state["worker_up"] is False:
-                            no_worker_count += 1
-                            no_worker_since = (
-                                no_worker_since or time.monotonic()
-                            )
+                        sampled_at = time.monotonic()
+                        if queue_state["queue_up"]:
+                            last_queue_confirmed_at = sampled_at
+                            if queue_state["worker_up"] is False:
+                                no_worker_count += 1
+                                no_worker_since = no_worker_since or sampled_at
+                            else:
+                                no_worker_count = 0
+                                no_worker_since = None
                         else:
                             no_worker_count = 0
                             no_worker_since = None
-                else:
+                elif job_status is not None:
                     no_worker_count = 0
                     no_worker_since = None
                 if not_found_count >= lost_observations:
@@ -433,6 +444,11 @@ async def _wait_for_source_image_terminal_state(
                 and enqueue_result is not None
                 and enqueue_result.job is not None
                 and time.monotonic() - queued_at >= pending_wait_safety_cap_seconds
+                and (
+                    last_queue_confirmed_at is None
+                    or time.monotonic() - last_queue_confirmed_at
+                    >= _SOURCE_IMAGE_QUEUE_CONFIRMATION_MAX_AGE_SECONDS
+                )
             ):
                 latch_written = await _write_source_image_abort_latch(
                     source_image_id,

@@ -66,6 +66,7 @@ _execution_mode = Gauge(
 ARQ_QUEUE_NAME = default_queue_name
 HEALTH_CHECK_KEY = ARQ_QUEUE_NAME + health_check_key_suffix
 HEALTH_CHECK_INTERVAL_SECONDS = 30
+_QUEUE_STATE_READ_TIMEOUT_SECONDS = 5
 
 
 def record_enqueue(job_type: str, outcome: str, reason: str) -> None:
@@ -90,20 +91,23 @@ async def collect_queue_state() -> dict[str, Any]:
     }
     if pool is None:
         return state
-    try:
+
+    async def read_state() -> tuple[int, float | None, float | None, bool | None]:
         now_ms = time.time() * 1000
         health_check_interval = WorkerSettings.health_check_interval
-        state["depth"] = await pool.zcard(ARQ_QUEUE_NAME)
+        depth = await pool.zcard(ARQ_QUEUE_NAME)
         oldest = await pool.zrange(ARQ_QUEUE_NAME, 0, 0, withscores=True)
+        oldest_age = None
         if oldest:
             score = oldest[0][1] if isinstance(oldest[0], tuple) else oldest[0]
-            state["oldest_pending_age_seconds"] = max(0.0, (now_ms - float(score)) / 1000)
+            oldest_age = max(0.0, (now_ms - float(score)) / 1000)
         remaining_ttl = await pool.ttl(HEALTH_CHECK_KEY)
-        state["worker_up"] = remaining_ttl != -2
+        worker_up = remaining_ttl != -2
+        heartbeat_age = None
         if remaining_ttl != -2:
             # arq.record_health() sets health_check_interval + 1 TTL; this
             # reads the API pod's interval, so worker overrides skew this age.
-            state["worker_heartbeat_age_seconds"] = (
+            heartbeat_age = (
                 0.0
                 if remaining_ttl == -1
                 else max(
@@ -111,6 +115,18 @@ async def collect_queue_state() -> dict[str, Any]:
                     health_check_interval + 1 - float(remaining_ttl),
                 )
             )
+        return depth, oldest_age, heartbeat_age, worker_up
+
+    try:
+        (
+            state["depth"],
+            state["oldest_pending_age_seconds"],
+            state["worker_heartbeat_age_seconds"],
+            state["worker_up"],
+        ) = await asyncio.wait_for(
+            read_state(),
+            timeout=_QUEUE_STATE_READ_TIMEOUT_SECONDS,
+        )
     except RedisError:
         state["queue_up"] = False
         state["depth"] = None

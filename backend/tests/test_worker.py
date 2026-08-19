@@ -6,7 +6,8 @@ from types import ModuleType
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
-from arq.constants import abort_jobs_ss
+from fakeredis import aioredis
+from arq.constants import abort_jobs_ss, job_key_prefix
 from arq.jobs import serialize_job
 from arq.utils import timestamp_ms
 from arq.worker import Worker, func
@@ -56,67 +57,6 @@ async def test_enqueue_succeeds_when_redis_available() -> None:
 async def test_abort_latch_survives_pruning_and_is_consumed_before_job_start() -> None:
     """Pin arq's past-dated abort marker behavior used by bulk imports."""
 
-    class _Pipeline:
-        def __init__(self, pool: "_AbortLatchRedis") -> None:
-            self.pool = pool
-            self.operations: list[tuple[str, object]] = []
-
-        def zrange(self, *_args: object, **_kwargs: object) -> None:
-            self.operations.append(("prune", None))
-
-        def zremrangebyscore(self, *_args: object, **_kwargs: object) -> None:
-            self.operations.append(("prune", None))
-
-        def get(self, *_args: object, **_kwargs: object) -> None:
-            self.operations.append(("start_get", None))
-
-        def incr(self, *_args: object, **_kwargs: object) -> None:
-            self.operations.append(("start_incr", None))
-
-        def expire(self, *_args: object, **_kwargs: object) -> None:
-            self.operations.append(("start_expire", None))
-
-        def zrem(self, *_args: object) -> None:
-            self.operations.append(("start_zrem", _args[-1]))
-
-        async def __aenter__(self) -> "_Pipeline":
-            return self
-
-        async def __aexit__(self, *_args: object) -> None:
-            return None
-
-        async def execute(self) -> list[object]:
-            if any(name == "prune" for name, _ in self.operations):
-                threshold = timestamp_ms() + 60
-                removed = [
-                    job_id
-                    for job_id, score in self.pool.markers.items()
-                    if score >= threshold
-                ]
-                for job_id in removed:
-                    del self.pool.markers[job_id]
-                return [[job_id.encode() for job_id in self.pool.markers], removed]
-
-            job_id = "latch-job"
-            abort_seen = job_id in self.pool.markers
-            self.pool.start_zrem_seen = abort_seen
-            self.pool.markers.pop(job_id, None)
-            return [
-                self.pool.job_payload,
-                1,
-                None,
-                abort_seen,
-            ]
-
-    class _AbortLatchRedis:
-        def __init__(self, job_payload: bytes) -> None:
-            self.markers = {"latch-job": timestamp_ms() - 1_000}
-            self.job_payload = job_payload
-            self.start_zrem_seen = False
-
-        def pipeline(self, **_kwargs: object) -> _Pipeline:
-            return _Pipeline(self)
-
     executed = False
 
     async def noop(_ctx: dict[str, object]) -> None:
@@ -124,7 +64,9 @@ async def test_abort_latch_survives_pruning_and_is_consumed_before_job_start() -
         executed = True
 
     job_payload = serialize_job("noop", (), {}, None, timestamp_ms() - 1_000)
-    redis = _AbortLatchRedis(job_payload)
+    redis = aioredis.FakeRedis()
+    await redis.set(job_key_prefix + "latch-job", job_payload)
+    await redis.zadd(abort_jobs_ss, {"latch-job": timestamp_ms() - 1_000})
     worker = Worker(
         [func(noop)],
         queue_name="arq:queue",
@@ -136,16 +78,16 @@ async def test_abort_latch_survives_pruning_and_is_consumed_before_job_start() -
 
     await worker._cancel_aborted_jobs()
     assert abort_jobs_ss == "arq:abort"
-    marker_score = redis.markers["latch-job"]
+    marker_score = await redis.zscore(abort_jobs_ss, "latch-job")
+    assert marker_score is not None
     assert marker_score < timestamp_ms() + 60
-    assert set(redis.markers) == {"latch-job"}
 
     await worker.run_job("latch-job", timestamp_ms())
 
-    assert redis.start_zrem_seen is True
-    assert redis.markers == {}
+    assert await redis.zscore(abort_jobs_ss, "latch-job") is None
     assert executed is False
     worker.finish_failed_job.assert_awaited_once()
+    await redis.aclose()
 
 
 def test_api_redis_settings_use_low_retry_budget() -> None:

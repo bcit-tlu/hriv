@@ -187,11 +187,15 @@ wall-clock window, it writes arq's abort latch before marking the `SourceImage`
 failed. The latch prevents a later worker from running the child against the
 failed row. If Redis cannot accept the latch, the row remains pending and the
 coordinator keeps waiting. The pending wait ceiling stays below the
-coordinator's `job_timeout` so it can record a never-started child, while the
-processing backstop is above the child's `job_timeout` because its clock starts
-when processing is first observed. Both paths use the latch before failing the
-row. This guarantee relies on the pinned arq version's past-dated abort-marker
-behavior and is covered by
+coordinator's `job_timeout` as an evidence-gated last resort, so it can record a
+child whose status has remained unknown without failing healthy queued work.
+The processing backstop is above the child's `job_timeout` because its clock
+starts when processing is first observed. Worker-hosted coordinators normally
+rely on the 900-second no-progress stale check because arq's coordinator
+timeout is reached first; the processing backstop is retained for API-hosted
+coordination. Both paths use the latch before failing the row. This guarantee
+relies on the pinned arq version's past-dated abort-marker behavior and is
+covered by
 `test_abort_latch_survives_pruning_and_is_consumed_before_job_start` in
 `backend/tests/test_worker.py`.
 

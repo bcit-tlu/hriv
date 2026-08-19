@@ -1,5 +1,6 @@
 """Tests for task queue health and durable metrics."""
 
+import asyncio
 from unittest.mock import AsyncMock, patch
 
 from redis.exceptions import ConnectionError
@@ -111,3 +112,25 @@ async def test_collect_queue_state_reports_redis_error() -> None:
     assert state["oldest_pending_age_seconds"] is None
     assert state["worker_heartbeat_age_seconds"] is None
     assert state["worker_up"] is None
+
+
+async def test_collect_queue_state_bounds_stalled_redis_read() -> None:
+    pool = AsyncMock()
+
+    async def stalled_read(*_args: object) -> None:
+        await asyncio.Future()
+
+    pool.zcard.side_effect = stalled_read
+    with (
+        patch("app.worker.get_pool", new_callable=AsyncMock, return_value=pool),
+        patch("app.queue_metrics._QUEUE_STATE_READ_TIMEOUT_SECONDS", 0.001),
+    ):
+        state = await collect_queue_state()
+
+    assert state == {
+        "queue_up": False,
+        "depth": None,
+        "oldest_pending_age_seconds": None,
+        "worker_heartbeat_age_seconds": None,
+        "worker_up": None,
+    }
