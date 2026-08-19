@@ -898,6 +898,7 @@ async def test_replace_image_rejection_preserves_metadata_and_version(
     db.add = MagicMock()
     db.refresh = AsyncMock(side_effect=lambda obj: setattr(obj, "id", 2))
     db.execute = AsyncMock(return_value=SimpleNamespace(rowcount=1))
+    db.expire = MagicMock()
     background_tasks = MagicMock()
 
     with patch.dict("sys.modules", {
@@ -922,8 +923,16 @@ async def test_replace_image_rejection_preserves_metadata_and_version(
                 metadata_extra='{"replace": "me"}',
             )
 
-    for key, value in original.items():
-        assert getattr(img, key) == value
+    db.expire.assert_called_once_with(img)
+    restore_statement = db.execute.await_args.args[0]
+    restore_values = restore_statement.compile().params
+    assert restore_values["name"] == original["name"]
+    assert restore_values["category_id"] == original["category_id"]
+    assert restore_values["copyright"] == original["copyright"]
+    assert restore_values["note"] == original["note"]
+    assert restore_values["active"] == original["active"]
+    assert restore_values["metadata"] == original["metadata_"]
+    assert restore_values["version"] == original["version"]
     background_tasks.add_task.assert_not_called()
 
 

@@ -948,12 +948,50 @@ async def test_wait_for_source_image_terminal_state_does_not_fail_deep_queued_so
                 queued_at=time.monotonic() - 3600,
             ),
             pending_grace_seconds=0,
-            wait_safety_cap_seconds=0,
+            wait_safety_cap_seconds=7200,
         )
 
     assert result.status == "completed"
     db.commit.assert_not_awaited()
     job.status.assert_awaited_once()
+
+
+async def test_wait_for_source_image_terminal_state_aborts_queued_timeout() -> None:
+    """A queued child is aborted before the pending wait ceiling fails it."""
+    job = MagicMock()
+    job.status = AsyncMock(return_value=JobStatus.queued)
+    job.abort = AsyncMock(return_value=True)
+    src = SimpleNamespace(
+        id=20,
+        status="pending",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message="Queued",
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=src)
+    db.commit = AsyncMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.routers.bulk_import.async_session", return_value=db):
+        result = await _wait_for_source_image_terminal_state(
+            20,
+            "never-started.jpg",
+            enqueue_result=EnqueueResult(
+                "queued",
+                "submitted",
+                job=job,
+                queued_at=time.monotonic() - 1,
+            ),
+            pending_grace_seconds=0,
+            wait_safety_cap_seconds=0,
+        )
+
+    assert result.status == "failed"
+    assert "never started" in result.error_message
+    job.abort.assert_awaited_once_with(timeout=5)
+    db.commit.assert_awaited_once()
 
 
 async def test_wait_for_source_image_terminal_state_respects_lost_job_grace(

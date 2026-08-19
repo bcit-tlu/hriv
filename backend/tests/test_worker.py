@@ -200,6 +200,7 @@ def test_worker_settings_only_extend_timeout_for_admin_tasks() -> None:
     """Long timeout should apply to admin tasks without widening all jobs."""
     assert WorkerSettings.job_timeout == 7200
     assert WorkerSettings.max_jobs == 4
+    assert WorkerSettings.allow_abort_jobs is True
     assert WorkerSettings.health_check_interval == 30
     assert WorkerSettings.health_check_key == "arq:queue:health-check"
     assert not hasattr(WorkerSettings, "cron_jobs")

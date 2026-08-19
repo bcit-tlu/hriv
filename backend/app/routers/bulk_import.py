@@ -59,6 +59,7 @@ _SOURCE_IMAGE_STALE_SECONDS = int(os.environ.get("SOURCE_IMAGE_STALE_SECONDS", "
 _SOURCE_IMAGE_PENDING_GRACE_SECONDS = 10
 _SOURCE_IMAGE_LOST_OBSERVATIONS = 2
 _SOURCE_IMAGE_WAIT_SAFETY_CAP_SECONDS = WorkerSettings.job_timeout + 60
+_SOURCE_IMAGE_ABORT_TIMEOUT_SECONDS = 5
 
 
 def _is_image_filename(filename: str) -> bool:
@@ -226,6 +227,39 @@ async def _wait_for_source_image_terminal_state(
                     )
                     return _source_image_terminal_state(src)
             if (
+                src.status == "pending"
+                and enqueue_result is not None
+                and enqueue_result.job is not None
+                and time.monotonic() - queued_at >= wait_safety_cap_seconds
+            ):
+                abort_succeeded = False
+                abort_error: str | None = None
+                try:
+                    abort_succeeded = await enqueue_result.job.abort(
+                        timeout=_SOURCE_IMAGE_ABORT_TIMEOUT_SECONDS,
+                    )
+                except Exception as exc:
+                    abort_error = str(exc)
+                logger.error(
+                    "Bulk import source image exceeded pending wait ceiling",
+                    extra={
+                        "event": "bulk_import.source_job_pending_timeout",
+                        "source_image_id": source_image_id,
+                        "original_filename": original_filename,
+                        "wait_safety_cap_seconds": wait_safety_cap_seconds,
+                        "abort_succeeded": abort_succeeded,
+                        "abort_error": abort_error,
+                    },
+                )
+                src.status = "failed"
+                src.error_message = (
+                    "Tile generation never started during bulk import. "
+                    "The queued processing job exceeded the wait ceiling."
+                )
+                src.status_message = "Failed"
+                await db.commit()
+                return _source_image_terminal_state(src)
+            if (
                 src.status == "processing"
                 and processing_started_at is not None
                 and time.monotonic() - processing_started_at >= wait_safety_cap_seconds
@@ -342,7 +376,10 @@ async def _process_bulk_import(
                     logger.warning(
                         "Bulk import image enqueue rejected",
                         extra={
-                            "event": "worker.queue_unavailable",
+                            "event": {
+                                "queue_unavailable": "worker.queue_unavailable",
+                                "submission_failed": "worker.submission_failed",
+                            }.get(exc.reason, "worker.queue_unavailable"),
                             "job_id": job_id,
                             "source_image_id": source_image_id,
                             "original_filename": original_filename,

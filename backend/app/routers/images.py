@@ -486,8 +486,7 @@ async def replace_image(
                             )
                         )
                         if restore_result.rowcount == 1:
-                            for field, value in metadata_snapshot.items():
-                                setattr(img, field, value)
+                            db.expire(img)
                             await db.commit()
                         else:
                             await db.rollback()

@@ -18,6 +18,7 @@ import asyncio
 import logging
 import os
 import time
+import weakref
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
@@ -43,7 +44,17 @@ from .queue_metrics import (
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
 _pool: ArqRedis | None = None
-_pool_creation_lock = asyncio.Lock()
+_pool_creation_locks: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+
+
+def _get_pool_creation_lock() -> asyncio.Lock:
+    """Return the pool-publication lock for the current event loop."""
+    loop = asyncio.get_running_loop()
+    lock = _pool_creation_locks.get(loop)
+    if lock is None:
+        lock = asyncio.Lock()
+        _pool_creation_locks[loop] = lock
+    return lock
 
 
 # ── Shared helpers ────────────────────────────────────────
@@ -165,7 +176,7 @@ async def get_pool() -> ArqRedis | None:
         return None
 
     assert pool is not None
-    async with _pool_creation_lock:
+    async with _get_pool_creation_lock():
         if _pool is None:
             _pool = pool
             return pool
@@ -495,3 +506,4 @@ class WorkerSettings:
     on_startup = on_startup
     max_jobs = settings.worker_max_jobs
     job_timeout = 7200  # 2 hours — default bound for short-lived worker jobs
+    allow_abort_jobs = True

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+import weakref
 from typing import Any
 
 from arq.constants import default_queue_name, health_check_key_suffix
@@ -21,7 +22,19 @@ _enqueue_counter = _meter.create_counter(
 )
 
 _registry = CollectorRegistry()
-_render_lock = asyncio.Lock()
+_render_locks: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+
+
+def _get_render_lock() -> asyncio.Lock:
+    """Return the metrics-render lock for the current event loop."""
+    loop = asyncio.get_running_loop()
+    lock = _render_locks.get(loop)
+    if lock is None:
+        lock = asyncio.Lock()
+        _render_locks[loop] = lock
+    return lock
+
+
 _queue_up = Gauge("hriv_task_queue_up", "Whether Redis is reachable", registry=_registry)
 _queue_depth = Gauge(
     "hriv_task_queue_depth",
@@ -116,7 +129,7 @@ async def collect_queue_state() -> dict[str, Any]:
 async def render_queue_metrics() -> tuple[bytes, str]:
     """Render queue gauges for the backend Prometheus endpoint."""
     state = await collect_queue_state()
-    async with _render_lock:
+    async with _get_render_lock():
         _queue_up.set(1 if state["queue_up"] else 0)
         _queue_depth.set(float("nan") if state["depth"] is None else state["depth"])
         _oldest_pending_age.set(
