@@ -8,6 +8,7 @@ processing helper.
 
 import errno
 import io
+import logging
 import os
 import sys
 import time
@@ -60,9 +61,24 @@ def _patch_enqueue_bulk_import():
 
 def test_pending_wait_ceiling_stays_below_coordinator_timeout() -> None:
     """The coordinator can record a pending-ceiling failure before arq kills it."""
-    from app.routers.bulk_import import _SOURCE_IMAGE_WAIT_SAFETY_CAP_SECONDS
+    from app.routers.bulk_import import (
+        _SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS,
+    )
 
-    assert 0 < _SOURCE_IMAGE_WAIT_SAFETY_CAP_SECONDS < WorkerSettings.job_timeout
+    assert (
+        0
+        < _SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS
+        < WorkerSettings.job_timeout
+    )
+
+
+def test_processing_wait_ceiling_outlasts_child_timeout() -> None:
+    """The processing backstop cannot fail a child before arq can time it out."""
+    from app.routers.bulk_import import (
+        _SOURCE_IMAGE_PROCESSING_WAIT_SAFETY_CAP_SECONDS,
+    )
+
+    assert _SOURCE_IMAGE_PROCESSING_WAIT_SAFETY_CAP_SECONDS > WorkerSettings.job_timeout
 
 
 def test_is_image_filename_valid() -> None:
@@ -961,7 +977,7 @@ async def test_wait_for_source_image_terminal_state_does_not_fail_deep_queued_so
                 queued_at=time.monotonic() - 3600,
             ),
             pending_grace_seconds=0,
-            wait_safety_cap_seconds=7200,
+            pending_wait_safety_cap_seconds=7200,
         )
 
     assert result.status == "completed"
@@ -1003,7 +1019,7 @@ async def test_wait_for_source_image_terminal_state_latches_queued_timeout() -> 
                 queued_at=time.monotonic() - 1,
             ),
             pending_grace_seconds=0,
-            wait_safety_cap_seconds=0,
+            pending_wait_safety_cap_seconds=0,
         )
 
     assert result.status == "failed"
@@ -1053,8 +1069,8 @@ async def test_wait_for_source_image_terminal_state_fails_without_worker() -> No
             "no-worker.jpg",
             enqueue_result=EnqueueResult("queued", "submitted", job=job, queued_at=time.monotonic()),
             pending_grace_seconds=0,
-            no_worker_observations=2,
-            wait_safety_cap_seconds=7200,
+            no_worker_window_seconds=0,
+            pending_wait_safety_cap_seconds=7200,
         )
 
     assert result.status == "failed"
@@ -1091,6 +1107,7 @@ async def test_wait_for_source_image_no_worker_rereads_terminal_row() -> None:
     db.__aexit__ = AsyncMock(return_value=False)
     pool = MagicMock()
     pool.zadd = AsyncMock()
+    pool.zrem = AsyncMock()
 
     with (
         patch("app.routers.bulk_import.async_session", return_value=db),
@@ -1110,13 +1127,128 @@ async def test_wait_for_source_image_no_worker_rereads_terminal_row() -> None:
                 queued_at=time.monotonic(),
             ),
             pending_grace_seconds=0,
-            no_worker_observations=1,
-            wait_safety_cap_seconds=7200,
+            no_worker_window_seconds=0,
+            pending_wait_safety_cap_seconds=7200,
         )
 
     assert result.status == "completed"
     pool.zadd.assert_awaited_once()
+    pool.zrem.assert_awaited_once_with(abort_jobs_ss, "job-24")
     db.commit.assert_not_awaited()
+
+
+async def test_wait_for_source_image_no_worker_removes_latch_when_worker_starts(
+    caplog,
+) -> None:
+    """A worker starting during latch bookkeeping is allowed to continue."""
+    caplog.set_level(logging.INFO)
+    job = MagicMock()
+    job.status = AsyncMock(return_value=JobStatus.queued)
+    job.job_id = "job-27"
+    pending = SimpleNamespace(
+        id=27,
+        status="pending",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message="Queued",
+    )
+    processing = SimpleNamespace(
+        id=27,
+        status="processing",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message="Processing",
+    )
+    completed = SimpleNamespace(
+        id=27,
+        status="completed",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message=None,
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=[pending, processing, completed])
+    db.commit = AsyncMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+    pool = MagicMock()
+    pool.zadd = AsyncMock()
+    pool.zrem = AsyncMock()
+
+    with (
+        patch("app.routers.bulk_import.async_session", return_value=db),
+        patch("app.routers.bulk_import.get_pool", new_callable=AsyncMock, return_value=pool),
+        patch("app.routers.bulk_import.asyncio.sleep", new_callable=AsyncMock),
+        patch(
+            "app.routers.bulk_import.collect_queue_state",
+            new_callable=AsyncMock,
+            return_value={"queue_up": True, "worker_up": False},
+        ),
+    ):
+        result = await _wait_for_source_image_terminal_state(
+            27,
+            "worker-recovered.jpg",
+            enqueue_result=EnqueueResult(
+                "queued",
+                "submitted",
+                job=job,
+                queued_at=time.monotonic(),
+            ),
+            pending_grace_seconds=0,
+            no_worker_window_seconds=0,
+            pending_wait_safety_cap_seconds=7200,
+        )
+
+    assert result.status == "completed"
+    pool.zadd.assert_awaited_once()
+    pool.zrem.assert_awaited_once_with(abort_jobs_ss, "job-27")
+    db.commit.assert_not_awaited()
+    assert "worker recovered before no-worker failure" in caplog.text
+
+
+async def test_wait_for_source_image_processing_timeout_latches_before_failure() -> None:
+    """A processing-cap failure is latched before the row becomes terminal."""
+    job = MagicMock()
+    job.status = AsyncMock(return_value=JobStatus.queued)
+    job.job_id = "job-26"
+    src = SimpleNamespace(
+        id=26,
+        status="processing",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message="Processing",
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=src)
+    events: list[str] = []
+    db.commit = AsyncMock(side_effect=lambda: events.append("commit"))
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+    pool = MagicMock()
+    pool.zadd = AsyncMock(side_effect=lambda *args, **kwargs: events.append("latch"))
+
+    with (
+        patch("app.routers.bulk_import.async_session", return_value=db),
+        patch("app.routers.bulk_import.get_pool", new_callable=AsyncMock, return_value=pool),
+    ):
+        result = await _wait_for_source_image_terminal_state(
+            26,
+            "slow-image.jpg",
+            enqueue_result=EnqueueResult(
+                "queued",
+                "submitted",
+                job=job,
+                queued_at=time.monotonic(),
+            ),
+            processing_wait_safety_cap_seconds=0,
+            pending_wait_safety_cap_seconds=7200,
+        )
+
+    assert result.status == "failed"
+    assert "worker job timeout" in result.error_message
+    pool.zadd.assert_awaited_once()
+    assert events == ["latch", "commit"]
+    db.commit.assert_awaited_once()
 
 
 async def test_wait_for_source_image_timeout_rereads_terminal_row() -> None:
@@ -1164,7 +1296,7 @@ async def test_wait_for_source_image_timeout_rereads_terminal_row() -> None:
                 queued_at=time.monotonic(),
             ),
             pending_grace_seconds=0,
-            wait_safety_cap_seconds=0,
+            pending_wait_safety_cap_seconds=0,
         )
 
     assert result.status == "completed"
@@ -1219,12 +1351,65 @@ async def test_wait_for_source_image_terminal_state_keeps_waiting_with_worker() 
                 queued_at=time.monotonic() - 3600,
             ),
             pending_grace_seconds=0,
-            no_worker_observations=1,
-            wait_safety_cap_seconds=7200,
+            no_worker_window_seconds=1,
+            pending_wait_safety_cap_seconds=7200,
         )
 
     assert result.status == "completed"
     pool.zadd.assert_not_awaited()
+    db.commit.assert_not_awaited()
+
+
+async def test_wait_for_source_image_samples_worker_health_between_polls() -> None:
+    """Worker health sampling is less frequent than child-status polling."""
+    job = MagicMock()
+    job.status = AsyncMock(return_value=JobStatus.queued)
+    job.job_id = "job-28"
+    pending = SimpleNamespace(
+        id=28,
+        status="pending",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message="Queued",
+    )
+    completed = SimpleNamespace(
+        id=28,
+        status="completed",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message=None,
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=[pending, pending, completed])
+    db.commit = AsyncMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+    collect_queue = AsyncMock(
+        return_value={"queue_up": True, "worker_up": True},
+    )
+
+    with (
+        patch("app.routers.bulk_import.async_session", return_value=db),
+        patch("app.routers.bulk_import.asyncio.sleep", new_callable=AsyncMock),
+        patch("app.routers.bulk_import.collect_queue_state", collect_queue),
+    ):
+        result = await _wait_for_source_image_terminal_state(
+            28,
+            "sampled-worker-health.jpg",
+            enqueue_result=EnqueueResult(
+                "queued",
+                "submitted",
+                job=job,
+                queued_at=time.monotonic(),
+            ),
+            pending_grace_seconds=0,
+            no_worker_window_seconds=120,
+            pending_wait_safety_cap_seconds=7200,
+        )
+
+    assert result.status == "completed"
+    collect_queue.assert_awaited_once()
+    assert job.status.await_count == 2
     db.commit.assert_not_awaited()
 
 
@@ -1270,8 +1455,8 @@ async def test_wait_for_source_image_terminal_state_keeps_waiting_when_latch_fai
             "latch-failure.jpg",
             enqueue_result=EnqueueResult("queued", "submitted", job=job, queued_at=time.monotonic()),
             pending_grace_seconds=0,
-            no_worker_observations=1,
-            wait_safety_cap_seconds=7200,
+            no_worker_window_seconds=0,
+            pending_wait_safety_cap_seconds=7200,
         )
 
     assert result.status == "completed"
@@ -1530,6 +1715,9 @@ async def test_wait_for_source_image_terminal_state_rereads_after_complete_probe
 
 async def test_wait_for_source_image_terminal_state_has_safety_cap() -> None:
     """The safety cap starts when processing begins, not while pending."""
+    job = MagicMock()
+    job.status = AsyncMock(return_value=JobStatus.queued)
+    job.job_id = "job-19"
     pending = SimpleNamespace(
         id=19,
         status="pending",
@@ -1545,20 +1733,33 @@ async def test_wait_for_source_image_terminal_state_has_safety_cap() -> None:
         status_message="Generating tiles",
     )
     db = AsyncMock()
-    db.get = AsyncMock(side_effect=[pending, processing])
+    db.get = AsyncMock(side_effect=[pending, processing, processing])
     db.commit = AsyncMock()
     db.__aenter__ = AsyncMock(return_value=db)
     db.__aexit__ = AsyncMock(return_value=False)
+    pool = MagicMock()
+    pool.zadd = AsyncMock()
 
-    with patch("app.routers.bulk_import.async_session", return_value=db):
+    with (
+        patch("app.routers.bulk_import.async_session", return_value=db),
+        patch("app.routers.bulk_import.get_pool", new_callable=AsyncMock, return_value=pool),
+    ):
         result = await _wait_for_source_image_terminal_state(
             19,
             "safety-cap.jpg",
-            wait_safety_cap_seconds=0,
+            enqueue_result=EnqueueResult(
+                "queued",
+                "submitted",
+                job=job,
+                queued_at=time.monotonic(),
+            ),
+            pending_wait_safety_cap_seconds=7200,
+            processing_wait_safety_cap_seconds=0,
         )
 
     assert result.status == "failed"
     assert "worker job timeout" in result.error_message
+    pool.zadd.assert_awaited_once()
     db.commit.assert_awaited_once()
 
 
