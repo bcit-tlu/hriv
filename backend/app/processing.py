@@ -27,7 +27,11 @@ from sqlalchemy.sql import func
 from .database import async_session, settings
 from .models import Image, SourceImage
 from .queue_metrics import collect_queue_state
-from .task_constants import SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS
+from .task_constants import (
+    BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
+    BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS,
+    SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS,
+)
 from .tile_provenance import (
     DZI_OVERLAP,
     DZI_TILE_SIZE,
@@ -1036,8 +1040,6 @@ _STALE_SOURCE_IMAGE_SECONDS = int(
     os.environ.get("SOURCE_IMAGE_STALE_SECONDS", "900")
 )
 _STALE_PENDING_SOURCE_IMAGE_SECONDS = SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS
-_BULK_IMPORT_COORDINATOR_LIVENESS_KEY = "hriv:bulk_import:coordinators"
-_BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS = 90
 
 
 async def _live_bulk_import_coordinator_count() -> int | None:
@@ -1047,15 +1049,23 @@ async def _live_bulk_import_coordinator_count() -> int | None:
     pool = await get_pool()
     if pool is None:
         return None
-    live_since = (
-        time.time() * 1000
-        - _BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS * 1000
-    )
-    return await pool.zcount(
-        _BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
-        live_since,
-        "+inf",
-    )
+    try:
+        live_since = (
+            time.time() * 1000
+            - BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS * 1000
+        )
+        return await pool.zcount(
+            BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
+            live_since,
+            "+inf",
+        )
+    except Exception:
+        logger.warning(
+            "Could not read bulk-import coordinator liveness",
+            extra={"event": "bulk_import.coordinator_liveness_unavailable"},
+            exc_info=True,
+        )
+        return None
 
 
 async def reconcile_stale_source_images(
@@ -1094,8 +1104,10 @@ async def reconcile_stale_source_images(
         )
         .returning(SourceImage.id)
     )
-    queue_state = await collect_queue_state()
     pending_stmt = None
+    processing_result = await session.execute(processing_stmt)
+    processing_ids = [row[0] for row in processing_result.all()]
+    queue_state = await collect_queue_state()
     if (
         queue_state["queue_up"] is True
         and queue_state["worker_up"] is True
@@ -1124,8 +1136,6 @@ async def reconcile_stale_source_images(
             )
             .returning(SourceImage.id)
         )
-    processing_result = await session.execute(processing_stmt)
-    processing_ids = [row[0] for row in processing_result.all()]
     pending_ids: list[int] = []
     if pending_stmt is not None and live_coordinator_count == 0:
         pending_result = await session.execute(pending_stmt)

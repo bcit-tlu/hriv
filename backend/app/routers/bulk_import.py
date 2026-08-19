@@ -37,7 +37,11 @@ from ..image_validation import IMAGE_EXTENSIONS, UPLOAD_CHUNK_SIZE
 from ..models import BulkImportJob, Category, SourceImage, User
 from ..processing import process_source_image
 from ..schemas import MAX_NOTE_LENGTH, BulkImportJobOut, normalize_note_value
-from ..task_constants import SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS
+from ..task_constants import (
+    BULK_IMPORT_COORDINATOR_LIVENESS_KEY as _BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
+    BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS as _BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS,
+    SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS,
+)
 from ..tracing import record_exception_if_server_error
 from ..worker import (
     EnqueueResult,
@@ -86,8 +90,6 @@ _SOURCE_IMAGE_QUEUE_STATE_SAMPLE_POLLS = max(
 _SOURCE_IMAGE_QUEUE_CONFIRMATION_MAX_AGE_SECONDS = (
     HEALTH_CHECK_INTERVAL_SECONDS * 2
 )
-_BULK_IMPORT_COORDINATOR_LIVENESS_KEY = "hriv:bulk_import:coordinators"
-_BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS = HEALTH_CHECK_INTERVAL_SECONDS * 3
 _BULK_IMPORT_COORDINATOR_LIVENESS_REFRESH_SECONDS = HEALTH_CHECK_INTERVAL_SECONDS
 _SOURCE_IMAGE_ABORT_LATCH_RETENTION_SECONDS = WorkerSettings.job_timeout * 2
 _SOURCE_IMAGE_NO_WORKER_WINDOW_SECONDS = (
@@ -389,14 +391,12 @@ async def _refresh_bulk_import_coordinator(
 
 
 async def _bulk_import_coordinator_liveness_loop(
-    pool_ref: ArqRedis | None | list[ArqRedis | None],
+    pool_ref: list[ArqRedis | None],
     bulk_import_job_id: int,
     stop_event: asyncio.Event,
     worker_hosted: bool = False,
 ) -> None:
     """Refresh coordinator liveness independently of child-image status."""
-    if not isinstance(pool_ref, list):
-        pool_ref = [pool_ref]
     while True:
         try:
             await asyncio.wait_for(
@@ -970,7 +970,7 @@ async def reconcile_stale_bulk_import_jobs(
         )
     cutoff = datetime.now(timezone.utc) - timedelta(seconds=stale_after_seconds)
     filters = [
-        BulkImportJob.status == "processing",
+        BulkImportJob.status.in_(("pending", "processing")),
         BulkImportJob.updated_at < cutoff,
     ]
     if live_ids is not None:

@@ -409,6 +409,37 @@ async def test_reconcile_stale_source_images_updates_stale() -> None:
     session.commit.assert_awaited_once()
 
 
+async def test_reconcile_processing_survives_coordinator_liveness_read_failure() -> None:
+    """A Redis liveness failure does not skip processing-row reconciliation."""
+    mock_row = MagicMock()
+    mock_row.__getitem__ = lambda self, i: 42
+    processing_result = MagicMock()
+    processing_result.all.return_value = [mock_row]
+    session = AsyncMock()
+    session.execute = AsyncMock(return_value=processing_result)
+    pool = AsyncMock()
+    pool.zcount.side_effect = RuntimeError("Redis unavailable")
+
+    with patch(
+        "app.processing.collect_queue_state",
+        new_callable=AsyncMock,
+        return_value={"queue_up": True, "worker_up": True, "depth": 0},
+    ), patch(
+        "app.worker.get_pool",
+        new_callable=AsyncMock,
+        return_value=pool,
+    ):
+        count = await reconcile_stale_source_images(
+            session,
+            stale_after_seconds=900,
+            pending_stale_after_seconds=3600,
+        )
+
+    assert count == 1
+    assert session.execute.await_count == 1
+    session.commit.assert_awaited_once()
+
+
 async def test_reconcile_pending_cutoff_is_longer_than_processing() -> None:
     """Pending queue wait uses the coordinator's longer safety bound."""
     processing_result = MagicMock()

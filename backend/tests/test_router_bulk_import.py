@@ -111,7 +111,7 @@ async def test_reconcile_stale_bulk_import_jobs_marks_expired_processing_stale()
     assert count == 1
     session.commit.assert_awaited_once()
     stmt = session.execute.await_args.args[0]
-    assert stmt.compile().params["status_1"] == "processing"
+    assert stmt.compile().params["status_1"] == ["pending", "processing"]
     sql = str(stmt.compile())
     assert "errors" in sql
     assert "failed_count" in sql
@@ -166,13 +166,14 @@ async def test_reconcile_stale_bulk_import_jobs_uses_conservative_cutoff_without
 async def test_bulk_import_coordinator_liveness_refreshes_independent_of_children() -> None:
     pool = MagicMock()
     pool.zadd = AsyncMock()
+    pool_ref = [pool]
     stop_event = MagicMock()
     with patch(
         "app.routers.bulk_import.asyncio.wait_for",
         new_callable=AsyncMock,
         side_effect=[asyncio.TimeoutError(), True],
     ):
-        await _bulk_import_coordinator_liveness_loop(pool, 27, stop_event)
+        await _bulk_import_coordinator_liveness_loop(pool_ref, 27, stop_event)
 
     pool.zadd.assert_awaited_once()
 
