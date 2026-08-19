@@ -9,11 +9,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from opentelemetry import trace
-from sqlalchemy import select
+from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import require_role
-from ..database import get_db, settings
+from ..database import async_session, get_db, settings
 from ..image_validation import UPLOAD_CHUNK_SIZE, is_valid_image
 from ..models import SourceImage, User
 from ..processing import process_source_image
@@ -145,6 +145,34 @@ async def upload_source_image(
                             "source_image_id": source_image_id,
                         },
                     )
+                    with contextlib.suppress(Exception):
+                        await db.rollback()
+                    try:
+                        async with async_session() as recovery_db:
+                            await recovery_db.execute(
+                                sql_update(SourceImage)
+                                .where(
+                                    SourceImage.id == source_image_id,
+                                    SourceImage.status == "pending",
+                                )
+                                .values(
+                                    status="failed",
+                                    status_message="Failed",
+                                    error_message=(
+                                        "Task queue unavailable; image processing "
+                                        "was not started."
+                                    ),
+                                )
+                            )
+                            await recovery_db.commit()
+                    except Exception:
+                        logger.exception(
+                            "Fresh-session uploaded source-image bookkeeping failed",
+                            extra={
+                                "event": "upload.queue_rejection_recovery_failed",
+                                "source_image_id": source_image_id,
+                            },
+                        )
                 with contextlib.suppress(OSError):
                     os.unlink(stored_path)
                 raise
