@@ -853,6 +853,28 @@ async def test_bulk_import_conflict_allows_abandoned_recent_processing_row(
     bg.add_task.assert_called_once()
 
 
+async def test_bulk_import_conflict_rejects_recent_pending_coordinator() -> None:
+    """A queued coordinator that has not registered yet still blocks imports."""
+    processing_result = MagicMock()
+    processing_result.all.return_value = []
+    recent_result = MagicMock()
+    recent_result.scalar_one.return_value = 1
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=[processing_result, recent_result])
+
+    with pytest.raises(HTTPException) as exc_info:
+        await bulk_import_images(
+            files=[_make_upload("blocked.png", [b"image-data", b""])],
+            category_id=None,
+            background_tasks=MagicMock(),
+            _user=MagicMock(),
+            db=db,
+        )
+
+    assert exc_info.value.status_code == 409
+    db.add.assert_not_called()
+
+
 async def test_process_bulk_import_normalizes_empty_note(tmp_path) -> None:
     job = SimpleNamespace(
         id=1,

@@ -191,7 +191,9 @@ fallbacks, while a separate registration tracks only worker-hosted arq slot
 occupancy. Capacity starvation counts only the latter. The bulk-import endpoint
 returns HTTP 409 (`A bulk import is already in progress`) while another
 pending or processing import has a live coordinator registration, or while a
-processing row is still within the short coordinator-registration window.
+pending or processing row is still within the short coordinator-registration
+window (covering coordinators that are queued or starting and have not
+registered yet).
 Staleness alone never blocks a new import, and an unreadable Redis liveness
 check fails open. This prevents coordinators from consuming every worker slot
 without making imports permanently un-startable. The serialization is

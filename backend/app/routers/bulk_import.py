@@ -1422,15 +1422,20 @@ async def bulk_import_images(
     registration_cutoff = datetime.now(timezone.utc) - timedelta(
         seconds=_BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS
     )
-    recent_processing_result = await db.execute(
+    # A row younger than the liveness window may belong to a coordinator that
+    # has not registered yet (queued behind other work, or still starting), so
+    # recency stands in for liveness only for that window. Anything older falls
+    # through to the registration check below and is admitted when no
+    # coordinator is alive, so a crash can never block imports for long.
+    recent_coordinator_result = await db.execute(
         select(func.count())
         .select_from(BulkImportJob)
         .where(
-            BulkImportJob.status == "processing",
+            BulkImportJob.status.in_(("pending", "processing")),
             BulkImportJob.updated_at >= registration_cutoff,
         )
     )
-    if recent_processing_result.scalar_one() > 0:
+    if recent_coordinator_result.scalar_one() > 0:
         raise HTTPException(
             status_code=409,
             detail="A bulk import is already in progress",
