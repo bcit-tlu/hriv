@@ -782,6 +782,12 @@ Redis-outage alerting. In required mode, use
 the heartbeat key is absent, while the `NaN` value means Redis could not be
 queried. In local mode, an absent dedicated-worker heartbeat is expected.
 
+The bulk-import endpoint's HTTP 409 conflict is evidence-based: a live
+coordinator registration, or a processing row still inside the short
+registration window, blocks a second import. Stale timestamps alone and
+unreadable Redis liveness data fail open, so an abandoned coordinator cannot
+permanently prevent new imports.
+
 Distinguish the four failure classes in structured logs:
 
 - `worker.queue_unavailable`: Redis could not be reached.

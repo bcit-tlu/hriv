@@ -85,8 +85,6 @@ class Settings(BaseSettings):
             self.database_url = self.database_url.replace(
                 "postgresql://", "postgresql+asyncpg://", 1
             )
-        if self.worker_total_slots is None:
-            self.worker_total_slots = self.worker_max_jobs
         return self
 
 

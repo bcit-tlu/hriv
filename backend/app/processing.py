@@ -1107,8 +1107,6 @@ async def reconcile_stale_source_images(
         .returning(SourceImage.id)
     )
     pending_stmt = None
-    processing_result = await session.execute(processing_stmt)
-    processing_ids = [row[0] for row in processing_result.all()]
     queue_state = await collect_queue_state()
     if (
         queue_state["queue_up"] is True
@@ -1138,6 +1136,8 @@ async def reconcile_stale_source_images(
             )
             .returning(SourceImage.id)
         )
+    processing_result = await session.execute(processing_stmt)
+    processing_ids = [row[0] for row in processing_result.all()]
     pending_ids: list[int] = []
     if pending_stmt is not None and live_coordinator_count == 0:
         pending_result = await session.execute(pending_stmt)

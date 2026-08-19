@@ -190,13 +190,16 @@ All coordinators register liveness in Redis, including API-hosted local
 fallbacks, while a separate registration tracks only worker-hosted arq slot
 occupancy. Capacity starvation counts only the latter. The bulk-import endpoint
 returns HTTP 409 (`A bulk import is already in progress`) while another
-pending or processing import is active, preventing coordinators from
-consuming every worker slot. This serialization is intentionally temporary
-until issue [#1078](https://github.com/bcit-tlu/hriv/issues/1078) provides a
-safe concurrent-coordinator model. A pending row blocks only while its
-coordinator has a live registration; if the enqueue or coordinator is lost,
-the missing registration lets a later request proceed rather than making
-imports permanently un-startable.
+pending or processing import has a live coordinator registration, or while a
+processing row is still within the short coordinator-registration window.
+Staleness alone never blocks a new import, and an unreadable Redis liveness
+check fails open. This prevents coordinators from consuming every worker slot
+without making imports permanently un-startable. The serialization is
+intentionally temporary until issue
+[#1078](https://github.com/bcit-tlu/hriv/issues/1078) provides a safe
+concurrent-coordinator model. A pending row blocks only while its coordinator
+has a live registration; if the enqueue or coordinator is lost, the missing
+registration lets a later request proceed.
 When a queued child observes an absent worker heartbeat for the configured
 wall-clock window, it writes arq's abort latch before marking the `SourceImage`
 failed. The latch narrows the race window; the processor's terminal-row guard

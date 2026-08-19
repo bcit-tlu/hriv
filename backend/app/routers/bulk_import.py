@@ -68,7 +68,6 @@ _SOURCE_IMAGE_POLL_INTERVAL_SECONDS = 2
 _SOURCE_IMAGE_STALE_SECONDS = int(os.environ.get("SOURCE_IMAGE_STALE_SECONDS", "900"))
 _SOURCE_IMAGE_PENDING_GRACE_SECONDS = 10
 _SOURCE_IMAGE_LOST_OBSERVATIONS = 2
-_SOURCE_IMAGE_NO_WORKER_SAMPLES = 4
 _SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS = (
     SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS
 )
@@ -93,11 +92,7 @@ _SOURCE_IMAGE_QUEUE_CONFIRMATION_MAX_AGE_SECONDS = (
 _BULK_IMPORT_COORDINATOR_LIVENESS_REFRESH_SECONDS = HEALTH_CHECK_INTERVAL_SECONDS
 _BULK_IMPORT_COORDINATOR_REREGISTRATION_MAX_SECONDS = 300
 _SOURCE_IMAGE_ABORT_LATCH_RETENTION_SECONDS = WorkerSettings.job_timeout * 2
-_SOURCE_IMAGE_NO_WORKER_WINDOW_SECONDS = (
-    _SOURCE_IMAGE_NO_WORKER_SAMPLES
-    * _SOURCE_IMAGE_QUEUE_STATE_SAMPLE_POLLS
-    * _SOURCE_IMAGE_POLL_INTERVAL_SECONDS
-)
+_SOURCE_IMAGE_NO_WORKER_WINDOW_SECONDS = HEALTH_CHECK_INTERVAL_SECONDS * 4
 _BULK_IMPORT_WORKER_COORDINATOR_LIVENESS_KEY = (
     "hriv:bulk_import:worker_coordinators"
 )
@@ -477,7 +472,6 @@ async def _wait_for_source_image_terminal_state(
 ) -> _SourceImageTerminalState:
     """Wait for queued processing to reach a terminal source-image state."""
     not_found_count = 0
-    no_worker_count = 0
     no_worker_since: float | None = None
     last_queue_confirmed_at: float | None = None
     last_queue_worker_up: bool | None = None
@@ -650,17 +644,13 @@ async def _wait_for_source_image_terminal_state(
                                 job_status in {JobStatus.queued, JobStatus.deferred}
                                 and queue_state["worker_up"] is False
                             ):
-                                no_worker_count += 1
                                 if no_worker_since is None:
                                     no_worker_since = sampled_at
                             else:
-                                no_worker_count = 0
                                 no_worker_since = None
                         else:
-                            no_worker_count = 0
                             no_worker_since = None
                 elif job_status is not None:
-                    no_worker_count = 0
                     no_worker_since = None
                 if not_found_count >= lost_observations:
                     latest_src = await db.get(
@@ -717,7 +707,6 @@ async def _wait_for_source_image_terminal_state(
                             )
                         )
                         if latest_src.status != "pending":
-                            no_worker_count = 0
                             no_worker_since = None
                             logger.info(
                                 "Bulk import source image worker recovered before no-worker failure",
@@ -752,7 +741,6 @@ async def _wait_for_source_image_terminal_state(
                                     "source_image_id": source_image_id,
                                     "bulk_import_job_id": bulk_import_job_id,
                                     "original_filename": original_filename,
-                                    "no_worker_samples": no_worker_count,
                                     "no_worker_window_seconds": no_worker_window_seconds,
                                 },
                             )
@@ -1307,9 +1295,20 @@ async def _process_bulk_import_impl(
     # Mark job as processing
     async with async_session() as db:
         job = await db.get(BulkImportJob, job_id)
-        if job is not None:
-            job.status = "processing"
-            await db.commit()
+        if job is None:
+            return
+        if job.status in {"completed", "failed"}:
+            logger.info(
+                "Terminal BulkImportJob found, skipping processing",
+                extra={
+                    "event": "bulk_import.terminal_job_skipped",
+                    "bulk_import_job_id": job_id,
+                    "status": job.status,
+                },
+            )
+            return
+        job.status = "processing"
+        await db.commit()
 
     logger.info(
         "Bulk import processing started",
@@ -1416,15 +1415,15 @@ async def bulk_import_images(
     )
     processing_rows = processing_result.all()
     processing_ids = {row[0] for row in processing_rows}
-    processing_cutoff = datetime.now(timezone.utc) - timedelta(
-        seconds=_STALE_BULK_IMPORT_SECONDS
+    registration_cutoff = datetime.now(timezone.utc) - timedelta(
+        seconds=_BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS
     )
     recent_processing_result = await db.execute(
         select(func.count())
         .select_from(BulkImportJob)
         .where(
             BulkImportJob.status == "processing",
-            BulkImportJob.updated_at >= processing_cutoff,
+            BulkImportJob.updated_at >= registration_cutoff,
         )
     )
     if recent_processing_result.scalar_one() > 0:

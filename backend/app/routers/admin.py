@@ -220,7 +220,7 @@ async def _kick_off(
         if task_type == "files_import":
             # Pass the BackgroundTasks object so the import can schedule the
             # automatic rebuild_tiles task that runs after it.
-            bg.add_task(run_files_import, task.id, bg)
+            bg.add_task(run_files_import, task_id, bg)
         else:
             runner = {
                 "db_export": run_db_export,
@@ -228,8 +228,8 @@ async def _kick_off(
                 "file_restore": run_file_restore,
                 "files_export": run_files_export,
                 "rebuild_tiles": run_rebuild_tiles,
-            }[task.task_type]
-            bg.add_task(runner, task.id)
+            }[task_type]
+            bg.add_task(runner, task_id)
 
 
 def _task_to_dict(task: AdminTask) -> dict:

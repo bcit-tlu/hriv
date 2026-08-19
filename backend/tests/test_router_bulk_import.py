@@ -34,6 +34,7 @@ from app.routers.bulk_import import (
     _bulk_import_coordinator_liveness_loop,
     _is_image_filename,
     _process_bulk_import,
+    _process_bulk_import_impl,
     _write_source_image_abort_latch,
     _wait_for_source_image_terminal_state,
     bulk_import_images,
@@ -750,6 +751,19 @@ async def test_api_hosted_bulk_import_registers_liveness_without_slot() -> None:
     assert pool.zrem.await_args.args[0] == "hriv:bulk_import:coordinators"
 
 
+async def test_process_bulk_import_impl_skips_terminal_job() -> None:
+    job = SimpleNamespace(status="failed")
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=job)
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.routers.bulk_import.async_session", return_value=db):
+        await _process_bulk_import_impl(27, [])
+
+    db.commit.assert_not_awaited()
+
+
 async def test_bulk_import_conflict_rejected_before_staging() -> None:
     """An active import prevents a second import from creating files or rows."""
     processing_result = MagicMock()
@@ -792,6 +806,51 @@ async def test_bulk_import_conflict_guard_handles_naive_updated_at() -> None:
         )
 
     assert exc_info.value.status_code == 409
+
+
+async def test_bulk_import_conflict_allows_abandoned_recent_processing_row(
+    tmp_path,
+) -> None:
+    """A stale coordinator without liveness must not lock out new imports."""
+    processing_result = MagicMock()
+    processing_result.all.return_value = [
+        (27, datetime.now(timezone.utc) - timedelta(seconds=91))
+    ]
+    recent_result = MagicMock()
+    recent_result.scalar_one.return_value = 0
+    pending_result = MagicMock()
+    pending_result.all.return_value = []
+    db = AsyncMock()
+    db.execute = AsyncMock(
+        side_effect=[processing_result, recent_result, pending_result]
+    )
+    db.get = AsyncMock(return_value=SimpleNamespace(id=1))
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock(side_effect=lambda obj: setattr(obj, "id", 77))
+    bg = MagicMock()
+    pool = MagicMock()
+    pool.zrangebyscore = AsyncMock(return_value=[])
+
+    with (
+        patch("app.routers.bulk_import.settings") as mock_settings,
+        patch(
+            "app.routers.bulk_import.get_pool",
+            new_callable=AsyncMock,
+            return_value=pool,
+        ),
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        result = await bulk_import_images(
+            files=[_make_upload("recovered.png", [b"image-data", b""])],
+            category_id=1,
+            background_tasks=bg,
+            _user=MagicMock(),
+            db=db,
+        )
+
+    assert result.id == 77
+    bg.add_task.assert_called_once()
 
 
 async def test_process_bulk_import_normalizes_empty_note(tmp_path) -> None:
