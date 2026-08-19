@@ -116,6 +116,8 @@ async def test_reconcile_stale_bulk_import_jobs_marks_expired_processing_stale()
     sql = str(stmt.compile())
     assert "CASE" in sql
     assert "completed_count" in sql
+    # Partial success classifies as completed, matching the finalizer.
+    assert 0 in stmt.compile().params.values()
     assert "completed" in sql
     assert "failed" in sql
     assert "errors" in sql

@@ -26,7 +26,7 @@ from arq.utils import timestamp_ms
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
-from sqlalchemy import case, cast, select, update
+from sqlalchemy import case, cast, or_, select, update
 from sqlalchemy.dialects.postgresql import JSONB as JSONB_type
 from sqlalchemy.sql import func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1025,9 +1025,14 @@ async def reconcile_stale_bulk_import_jobs(
         update(BulkImportJob)
         .where(*filters)
         .values(
+            # Match the coordinator finalizer: any completed image counts as
+            # partial success, so "failed" means nothing was imported.
             status=case(
                 (
-                    BulkImportJob.completed_count == BulkImportJob.total_count,
+                    or_(
+                        BulkImportJob.completed_count == BulkImportJob.total_count,
+                        BulkImportJob.completed_count > 0,
+                    ),
                     "completed",
                 ),
                 else_="failed",
@@ -1413,12 +1418,9 @@ async def bulk_import_images(
     # Each coordinator occupies a worker slot for its whole batch. Keep
     # imports serialized until #1078 provides a safe coordinator model.
     processing_result = await db.execute(
-        select(BulkImportJob.id, BulkImportJob.updated_at).where(
-            BulkImportJob.status == "processing"
-        )
+        select(BulkImportJob.id).where(BulkImportJob.status == "processing")
     )
-    processing_rows = processing_result.all()
-    processing_ids = {row[0] for row in processing_rows}
+    processing_ids = {row[0] for row in processing_result.all()}
     registration_cutoff = datetime.now(timezone.utc) - timedelta(
         seconds=_BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS
     )
