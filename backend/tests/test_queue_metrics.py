@@ -67,6 +67,29 @@ async def test_queue_metrics_render_works_on_another_event_loop() -> None:
     assert b"hriv_task_queue_worker_up 0.0" in content
 
 
+async def test_queue_metrics_clears_previous_execution_mode() -> None:
+    state = {
+        "queue_up": True,
+        "depth": 0,
+        "oldest_pending_age_seconds": None,
+        "worker_heartbeat_age_seconds": None,
+        "worker_up": True,
+    }
+    with (
+        patch("app.queue_metrics.collect_queue_state", new_callable=AsyncMock, return_value=state),
+        patch.object(settings, "task_execution_mode", "local"),
+    ):
+        await render_queue_metrics()
+    with (
+        patch("app.queue_metrics.collect_queue_state", new_callable=AsyncMock, return_value=state),
+        patch.object(settings, "task_execution_mode", "required"),
+    ):
+        content, _ = await render_queue_metrics()
+
+    assert b'hriv_task_execution_mode_info{mode="local"}' not in content
+    assert b'hriv_task_execution_mode_info{mode="required"} 1.0' in content
+
+
 async def test_queue_health_marks_stale_worker_degraded() -> None:
     with (
         patch("app.queue_metrics.collect_queue_state", new_callable=AsyncMock, return_value={

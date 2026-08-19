@@ -185,8 +185,10 @@ async def test_upload_source_image_normalizes_empty_note(tmp_path) -> None:
     assert src.note is None
 
 
+@pytest.mark.parametrize("recovery_succeeds", [True, False])
 async def test_upload_source_image_rejection_uses_fresh_session_when_bookkeeping_fails(
     tmp_path,
+    recovery_succeeds,
 ) -> None:
     """A failed original-session write still terminalizes the source row."""
     file = AsyncMock()
@@ -202,7 +204,9 @@ async def test_upload_source_image_rejection_uses_fresh_session_when_bookkeeping
 
     recovery_db = AsyncMock()
     recovery_db.execute = AsyncMock()
-    recovery_db.commit = AsyncMock()
+    recovery_db.commit = AsyncMock(
+        side_effect=None if recovery_succeeds else RuntimeError("recovery lost"),
+    )
     recovery_db.__aenter__ = AsyncMock(return_value=recovery_db)
     recovery_db.__aexit__ = AsyncMock(return_value=False)
 
@@ -234,7 +238,10 @@ async def test_upload_source_image_rejection_uses_fresh_session_when_bookkeeping
     recovery_db.commit.assert_awaited_once()
     statement = recovery_db.execute.await_args.args[0]
     assert statement.compile().params["status_1"] == "pending"
-    unlink.assert_called_once()
+    if recovery_succeeds:
+        unlink.assert_called_once()
+    else:
+        unlink.assert_not_called()
     background_tasks.add_task.assert_not_called()
 
 

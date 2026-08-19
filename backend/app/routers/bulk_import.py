@@ -17,7 +17,7 @@ import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from arq.constants import abort_jobs_ss
 from arq.jobs import JobStatus
@@ -82,9 +82,8 @@ _SOURCE_IMAGE_QUEUE_STATE_SAMPLE_POLLS = max(
 _SOURCE_IMAGE_QUEUE_CONFIRMATION_MAX_AGE_SECONDS = (
     HEALTH_CHECK_INTERVAL_SECONDS * 2
 )
-_BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS = (
-    HEALTH_CHECK_INTERVAL_SECONDS * 3
-)
+_BULK_IMPORT_COORDINATOR_LIVENESS_KEY = "hriv:bulk_import:coordinators"
+_BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS = HEALTH_CHECK_INTERVAL_SECONDS * 3
 _SOURCE_IMAGE_NO_WORKER_WINDOW_SECONDS = (
     _SOURCE_IMAGE_NO_WORKER_OBSERVATIONS * _SOURCE_IMAGE_POLL_INTERVAL_SECONDS
 )
@@ -244,13 +243,13 @@ async def _reread_source_image_after_abort_latch(
 
 
 async def _bulk_import_has_capacity_starvation(
-    db: AsyncSession,
     *,
     batch_progress: _BulkImportProgress | None,
     stale_after_seconds: int,
     last_queue_confirmed_at: float | None,
     last_queue_worker_up: bool | None,
     job_status: JobStatus | None,
+    coordinator_pool: Any | None,
 ) -> bool:
     """Return whether coordinator slots are demonstrably blocking this child."""
     if (
@@ -268,42 +267,90 @@ async def _bulk_import_has_capacity_starvation(
     ):
         return False
 
-    result = await db.execute(
-        select(func.count(BulkImportJob.id)).where(
-            BulkImportJob.status == "processing",
-            BulkImportJob.updated_at
-            >= datetime.now(timezone.utc)
-            - timedelta(seconds=_BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS),
-        )
-    )
-    return result.scalar_one() >= settings.worker_max_jobs
-
-
-async def _touch_bulk_import_coordinator(
-    db: AsyncSession,
-    bulk_import_job_id: int,
-) -> None:
-    """Refresh coordinator liveness without making heartbeat failure terminal."""
+    if coordinator_pool is None:
+        return False
     try:
-        await db.execute(
-            update(BulkImportJob)
-            .where(
-                BulkImportJob.id == bulk_import_job_id,
-                BulkImportJob.status == "processing",
-            )
-            .values(updated_at=datetime.now(timezone.utc))
+        live_since = timestamp_ms() - (
+            _BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS * 1000
         )
-        await db.commit()
+        live_count = await coordinator_pool.zcount(
+            _BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
+            live_since,
+            "+inf",
+        )
     except Exception:
         logger.exception(
-            "Bulk import coordinator liveness update failed",
+            "Could not read bulk import coordinator capacity",
             extra={
-                "event": "bulk_import.coordinator_liveness_update_failed",
+                "event": "bulk_import.coordinator_capacity_check_failed",
+            },
+        )
+        return False
+    return live_count >= settings.worker_max_jobs
+
+
+async def _register_bulk_import_coordinator(
+    bulk_import_job_id: int,
+) -> Any | None:
+    """Register a worker-hosted coordinator's arq worker-slot occupancy."""
+    pool = await get_pool()
+    if pool is None:
+        return None
+    try:
+        await pool.zadd(
+            _BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
+            {str(bulk_import_job_id): timestamp_ms()},
+        )
+    except Exception:
+        logger.exception(
+            "Bulk import coordinator slot registration failed",
+            extra={
+                "event": "bulk_import.coordinator_registration_failed",
                 "job_id": bulk_import_job_id,
             },
         )
-        with contextlib.suppress(Exception):
-            await db.rollback()
+        return None
+    return pool
+
+
+async def _refresh_bulk_import_coordinator(
+    pool: Any,
+    bulk_import_job_id: int,
+) -> None:
+    """Refresh a worker-hosted coordinator's Redis liveness score."""
+    try:
+        await pool.zadd(
+            _BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
+            {str(bulk_import_job_id): timestamp_ms()},
+        )
+    except Exception:
+        logger.exception(
+            "Bulk import coordinator liveness refresh failed",
+            extra={
+                "event": "bulk_import.coordinator_liveness_refresh_failed",
+                "job_id": bulk_import_job_id,
+            },
+        )
+
+
+async def _unregister_bulk_import_coordinator(
+    pool: Any,
+    bulk_import_job_id: int,
+) -> None:
+    """Remove a worker-hosted coordinator from the Redis liveness set."""
+    try:
+        await pool.zrem(
+            _BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
+            str(bulk_import_job_id),
+        )
+    except Exception:
+        logger.exception(
+            "Bulk import coordinator slot cleanup failed",
+            extra={
+                "event": "bulk_import.coordinator_cleanup_failed",
+                "job_id": bulk_import_job_id,
+            },
+        )
 
 
 async def _wait_for_source_image_terminal_state(
@@ -321,6 +368,7 @@ async def _wait_for_source_image_terminal_state(
         _SOURCE_IMAGE_PROCESSING_WAIT_SAFETY_CAP_SECONDS
     ),
     batch_progress: _BulkImportProgress | None = None,
+    coordinator_pool: Any | None = None,
     bulk_import_job_id: int | None = None,
 ) -> _SourceImageTerminalState:
     """Wait for queued processing to reach a terminal source-image state."""
@@ -447,9 +495,9 @@ async def _wait_for_source_image_terminal_state(
                     ):
                         queue_state = await collect_queue_state()
                         sampled_at = time.monotonic()
-                        if bulk_import_job_id is not None:
-                            await _touch_bulk_import_coordinator(
-                                db,
+                        if coordinator_pool is not None and bulk_import_job_id is not None:
+                            await _refresh_bulk_import_coordinator(
+                                coordinator_pool,
                                 bulk_import_job_id,
                             )
                         last_queue_worker_up = queue_state["worker_up"]
@@ -631,12 +679,12 @@ async def _wait_for_source_image_terminal_state(
                 and enqueue_result is not None
                 and enqueue_result.job is not None
                 and await _bulk_import_has_capacity_starvation(
-                    db,
                     batch_progress=batch_progress,
                     stale_after_seconds=stale_after_seconds,
                     last_queue_confirmed_at=last_queue_confirmed_at,
                     last_queue_worker_up=last_queue_worker_up,
                     job_status=job_status,
+                    coordinator_pool=coordinator_pool,
                 )
             ):
                 latch_written = await _write_source_image_abort_latch(
@@ -766,6 +814,38 @@ async def _process_bulk_import(
     copyright: str | None = None,
     note: str | None = None,
     active: bool = True,
+    worker_hosted: bool = False,
+) -> None:
+    """Process a bulk import, optionally registering its arq worker slot."""
+    coordinator_pool = (
+        await _register_bulk_import_coordinator(job_id)
+        if worker_hosted
+        else None
+    )
+    try:
+        await _process_bulk_import_impl(
+            job_id,
+            file_entries,
+            copyright=copyright,
+            note=note,
+            active=active,
+            coordinator_pool=coordinator_pool,
+        )
+    finally:
+        if coordinator_pool is not None:
+            await _unregister_bulk_import_coordinator(
+                coordinator_pool,
+                job_id,
+            )
+
+
+async def _process_bulk_import_impl(
+    job_id: int,
+    file_entries: list[tuple[str, str]],
+    copyright: str | None = None,
+    note: str | None = None,
+    active: bool = True,
+    coordinator_pool: Any | None = None,
 ) -> None:
     """Background task: process all images for a bulk import job.
 
@@ -816,6 +896,7 @@ async def _process_bulk_import(
                                     original_filename,
                                     enqueue_result=enqueue_result,
                                     batch_progress=batch_progress,
+                                    coordinator_pool=coordinator_pool,
                                     bulk_import_job_id=job_id,
                                 )
                             )
@@ -838,8 +919,7 @@ async def _process_bulk_import(
                             terminal_state = _source_image_terminal_state(src_check)
                 except TaskQueueUnavailableError as exc:
                     detail = "Task queue unavailable; image processing was not started."
-                    with contextlib.suppress(OSError):
-                        os.unlink(stored_path)
+                    bookkeeping_committed = False
                     try:
                         async with async_session() as db:
                             src_check = await db.get(SourceImage, source_image_id)
@@ -848,6 +928,7 @@ async def _process_bulk_import(
                                 src_check.status_message = "Failed"
                                 src_check.error_message = detail
                                 await db.commit()
+                                bookkeeping_committed = True
                     except Exception:
                         logger.exception(
                             "Failed to mark bulk-import source image after queue rejection",
@@ -858,6 +939,9 @@ async def _process_bulk_import(
                                 "original_filename": original_filename,
                             },
                         )
+                    if bookkeeping_committed:
+                        with contextlib.suppress(OSError):
+                            os.unlink(stored_path)
                     span = trace.get_current_span()
                     span.record_exception(exc)
                     span.set_status(StatusCode.ERROR, str(exc))
@@ -1214,9 +1298,7 @@ async def bulk_import_images(
                     active=active,
                 )
             except TaskQueueUnavailableError:
-                for _, stored_path in file_entries:
-                    with contextlib.suppress(OSError):
-                        os.unlink(stored_path)
+                bookkeeping_committed = False
                 error_entry = [{
                     "filename": None,
                     "error": "Task queue unavailable; bulk import was not started.",
@@ -1226,6 +1308,7 @@ async def bulk_import_images(
                     job.failed_count = job.total_count
                     job.errors = list(job.errors or []) + error_entry
                     await db.commit()
+                    bookkeeping_committed = True
                 except Exception:
                     logger.exception(
                         "Failed to mark bulk import after queue rejection",
@@ -1234,6 +1317,10 @@ async def bulk_import_images(
                             "job_id": bulk_job_id,
                         },
                     )
+                if bookkeeping_committed:
+                    for _, stored_path in file_entries:
+                        with contextlib.suppress(OSError):
+                            os.unlink(stored_path)
                 raise
             span.set_attribute("bulk_import.enqueued", enqueue_result.queued)
             if not enqueue_result.queued:

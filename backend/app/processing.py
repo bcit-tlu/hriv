@@ -498,6 +498,17 @@ async def process_source_image(source_image_id: int) -> None:
             )
             return
 
+        if src.status in {"completed", "failed"}:
+            logger.info(
+                "Terminal SourceImage found, skipping processing",
+                extra={
+                    "event": "processing.terminal_source_skipped",
+                    "source_image_id": source_image_id,
+                    "status": src.status,
+                },
+            )
+            return
+
         src.status = "processing"
         src.progress = 5
         src.status_message = "Preparing image"
@@ -754,6 +765,17 @@ async def process_replace_image(
                 extra={
                     "event": "replace.source_not_found",
                     "source_image_id": source_image_id,
+                },
+            )
+            return
+
+        if src.status in {"completed", "failed"}:
+            logger.info(
+                "Terminal replacement SourceImage found, skipping processing",
+                extra={
+                    "event": "replace.terminal_source_skipped",
+                    "source_image_id": source_image_id,
+                    "status": src.status,
                 },
             )
             return

@@ -37,7 +37,7 @@ from app.routers.bulk_import import (
     get_bulk_import_job,
     list_bulk_import_jobs,
 )
-from app.worker import EnqueueResult, WorkerSettings
+from app.worker import EnqueueResult, TaskQueueUnavailableError, WorkerSettings
 
 
 # ── Global fixture: default enqueue_bulk_import to False (no Redis) ───────
@@ -540,6 +540,30 @@ async def test_process_bulk_import_completes_successful_job(tmp_path) -> None:
 
     # Final status is "completed" and the completed_count was incremented
     assert job.status == "completed"
+
+
+async def test_worker_hosted_bulk_import_registers_and_cleans_up_slot() -> None:
+    """Only arq-hosted coordinators register worker-slot occupancy."""
+    pool = MagicMock()
+    pool.zadd = AsyncMock()
+    pool.zrem = AsyncMock()
+
+    with (
+        patch("app.routers.bulk_import.get_pool", new_callable=AsyncMock, return_value=pool),
+        patch(
+            "app.routers.bulk_import._process_bulk_import_impl",
+            new_callable=AsyncMock,
+        ) as process_impl,
+    ):
+        await _process_bulk_import(
+            job_id=77,
+            file_entries=[],
+            worker_hosted=True,
+        )
+
+    process_impl.assert_awaited_once()
+    pool.zadd.assert_awaited_once()
+    pool.zrem.assert_awaited_once()
 
 
 async def test_process_bulk_import_normalizes_empty_note(tmp_path) -> None:
@@ -1048,15 +1072,13 @@ async def test_wait_for_source_image_detects_coordinator_capacity_starvation() -
     )
     db = AsyncMock()
     db.get = AsyncMock(return_value=src)
-    execute_result = MagicMock()
-    execute_result.scalar_one.return_value = 4
-    db.execute = AsyncMock(return_value=execute_result)
     db.commit = AsyncMock()
     db.__aenter__ = AsyncMock(return_value=db)
     db.__aexit__ = AsyncMock(return_value=False)
     pool = MagicMock()
     pool.zadd = AsyncMock()
     pool.zrem = AsyncMock()
+    pool.zcount = AsyncMock(return_value=4)
     progress = _BulkImportProgress(time.monotonic() - 901)
 
     with (
@@ -1076,15 +1098,15 @@ async def test_wait_for_source_image_detects_coordinator_capacity_starvation() -
             stale_after_seconds=900,
             pending_wait_safety_cap_seconds=7200,
             batch_progress=progress,
+            coordinator_pool=pool,
             bulk_import_job_id=900,
         )
 
     assert result.status == "failed"
     assert "fully consumed by concurrent bulk imports" in result.error_message
-    pool.zadd.assert_awaited_once()
+    assert pool.zadd.await_count == 2
     pool.zrem.assert_awaited_once_with(abort_jobs_ss, "job-capacity")
-    assert db.commit.await_count == 2
-    assert "bulk_import_jobs" in str(db.execute.await_args_list[0].args[0])
+    assert db.commit.await_count == 1
 
 
 async def test_wait_for_source_image_does_not_fail_queued_child_behind_unrelated_jobs() -> None:
@@ -1160,16 +1182,16 @@ async def test_capacity_starvation_ignores_stale_abandoned_coordinators() -> Non
     )
     db = AsyncMock()
     db.get = AsyncMock(side_effect=[src, completed])
-    execute_result = MagicMock()
-    execute_result.scalar_one.return_value = 0
-    db.execute = AsyncMock(return_value=execute_result)
     db.commit = AsyncMock()
     db.__aenter__ = AsyncMock(return_value=db)
     db.__aexit__ = AsyncMock(return_value=False)
+    pool = MagicMock()
+    pool.zcount = AsyncMock(return_value=0)
     progress = _BulkImportProgress(time.monotonic() - 1201)
 
     with (
         patch("app.routers.bulk_import.async_session", return_value=db),
+        patch("app.routers.bulk_import.get_pool", new_callable=AsyncMock, return_value=pool),
         patch("app.routers.bulk_import.asyncio.sleep", new_callable=AsyncMock),
         patch(
             "app.routers.bulk_import.collect_queue_state",
@@ -1185,14 +1207,11 @@ async def test_capacity_starvation_ignores_stale_abandoned_coordinators() -> Non
             stale_after_seconds=900,
             pending_wait_safety_cap_seconds=0,
             batch_progress=progress,
+            coordinator_pool=pool,
         )
 
     assert result.status == "completed"
     db.commit.assert_not_awaited()
-    capacity_query = db.execute.await_args_list[-1].args[0]
-    query_text = str(capacity_query)
-    assert "bulk_import_jobs.status =" in query_text
-    assert "bulk_import_jobs.updated_at" in query_text
 
 
 async def test_wait_for_source_image_batch_progress_resets_deadlock_window() -> None:
@@ -1208,18 +1227,16 @@ async def test_capacity_starvation_latch_fails_remaining_pending_children() -> N
     """Once established, capacity starvation remains active for the batch."""
     progress = _BulkImportProgress(time.monotonic())
     progress.capacity_starvation_detected = True
-    db = AsyncMock()
-    execute_result = MagicMock()
-    execute_result.scalar_one.return_value = 4
-    db.execute = AsyncMock(return_value=execute_result)
+    pool = MagicMock()
+    pool.zcount = AsyncMock(return_value=4)
 
     assert await _bulk_import_has_capacity_starvation(
-        db,
         batch_progress=progress,
         stale_after_seconds=900,
         last_queue_confirmed_at=time.monotonic(),
         last_queue_worker_up=True,
         job_status=JobStatus.queued,
+        coordinator_pool=pool,
     )
 
 
@@ -1227,18 +1244,30 @@ async def test_capacity_starvation_latch_rechecks_current_coordinator_capacity()
     """A prior starvation verdict cannot survive after coordinator slots free."""
     progress = _BulkImportProgress(time.monotonic())
     progress.capacity_starvation_detected = True
-    db = AsyncMock()
-    execute_result = MagicMock()
-    execute_result.scalar_one.return_value = 3
-    db.execute = AsyncMock(return_value=execute_result)
+    pool = MagicMock()
+    pool.zcount = AsyncMock(return_value=3)
 
     assert not await _bulk_import_has_capacity_starvation(
-        db,
         batch_progress=progress,
         stale_after_seconds=900,
         last_queue_confirmed_at=time.monotonic(),
         last_queue_worker_up=True,
         job_status=JobStatus.queued,
+        coordinator_pool=pool,
+    )
+
+
+async def test_capacity_starvation_ignores_api_hosted_coordinator() -> None:
+    """API-hosted local fallback coordinators do not occupy arq slots."""
+    progress = _BulkImportProgress(time.monotonic() - 901)
+
+    assert not await _bulk_import_has_capacity_starvation(
+        batch_progress=progress,
+        stale_after_seconds=900,
+        last_queue_confirmed_at=time.monotonic(),
+        last_queue_worker_up=True,
+        job_status=JobStatus.queued,
+        coordinator_pool=None,
     )
 
 
@@ -2525,6 +2554,53 @@ async def test_bulk_import_falls_back_to_background_tasks(tmp_path) -> None:
     mock_enqueue.assert_awaited_once()
     # BackgroundTasks should have been called as fallback
     assert bg.add_task.call_count == 1
+
+
+@pytest.mark.parametrize("bookkeeping_succeeds", [True, False])
+async def test_bulk_import_rejection_unlinks_only_after_bookkeeping(
+    tmp_path,
+    bookkeeping_succeeds: bool,
+) -> None:
+    """Queue rejection retains staged files when terminal bookkeeping fails."""
+    category = SimpleNamespace(id=1)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=category)
+    db.add = MagicMock()
+    db.refresh = AsyncMock(side_effect=lambda obj: setattr(obj, "id", 88))
+    db.commit = AsyncMock(
+        side_effect=(
+            [None, None]
+            if bookkeeping_succeeds
+            else [None, RuntimeError("connection lost")]
+        ),
+    )
+    bg = MagicMock()
+    unlink = MagicMock()
+
+    with (
+        patch("app.routers.bulk_import.settings") as mock_settings,
+        patch(
+            "app.routers.bulk_import.enqueue_bulk_import",
+            new=AsyncMock(
+                side_effect=TaskQueueUnavailableError("queue_unavailable"),
+            ),
+        ),
+        patch("app.routers.bulk_import.os.unlink", new=unlink),
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        with pytest.raises(TaskQueueUnavailableError):
+            await bulk_import_images(
+                files=[_make_upload("rejected.tiff", [b"tiff-data", b""])],
+                category_id=1,
+                background_tasks=bg,
+                _user=MagicMock(),
+                db=db,
+            )
+
+    if bookkeeping_succeeds:
+        unlink.assert_called_once()
+    else:
+        unlink.assert_not_called()
 
 
 # ── ENOSPC handling ──────────────────────────────────────────────────────

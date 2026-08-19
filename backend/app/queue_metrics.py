@@ -10,8 +10,6 @@ from typing import Any
 from arq.constants import default_queue_name, health_check_key_suffix
 from opentelemetry import metrics
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Gauge, generate_latest
-from redis.exceptions import RedisError
-
 from .database import settings
 
 _meter = metrics.get_meter(__name__)
@@ -127,12 +125,6 @@ async def collect_queue_state() -> dict[str, Any]:
             read_state(),
             timeout=_QUEUE_STATE_READ_TIMEOUT_SECONDS,
         )
-    except RedisError:
-        state["queue_up"] = False
-        state["depth"] = None
-        state["oldest_pending_age_seconds"] = None
-        state["worker_heartbeat_age_seconds"] = None
-        state["worker_up"] = None
     except Exception:
         state["queue_up"] = False
         state["depth"] = None
@@ -163,6 +155,7 @@ async def render_queue_metrics() -> tuple[bytes, str]:
             if state["worker_up"] is None
             else 1 if state["worker_up"] else 0
         )
+        _execution_mode.clear()
         _execution_mode.labels(mode=settings.task_execution_mode).set(1)
         return generate_latest(_registry), CONTENT_TYPE_LATEST
 

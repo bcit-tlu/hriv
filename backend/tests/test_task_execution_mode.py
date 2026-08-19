@@ -25,7 +25,7 @@ def test_required_mode_call_site_matrix_has_terminal_rejection_guards() -> None:
         (upload.upload_source_image, "TaskQueueUnavailableError"),
         (images.replace_image, "TaskQueueUnavailableError"),
         (bulk_import.bulk_import_images, "TaskQueueUnavailableError"),
-        (bulk_import._process_bulk_import, "TaskQueueUnavailableError"),
+        (bulk_import._process_bulk_import_impl, "TaskQueueUnavailableError"),
         (admin._kick_off, "TaskQueueUnavailableError"),
     )
 

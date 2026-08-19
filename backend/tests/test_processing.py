@@ -28,6 +28,7 @@ from app.processing import (
     _tile_source_id_from_url,
     detect_pyramid_info,
     generate_tiles,
+    process_replace_image,
     process_source_image,
     rebuild_source_image_tiles,
     reconcile_stale_source_images,
@@ -202,6 +203,34 @@ async def test_process_source_image_not_found() -> None:
 
     # Should have attempted to get and then returned
     mock_session.get.assert_awaited_once()
+
+
+async def test_process_source_image_skips_terminal_row() -> None:
+    """A late child cannot overwrite a terminal source-image result."""
+    src = SimpleNamespace(id=100, status="failed")
+    mock_session = AsyncMock()
+    mock_session.get.return_value = src
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.processing.async_session", return_value=mock_session):
+        await process_source_image(100)
+
+    mock_session.commit.assert_not_awaited()
+
+
+async def test_process_replace_image_skips_terminal_row() -> None:
+    """A late replacement child cannot overwrite a terminal source result."""
+    src = SimpleNamespace(id=101, status="completed")
+    mock_session = AsyncMock()
+    mock_session.get.return_value = src
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.processing.async_session", return_value=mock_session):
+        await process_replace_image(101, 202)
+
+    mock_session.commit.assert_not_awaited()
 
 
 async def test_process_source_image_success() -> None:

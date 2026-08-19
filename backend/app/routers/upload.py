@@ -130,6 +130,7 @@ async def upload_source_image(
             try:
                 enqueue_result = await enqueue_process_source_image(source_image_id)
             except TaskQueueUnavailableError:
+                bookkeeping_committed = False
                 try:
                     src.status = "failed"
                     src.status_message = "Failed"
@@ -137,6 +138,7 @@ async def upload_source_image(
                         "Task queue unavailable; image processing was not started."
                     )
                     await db.commit()
+                    bookkeeping_committed = True
                 except Exception:
                     logger.exception(
                         "Failed to mark uploaded source image after queue rejection",
@@ -165,6 +167,7 @@ async def upload_source_image(
                                 )
                             )
                             await recovery_db.commit()
+                            bookkeeping_committed = True
                     except Exception:
                         logger.exception(
                             "Fresh-session uploaded source-image bookkeeping failed",
@@ -173,8 +176,9 @@ async def upload_source_image(
                                 "source_image_id": source_image_id,
                             },
                         )
-                with contextlib.suppress(OSError):
-                    os.unlink(stored_path)
+                if bookkeeping_committed:
+                    with contextlib.suppress(OSError):
+                        os.unlink(stored_path)
                 raise
             span.set_attribute("source_image.enqueued", enqueue_result.queued)
             if not enqueue_result.queued:

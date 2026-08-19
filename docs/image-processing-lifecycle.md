@@ -182,11 +182,15 @@ settings hash. See [tile-cache-provenance.md](tile-cache-provenance.md) for the
 staleness rules and API surface.
 
 Bulk-import coordinators distinguish a lost child job from a stopped worker.
+Worker-hosted coordinators register their arq worker-slot occupancy in Redis
+while API-hosted local fallbacks do not; capacity starvation counts only those
+live registrations.
 When a queued child observes an absent worker heartbeat for the configured
 wall-clock window, it writes arq's abort latch before marking the `SourceImage`
-failed. The latch prevents a later worker from running the child against the
-failed row. If Redis cannot accept the latch, the row remains pending and the
-coordinator keeps waiting. The pending wait ceiling stays below the
+failed. The latch narrows the race window; the processor's terminal-row guard
+is what guarantees a late child cannot overwrite a recorded failure. If Redis
+cannot accept the latch, the row remains pending and the coordinator keeps
+waiting. The pending wait ceiling stays below the
 coordinator's `job_timeout` as an evidence-gated last resort, so it can record a
 child whose status has remained unknown without failing healthy queued work.
 The processing backstop is above the child's `job_timeout` because its clock

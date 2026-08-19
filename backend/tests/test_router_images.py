@@ -936,6 +936,7 @@ async def test_replace_image_rejection_preserves_metadata_and_version(
     background_tasks.add_task.assert_not_called()
 
 
+@pytest.mark.parametrize("recovery_succeeds", [True, False])
 @patch("os.path.getsize", return_value=1024)
 @patch("os.makedirs")
 @patch("builtins.open", new_callable=MagicMock)
@@ -943,6 +944,7 @@ async def test_replace_image_rejection_uses_fresh_session_when_bookkeeping_fails
     mock_open: MagicMock,
     mock_makedirs: MagicMock,
     mock_getsize: MagicMock,
+    recovery_succeeds: bool,
 ) -> None:
     """A failed original-session write still terminalizes the source row."""
     mock_enqueue = AsyncMock(
@@ -962,7 +964,9 @@ async def test_replace_image_rejection_uses_fresh_session_when_bookkeeping_fails
 
     recovery_db = AsyncMock()
     recovery_db.execute = AsyncMock()
-    recovery_db.commit = AsyncMock()
+    recovery_db.commit = AsyncMock(
+        side_effect=None if recovery_succeeds else RuntimeError("recovery lost"),
+    )
     recovery_db.__aenter__ = AsyncMock(return_value=recovery_db)
     recovery_db.__aexit__ = AsyncMock(return_value=False)
 
@@ -993,7 +997,10 @@ async def test_replace_image_rejection_uses_fresh_session_when_bookkeeping_fails
 
     recovery_db.execute.assert_awaited_once()
     recovery_db.commit.assert_awaited_once()
-    unlink.assert_called_once()
+    if recovery_succeeds:
+        unlink.assert_called_once()
+    else:
+        unlink.assert_not_called()
     background_tasks.add_task.assert_not_called()
 
 

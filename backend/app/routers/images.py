@@ -449,6 +449,7 @@ async def replace_image(
                     target_image_id,
                 )
             except TaskQueueUnavailableError:
+                bookkeeping_committed = False
                 try:
                     src.status = "failed"
                     src.status_message = "Failed"
@@ -456,6 +457,7 @@ async def replace_image(
                         "Task queue unavailable; image replacement was not started."
                     )
                     await db.commit()
+                    bookkeeping_committed = True
                 except Exception:
                     logger.exception(
                         "Failed to mark replacement source image after queue rejection",
@@ -485,6 +487,7 @@ async def replace_image(
                                 )
                             )
                             await recovery_db.commit()
+                            bookkeeping_committed = True
                     except Exception:
                         logger.exception(
                             "Fresh-session replacement source-image bookkeeping failed",
@@ -535,8 +538,9 @@ async def replace_image(
                                 "target_image_id": target_image_id,
                             },
                         )
-                with contextlib.suppress(OSError):
-                    os.unlink(stored_path)
+                if bookkeeping_committed:
+                    with contextlib.suppress(OSError):
+                        os.unlink(stored_path)
                 raise
             span.set_attribute("image.enqueued", enqueue_result.queued)
             if not enqueue_result.queued:
