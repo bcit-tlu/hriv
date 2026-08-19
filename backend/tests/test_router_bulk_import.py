@@ -1076,13 +1076,15 @@ async def test_wait_for_source_image_detects_coordinator_capacity_starvation() -
             stale_after_seconds=900,
             pending_wait_safety_cap_seconds=7200,
             batch_progress=progress,
+            bulk_import_job_id=900,
         )
 
     assert result.status == "failed"
     assert "fully consumed by concurrent bulk imports" in result.error_message
     pool.zadd.assert_awaited_once()
     pool.zrem.assert_awaited_once_with(abort_jobs_ss, "job-capacity")
-    db.commit.assert_awaited_once()
+    assert db.commit.await_count == 2
+    assert "bulk_import_jobs" in str(db.execute.await_args_list[0].args[0])
 
 
 async def test_wait_for_source_image_does_not_fail_queued_child_behind_unrelated_jobs() -> None:
@@ -1137,6 +1139,62 @@ async def test_wait_for_source_image_does_not_fail_queued_child_behind_unrelated
     db.commit.assert_not_awaited()
 
 
+async def test_capacity_starvation_ignores_stale_abandoned_coordinators() -> None:
+    """Old processing rows do not make a healthy queue appear starved."""
+    job = MagicMock()
+    job.status = AsyncMock(return_value=JobStatus.queued)
+    job.job_id = "job-stale-coordinators"
+    src = SimpleNamespace(
+        id=45,
+        status="pending",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message="Queued",
+    )
+    completed = SimpleNamespace(
+        id=45,
+        status="completed",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message=None,
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=[src, completed])
+    execute_result = MagicMock()
+    execute_result.scalar_one.return_value = 0
+    db.execute = AsyncMock(return_value=execute_result)
+    db.commit = AsyncMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+    progress = _BulkImportProgress(time.monotonic() - 1201)
+
+    with (
+        patch("app.routers.bulk_import.async_session", return_value=db),
+        patch("app.routers.bulk_import.asyncio.sleep", new_callable=AsyncMock),
+        patch(
+            "app.routers.bulk_import.collect_queue_state",
+            new_callable=AsyncMock,
+            return_value={"queue_up": True, "worker_up": True},
+        ),
+    ):
+        result = await _wait_for_source_image_terminal_state(
+            45,
+            "stale-coordinators.jpg",
+            enqueue_result=EnqueueResult("queued", "submitted", job=job),
+            pending_grace_seconds=0,
+            stale_after_seconds=900,
+            pending_wait_safety_cap_seconds=0,
+            batch_progress=progress,
+        )
+
+    assert result.status == "completed"
+    db.commit.assert_not_awaited()
+    capacity_query = db.execute.await_args_list[-1].args[0]
+    query_text = str(capacity_query)
+    assert "bulk_import_jobs.status =" in query_text
+    assert "bulk_import_jobs.updated_at" in query_text
+
+
 async def test_wait_for_source_image_batch_progress_resets_deadlock_window() -> None:
     """A child entering processing resets the batch pending window."""
     progress = _BulkImportProgress(100.0)
@@ -1156,6 +1214,25 @@ async def test_capacity_starvation_latch_fails_remaining_pending_children() -> N
     db.execute = AsyncMock(return_value=execute_result)
 
     assert await _bulk_import_has_capacity_starvation(
+        db,
+        batch_progress=progress,
+        stale_after_seconds=900,
+        last_queue_confirmed_at=time.monotonic(),
+        last_queue_worker_up=True,
+        job_status=JobStatus.queued,
+    )
+
+
+async def test_capacity_starvation_latch_rechecks_current_coordinator_capacity() -> None:
+    """A prior starvation verdict cannot survive after coordinator slots free."""
+    progress = _BulkImportProgress(time.monotonic())
+    progress.capacity_starvation_detected = True
+    db = AsyncMock()
+    execute_result = MagicMock()
+    execute_result.scalar_one.return_value = 3
+    db.execute = AsyncMock(return_value=execute_result)
+
+    assert not await _bulk_import_has_capacity_starvation(
         db,
         batch_progress=progress,
         stale_after_seconds=900,

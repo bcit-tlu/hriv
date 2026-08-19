@@ -82,6 +82,9 @@ _SOURCE_IMAGE_QUEUE_STATE_SAMPLE_POLLS = max(
 _SOURCE_IMAGE_QUEUE_CONFIRMATION_MAX_AGE_SECONDS = (
     HEALTH_CHECK_INTERVAL_SECONDS * 2
 )
+_BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS = (
+    HEALTH_CHECK_INTERVAL_SECONDS * 3
+)
 _SOURCE_IMAGE_NO_WORKER_WINDOW_SECONDS = (
     _SOURCE_IMAGE_NO_WORKER_OBSERVATIONS * _SOURCE_IMAGE_POLL_INTERVAL_SECONDS
 )
@@ -267,10 +270,40 @@ async def _bulk_import_has_capacity_starvation(
 
     result = await db.execute(
         select(func.count(BulkImportJob.id)).where(
-            BulkImportJob.status.notin_({"completed", "failed"})
+            BulkImportJob.status == "processing",
+            BulkImportJob.updated_at
+            >= datetime.now(timezone.utc)
+            - timedelta(seconds=_BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS),
         )
     )
     return result.scalar_one() >= settings.worker_max_jobs
+
+
+async def _touch_bulk_import_coordinator(
+    db: AsyncSession,
+    bulk_import_job_id: int,
+) -> None:
+    """Refresh coordinator liveness without making heartbeat failure terminal."""
+    try:
+        await db.execute(
+            update(BulkImportJob)
+            .where(
+                BulkImportJob.id == bulk_import_job_id,
+                BulkImportJob.status == "processing",
+            )
+            .values(updated_at=datetime.now(timezone.utc))
+        )
+        await db.commit()
+    except Exception:
+        logger.exception(
+            "Bulk import coordinator liveness update failed",
+            extra={
+                "event": "bulk_import.coordinator_liveness_update_failed",
+                "job_id": bulk_import_job_id,
+            },
+        )
+        with contextlib.suppress(Exception):
+            await db.rollback()
 
 
 async def _wait_for_source_image_terminal_state(
@@ -288,6 +321,7 @@ async def _wait_for_source_image_terminal_state(
         _SOURCE_IMAGE_PROCESSING_WAIT_SAFETY_CAP_SECONDS
     ),
     batch_progress: _BulkImportProgress | None = None,
+    bulk_import_job_id: int | None = None,
 ) -> _SourceImageTerminalState:
     """Wait for queued processing to reach a terminal source-image state."""
     not_found_count = 0
@@ -413,6 +447,11 @@ async def _wait_for_source_image_terminal_state(
                     ):
                         queue_state = await collect_queue_state()
                         sampled_at = time.monotonic()
+                        if bulk_import_job_id is not None:
+                            await _touch_bulk_import_coordinator(
+                                db,
+                                bulk_import_job_id,
+                            )
                         last_queue_worker_up = queue_state["worker_up"]
                         if queue_state["queue_up"]:
                             last_queue_confirmed_at = sampled_at
@@ -777,6 +816,7 @@ async def _process_bulk_import(
                                     original_filename,
                                     enqueue_result=enqueue_result,
                                     batch_progress=batch_progress,
+                                    bulk_import_job_id=job_id,
                                 )
                             )
                         else:

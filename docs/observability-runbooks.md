@@ -804,3 +804,10 @@ consume the latch in the sub-poll interval before the reread's `zrem`. The
 symptom is a child that fails with a generic processing error during a worker
 flap, without an abort-specific message. Retry the bulk import; do not treat
 that narrow race as evidence of a bad source image.
+
+If `bulk_import.source_job_capacity_starvation` appears with the message
+`worker capacity was fully consumed by concurrent bulk imports`, all configured
+worker slots were held by live bulk-import coordinators while this batch's
+children remained queued. The coordinator liveness check excludes stale
+abandoned import rows, so this is distinct from a child waiting behind
+unrelated work. Retry the import after the concurrent bulk imports finish.
