@@ -41,6 +41,38 @@ async def test_health_endpoint() -> None:
     assert result == {"status": "ok", "version": app.version}
 
 
+async def test_lifespan_continues_when_bulk_import_reconciliation_fails(
+    caplog,
+    monkeypatch,
+) -> None:
+    from app import main
+    from app.database import settings
+
+    session = AsyncMock()
+    context = MagicMock()
+    context.__aenter__ = AsyncMock(return_value=session)
+    context.__aexit__ = AsyncMock(return_value=False)
+    session_factory = MagicMock(return_value=context)
+
+    monkeypatch.setattr(settings, "task_execution_mode", "local")
+    monkeypatch.setattr(main, "setup_logging", MagicMock())
+    monkeypatch.setattr(main, "_check_oidc_connectivity", AsyncMock())
+    monkeypatch.setattr(main, "get_async_session", MagicMock(return_value=session_factory))
+    monkeypatch.setattr(main, "reconcile_stale_tasks", AsyncMock())
+    monkeypatch.setattr(main, "enforce_files_import_archive_retention", AsyncMock())
+    monkeypatch.setattr(main, "reconcile_stale_source_images", AsyncMock())
+    monkeypatch.setattr(
+        main,
+        "reconcile_stale_bulk_import_jobs",
+        AsyncMock(side_effect=RuntimeError("database unavailable")),
+    )
+
+    async with main.lifespan(main.app):
+        pass
+
+    assert "Stale bulk-import reconciliation failed" in caplog.text
+
+
 async def test_queue_health_returns_minimal_status(monkeypatch) -> None:
     from app.main import queue_health_endpoint
     from app.database import settings

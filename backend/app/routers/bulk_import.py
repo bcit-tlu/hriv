@@ -68,6 +68,9 @@ _SOURCE_IMAGE_NO_WORKER_OBSERVATIONS = 60
 _SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS = (
     SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS
 )
+_STALE_BULK_IMPORT_SECONDS = int(
+    os.environ.get("BULK_IMPORT_STALE_SECONDS", "900")
+)
 # Keep the pending ceiling below the coordinator's timeout so late-enqueued
 # children still leave time for terminal bookkeeping before it is killed.
 # The ceiling is only a backstop when queue evidence has gone stale; a child
@@ -497,8 +500,7 @@ async def _wait_for_source_image_terminal_state(
                     JobStatus.in_progress,
                 }:
                     if (
-                        poll_count == 1
-                        or poll_count % _SOURCE_IMAGE_QUEUE_STATE_SAMPLE_POLLS == 0
+                        poll_count % _SOURCE_IMAGE_QUEUE_STATE_SAMPLE_POLLS == 0
                     ):
                         queue_state = await collect_queue_state()
                         sampled_at = time.monotonic()
@@ -844,6 +846,40 @@ async def _process_bulk_import(
                 coordinator_pool,
                 job_id,
             )
+
+
+async def reconcile_stale_bulk_import_jobs(
+    session: AsyncSession,
+    stale_after_seconds: int = _STALE_BULK_IMPORT_SECONDS,
+) -> int:
+    """Mark abandoned bulk-import coordinators as failed on startup."""
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=stale_after_seconds)
+    stmt = (
+        update(BulkImportJob)
+        .where(
+            BulkImportJob.status == "processing",
+            BulkImportJob.updated_at < cutoff,
+        )
+        .values(
+            status="failed",
+            updated_at=func.now(),
+        )
+        .returning(BulkImportJob.id)
+    )
+    result = await session.execute(stmt)
+    ids = [row[0] for row in result.all()]
+    await session.commit()
+    if ids:
+        logger.warning(
+            "Reconciled %d stale bulk-import job(s) to 'failed' on startup",
+            len(ids),
+            extra={
+                "event": "bulk_import.reconciled_stale",
+                "bulk_import_job_ids": ids,
+                "stale_after_seconds": stale_after_seconds,
+            },
+        )
+    return len(ids)
 
 
 async def _process_bulk_import_impl(

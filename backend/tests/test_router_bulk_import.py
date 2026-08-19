@@ -36,6 +36,7 @@ from app.routers.bulk_import import (
     bulk_import_images,
     get_bulk_import_job,
     list_bulk_import_jobs,
+    reconcile_stale_bulk_import_jobs,
 )
 from app.worker import EnqueueResult, TaskQueueUnavailableError, WorkerSettings
 
@@ -49,6 +50,7 @@ def _patch_enqueue_bulk_import():
     with (
         patch("app.routers.bulk_import.enqueue_bulk_import", new_callable=AsyncMock, return_value=EnqueueResult("fallback", "queue_unavailable")),
         patch("app.routers.bulk_import.enqueue_process_source_image", new_callable=AsyncMock, return_value=EnqueueResult("fallback", "queue_unavailable")),
+        patch("app.routers.bulk_import._SOURCE_IMAGE_QUEUE_STATE_SAMPLE_POLLS", 1),
         patch(
             "app.routers.bulk_import.collect_queue_state",
             new_callable=AsyncMock,
@@ -81,6 +83,28 @@ def test_processing_wait_ceiling_outlasts_child_timeout() -> None:
     )
 
     assert _SOURCE_IMAGE_PROCESSING_WAIT_SAFETY_CAP_SECONDS > WorkerSettings.job_timeout
+
+
+async def test_reconcile_stale_bulk_import_jobs_marks_processing_stale() -> None:
+    row = MagicMock()
+    row.__getitem__ = lambda self, index: 27
+    result = MagicMock()
+    result.all.return_value = [row]
+    session = AsyncMock()
+    session.execute = AsyncMock(return_value=result)
+
+    count = await reconcile_stale_bulk_import_jobs(
+        session,
+        stale_after_seconds=900,
+    )
+
+    assert count == 1
+    session.commit.assert_awaited_once()
+    stmt = session.execute.await_args.args[0]
+    assert stmt.compile().params["status_1"] == "processing"
+    sql = str(stmt.compile())
+    assert "errors" not in sql
+    assert "failed_count" not in sql
 
 
 def test_is_image_filename_valid() -> None:
@@ -1983,6 +2007,7 @@ async def test_wait_for_source_image_samples_worker_health_between_polls() -> No
     with (
         patch("app.routers.bulk_import.async_session", return_value=db),
         patch("app.routers.bulk_import.asyncio.sleep", new_callable=AsyncMock),
+        patch("app.routers.bulk_import._SOURCE_IMAGE_QUEUE_STATE_SAMPLE_POLLS", 2),
         patch("app.routers.bulk_import.collect_queue_state", collect_queue),
     ):
         result = await _wait_for_source_image_terminal_state(

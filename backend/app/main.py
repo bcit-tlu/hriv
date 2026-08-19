@@ -29,6 +29,7 @@ from .worker import TaskQueueUnavailableError, get_pool
 from .maintenance import is_maintenance_mode
 from .middleware import AuditMiddleware, MaintenanceMiddleware
 from .processing import reconcile_stale_source_images
+from .routers.bulk_import import reconcile_stale_bulk_import_jobs
 from .routers import (
     admin,
     announcement,
@@ -217,6 +218,19 @@ async def lifespan(app: FastAPI):
             "Stale source image reconciliation failed: %s",
             exc,
             extra={"event": "processing.reconcile_failed", "error": str(exc)},
+        )
+
+    try:
+        async with get_async_session()() as session:
+            await reconcile_stale_bulk_import_jobs(session)
+    except Exception as exc:  # pragma: no cover - best effort on startup
+        logger.warning(
+            "Stale bulk-import reconciliation failed: %s",
+            exc,
+            extra={
+                "event": "bulk_import.reconcile_failed",
+                "error": str(exc),
+            },
         )
 
     yield

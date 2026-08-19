@@ -210,10 +210,19 @@ covered by
 
 `reconcile_stale_source_images()` runs on **backend (API pod) startup** and marks
 SourceImages as `failed` when they exceed status-specific cutoffs. `processing`
-rows use the 900-second no-progress cutoff because they have started work;
-`pending` rows use the longer `job_timeout // 2` pending-wait bound (1 hour by
-default) so time spent waiting in the arq queue is not mistaken for a crash.
-This handles genuinely orphaned rows without failing healthy queued work.
+rows use the 900-second no-progress cutoff because they have started work.
+`pending` rows use the longer `job_timeout // 2` bound (1 hour by default), but
+that cutoff is applied only when Redis is reachable, a worker heartbeat is
+present, and the arq queue is empty. A non-empty or unhealthy queue leaves
+pending rows untouched so a valid queued job can still self-heal. This handles
+genuinely lost jobs without failing healthy queued work.
+
+`reconcile_stale_bulk_import_jobs()` also runs at startup. It marks a
+`processing` bulk-import coordinator as `failed` when its counters have not
+moved past the configured stale threshold, preserving the existing per-file
+`errors` and `failed_count` accounting. This finalises coordinator rows left
+behind by a cancelled or killed arq job; the coordinator uses `max_tries=1`
+because retrying its non-idempotent batch would duplicate `SourceImage` rows.
 
 ## Related code
 

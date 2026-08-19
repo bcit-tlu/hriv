@@ -98,7 +98,7 @@ async def collect_queue_state() -> dict[str, Any]:
         oldest = await pool.zrange(ARQ_QUEUE_NAME, 0, 0, withscores=True)
         oldest_age = None
         if oldest:
-            score = oldest[0][1] if isinstance(oldest[0], tuple) else oldest[0]
+            score = oldest[0][1]
             oldest_age = max(0.0, (now_ms - float(score)) / 1000)
         remaining_ttl = await pool.ttl(HEALTH_CHECK_KEY)
         worker_up = remaining_ttl != -2

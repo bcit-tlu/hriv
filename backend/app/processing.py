@@ -26,6 +26,7 @@ from sqlalchemy.sql import func
 
 from .database import async_session, settings
 from .models import Image, SourceImage
+from .queue_metrics import collect_queue_state
 from .task_constants import SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS
 from .tile_provenance import (
     DZI_OVERLAP,
@@ -1073,27 +1074,37 @@ async def reconcile_stale_source_images(
         )
         .returning(SourceImage.id)
     )
-    pending_stmt = (
-        update(SourceImage)
-        .where(
-            SourceImage.status == "pending",
-            SourceImage.updated_at < pending_cutoff,
+    queue_state = await collect_queue_state()
+    pending_stmt = None
+    if (
+        queue_state["queue_up"] is True
+        and queue_state["worker_up"] is True
+        and queue_state["depth"] == 0
+    ):
+        pending_stmt = (
+            update(SourceImage)
+            .where(
+                SourceImage.status == "pending",
+                SourceImage.updated_at < pending_cutoff,
+            )
+            .values(
+                status="failed",
+                error_message=(
+                    "Marked as failed on backend startup — processing never "
+                    f"started within {pending_stale_after_seconds}s and the "
+                    "healthy task queue is empty."
+                ),
+                status_message="Failed",
+                updated_at=func.now(),
+            )
+            .returning(SourceImage.id)
         )
-        .values(
-            status="failed",
-            error_message=(
-                "Marked as failed on backend startup — processing never "
-                f"started within {pending_stale_after_seconds}s."
-            ),
-            status_message="Failed",
-            updated_at=func.now(),
-        )
-        .returning(SourceImage.id)
-    )
     processing_result = await session.execute(processing_stmt)
-    pending_result = await session.execute(pending_stmt)
     processing_ids = [row[0] for row in processing_result.all()]
-    pending_ids = [row[0] for row in pending_result.all()]
+    pending_ids: list[int] = []
+    if pending_stmt is not None:
+        pending_result = await session.execute(pending_stmt)
+        pending_ids = [row[0] for row in pending_result.all()]
     ids = processing_ids + pending_ids
     await session.commit()
     if ids:

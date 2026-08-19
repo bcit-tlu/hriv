@@ -390,11 +390,16 @@ async def test_reconcile_stale_source_images_updates_stale() -> None:
     session = AsyncMock()
     session.execute = AsyncMock(return_value=mock_result)
 
-    count = await reconcile_stale_source_images(
-        session,
-        stale_after_seconds=900,
-        pending_stale_after_seconds=3600,
-    )
+    with patch(
+        "app.processing.collect_queue_state",
+        new_callable=AsyncMock,
+        return_value={"queue_up": True, "worker_up": True, "depth": 0},
+    ):
+        count = await reconcile_stale_source_images(
+            session,
+            stale_after_seconds=900,
+            pending_stale_after_seconds=3600,
+        )
     assert count == 2
     assert session.execute.await_count == 2
     session.commit.assert_awaited_once()
@@ -411,11 +416,16 @@ async def test_reconcile_pending_cutoff_is_longer_than_processing() -> None:
         side_effect=[processing_result, pending_result],
     )
 
-    await reconcile_stale_source_images(
-        session,
-        stale_after_seconds=900,
-        pending_stale_after_seconds=3600,
-    )
+    with patch(
+        "app.processing.collect_queue_state",
+        new_callable=AsyncMock,
+        return_value={"queue_up": True, "worker_up": True, "depth": 0},
+    ):
+        await reconcile_stale_source_images(
+            session,
+            stale_after_seconds=900,
+            pending_stale_after_seconds=3600,
+        )
 
     processing_stmt = session.execute.await_args_list[0].args[0]
     pending_stmt = session.execute.await_args_list[1].args[0]
@@ -439,14 +449,49 @@ async def test_reconcile_stale_source_images_no_stale() -> None:
     session = AsyncMock()
     session.execute = AsyncMock(side_effect=mock_results)
 
-    count = await reconcile_stale_source_images(
-        session,
-        stale_after_seconds=900,
-        pending_stale_after_seconds=3600,
-    )
+    with patch(
+        "app.processing.collect_queue_state",
+        new_callable=AsyncMock,
+        return_value={"queue_up": True, "worker_up": True, "depth": 0},
+    ):
+        count = await reconcile_stale_source_images(
+            session,
+            stale_after_seconds=900,
+            pending_stale_after_seconds=3600,
+        )
     assert count == 0
     assert session.execute.await_count == 2
     session.commit.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    "queue_state",
+    [
+        {"queue_up": True, "worker_up": True, "depth": 2},
+        {"queue_up": True, "worker_up": False, "depth": 0},
+        {"queue_up": False, "worker_up": None, "depth": None},
+    ],
+)
+async def test_reconcile_pending_requires_healthy_empty_queue(queue_state) -> None:
+    """Pending rows remain queued unless Redis is healthy and empty."""
+    processing_result = MagicMock()
+    processing_result.all.return_value = []
+    session = AsyncMock()
+    session.execute = AsyncMock(return_value=processing_result)
+
+    with patch(
+        "app.processing.collect_queue_state",
+        new_callable=AsyncMock,
+        return_value=queue_state,
+    ):
+        count = await reconcile_stale_source_images(
+            session,
+            stale_after_seconds=900,
+            pending_stale_after_seconds=3600,
+        )
+
+    assert count == 0
+    assert session.execute.await_count == 1
 
 
 # ── Pyramidal detection tests ────────────────────────────
