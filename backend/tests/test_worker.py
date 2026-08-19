@@ -99,6 +99,36 @@ async def test_get_pool_publishes_only_after_successful_ping() -> None:
         worker_module._pool = original_pool
 
 
+async def test_get_pool_closes_duplicate_after_concurrent_publication() -> None:
+    """Concurrent healthy connects publish one pool and close the loser."""
+    worker_module = sys.modules["app.worker"]
+    original_pool = worker_module._pool
+    pools = [AsyncMock(), AsyncMock()]
+    create_count = 0
+    both_created = asyncio.Event()
+
+    async def create_candidate(_settings):
+        nonlocal create_count
+        pool = pools[create_count]
+        create_count += 1
+        if create_count == len(pools):
+            both_created.set()
+        await both_created.wait()
+        return pool
+
+    worker_module._pool = None
+    try:
+        with patch("app.worker.create_pool", side_effect=create_candidate):
+            results = await asyncio.gather(get_pool(), get_pool())
+
+        assert results[0] is results[1]
+        assert results[0] in pools
+        loser = pools[0] if results[0] is pools[1] else pools[1]
+        loser.aclose.assert_awaited_once()
+    finally:
+        worker_module._pool = original_pool
+
+
 async def test_enqueue_rejects_in_required_mode() -> None:
     """Required mode raises instead of allowing in-process execution."""
     with (

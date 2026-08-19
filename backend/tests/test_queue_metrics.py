@@ -66,3 +66,6 @@ async def test_collect_queue_state_reports_redis_error() -> None:
         state = await collect_queue_state()
 
     assert state["queue_up"] is False
+    assert state["depth"] is None
+    assert state["oldest_pending_age_seconds"] is None
+    assert state["worker_heartbeat_age_seconds"] is None

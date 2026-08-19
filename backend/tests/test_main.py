@@ -7,6 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture(autouse=True)
@@ -81,6 +83,28 @@ async def test_queue_health_returns_minimal_503_when_required_mode_is_degraded(
 
     assert exc_info.value.status_code == 503
     assert exc_info.value.detail == {"status": "degraded"}
+
+
+def test_task_queue_unavailable_handler_asgi_contract() -> None:
+    from app.main import task_queue_unavailable_handler
+    from app.worker import TaskQueueUnavailableError
+
+    test_app = FastAPI()
+    test_app.add_exception_handler(
+        TaskQueueUnavailableError,
+        task_queue_unavailable_handler,
+    )
+
+    @test_app.get("/queue")
+    async def raise_queue_unavailable():
+        raise TaskQueueUnavailableError("submission_failed")
+
+    with TestClient(test_app) as client:
+        response = client.get("/queue")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Task queue unavailable"}
+    assert response.headers["Retry-After"] == "30"
 
 
 # ── _check_oidc_connectivity tests ──────────────────────

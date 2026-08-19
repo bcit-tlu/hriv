@@ -780,7 +780,8 @@ Distinguish the four failure classes in structured logs:
 
 - `worker.queue_unavailable`: Redis could not be reached.
 - `worker.submission_failed`: Redis was reachable but enqueue failed.
-- `worker.unavailable`: the dedicated worker is not reporting a heartbeat.
+- dedicated-worker heartbeat failure: inspect
+  `hriv_task_queue_worker_heartbeat_age_seconds` on `/api/metrics`.
 - task execution failure: inspect the task-specific worker error event and
   trace for the runner exception.
 

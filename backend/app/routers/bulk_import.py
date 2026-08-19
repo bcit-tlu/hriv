@@ -204,6 +204,7 @@ async def _wait_for_source_image_terminal_state(
                             },
                         )
                         return _source_image_terminal_state(latest_src)
+                    not_found_count = 0
                 elif job_status is not None:
                     not_found_count = 0
                 if not_found_count >= lost_observations:
@@ -316,13 +317,24 @@ async def _process_bulk_import(
                     detail = "Task queue unavailable; image processing was not started."
                     with contextlib.suppress(OSError):
                         os.unlink(stored_path)
-                    async with async_session() as db:
-                        src_check = await db.get(SourceImage, src.id)
-                        if src_check is not None:
-                            src_check.status = "failed"
-                            src_check.status_message = "Failed"
-                            src_check.error_message = detail
-                            await db.commit()
+                    try:
+                        async with async_session() as db:
+                            src_check = await db.get(SourceImage, src.id)
+                            if src_check is not None:
+                                src_check.status = "failed"
+                                src_check.status_message = "Failed"
+                                src_check.error_message = detail
+                                await db.commit()
+                    except Exception:
+                        logger.exception(
+                            "Failed to mark bulk-import source image after queue rejection",
+                            extra={
+                                "event": "bulk_import.queue_rejection_bookkeeping_failed",
+                                "job_id": job_id,
+                                "source_image_id": src.id,
+                                "original_filename": original_filename,
+                            },
+                        )
                     span = trace.get_current_span()
                     span.record_exception(exc)
                     span.set_status(StatusCode.ERROR, str(exc))
@@ -681,10 +693,19 @@ async def bulk_import_images(
                     "filename": None,
                     "error": "Task queue unavailable; bulk import was not started.",
                 }]
-                job.status = "failed"
-                job.failed_count = job.total_count
-                job.errors = list(job.errors or []) + error_entry
-                await db.commit()
+                try:
+                    job.status = "failed"
+                    job.failed_count = job.total_count
+                    job.errors = list(job.errors or []) + error_entry
+                    await db.commit()
+                except Exception:
+                    logger.exception(
+                        "Failed to mark bulk import after queue rejection",
+                        extra={
+                            "event": "bulk_import.queue_rejection_bookkeeping_failed",
+                            "job_id": job.id,
+                        },
+                    )
                 raise
             span.set_attribute("bulk_import.enqueued", enqueue_result.queued)
             if not enqueue_result.queued:

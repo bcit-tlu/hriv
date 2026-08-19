@@ -129,10 +129,21 @@ async def upload_source_image(
             try:
                 enqueue_result = await enqueue_process_source_image(src.id)
             except TaskQueueUnavailableError:
-                src.status = "failed"
-                src.status_message = "Failed"
-                src.error_message = "Task queue unavailable; image processing was not started."
-                await db.commit()
+                try:
+                    src.status = "failed"
+                    src.status_message = "Failed"
+                    src.error_message = (
+                        "Task queue unavailable; image processing was not started."
+                    )
+                    await db.commit()
+                except Exception:
+                    logger.exception(
+                        "Failed to mark uploaded source image after queue rejection",
+                        extra={
+                            "event": "upload.queue_rejection_bookkeeping_failed",
+                            "source_image_id": src.id,
+                        },
+                    )
                 with contextlib.suppress(OSError):
                     os.unlink(stored_path)
                 raise

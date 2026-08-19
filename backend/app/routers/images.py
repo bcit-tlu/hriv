@@ -444,10 +444,24 @@ async def replace_image(
             try:
                 enqueue_result = await enqueue_replace_image(src.id, image_id)
             except TaskQueueUnavailableError:
-                src.status = "failed"
-                src.status_message = "Failed"
-                src.error_message = "Task queue unavailable; image replacement was not started."
-                await db.commit()
+                try:
+                    src.status = "failed"
+                    src.status_message = "Failed"
+                    src.error_message = (
+                        "Task queue unavailable; image replacement was not started."
+                    )
+                    await db.commit()
+                except Exception:
+                    logger.exception(
+                        "Failed to mark replacement source image after queue rejection",
+                        extra={
+                            "event": "replace.queue_rejection_bookkeeping_failed",
+                            "source_image_id": src.id,
+                            "target_image_id": image_id,
+                        },
+                    )
+                    with contextlib.suppress(Exception):
+                        await db.rollback()
                 if has_metadata:
                     try:
                         restore_result = await db.execute(

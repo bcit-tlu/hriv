@@ -139,30 +139,47 @@ class EnqueueResult:
 async def get_pool() -> ArqRedis | None:
     """Return a shared arq connection pool, or ``None`` if Redis is down."""
     global _pool
-    async with _pool_creation_lock:
+    if _pool is not None:
+        return _pool
+
+    pool: ArqRedis | None = None
+    try:
+        pool = await create_pool(_parse_redis_settings(api_pool=True))
+        await pool.ping()
+    except Exception:
+        if pool is not None:
+            try:
+                await pool.aclose()
+            except Exception:
+                logger.debug(
+                    "Failed to close unverified task queue pool",
+                    extra={"event": "worker.pool_cleanup_failed"},
+                    exc_info=True,
+                )
+        logger.warning(
+            "Task queue unavailable; enqueue fallback/rejection will apply",
+            extra={"event": "worker.queue_unavailable"},
+        )
         if _pool is not None:
             return _pool
-        pool: ArqRedis | None = None
-        try:
-            pool = await create_pool(_parse_redis_settings(api_pool=True))
-            await pool.ping()
+        return None
+
+    assert pool is not None
+    async with _pool_creation_lock:
+        if _pool is None:
             _pool = pool
             return pool
-        except Exception:
-            if pool is not None:
-                try:
-                    await pool.aclose()
-                except Exception:
-                    logger.debug(
-                        "Failed to close unverified task queue pool",
-                        extra={"event": "worker.pool_cleanup_failed"},
-                        exc_info=True,
-                    )
-            logger.warning(
-                "Task queue unavailable; enqueue fallback/rejection will apply",
-                extra={"event": "worker.queue_unavailable"},
-            )
-            return None
+        winner = _pool
+
+    try:
+        await pool.aclose()
+    except Exception:
+        logger.debug(
+            "Failed to close duplicate task queue pool",
+            extra={"event": "worker.pool_cleanup_failed"},
+            exc_info=True,
+        )
+    return winner
 
 
 async def _enqueue(

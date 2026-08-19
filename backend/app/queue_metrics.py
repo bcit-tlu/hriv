@@ -93,8 +93,14 @@ async def collect_queue_state() -> dict[str, Any]:
             )
     except RedisError:
         state["queue_up"] = False
+        state["depth"] = None
+        state["oldest_pending_age_seconds"] = None
+        state["worker_heartbeat_age_seconds"] = None
     except Exception:
         state["queue_up"] = False
+        state["depth"] = None
+        state["oldest_pending_age_seconds"] = None
+        state["worker_heartbeat_age_seconds"] = None
     return state
 
 
