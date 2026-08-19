@@ -1251,6 +1251,65 @@ async def test_wait_for_source_image_processing_timeout_latches_before_failure()
     db.commit.assert_awaited_once()
 
 
+async def test_wait_for_source_image_processing_timeout_removes_latch_when_pending() -> None:
+    """A processing-cap race back to pending does not leave a cancellation latch."""
+    job = MagicMock()
+    job.status = AsyncMock(return_value=JobStatus.queued)
+    job.job_id = "job-30"
+    processing = SimpleNamespace(
+        id=30,
+        status="processing",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message="Processing",
+    )
+    pending = SimpleNamespace(
+        id=30,
+        status="pending",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message="Queued",
+    )
+    completed = SimpleNamespace(
+        id=30,
+        status="completed",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message=None,
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=[processing, pending, completed])
+    db.commit = AsyncMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+    pool = MagicMock()
+    pool.zadd = AsyncMock()
+    pool.zrem = AsyncMock()
+
+    with (
+        patch("app.routers.bulk_import.async_session", return_value=db),
+        patch("app.routers.bulk_import.get_pool", new_callable=AsyncMock, return_value=pool),
+        patch("app.routers.bulk_import.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        result = await _wait_for_source_image_terminal_state(
+            30,
+            "processing-recovered.jpg",
+            enqueue_result=EnqueueResult(
+                "queued",
+                "submitted",
+                job=job,
+                queued_at=time.monotonic(),
+            ),
+            processing_wait_safety_cap_seconds=0,
+            pending_wait_safety_cap_seconds=7200,
+        )
+
+    assert result.status == "completed"
+    pool.zadd.assert_awaited_once()
+    pool.zrem.assert_awaited_once_with(abort_jobs_ss, "job-30")
+    db.commit.assert_not_awaited()
+
+
 async def test_wait_for_source_image_timeout_rereads_terminal_row() -> None:
     """A concurrent completion wins over the pending-ceiling branch."""
     job = MagicMock()
@@ -1277,6 +1336,7 @@ async def test_wait_for_source_image_timeout_rereads_terminal_row() -> None:
     db.__aexit__ = AsyncMock(return_value=False)
     pool = MagicMock()
     pool.zadd = AsyncMock()
+    pool.zrem = AsyncMock()
 
     with (
         patch("app.routers.bulk_import.async_session", return_value=db),
@@ -1301,7 +1361,71 @@ async def test_wait_for_source_image_timeout_rereads_terminal_row() -> None:
 
     assert result.status == "completed"
     pool.zadd.assert_awaited_once()
+    pool.zrem.assert_awaited_once_with(abort_jobs_ss, "job-25")
     db.commit.assert_not_awaited()
+
+
+async def test_wait_for_source_image_pending_timeout_removes_latch_when_processing(
+    caplog,
+) -> None:
+    """A child picked up during pending bookkeeping is allowed to continue."""
+    caplog.set_level(logging.INFO)
+    job = MagicMock()
+    job.status = AsyncMock(return_value=JobStatus.queued)
+    job.job_id = "job-29"
+    pending = SimpleNamespace(
+        id=29,
+        status="pending",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message="Queued",
+    )
+    processing = SimpleNamespace(
+        id=29,
+        status="processing",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message="Processing",
+    )
+    completed = SimpleNamespace(
+        id=29,
+        status="completed",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message=None,
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=[pending, processing, completed])
+    db.commit = AsyncMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+    pool = MagicMock()
+    pool.zadd = AsyncMock()
+    pool.zrem = AsyncMock()
+
+    with (
+        patch("app.routers.bulk_import.async_session", return_value=db),
+        patch("app.routers.bulk_import.get_pool", new_callable=AsyncMock, return_value=pool),
+        patch("app.routers.bulk_import.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        result = await _wait_for_source_image_terminal_state(
+            29,
+            "pending-recovered.jpg",
+            enqueue_result=EnqueueResult(
+                "queued",
+                "submitted",
+                job=job,
+                queued_at=time.monotonic(),
+            ),
+            pending_grace_seconds=0,
+            pending_wait_safety_cap_seconds=0,
+        )
+
+    assert result.status == "completed"
+    pool.zadd.assert_awaited_once()
+    pool.zrem.assert_awaited_once_with(abort_jobs_ss, "job-29")
+    db.commit.assert_not_awaited()
+    assert "advanced before pending wait failure" in caplog.text
 
 
 async def test_wait_for_source_image_terminal_state_keeps_waiting_with_worker() -> None:

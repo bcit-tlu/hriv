@@ -186,6 +186,39 @@ async def _remove_source_image_abort_latch(
     return True
 
 
+async def _reread_source_image_after_abort_latch(
+    db: AsyncSession,
+    source_image_id: int,
+    original_filename: str,
+    job_id: str,
+    *,
+    expected_status: str,
+) -> tuple[SourceImage, bool]:
+    """Re-read a latched row and remove the latch if it advanced."""
+    latest_src = await db.get(
+        SourceImage,
+        source_image_id,
+        populate_existing=True,
+    )
+    if latest_src is None:
+        await _remove_source_image_abort_latch(
+            source_image_id,
+            original_filename,
+            job_id,
+        )
+        raise RuntimeError(
+            f"Queued source image {source_image_id} disappeared before completion"
+        )
+    if latest_src.status == expected_status:
+        return latest_src, False
+    latch_removed = await _remove_source_image_abort_latch(
+        source_image_id,
+        original_filename,
+        job_id,
+    )
+    return latest_src, latch_removed
+
+
 async def _wait_for_source_image_terminal_state(
     source_image_id: int,
     original_filename: str,
@@ -352,21 +385,16 @@ async def _wait_for_source_image_terminal_state(
                         enqueue_result.job.job_id,
                     )
                     if latch_written:
-                        latest_src = await db.get(
-                            SourceImage,
-                            source_image_id,
-                            populate_existing=True,
-                        )
-                        if latest_src is None:
-                            raise RuntimeError(
-                                f"Queued source image {source_image_id} disappeared before completion"
-                            )
-                        if latest_src.status != "pending":
-                            latch_removed = await _remove_source_image_abort_latch(
+                        latest_src, latch_removed = (
+                            await _reread_source_image_after_abort_latch(
+                                db,
                                 source_image_id,
                                 original_filename,
                                 enqueue_result.job.job_id,
+                                expected_status="pending",
                             )
+                        )
+                        if latest_src.status != "pending":
                             no_worker_count = 0
                             no_worker_since = None
                             logger.info(
@@ -412,19 +440,29 @@ async def _wait_for_source_image_terminal_state(
                     enqueue_result.job.job_id,
                 )
                 if latch_written:
-                    latest_src = await db.get(
-                        SourceImage,
-                        source_image_id,
-                        populate_existing=True,
-                    )
-                    if latest_src is None:
-                        raise RuntimeError(
-                            f"Queued source image {source_image_id} disappeared before completion"
+                    latest_src, latch_removed = (
+                        await _reread_source_image_after_abort_latch(
+                            db,
+                            source_image_id,
+                            original_filename,
+                            enqueue_result.job.job_id,
+                            expected_status="pending",
                         )
-                    if latest_src.status in {"completed", "failed"}:
-                        return _source_image_terminal_state(latest_src)
-                    src = latest_src
-                    if src.status == "pending":
+                    )
+                    if latest_src.status != "pending":
+                        logger.info(
+                            "Bulk import source image advanced before pending wait failure",
+                            extra={
+                                "event": "bulk_import.source_job_pending_recovered",
+                                "source_image_id": source_image_id,
+                                "original_filename": original_filename,
+                                "latch_removed": latch_removed,
+                            },
+                        )
+                        src = latest_src
+                        if latest_src.status in {"completed", "failed"}:
+                            return _source_image_terminal_state(latest_src)
+                    else:
                         logger.error(
                             "Bulk import source image exceeded pending wait ceiling",
                             extra={
@@ -436,14 +474,14 @@ async def _wait_for_source_image_terminal_state(
                                 ),
                             },
                         )
-                        src.status = "failed"
-                        src.error_message = (
+                        latest_src.status = "failed"
+                        latest_src.error_message = (
                             "Tile generation never started during bulk import. "
                             "The queued processing job exceeded the wait ceiling."
                         )
-                        src.status_message = "Failed"
+                        latest_src.status_message = "Failed"
                         await db.commit()
-                        return _source_image_terminal_state(src)
+                        return _source_image_terminal_state(latest_src)
             if (
                 src.status == "processing"
                 and processing_started_at is not None
@@ -458,23 +496,29 @@ async def _wait_for_source_image_terminal_state(
                     enqueue_result.job.job_id,
                 )
                 if latch_written:
-                    latest_src = await db.get(
-                        SourceImage,
-                        source_image_id,
-                        populate_existing=True,
-                    )
-                    if latest_src is None:
-                        raise RuntimeError(
-                            f"Queued source image {source_image_id} disappeared before completion"
-                        )
-                    if latest_src.status in {"completed", "failed"}:
-                        await _remove_source_image_abort_latch(
+                    latest_src, latch_removed = (
+                        await _reread_source_image_after_abort_latch(
+                            db,
                             source_image_id,
                             original_filename,
                             enqueue_result.job.job_id,
+                            expected_status="processing",
                         )
-                        return _source_image_terminal_state(latest_src)
-                    if latest_src.status == "processing":
+                    )
+                    if latest_src.status != "processing":
+                        logger.info(
+                            "Bulk import source image advanced before processing wait failure",
+                            extra={
+                                "event": "bulk_import.source_job_processing_recovered",
+                                "source_image_id": source_image_id,
+                                "original_filename": original_filename,
+                                "latch_removed": latch_removed,
+                            },
+                        )
+                        src = latest_src
+                        if latest_src.status in {"completed", "failed"}:
+                            return _source_image_terminal_state(latest_src)
+                    else:
                         latest_src.status = "failed"
                         latest_src.error_message = (
                             "Tile generation did not finish during bulk import "
