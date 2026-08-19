@@ -113,6 +113,10 @@ async def test_reconcile_stale_bulk_import_jobs_marks_expired_processing_stale()
     stmt = session.execute.await_args.args[0]
     assert stmt.compile().params["status_1"] == ["pending", "processing"]
     sql = str(stmt.compile())
+    assert "CASE" in sql
+    assert "completed_count" in sql
+    assert "completed" in sql
+    assert "failed" in sql
     assert "errors" in sql
     assert "failed_count" in sql
     pool.zrange.assert_awaited_once()
@@ -176,6 +180,35 @@ async def test_bulk_import_coordinator_liveness_refreshes_independent_of_childre
         await _bulk_import_coordinator_liveness_loop(pool_ref, 27, stop_event)
 
     pool.zadd.assert_awaited_once()
+
+
+async def test_bulk_import_coordinator_liveness_reregistration_backs_off_and_resets() -> None:
+    pool = MagicMock()
+    pool.zadd = AsyncMock()
+    pool_ref = [None]
+    stop_event = MagicMock()
+    with (
+        patch(
+            "app.routers.bulk_import._register_bulk_import_coordinator",
+            new_callable=AsyncMock,
+            side_effect=[None, pool],
+        ) as register,
+        patch(
+            "app.routers.bulk_import.asyncio.wait_for",
+            new_callable=AsyncMock,
+            side_effect=[
+                asyncio.TimeoutError(),
+                asyncio.TimeoutError(),
+                asyncio.TimeoutError(),
+                True,
+            ],
+        ) as wait_for,
+    ):
+        await _bulk_import_coordinator_liveness_loop(pool_ref, 27, stop_event)
+
+    assert register.await_count == 2
+    assert [call.kwargs["timeout"] for call in wait_for.await_args_list] == [30, 60, 30, 30]
+
 
 
 async def test_write_abort_latch_prunes_old_markers() -> None:
@@ -719,10 +752,12 @@ async def test_api_hosted_bulk_import_registers_liveness_without_slot() -> None:
 
 async def test_bulk_import_conflict_rejected_before_staging() -> None:
     """An active import prevents a second import from creating files or rows."""
-    result = MagicMock()
-    result.all.return_value = [(27, datetime.now(timezone.utc))]
+    processing_result = MagicMock()
+    processing_result.all.return_value = [(27, datetime.now())]
+    recent_result = MagicMock()
+    recent_result.scalar_one.return_value = 1
     db = AsyncMock()
-    db.execute = AsyncMock(return_value=result)
+    db.execute = AsyncMock(side_effect=[processing_result, recent_result])
 
     with pytest.raises(HTTPException) as exc_info:
         await bulk_import_images(
@@ -736,6 +771,27 @@ async def test_bulk_import_conflict_rejected_before_staging() -> None:
     assert exc_info.value.status_code == 409
     assert exc_info.value.detail == "A bulk import is already in progress"
     db.add.assert_not_called()
+
+
+async def test_bulk_import_conflict_guard_handles_naive_updated_at() -> None:
+    """A naive DB timestamp is handled by the SQL recency predicate."""
+    processing_result = MagicMock()
+    processing_result.all.return_value = [(27, datetime.now())]
+    recent_result = MagicMock()
+    recent_result.scalar_one.return_value = 1
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=[processing_result, recent_result])
+
+    with pytest.raises(HTTPException) as exc_info:
+        await bulk_import_images(
+            files=[_make_upload("blocked.png", [b"image-data", b""])],
+            category_id=None,
+            background_tasks=MagicMock(),
+            _user=MagicMock(),
+            db=db,
+        )
+
+    assert exc_info.value.status_code == 409
 
 
 async def test_process_bulk_import_normalizes_empty_note(tmp_path) -> None:
@@ -1098,6 +1154,58 @@ async def test_wait_for_source_image_terminal_state_marks_stale_source_failed(
         record.event == "bulk_import.source_stalled"
         for record in caplog.records
     )
+
+
+async def test_wait_for_source_image_terminal_state_preserves_progress_during_stall_latch() -> None:
+    """A row that advances while latching a stall must not be failed."""
+    stale_time = datetime.now(timezone.utc) - timedelta(seconds=901)
+    processing_src = SimpleNamespace(
+        id=10,
+        status="processing",
+        updated_at=stale_time,
+        error_message=None,
+        status_message="Generating tiles",
+    )
+    completed_src = SimpleNamespace(
+        id=10,
+        status="completed",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message="Completed",
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=[processing_src, completed_src])
+    db.commit = AsyncMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+    job = SimpleNamespace(job_id="job-10")
+
+    with (
+        patch("app.routers.bulk_import.async_session", return_value=db),
+        patch(
+            "app.routers.bulk_import._write_source_image_abort_latch",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+        patch(
+            "app.routers.bulk_import._remove_source_image_abort_latch",
+            new_callable=AsyncMock,
+        ) as remove_latch,
+    ):
+        result = await _wait_for_source_image_terminal_state(
+            10,
+            "slide.jpg",
+            stale_after_seconds=900,
+            enqueue_result=EnqueueResult(
+                "queued",
+                "submitted",
+                job=job,
+            ),
+        )
+
+    assert result.status == "completed"
+    db.commit.assert_not_awaited()
+    remove_latch.assert_awaited_once()
 
 
 async def test_wait_for_source_image_terminal_state_does_not_stale_queued_source() -> None:

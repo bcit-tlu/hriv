@@ -235,10 +235,11 @@ queued job can still self-heal. This handles genuinely lost jobs without
 failing healthy queued work.
 
 `reconcile_stale_bulk_import_jobs()` also runs at startup. It marks a
-`pending` or `processing` bulk-import row as `failed` only when its
+`pending` or `processing` bulk-import row as terminal only when its
 `updated_at` is older than the configured stale threshold and it has no live
-coordinator registration. A live registration keeps a long-running import
-untouched.
+coordinator registration: incomplete rows become `failed`, while rows whose
+completed count equals their total become `completed`. A live registration
+keeps a long-running import untouched.
 When Redis is unavailable, startup uses the conservative stale timestamp
 bound alone rather than leaving abandoned rows permanently in `processing`;
 the default bound is the coordinator job timeout. API-hosted local fallbacks

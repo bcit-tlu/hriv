@@ -26,7 +26,7 @@ from arq.utils import timestamp_ms
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
-from sqlalchemy import cast, select, update
+from sqlalchemy import case, cast, select, update
 from sqlalchemy.dialects.postgresql import JSONB as JSONB_type
 from sqlalchemy.sql import func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -91,6 +91,7 @@ _SOURCE_IMAGE_QUEUE_CONFIRMATION_MAX_AGE_SECONDS = (
     HEALTH_CHECK_INTERVAL_SECONDS * 2
 )
 _BULK_IMPORT_COORDINATOR_LIVENESS_REFRESH_SECONDS = HEALTH_CHECK_INTERVAL_SECONDS
+_BULK_IMPORT_COORDINATOR_REREGISTRATION_MAX_SECONDS = 300
 _SOURCE_IMAGE_ABORT_LATCH_RETENTION_SECONDS = WorkerSettings.job_timeout * 2
 _SOURCE_IMAGE_NO_WORKER_WINDOW_SECONDS = (
     _SOURCE_IMAGE_NO_WORKER_SAMPLES
@@ -397,11 +398,12 @@ async def _bulk_import_coordinator_liveness_loop(
     worker_hosted: bool = False,
 ) -> None:
     """Refresh coordinator liveness independently of child-image status."""
+    registration_retry_seconds = _BULK_IMPORT_COORDINATOR_LIVENESS_REFRESH_SECONDS
     while True:
         try:
             await asyncio.wait_for(
                 stop_event.wait(),
-                timeout=_BULK_IMPORT_COORDINATOR_LIVENESS_REFRESH_SECONDS,
+                timeout=registration_retry_seconds,
             )
             return
         except asyncio.TimeoutError:
@@ -413,6 +415,14 @@ async def _bulk_import_coordinator_liveness_loop(
                 )
                 if pool is not None:
                     pool_ref[0] = pool
+                    registration_retry_seconds = (
+                        _BULK_IMPORT_COORDINATOR_LIVENESS_REFRESH_SECONDS
+                    )
+                else:
+                    registration_retry_seconds = min(
+                        registration_retry_seconds * 2,
+                        _BULK_IMPORT_COORDINATOR_REREGISTRATION_MAX_SECONDS,
+                    )
             else:
                 await _refresh_bulk_import_coordinator(
                     pool,
@@ -501,23 +511,67 @@ async def _wait_for_source_image_terminal_state(
             updated_at = _coerce_utc_aware(src.updated_at, source_image_id=source_image_id)
             job_status: JobStatus | None = None
             if src.status == "processing" and updated_at < cutoff:
-                src.status = "failed"
-                src.error_message = (
-                    "Tile generation stalled during bulk import. "
-                    f"No progress update was recorded for more than {stale_after_seconds}s."
-                )
-                src.status_message = "Failed"
-                await db.commit()
-                logger.error(
-                    "Bulk import source image stalled while waiting for queued processing",
-                    extra={
-                        "event": "bulk_import.source_stalled",
-                        "source_image_id": source_image_id,
-                        "original_filename": original_filename,
-                        "stale_after_seconds": stale_after_seconds,
-                    },
-                )
-                return _source_image_terminal_state(src)
+                latch_written = False
+                if enqueue_result is not None and enqueue_result.job is not None:
+                    latch_written = await _write_source_image_abort_latch(
+                        source_image_id,
+                        original_filename,
+                        enqueue_result.job.job_id,
+                    )
+                if latch_written:
+                    latest_src, latch_removed = (
+                        await _reread_source_image_after_abort_latch(
+                            db,
+                            source_image_id,
+                            original_filename,
+                            enqueue_result.job.job_id,
+                            expected_status="processing",
+                        )
+                    )
+                    if latest_src.status != "processing":
+                        logger.info(
+                            "Bulk import source image advanced before stall failure",
+                            extra={
+                                "event": "bulk_import.source_stalled_recovered",
+                                "source_image_id": source_image_id,
+                                "bulk_import_job_id": bulk_import_job_id,
+                                "original_filename": original_filename,
+                                "latch_removed": latch_removed,
+                            },
+                        )
+                        src = latest_src
+                        if latest_src.status in {"completed", "failed"}:
+                            return _source_image_terminal_state(latest_src)
+                    else:
+                        src = latest_src
+                if src.status == "processing":
+                    src.status = "failed"
+                    src.error_message = (
+                        "Tile generation stalled during bulk import. "
+                        f"No progress update was recorded for more than {stale_after_seconds}s."
+                    )
+                    src.status_message = "Failed"
+                    await db.commit()
+                    if (
+                        enqueue_result is not None
+                        and enqueue_result.job is not None
+                    ):
+                        await _remove_source_image_abort_latch(
+                            source_image_id,
+                            original_filename,
+                            enqueue_result.job.job_id,
+                        )
+                    logger.error(
+                        "Bulk import source image stalled while waiting for queued processing",
+                        extra={
+                            "event": "bulk_import.source_stalled",
+                            "source_image_id": source_image_id,
+                            "bulk_import_job_id": bulk_import_job_id,
+                            "original_filename": original_filename,
+                            "stale_after_seconds": stale_after_seconds,
+                        },
+                    )
+                    return _source_image_terminal_state(src)
             if (
                 src.status == "pending"
                 and enqueue_result is not None
@@ -979,23 +1033,35 @@ async def reconcile_stale_bulk_import_jobs(
         update(BulkImportJob)
         .where(*filters)
         .values(
-            status="failed",
+            status=case(
+                (
+                    BulkImportJob.completed_count == BulkImportJob.total_count,
+                    "completed",
+                ),
+                else_="failed",
+            ),
             failed_count=BulkImportJob.total_count - BulkImportJob.completed_count,
-            errors=(
-                func.coalesce(
+            errors=case(
+                (
+                    BulkImportJob.completed_count == BulkImportJob.total_count,
                     BulkImportJob.errors,
-                    cast([], JSONB_type),
-                )
-                + cast(
-                    [
-                        {
-                            "error": (
-                                "Coordinator abandoned during backend startup "
-                                "reconciliation."
-                            )
-                        }
-                    ],
-                    JSONB_type,
+                ),
+                else_=(
+                    func.coalesce(
+                        BulkImportJob.errors,
+                        cast([], JSONB_type),
+                    )
+                    + cast(
+                        [
+                            {
+                                "error": (
+                                    "Coordinator abandoned during backend startup "
+                                    "reconciliation."
+                                )
+                            }
+                        ],
+                        JSONB_type,
+                    )
                 )
             ),
             updated_at=func.now(),
@@ -1007,7 +1073,7 @@ async def reconcile_stale_bulk_import_jobs(
     await session.commit()
     if ids:
         logger.warning(
-            "Reconciled %d stale bulk-import job(s) to 'failed' on startup",
+            "Reconciled %d stale bulk-import job(s) to a terminal state on startup",
             len(ids),
             extra={
                 "event": "bulk_import.reconciled_stale",
@@ -1353,10 +1419,15 @@ async def bulk_import_images(
     processing_cutoff = datetime.now(timezone.utc) - timedelta(
         seconds=_STALE_BULK_IMPORT_SECONDS
     )
-    if any(
-        updated_at is not None and updated_at >= processing_cutoff
-        for _, updated_at in processing_rows
-    ):
+    recent_processing_result = await db.execute(
+        select(func.count())
+        .select_from(BulkImportJob)
+        .where(
+            BulkImportJob.status == "processing",
+            BulkImportJob.updated_at >= processing_cutoff,
+        )
+    )
+    if recent_processing_result.scalar_one() > 0:
         raise HTTPException(
             status_code=409,
             detail="A bulk import is already in progress",

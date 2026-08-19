@@ -504,6 +504,8 @@ async def process_source_image(source_image_id: int) -> None:
             )
             return
 
+        # This guard relies on process_source_image recording failures without
+        # re-raising them; otherwise arq retries could become silent no-ops.
         if src.status in {"completed", "failed"}:
             logger.info(
                 "Terminal SourceImage found, skipping processing",
