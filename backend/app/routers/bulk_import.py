@@ -88,6 +88,7 @@ _SOURCE_IMAGE_QUEUE_CONFIRMATION_MAX_AGE_SECONDS = (
 )
 _BULK_IMPORT_COORDINATOR_LIVENESS_KEY = "hriv:bulk_import:coordinators"
 _BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS = HEALTH_CHECK_INTERVAL_SECONDS * 3
+_BULK_IMPORT_COORDINATOR_LIVENESS_REFRESH_SECONDS = HEALTH_CHECK_INTERVAL_SECONDS
 _SOURCE_IMAGE_ABORT_LATCH_RETENTION_SECONDS = WorkerSettings.job_timeout * 2
 _SOURCE_IMAGE_NO_WORKER_WINDOW_SECONDS = (
     _SOURCE_IMAGE_NO_WORKER_OBSERVATIONS * _SOURCE_IMAGE_POLL_INTERVAL_SECONDS
@@ -357,6 +358,23 @@ async def _refresh_bulk_import_coordinator(
                 "job_id": bulk_import_job_id,
             },
         )
+
+
+async def _bulk_import_coordinator_liveness_loop(
+    pool: ArqRedis,
+    bulk_import_job_id: int,
+    stop_event: asyncio.Event,
+) -> None:
+    """Refresh coordinator liveness independently of child-image status."""
+    while True:
+        try:
+            await asyncio.wait_for(
+                stop_event.wait(),
+                timeout=_BULK_IMPORT_COORDINATOR_LIVENESS_REFRESH_SECONDS,
+            )
+            return
+        except asyncio.TimeoutError:
+            await _refresh_bulk_import_coordinator(pool, bulk_import_job_id)
 
 
 async def _unregister_bulk_import_coordinator(
@@ -1154,11 +1172,30 @@ async def _process_bulk_import_impl(
 
     # Process all images concurrently (bounded by semaphore)
     batch_progress = _BulkImportProgress(last_child_advanced_at=time.monotonic())
+    coordinator_stop_event: asyncio.Event | None = None
+    coordinator_liveness_task: asyncio.Task[None] | None = None
+    if coordinator_pool is not None:
+        coordinator_stop_event = asyncio.Event()
+        coordinator_liveness_task = asyncio.create_task(
+            _bulk_import_coordinator_liveness_loop(
+                coordinator_pool,
+                job_id,
+                coordinator_stop_event,
+            )
+        )
     tasks = [
         asyncio.create_task(_process_one(fname, spath))
         for fname, spath in file_entries
     ]
-    await asyncio.gather(*tasks, return_exceptions=True)
+    try:
+        await asyncio.gather(*tasks, return_exceptions=True)
+    finally:
+        if coordinator_stop_event is not None:
+            coordinator_stop_event.set()
+        if coordinator_liveness_task is not None:
+            coordinator_liveness_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await coordinator_liveness_task
 
     # Finalise job status
     async with async_session() as db:

@@ -6,6 +6,7 @@ image-filtering, error handling, job-state transitions, and the background
 processing helper.
 """
 
+import asyncio
 import errno
 import io
 import logging
@@ -30,6 +31,7 @@ if "pyvips" not in sys.modules:
 from app.routers.bulk_import import (
     _BulkImportProgress,
     _bulk_import_has_capacity_starvation,
+    _bulk_import_coordinator_liveness_loop,
     _is_image_filename,
     _process_bulk_import,
     _write_source_image_abort_latch,
@@ -86,7 +88,7 @@ def test_processing_wait_ceiling_outlasts_child_timeout() -> None:
     assert _SOURCE_IMAGE_PROCESSING_WAIT_SAFETY_CAP_SECONDS > WorkerSettings.job_timeout
 
 
-async def test_reconcile_stale_bulk_import_jobs_marks_processing_stale() -> None:
+async def test_reconcile_stale_bulk_import_jobs_marks_expired_processing_stale() -> None:
     row = MagicMock()
     row.__getitem__ = lambda self, index: 27
     result = MagicMock()
@@ -113,6 +115,7 @@ async def test_reconcile_stale_bulk_import_jobs_marks_processing_stale() -> None
     sql = str(stmt.compile())
     assert "errors" not in sql
     assert "failed_count" not in sql
+    pool.zrange.assert_awaited_once()
 
 
 async def test_reconcile_stale_bulk_import_jobs_keeps_live_coordinator() -> None:
@@ -135,6 +138,8 @@ async def test_reconcile_stale_bulk_import_jobs_keeps_live_coordinator() -> None
 
     assert count == 0
     session.commit.assert_awaited_once()
+    pool.zrange.assert_awaited_once()
+    assert pool.zrange.await_args.kwargs["byscore"] is True
 
 
 async def test_reconcile_stale_bulk_import_jobs_skips_when_redis_unavailable() -> None:
@@ -153,6 +158,20 @@ async def test_reconcile_stale_bulk_import_jobs_skips_when_redis_unavailable() -
     assert count == 0
     session.execute.assert_not_awaited()
     session.commit.assert_not_awaited()
+
+
+async def test_bulk_import_coordinator_liveness_refreshes_independent_of_children() -> None:
+    pool = MagicMock()
+    pool.zadd = AsyncMock()
+    stop_event = MagicMock()
+    with patch(
+        "app.routers.bulk_import.asyncio.wait_for",
+        new_callable=AsyncMock,
+        side_effect=[asyncio.TimeoutError(), True],
+    ):
+        await _bulk_import_coordinator_liveness_loop(pool, 27, stop_event)
+
+    pool.zadd.assert_awaited_once()
 
 
 async def test_write_abort_latch_prunes_old_markers() -> None:
