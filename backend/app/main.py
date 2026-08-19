@@ -7,9 +7,9 @@ import uuid
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, status as http_status
+from fastapi import Depends, FastAPI, HTTPException, Request, status as http_status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,9 +24,12 @@ from .auth import auth_settings
 from .database import get_async_session, get_db, settings
 from .logging_config import setup_logging
 from .metrics import render_metrics
+from .queue_metrics import queue_health
+from .worker import TaskQueueUnavailableError, get_pool
 from .maintenance import is_maintenance_mode
 from .middleware import AuditMiddleware, MaintenanceMiddleware
 from .processing import reconcile_stale_source_images
+from .routers.bulk_import import reconcile_stale_bulk_import_jobs
 from .routers import (
     admin,
     announcement,
@@ -168,6 +171,13 @@ async def lifespan(app: FastAPI):
     if settings.oidc_enabled:
         await _check_oidc_connectivity()
 
+    if settings.task_execution_mode == "required":
+        if await get_pool() is None:
+            logger.error(
+                "Required task queue is unreachable; task-producing endpoints will return 503",
+                extra={"event": "worker.queue_unavailable"},
+            )
+
     # Reconcile admin tasks orphaned by a previous pod crash/rollout so
     # their concurrency guard doesn't permanently block new imports or
     # exports.  Stale-timestamp protection keeps multi-replica deployments
@@ -210,6 +220,19 @@ async def lifespan(app: FastAPI):
             extra={"event": "processing.reconcile_failed", "error": str(exc)},
         )
 
+    try:
+        async with get_async_session()() as session:
+            await reconcile_stale_bulk_import_jobs(session)
+    except Exception as exc:  # pragma: no cover - best effort on startup
+        logger.warning(
+            "Stale bulk-import reconciliation failed: %s",
+            exc,
+            extra={
+                "event": "bulk_import.reconcile_failed",
+                "error": str(exc),
+            },
+        )
+
     yield
     logger.info("Application shutting down", extra={"event": "app.shutdown"})
 
@@ -219,6 +242,18 @@ app = FastAPI(
     version=os.environ.get("APP_VERSION", "dev"),
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(TaskQueueUnavailableError)
+async def task_queue_unavailable_handler(
+    request: Request, exc: TaskQueueUnavailableError
+) -> JSONResponse:
+    """Return one stable response for required queue submission failures."""
+    return JSONResponse(
+        status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={"detail": "Task queue unavailable"},
+        headers={"Retry-After": "30"},
+    )
 
 # CORS: read allowed origins from the CORS_ORIGINS env var (comma-separated).
 # Defaults to "*" for local development; production deployments should set
@@ -267,6 +302,18 @@ app.mount("/api/tiles", StaticFiles(directory=settings.tiles_dir), name="tiles")
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "version": app.version}
+
+
+@app.get("/api/health/queue")
+async def queue_health_endpoint():
+    """Report Redis reachability and dedicated-worker liveness."""
+    state = await queue_health()
+    if settings.task_execution_mode == "required" and state["degraded"]:
+        raise HTTPException(
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"status": "degraded"},
+        )
+    return {"status": "degraded" if state["degraded"] else "ok"}
 
 
 @app.get("/api/health/ready")

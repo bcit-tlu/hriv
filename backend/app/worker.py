@@ -17,24 +17,45 @@ visible as a single distributed trace.
 import asyncio
 import logging
 import os
+import time
+import weakref
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
 from arq import create_pool
 from arq.connections import ArqRedis, RedisSettings
+from arq.jobs import Job
 from arq.worker import func
 from opentelemetry import trace
 from opentelemetry.context import attach, detach
 from opentelemetry.propagate import extract, inject
 from opentelemetry.trace import Status, StatusCode
-
 from .component_versions import get_worker_version
 from .database import async_session, settings
 from .logging_config import setup_logging
 from .models import ACTIVE_TASK_STATUSES, AdminTask
+from .queue_metrics import (
+    ARQ_QUEUE_NAME,
+    HEALTH_CHECK_INTERVAL_SECONDS,
+    HEALTH_CHECK_KEY,
+)
+from .task_constants import WORKER_JOB_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
+_pool: ArqRedis | None = None
+_pool_creation_locks: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+
+
+def _get_pool_creation_lock() -> asyncio.Lock:
+    """Return the pool-publication lock for the current event loop."""
+    loop = asyncio.get_running_loop()
+    lock = _pool_creation_locks.get(loop)
+    if lock is None:
+        lock = asyncio.Lock()
+        _pool_creation_locks[loop] = lock
+    return lock
 
 
 # ── Shared helpers ────────────────────────────────────────
@@ -73,14 +94,14 @@ async def _finalize_interrupted_admin_task(task_id: int, task_type: str) -> None
         )
 
 
-def _parse_redis_settings() -> RedisSettings:
+def _parse_redis_settings(*, api_pool: bool = False) -> RedisSettings:
     """Convert the ``REDIS_URL`` env-var into arq ``RedisSettings``.
 
     Handles full Redis URLs including auth and database, e.g.
     ``redis://:password@host:6379/1``.
     """
     global _redis_settings
-    if _redis_settings is not None:
+    if not api_pool and _redis_settings is not None:
         return _redis_settings
     parsed = urlparse(settings.redis_url)
     host = parsed.hostname or "localhost"
@@ -88,15 +109,43 @@ def _parse_redis_settings() -> RedisSettings:
     password = parsed.password
     # Database number is the first path segment (e.g. /1 → 1)
     database = int(parsed.path.lstrip("/")) if parsed.path.strip("/") else 0
-    _redis_settings = RedisSettings(
-        host=host, port=port, password=password, database=database,
+    parsed_settings = RedisSettings(
+        host=host,
+        port=port,
+        password=password,
+        database=database,
+        # API submissions fail promptly; the dedicated worker keeps arq's
+        # normal retry budget for startup and task processing.
+        conn_retries=0 if api_pool else 5,
+        conn_retry_delay=0 if api_pool else 1,
     )
-    return _redis_settings
+    if not api_pool:
+        _redis_settings = parsed_settings
+    return parsed_settings
 
 
 # ── Enqueue helper (used by FastAPI routers) ──────────────
 
-_pool: ArqRedis | None = None
+class TaskQueueUnavailableError(RuntimeError):
+    """Raised when required queue execution cannot submit a task."""
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(reason)
+
+
+@dataclass(frozen=True)
+class EnqueueResult:
+    """Outcome returned by the shared task enqueue boundary."""
+
+    outcome: str
+    reason: str
+    job: Job | None = None
+    queued_at: float | None = None
+
+    @property
+    def queued(self) -> bool:
+        return self.outcome == "queued"
 
 
 async def get_pool() -> ArqRedis | None:
@@ -104,72 +153,114 @@ async def get_pool() -> ArqRedis | None:
     global _pool
     if _pool is not None:
         return _pool
+
+    pool: ArqRedis | None = None
     try:
-        _pool = await create_pool(_parse_redis_settings())
-        return _pool
+        pool = await create_pool(_parse_redis_settings(api_pool=True))
+        await pool.ping()
     except Exception:
+        if pool is not None:
+            try:
+                await pool.aclose()
+            except Exception:
+                logger.debug(
+                    "Failed to close unverified task queue pool",
+                    extra={"event": "worker.pool_cleanup_failed"},
+                    exc_info=True,
+                )
         logger.warning(
-            "Redis unavailable — task queue disabled; falling back to BackgroundTasks",
-            extra={"event": "worker.redis_unavailable"},
+            "Task queue unavailable; enqueue fallback/rejection will apply",
+            extra={"event": "worker.queue_unavailable"},
         )
+        if _pool is not None:
+            return _pool
         return None
 
+    assert pool is not None
+    async with _get_pool_creation_lock():
+        if _pool is None:
+            _pool = pool
+            return pool
+        winner = _pool
 
-async def enqueue_process_source_image(source_image_id: int) -> bool:
-    """Enqueue an image-processing job via arq.
+    try:
+        await pool.aclose()
+    except Exception:
+        logger.debug(
+            "Failed to close duplicate task queue pool",
+            extra={"event": "worker.pool_cleanup_failed"},
+            exc_info=True,
+        )
+    return winner
 
-    Returns ``True`` if the job was enqueued, ``False`` if Redis is
-    unavailable (caller should fall back to ``BackgroundTasks``).
-    """
+
+async def _enqueue(
+    job_name: str,
+    *args: Any,
+    job_type: str,
+) -> EnqueueResult:
+    """Apply the single queue-vs-fallback policy for all task submissions."""
+    def _fallback_or_reject(
+        reason: str,
+        exc: BaseException | None = None,
+    ) -> EnqueueResult:
+        outcome = (
+            "rejected"
+            if settings.task_execution_mode == "required"
+            else "fallback"
+        )
+        _record_enqueue(job_type, outcome, reason)
+        if settings.task_execution_mode == "required":
+            error = TaskQueueUnavailableError(reason)
+            if exc is not None:
+                raise error from exc
+            raise error
+        return EnqueueResult("fallback", reason)
+
     pool = await get_pool()
     if pool is None:
-        return False
+        return _fallback_or_reject("queue_unavailable")
     try:
         carrier: dict[str, str] = {}
         inject(carrier)
-        await pool.enqueue_job(
-            "process_source_image_task", source_image_id, carrier,
-        )
-        return True
-    except Exception:
+        job = await pool.enqueue_job(job_name, *args, carrier)
+    except Exception as exc:
         logger.warning(
-            "Failed to enqueue job — falling back to BackgroundTasks",
-            extra={
-                "event": "worker.enqueue_failed",
-                "source_image_id": source_image_id,
-            },
+            "Task queue submission failed",
+            extra={"event": "worker.submission_failed", "job_type": job_type},
+            exc_info=True,
         )
-        return False
+        return _fallback_or_reject("submission_failed", exc)
+    _record_enqueue(job_type, "queued", "submitted")
+    return EnqueueResult(
+        "queued",
+        "submitted",
+        job=job,
+        queued_at=time.monotonic(),
+    )
+
+
+def _record_enqueue(job_type: str, outcome: str, reason: str) -> None:
+    from .queue_metrics import record_enqueue
+
+    record_enqueue(job_type, outcome, reason)
+
+
+async def enqueue_process_source_image(source_image_id: int) -> EnqueueResult:
+    """Enqueue an image-processing job via the shared queue boundary."""
+    return await _enqueue(
+        "process_source_image_task", source_image_id, job_type="source_image"
+    )
 
 
 async def enqueue_replace_image(
     source_image_id: int, target_image_id: int,
-) -> bool:
-    """Enqueue an image-replacement job via arq.
-
-    Returns ``True`` if the job was enqueued, ``False`` if Redis is
-    unavailable (caller should fall back to ``BackgroundTasks``).
-    """
-    pool = await get_pool()
-    if pool is None:
-        return False
-    try:
-        carrier: dict[str, str] = {}
-        inject(carrier)
-        await pool.enqueue_job(
-            "replace_image_task", source_image_id, target_image_id, carrier,
-        )
-        return True
-    except Exception:
-        logger.warning(
-            "Failed to enqueue replacement job — falling back to BackgroundTasks",
-            extra={
-                "event": "worker.enqueue_replace_failed",
-                "source_image_id": source_image_id,
-                "target_image_id": target_image_id,
-            },
-        )
-        return False
+) -> EnqueueResult:
+    """Enqueue an image-replacement job via the shared queue boundary."""
+    return await _enqueue(
+        "replace_image_task", source_image_id, target_image_id,
+        job_type="image_replacement",
+    )
 
 
 async def enqueue_bulk_import(
@@ -178,65 +269,19 @@ async def enqueue_bulk_import(
     copyright: str | None = None,
     note: str | None = None,
     active: bool = True,
-) -> bool:
-    """Enqueue a bulk-import processing job via arq.
-
-    Returns ``True`` if the job was enqueued, ``False`` if Redis is
-    unavailable (caller should fall back to ``BackgroundTasks``).
-    """
-    pool = await get_pool()
-    if pool is None:
-        return False
-    try:
-        carrier: dict[str, str] = {}
-        inject(carrier)
-        await pool.enqueue_job(
-            "bulk_import_task",
-            job_id,
-            file_entries,
-            copyright,
-            note,
-            active,
-            carrier,
-        )
-        return True
-    except Exception:
-        logger.warning(
-            "Failed to enqueue bulk import — falling back to BackgroundTasks",
-            extra={
-                "event": "worker.enqueue_bulk_import_failed",
-                "job_id": job_id,
-            },
-        )
-        return False
+) -> EnqueueResult:
+    """Enqueue a bulk-import processing job via the shared queue boundary."""
+    return await _enqueue(
+        "bulk_import_task", job_id, file_entries, copyright, note, active,
+        job_type="bulk_import",
+    )
 
 
-async def enqueue_admin_task(task_id: int, task_type: str) -> bool:
-    """Enqueue a background admin task via arq.
-
-    Returns ``True`` if the job was enqueued, ``False`` if Redis is
-    unavailable (caller should fall back to ``BackgroundTasks``).
-    """
-    pool = await get_pool()
-    if pool is None:
-        return False
-    try:
-        carrier: dict[str, str] = {}
-        inject(carrier)
-        await pool.enqueue_job(
-            "admin_task_runner", task_id, task_type, carrier,
-        )
-        return True
-    except Exception:
-        logger.warning(
-            "Failed to enqueue admin task — falling back to BackgroundTasks",
-            extra={
-                "event": "worker.enqueue_admin_failed",
-                "task_id": task_id,
-                "task_type": task_type,
-            },
-        )
-        return False
+async def enqueue_admin_task(task_id: int, task_type: str) -> EnqueueResult:
+    """Enqueue a background admin task via the shared queue boundary."""
+    return await _enqueue(
+        "admin_task_runner", task_id, task_type, job_type=f"admin:{task_type}"
+    )
 
 
 # ── arq task functions ────────────────────────────────────
@@ -346,6 +391,7 @@ async def bulk_import_task(
                     copyright=copyright,
                     note=note,
                     active=active,
+                    worker_hosted=True,
                 )
             except Exception as exc:
                 span.set_status(Status(StatusCode.ERROR, str(exc)))
@@ -445,17 +491,21 @@ async def on_startup(ctx: dict[str, Any]) -> None:
 
 
 # ── arq WorkerSettings ───────────────────────────────────
-
 class WorkerSettings:
     """Configuration class consumed by ``arq worker``."""
 
     functions = [
         process_source_image_task,
         replace_image_task,
-        bulk_import_task,
+        func(bulk_import_task, max_tries=1),
         func(admin_task_runner, timeout=86400),
     ]
     redis_settings = _parse_redis_settings()
+    queue_name = ARQ_QUEUE_NAME
+    health_check_key = HEALTH_CHECK_KEY
+    health_check_interval = int(HEALTH_CHECK_INTERVAL_SECONDS)
     on_startup = on_startup
-    max_jobs = 4  # Match the existing _MAX_CONCURRENCY
-    job_timeout = 7200  # 2 hours — default bound for short-lived worker jobs
+    max_jobs = settings.worker_max_jobs
+    # 2 hours — default bound for short-lived worker jobs
+    job_timeout = WORKER_JOB_TIMEOUT_SECONDS
+    allow_abort_jobs = True

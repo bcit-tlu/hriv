@@ -1,4 +1,5 @@
 import contextlib
+from copy import deepcopy
 import errno
 import json
 import logging
@@ -12,7 +13,7 @@ from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import get_current_user, require_role
-from ..database import get_db, settings
+from ..database import async_session, get_db, settings
 from ..image_validation import UPLOAD_CHUNK_SIZE, is_valid_image
 from ..models import Category, Image, SourceImage, User
 from ..schemas import (
@@ -28,6 +29,7 @@ from ..schemas import (
 from ..tile_order import bump_scopes, scope_key_for
 from ..tracing import record_exception_if_server_error
 from ..visibility import get_student_excluded_category_ids, is_category_visible_to_student
+from ..worker import TaskQueueUnavailableError
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -288,6 +290,9 @@ async def replace_image(
     When metadata fields are included in the multipart form, the image record
     is updated in the same transaction as the source-image creation, ensuring
     both succeed or both fail.
+
+    In required task-execution mode, a rejected enqueue restores the target
+    metadata and version when no concurrent image update has superseded it.
     """
     with tracer.start_as_current_span("image.replace") as span:
         try:
@@ -368,12 +373,18 @@ async def replace_image(
 
             file_size = os.path.getsize(stored_path)
 
-            # ── Apply optional metadata updates atomically ──────────
-            # Done after the upload loop so the revision lock below is
-            # held only for the short transaction, never across client
-            # I/O; and before any row mutation so the session is clean
-            # while the lock is taken, preserving the revision-then-rows
-            # lock order (docs/tile-ordering.md).
+            metadata_snapshot = {
+                "name": img.name,
+                "category_id": img.category_id,
+                "copyright": img.copyright,
+                "note": img.note,
+                "active": img.active,
+                "metadata_": deepcopy(img.metadata_),
+                "version": img.version,
+            }
+
+            # Apply metadata before creating the SourceImage so the target
+            # update and source-image insert remain one transaction.
             if has_metadata:
                 if category_id is not None and parsed_cat != img.category_id:
                     # A category move changes scope membership: invalidate
@@ -430,10 +441,114 @@ async def replace_image(
             from ..processing import process_replace_image
             from ..worker import enqueue_replace_image
 
-            enqueued = await enqueue_replace_image(src.id, image_id)
-            span.set_attribute("image.enqueued", enqueued)
-            if not enqueued:
-                background_tasks.add_task(process_replace_image, src.id, image_id)
+            source_image_id = src.id
+            target_image_id = image_id
+            try:
+                enqueue_result = await enqueue_replace_image(
+                    source_image_id,
+                    target_image_id,
+                )
+            except TaskQueueUnavailableError:
+                bookkeeping_committed = False
+                try:
+                    src.status = "failed"
+                    src.status_message = "Failed"
+                    src.error_message = (
+                        "Task queue unavailable; image replacement was not started."
+                    )
+                    await db.commit()
+                    bookkeeping_committed = True
+                except Exception:
+                    logger.exception(
+                        "Failed to mark replacement source image after queue rejection",
+                        extra={
+                            "event": "replace.queue_rejection_bookkeeping_failed",
+                            "source_image_id": source_image_id,
+                            "target_image_id": target_image_id,
+                        },
+                    )
+                    with contextlib.suppress(Exception):
+                        await db.rollback()
+                    try:
+                        async with async_session() as recovery_db:
+                            await recovery_db.execute(
+                                sql_update(SourceImage)
+                                .where(
+                                    SourceImage.id == source_image_id,
+                                    SourceImage.status == "pending",
+                                )
+                                .values(
+                                    status="failed",
+                                    status_message="Failed",
+                                    error_message=(
+                                        "Task queue unavailable; image replacement "
+                                        "was not started."
+                                    ),
+                                )
+                            )
+                            await recovery_db.commit()
+                            bookkeeping_committed = True
+                    except Exception:
+                        logger.exception(
+                            "Fresh-session replacement source-image bookkeeping failed",
+                            extra={
+                                "event": "replace.queue_rejection_recovery_failed",
+                                "source_image_id": source_image_id,
+                                "target_image_id": target_image_id,
+                            },
+                        )
+                if has_metadata:
+                    try:
+                        restore_result = await db.execute(
+                            sql_update(Image)
+                            .where(
+                                Image.id == target_image_id,
+                                Image.version == metadata_snapshot["version"] + 1,
+                            )
+                            .values(
+                                name=metadata_snapshot["name"],
+                                category_id=metadata_snapshot["category_id"],
+                                copyright=metadata_snapshot["copyright"],
+                                note=metadata_snapshot["note"],
+                                active=metadata_snapshot["active"],
+                                metadata_=metadata_snapshot["metadata_"],
+                                version=metadata_snapshot["version"],
+                            )
+                        )
+                        if restore_result.rowcount == 1:
+                            db.expire(img)
+                            await db.commit()
+                        else:
+                            await db.rollback()
+                            logger.warning(
+                                "Skipped replacement metadata restore after a concurrent update",
+                                extra={
+                                    "event": "replace.metadata_restore_skipped",
+                                    "source_image_id": source_image_id,
+                                    "target_image_id": target_image_id,
+                                    "expected_version": metadata_snapshot["version"] + 1,
+                                },
+                            )
+                    except Exception:
+                        logger.exception(
+                            "Replacement metadata restore failed after queue rejection",
+                            extra={
+                                "event": "replace.metadata_restore_failed",
+                                "source_image_id": source_image_id,
+                                "target_image_id": target_image_id,
+                            },
+                        )
+                if bookkeeping_committed:
+                    with contextlib.suppress(OSError):
+                        os.unlink(stored_path)
+                raise
+            span.set_attribute("image.enqueued", enqueue_result.queued)
+            if not enqueue_result.queued:
+                background_tasks.add_task(
+                    process_replace_image,
+                    source_image_id,
+                    target_image_id,
+                )
 
             return src
         except Exception as exc:

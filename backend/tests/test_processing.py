@@ -28,6 +28,7 @@ from app.processing import (
     _tile_source_id_from_url,
     detect_pyramid_info,
     generate_tiles,
+    process_replace_image,
     process_source_image,
     rebuild_source_image_tiles,
     reconcile_stale_source_images,
@@ -204,6 +205,34 @@ async def test_process_source_image_not_found() -> None:
     mock_session.get.assert_awaited_once()
 
 
+async def test_process_source_image_skips_terminal_row() -> None:
+    """A late child cannot overwrite a terminal source-image result."""
+    src = SimpleNamespace(id=100, status="failed")
+    mock_session = AsyncMock()
+    mock_session.get.return_value = src
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.processing.async_session", return_value=mock_session):
+        await process_source_image(100)
+
+    mock_session.commit.assert_not_awaited()
+
+
+async def test_process_replace_image_skips_terminal_row() -> None:
+    """A late replacement child cannot overwrite a terminal source result."""
+    src = SimpleNamespace(id=101, status="completed")
+    mock_session = AsyncMock()
+    mock_session.get.return_value = src
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.processing.async_session", return_value=mock_session):
+        await process_replace_image(101, 202)
+
+    mock_session.commit.assert_not_awaited()
+
+
 async def test_process_source_image_success() -> None:
     """Successful processing creates Image and updates SourceImage."""
     src = SimpleNamespace(
@@ -352,7 +381,7 @@ async def test_best_effort_source_checksum_swallows_dispatch_error() -> None:
 
 
 async def test_reconcile_stale_source_images_updates_stale() -> None:
-    """Stale source images in processing/pending are marked failed."""
+    """Stale processing and pending source images are marked failed."""
     mock_row = MagicMock()
     mock_row.__getitem__ = lambda self, i: 42  # id=42
     mock_result = MagicMock()
@@ -361,22 +390,151 @@ async def test_reconcile_stale_source_images_updates_stale() -> None:
     session = AsyncMock()
     session.execute = AsyncMock(return_value=mock_result)
 
-    count = await reconcile_stale_source_images(session, stale_after_seconds=900)
-    assert count == 1
+    with patch(
+        "app.processing.collect_queue_state",
+        new_callable=AsyncMock,
+        return_value={"queue_up": True, "worker_up": True, "depth": 0},
+    ), patch(
+        "app.worker.get_pool",
+        new_callable=AsyncMock,
+        return_value=AsyncMock(zcount=AsyncMock(return_value=0)),
+    ):
+        count = await reconcile_stale_source_images(
+            session,
+            stale_after_seconds=900,
+            pending_stale_after_seconds=3600,
+        )
+    assert count == 2
+    assert session.execute.await_count == 2
     session.commit.assert_awaited_once()
+
+
+async def test_reconcile_processing_survives_coordinator_liveness_read_failure() -> None:
+    """A Redis liveness failure does not skip processing-row reconciliation."""
+    mock_row = MagicMock()
+    mock_row.__getitem__ = lambda self, i: 42
+    processing_result = MagicMock()
+    processing_result.all.return_value = [mock_row]
+    session = AsyncMock()
+    session.execute = AsyncMock(return_value=processing_result)
+    pool = AsyncMock()
+    pool.zcount.side_effect = RuntimeError("Redis unavailable")
+
+    with patch(
+        "app.processing.collect_queue_state",
+        new_callable=AsyncMock,
+        return_value={"queue_up": True, "worker_up": True, "depth": 0},
+    ), patch(
+        "app.worker.get_pool",
+        new_callable=AsyncMock,
+        return_value=pool,
+    ):
+        count = await reconcile_stale_source_images(
+            session,
+            stale_after_seconds=900,
+            pending_stale_after_seconds=3600,
+        )
+
+    assert count == 1
+    assert session.execute.await_count == 1
+    session.commit.assert_awaited_once()
+
+
+async def test_reconcile_pending_cutoff_is_longer_than_processing() -> None:
+    """Pending queue wait uses the coordinator's longer safety bound."""
+    processing_result = MagicMock()
+    processing_result.all.return_value = []
+    pending_result = MagicMock()
+    pending_result.all.return_value = []
+    session = AsyncMock()
+    session.execute = AsyncMock(
+        side_effect=[processing_result, pending_result],
+    )
+
+    with patch(
+        "app.processing.collect_queue_state",
+        new_callable=AsyncMock,
+        return_value={"queue_up": True, "worker_up": True, "depth": 0},
+    ), patch(
+        "app.worker.get_pool",
+        new_callable=AsyncMock,
+        return_value=AsyncMock(zcount=AsyncMock(return_value=0)),
+    ):
+        await reconcile_stale_source_images(
+            session,
+            stale_after_seconds=900,
+            pending_stale_after_seconds=3600,
+        )
+
+    processing_stmt = session.execute.await_args_list[0].args[0]
+    pending_stmt = session.execute.await_args_list[1].args[0]
+    processing_sql = str(processing_stmt.compile())
+    pending_sql = str(pending_stmt.compile())
+    assert "source_images.status = :status_1" in processing_sql
+    assert "source_images.status = :status_1" in pending_sql
+    assert processing_stmt.compile().params["status_1"] == "processing"
+    assert pending_stmt.compile().params["status_1"] == "pending"
+    assert pending_stmt.compile().params["updated_at_1"] < processing_stmt.compile().params["updated_at_1"]
+    assert "processing task likely crashed" in processing_stmt.compile().params["error_message"]
+    assert "processing never started" in pending_stmt.compile().params["error_message"]
 
 
 async def test_reconcile_stale_source_images_no_stale() -> None:
     """When no source images are stale, nothing is updated."""
-    mock_result = MagicMock()
-    mock_result.all.return_value = []
+    mock_results = [MagicMock(), MagicMock()]
+    for mock_result in mock_results:
+        mock_result.all.return_value = []
 
     session = AsyncMock()
-    session.execute = AsyncMock(return_value=mock_result)
+    session.execute = AsyncMock(side_effect=mock_results)
 
-    count = await reconcile_stale_source_images(session, stale_after_seconds=900)
+    with patch(
+        "app.processing.collect_queue_state",
+        new_callable=AsyncMock,
+        return_value={"queue_up": True, "worker_up": True, "depth": 0},
+    ), patch(
+        "app.worker.get_pool",
+        new_callable=AsyncMock,
+        return_value=AsyncMock(zcount=AsyncMock(return_value=0)),
+    ):
+        count = await reconcile_stale_source_images(
+            session,
+            stale_after_seconds=900,
+            pending_stale_after_seconds=3600,
+        )
     assert count == 0
+    assert session.execute.await_count == 2
     session.commit.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    "queue_state",
+    [
+        {"queue_up": True, "worker_up": True, "depth": 2},
+        {"queue_up": True, "worker_up": False, "depth": 0},
+        {"queue_up": False, "worker_up": None, "depth": None},
+    ],
+)
+async def test_reconcile_pending_requires_healthy_empty_queue(queue_state) -> None:
+    """Pending rows remain queued unless Redis is healthy and empty."""
+    processing_result = MagicMock()
+    processing_result.all.return_value = []
+    session = AsyncMock()
+    session.execute = AsyncMock(return_value=processing_result)
+
+    with patch(
+        "app.processing.collect_queue_state",
+        new_callable=AsyncMock,
+        return_value=queue_state,
+    ):
+        count = await reconcile_stale_source_images(
+            session,
+            stale_after_seconds=900,
+            pending_stale_after_seconds=3600,
+        )
+
+    assert count == 0
+    assert session.execute.await_count == 1
 
 
 # ── Pyramidal detection tests ────────────────────────────
