@@ -796,3 +796,11 @@ For required-mode enqueue failures, verify the API returned HTTP 503 with
 `Retry-After: 30`, then confirm the corresponding `SourceImage` or
 `AdminTask` is terminal rather than pending. Bulk imports record the rejection
 in the job's `errors` list and mark the job failed.
+
+When a bulk-import worker recovers after the no-worker detector writes an abort
+latch, look for `bulk_import.source_job_worker_recovered`. The latch-write,
+row-reread, and removal sequence closes the usual race, but a worker can still
+consume the latch in the sub-poll interval before the reread's `zrem`. The
+symptom is a child that fails with a generic processing error during a worker
+flap, without an abort-specific message. Retry the bulk import; do not treat
+that narrow race as evidence of a bad source image.

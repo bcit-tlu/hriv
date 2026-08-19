@@ -263,8 +263,11 @@ async def _wait_for_source_image_terminal_state(
             if src.status in {"completed", "failed"}:
                 return _source_image_terminal_state(src)
 
-            if src.status == "processing" and processing_started_at is None:
-                processing_started_at = time.monotonic()
+            if src.status == "processing":
+                if processing_started_at is None:
+                    processing_started_at = time.monotonic()
+            else:
+                processing_started_at = None
 
             cutoff = datetime.now(timezone.utc) - timedelta(seconds=stale_after_seconds)
             updated_at = _coerce_utc_aware(src.updated_at, source_image_id=source_image_id)
@@ -522,6 +525,7 @@ async def _wait_for_source_image_terminal_state(
                         )
                     )
                     if latest_src.status != "processing":
+                        processing_started_at = None
                         logger.info(
                             "Bulk import source image advanced before processing wait failure",
                             extra={

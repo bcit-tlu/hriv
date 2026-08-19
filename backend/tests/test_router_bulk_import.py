@@ -1362,6 +1362,68 @@ async def test_wait_for_source_image_processing_timeout_removes_latch_when_pendi
     db.commit.assert_not_awaited()
 
 
+async def test_wait_for_source_image_processing_cap_resets_after_retry() -> None:
+    """A retried processing attempt gets a fresh processing-cap window."""
+    clock = [100.0]
+    job = MagicMock()
+    job.status = AsyncMock(return_value=JobStatus.queued)
+    job.job_id = "job-31"
+    processing = SimpleNamespace(
+        id=31,
+        status="processing",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message="Processing",
+    )
+    pending = SimpleNamespace(
+        id=31,
+        status="pending",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message="Queued",
+    )
+    completed = SimpleNamespace(
+        id=31,
+        status="completed",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message=None,
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=[processing, pending, processing, completed])
+    db.commit = AsyncMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+
+    async def advance_clock(_seconds: float) -> None:
+        clock[0] += 1
+
+    with (
+        patch("app.routers.bulk_import.async_session", return_value=db),
+        patch("app.routers.bulk_import.asyncio.sleep", side_effect=advance_clock),
+        patch(
+            "app.routers.bulk_import.time.monotonic",
+            side_effect=lambda: clock[0],
+        ),
+    ):
+        result = await _wait_for_source_image_terminal_state(
+            31,
+            "processing-retry.jpg",
+            enqueue_result=EnqueueResult(
+                "queued",
+                "submitted",
+                job=job,
+                queued_at=clock[0],
+            ),
+            pending_grace_seconds=7200,
+            pending_wait_safety_cap_seconds=7200,
+            processing_wait_safety_cap_seconds=1,
+        )
+
+    assert result.status == "completed"
+    db.commit.assert_not_awaited()
+
+
 async def test_wait_for_source_image_timeout_rereads_terminal_row() -> None:
     """A concurrent completion wins over the pending-ceiling branch."""
     job = MagicMock()
