@@ -241,13 +241,14 @@ curl -s http://localhost:8000/api/categories/ -H "Authorization: Bearer $TOKEN"
 
 All endpoints except login require a valid JWT bearer token in the `Authorization` header.
 
+<!-- prettier-ignore -->
 | Method | Endpoint                                                                                                  | Auth Required | Minimum Role                                                                                        |
 | ------ | --------------------------------------------------------------------------------------------------------- | ------------- | --------------------------------------------------------------------------------------------------- |
 | POST   | /api/auth/login                                                                                           | No            | —                                                                                                   |
 | GET    | /api/health                                                                                               | No            | —                                                                                                   |
 | GET    | /api/health/ready                                                                                         | No            | —                                                                                                   |
 | GET    | /api/health/storage                                                                                       | No            | —                                                                                                   |
-| GET    | /api/health/queue                                                                                         | No            | — (minimal status only; 503 when degraded in required task-execution mode; details at /api/metrics) |
+| GET    | /api/health/queue                                                                                         | No            | — ‡                                                                                                  |
 | GET    | /api/categories/                                                                                          | Yes           | student                                                                                             |
 | POST   | /api/categories/                                                                                          | Yes           | instructor                                                                                          |
 | GET    | /api/categories/tree                                                                                      | Yes           | student                                                                                             |
@@ -320,6 +321,10 @@ category, or removing a group's last instructor all return **409**. See
 [groups.md](groups.md) for the full model, authorization, and API details, and
 [category-visibility-and-programs.md](category-visibility-and-programs.md) for
 the dual-gate visibility evaluation.
+
+Rows marked **‡** return minimal health status; they return **503** when the
+queue is degraded in required task-execution mode. Detailed queue state is
+available from `/api/metrics`.
 
 Filesystem-import uploads use raw request bodies only. `PUT /api/admin/tasks/{task_id}/upload` streams an `application/octet-stream` body directly to disk, rejects multipart form uploads with 415, and preflights declared `Content-Length` against the admin-tasks volume so a full archive can fail fast with 507 before streaming begins.
 

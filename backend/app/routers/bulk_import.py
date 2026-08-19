@@ -19,7 +19,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated
 
+from arq.constants import abort_jobs_ss
 from arq.jobs import JobStatus
+from arq.utils import timestamp_ms
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
@@ -41,7 +43,9 @@ from ..worker import (
     WorkerSettings,
     enqueue_bulk_import,
     enqueue_process_source_image,
+    get_pool,
 )
+from ..queue_metrics import collect_queue_state
 
 router = APIRouter(prefix="/admin/bulk-import", tags=["admin"])
 
@@ -58,8 +62,8 @@ _SOURCE_IMAGE_POLL_INTERVAL_SECONDS = 2
 _SOURCE_IMAGE_STALE_SECONDS = int(os.environ.get("SOURCE_IMAGE_STALE_SECONDS", "900"))
 _SOURCE_IMAGE_PENDING_GRACE_SECONDS = 10
 _SOURCE_IMAGE_LOST_OBSERVATIONS = 2
+_SOURCE_IMAGE_NO_WORKER_OBSERVATIONS = 60
 _SOURCE_IMAGE_WAIT_SAFETY_CAP_SECONDS = WorkerSettings.job_timeout + 60
-_SOURCE_IMAGE_ABORT_TIMEOUT_SECONDS = 5
 
 
 def _is_image_filename(filename: str) -> bool:
@@ -99,6 +103,40 @@ def _coerce_utc_aware(dt: datetime, *, source_image_id: int) -> datetime:
     return dt.replace(tzinfo=timezone.utc)
 
 
+async def _write_source_image_abort_latch(
+    source_image_id: int,
+    original_filename: str,
+    job_id: str,
+) -> bool:
+    """Write arq's durable abort latch without waiting for a job result."""
+    pool = await get_pool()
+    if pool is None:
+        logger.warning(
+            "Could not write bulk import source image abort latch",
+            extra={
+                "event": "bulk_import.source_job_abort_latch_failed",
+                "source_image_id": source_image_id,
+                "original_filename": original_filename,
+                "reason": "queue_unavailable",
+            },
+        )
+        return False
+    try:
+        await pool.zadd(abort_jobs_ss, {job_id: timestamp_ms()})
+    except Exception:
+        logger.exception(
+            "Could not write bulk import source image abort latch",
+            extra={
+                "event": "bulk_import.source_job_abort_latch_failed",
+                "source_image_id": source_image_id,
+                "original_filename": original_filename,
+                "reason": "submission_failed",
+            },
+        )
+        return False
+    return True
+
+
 async def _wait_for_source_image_terminal_state(
     source_image_id: int,
     original_filename: str,
@@ -106,10 +144,12 @@ async def _wait_for_source_image_terminal_state(
     enqueue_result: EnqueueResult | None = None,
     pending_grace_seconds: int = _SOURCE_IMAGE_PENDING_GRACE_SECONDS,
     lost_observations: int = _SOURCE_IMAGE_LOST_OBSERVATIONS,
+    no_worker_observations: int = _SOURCE_IMAGE_NO_WORKER_OBSERVATIONS,
     wait_safety_cap_seconds: int = _SOURCE_IMAGE_WAIT_SAFETY_CAP_SECONDS,
 ) -> _SourceImageTerminalState:
     """Wait for queued processing to reach a terminal source-image state."""
     not_found_count = 0
+    no_worker_count = 0
     processing_started_at: float | None = None
     queued_at = (
         enqueue_result.queued_at
@@ -208,6 +248,14 @@ async def _wait_for_source_image_terminal_state(
                     not_found_count = 0
                 elif job_status is not None:
                     not_found_count = 0
+                if job_status in {JobStatus.queued, JobStatus.deferred}:
+                    queue_state = await collect_queue_state()
+                    if queue_state["queue_up"] and queue_state["worker_up"] is False:
+                        no_worker_count += 1
+                    else:
+                        no_worker_count = 0
+                else:
+                    no_worker_count = 0
                 if not_found_count >= lost_observations:
                     src.status = "failed"
                     src.error_message = (
@@ -226,39 +274,59 @@ async def _wait_for_source_image_terminal_state(
                         },
                     )
                     return _source_image_terminal_state(src)
+                if no_worker_count >= no_worker_observations:
+                    latch_written = await _write_source_image_abort_latch(
+                        source_image_id,
+                        original_filename,
+                        enqueue_result.job.job_id,
+                    )
+                    if latch_written:
+                        src.status = "failed"
+                        src.error_message = (
+                            "Tile generation never started during bulk import "
+                            "because no dedicated worker was available."
+                        )
+                        src.status_message = "Failed"
+                        await db.commit()
+                        logger.error(
+                            "Bulk import source image had no available worker",
+                            extra={
+                                "event": "bulk_import.source_job_no_worker",
+                                "source_image_id": source_image_id,
+                                "original_filename": original_filename,
+                                "no_worker_observations": no_worker_count,
+                            },
+                        )
+                        return _source_image_terminal_state(src)
             if (
                 src.status == "pending"
                 and enqueue_result is not None
                 and enqueue_result.job is not None
                 and time.monotonic() - queued_at >= wait_safety_cap_seconds
             ):
-                abort_succeeded = False
-                abort_error: str | None = None
-                try:
-                    abort_succeeded = await enqueue_result.job.abort(
-                        timeout=_SOURCE_IMAGE_ABORT_TIMEOUT_SECONDS,
+                latch_written = await _write_source_image_abort_latch(
+                    source_image_id,
+                    original_filename,
+                    enqueue_result.job.job_id,
+                )
+                if latch_written:
+                    logger.error(
+                        "Bulk import source image exceeded pending wait ceiling",
+                        extra={
+                            "event": "bulk_import.source_job_pending_timeout",
+                            "source_image_id": source_image_id,
+                            "original_filename": original_filename,
+                            "wait_safety_cap_seconds": wait_safety_cap_seconds,
+                        },
                     )
-                except Exception as exc:
-                    abort_error = str(exc)
-                logger.error(
-                    "Bulk import source image exceeded pending wait ceiling",
-                    extra={
-                        "event": "bulk_import.source_job_pending_timeout",
-                        "source_image_id": source_image_id,
-                        "original_filename": original_filename,
-                        "wait_safety_cap_seconds": wait_safety_cap_seconds,
-                        "abort_succeeded": abort_succeeded,
-                        "abort_error": abort_error,
-                    },
-                )
-                src.status = "failed"
-                src.error_message = (
-                    "Tile generation never started during bulk import. "
-                    "The queued processing job exceeded the wait ceiling."
-                )
-                src.status_message = "Failed"
-                await db.commit()
-                return _source_image_terminal_state(src)
+                    src.status = "failed"
+                    src.error_message = (
+                        "Tile generation never started during bulk import. "
+                        "The queued processing job exceeded the wait ceiling."
+                    )
+                    src.status_message = "Failed"
+                    await db.commit()
+                    return _source_image_terminal_state(src)
             if (
                 src.status == "processing"
                 and processing_started_at is not None

@@ -17,6 +17,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from arq.constants import abort_jobs_ss
 from arq.jobs import JobStatus
 from fastapi import HTTPException
 
@@ -45,6 +46,11 @@ def _patch_enqueue_bulk_import():
     with (
         patch("app.routers.bulk_import.enqueue_bulk_import", new_callable=AsyncMock, return_value=EnqueueResult("fallback", "queue_unavailable")),
         patch("app.routers.bulk_import.enqueue_process_source_image", new_callable=AsyncMock, return_value=EnqueueResult("fallback", "queue_unavailable")),
+        patch(
+            "app.routers.bulk_import.collect_queue_state",
+            new_callable=AsyncMock,
+            return_value={"queue_up": True, "worker_up": True},
+        ),
     ):
         yield
 
@@ -956,11 +962,13 @@ async def test_wait_for_source_image_terminal_state_does_not_fail_deep_queued_so
     job.status.assert_awaited_once()
 
 
-async def test_wait_for_source_image_terminal_state_aborts_queued_timeout() -> None:
-    """A queued child is aborted before the pending wait ceiling fails it."""
+async def test_wait_for_source_image_terminal_state_latches_queued_timeout() -> None:
+    """The last-resort ceiling writes an abort latch before failing the row."""
     job = MagicMock()
     job.status = AsyncMock(return_value=JobStatus.queued)
-    job.abort = AsyncMock(return_value=True)
+    job.job_id = "job-20"
+    pool = MagicMock()
+    pool.zadd = AsyncMock()
     src = SimpleNamespace(
         id=20,
         status="pending",
@@ -974,7 +982,10 @@ async def test_wait_for_source_image_terminal_state_aborts_queued_timeout() -> N
     db.__aenter__ = AsyncMock(return_value=db)
     db.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("app.routers.bulk_import.async_session", return_value=db):
+    with (
+        patch("app.routers.bulk_import.async_session", return_value=db),
+        patch("app.routers.bulk_import.get_pool", new_callable=AsyncMock, return_value=pool),
+    ):
         result = await _wait_for_source_image_terminal_state(
             20,
             "never-started.jpg",
@@ -990,8 +1001,168 @@ async def test_wait_for_source_image_terminal_state_aborts_queued_timeout() -> N
 
     assert result.status == "failed"
     assert "never started" in result.error_message
-    job.abort.assert_awaited_once_with(timeout=5)
+    pool.zadd.assert_awaited_once()
+    assert pool.zadd.await_args.args[0] == abort_jobs_ss
+    assert set(pool.zadd.await_args.args[1]) == {"job-20"}
+    assert isinstance(pool.zadd.await_args.args[1]["job-20"], int)
     db.commit.assert_awaited_once()
+    job.abort.assert_not_called()
+
+
+async def test_wait_for_source_image_terminal_state_fails_without_worker() -> None:
+    """A queued child is latched and failed after repeated absent heartbeats."""
+    job = MagicMock()
+    job.status = AsyncMock(return_value=JobStatus.queued)
+    job.job_id = "job-21"
+    pool = MagicMock()
+    pool.zadd = AsyncMock()
+    events: list[str] = []
+    pool.zadd.side_effect = lambda *args, **kwargs: events.append("latch")
+    src = SimpleNamespace(
+        id=21,
+        status="pending",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message="Queued",
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=src)
+    db.commit = AsyncMock(side_effect=lambda: events.append("commit"))
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("app.routers.bulk_import.async_session", return_value=db),
+        patch("app.routers.bulk_import.get_pool", new_callable=AsyncMock, return_value=pool),
+        patch("app.routers.bulk_import.asyncio.sleep", new_callable=AsyncMock),
+        patch(
+            "app.routers.bulk_import.collect_queue_state",
+            new_callable=AsyncMock,
+            return_value={"queue_up": True, "worker_up": False},
+        ),
+    ):
+        result = await _wait_for_source_image_terminal_state(
+            21,
+            "no-worker.jpg",
+            enqueue_result=EnqueueResult("queued", "submitted", job=job, queued_at=time.monotonic()),
+            pending_grace_seconds=0,
+            no_worker_observations=2,
+            wait_safety_cap_seconds=7200,
+        )
+
+    assert result.status == "failed"
+    assert "no dedicated worker" in result.error_message
+    pool.zadd.assert_awaited_once()
+    db.commit.assert_awaited_once()
+    assert events == ["latch", "commit"]
+    job.abort.assert_not_called()
+
+
+async def test_wait_for_source_image_terminal_state_keeps_waiting_with_worker() -> None:
+    """A live worker heartbeat prevents deep queued work from being failed."""
+    job = MagicMock()
+    job.status = AsyncMock(return_value=JobStatus.queued)
+    job.job_id = "job-22"
+    src = SimpleNamespace(
+        id=22,
+        status="pending",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message="Queued",
+    )
+    completed = SimpleNamespace(
+        id=22,
+        status="completed",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message=None,
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=[src, completed])
+    db.commit = AsyncMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+    pool = MagicMock()
+    pool.zadd = AsyncMock()
+
+    with (
+        patch("app.routers.bulk_import.async_session", return_value=db),
+        patch("app.routers.bulk_import.get_pool", new_callable=AsyncMock, return_value=pool),
+        patch("app.routers.bulk_import.asyncio.sleep", new_callable=AsyncMock),
+        patch(
+            "app.routers.bulk_import.collect_queue_state",
+            new_callable=AsyncMock,
+            return_value={"queue_up": True, "worker_up": True},
+        ),
+    ):
+        result = await _wait_for_source_image_terminal_state(
+            22,
+            "deep-queue-live-worker.jpg",
+            enqueue_result=EnqueueResult(
+                "queued",
+                "submitted",
+                job=job,
+                queued_at=time.monotonic() - 3600,
+            ),
+            pending_grace_seconds=0,
+            no_worker_observations=1,
+            wait_safety_cap_seconds=7200,
+        )
+
+    assert result.status == "completed"
+    pool.zadd.assert_not_awaited()
+    db.commit.assert_not_awaited()
+
+
+async def test_wait_for_source_image_terminal_state_keeps_waiting_when_latch_fails() -> None:
+    """A failed abort-latch write cannot make a pending row terminal."""
+    job = MagicMock()
+    job.status = AsyncMock(return_value=JobStatus.queued)
+    job.job_id = "job-23"
+    src = SimpleNamespace(
+        id=23,
+        status="pending",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message="Queued",
+    )
+    completed = SimpleNamespace(
+        id=23,
+        status="completed",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message=None,
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=[src, completed])
+    db.commit = AsyncMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+    pool = MagicMock()
+    pool.zadd = AsyncMock(side_effect=RuntimeError("Redis unavailable"))
+
+    with (
+        patch("app.routers.bulk_import.async_session", return_value=db),
+        patch("app.routers.bulk_import.get_pool", new_callable=AsyncMock, return_value=pool),
+        patch("app.routers.bulk_import.asyncio.sleep", new_callable=AsyncMock),
+        patch(
+            "app.routers.bulk_import.collect_queue_state",
+            new_callable=AsyncMock,
+            return_value={"queue_up": True, "worker_up": False},
+        ),
+    ):
+        result = await _wait_for_source_image_terminal_state(
+            23,
+            "latch-failure.jpg",
+            enqueue_result=EnqueueResult("queued", "submitted", job=job, queued_at=time.monotonic()),
+            pending_grace_seconds=0,
+            no_worker_observations=1,
+            wait_safety_cap_seconds=7200,
+        )
+
+    assert result.status == "completed"
+    pool.zadd.assert_awaited_once()
+    db.commit.assert_not_awaited()
 
 
 async def test_wait_for_source_image_terminal_state_respects_lost_job_grace(

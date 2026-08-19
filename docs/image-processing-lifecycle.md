@@ -181,6 +181,13 @@ parameters live in `app/tile_provenance.py` and feed both `dzsave` and the
 settings hash. See [tile-cache-provenance.md](tile-cache-provenance.md) for the
 staleness rules and API surface.
 
+Bulk-import coordinators distinguish a lost child job from a stopped worker.
+When a queued child observes an absent worker heartbeat for the configured
+consecutive-poll window, it writes arq's abort latch before marking the
+`SourceImage` failed. The latch prevents a later worker from running the child
+against the failed row. If Redis cannot accept the latch, the row remains
+pending and the coordinator keeps waiting.
+
 ## Stale SourceImage reconciliation
 
 `reconcile_stale_source_images()` runs on **backend (API pod) startup** and marks
