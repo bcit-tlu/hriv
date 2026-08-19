@@ -1333,6 +1333,14 @@ async def bulk_import_images(
         if category is None:
             raise HTTPException(status_code=400, detail="Category not found")
 
+    try:
+        note = normalize_note_value(note)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Note must be {MAX_NOTE_LENGTH} characters or fewer",
+        )
+
     # Each coordinator occupies a worker slot for its whole batch. Keep
     # imports serialized until #1078 provides a safe coordinator model.
     processing_result = await db.execute(
@@ -1388,15 +1396,6 @@ async def bulk_import_images(
 
     with tracer.start_as_current_span("bulk_import.enqueue") as span:
         try:
-            # Validate and normalize note before proceeding.
-            try:
-                note = normalize_note_value(note)
-            except ValueError:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Note must be {MAX_NOTE_LENGTH} characters or fewer",
-                )
-
             span.set_attribute("bulk_import.category_id", category_id if category_id is not None else "none")
 
             os.makedirs(settings.source_images_dir, exist_ok=True)
