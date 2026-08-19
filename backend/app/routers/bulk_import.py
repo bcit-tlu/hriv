@@ -64,7 +64,7 @@ _SOURCE_IMAGE_POLL_INTERVAL_SECONDS = 2
 _SOURCE_IMAGE_STALE_SECONDS = int(os.environ.get("SOURCE_IMAGE_STALE_SECONDS", "900"))
 _SOURCE_IMAGE_PENDING_GRACE_SECONDS = 10
 _SOURCE_IMAGE_LOST_OBSERVATIONS = 2
-_SOURCE_IMAGE_NO_WORKER_OBSERVATIONS = 60
+_SOURCE_IMAGE_NO_WORKER_SAMPLES = 4
 _SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS = (
     SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS
 )
@@ -91,7 +91,12 @@ _BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS = HEALTH_CHECK_INTERVAL_SECONDS
 _BULK_IMPORT_COORDINATOR_LIVENESS_REFRESH_SECONDS = HEALTH_CHECK_INTERVAL_SECONDS
 _SOURCE_IMAGE_ABORT_LATCH_RETENTION_SECONDS = WorkerSettings.job_timeout * 2
 _SOURCE_IMAGE_NO_WORKER_WINDOW_SECONDS = (
-    _SOURCE_IMAGE_NO_WORKER_OBSERVATIONS * _SOURCE_IMAGE_POLL_INTERVAL_SECONDS
+    _SOURCE_IMAGE_NO_WORKER_SAMPLES
+    * _SOURCE_IMAGE_QUEUE_STATE_SAMPLE_POLLS
+    * _SOURCE_IMAGE_POLL_INTERVAL_SECONDS
+)
+_BULK_IMPORT_WORKER_COORDINATOR_LIVENESS_KEY = (
+    "hriv:bulk_import:worker_coordinators"
 )
 
 
@@ -295,7 +300,7 @@ async def _bulk_import_has_capacity_starvation(
             _BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS * 1000
         )
         live_count = await coordinator_pool.zcount(
-            _BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
+            _BULK_IMPORT_WORKER_COORDINATOR_LIVENESS_KEY,
             live_since,
             "+inf",
         )
@@ -307,13 +312,14 @@ async def _bulk_import_has_capacity_starvation(
             },
         )
         return False
-    return live_count >= settings.worker_max_jobs
+    return live_count >= settings.worker_total_slots
 
 
 async def _register_bulk_import_coordinator(
     bulk_import_job_id: int,
+    worker_hosted: bool = False,
 ) -> ArqRedis | None:
-    """Register a worker-hosted coordinator's arq worker-slot occupancy."""
+    """Register a coordinator's liveness and optional worker-slot occupancy."""
     pool = await get_pool()
     if pool is None:
         return None
@@ -324,10 +330,21 @@ async def _register_bulk_import_coordinator(
             "-inf",
             now_ms - (_BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS * 1000),
         )
+        if worker_hosted:
+            await pool.zremrangebyscore(
+                _BULK_IMPORT_WORKER_COORDINATOR_LIVENESS_KEY,
+                "-inf",
+                now_ms - (_BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS * 1000),
+            )
         await pool.zadd(
             _BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
             {str(bulk_import_job_id): now_ms},
         )
+        if worker_hosted:
+            await pool.zadd(
+                _BULK_IMPORT_WORKER_COORDINATOR_LIVENESS_KEY,
+                {str(bulk_import_job_id): now_ms},
+            )
     except Exception:
         logger.exception(
             "Bulk import coordinator slot registration failed",
@@ -343,13 +360,19 @@ async def _register_bulk_import_coordinator(
 async def _refresh_bulk_import_coordinator(
     pool: ArqRedis,
     bulk_import_job_id: int,
+    worker_hosted: bool = False,
 ) -> None:
-    """Refresh a worker-hosted coordinator's Redis liveness score."""
+    """Refresh a coordinator's liveness and optional worker-slot score."""
     try:
         await pool.zadd(
             _BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
             {str(bulk_import_job_id): timestamp_ms()},
         )
+        if worker_hosted:
+            await pool.zadd(
+                _BULK_IMPORT_WORKER_COORDINATOR_LIVENESS_KEY,
+                {str(bulk_import_job_id): timestamp_ms()},
+            )
     except Exception:
         logger.exception(
             "Bulk import coordinator liveness refresh failed",
@@ -361,11 +384,14 @@ async def _refresh_bulk_import_coordinator(
 
 
 async def _bulk_import_coordinator_liveness_loop(
-    pool: ArqRedis,
+    pool_ref: ArqRedis | None | list[ArqRedis | None],
     bulk_import_job_id: int,
     stop_event: asyncio.Event,
+    worker_hosted: bool = False,
 ) -> None:
     """Refresh coordinator liveness independently of child-image status."""
+    if not isinstance(pool_ref, list):
+        pool_ref = [pool_ref]
     while True:
         try:
             await asyncio.wait_for(
@@ -374,19 +400,38 @@ async def _bulk_import_coordinator_liveness_loop(
             )
             return
         except asyncio.TimeoutError:
-            await _refresh_bulk_import_coordinator(pool, bulk_import_job_id)
+            pool = pool_ref[0]
+            if pool is None:
+                pool = await _register_bulk_import_coordinator(
+                    bulk_import_job_id,
+                    worker_hosted=worker_hosted,
+                )
+                if pool is not None:
+                    pool_ref[0] = pool
+            else:
+                await _refresh_bulk_import_coordinator(
+                    pool,
+                    bulk_import_job_id,
+                    worker_hosted=worker_hosted,
+                )
 
 
 async def _unregister_bulk_import_coordinator(
     pool: ArqRedis,
     bulk_import_job_id: int,
+    worker_hosted: bool = False,
 ) -> None:
-    """Remove a worker-hosted coordinator from the Redis liveness set."""
+    """Remove a coordinator from liveness and optional worker-slot sets."""
     try:
         await pool.zrem(
             _BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
             str(bulk_import_job_id),
         )
+        if worker_hosted:
+            await pool.zrem(
+                _BULK_IMPORT_WORKER_COORDINATOR_LIVENESS_KEY,
+                str(bulk_import_job_id),
+            )
     except Exception:
         logger.exception(
             "Bulk import coordinator slot cleanup failed",
@@ -538,11 +583,6 @@ async def _wait_for_source_image_terminal_state(
                     ):
                         queue_state = await collect_queue_state()
                         sampled_at = time.monotonic()
-                        if coordinator_pool is not None and bulk_import_job_id is not None:
-                            await _refresh_bulk_import_coordinator(
-                                coordinator_pool,
-                                bulk_import_job_id,
-                            )
                         last_queue_worker_up = queue_state["worker_up"]
                         if queue_state["queue_up"]:
                             last_queue_confirmed_at = sampled_at
@@ -761,9 +801,10 @@ async def _wait_for_source_image_terminal_state(
                     else:
                         latest_src.status = "failed"
                         latest_src.error_message = (
-                            "Tile generation could not start during bulk import "
-                            "because worker capacity was fully consumed by concurrent "
-                            "bulk imports. Retry when those imports finish."
+                            "Tile generation remained queued while the queue and "
+                            "worker were healthy and all configured worker-hosted "
+                            "coordinator slots were occupied. Retry after capacity "
+                            "is available."
                         )
                         latest_src.status_message = "Failed"
                         await db.commit()
@@ -780,7 +821,9 @@ async def _wait_for_source_image_terminal_state(
                                 "event": "bulk_import.source_job_capacity_starvation",
                                 "source_image_id": source_image_id,
                                 "original_filename": original_filename,
-                                "worker_max_jobs": settings.worker_max_jobs,
+                                "worker_total_slots": settings.worker_total_slots,
+                                "queue_worker_healthy": True,
+                                "child_status": "queued",
                                 "stale_after_seconds": stale_after_seconds,
                             },
                         )
@@ -859,12 +902,13 @@ async def _process_bulk_import(
     active: bool = True,
     worker_hosted: bool = False,
 ) -> None:
-    """Process a bulk import, optionally registering its arq worker slot."""
-    coordinator_pool = (
-        await _register_bulk_import_coordinator(job_id)
-        if worker_hosted
-        else None
-    )
+    """Process a bulk import while publishing coordinator liveness."""
+    coordinator_pool_ref = [
+        await _register_bulk_import_coordinator(
+            job_id,
+            worker_hosted=worker_hosted,
+        )
+    ]
     try:
         await _process_bulk_import_impl(
             job_id,
@@ -872,13 +916,16 @@ async def _process_bulk_import(
             copyright=copyright,
             note=note,
             active=active,
-            coordinator_pool=coordinator_pool,
+            coordinator_pool=coordinator_pool_ref[0],
+            coordinator_pool_ref=coordinator_pool_ref,
+            worker_hosted=worker_hosted,
         )
     finally:
-        if coordinator_pool is not None:
+        if coordinator_pool_ref[0] is not None:
             await _unregister_bulk_import_coordinator(
-                coordinator_pool,
+                coordinator_pool_ref[0],
                 job_id,
+                worker_hosted=worker_hosted,
             )
 
 
@@ -920,6 +967,24 @@ async def reconcile_stale_bulk_import_jobs(
         .where(*filters)
         .values(
             status="failed",
+            failed_count=BulkImportJob.total_count - BulkImportJob.completed_count,
+            errors=(
+                func.coalesce(
+                    BulkImportJob.errors,
+                    cast([], JSONB_type),
+                )
+                + cast(
+                    [
+                        {
+                            "error": (
+                                "Coordinator abandoned during backend startup "
+                                "reconciliation."
+                            )
+                        }
+                    ],
+                    JSONB_type,
+                )
+            ),
             updated_at=func.now(),
         )
         .returning(BulkImportJob.id)
@@ -947,6 +1012,8 @@ async def _process_bulk_import_impl(
     note: str | None = None,
     active: bool = True,
     coordinator_pool: ArqRedis | None = None,
+    coordinator_pool_ref: list[ArqRedis | None] | None = None,
+    worker_hosted: bool = False,
 ) -> None:
     """Background task: process all images for a bulk import job.
 
@@ -956,6 +1023,7 @@ async def _process_bulk_import_impl(
     """
     semaphore = asyncio.Semaphore(_MAX_CONCURRENCY)
     note = normalize_note_value(note)
+    coordinator_pool_ref = coordinator_pool_ref or [coordinator_pool]
 
     async def _process_one(original_filename: str, stored_path: str) -> None:
         try:
@@ -997,7 +1065,7 @@ async def _process_bulk_import_impl(
                                     original_filename,
                                     enqueue_result=enqueue_result,
                                     batch_progress=batch_progress,
-                                    coordinator_pool=coordinator_pool,
+                                    coordinator_pool=coordinator_pool_ref[0],
                                     bulk_import_job_id=job_id,
                                 )
                             )
@@ -1172,17 +1240,15 @@ async def _process_bulk_import_impl(
 
     # Process all images concurrently (bounded by semaphore)
     batch_progress = _BulkImportProgress(last_child_advanced_at=time.monotonic())
-    coordinator_stop_event: asyncio.Event | None = None
-    coordinator_liveness_task: asyncio.Task[None] | None = None
-    if coordinator_pool is not None:
-        coordinator_stop_event = asyncio.Event()
-        coordinator_liveness_task = asyncio.create_task(
-            _bulk_import_coordinator_liveness_loop(
-                coordinator_pool,
-                job_id,
-                coordinator_stop_event,
-            )
+    coordinator_stop_event = asyncio.Event()
+    coordinator_liveness_task = asyncio.create_task(
+        _bulk_import_coordinator_liveness_loop(
+            coordinator_pool_ref,
+            job_id,
+            coordinator_stop_event,
+            worker_hosted,
         )
+    )
     tasks = [
         asyncio.create_task(_process_one(fname, spath))
         for fname, spath in file_entries
@@ -1240,6 +1306,26 @@ async def bulk_import_images(
     active) are applied uniformly to every image in the batch.  Omitted
     fields fall back to sensible defaults.
     """
+    # Each coordinator occupies a worker slot for its whole batch. Keep
+    # imports serialized until #1078 provides a safe coordinator model.
+    active_query = db.execute(
+        select(func.count())
+        .select_from(BulkImportJob)
+        .where(BulkImportJob.status.in_(("pending", "processing")))
+    )
+    active_result = (
+        await active_query
+        if asyncio.iscoroutine(active_query)
+        else active_query
+    )
+    active_count = active_result.scalar_one()
+    if asyncio.iscoroutine(active_count):
+        active_count = await active_count
+    if isinstance(active_count, int) and active_count > 0:
+        raise HTTPException(
+            status_code=409,
+            detail="A bulk import is already in progress",
+        )
     if not files:
         raise HTTPException(status_code=400, detail="No files provided")
 

@@ -43,10 +43,11 @@ without blocking tile generation.
 
 ## Worker configuration
 
-| Setting           | Value            | Rationale                                                                                                |
-| ----------------- | ---------------- | -------------------------------------------------------------------------------------------------------- |
-| `WORKER_MAX_JOBS` | 4 (configurable) | Concurrent processing slots per worker pod; also bounds in-process bulk-import concurrency in local mode |
-| `job_timeout`     | 7200s            | 2 hours — large filesystem archives need headroom                                                        |
+| Setting              | Value            | Rationale                                                                                                                                                          |
+| -------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `WORKER_MAX_JOBS`    | 4 (configurable) | Concurrent processing slots per worker pod; also bounds in-process bulk-import concurrency in local mode                                                           |
+| `WORKER_TOTAL_SLOTS` | 4 (configurable) | Cluster-wide worker-slot capacity used by starvation detection; defaults to the single-replica `WORKER_MAX_JOBS` value and can later be set to replicas × max jobs |
+| `job_timeout`        | 7200s            | 2 hours — large filesystem archives need headroom                                                                                                                  |
 
 Task types registered on the worker:
 
@@ -185,9 +186,14 @@ Bulk-import coordinators distinguish a lost child job from a stopped worker.
 The coordinator itself is registered with arq using `max_tries=1`: arq does not
 retry a timed-out coordinator because rerunning the non-idempotent coordinator
 would create duplicate `SourceImage` rows for the same files.
-Worker-hosted coordinators register their arq worker-slot occupancy in Redis
-while API-hosted local fallbacks do not; capacity starvation counts only those
-live registrations.
+All coordinators register liveness in Redis, including API-hosted local
+fallbacks, while a separate registration tracks only worker-hosted arq slot
+occupancy. Capacity starvation counts only the latter. The bulk-import endpoint
+returns HTTP 409 (`A bulk import is already in progress`) while another
+pending or processing import is active, preventing coordinators from
+consuming every worker slot. This serialization is intentionally temporary
+until issue [#1078](https://github.com/bcit-tlu/hriv/issues/1078) provides a
+safe concurrent-coordinator model.
 When a queued child observes an absent worker heartbeat for the configured
 wall-clock window, it writes arq's abort latch before marking the `SourceImage`
 failed. The latch narrows the race window; the processor's terminal-row guard
@@ -218,11 +224,12 @@ terminal.
 `reconcile_stale_source_images()` runs on **backend (API pod) startup** and marks
 SourceImages as `failed` when they exceed status-specific cutoffs. `processing`
 rows use the 900-second no-progress cutoff because they have started work.
-`pending` rows use the longer `job_timeout // 2` bound (1 hour by default), but
-that cutoff is applied only when Redis is reachable, a worker heartbeat is
-present, and the arq queue is empty. A non-empty or unhealthy queue leaves
-pending rows untouched so a valid queued job can still self-heal. This handles
-genuinely lost jobs without failing healthy queued work.
+`pending` rows are never failed by elapsed time alone. Once they exceed the
+`job_timeout // 2` observation bound (1 hour by default), they are failed only
+when Redis is reachable, a worker heartbeat is present, and the arq queue is
+empty. A non-empty or unhealthy queue leaves pending rows untouched so a valid
+queued job can still self-heal. This handles genuinely lost jobs without
+failing healthy queued work.
 
 `reconcile_stale_bulk_import_jobs()` also runs at startup. It marks a
 `processing` bulk-import coordinator as `failed` when its counters have not

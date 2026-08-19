@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379"
     task_execution_mode: Literal["local", "required"] = "local"
     worker_max_jobs: int = Field(default=4, ge=2)
+    worker_total_slots: int = Field(default=4, ge=2)
 
     # Audit middleware: comma-separated list of URL paths whose request logs are
     # emitted at DEBUG instead of INFO. Entries without a trailing slash match

@@ -113,8 +113,8 @@ async def test_reconcile_stale_bulk_import_jobs_marks_expired_processing_stale()
     stmt = session.execute.await_args.args[0]
     assert stmt.compile().params["status_1"] == "processing"
     sql = str(stmt.compile())
-    assert "errors" not in sql
-    assert "failed_count" not in sql
+    assert "errors" in sql
+    assert "failed_count" in sql
     pool.zrange.assert_awaited_once()
 
 
@@ -650,7 +650,7 @@ async def test_process_bulk_import_completes_successful_job(tmp_path) -> None:
 
 
 async def test_worker_hosted_bulk_import_registers_and_cleans_up_slot() -> None:
-    """Only arq-hosted coordinators register worker-slot occupancy."""
+    """Worker-hosted coordinators register liveness and slot occupancy."""
     pool = MagicMock()
     pool.zadd = AsyncMock()
     pool.zrem = AsyncMock()
@@ -670,13 +670,60 @@ async def test_worker_hosted_bulk_import_registers_and_cleans_up_slot() -> None:
         )
 
     process_impl.assert_awaited_once()
-    pool.zadd.assert_awaited_once()
-    pool.zrem.assert_awaited_once()
-    pool.zremrangebyscore.assert_awaited_once()
-    assert pool.zremrangebyscore.await_args.args[0] == (
+    assert pool.zadd.await_count == 2
+    assert pool.zrem.await_count == 2
+    assert pool.zremrangebyscore.await_count == 2
+    assert pool.zremrangebyscore.await_args_list[0].args[0] == (
         "hriv:bulk_import:coordinators"
     )
     assert pool.zremrangebyscore.await_args.args[1] == "-inf"
+
+
+async def test_api_hosted_bulk_import_registers_liveness_without_slot() -> None:
+    """Local coordinators publish liveness but do not occupy arq slots."""
+    pool = MagicMock()
+    pool.zadd = AsyncMock()
+    pool.zrem = AsyncMock()
+    pool.zremrangebyscore = AsyncMock()
+
+    with (
+        patch("app.routers.bulk_import.get_pool", new_callable=AsyncMock, return_value=pool),
+        patch(
+            "app.routers.bulk_import._process_bulk_import_impl",
+            new_callable=AsyncMock,
+        ),
+    ):
+        await _process_bulk_import(
+            job_id=78,
+            file_entries=[],
+            worker_hosted=False,
+        )
+
+    assert pool.zadd.await_count == 1
+    assert pool.zrem.await_count == 1
+    assert pool.zadd.await_args.args[0] == "hriv:bulk_import:coordinators"
+    assert pool.zrem.await_args.args[0] == "hriv:bulk_import:coordinators"
+
+
+async def test_bulk_import_conflict_rejected_before_staging() -> None:
+    """An active import prevents a second import from creating files or rows."""
+    result = MagicMock()
+    result.scalar_one.return_value = 1
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=result)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await bulk_import_images(
+            files=[_make_upload("blocked.png", [b"image-data", b""])],
+            category_id=None,
+            background_tasks=MagicMock(),
+            _user=MagicMock(),
+            db=db,
+        )
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == "A bulk import is already in progress"
+    db.add.assert_not_called()
 
 
 async def test_process_bulk_import_normalizes_empty_note(tmp_path) -> None:
@@ -1216,8 +1263,10 @@ async def test_wait_for_source_image_detects_coordinator_capacity_starvation() -
         )
 
     assert result.status == "failed"
-    assert "fully consumed by concurrent bulk imports" in result.error_message
-    assert pool.zadd.await_count == 2
+    assert "all configured worker-hosted coordinator slots were occupied" in (
+        result.error_message
+    )
+    assert pool.zadd.await_count == 1
     pool.zrem.assert_awaited_once_with(abort_jobs_ss, "job-capacity")
     assert db.commit.await_count == 1
 

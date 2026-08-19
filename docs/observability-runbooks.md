@@ -805,9 +805,9 @@ symptom is a child that fails with a generic processing error during a worker
 flap, without an abort-specific message. Retry the bulk import; do not treat
 that narrow race as evidence of a bad source image.
 
-If `bulk_import.source_job_capacity_starvation` appears with the message
-`worker capacity was fully consumed by concurrent bulk imports`, all configured
-worker slots were held by live bulk-import coordinators while this batch's
-children remained queued. The coordinator liveness check excludes stale
-abandoned import rows, so this is distinct from a child waiting behind
-unrelated work. Retry the import after the concurrent bulk imports finish.
+If `bulk_import.source_job_capacity_starvation` appears, the event records
+that the child remained queued while the queue and worker were healthy and all
+configured worker-hosted coordinator slots were occupied. The coordinator
+liveness check excludes stale abandoned import rows and API-hosted local
+coordinators, so this is distinct from a child waiting behind unrelated work.
+Retry the import after capacity is available.
