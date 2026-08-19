@@ -168,8 +168,10 @@ async def _kick_off(
     bg: BackgroundTasks,
 ) -> None:
     """Enqueue the task via arq, falling back to BackgroundTasks."""
+    task_id = task.id
+    task_type = task.task_type
     try:
-        enqueue_result = await enqueue_admin_task(task.id, task.task_type)
+        enqueue_result = await enqueue_admin_task(task_id, task_type)
     except TaskQueueUnavailableError:
         detail = "Task queue unavailable; task was not started."
         try:
@@ -177,13 +179,14 @@ async def _kick_off(
                 await db.execute(
                     update(AdminTask)
                     .where(
-                        AdminTask.id == task.id,
+                        AdminTask.id == task_id,
                         AdminTask.status.in_(_ACTIVE_STATUSES),
                     )
                     .values(
                         status="failed",
                         error_message=detail,
                         log=func.coalesce(AdminTask.log, "") + f"ERROR: {detail}\n",
+                        updated_at=func.now(),
                     )
                 )
                 await db.commit()
@@ -192,12 +195,12 @@ async def _kick_off(
                 "Failed to mark admin task as failed after queue rejection",
                 extra={
                     "event": "admin.task_queue_rejection_bookkeeping_failed",
-                    "task_id": task.id,
-                    "task_type": task.task_type,
+                    "task_id": task_id,
+                    "task_type": task_type,
                 },
             )
         if (
-            task.task_type in {"db_import", "rebuild_tiles", "file_restore"}
+            task_type in {"db_import", "rebuild_tiles", "file_restore"}
             and task.input_path
         ):
             try:
@@ -211,7 +214,7 @@ async def _kick_off(
         raise
     if not enqueue_result.queued:
         # Redis unavailable — run in-process
-        if task.task_type == "files_import":
+        if task_type == "files_import":
             # Pass the BackgroundTasks object so the import can schedule the
             # automatic rebuild_tiles task that runs after it.
             bg.add_task(run_files_import, task.id, bg)

@@ -126,8 +126,9 @@ async def upload_source_image(
 
             # Prefer the arq task queue; fall back to in-process BackgroundTasks
             # when Redis is unavailable (e.g. local development without Redis).
+            source_image_id = src.id
             try:
-                enqueue_result = await enqueue_process_source_image(src.id)
+                enqueue_result = await enqueue_process_source_image(source_image_id)
             except TaskQueueUnavailableError:
                 try:
                     src.status = "failed"
@@ -141,7 +142,7 @@ async def upload_source_image(
                         "Failed to mark uploaded source image after queue rejection",
                         extra={
                             "event": "upload.queue_rejection_bookkeeping_failed",
-                            "source_image_id": src.id,
+                            "source_image_id": source_image_id,
                         },
                     )
                 with contextlib.suppress(OSError):
@@ -149,7 +150,7 @@ async def upload_source_image(
                 raise
             span.set_attribute("source_image.enqueued", enqueue_result.queued)
             if not enqueue_result.queued:
-                background_tasks.add_task(process_source_image, src.id)
+                background_tasks.add_task(process_source_image, source_image_id)
 
             return src
         except Exception as exc:

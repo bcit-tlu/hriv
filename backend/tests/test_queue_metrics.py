@@ -26,6 +26,7 @@ async def test_collect_queue_state_reads_depth_and_heartbeat() -> None:
     assert state["depth"] == 3
     assert state["oldest_pending_age_seconds"] is not None
     assert state["worker_heartbeat_age_seconds"] == 6
+    assert state["worker_up"] is True
     pool.zcard.assert_awaited_once_with(ARQ_QUEUE_NAME)
     pool.ttl.assert_awaited_once_with(HEALTH_CHECK_KEY)
 
@@ -37,26 +38,49 @@ async def test_queue_metrics_render_contains_execution_mode() -> None:
             "depth": 0,
             "oldest_pending_age_seconds": None,
             "worker_heartbeat_age_seconds": 2,
+            "worker_up": True,
         }),
         patch.object(settings, "task_execution_mode", "required"),
     ):
         content, _ = await render_queue_metrics()
 
     assert b"hriv_task_queue_up 1.0" in content
+    assert b"hriv_task_queue_worker_up 1.0" in content
     assert b'hriv_task_execution_mode_info{mode="required"} 1.0' in content
 
 
 async def test_queue_health_marks_stale_worker_degraded() -> None:
-    with patch("app.queue_metrics.collect_queue_state", new_callable=AsyncMock, return_value={
-        "queue_up": True,
-        "depth": 0,
-        "oldest_pending_age_seconds": None,
-        "worker_heartbeat_age_seconds": None,
-    }):
+    with (
+        patch("app.queue_metrics.collect_queue_state", new_callable=AsyncMock, return_value={
+            "queue_up": True,
+            "depth": 0,
+            "oldest_pending_age_seconds": None,
+            "worker_heartbeat_age_seconds": None,
+            "worker_up": False,
+        }),
+        patch.object(settings, "task_execution_mode", "required"),
+    ):
         state = await queue_health()
 
     assert state["worker_up"] is False
     assert state["degraded"] is True
+
+
+async def test_queue_health_ignores_missing_worker_in_local_mode() -> None:
+    with (
+        patch("app.queue_metrics.collect_queue_state", new_callable=AsyncMock, return_value={
+            "queue_up": True,
+            "depth": 0,
+            "oldest_pending_age_seconds": None,
+            "worker_heartbeat_age_seconds": None,
+            "worker_up": False,
+        }),
+        patch.object(settings, "task_execution_mode", "local"),
+    ):
+        state = await queue_health()
+
+    assert state["worker_up"] is False
+    assert state["degraded"] is False
 
 
 async def test_collect_queue_state_reports_redis_error() -> None:
@@ -69,3 +93,4 @@ async def test_collect_queue_state_reports_redis_error() -> None:
     assert state["depth"] is None
     assert state["oldest_pending_age_seconds"] is None
     assert state["worker_heartbeat_age_seconds"] is None
+    assert state["worker_up"] is None

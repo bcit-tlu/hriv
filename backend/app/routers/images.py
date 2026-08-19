@@ -441,8 +441,13 @@ async def replace_image(
             from ..processing import process_replace_image
             from ..worker import enqueue_replace_image
 
+            source_image_id = src.id
+            target_image_id = image_id
             try:
-                enqueue_result = await enqueue_replace_image(src.id, image_id)
+                enqueue_result = await enqueue_replace_image(
+                    source_image_id,
+                    target_image_id,
+                )
             except TaskQueueUnavailableError:
                 try:
                     src.status = "failed"
@@ -456,8 +461,8 @@ async def replace_image(
                         "Failed to mark replacement source image after queue rejection",
                         extra={
                             "event": "replace.queue_rejection_bookkeeping_failed",
-                            "source_image_id": src.id,
-                            "target_image_id": image_id,
+                            "source_image_id": source_image_id,
+                            "target_image_id": target_image_id,
                         },
                     )
                     with contextlib.suppress(Exception):
@@ -467,7 +472,7 @@ async def replace_image(
                         restore_result = await db.execute(
                             sql_update(Image)
                             .where(
-                                Image.id == image_id,
+                                Image.id == target_image_id,
                                 Image.version == metadata_snapshot["version"] + 1,
                             )
                             .values(
@@ -490,8 +495,8 @@ async def replace_image(
                                 "Skipped replacement metadata restore after a concurrent update",
                                 extra={
                                     "event": "replace.metadata_restore_skipped",
-                                    "source_image_id": src.id,
-                                    "target_image_id": image_id,
+                                    "source_image_id": source_image_id,
+                                    "target_image_id": target_image_id,
                                     "expected_version": metadata_snapshot["version"] + 1,
                                 },
                             )
@@ -500,8 +505,8 @@ async def replace_image(
                             "Replacement metadata restore failed after queue rejection",
                             extra={
                                 "event": "replace.metadata_restore_failed",
-                                "source_image_id": src.id,
-                                "target_image_id": image_id,
+                                "source_image_id": source_image_id,
+                                "target_image_id": target_image_id,
                             },
                         )
                 with contextlib.suppress(OSError):
@@ -509,7 +514,11 @@ async def replace_image(
                 raise
             span.set_attribute("image.enqueued", enqueue_result.queued)
             if not enqueue_result.queued:
-                background_tasks.add_task(process_replace_image, src.id, image_id)
+                background_tasks.add_task(
+                    process_replace_image,
+                    source_image_id,
+                    target_image_id,
+                )
 
             return src
         except Exception as exc:

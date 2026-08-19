@@ -244,6 +244,13 @@ queued **or actively executing** jobs, not only workers waiting for a slot.
 Likewise, `hriv_task_queue_oldest_pending_age_seconds` measures the age of the
 oldest queued-or-executing job, not pure queue latency. Do not use either
 gauge as a backlog-only alert without accounting for actively running work.
+`hriv_task_queue_worker_up` is the boolean liveness signal for the dedicated
+worker: it is `1` when arq's health key exists, `0` when the key is absent, and
+`NaN` only when Redis itself cannot be queried. The heartbeat-age gauge remains
+diagnostic detail rather than the worker-down alert signal.
+In local execution mode, a missing dedicated-worker heartbeat is expected and
+does not make the queue health endpoint degraded; use the worker liveness signal
+for required-mode deployments.
 
 ## Privacy, Access, and Retention
 

@@ -38,6 +38,11 @@ _heartbeat_age = Gauge(
     "Age of the worker heartbeat",
     registry=_registry,
 )
+_worker_up = Gauge(
+    "hriv_task_queue_worker_up",
+    "Whether the dedicated worker heartbeat key exists",
+    registry=_registry,
+)
 _execution_mode = Gauge(
     "hriv_task_execution_mode_info",
     "Configured task execution mode",
@@ -68,6 +73,7 @@ async def collect_queue_state() -> dict[str, Any]:
         "depth": None,
         "oldest_pending_age_seconds": None,
         "worker_heartbeat_age_seconds": None,
+        "worker_up": None,
     }
     if pool is None:
         return state
@@ -80,6 +86,7 @@ async def collect_queue_state() -> dict[str, Any]:
             score = oldest[0][1] if isinstance(oldest[0], tuple) else oldest[0]
             state["oldest_pending_age_seconds"] = max(0.0, (now_ms - float(score)) / 1000)
         remaining_ttl = await pool.ttl(HEALTH_CHECK_KEY)
+        state["worker_up"] = remaining_ttl != -2
         if remaining_ttl != -2:
             # arq.record_health() sets health_check_interval + 1 TTL; this
             # reads the API pod's interval, so worker overrides skew this age.
@@ -96,11 +103,13 @@ async def collect_queue_state() -> dict[str, Any]:
         state["depth"] = None
         state["oldest_pending_age_seconds"] = None
         state["worker_heartbeat_age_seconds"] = None
+        state["worker_up"] = None
     except Exception:
         state["queue_up"] = False
         state["depth"] = None
         state["oldest_pending_age_seconds"] = None
         state["worker_heartbeat_age_seconds"] = None
+        state["worker_up"] = None
     return state
 
 
@@ -120,6 +129,11 @@ async def render_queue_metrics() -> tuple[bytes, str]:
             if state["worker_heartbeat_age_seconds"] is None
             else state["worker_heartbeat_age_seconds"]
         )
+        _worker_up.set(
+            float("nan")
+            if state["worker_up"] is None
+            else 1 if state["worker_up"] else 0
+        )
         _execution_mode.labels(mode=settings.task_execution_mode).set(1)
         return generate_latest(_registry), CONTENT_TYPE_LATEST
 
@@ -128,6 +142,8 @@ async def queue_health() -> dict[str, Any]:
     """Return the queue and worker liveness state for the health endpoint."""
     state = await collect_queue_state()
     state["mode"] = settings.task_execution_mode
-    state["worker_up"] = state["worker_heartbeat_age_seconds"] is not None
-    state["degraded"] = not state["queue_up"] or not state["worker_up"]
+    state["degraded"] = not state["queue_up"] or (
+        settings.task_execution_mode == "required"
+        and state["worker_up"] is not True
+    )
     return state

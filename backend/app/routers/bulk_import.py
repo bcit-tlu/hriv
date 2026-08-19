@@ -297,20 +297,21 @@ async def _process_bulk_import(
             # per-job counters synchronously.
             async with semaphore:
                 try:
-                    enqueue_result = await enqueue_process_source_image(src.id)
+                    source_image_id = src.id
+                    enqueue_result = await enqueue_process_source_image(source_image_id)
                     if enqueue_result.queued:
                         terminal_state = await _wait_for_source_image_terminal_state(
-                            src.id,
+                            source_image_id,
                             original_filename,
                             enqueue_result=enqueue_result,
                         )
                     else:
-                        await process_source_image(src.id)
+                        await process_source_image(source_image_id)
                         async with async_session() as db:
-                            src_check = await db.get(SourceImage, src.id)
+                            src_check = await db.get(SourceImage, source_image_id)
                             if src_check is None:
                                 raise RuntimeError(
-                                    f"Source image {src.id} disappeared after processing"
+                                    f"Source image {source_image_id} disappeared after processing"
                                 )
                             terminal_state = _source_image_terminal_state(src_check)
                 except TaskQueueUnavailableError as exc:
@@ -319,7 +320,7 @@ async def _process_bulk_import(
                         os.unlink(stored_path)
                     try:
                         async with async_session() as db:
-                            src_check = await db.get(SourceImage, src.id)
+                            src_check = await db.get(SourceImage, source_image_id)
                             if src_check is not None:
                                 src_check.status = "failed"
                                 src_check.status_message = "Failed"
@@ -331,7 +332,7 @@ async def _process_bulk_import(
                             extra={
                                 "event": "bulk_import.queue_rejection_bookkeeping_failed",
                                 "job_id": job_id,
-                                "source_image_id": src.id,
+                                "source_image_id": source_image_id,
                                 "original_filename": original_filename,
                             },
                         )
@@ -343,7 +344,7 @@ async def _process_bulk_import(
                         extra={
                             "event": "worker.queue_unavailable",
                             "job_id": job_id,
-                            "source_image_id": src.id,
+                            "source_image_id": source_image_id,
                             "original_filename": original_filename,
                         },
                         exc_info=True,
@@ -677,9 +678,10 @@ async def bulk_import_images(
             # Prefer the arq task queue for resource isolation and job
             # persistence; fall back to in-process BackgroundTasks when Redis
             # is unavailable (e.g. local development without Redis).
+            bulk_job_id = job.id
             try:
                 enqueue_result = await enqueue_bulk_import(
-                    job.id,
+                    bulk_job_id,
                     file_entries,
                     copyright=copyright,
                     note=note,
@@ -703,7 +705,7 @@ async def bulk_import_images(
                         "Failed to mark bulk import after queue rejection",
                         extra={
                             "event": "bulk_import.queue_rejection_bookkeeping_failed",
-                            "job_id": job.id,
+                            "job_id": bulk_job_id,
                         },
                     )
                 raise
@@ -711,7 +713,7 @@ async def bulk_import_images(
             if not enqueue_result.queued:
                 background_tasks.add_task(
                     _process_bulk_import,
-                    job.id,
+                    bulk_job_id,
                     file_entries,
                     copyright=copyright,
                     note=note,

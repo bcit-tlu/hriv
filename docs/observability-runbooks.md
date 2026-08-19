@@ -760,13 +760,16 @@ healthy across at least one alerting interval.
 The backend exposes `hriv_task_queue_up`,
 `hriv_task_queue_depth`,
 `hriv_task_queue_oldest_pending_age_seconds`, and
-`hriv_task_queue_worker_heartbeat_age_seconds` on `/api/metrics`. The queue
-health endpoint (`/api/health/queue`) is an unauthenticated minimal status
-check; use `/api/metrics` for queue depth, heartbeat age, and execution-mode
-details. In `required` execution mode, `/api/health/queue` returns HTTP 503
-when Redis or the dedicated worker is degraded. The worker heartbeat age is
-derived from the remaining TTL of arq's `arq:queue:health-check` key; the
-worker's arq main loop refreshes that key independently of job slots.
+`hriv_task_queue_worker_heartbeat_age_seconds`, and
+`hriv_task_queue_worker_up` on `/api/metrics`. The queue health endpoint
+(`/api/health/queue`) is an unauthenticated minimal status check; use
+`/api/metrics` for queue depth, worker liveness, heartbeat age, and
+execution-mode details. In `required` execution mode, `/api/health/queue`
+returns HTTP 503 when Redis or the dedicated worker is degraded. In local mode,
+the absent dedicated-worker heartbeat does not make the queue health status
+degraded. The worker heartbeat age is derived from the remaining TTL of arq's
+`arq:queue:health-check` key; the worker's arq main loop refreshes that key
+independently of job slots.
 Kubernetes checks the same contract with
 `arq app.worker.WorkerSettings --check`.
 
@@ -774,14 +777,18 @@ Queue depth, oldest-pending age, and worker-heartbeat age intentionally render
 as `NaN` while Redis is unavailable. PromQL comparisons against `NaN` are
 false, so alerts based on those gauges remain silent during an outage;
 `hriv_task_queue_up` is the explicit availability signal and should drive
-Redis-outage alerting.
+Redis-outage alerting. In required mode, use
+`hriv_task_queue_worker_up` for dedicated-worker liveness; its `0` value means
+the heartbeat key is absent, while the `NaN` value means Redis could not be
+queried. In local mode, an absent dedicated-worker heartbeat is expected.
 
 Distinguish the four failure classes in structured logs:
 
 - `worker.queue_unavailable`: Redis could not be reached.
 - `worker.submission_failed`: Redis was reachable but enqueue failed.
 - dedicated-worker heartbeat failure: inspect
-  `hriv_task_queue_worker_heartbeat_age_seconds` on `/api/metrics`.
+  `hriv_task_queue_worker_up` on `/api/metrics`; use the heartbeat-age gauge
+  for diagnostic timing.
 - task execution failure: inspect the task-specific worker error event and
   trace for the runner exception.
 
