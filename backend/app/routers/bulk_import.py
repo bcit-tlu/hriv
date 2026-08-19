@@ -69,7 +69,7 @@ _SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS = (
     SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS
 )
 _STALE_BULK_IMPORT_SECONDS = int(
-    os.environ.get("BULK_IMPORT_STALE_SECONDS", "900")
+    os.environ.get("BULK_IMPORT_STALE_SECONDS", str(WorkerSettings.job_timeout))
 )
 # Keep the pending ceiling below the coordinator's timeout so late-enqueued
 # children still leave time for terminal bookkeeping before it is killed.
@@ -277,7 +277,12 @@ async def _bulk_import_has_capacity_starvation(
     job_status: JobStatus | None,
     coordinator_pool: ArqRedis | None,
 ) -> bool:
-    """Return whether coordinator slots are demonstrably blocking this child."""
+    """Return whether coordinator slots are demonstrably blocking this child.
+
+    Import serialization currently makes this detector a backstop rather than
+    a routinely reachable path. Issue #1078 will remove that serialization,
+    making this cluster-wide slot check load-bearing again.
+    """
     if (
         batch_progress is None
         or job_status not in {JobStatus.queued, JobStatus.deferred}
@@ -944,32 +949,31 @@ async def reconcile_stale_bulk_import_jobs(
 ) -> int:
     """Mark abandoned bulk-import coordinators as failed on startup."""
     pool = await get_pool()
-    if pool is None:
-        return 0
+    live_ids: set[int] | None = None
     try:
-        live_since = timestamp_ms() - (
-            _BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS * 1000
-        )
-        live_members = await pool.zrange(
-            _BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
-            live_since,
-            "+inf",
-            byscore=True,
-        )
-        live_ids = {int(member) for member in live_members}
+        if pool is not None:
+            live_since = timestamp_ms() - (
+                _BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS * 1000
+            )
+            live_members = await pool.zrange(
+                _BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
+                live_since,
+                "+inf",
+                byscore=True,
+            )
+            live_ids = {int(member) for member in live_members}
     except Exception:
         logger.warning(
             "Could not read bulk-import coordinator liveness on startup",
             extra={"event": "bulk_import.reconcile_liveness_unavailable"},
             exc_info=True,
         )
-        return 0
     cutoff = datetime.now(timezone.utc) - timedelta(seconds=stale_after_seconds)
     filters = [
         BulkImportJob.status == "processing",
         BulkImportJob.updated_at < cutoff,
     ]
-    if live_ids:
+    if live_ids is not None:
         filters.append(BulkImportJob.id.not_in(live_ids))
     stmt = (
         update(BulkImportJob)
@@ -1009,6 +1013,9 @@ async def reconcile_stale_bulk_import_jobs(
                 "event": "bulk_import.reconciled_stale",
                 "bulk_import_job_ids": ids,
                 "stale_after_seconds": stale_after_seconds,
+                "liveness_evidence": (
+                    "redis" if live_ids is not None else "stale_timestamp_only"
+                ),
             },
         )
     return len(ids)
@@ -1269,8 +1276,10 @@ async def _process_bulk_import_impl(
             coordinator_stop_event.set()
         if coordinator_liveness_task is not None:
             coordinator_liveness_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await coordinator_liveness_task
+            await asyncio.gather(
+                coordinator_liveness_task,
+                return_exceptions=True,
+            )
 
     # Finalise job status
     async with async_session() as db:
@@ -1326,12 +1335,20 @@ async def bulk_import_images(
 
     # Each coordinator occupies a worker slot for its whole batch. Keep
     # imports serialized until #1078 provides a safe coordinator model.
-    active_result = await db.execute(
-        select(func.count())
-        .select_from(BulkImportJob)
-        .where(BulkImportJob.status == "processing")
+    processing_result = await db.execute(
+        select(BulkImportJob.id, BulkImportJob.updated_at).where(
+            BulkImportJob.status == "processing"
+        )
     )
-    if active_result.scalar_one() > 0:
+    processing_rows = processing_result.all()
+    processing_ids = {row[0] for row in processing_rows}
+    processing_cutoff = datetime.now(timezone.utc) - timedelta(
+        seconds=_STALE_BULK_IMPORT_SECONDS
+    )
+    if any(
+        updated_at is not None and updated_at >= processing_cutoff
+        for _, updated_at in processing_rows
+    ):
         raise HTTPException(
             status_code=409,
             detail="A bulk import is already in progress",
@@ -1340,24 +1357,34 @@ async def bulk_import_images(
         select(BulkImportJob.id).where(BulkImportJob.status == "pending")
     )
     pending_ids = {row[0] for row in pending_result.all()}
-    if pending_ids:
+    coordinator_ids = processing_ids | pending_ids
+    if coordinator_ids:
         pool = await get_pool()
         if pool is not None:
             live_since = timestamp_ms() - (
                 _BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS * 1000
             )
-            live_members = await pool.zrangebyscore(
-                _BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
-                live_since,
-                "+inf",
-            )
-            if pending_ids.intersection(
-                int(member) for member in live_members
-            ):
-                raise HTTPException(
-                    status_code=409,
-                    detail="A bulk import is already in progress",
+            try:
+                live_members = await pool.zrangebyscore(
+                    _BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
+                    live_since,
+                    "+inf",
                 )
+            except Exception:
+                logger.warning(
+                    "Could not read bulk-import coordinator liveness",
+                    extra={
+                        "event": "bulk_import.conflict_liveness_unavailable",
+                    },
+                    exc_info=True,
+                )
+            else:
+                live_ids = {int(member) for member in live_members}
+                if coordinator_ids.intersection(live_ids):
+                    raise HTTPException(
+                        status_code=409,
+                        detail="A bulk import is already in progress",
+                    )
 
     with tracer.start_as_current_span("bulk_import.enqueue") as span:
         try:

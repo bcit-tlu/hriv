@@ -142,8 +142,11 @@ async def test_reconcile_stale_bulk_import_jobs_keeps_live_coordinator() -> None
     assert pool.zrange.await_args.kwargs["byscore"] is True
 
 
-async def test_reconcile_stale_bulk_import_jobs_skips_when_redis_unavailable() -> None:
+async def test_reconcile_stale_bulk_import_jobs_uses_conservative_cutoff_without_redis() -> None:
     session = AsyncMock()
+    result = MagicMock()
+    result.all.return_value = [(27,)]
+    session.execute = AsyncMock(return_value=result)
 
     with patch(
         "app.routers.bulk_import.get_pool",
@@ -155,9 +158,9 @@ async def test_reconcile_stale_bulk_import_jobs_skips_when_redis_unavailable() -
             stale_after_seconds=900,
         )
 
-    assert count == 0
-    session.execute.assert_not_awaited()
-    session.commit.assert_not_awaited()
+    assert count == 1
+    session.execute.assert_awaited_once()
+    session.commit.assert_awaited_once()
 
 
 async def test_bulk_import_coordinator_liveness_refreshes_independent_of_children() -> None:
@@ -716,7 +719,7 @@ async def test_api_hosted_bulk_import_registers_liveness_without_slot() -> None:
 async def test_bulk_import_conflict_rejected_before_staging() -> None:
     """An active import prevents a second import from creating files or rows."""
     result = MagicMock()
-    result.scalar_one.return_value = 1
+    result.all.return_value = [(27, datetime.now(timezone.utc))]
     db = AsyncMock()
     db.execute = AsyncMock(return_value=result)
 

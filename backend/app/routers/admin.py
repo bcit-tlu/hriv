@@ -177,7 +177,7 @@ async def _kick_off(
         bookkeeping_committed = False
         try:
             async with async_session() as db:
-                await db.execute(
+                result = await db.execute(
                     update(AdminTask)
                     .where(
                         AdminTask.id == task_id,
@@ -191,7 +191,7 @@ async def _kick_off(
                     )
                 )
                 await db.commit()
-                bookkeeping_committed = True
+                bookkeeping_committed = result.rowcount == 1
         except Exception:
             logger.exception(
                 "Failed to mark admin task as failed after queue rejection",

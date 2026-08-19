@@ -236,14 +236,15 @@ failing healthy queued work.
 
 `reconcile_stale_bulk_import_jobs()` also runs at startup. It marks a
 `processing` bulk-import coordinator as `failed` when its counters have not
-moved past the configured stale threshold and it has no live worker-hosted
-coordinator registration. A live registration keeps a long-running import
-untouched; unavailable Redis or unreadable liveness data leaves all rows
-untouched. API-hosted local fallbacks register in the general coordinator
-liveness set and therefore use the
-same conservative abandoned-row path on startup. Existing per-file `errors`
-and `failed_count` accounting is preserved. This finalises coordinator rows
-left behind by a cancelled or killed arq job; the coordinator uses
+moving past the configured stale threshold and it has no live coordinator
+registration. A live registration keeps a long-running import untouched.
+When Redis is unavailable, startup uses the conservative stale timestamp
+bound alone rather than leaving abandoned rows permanently in `processing`;
+the default bound is the coordinator job timeout. API-hosted local fallbacks
+register in the general coordinator liveness set and therefore use the same
+conservative abandoned-row path on startup. Existing per-file `errors` and
+`failed_count` accounting is preserved. This finalises coordinator rows left
+behind by a cancelled or killed arq job; the coordinator uses
 `max_tries=1` because retrying its non-idempotent batch would duplicate
 `SourceImage` rows.
 

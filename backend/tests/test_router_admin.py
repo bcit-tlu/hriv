@@ -379,7 +379,8 @@ async def test_kick_off_rejection_retains_input_when_bookkeeping_fails(tmp_path)
     input_path.write_text("payload")
     task = _make_admin_task(task_type="db_import", input_path=str(input_path))
     db = AsyncMock()
-    db.execute = AsyncMock()
+    update_result = MagicMock(rowcount=1)
+    db.execute = AsyncMock(return_value=update_result)
     db.commit = AsyncMock(side_effect=RuntimeError("database unavailable"))
     db_context = MagicMock()
     db_context.__aenter__ = AsyncMock(return_value=db)
@@ -410,7 +411,7 @@ async def test_kick_off_rejection_cleans_generated_inputs_but_retains_archives(
     task = _make_admin_task(task_type=task_type, input_path=str(input_path))
     bg = MagicMock()
     db = AsyncMock()
-    db.execute = AsyncMock()
+    db.execute = AsyncMock(return_value=MagicMock(rowcount=1))
     db.commit = AsyncMock()
     db_context = MagicMock()
     db_context.__aenter__ = AsyncMock(return_value=db)
@@ -428,6 +429,33 @@ async def test_kick_off_rejection_cleans_generated_inputs_but_retains_archives(
             await _kick_off(task, bg)
 
     assert input_path.exists() is (task_type == "files_import")
+
+
+async def test_kick_off_rejection_retains_input_when_no_active_row_matched(
+    tmp_path,
+) -> None:
+    input_path = tmp_path / "import.json"
+    input_path.write_text("payload")
+    task = _make_admin_task(task_type="db_import", input_path=str(input_path))
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=MagicMock(rowcount=0))
+    db.commit = AsyncMock()
+    db_context = MagicMock()
+    db_context.__aenter__ = AsyncMock(return_value=db)
+    db_context.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("app.routers.admin.async_session", return_value=db_context),
+        patch(
+            "app.routers.admin.enqueue_admin_task",
+            new_callable=AsyncMock,
+            side_effect=TaskQueueUnavailableError("queue_unavailable"),
+        ),
+    ):
+        with pytest.raises(TaskQueueUnavailableError):
+            await _kick_off(task, MagicMock())
+
+    assert input_path.exists()
 
 
 async def test_start_db_export() -> None:
