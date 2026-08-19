@@ -122,6 +122,10 @@ walking millions of generated tile files.
   same **Rebuild Tiles** control can also be triggered manually if needed.
   Until then, viewers may show missing or stale tile placeholders.
 
+For the follow-on architecture plan that keeps this reliable while making large
+restore-driven rebuilds more usable, see
+[Rebuild Tiles Architecture Plan](rebuild-tiles-architecture-plan.md).
+
 For a full cross-environment clone, follow this order:
 
 1. **Database import**
