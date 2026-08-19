@@ -10,6 +10,7 @@ from typing import Any
 from arq.constants import default_queue_name, health_check_key_suffix
 from opentelemetry import metrics
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Gauge, generate_latest
+
 from .database import settings
 
 _meter = metrics.get_meter(__name__)

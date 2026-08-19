@@ -17,8 +17,9 @@ import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated
 
+from arq.connections import ArqRedis
 from arq.constants import abort_jobs_ss
 from arq.jobs import JobStatus
 from arq.utils import timestamp_ms
@@ -249,7 +250,7 @@ async def _bulk_import_has_capacity_starvation(
     last_queue_confirmed_at: float | None,
     last_queue_worker_up: bool | None,
     job_status: JobStatus | None,
-    coordinator_pool: Any | None,
+    coordinator_pool: ArqRedis | None,
 ) -> bool:
     """Return whether coordinator slots are demonstrably blocking this child."""
     if (
@@ -291,7 +292,7 @@ async def _bulk_import_has_capacity_starvation(
 
 async def _register_bulk_import_coordinator(
     bulk_import_job_id: int,
-) -> Any | None:
+) -> ArqRedis | None:
     """Register a worker-hosted coordinator's arq worker-slot occupancy."""
     pool = await get_pool()
     if pool is None:
@@ -314,7 +315,7 @@ async def _register_bulk_import_coordinator(
 
 
 async def _refresh_bulk_import_coordinator(
-    pool: Any,
+    pool: ArqRedis,
     bulk_import_job_id: int,
 ) -> None:
     """Refresh a worker-hosted coordinator's Redis liveness score."""
@@ -334,7 +335,7 @@ async def _refresh_bulk_import_coordinator(
 
 
 async def _unregister_bulk_import_coordinator(
-    pool: Any,
+    pool: ArqRedis,
     bulk_import_job_id: int,
 ) -> None:
     """Remove a worker-hosted coordinator from the Redis liveness set."""
@@ -368,7 +369,7 @@ async def _wait_for_source_image_terminal_state(
         _SOURCE_IMAGE_PROCESSING_WAIT_SAFETY_CAP_SECONDS
     ),
     batch_progress: _BulkImportProgress | None = None,
-    coordinator_pool: Any | None = None,
+    coordinator_pool: ArqRedis | None = None,
     bulk_import_job_id: int | None = None,
 ) -> _SourceImageTerminalState:
     """Wait for queued processing to reach a terminal source-image state."""
@@ -845,7 +846,7 @@ async def _process_bulk_import_impl(
     copyright: str | None = None,
     note: str | None = None,
     active: bool = True,
-    coordinator_pool: Any | None = None,
+    coordinator_pool: ArqRedis | None = None,
 ) -> None:
     """Background task: process all images for a bulk import job.
 
