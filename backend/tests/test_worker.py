@@ -19,7 +19,6 @@ from app.worker import (
     enqueue_process_source_image,
     get_pool,
     _parse_redis_settings,
-    _discard_pool,
     on_startup,
     process_source_image_task,
     replace_image_task,
@@ -105,21 +104,6 @@ async def test_enqueue_uses_shared_pool() -> None:
     get_pool_mock.assert_awaited_once_with()
 
 
-async def test_discard_pool_closes_cached_pool() -> None:
-    """Discarding a live pool closes its sockets before dropping the reference."""
-    import app.worker as worker_module
-
-    original_pool = worker_module._pool
-    pool = AsyncMock()
-    worker_module._pool = pool
-    try:
-        await _discard_pool()
-        assert worker_module._pool is None
-        pool.aclose.assert_awaited_once()
-    finally:
-        worker_module._pool = original_pool
-
-
 async def test_get_pool_publishes_only_after_successful_ping() -> None:
     """An unverified pool is closed and never published globally."""
     worker_module = sys.modules["app.worker"]
@@ -162,6 +146,7 @@ async def test_enqueue_submission_rejects_in_required_mode() -> None:
             await enqueue_process_source_image(42)
 
     assert exc_info.value.reason == "submission_failed"
+    mock_pool.aclose.assert_not_awaited()
 
 
 async def test_process_source_image_task_calls_processing() -> None:

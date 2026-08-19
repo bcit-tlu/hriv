@@ -164,12 +164,6 @@ async def test_required_mode_call_site_matrix_rejects_without_runners(tmp_path) 
         completed_count=0,
         total_count=1,
     )
-    source = SimpleNamespace(
-        id=5,
-        status="pending",
-        status_message=None,
-        error_message=None,
-    )
     persisted_source = SimpleNamespace(
         id=5,
         category_id=None,

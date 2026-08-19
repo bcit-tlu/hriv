@@ -58,7 +58,7 @@ _SOURCE_IMAGE_POLL_INTERVAL_SECONDS = 2
 _SOURCE_IMAGE_STALE_SECONDS = int(os.environ.get("SOURCE_IMAGE_STALE_SECONDS", "900"))
 _SOURCE_IMAGE_PENDING_GRACE_SECONDS = 10
 _SOURCE_IMAGE_LOST_OBSERVATIONS = 2
-_SOURCE_IMAGE_WAIT_SAFETY_CAP_SECONDS = WorkerSettings.job_timeout - 60
+_SOURCE_IMAGE_WAIT_SAFETY_CAP_SECONDS = WorkerSettings.job_timeout + 60
 
 
 def _is_image_filename(filename: str) -> bool:
@@ -176,22 +176,30 @@ async def _wait_for_source_image_terminal_state(
                 if job_status == JobStatus.not_found:
                     not_found_count += 1
                 elif job_status == JobStatus.complete:
-                    src.status = "failed"
-                    src.error_message = (
-                        "Tile generation finished during bulk import, "
-                        "but did not record a terminal source-image result."
-                    )
-                    src.status_message = "Failed"
-                    await db.commit()
-                    logger.error(
-                        "Bulk import source image job completed without a result",
-                        extra={
-                            "event": "bulk_import.source_job_completed_without_result",
-                            "source_image_id": source_image_id,
-                            "original_filename": original_filename,
-                        },
-                    )
-                    return _source_image_terminal_state(src)
+                    latest_src = await db.get(SourceImage, source_image_id)
+                    if latest_src is None:
+                        raise RuntimeError(
+                            f"Queued source image {source_image_id} disappeared before completion"
+                        )
+                    if latest_src.status in {"completed", "failed"}:
+                        return _source_image_terminal_state(latest_src)
+                    if latest_src.status == "pending":
+                        latest_src.status = "failed"
+                        latest_src.error_message = (
+                            "Tile generation finished during bulk import, "
+                            "but did not record a terminal source-image result."
+                        )
+                        latest_src.status_message = "Failed"
+                        await db.commit()
+                        logger.error(
+                            "Bulk import source image job completed without a result",
+                            extra={
+                                "event": "bulk_import.source_job_completed_without_result",
+                                "source_image_id": source_image_id,
+                                "original_filename": original_filename,
+                            },
+                        )
+                        return _source_image_terminal_state(latest_src)
                 elif job_status is not None:
                     not_found_count = 0
                 if not_found_count >= lost_observations:

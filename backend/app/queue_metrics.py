@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from threading import Lock
 from typing import Any
 
 from arq.constants import default_queue_name, health_check_key_suffix
@@ -20,6 +21,7 @@ _enqueue_counter = _meter.create_counter(
 )
 
 _registry = CollectorRegistry()
+_render_lock = Lock()
 _queue_up = Gauge("hriv_task_queue_up", "Whether Redis is reachable", registry=_registry)
 _queue_depth = Gauge(
     "hriv_task_queue_depth",
@@ -99,20 +101,21 @@ async def collect_queue_state() -> dict[str, Any]:
 async def render_queue_metrics() -> tuple[bytes, str]:
     """Render queue gauges for the backend Prometheus endpoint."""
     state = await collect_queue_state()
-    _queue_up.set(1 if state["queue_up"] else 0)
-    _queue_depth.set(float("nan") if state["depth"] is None else state["depth"])
-    _oldest_pending_age.set(
-        float("nan")
-        if state["oldest_pending_age_seconds"] is None
-        else state["oldest_pending_age_seconds"]
-    )
-    _heartbeat_age.set(
-        float("nan")
-        if state["worker_heartbeat_age_seconds"] is None
-        else state["worker_heartbeat_age_seconds"]
-    )
-    _execution_mode.labels(mode=settings.task_execution_mode).set(1)
-    return generate_latest(_registry), CONTENT_TYPE_LATEST
+    with _render_lock:
+        _queue_up.set(1 if state["queue_up"] else 0)
+        _queue_depth.set(float("nan") if state["depth"] is None else state["depth"])
+        _oldest_pending_age.set(
+            float("nan")
+            if state["oldest_pending_age_seconds"] is None
+            else state["oldest_pending_age_seconds"]
+        )
+        _heartbeat_age.set(
+            float("nan")
+            if state["worker_heartbeat_age_seconds"] is None
+            else state["worker_heartbeat_age_seconds"]
+        )
+        _execution_mode.labels(mode=settings.task_execution_mode).set(1)
+        return generate_latest(_registry), CONTENT_TYPE_LATEST
 
 
 async def queue_health() -> dict[str, Any]:

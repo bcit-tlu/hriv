@@ -45,6 +45,7 @@ from .queue_metrics import (
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
 _pool: ArqRedis | None = None
+_pool_creation_lock = asyncio.Lock()
 
 
 # ── Shared helpers ────────────────────────────────────────
@@ -137,48 +138,33 @@ class EnqueueResult:
         return self.outcome == "queued"
 
 
-async def _discard_pool() -> None:
-    """Discard and close the cached pool."""
-    global _pool
-    pool = _pool
-    _pool = None
-    if pool is not None:
-        try:
-            await pool.aclose()
-        except Exception:
-            logger.debug(
-                "Failed to close discarded task queue pool",
-                extra={"event": "worker.pool_cleanup_failed"},
-                exc_info=True,
-            )
-
-
 async def get_pool() -> ArqRedis | None:
     """Return a shared arq connection pool, or ``None`` if Redis is down."""
     global _pool
-    if _pool is not None:
-        return _pool
-    pool: ArqRedis | None = None
-    try:
-        pool = await create_pool(_parse_redis_settings(api_pool=True))
-        await pool.ping()
-        _pool = pool
-        return pool
-    except Exception:
-        if pool is not None:
-            try:
-                await pool.aclose()
-            except Exception:
-                logger.debug(
-                    "Failed to close unverified task queue pool",
-                    extra={"event": "worker.pool_cleanup_failed"},
-                    exc_info=True,
-                )
-        logger.warning(
-            "Task queue unavailable; enqueue fallback/rejection will apply",
-            extra={"event": "worker.queue_unavailable"},
-        )
-        return None
+    async with _pool_creation_lock:
+        if _pool is not None:
+            return _pool
+        pool: ArqRedis | None = None
+        try:
+            pool = await create_pool(_parse_redis_settings(api_pool=True))
+            await pool.ping()
+            _pool = pool
+            return pool
+        except Exception:
+            if pool is not None:
+                try:
+                    await pool.aclose()
+                except Exception:
+                    logger.debug(
+                        "Failed to close unverified task queue pool",
+                        extra={"event": "worker.pool_cleanup_failed"},
+                        exc_info=True,
+                    )
+            logger.warning(
+                "Task queue unavailable; enqueue fallback/rejection will apply",
+                extra={"event": "worker.queue_unavailable"},
+            )
+            return None
 
 
 async def _enqueue(
@@ -212,7 +198,6 @@ async def _enqueue(
         inject(carrier)
         job = await pool.enqueue_job(job_name, *args, carrier)
     except RedisError as exc:
-        await _discard_pool()
         logger.warning(
             "Task queue submission failed",
             extra={"event": "worker.submission_failed", "job_type": job_type},

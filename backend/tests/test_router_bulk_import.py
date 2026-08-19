@@ -1161,6 +1161,47 @@ async def test_wait_for_source_image_terminal_state_fails_complete_job_without_r
     db.commit.assert_awaited_once()
 
 
+async def test_wait_for_source_image_terminal_state_rereads_after_complete_probe() -> None:
+    """A terminal row observed after probing wins over a stale pending read."""
+    job = MagicMock()
+    job.status = AsyncMock(return_value=JobStatus.complete)
+    pending = SimpleNamespace(
+        id=20,
+        status="pending",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message="Queued",
+    )
+    completed = SimpleNamespace(
+        id=20,
+        status="completed",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message=None,
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=[pending, completed])
+    db.commit = AsyncMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.routers.bulk_import.async_session", return_value=db):
+        result = await _wait_for_source_image_terminal_state(
+            20,
+            "complete-race.jpg",
+            enqueue_result=EnqueueResult(
+                "queued",
+                "submitted",
+                job=job,
+                queued_at=time.monotonic() - 60,
+            ),
+            pending_grace_seconds=0,
+        )
+
+    assert result.status == "completed"
+    db.commit.assert_not_awaited()
+
+
 async def test_wait_for_source_image_terminal_state_has_safety_cap() -> None:
     """The safety cap starts when processing begins, not while pending."""
     pending = SimpleNamespace(

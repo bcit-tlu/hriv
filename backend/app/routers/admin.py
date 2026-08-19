@@ -172,20 +172,30 @@ async def _kick_off(
         enqueue_result = await enqueue_admin_task(task.id, task.task_type)
     except TaskQueueUnavailableError:
         detail = "Task queue unavailable; task was not started."
-        async with async_session() as db:
-            await db.execute(
-                update(AdminTask)
-                .where(
-                    AdminTask.id == task.id,
-                    AdminTask.status.in_(_ACTIVE_STATUSES),
+        try:
+            async with async_session() as db:
+                await db.execute(
+                    update(AdminTask)
+                    .where(
+                        AdminTask.id == task.id,
+                        AdminTask.status.in_(_ACTIVE_STATUSES),
+                    )
+                    .values(
+                        status="failed",
+                        error_message=detail,
+                        log=func.coalesce(AdminTask.log, "") + f"ERROR: {detail}\n",
+                    )
                 )
-                .values(
-                    status="failed",
-                    error_message=detail,
-                    log=func.coalesce(AdminTask.log, "") + f"ERROR: {detail}\n",
-                )
+                await db.commit()
+        except Exception:
+            logger.exception(
+                "Failed to mark admin task as failed after queue rejection",
+                extra={
+                    "event": "admin.task_queue_rejection_bookkeeping_failed",
+                    "task_id": task.id,
+                    "task_type": task.task_type,
+                },
             )
-            await db.commit()
         if (
             task.task_type in {"db_import", "rebuild_tiles", "file_restore"}
             and task.input_path
