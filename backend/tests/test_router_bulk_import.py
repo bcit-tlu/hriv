@@ -34,7 +34,7 @@ from app.routers.bulk_import import (
     get_bulk_import_job,
     list_bulk_import_jobs,
 )
-from app.worker import EnqueueResult
+from app.worker import EnqueueResult, WorkerSettings
 
 
 # ── Global fixture: default enqueue_bulk_import to False (no Redis) ───────
@@ -56,6 +56,13 @@ def _patch_enqueue_bulk_import():
 
 
 # ── _is_image_filename ────────────────────────────────────────────────────
+
+
+def test_pending_wait_ceiling_stays_below_coordinator_timeout() -> None:
+    """The coordinator can record a pending-ceiling failure before arq kills it."""
+    from app.routers.bulk_import import _SOURCE_IMAGE_WAIT_SAFETY_CAP_SECONDS
+
+    assert 0 < _SOURCE_IMAGE_WAIT_SAFETY_CAP_SECONDS < WorkerSettings.job_timeout
 
 
 def test_is_image_filename_valid() -> None:
@@ -1056,6 +1063,113 @@ async def test_wait_for_source_image_terminal_state_fails_without_worker() -> No
     db.commit.assert_awaited_once()
     assert events == ["latch", "commit"]
     job.abort.assert_not_called()
+
+
+async def test_wait_for_source_image_no_worker_rereads_terminal_row() -> None:
+    """A concurrent completion wins over the no-worker terminal branch."""
+    job = MagicMock()
+    job.status = AsyncMock(return_value=JobStatus.queued)
+    job.job_id = "job-24"
+    pending = SimpleNamespace(
+        id=24,
+        status="pending",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message="Queued",
+    )
+    completed = SimpleNamespace(
+        id=24,
+        status="completed",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message=None,
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=[pending, completed])
+    db.commit = AsyncMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+    pool = MagicMock()
+    pool.zadd = AsyncMock()
+
+    with (
+        patch("app.routers.bulk_import.async_session", return_value=db),
+        patch("app.routers.bulk_import.get_pool", new_callable=AsyncMock, return_value=pool),
+        patch("app.routers.bulk_import.collect_queue_state", new_callable=AsyncMock, return_value={
+            "queue_up": True,
+            "worker_up": False,
+        }),
+    ):
+        result = await _wait_for_source_image_terminal_state(
+            24,
+            "concurrent-completion.jpg",
+            enqueue_result=EnqueueResult(
+                "queued",
+                "submitted",
+                job=job,
+                queued_at=time.monotonic(),
+            ),
+            pending_grace_seconds=0,
+            no_worker_observations=1,
+            wait_safety_cap_seconds=7200,
+        )
+
+    assert result.status == "completed"
+    pool.zadd.assert_awaited_once()
+    db.commit.assert_not_awaited()
+
+
+async def test_wait_for_source_image_timeout_rereads_terminal_row() -> None:
+    """A concurrent completion wins over the pending-ceiling branch."""
+    job = MagicMock()
+    job.status = AsyncMock(return_value=JobStatus.queued)
+    job.job_id = "job-25"
+    pending = SimpleNamespace(
+        id=25,
+        status="pending",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message="Queued",
+    )
+    completed = SimpleNamespace(
+        id=25,
+        status="completed",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message=None,
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=[pending, completed])
+    db.commit = AsyncMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+    pool = MagicMock()
+    pool.zadd = AsyncMock()
+
+    with (
+        patch("app.routers.bulk_import.async_session", return_value=db),
+        patch("app.routers.bulk_import.get_pool", new_callable=AsyncMock, return_value=pool),
+        patch("app.routers.bulk_import.collect_queue_state", new_callable=AsyncMock, return_value={
+            "queue_up": True,
+            "worker_up": True,
+        }),
+    ):
+        result = await _wait_for_source_image_terminal_state(
+            25,
+            "concurrent-timeout.jpg",
+            enqueue_result=EnqueueResult(
+                "queued",
+                "submitted",
+                job=job,
+                queued_at=time.monotonic(),
+            ),
+            pending_grace_seconds=0,
+            wait_safety_cap_seconds=0,
+        )
+
+    assert result.status == "completed"
+    pool.zadd.assert_awaited_once()
+    db.commit.assert_not_awaited()
 
 
 async def test_wait_for_source_image_terminal_state_keeps_waiting_with_worker() -> None:

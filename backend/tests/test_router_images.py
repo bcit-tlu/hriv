@@ -939,6 +939,67 @@ async def test_replace_image_rejection_preserves_metadata_and_version(
 @patch("os.path.getsize", return_value=1024)
 @patch("os.makedirs")
 @patch("builtins.open", new_callable=MagicMock)
+async def test_replace_image_rejection_uses_fresh_session_when_bookkeeping_fails(
+    mock_open: MagicMock,
+    mock_makedirs: MagicMock,
+    mock_getsize: MagicMock,
+) -> None:
+    """A failed original-session write still terminalizes the source row."""
+    mock_enqueue = AsyncMock(
+        side_effect=TaskQueueUnavailableError("queue_unavailable"),
+    )
+    img = _make_image(name="original", category_id=7, active=True)
+    img.metadata_ = {"keep": "this"}
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.add = MagicMock()
+    db.refresh = AsyncMock(side_effect=lambda obj: setattr(obj, "id", 3))
+    db.commit = AsyncMock(side_effect=[None, RuntimeError("connection lost"), None])
+    db.rollback = AsyncMock()
+    db.execute = AsyncMock(return_value=SimpleNamespace(rowcount=1))
+    db.expire = MagicMock()
+
+    recovery_db = AsyncMock()
+    recovery_db.execute = AsyncMock()
+    recovery_db.commit = AsyncMock()
+    recovery_db.__aenter__ = AsyncMock(return_value=recovery_db)
+    recovery_db.__aexit__ = AsyncMock(return_value=False)
+
+    background_tasks = MagicMock()
+    unlink = MagicMock()
+
+    with patch.dict("sys.modules", {
+        "app.processing": MagicMock(process_replace_image=MagicMock()),
+        "app.worker": MagicMock(enqueue_replace_image=mock_enqueue),
+    }), patch(
+        "app.routers.images.bump_scopes",
+        new=AsyncMock(),
+    ), patch(
+        "app.routers.images.async_session",
+        return_value=recovery_db,
+    ), patch(
+        "app.routers.images.os.unlink",
+        new=unlink,
+    ):
+        with pytest.raises(TaskQueueUnavailableError):
+            await replace_image(
+                image_id=1,
+                file=_make_upload_file(filename="rejected.png", content_type="image/png"),
+                background_tasks=background_tasks,
+                _user=_make_user(),
+                db=db,
+            )
+
+    recovery_db.execute.assert_awaited_once()
+    recovery_db.commit.assert_awaited_once()
+    unlink.assert_called_once()
+    background_tasks.add_task.assert_not_called()
+
+
+@patch("os.path.getsize", return_value=1024)
+@patch("os.makedirs")
+@patch("builtins.open", new_callable=MagicMock)
 async def test_replace_image_unchanged_category_does_not_bump_scopes(
     mock_open: MagicMock,
     mock_makedirs: MagicMock,

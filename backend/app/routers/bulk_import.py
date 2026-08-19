@@ -63,7 +63,10 @@ _SOURCE_IMAGE_STALE_SECONDS = int(os.environ.get("SOURCE_IMAGE_STALE_SECONDS", "
 _SOURCE_IMAGE_PENDING_GRACE_SECONDS = 10
 _SOURCE_IMAGE_LOST_OBSERVATIONS = 2
 _SOURCE_IMAGE_NO_WORKER_OBSERVATIONS = 60
-_SOURCE_IMAGE_WAIT_SAFETY_CAP_SECONDS = WorkerSettings.job_timeout + 60
+# Keep the coordinator's last-resort pending ceiling below its own arq timeout
+# so it remains alive long enough to write terminal bookkeeping. The abort
+# latch makes failing a child at this point safe if it starts later.
+_SOURCE_IMAGE_WAIT_SAFETY_CAP_SECONDS = max(WorkerSettings.job_timeout - 60, 1)
 
 
 def _is_image_filename(filename: str) -> bool:
@@ -199,8 +202,10 @@ async def _wait_for_source_image_terminal_state(
                 # the queue zset and its result key has expired. This detector
                 # therefore covers Redis data loss; ``complete`` while the
                 # row is pending covers a finished job that recorded no
-                # source-image result during the retention window. With
-                # ``keep_result=0``, both cases collapse into "lost".
+                # source-image result while arq's default 3600-second
+                # keep_result retention window is active. If a future worker
+                # configuration sets keep_result=0, both cases collapse into
+                # "lost".
                 try:
                     job_status = await enqueue_result.job.status()
                 except Exception as exc:
@@ -281,23 +286,36 @@ async def _wait_for_source_image_terminal_state(
                         enqueue_result.job.job_id,
                     )
                     if latch_written:
-                        src.status = "failed"
-                        src.error_message = (
-                            "Tile generation never started during bulk import "
-                            "because no dedicated worker was available."
+                        latest_src = await db.get(
+                            SourceImage,
+                            source_image_id,
+                            populate_existing=True,
                         )
-                        src.status_message = "Failed"
-                        await db.commit()
-                        logger.error(
-                            "Bulk import source image had no available worker",
-                            extra={
-                                "event": "bulk_import.source_job_no_worker",
-                                "source_image_id": source_image_id,
-                                "original_filename": original_filename,
-                                "no_worker_observations": no_worker_count,
-                            },
-                        )
-                        return _source_image_terminal_state(src)
+                        if latest_src is None:
+                            raise RuntimeError(
+                                f"Queued source image {source_image_id} disappeared before completion"
+                            )
+                        if latest_src.status in {"completed", "failed"}:
+                            return _source_image_terminal_state(latest_src)
+                        src = latest_src
+                        if src.status == "pending":
+                            src.status = "failed"
+                            src.error_message = (
+                                "Tile generation never started during bulk import "
+                                "because no dedicated worker was available."
+                            )
+                            src.status_message = "Failed"
+                            await db.commit()
+                            logger.error(
+                                "Bulk import source image had no available worker",
+                                extra={
+                                    "event": "bulk_import.source_job_no_worker",
+                                    "source_image_id": source_image_id,
+                                    "original_filename": original_filename,
+                                    "no_worker_observations": no_worker_count,
+                                },
+                            )
+                            return _source_image_terminal_state(src)
             if (
                 src.status == "pending"
                 and enqueue_result is not None
@@ -310,23 +328,36 @@ async def _wait_for_source_image_terminal_state(
                     enqueue_result.job.job_id,
                 )
                 if latch_written:
-                    logger.error(
-                        "Bulk import source image exceeded pending wait ceiling",
-                        extra={
-                            "event": "bulk_import.source_job_pending_timeout",
-                            "source_image_id": source_image_id,
-                            "original_filename": original_filename,
-                            "wait_safety_cap_seconds": wait_safety_cap_seconds,
-                        },
+                    latest_src = await db.get(
+                        SourceImage,
+                        source_image_id,
+                        populate_existing=True,
                     )
-                    src.status = "failed"
-                    src.error_message = (
-                        "Tile generation never started during bulk import. "
-                        "The queued processing job exceeded the wait ceiling."
-                    )
-                    src.status_message = "Failed"
-                    await db.commit()
-                    return _source_image_terminal_state(src)
+                    if latest_src is None:
+                        raise RuntimeError(
+                            f"Queued source image {source_image_id} disappeared before completion"
+                        )
+                    if latest_src.status in {"completed", "failed"}:
+                        return _source_image_terminal_state(latest_src)
+                    src = latest_src
+                    if src.status == "pending":
+                        logger.error(
+                            "Bulk import source image exceeded pending wait ceiling",
+                            extra={
+                                "event": "bulk_import.source_job_pending_timeout",
+                                "source_image_id": source_image_id,
+                                "original_filename": original_filename,
+                                "wait_safety_cap_seconds": wait_safety_cap_seconds,
+                            },
+                        )
+                        src.status = "failed"
+                        src.error_message = (
+                            "Tile generation never started during bulk import. "
+                            "The queued processing job exceeded the wait ceiling."
+                        )
+                        src.status_message = "Failed"
+                        await db.commit()
+                        return _source_image_terminal_state(src)
             if (
                 src.status == "processing"
                 and processing_started_at is not None

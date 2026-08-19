@@ -43,10 +43,10 @@ without blocking tile generation.
 
 ## Worker configuration
 
-| Setting       | Value | Rationale                                         |
-| ------------- | ----- | ------------------------------------------------- |
-| `max_jobs`    | 4     | Concurrent processing slots per worker pod        |
-| `job_timeout` | 7200s | 2 hours — large filesystem archives need headroom |
+| Setting           | Value            | Rationale                                                                                                |
+| ----------------- | ---------------- | -------------------------------------------------------------------------------------------------------- |
+| `WORKER_MAX_JOBS` | 4 (configurable) | Concurrent processing slots per worker pod; also bounds in-process bulk-import concurrency in local mode |
+| `job_timeout`     | 7200s            | 2 hours — large filesystem archives need headroom                                                        |
 
 Task types registered on the worker:
 
@@ -186,7 +186,10 @@ When a queued child observes an absent worker heartbeat for the configured
 consecutive-poll window, it writes arq's abort latch before marking the
 `SourceImage` failed. The latch prevents a later worker from running the child
 against the failed row. If Redis cannot accept the latch, the row remains
-pending and the coordinator keeps waiting.
+pending and the coordinator keeps waiting. This guarantee relies on the pinned
+arq version's past-dated abort-marker behavior and is covered by
+`test_abort_latch_survives_pruning_and_is_consumed_before_job_start` in
+`backend/tests/test_worker.py`.
 
 ## Stale SourceImage reconciliation
 

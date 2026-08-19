@@ -13,7 +13,7 @@ from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import get_current_user, require_role
-from ..database import get_db, settings
+from ..database import async_session, get_db, settings
 from ..image_validation import UPLOAD_CHUNK_SIZE, is_valid_image
 from ..models import Category, Image, SourceImage, User
 from ..schemas import (
@@ -467,6 +467,33 @@ async def replace_image(
                     )
                     with contextlib.suppress(Exception):
                         await db.rollback()
+                    try:
+                        async with async_session() as recovery_db:
+                            await recovery_db.execute(
+                                sql_update(SourceImage)
+                                .where(
+                                    SourceImage.id == source_image_id,
+                                    SourceImage.status == "pending",
+                                )
+                                .values(
+                                    status="failed",
+                                    status_message="Failed",
+                                    error_message=(
+                                        "Task queue unavailable; image replacement "
+                                        "was not started."
+                                    ),
+                                )
+                            )
+                            await recovery_db.commit()
+                    except Exception:
+                        logger.exception(
+                            "Fresh-session replacement source-image bookkeeping failed",
+                            extra={
+                                "event": "replace.queue_rejection_recovery_failed",
+                                "source_image_id": source_image_id,
+                                "target_image_id": target_image_id,
+                            },
+                        )
                 if has_metadata:
                     try:
                         restore_result = await db.execute(
