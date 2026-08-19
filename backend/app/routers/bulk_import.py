@@ -1038,9 +1038,13 @@ async def reconcile_stale_bulk_import_jobs(
                 else_="failed",
             ),
             failed_count=BulkImportJob.total_count - BulkImportJob.completed_count,
+            # Only note the abandonment when children are actually
+            # unaccounted for; a coordinator killed after every child reached
+            # a terminal state already has coherent per-file error entries.
             errors=case(
                 (
-                    BulkImportJob.completed_count == BulkImportJob.total_count,
+                    BulkImportJob.failed_count
+                    == BulkImportJob.total_count - BulkImportJob.completed_count,
                     BulkImportJob.errors,
                 ),
                 else_=(
