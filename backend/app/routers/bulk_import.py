@@ -63,10 +63,10 @@ _SOURCE_IMAGE_STALE_SECONDS = int(os.environ.get("SOURCE_IMAGE_STALE_SECONDS", "
 _SOURCE_IMAGE_PENDING_GRACE_SECONDS = 10
 _SOURCE_IMAGE_LOST_OBSERVATIONS = 2
 _SOURCE_IMAGE_NO_WORKER_OBSERVATIONS = 60
-# Keep the coordinator's last-resort pending ceiling below its own arq timeout
-# so it remains alive long enough to write terminal bookkeeping. The abort
-# latch makes failing a child at this point safe if it starts later.
-_SOURCE_IMAGE_WAIT_SAFETY_CAP_SECONDS = max(WorkerSettings.job_timeout - 60, 1)
+# Keep the coordinator's last-resort pending ceiling at half its arq timeout.
+# This leaves headroom for terminal bookkeeping even when a child is enqueued
+# late in a long import, since each child has its own enqueue-time clock.
+_SOURCE_IMAGE_WAIT_SAFETY_CAP_SECONDS = max(WorkerSettings.job_timeout // 2, 1)
 
 
 def _is_image_filename(filename: str) -> bool:
