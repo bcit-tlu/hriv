@@ -14,7 +14,7 @@ import tempfile
 import time
 import uuid
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated
@@ -99,6 +99,21 @@ class _SourceImageTerminalState:
     status: str
     error_message: str | None
     status_message: str | None
+
+
+@dataclass
+class _BulkImportProgress:
+    """Track when any child in a batch last advanced out of ``pending``."""
+
+    last_child_advanced_at: float
+    observed_statuses: dict[int, str] = field(default_factory=dict)
+    capacity_starvation_detected: bool = False
+
+    def observe(self, source_image_id: int, status: str) -> None:
+        previous_status = self.observed_statuses.get(source_image_id)
+        if status != "pending" and previous_status in {None, "pending"}:
+            self.last_child_advanced_at = time.monotonic()
+        self.observed_statuses[source_image_id] = status
 
 
 def _source_image_terminal_state(src: SourceImage) -> _SourceImageTerminalState:
@@ -225,6 +240,39 @@ async def _reread_source_image_after_abort_latch(
     return latest_src, latch_removed
 
 
+async def _bulk_import_has_capacity_starvation(
+    db: AsyncSession,
+    *,
+    batch_progress: _BulkImportProgress | None,
+    stale_after_seconds: int,
+    last_queue_confirmed_at: float | None,
+    last_queue_worker_up: bool | None,
+    job_status: JobStatus | None,
+) -> bool:
+    """Return whether coordinator slots are demonstrably blocking this child."""
+    if (
+        batch_progress is None
+        or job_status not in {JobStatus.queued, JobStatus.deferred}
+        or last_queue_confirmed_at is None
+        or last_queue_worker_up is not True
+        or time.monotonic() - last_queue_confirmed_at
+            >= _SOURCE_IMAGE_QUEUE_CONFIRMATION_MAX_AGE_SECONDS
+        or (
+            not batch_progress.capacity_starvation_detected
+            and time.monotonic() - batch_progress.last_child_advanced_at
+            < stale_after_seconds
+        )
+    ):
+        return False
+
+    result = await db.execute(
+        select(func.count(BulkImportJob.id)).where(
+            BulkImportJob.status.notin_({"completed", "failed"})
+        )
+    )
+    return result.scalar_one() >= settings.worker_max_jobs
+
+
 async def _wait_for_source_image_terminal_state(
     source_image_id: int,
     original_filename: str,
@@ -239,12 +287,14 @@ async def _wait_for_source_image_terminal_state(
     processing_wait_safety_cap_seconds: int = (
         _SOURCE_IMAGE_PROCESSING_WAIT_SAFETY_CAP_SECONDS
     ),
+    batch_progress: _BulkImportProgress | None = None,
 ) -> _SourceImageTerminalState:
     """Wait for queued processing to reach a terminal source-image state."""
     not_found_count = 0
     no_worker_count = 0
     no_worker_since: float | None = None
     last_queue_confirmed_at: float | None = None
+    last_queue_worker_up: bool | None = None
     poll_count = 0
     processing_started_at: float | None = None
     queued_at = (
@@ -260,6 +310,8 @@ async def _wait_for_source_image_terminal_state(
                 raise RuntimeError(
                     f"Queued source image {source_image_id} disappeared before completion"
                 )
+            if batch_progress is not None:
+                batch_progress.observe(source_image_id, src.status)
             if src.status in {"completed", "failed"}:
                 return _source_image_terminal_state(src)
 
@@ -271,6 +323,7 @@ async def _wait_for_source_image_terminal_state(
 
             cutoff = datetime.now(timezone.utc) - timedelta(seconds=stale_after_seconds)
             updated_at = _coerce_utc_aware(src.updated_at, source_image_id=source_image_id)
+            job_status: JobStatus | None = None
             if src.status == "processing" and updated_at < cutoff:
                 src.status = "failed"
                 src.error_message = (
@@ -349,16 +402,24 @@ async def _wait_for_source_image_terminal_state(
                     not_found_count = 0
                 elif job_status is not None:
                     not_found_count = 0
-                if job_status in {JobStatus.queued, JobStatus.deferred}:
+                if job_status in {
+                    JobStatus.queued,
+                    JobStatus.deferred,
+                    JobStatus.in_progress,
+                }:
                     if (
                         poll_count == 1
                         or poll_count % _SOURCE_IMAGE_QUEUE_STATE_SAMPLE_POLLS == 0
                     ):
                         queue_state = await collect_queue_state()
                         sampled_at = time.monotonic()
+                        last_queue_worker_up = queue_state["worker_up"]
                         if queue_state["queue_up"]:
                             last_queue_confirmed_at = sampled_at
-                            if queue_state["worker_up"] is False:
+                            if (
+                                job_status in {JobStatus.queued, JobStatus.deferred}
+                                and queue_state["worker_up"] is False
+                            ):
                                 no_worker_count += 1
                                 no_worker_since = no_worker_since or sampled_at
                             else:
@@ -371,23 +432,38 @@ async def _wait_for_source_image_terminal_state(
                     no_worker_count = 0
                     no_worker_since = None
                 if not_found_count >= lost_observations:
-                    src.status = "failed"
-                    src.error_message = (
-                        "Tile generation never started during bulk import. "
-                        "The queued processing job was lost before it started."
+                    latest_src = await db.get(
+                        SourceImage,
+                        source_image_id,
+                        populate_existing=True,
                     )
-                    src.status_message = "Failed"
-                    await db.commit()
-                    logger.error(
-                        "Bulk import source image processing job was lost",
-                        extra={
-                            "event": "bulk_import.source_job_lost",
-                            "source_image_id": source_image_id,
-                            "original_filename": original_filename,
-                            "not_found_observations": not_found_count,
-                        },
-                    )
-                    return _source_image_terminal_state(src)
+                    if latest_src is None:
+                        raise RuntimeError(
+                            f"Queued source image {source_image_id} disappeared before completion"
+                        )
+                    if latest_src.status in {"completed", "failed"}:
+                        return _source_image_terminal_state(latest_src)
+                    if latest_src.status != "pending":
+                        not_found_count = 0
+                        src = latest_src
+                    else:
+                        latest_src.status = "failed"
+                        latest_src.error_message = (
+                            "Tile generation never started during bulk import. "
+                            "The queued processing job was lost before it started."
+                        )
+                        latest_src.status_message = "Failed"
+                        await db.commit()
+                        logger.error(
+                            "Bulk import source image processing job was lost",
+                            extra={
+                                "event": "bulk_import.source_job_lost",
+                                "source_image_id": source_image_id,
+                                "original_filename": original_filename,
+                                "not_found_observations": not_found_count,
+                            },
+                        )
+                        return _source_image_terminal_state(latest_src)
                 if (
                     no_worker_since is not None
                     and time.monotonic() - no_worker_since
@@ -431,6 +507,11 @@ async def _wait_for_source_image_terminal_state(
                             )
                             src.status_message = "Failed"
                             await db.commit()
+                            await _remove_source_image_abort_latch(
+                                source_image_id,
+                                original_filename,
+                                enqueue_result.job.job_id,
+                            )
                             logger.error(
                                 "Bulk import source image had no available worker",
                                 extra={
@@ -500,6 +581,79 @@ async def _wait_for_source_image_terminal_state(
                         )
                         latest_src.status_message = "Failed"
                         await db.commit()
+                        await _remove_source_image_abort_latch(
+                            source_image_id,
+                            original_filename,
+                            enqueue_result.job.job_id,
+                        )
+                        return _source_image_terminal_state(latest_src)
+            if (
+                src.status == "pending"
+                and enqueue_result is not None
+                and enqueue_result.job is not None
+                and await _bulk_import_has_capacity_starvation(
+                    db,
+                    batch_progress=batch_progress,
+                    stale_after_seconds=stale_after_seconds,
+                    last_queue_confirmed_at=last_queue_confirmed_at,
+                    last_queue_worker_up=last_queue_worker_up,
+                    job_status=job_status,
+                )
+            ):
+                latch_written = await _write_source_image_abort_latch(
+                    source_image_id,
+                    original_filename,
+                    enqueue_result.job.job_id,
+                )
+                if latch_written:
+                    latest_src, latch_removed = (
+                        await _reread_source_image_after_abort_latch(
+                            db,
+                            source_image_id,
+                            original_filename,
+                            enqueue_result.job.job_id,
+                            expected_status="pending",
+                        )
+                    )
+                    if latest_src.status != "pending":
+                        logger.info(
+                            "Bulk import source image advanced before capacity starvation failure",
+                            extra={
+                                "event": "bulk_import.source_job_capacity_recovered",
+                                "source_image_id": source_image_id,
+                                "original_filename": original_filename,
+                                "latch_removed": latch_removed,
+                            },
+                        )
+                        src = latest_src
+                        if latest_src.status in {"completed", "failed"}:
+                            return _source_image_terminal_state(latest_src)
+                    else:
+                        latest_src.status = "failed"
+                        latest_src.error_message = (
+                            "Tile generation could not start during bulk import "
+                            "because worker capacity was fully consumed by concurrent "
+                            "bulk imports. Retry when those imports finish."
+                        )
+                        latest_src.status_message = "Failed"
+                        await db.commit()
+                        if batch_progress is not None:
+                            batch_progress.capacity_starvation_detected = True
+                        await _remove_source_image_abort_latch(
+                            source_image_id,
+                            original_filename,
+                            enqueue_result.job.job_id,
+                        )
+                        logger.error(
+                            "Bulk import source image was blocked by coordinator capacity starvation",
+                            extra={
+                                "event": "bulk_import.source_job_capacity_starvation",
+                                "source_image_id": source_image_id,
+                                "original_filename": original_filename,
+                                "worker_max_jobs": settings.worker_max_jobs,
+                                "stale_after_seconds": stale_after_seconds,
+                            },
+                        )
                         return _source_image_terminal_state(latest_src)
             if (
                 src.status == "processing"
@@ -546,6 +700,11 @@ async def _wait_for_source_image_terminal_state(
                         )
                         latest_src.status_message = "Failed"
                         await db.commit()
+                        await _remove_source_image_abort_latch(
+                            source_image_id,
+                            original_filename,
+                            enqueue_result.job.job_id,
+                        )
                         logger.error(
                             "Bulk import source image wait exceeded processing safety cap",
                             extra={
@@ -611,11 +770,23 @@ async def _process_bulk_import(
                     source_image_id = src.id
                     enqueue_result = await enqueue_process_source_image(source_image_id)
                     if enqueue_result.queued:
-                        terminal_state = await _wait_for_source_image_terminal_state(
-                            source_image_id,
-                            original_filename,
-                            enqueue_result=enqueue_result,
-                        )
+                        if enqueue_result.job is not None:
+                            terminal_state = (
+                                await _wait_for_source_image_terminal_state(
+                                    source_image_id,
+                                    original_filename,
+                                    enqueue_result=enqueue_result,
+                                    batch_progress=batch_progress,
+                                )
+                            )
+                        else:
+                            terminal_state = (
+                                await _wait_for_source_image_terminal_state(
+                                    source_image_id,
+                                    original_filename,
+                                    enqueue_result=enqueue_result,
+                                )
+                            )
                     else:
                         await process_source_image(source_image_id)
                         async with async_session() as db:
@@ -775,6 +946,7 @@ async def _process_bulk_import(
     )
 
     # Process all images concurrently (bounded by semaphore)
+    batch_progress = _BulkImportProgress(last_child_advanced_at=time.monotonic())
     tasks = [
         asyncio.create_task(_process_one(fname, spath))
         for fname, spath in file_entries

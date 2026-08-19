@@ -28,6 +28,8 @@ if "pyvips" not in sys.modules:
     sys.modules["pyvips.enums"] = MagicMock()
 
 from app.routers.bulk_import import (
+    _BulkImportProgress,
+    _bulk_import_has_capacity_starvation,
     _is_image_filename,
     _process_bulk_import,
     _wait_for_source_image_terminal_state,
@@ -1032,6 +1034,181 @@ async def test_wait_for_source_image_unknown_status_hits_pending_backstop() -> N
     db.commit.assert_awaited_once()
 
 
+async def test_wait_for_source_image_detects_coordinator_capacity_starvation() -> None:
+    """Coordinator saturation fails a child only with positive deadlock evidence."""
+    job = MagicMock()
+    job.status = AsyncMock(return_value=JobStatus.queued)
+    job.job_id = "job-capacity"
+    src = SimpleNamespace(
+        id=40,
+        status="pending",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message="Queued",
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=src)
+    execute_result = MagicMock()
+    execute_result.scalar_one.return_value = 4
+    db.execute = AsyncMock(return_value=execute_result)
+    db.commit = AsyncMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+    pool = MagicMock()
+    pool.zadd = AsyncMock()
+    pool.zrem = AsyncMock()
+    progress = _BulkImportProgress(time.monotonic() - 901)
+
+    with (
+        patch("app.routers.bulk_import.async_session", return_value=db),
+        patch("app.routers.bulk_import.get_pool", new_callable=AsyncMock, return_value=pool),
+        patch(
+            "app.routers.bulk_import.collect_queue_state",
+            new_callable=AsyncMock,
+            return_value={"queue_up": True, "worker_up": True},
+        ),
+    ):
+        result = await _wait_for_source_image_terminal_state(
+            40,
+            "capacity-starved.jpg",
+            enqueue_result=EnqueueResult("queued", "submitted", job=job),
+            pending_grace_seconds=0,
+            stale_after_seconds=900,
+            pending_wait_safety_cap_seconds=7200,
+            batch_progress=progress,
+        )
+
+    assert result.status == "failed"
+    assert "fully consumed by concurrent bulk imports" in result.error_message
+    pool.zadd.assert_awaited_once()
+    pool.zrem.assert_awaited_once_with(abort_jobs_ss, "job-capacity")
+    db.commit.assert_awaited_once()
+
+
+async def test_wait_for_source_image_does_not_fail_queued_child_behind_unrelated_jobs() -> None:
+    """Unrelated worker work does not satisfy the coordinator deadlock detector."""
+    job = MagicMock()
+    job.status = AsyncMock(return_value=JobStatus.queued)
+    job.job_id = "job-unrelated"
+    src = SimpleNamespace(
+        id=41,
+        status="pending",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message="Queued",
+    )
+    completed = SimpleNamespace(
+        id=41,
+        status="completed",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message=None,
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=[src, completed])
+    execute_result = MagicMock()
+    execute_result.scalar_one.return_value = 3
+    db.execute = AsyncMock(return_value=execute_result)
+    db.commit = AsyncMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+    progress = _BulkImportProgress(time.monotonic() - 901)
+
+    with (
+        patch("app.routers.bulk_import.async_session", return_value=db),
+        patch("app.routers.bulk_import.asyncio.sleep", new_callable=AsyncMock),
+        patch(
+            "app.routers.bulk_import.collect_queue_state",
+            new_callable=AsyncMock,
+            return_value={"queue_up": True, "worker_up": True},
+        ),
+    ):
+        result = await _wait_for_source_image_terminal_state(
+            41,
+            "unrelated-queue.jpg",
+            enqueue_result=EnqueueResult("queued", "submitted", job=job),
+            pending_grace_seconds=0,
+            stale_after_seconds=900,
+            pending_wait_safety_cap_seconds=7200,
+            batch_progress=progress,
+        )
+
+    assert result.status == "completed"
+    db.commit.assert_not_awaited()
+
+
+async def test_wait_for_source_image_batch_progress_resets_deadlock_window() -> None:
+    """A child entering processing resets the batch pending window."""
+    progress = _BulkImportProgress(100.0)
+    with patch("app.routers.bulk_import.time.monotonic", return_value=200.0):
+        progress.observe(42, "pending")
+        progress.observe(42, "processing")
+    assert progress.last_child_advanced_at == 200.0
+
+
+async def test_capacity_starvation_latch_fails_remaining_pending_children() -> None:
+    """Once established, capacity starvation remains active for the batch."""
+    progress = _BulkImportProgress(time.monotonic())
+    progress.capacity_starvation_detected = True
+    db = AsyncMock()
+    execute_result = MagicMock()
+    execute_result.scalar_one.return_value = 4
+    db.execute = AsyncMock(return_value=execute_result)
+
+    assert await _bulk_import_has_capacity_starvation(
+        db,
+        batch_progress=progress,
+        stale_after_seconds=900,
+        last_queue_confirmed_at=time.monotonic(),
+        last_queue_worker_up=True,
+        job_status=JobStatus.queued,
+    )
+
+
+async def test_wait_for_source_image_refreshes_queue_evidence_for_in_progress_job() -> None:
+    """An executing arq child is positive evidence that the queue is healthy."""
+    job = MagicMock()
+    job.status = AsyncMock(return_value=JobStatus.in_progress)
+    src = SimpleNamespace(
+        id=43,
+        status="pending",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message="Queued",
+    )
+    completed = SimpleNamespace(
+        id=43,
+        status="completed",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message=None,
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=[src, completed])
+    db.commit = AsyncMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+    collect_queue = AsyncMock(
+        return_value={"queue_up": True, "worker_up": True},
+    )
+
+    with (
+        patch("app.routers.bulk_import.async_session", return_value=db),
+        patch("app.routers.bulk_import.asyncio.sleep", new_callable=AsyncMock),
+        patch("app.routers.bulk_import.collect_queue_state", collect_queue),
+    ):
+        result = await _wait_for_source_image_terminal_state(
+            43,
+            "in-progress.jpg",
+            enqueue_result=EnqueueResult("queued", "submitted", job=job),
+            pending_grace_seconds=0,
+            pending_wait_safety_cap_seconds=7200,
+        )
+
+    assert result.status == "completed"
+    collect_queue.assert_awaited_once()
+
+
 async def test_wait_for_source_image_terminal_state_latches_queued_timeout() -> None:
     """The last-resort ceiling writes an abort latch before failing the row."""
     job = MagicMock()
@@ -1093,6 +1270,7 @@ async def test_wait_for_source_image_terminal_state_fails_without_worker() -> No
     pool.zadd = AsyncMock()
     events: list[str] = []
     pool.zadd.side_effect = lambda *args, **kwargs: events.append("latch")
+    pool.zrem = AsyncMock(side_effect=lambda *args, **kwargs: events.append("latch-removed"))
     src = SimpleNamespace(
         id=21,
         status="pending",
@@ -1129,7 +1307,7 @@ async def test_wait_for_source_image_terminal_state_fails_without_worker() -> No
     assert "no dedicated worker" in result.error_message
     pool.zadd.assert_awaited_once()
     db.commit.assert_awaited_once()
-    assert events == ["latch", "commit"]
+    assert events == ["latch", "commit", "latch-removed"]
     job.abort.assert_not_called()
 
 
@@ -1278,6 +1456,7 @@ async def test_wait_for_source_image_processing_timeout_latches_before_failure()
     db.__aexit__ = AsyncMock(return_value=False)
     pool = MagicMock()
     pool.zadd = AsyncMock(side_effect=lambda *args, **kwargs: events.append("latch"))
+    pool.zrem = AsyncMock(side_effect=lambda *args, **kwargs: events.append("latch-removed"))
 
     with (
         patch("app.routers.bulk_import.async_session", return_value=db),
@@ -1299,7 +1478,7 @@ async def test_wait_for_source_image_processing_timeout_latches_before_failure()
     assert result.status == "failed"
     assert "worker job timeout" in result.error_message
     pool.zadd.assert_awaited_once()
-    assert events == ["latch", "commit"]
+    assert events == ["latch", "commit", "latch-removed"]
     db.commit.assert_awaited_once()
 
 
@@ -1968,6 +2147,59 @@ async def test_wait_for_source_image_terminal_state_fails_complete_job_without_r
     assert "did not record a terminal" in result.error_message
     assert "never started" not in result.error_message
     db.commit.assert_awaited_once()
+
+
+async def test_wait_for_source_image_not_found_rereads_before_failing() -> None:
+    """A child that starts during lost-job detection is not overwritten."""
+    job = MagicMock()
+    job.status = AsyncMock(
+        side_effect=[JobStatus.not_found, JobStatus.not_found],
+    )
+    pending = SimpleNamespace(
+        id=44,
+        status="pending",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message="Queued",
+    )
+    processing = SimpleNamespace(
+        id=44,
+        status="processing",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message="Processing",
+    )
+    completed = SimpleNamespace(
+        id=44,
+        status="completed",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message=None,
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=[pending, pending, processing, completed])
+    db.commit = AsyncMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("app.routers.bulk_import.async_session", return_value=db),
+        patch("app.routers.bulk_import.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        result = await _wait_for_source_image_terminal_state(
+            44,
+            "not-found-race.jpg",
+            enqueue_result=EnqueueResult(
+                "queued",
+                "submitted",
+                job=job,
+                queued_at=time.monotonic() - 60,
+            ),
+            pending_grace_seconds=0,
+        )
+
+    assert result.status == "completed"
+    db.commit.assert_not_awaited()
 
 
 async def test_wait_for_source_image_terminal_state_rereads_after_complete_probe() -> None:
