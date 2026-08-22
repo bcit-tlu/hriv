@@ -10,8 +10,10 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@chromatic-com/playwright": "^0.14.12",
     "@playwright/test": "1.61.1",
     "@types/node": "^22.0.0",
+    "chromatic": "^18.5.0",
     "typescript": "^5.4.0"
   }
 }
