@@ -24,11 +24,12 @@ SELECT setval('programs_id_seq', GREATEST((SELECT MAX(id) FROM programs), 1));
 
 INSERT INTO categories (id, label, parent_id, status, metadata)
 VALUES
-  (1, 'Architecture', NULL, 'active', '{}'),
-  (2, 'Panoramas',    NULL, 'active', '{}'),
-  (3, 'Italian',      1,    'active', '{}'),
-  (4, 'American',     1,    'active', '{}'),
-  (5, 'Gothic',       3,    'active', '{}')
+  (1, 'Architecture',           NULL, 'active', '{}'),
+  (2, 'Panoramas',              NULL, 'active', '{}'),
+  (3, 'Italian',                1,    'active', '{}'),
+  (4, 'American',               1,    'active', '{}'),
+  (5, 'Gothic',                 3,    'active', '{}'),
+  (6, 'Synthetic Monitoring',   NULL, 'active', '{}')
 ON CONFLICT (id) DO NOTHING;
 
 SELECT setval('categories_id_seq', GREATEST((SELECT MAX(id) FROM categories), 1));

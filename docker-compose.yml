@@ -57,6 +57,34 @@ services:
         condition: service_completed_successfully
     restart: 'no'
 
+  seed-media:
+    # Generates local DZI tiles for the synthetic monitoring seed image.
+    # This keeps the synthetic journey independent of external OpenSeadragon
+    # example URLs when running ``docker compose up --build`` locally.
+    build:
+      context: ./backend
+      target: dev
+    command: ['python', '-m', 'app.seed_media']
+    volumes:
+      - ./backend/app:/app/app
+      - ./db/seed-assets:/seed-assets:ro
+      - image_data:/data
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://hriv:hriv@db:5432/hriv
+      - SOURCE_IMAGES_DIR=/data/source_images
+      - TILES_DIR=/data/tiles
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      seed:
+        condition: service_completed_successfully
+    restart: 'no'
+
   backend:
     build:
       context: ./backend
@@ -84,6 +112,8 @@ services:
       migrate:
         condition: service_completed_successfully
       seed:
+        condition: service_completed_successfully
+      seed-media:
         condition: service_completed_successfully
     healthcheck:
       test:
@@ -159,6 +189,8 @@ services:
       migrate:
         condition: service_completed_successfully
       seed:
+        condition: service_completed_successfully
+      seed-media:
         condition: service_completed_successfully
 
   redis:

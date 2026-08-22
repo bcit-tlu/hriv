@@ -1,4 +1,5 @@
-import { test, expect, type Response } from '@playwright/test'
+import { expect, test } from '@chromatic-com/playwright'
+import type { Response } from '@playwright/test'
 
 import { SyntheticJourneyRecorder } from './journeyRecorder'
 
@@ -16,12 +17,12 @@ import { SyntheticJourneyRecorder } from './journeyRecorder'
 test('synthetic student can log in, browse, and view an image', async ({ page }) => {
   const email = process.env.SYNTHETIC_EMAIL || 'synthetic.student@example.ca'
   const password = process.env.SYNTHETIC_PASSWORD || 'password'
-  const categoryPathValue = process.env.SYNTHETIC_CATEGORY_PATH?.trim() || 'Architecture/Italian'
+  const categoryPathValue = process.env.SYNTHETIC_CATEGORY_PATH?.trim() || 'Synthetic Monitoring'
   const categoryPath = categoryPathValue
     .split('/')
     .map((segment) => segment.trim())
     .filter(Boolean)
-  const imageName = process.env.SYNTHETIC_IMAGE_NAME?.trim() || 'Duomo di Milano'
+  const imageName = process.env.SYNTHETIC_IMAGE_NAME?.trim() || 'Synthetic Monitoring Image'
   expect(categoryPath, 'SYNTHETIC_CATEGORY_PATH must contain a category label').not.toHaveLength(0)
   const recorder = new SyntheticJourneyRecorder()
   console.log(`[synthetic] component version: ${recorder.version}`)
