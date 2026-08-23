@@ -23,6 +23,7 @@ from app.routers.images import (
     replace_image,
 )
 from app.schemas import ImageCreate, ImageUpdate, ImageBulkUpdate, ImageBulkDelete
+from app.worker import EnqueueResult, TaskQueueUnavailableError
 
 
 def _make_image(
@@ -725,7 +726,7 @@ async def test_replace_image_success(
     mock_getsize: MagicMock,
 ) -> None:
     """Replacement endpoint creates SourceImage and enqueues processing."""
-    mock_enqueue = AsyncMock(return_value=True)
+    mock_enqueue = AsyncMock(return_value=EnqueueResult("queued", "submitted"))
     mock_process = MagicMock()
 
     img = _make_image()
@@ -767,7 +768,7 @@ async def test_replace_image_fallback_to_background_tasks(
     mock_getsize: MagicMock,
 ) -> None:
     """When arq enqueue fails, replacement falls back to BackgroundTasks."""
-    mock_enqueue = AsyncMock(return_value=False)
+    mock_enqueue = AsyncMock(return_value=EnqueueResult("fallback", "queue_unavailable"))
     mock_process = MagicMock()
 
     img = _make_image()
@@ -803,7 +804,7 @@ async def test_replace_image_applies_metadata_updates(
     mock_getsize: MagicMock,
 ) -> None:
     """Multipart metadata updates are applied before creating the SourceImage."""
-    mock_enqueue = AsyncMock(return_value=True)
+    mock_enqueue = AsyncMock(return_value=EnqueueResult("queued", "submitted"))
     img = _make_image(name="old-name", category_id=7, active=True)
 
     db = AsyncMock()
@@ -863,13 +864,156 @@ async def test_replace_image_applies_metadata_updates(
 @patch("os.path.getsize", return_value=1024)
 @patch("os.makedirs")
 @patch("builtins.open", new_callable=MagicMock)
+async def test_replace_image_rejection_preserves_metadata_and_version(
+    mock_open: MagicMock,
+    mock_makedirs: MagicMock,
+    mock_getsize: MagicMock,
+) -> None:
+    """Required-mode queue rejection leaves the target image unchanged."""
+    mock_enqueue = AsyncMock(
+        side_effect=TaskQueueUnavailableError("queue_unavailable"),
+    )
+    img = _make_image(name="original", category_id=7, active=True)
+    img.copyright = "Original copyright"
+    img.note = "Original note"
+    img.metadata_ = {
+        "keep": "this",
+        "canvas_annotations": [{"type": "rect"}],
+    }
+    original = {
+        key: getattr(img, key)
+        for key in (
+            "name",
+            "category_id",
+            "copyright",
+            "note",
+            "active",
+            "metadata_",
+            "version",
+        )
+    }
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.add = MagicMock()
+    db.refresh = AsyncMock(side_effect=lambda obj: setattr(obj, "id", 2))
+    db.execute = AsyncMock(return_value=SimpleNamespace(rowcount=1))
+    db.expire = MagicMock()
+    background_tasks = MagicMock()
+
+    with patch.dict("sys.modules", {
+        "app.processing": MagicMock(process_replace_image=MagicMock()),
+        "app.worker": MagicMock(enqueue_replace_image=mock_enqueue),
+    }), patch(
+        "app.routers.images.bump_scopes",
+        new=AsyncMock(),
+    ):
+        with pytest.raises(TaskQueueUnavailableError):
+            await replace_image(
+                image_id=1,
+                file=_make_upload_file(filename="rejected.png", content_type="image/png"),
+                background_tasks=background_tasks,
+                _user=_make_user(),
+                db=db,
+                name="new-name",
+                category_id="9",
+                copyright="New copyright",
+                note="New note",
+                active="0",
+                metadata_extra='{"replace": "me"}',
+            )
+
+    db.expire.assert_called_once_with(img)
+    restore_statement = db.execute.await_args.args[0]
+    restore_values = restore_statement.compile().params
+    assert restore_values["name"] == original["name"]
+    assert restore_values["category_id"] == original["category_id"]
+    assert restore_values["copyright"] == original["copyright"]
+    assert restore_values["note"] == original["note"]
+    assert restore_values["active"] == original["active"]
+    assert restore_values["metadata"] == original["metadata_"]
+    assert restore_values["version"] == original["version"]
+    background_tasks.add_task.assert_not_called()
+
+
+@pytest.mark.parametrize("recovery_succeeds", [True, False])
+@patch("os.path.getsize", return_value=1024)
+@patch("os.makedirs")
+@patch("builtins.open", new_callable=MagicMock)
+async def test_replace_image_rejection_uses_fresh_session_when_bookkeeping_fails(
+    mock_open: MagicMock,
+    mock_makedirs: MagicMock,
+    mock_getsize: MagicMock,
+    recovery_succeeds: bool,
+) -> None:
+    """A failed original-session write still terminalizes the source row."""
+    mock_enqueue = AsyncMock(
+        side_effect=TaskQueueUnavailableError("queue_unavailable"),
+    )
+    img = _make_image(name="original", category_id=7, active=True)
+    img.metadata_ = {"keep": "this"}
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.add = MagicMock()
+    db.refresh = AsyncMock(side_effect=lambda obj: setattr(obj, "id", 3))
+    db.commit = AsyncMock(side_effect=[None, RuntimeError("connection lost"), None])
+    db.rollback = AsyncMock()
+    db.execute = AsyncMock(return_value=SimpleNamespace(rowcount=1))
+    db.expire = MagicMock()
+
+    recovery_db = AsyncMock()
+    recovery_db.execute = AsyncMock()
+    recovery_db.commit = AsyncMock(
+        side_effect=None if recovery_succeeds else RuntimeError("recovery lost"),
+    )
+    recovery_db.__aenter__ = AsyncMock(return_value=recovery_db)
+    recovery_db.__aexit__ = AsyncMock(return_value=False)
+
+    background_tasks = MagicMock()
+    unlink = MagicMock()
+
+    with patch.dict("sys.modules", {
+        "app.processing": MagicMock(process_replace_image=MagicMock()),
+        "app.worker": MagicMock(enqueue_replace_image=mock_enqueue),
+    }), patch(
+        "app.routers.images.bump_scopes",
+        new=AsyncMock(),
+    ), patch(
+        "app.routers.images.async_session",
+        return_value=recovery_db,
+    ), patch(
+        "app.routers.images.os.unlink",
+        new=unlink,
+    ):
+        with pytest.raises(TaskQueueUnavailableError):
+            await replace_image(
+                image_id=1,
+                file=_make_upload_file(filename="rejected.png", content_type="image/png"),
+                background_tasks=background_tasks,
+                _user=_make_user(),
+                db=db,
+            )
+
+    recovery_db.execute.assert_awaited_once()
+    recovery_db.commit.assert_awaited_once()
+    if recovery_succeeds:
+        unlink.assert_called_once()
+    else:
+        unlink.assert_not_called()
+    background_tasks.add_task.assert_not_called()
+
+
+@patch("os.path.getsize", return_value=1024)
+@patch("os.makedirs")
+@patch("builtins.open", new_callable=MagicMock)
 async def test_replace_image_unchanged_category_does_not_bump_scopes(
     mock_open: MagicMock,
     mock_makedirs: MagicMock,
     mock_getsize: MagicMock,
 ) -> None:
     """Echoing the current category_id back on replace must not bump revisions."""
-    mock_enqueue = AsyncMock(return_value=True)
+    mock_enqueue = AsyncMock(return_value=EnqueueResult("queued", "submitted"))
     img = _make_image(category_id=7)
 
     db = AsyncMock()
@@ -906,7 +1050,7 @@ async def test_replace_image_empty_note_clears_note(
     mock_getsize: MagicMock,
 ) -> None:
     """An explicit note="" on replace must erase the stored note."""
-    mock_enqueue = AsyncMock(return_value=True)
+    mock_enqueue = AsyncMock(return_value=EnqueueResult("queued", "submitted"))
     img = _make_image()
     img.note = "existing note"
 

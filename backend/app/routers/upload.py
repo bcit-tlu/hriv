@@ -9,17 +9,17 @@ from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from opentelemetry import trace
-from sqlalchemy import select
+from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import require_role
-from ..database import get_db, settings
+from ..database import async_session, get_db, settings
 from ..image_validation import UPLOAD_CHUNK_SIZE, is_valid_image
 from ..models import SourceImage, User
 from ..processing import process_source_image
 from ..schemas import MAX_NOTE_LENGTH, SourceImageOut, normalize_note_value
 from ..tracing import record_exception_if_server_error
-from ..worker import enqueue_process_source_image
+from ..worker import TaskQueueUnavailableError, enqueue_process_source_image
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -126,10 +126,63 @@ async def upload_source_image(
 
             # Prefer the arq task queue; fall back to in-process BackgroundTasks
             # when Redis is unavailable (e.g. local development without Redis).
-            enqueued = await enqueue_process_source_image(src.id)
-            span.set_attribute("source_image.enqueued", enqueued)
-            if not enqueued:
-                background_tasks.add_task(process_source_image, src.id)
+            source_image_id = src.id
+            try:
+                enqueue_result = await enqueue_process_source_image(source_image_id)
+            except TaskQueueUnavailableError:
+                bookkeeping_committed = False
+                try:
+                    src.status = "failed"
+                    src.status_message = "Failed"
+                    src.error_message = (
+                        "Task queue unavailable; image processing was not started."
+                    )
+                    await db.commit()
+                    bookkeeping_committed = True
+                except Exception:
+                    logger.exception(
+                        "Failed to mark uploaded source image after queue rejection",
+                        extra={
+                            "event": "upload.queue_rejection_bookkeeping_failed",
+                            "source_image_id": source_image_id,
+                        },
+                    )
+                    with contextlib.suppress(Exception):
+                        await db.rollback()
+                    try:
+                        async with async_session() as recovery_db:
+                            await recovery_db.execute(
+                                sql_update(SourceImage)
+                                .where(
+                                    SourceImage.id == source_image_id,
+                                    SourceImage.status == "pending",
+                                )
+                                .values(
+                                    status="failed",
+                                    status_message="Failed",
+                                    error_message=(
+                                        "Task queue unavailable; image processing "
+                                        "was not started."
+                                    ),
+                                )
+                            )
+                            await recovery_db.commit()
+                            bookkeeping_committed = True
+                    except Exception:
+                        logger.exception(
+                            "Fresh-session uploaded source-image bookkeeping failed",
+                            extra={
+                                "event": "upload.queue_rejection_recovery_failed",
+                                "source_image_id": source_image_id,
+                            },
+                        )
+                if bookkeeping_committed:
+                    with contextlib.suppress(OSError):
+                        os.unlink(stored_path)
+                raise
+            span.set_attribute("source_image.enqueued", enqueue_result.queued)
+            if not enqueue_result.queued:
+                background_tasks.add_task(process_source_image, source_image_id)
 
             return src
         except Exception as exc:

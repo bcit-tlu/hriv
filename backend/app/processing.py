@@ -26,6 +26,12 @@ from sqlalchemy.sql import func
 
 from .database import async_session, settings
 from .models import Image, SourceImage
+from .queue_metrics import collect_queue_state
+from .task_constants import (
+    BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
+    BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS,
+    SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS,
+)
 from .tile_provenance import (
     DZI_OVERLAP,
     DZI_TILE_SIZE,
@@ -498,6 +504,19 @@ async def process_source_image(source_image_id: int) -> None:
             )
             return
 
+        # This guard relies on process_source_image recording failures without
+        # re-raising them; otherwise arq retries could become silent no-ops.
+        if src.status in {"completed", "failed"}:
+            logger.info(
+                "Terminal SourceImage found, skipping processing",
+                extra={
+                    "event": "processing.terminal_source_skipped",
+                    "source_image_id": source_image_id,
+                    "status": src.status,
+                },
+            )
+            return
+
         src.status = "processing"
         src.progress = 5
         src.status_message = "Preparing image"
@@ -758,6 +777,17 @@ async def process_replace_image(
             )
             return
 
+        if src.status in {"completed", "failed"}:
+            logger.info(
+                "Terminal replacement SourceImage found, skipping processing",
+                extra={
+                    "event": "replace.terminal_source_skipped",
+                    "source_image_id": source_image_id,
+                    "status": src.status,
+                },
+            )
+            return
+
         img = await db.get(Image, target_image_id)
         if img is None:
             logger.error(
@@ -1011,28 +1041,58 @@ async def process_replace_image(
 _STALE_SOURCE_IMAGE_SECONDS = int(
     os.environ.get("SOURCE_IMAGE_STALE_SECONDS", "900")
 )
+_STALE_PENDING_SOURCE_IMAGE_SECONDS = SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS
+
+
+async def _live_bulk_import_coordinator_count() -> int | None:
+    """Return live coordinator count, or None when Redis is unavailable."""
+    from .worker import get_pool
+
+    pool = await get_pool()
+    if pool is None:
+        return None
+    try:
+        live_since = (
+            time.time() * 1000
+            - BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS * 1000
+        )
+        return await pool.zcount(
+            BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
+            live_since,
+            "+inf",
+        )
+    except Exception:
+        logger.warning(
+            "Could not read bulk-import coordinator liveness",
+            extra={"event": "bulk_import.coordinator_liveness_unavailable"},
+            exc_info=True,
+        )
+        return None
 
 
 async def reconcile_stale_source_images(
     session: AsyncSession,
     stale_after_seconds: int = _STALE_SOURCE_IMAGE_SECONDS,
+    pending_stale_after_seconds: int = _STALE_PENDING_SOURCE_IMAGE_SECONDS,
 ) -> int:
     """Mark orphaned in-flight SourceImages as ``failed``.
 
-    A SourceImage is considered stale when its status is ``pending`` or
-    ``processing`` but its ``updated_at`` timestamp is older than
-    *stale_after_seconds*.  This runs on backend startup so images whose
-    processing task died (pod crash, OOM kill, rollout) are cleaned up
-    rather than appearing stuck in the UI forever.
+    Processing rows use *stale_after_seconds* as their no-progress cutoff.
+    Pending rows use the longer coordinator pending-wait bound so queue wait
+    is not mistaken for a crashed task. This runs on backend startup so
+    genuinely orphaned images are cleaned up rather than appearing stuck in
+    the UI forever.
 
     Returns the number of rows updated.
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(seconds=stale_after_seconds)
-    stmt = (
+    now = datetime.now(timezone.utc)
+    processing_cutoff = now - timedelta(seconds=stale_after_seconds)
+    pending_cutoff = now - timedelta(seconds=pending_stale_after_seconds)
+    processing_stmt = (
         update(SourceImage)
         .where(
-            SourceImage.status.in_(["pending", "processing"]),
-            SourceImage.updated_at < cutoff,
+            SourceImage.status == "processing",
+            SourceImage.updated_at < processing_cutoff,
         )
         .values(
             status="failed",
@@ -1046,8 +1106,43 @@ async def reconcile_stale_source_images(
         )
         .returning(SourceImage.id)
     )
-    result = await session.execute(stmt)
-    ids = [row[0] for row in result.all()]
+    pending_stmt = None
+    queue_state = await collect_queue_state()
+    if (
+        queue_state["queue_up"] is True
+        and queue_state["worker_up"] is True
+        and queue_state["depth"] == 0
+    ):
+        live_coordinator_count = await _live_bulk_import_coordinator_count()
+        # arq keeps queued and executing job IDs in its queue zset until the
+        # job finishes, so a live coordinator (or executing child) keeps
+        # depth >= 1. Do not change this to a backlog-only metric: that would
+        # mass-fail rows committed before _process_one acquires its semaphore.
+        pending_stmt = (
+            update(SourceImage)
+            .where(
+                SourceImage.status == "pending",
+                SourceImage.updated_at < pending_cutoff,
+            )
+            .values(
+                status="failed",
+                error_message=(
+                    "Marked as failed on backend startup — processing never "
+                    f"started within {pending_stale_after_seconds}s and the "
+                    "healthy task queue is empty."
+                ),
+                status_message="Failed",
+                updated_at=func.now(),
+            )
+            .returning(SourceImage.id)
+        )
+    processing_result = await session.execute(processing_stmt)
+    processing_ids = [row[0] for row in processing_result.all()]
+    pending_ids: list[int] = []
+    if pending_stmt is not None and live_coordinator_count == 0:
+        pending_result = await session.execute(pending_stmt)
+        pending_ids = [row[0] for row in pending_result.all()]
+    ids = processing_ids + pending_ids
     await session.commit()
     if ids:
         logger.warning(
@@ -1057,6 +1152,9 @@ async def reconcile_stale_source_images(
                 "event": "processing.reconciled_stale",
                 "source_image_ids": ids,
                 "stale_after_seconds": stale_after_seconds,
+                "pending_stale_after_seconds": pending_stale_after_seconds,
+                "processing_source_image_ids": processing_ids,
+                "pending_source_image_ids": pending_ids,
             },
         )
     return len(ids)

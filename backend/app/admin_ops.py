@@ -18,6 +18,7 @@ import subprocess
 import tarfile
 import tempfile
 import threading
+import time
 import uuid
 from collections.abc import Callable, Iterator
 from datetime import datetime, timedelta, timezone
@@ -38,7 +39,7 @@ from .backup_access import (
 from .component_versions import get_app_version
 from .database import get_async_session, settings
 from .tile_order import INITIAL_SCOPE_REVISION
-from .worker import enqueue_admin_task
+from .worker import TaskQueueUnavailableError, enqueue_admin_task
 from .models import (
     ACTIVE_TASK_STATUSES,
     AdminTask,
@@ -613,7 +614,41 @@ async def reconcile_stale_tasks(
                 "stale_after_seconds": stale_after_seconds,
             },
         )
+    _cleanup_stale_export_staging_files(stale_after_seconds)
     return len(ids)
+
+
+def _cleanup_stale_export_staging_files(stale_after_seconds: int) -> None:
+    """Delete abandoned filesystem-export staging archives.
+
+    Export archives are staged in the tasks dir under a hidden
+    ``.export-staging-`` prefix before the final rename; a runner that
+    dies mid-archive (pod crash, eviction) leaves the partial file
+    behind on the data volume.  A live export keeps its staging file's
+    mtime fresh as tar appends, so only files older than
+    *stale_after_seconds* are removed.
+    """
+    cutoff = time.time() - stale_after_seconds
+    try:
+        entries = os.listdir(_TASKS_DIR)
+    except OSError:
+        return
+    for name in entries:
+        if not name.startswith(".export-staging-"):
+            continue
+        path = os.path.join(_TASKS_DIR, name)
+        try:
+            if os.path.getmtime(path) < cutoff:
+                os.unlink(path)
+                logger.warning(
+                    "Removed abandoned export staging file",
+                    extra={
+                        "event": "admin_task.export_staging_cleanup",
+                        "path": path,
+                    },
+                )
+        except OSError:
+            continue
 
 
 async def _update_task(
@@ -1900,23 +1935,29 @@ async def _queue_rebuild_tiles_after_import(
                 "Run Rebuild Tiles manually if needed."
             )
 
-        enqueued = False
         try:
-            enqueued = await enqueue_admin_task(task_id, "rebuild_tiles")
+            enqueue_result = await enqueue_admin_task(task_id, "rebuild_tiles")
+        except TaskQueueUnavailableError as exc:
+            logger.warning(
+                "Failed to enqueue rebuild task %d: %s",
+                task_id,
+                exc,
+            )
+            enqueue_result = None
         except Exception:
             logger.warning("Failed to enqueue rebuild task %d", task_id, exc_info=True)
+            enqueue_result = None
 
-        if enqueued:
+        if enqueue_result is not None and enqueue_result.queued:
             return (
                 f"Tile rebuild task #{task_id} was queued automatically. "
                 "Run Rebuild Tiles manually if you need to re-run it."
             )
 
-        # Redis is unavailable. The import task itself must not be blocked for
-        # the potentially hours-long rebuild, so schedule the rebuild to run
-        # in-process via BackgroundTasks if we have access to one, otherwise
-        # start it as an orphan asyncio task (e.g. inside an arq worker).
-        if bg is not None:
+        # In local mode, schedule the rebuild in-process when a BackgroundTasks
+        # object is available. Required mode has no local fallback and records
+        # the automatic rebuild task as failed below.
+        if bg is not None and settings.task_execution_mode == "local":
             bg.add_task(run_rebuild_tiles, task_id)
             return (
                 f"Tile rebuild task #{task_id} was scheduled to run automatically. "
@@ -2261,9 +2302,18 @@ async def run_files_export(task_id: int) -> None:
             filename = f"hriv-files-{timestamp}.tar.gz"
             filepath = os.path.join(tasks_dir, filename)
 
-            # Write to /tmp first so the archive doesn't include itself
-            # (_TASKS_DIR lives inside the data directory being archived).
-            tmp = tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False)
+            # Stage the archive inside the tasks dir on the data volume:
+            # the export walk excludes _TASKS_DIR, so the archive never
+            # includes itself, and staging on the PVC keeps the (multi-GB)
+            # archive off the pod's bounded ephemeral storage.  The hidden
+            # prefix keeps partial archives out of retained-artifact
+            # listings until the final rename.
+            tmp = tempfile.NamedTemporaryFile(
+                suffix=".tar.gz",
+                prefix=".export-staging-",
+                dir=tasks_dir,
+                delete=False,
+            )
             tmp.close()
             tmp_name = tmp.name
 

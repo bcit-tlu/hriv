@@ -139,12 +139,16 @@ To verify trace context propagation from API to arq worker:
 ```bash
 docker compose stop redis
 # Upload an image — should succeed, processed in backend container
-docker compose logs backend | grep 'worker.enqueue_failed\|processing.started'
+docker compose logs backend | grep 'worker.queue_unavailable\|worker.submission_failed\|processing.started'
 # Restart redis
 docker compose start redis
 ```
 
-Verify: `worker.enqueue_failed` event in backend logs, followed by `processing.started` in backend (not worker). Image completes successfully.
+Verify: `worker.queue_unavailable` or `worker.submission_failed` in backend logs,
+followed by `processing.started` in backend (not worker). This
+BackgroundTasks fallback applies only when `TASK_EXECUTION_MODE=local`; required
+mode returns HTTP 503 and does not start processing in the backend. Image
+completes successfully in local mode.
 
 ### Redis down — rate limiting
 

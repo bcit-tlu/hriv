@@ -48,6 +48,7 @@ from app.routers.admin import (
     create_task_download_token,
     download_task_result,
 )
+from app.worker import EnqueueResult, TaskQueueUnavailableError
 from app.schemas import FileRestoreRequest, FilesImportRerunRequest, RebuildTilesRequest, UploadFinalizeRequest
 
 
@@ -355,7 +356,7 @@ async def test_kick_off_redis_available() -> None:
     task = _make_admin_task(task_type="db_export")
     bg = MagicMock()
 
-    with patch("app.routers.admin.enqueue_admin_task", new_callable=AsyncMock, return_value=True):
+    with patch("app.routers.admin.enqueue_admin_task", new_callable=AsyncMock, return_value=EnqueueResult("queued", "submitted")):
         await _kick_off(task, bg)
 
     # Should NOT add to BackgroundTasks when Redis is available
@@ -366,11 +367,95 @@ async def test_kick_off_redis_unavailable() -> None:
     task = _make_admin_task(task_type="db_export")
     bg = MagicMock()
 
-    with patch("app.routers.admin.enqueue_admin_task", new_callable=AsyncMock, return_value=False):
+    with patch("app.routers.admin.enqueue_admin_task", new_callable=AsyncMock, return_value=EnqueueResult("fallback", "queue_unavailable")):
         await _kick_off(task, bg)
 
     # Falls back to BackgroundTasks
     bg.add_task.assert_called_once()
+
+
+async def test_kick_off_rejection_retains_input_when_bookkeeping_fails(tmp_path) -> None:
+    input_path = tmp_path / "import.json"
+    input_path.write_text("payload")
+    task = _make_admin_task(task_type="db_import", input_path=str(input_path))
+    db = AsyncMock()
+    update_result = MagicMock(rowcount=1)
+    db.execute = AsyncMock(return_value=update_result)
+    db.commit = AsyncMock(side_effect=RuntimeError("database unavailable"))
+    db_context = MagicMock()
+    db_context.__aenter__ = AsyncMock(return_value=db)
+    db_context.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("app.routers.admin.async_session", return_value=db_context),
+        patch(
+            "app.routers.admin.enqueue_admin_task",
+            new_callable=AsyncMock,
+            side_effect=TaskQueueUnavailableError("queue_unavailable"),
+        ),
+    ):
+        with pytest.raises(TaskQueueUnavailableError):
+            await _kick_off(task, MagicMock())
+
+    assert input_path.exists()
+
+
+@pytest.mark.parametrize("task_type", ["db_import", "rebuild_tiles", "file_restore", "files_import"])
+async def test_kick_off_rejection_cleans_generated_inputs_but_retains_archives(
+    task_type,
+    tmp_path,
+) -> None:
+    suffix = ".tar.gz" if task_type == "files_import" else ".json"
+    input_path = tmp_path / f"{task_type}{suffix}"
+    input_path.write_text("payload")
+    task = _make_admin_task(task_type=task_type, input_path=str(input_path))
+    bg = MagicMock()
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=MagicMock(rowcount=1))
+    db.commit = AsyncMock()
+    db_context = MagicMock()
+    db_context.__aenter__ = AsyncMock(return_value=db)
+    db_context.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("app.routers.admin.async_session", return_value=db_context),
+        patch(
+            "app.routers.admin.enqueue_admin_task",
+            new_callable=AsyncMock,
+            side_effect=TaskQueueUnavailableError("queue_unavailable"),
+        ),
+    ):
+        with pytest.raises(TaskQueueUnavailableError):
+            await _kick_off(task, bg)
+
+    assert input_path.exists() is (task_type == "files_import")
+
+
+async def test_kick_off_rejection_retains_input_when_no_active_row_matched(
+    tmp_path,
+) -> None:
+    input_path = tmp_path / "import.json"
+    input_path.write_text("payload")
+    task = _make_admin_task(task_type="db_import", input_path=str(input_path))
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=MagicMock(rowcount=0))
+    db.commit = AsyncMock()
+    db_context = MagicMock()
+    db_context.__aenter__ = AsyncMock(return_value=db)
+    db_context.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("app.routers.admin.async_session", return_value=db_context),
+        patch(
+            "app.routers.admin.enqueue_admin_task",
+            new_callable=AsyncMock,
+            side_effect=TaskQueueUnavailableError("queue_unavailable"),
+        ),
+    ):
+        with pytest.raises(TaskQueueUnavailableError):
+            await _kick_off(task, MagicMock())
+
+    assert input_path.exists()
 
 
 async def test_start_db_export() -> None:
@@ -391,7 +476,7 @@ async def test_start_db_export() -> None:
 
     db.refresh = AsyncMock(side_effect=mock_refresh)
 
-    with patch("app.routers.admin.enqueue_admin_task", new_callable=AsyncMock, return_value=True):
+    with patch("app.routers.admin.enqueue_admin_task", new_callable=AsyncMock, return_value=EnqueueResult("queued", "submitted")):
         result = await start_db_export(user, bg, db=db)
 
     assert result["task_type"] == "db_export"
@@ -421,7 +506,7 @@ async def test_start_rebuild_tiles_creates_task(tmp_path) -> None:
 
     with (
         patch("app.admin_ops._TASKS_DIR", tasks_dir),
-        patch("app.routers.admin.enqueue_admin_task", new_callable=AsyncMock, return_value=True),
+        patch("app.routers.admin.enqueue_admin_task", new_callable=AsyncMock, return_value=EnqueueResult("queued", "submitted")),
     ):
         result = await start_rebuild_tiles(user, bg, request=request, db=db)
 
@@ -469,7 +554,7 @@ async def test_start_file_restore_creates_task(tmp_path) -> None:
     with (
         patch("app.admin_ops._TASKS_DIR", tasks_dir),
         patch("app.routers.admin.get_snapshot_manifest", return_value=manifest),
-        patch("app.routers.admin.enqueue_admin_task", new_callable=AsyncMock, return_value=True),
+        patch("app.routers.admin.enqueue_admin_task", new_callable=AsyncMock, return_value=EnqueueResult("queued", "submitted")),
     ):
         result = await start_file_restore(user, bg, request=request, db=db)
 
@@ -690,7 +775,7 @@ async def test_rerun_files_import_creates_pending_task() -> None:
             new_callable=AsyncMock,
             return_value=task,
         ),
-        patch("app.routers.admin.enqueue_admin_task", new_callable=AsyncMock, return_value=True),
+        patch("app.routers.admin.enqueue_admin_task", new_callable=AsyncMock, return_value=EnqueueResult("queued", "submitted")),
     ):
         result = await rerun_files_import(user, bg, FilesImportRerunRequest(archive_task_id=7), db=db)
 
@@ -928,7 +1013,7 @@ async def test_upload_task_file_success(tmp_path) -> None:
     with (
         patch("app.routers.admin._ensure_tasks_dir", return_value=str(tmp_path / "admin_tasks")),
         patch("app.routers.admin.shutil.disk_usage", return_value=SimpleNamespace(free=10**12)),
-        patch("app.routers.admin.enqueue_admin_task", new_callable=AsyncMock, return_value=True),
+        patch("app.routers.admin.enqueue_admin_task", new_callable=AsyncMock, return_value=EnqueueResult("queued", "submitted")),
     ):
         result = await upload_task_file(task.id, request, user, bg, db=db)
 
@@ -1160,7 +1245,7 @@ async def test_finalize_task_upload_success(tmp_path) -> None:
 
     with (
         patch("app.routers.admin._ensure_tasks_dir", return_value=str(tmp_path / "admin_tasks")),
-        patch("app.routers.admin.enqueue_admin_task", new_callable=AsyncMock, return_value=True),
+        patch("app.routers.admin.enqueue_admin_task", new_callable=AsyncMock, return_value=EnqueueResult("queued", "submitted")),
     ):
         result = await finalize_task_upload(1, UploadFinalizeRequest(total_bytes=10), MagicMock(), MagicMock(), db=db)
 
