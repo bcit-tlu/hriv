@@ -226,6 +226,13 @@ fi
 assert_contains "$backend_required_no_worker_output" "requires redis.worker.enabled" \
   "backend chart should explain that required execution mode needs the worker Deployment"
 
+if backend_low_max_jobs_output="$(helm template test charts/backend \
+  --set redis.worker.maxJobs=1 2>&1)"; then
+  fail "expected redis.worker.maxJobs below 2 to be rejected"
+fi
+assert_contains "$backend_low_max_jobs_output" "must be at least 2" \
+  "backend chart should explain the redis.worker.maxJobs floor"
+
 if backend_bad_mode_output="$(helm template test charts/backend \
   --set tasks.executionMode=worker 2>&1)"; then
   fail "expected an unknown tasks.executionMode value to be rejected"
