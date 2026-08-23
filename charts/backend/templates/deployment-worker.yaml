@@ -2,6 +2,8 @@
 {{- $tiles := include "hriv-backend.resolvedTilesPersistence" . | fromYaml -}}
 {{- $sourceImagesAccessModes := get $sourceImages "accessModes" -}}
 {{- $tilesAccessModes := get $tiles "accessModes" -}}
+{{- $workerProbes := .Values.redis.worker.probes | default dict -}}
+{{- $workerLivenessProbe := get $workerProbes "liveness" | default dict -}}
 {{- if and .Values.redis.worker.enabled (not .Values.redis.enabled) }}
 {{- fail "redis.worker.enabled requires redis.enabled — the worker needs a Redis connection" }}
 {{- end }}
@@ -38,6 +40,7 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/component: worker
     spec:
+      terminationGracePeriodSeconds: {{ .Values.redis.worker.terminationGracePeriodSeconds }}
       containers:
         - name: worker
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
@@ -65,6 +68,18 @@ spec:
                   optional: true
             - name: REDIS_URL
               value: {{ .Values.redis.url | quote }}
+            - name: TASK_EXECUTION_MODE
+              value: {{ .Values.tasks.executionMode | quote }}
+            - name: WORKER_MAX_JOBS
+              value: {{ .Values.redis.worker.maxJobs | quote }}
+            {{- if .Values.redis.worker.totalSlots }}
+            - name: WORKER_TOTAL_SLOTS
+              value: {{ .Values.redis.worker.totalSlots | quote }}
+            {{- end }}
+            - name: DB_POOL_SIZE
+              value: {{ .Values.redis.worker.db.poolSize | quote }}
+            - name: DB_MAX_OVERFLOW
+              value: {{ .Values.redis.worker.db.maxOverflow | quote }}
             - name: APP_VERSION
               value: {{ include "hriv-backend.displayVersion" . | quote }}
             - name: APP_IMAGE_TAG
@@ -91,6 +106,15 @@ spec:
             - name: OTEL_PYTHON_FASTAPI_EXCLUDED_URLS
               value: {{ .Values.observability.openTelemetry.excludedUrls | quote }}
             {{- end }}
+          {{- if get $workerLivenessProbe "enabled" | default false }}
+          livenessProbe:
+            exec:
+              command: ["arq", "--check", "app.worker.WorkerSettings"]
+            initialDelaySeconds: {{ get $workerLivenessProbe "initialDelaySeconds" | default 60 }}
+            periodSeconds: {{ get $workerLivenessProbe "periodSeconds" | default 60 }}
+            timeoutSeconds: {{ get $workerLivenessProbe "timeoutSeconds" | default 15 }}
+            failureThreshold: {{ get $workerLivenessProbe "failureThreshold" | default 10 }}
+          {{- end }}
           {{- with .Values.redis.worker.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
