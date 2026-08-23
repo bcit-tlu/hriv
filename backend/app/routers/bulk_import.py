@@ -26,7 +26,7 @@ from arq.utils import timestamp_ms
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
-from sqlalchemy import case, cast, or_, select, update
+from sqlalchemy import case, cast, select, update
 from sqlalchemy.dialects.postgresql import JSONB as JSONB_type
 from sqlalchemy.sql import func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1028,13 +1028,7 @@ async def reconcile_stale_bulk_import_jobs(
             # Match the coordinator finalizer: any completed image counts as
             # partial success, so "failed" means nothing was imported.
             status=case(
-                (
-                    or_(
-                        BulkImportJob.completed_count == BulkImportJob.total_count,
-                        BulkImportJob.completed_count > 0,
-                    ),
-                    "completed",
-                ),
+                (BulkImportJob.completed_count > 0, "completed"),
                 else_="failed",
             ),
             failed_count=BulkImportJob.total_count - BulkImportJob.completed_count,

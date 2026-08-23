@@ -2,8 +2,12 @@
 
 Run with:  opentelemetry-instrument arq app.worker.WorkerSettings
 
-Falls back to in-process BackgroundTasks when Redis is unavailable so
-the application keeps working in local-dev / single-container setups.
+Queue policy is governed by ``TASK_EXECUTION_MODE``: in ``local`` mode
+enqueue falls back to in-process BackgroundTasks when Redis is
+unavailable so the application keeps working in local-dev /
+single-container setups, while in ``required`` mode the fallback is
+disabled and enqueue failures raise :class:`TaskQueueUnavailableError`
+(surfaced to API clients as HTTP 503).
 
 Trace context propagation
 ~~~~~~~~~~~~~~~~~~~~~~~~
