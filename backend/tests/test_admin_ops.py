@@ -10,6 +10,7 @@ import os
 import tarfile
 import tempfile
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,6 +19,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from sqlalchemy.sql.dml import Update
 
+from app import admin_ops
 from app.database import settings
 from app.models import AdminTask
 from app.worker import EnqueueResult, TaskQueueUnavailableError
@@ -1518,6 +1520,76 @@ async def test_run_files_export_success(tmp_path) -> None:
         names = tar.getnames()
         assert any("source_images" in name for name in names)
         assert not any("/tiles/" in name or name.endswith("/tiles") for name in names)
+
+
+async def test_run_files_export_stages_archive_in_tasks_dir(tmp_path) -> None:
+    """The archive is staged on the tasks dir (data PVC), not /tmp."""
+    data_dir = tmp_path / "data"
+    source_dir = data_dir / "source_images"
+    source_dir.mkdir(parents=True)
+    tiles_dir = data_dir / "tiles"
+    tiles_dir.mkdir()
+    (source_dir / "source.jpg").write_text("data")
+
+    task = SimpleNamespace(
+        id=1, task_type="files_export", status="pending", progress=0, log="",
+        result_filename=None, result_path=None, input_path=None, error_message=None,
+    )
+
+    mock_session = AsyncMock()
+    mock_session.get = AsyncMock(return_value=task)
+    mock_session.commit = AsyncMock()
+    mock_session_factory = MagicMock()
+    mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    tasks_dir = str(tmp_path / "admin_tasks")
+    staged_dests: list[str] = []
+    real_create_tar_file = admin_ops._create_tar_file
+
+    def _capture_dest(data_dir_arg, dest, **kwargs):
+        staged_dests.append(dest)
+        return real_create_tar_file(data_dir_arg, dest, **kwargs)
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=mock_session_factory),
+        patch("app.admin_ops.settings") as mock_settings,
+        patch("app.admin_ops._TASKS_DIR", tasks_dir),
+        patch("app.admin_ops._create_tar_file", side_effect=_capture_dest),
+    ):
+        mock_settings.tiles_dir = str(tiles_dir)
+        mock_settings.export_pigz_threads = 2
+        await run_files_export(1)
+
+    assert task.status == "completed"
+    assert len(staged_dests) == 1
+    assert os.path.dirname(staged_dests[0]) == tasks_dir
+    assert os.path.basename(staged_dests[0]).startswith(".export-staging-")
+    # The staging file was renamed to the final artifact.
+    assert not os.path.exists(staged_dests[0])
+    assert os.path.exists(os.path.join(tasks_dir, task.result_filename))
+
+
+def test_cleanup_stale_export_staging_files(tmp_path) -> None:
+    """Abandoned staging archives are removed; fresh ones survive."""
+    tasks_dir = tmp_path / "admin_tasks"
+    tasks_dir.mkdir()
+    old_staging = tasks_dir / ".export-staging-abc.tar.gz"
+    old_staging.write_bytes(b"partial")
+    stale_mtime = time.time() - 3600
+    os.utime(old_staging, (stale_mtime, stale_mtime))
+    fresh_staging = tasks_dir / ".export-staging-def.tar.gz"
+    fresh_staging.write_bytes(b"partial")
+    retained = tasks_dir / "hriv-files-20260101-000000.tar.gz"
+    retained.write_bytes(b"archive")
+    os.utime(retained, (stale_mtime, stale_mtime))
+
+    with patch("app.admin_ops._TASKS_DIR", str(tasks_dir)):
+        admin_ops._cleanup_stale_export_staging_files(900)
+
+    assert not old_staging.exists()
+    assert fresh_staging.exists()
+    assert retained.exists()
 
 
 def test_iter_export_files_skips_admin_tasks_and_tiles(tmp_path) -> None:

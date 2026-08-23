@@ -18,6 +18,7 @@ import subprocess
 import tarfile
 import tempfile
 import threading
+import time
 import uuid
 from collections.abc import Callable, Iterator
 from datetime import datetime, timedelta, timezone
@@ -613,7 +614,41 @@ async def reconcile_stale_tasks(
                 "stale_after_seconds": stale_after_seconds,
             },
         )
+    _cleanup_stale_export_staging_files(stale_after_seconds)
     return len(ids)
+
+
+def _cleanup_stale_export_staging_files(stale_after_seconds: int) -> None:
+    """Delete abandoned filesystem-export staging archives.
+
+    Export archives are staged in the tasks dir under a hidden
+    ``.export-staging-`` prefix before the final rename; a runner that
+    dies mid-archive (pod crash, eviction) leaves the partial file
+    behind on the data volume.  A live export keeps its staging file's
+    mtime fresh as tar appends, so only files older than
+    *stale_after_seconds* are removed.
+    """
+    cutoff = time.time() - stale_after_seconds
+    try:
+        entries = os.listdir(_TASKS_DIR)
+    except OSError:
+        return
+    for name in entries:
+        if not name.startswith(".export-staging-"):
+            continue
+        path = os.path.join(_TASKS_DIR, name)
+        try:
+            if os.path.getmtime(path) < cutoff:
+                os.unlink(path)
+                logger.warning(
+                    "Removed abandoned export staging file",
+                    extra={
+                        "event": "admin_task.export_staging_cleanup",
+                        "path": path,
+                    },
+                )
+        except OSError:
+            continue
 
 
 async def _update_task(
@@ -2267,9 +2302,18 @@ async def run_files_export(task_id: int) -> None:
             filename = f"hriv-files-{timestamp}.tar.gz"
             filepath = os.path.join(tasks_dir, filename)
 
-            # Write to /tmp first so the archive doesn't include itself
-            # (_TASKS_DIR lives inside the data directory being archived).
-            tmp = tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False)
+            # Stage the archive inside the tasks dir on the data volume:
+            # the export walk excludes _TASKS_DIR, so the archive never
+            # includes itself, and staging on the PVC keeps the (multi-GB)
+            # archive off the pod's bounded ephemeral storage.  The hidden
+            # prefix keeps partial archives out of retained-artifact
+            # listings until the final rename.
+            tmp = tempfile.NamedTemporaryFile(
+                suffix=".tar.gz",
+                prefix=".export-staging-",
+                dir=tasks_dir,
+                delete=False,
+            )
             tmp.close()
             tmp_name = tmp.name
 
