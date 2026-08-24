@@ -110,7 +110,8 @@ async def create_image(
                 file_size=body.file_size,
             )
             db.add(img)
-            await bump_browse_revision(db)
+            if body.category_id is not None:
+                await bump_browse_revision(db)
             await db.commit()
             await db.refresh(img)
             span.set_attribute("image.id", img.id)
@@ -149,11 +150,28 @@ async def bulk_update_images(
                     affected = {scope_key_for(img.category_id) for img in moved}
                     affected.add(scope_key_for(update_data["category_id"]))
                     await bump_scopes(db, affected)
+
+            # Only bump the global browse revision when an image that is (or is
+            # becoming) categorized actually changes. Uncategorized images do not
+            # appear in the category tree.
+            browse_dirty = False
+            for img in images:
+                new_category_id = update_data.get("category_id", img.category_id)
+                if img.category_id is None and new_category_id is None:
+                    continue
+                for key, value in update_data.items():
+                    if getattr(img, key) != value:
+                        browse_dirty = True
+                        break
+                if browse_dirty:
+                    break
+
             for img in images:
                 for key, value in update_data.items():
                     setattr(img, key, value)
                 img.version = img.version + 1
-            await bump_browse_revision(db)
+            if browse_dirty:
+                await bump_browse_revision(db)
             await db.commit()
             # Reload updated images
             stmt = select(Image).where(Image.id.in_(body.image_ids)).order_by(Image.sort_order, Image.name)
@@ -250,10 +268,19 @@ async def update_image(
                     else:
                         current[key] = value
                 update_data["metadata_"] = current if current else None
+            new_category_id = update_data.get("category_id", img.category_id)
+            browse_affects_tree = (
+                img.category_id is not None or new_category_id is not None
+            )
+            browse_dirty = browse_affects_tree and any(
+                getattr(img, key) != value for key, value in update_data.items()
+            )
+
             for key, value in update_data.items():
                 setattr(img, key, value)
 
-            await bump_browse_revision(db)
+            if browse_dirty:
+                await bump_browse_revision(db)
             await db.commit()
             await db.refresh(img)
 
@@ -426,7 +453,9 @@ async def replace_image(
                 image_id=image_id,
             )
             db.add(src)
-            if has_metadata:
+            if has_metadata and (
+                metadata_snapshot["category_id"] is not None or img.category_id is not None
+            ):
                 await bump_browse_revision(db)
             await db.commit()
             await db.refresh(src)
@@ -523,7 +552,11 @@ async def replace_image(
                         )
                         if restore_result.rowcount == 1:
                             db.expire(img)
-                            await bump_browse_revision(db)
+                            if (
+                                metadata_snapshot["category_id"] is not None
+                                or img.category_id is not None
+                            ):
+                                await bump_browse_revision(db)
                             await db.commit()
                         else:
                             await db.rollback()
@@ -578,9 +611,11 @@ async def bulk_delete_images(
             images = result.scalars().all()
             if len(images) != len(set(body.image_ids)):
                 raise HTTPException(status_code=404, detail="One or more images not found")
+            browse_dirty = any(img.category_id is not None for img in images)
             for img in images:
                 await db.delete(img)
-            await bump_browse_revision(db)
+            if browse_dirty:
+                await bump_browse_revision(db)
             await db.commit()
         except Exception as exc:
             record_exception_if_server_error(span, exc)
@@ -600,7 +635,8 @@ async def delete_image(
             if not img:
                 raise HTTPException(status_code=404, detail="Image not found")
             await db.delete(img)
-            await bump_browse_revision(db)
+            if img.category_id is not None:
+                await bump_browse_revision(db)
             await db.commit()
         except Exception as exc:
             record_exception_if_server_error(span, exc)

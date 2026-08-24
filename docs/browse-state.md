@@ -44,6 +44,12 @@ The revision is incremented inside the same transaction as the data change for:
 - Image processing completion (`process_source_image`, `process_replace_image`)
 - Admin restore/import (`admin_ops.py`)
 
+No-op category/image edits (where the submitted values equal the current values)
+do not bump the revision, so opening a dialog and clicking save without changing
+anything no longer invalidates every viewer's tree cache. Image create/update/
+delete/processing only bumps the revision when the image is or becomes attached
+to a category; uncategorized images do not appear in the browse tree.
+
 The `PUT /api/tile-order` response includes the new `browse_revision` (both in
 the JSON body and the `X-Browse-Revision` header) so the frontend can decide
 whether a full tree reload is needed.

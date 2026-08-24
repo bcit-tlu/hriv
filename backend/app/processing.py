@@ -708,7 +708,9 @@ async def process_source_image(source_image_id: int) -> None:
                 src.status = "completed"
                 src.progress = 100
                 src.status_message = "Completed"
-                await bump_browse_revision(db)
+                # Only images that are attached to a category appear in the tree.
+                if img.category_id is not None:
+                    await bump_browse_revision(db)
                 await db.commit()
 
             duration_ms = round((time.monotonic() - t_start) * 1000)
@@ -983,7 +985,9 @@ async def process_replace_image(
                 src.status = "completed"
                 src.progress = 100
                 src.status_message = "Completed"
-                await bump_browse_revision(db)
+                # Only images that are attached to a category appear in the tree.
+                if img.category_id is not None:
+                    await bump_browse_revision(db)
                 await db.commit()
 
             # Remove old tiles only after the commit succeeds, so a

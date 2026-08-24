@@ -498,19 +498,32 @@ async def update_category(
     group_ids = update_data.pop("group_ids", None)
     if "metadata_extra" in update_data:
         update_data["metadata_"] = update_data.pop("metadata_extra")
-    for key, value in update_data.items():
-        setattr(cat, key, value)
+
+    # Only bump the global browse revision when the edit actually changes the
+    # category tree. No-op saves from the edit dialog should not invalidate every
+    # viewer's tree cache.
+    browse_dirty = any(getattr(cat, key) != value for key, value in update_data.items())
     if program_ids is not None:
         existing_program_ids = {p.id for p in cat.programs}
-        cat.programs = await _resolve_programs(
+        new_programs = await _resolve_programs(
             db, _user, program_ids, existing_program_ids,
         )
+        if {p.id for p in new_programs} != existing_program_ids:
+            browse_dirty = True
+        cat.programs = new_programs
     if group_ids is not None:
         existing_group_ids = {g.id for g in cat.groups}
-        cat.groups = await _resolve_groups(
+        new_groups = await _resolve_groups(
             db, _user, group_ids, existing_group_ids,
         )
-    await bump_browse_revision(db)
+        if {g.id for g in new_groups} != existing_group_ids:
+            browse_dirty = True
+        cat.groups = new_groups
+
+    for key, value in update_data.items():
+        setattr(cat, key, value)
+    if browse_dirty:
+        await bump_browse_revision(db)
     await db.commit()
     await db.refresh(cat)
     cat._category_warnings = _intersection_warnings(
