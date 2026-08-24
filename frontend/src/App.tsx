@@ -202,6 +202,9 @@ export default function App() {
   const [fileDropCategoryId, setFileDropCategoryId] = useState<number | null>(null)
   const [droppedFiles, setDroppedFiles] = useState<File[]>([])
   const [fileDragActive, setFileDragActive] = useState(false)
+  const [dragActive, setDragActive] = useState(false)
+  const dragActiveRef = useRef(false)
+  const pendingRefreshRef = useRef(false)
   const fileDragCounter = useRef(0)
   const [manageUploadOpen, setManageUploadOpen] = useState(false)
   const [addCatOpen, setAddCatOpen] = useState(false)
@@ -254,7 +257,7 @@ export default function App() {
     getPathGroupRestriction,
     ancestorGroupIds,
     currentCategories,
-  } = useBrowseData({ path, currentUser })
+  } = useBrowseData({ path, currentUser, dragActive })
 
   // Navigation-safe reorder coordinator for the current Browse scope
   // (epic #975, issue #979).
@@ -1066,6 +1069,11 @@ export default function App() {
   }, [])
 
   const handleReorderComplete = useCallback(async () => {
+    if (dragActiveRef.current) {
+      pendingRefreshRef.current = true
+      return
+    }
+    pendingRefreshRef.current = false
     // Capture before fetching: a save committing while these requests are in
     // flight is newer than the fetched data and must survive the release.
     const marker = tileOrderingCoordinator.marker()
@@ -1079,6 +1087,13 @@ export default function App() {
     if (imgResult.status === 'rejected') {
       setWarnSnack('Could not refresh images after reorder.')
     }
+    // If a new drag started while we were refreshing, the grid must not see
+    // stale prop churn and this refresh may have been aborted, so queue a
+    // re-run for after the drag ends.
+    if (dragActiveRef.current) {
+      pendingRefreshRef.current = true
+      return
+    }
     // Once fresh authoritative data landed, drop the coordinator's cached
     // order for clean scopes so order changes made elsewhere (e.g. Manage
     // Categories) become visible immediately instead of on the next poll.
@@ -1086,6 +1101,20 @@ export default function App() {
       tileOrderingCoordinator.releaseCleanScopes(marker)
     }
   }, [refreshCategories, refreshUncategorizedImages])
+
+  const handleDragActiveChange = useCallback((active: boolean) => {
+    setDragActive(active)
+    dragActiveRef.current = active
+  }, [])
+
+  // Run any coordinator-commit refresh that was deferred while a drag was
+  // active as soon as the drag ends.
+  useEffect(() => {
+    if (!dragActive && pendingRefreshRef.current) {
+      pendingRefreshRef.current = false
+      void handleReorderComplete()
+    }
+  }, [dragActive, handleReorderComplete])
 
   // Every successful coordinator save refreshes the shared category tree and
   // uncategorized images so all consumers (e.g. Manage Categories, which can
@@ -1917,6 +1946,7 @@ export default function App() {
                     : undefined
                 }
                 tileOrdering={browseTileOrderingProp}
+                onDragActiveChange={handleDragActiveChange}
               />
 
               {categoriesLoading ? (

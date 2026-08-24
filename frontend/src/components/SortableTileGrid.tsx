@@ -240,6 +240,9 @@ export interface SortableTileGridProps {
     ) => void
     claimGeneration: () => number
   }
+
+  /** Called when a tile drag starts or ends so the app can pause refreshes. */
+  onDragActiveChange?: (active: boolean) => void
 }
 
 export default function SortableTileGrid({
@@ -265,6 +268,7 @@ export default function SortableTileGrid({
   onGridDragOver,
   onGridDrop,
   tileOrdering,
+  onDragActiveChange,
 }: SortableTileGridProps) {
   const visibleImages = useMemo(
     () => (path.length === 0 ? [...uncategorizedImages, ...currentImages] : currentImages),
@@ -294,6 +298,12 @@ export default function SortableTileGrid({
   const syncedCoordinatorOrderRef = useRef(coordinatorOrder)
 
   useLayoutEffect(() => {
+    // Never rebuild the tile list while a drag is active. Rebuilding would
+    // write new index props into useSortable and abort dnd-kit's optimistic
+    // sorting reflow, which is the "tiles don't make room" freeze.
+    if (activeItem !== null) {
+      return
+    }
     const membershipChanged =
       syncedCategoriesRef.current !== currentCategories ||
       syncedVisibleImagesRef.current !== visibleImages
@@ -310,7 +320,7 @@ export default function SortableTileGrid({
 
     const built = buildTileItems(currentCategories, visibleImages)
     setItems(coordinatorOrder !== null ? orderTileItems(built, coordinatorOrder) : built)
-  }, [currentCategories, visibleImages, coordinatorOrder])
+  }, [currentCategories, visibleImages, coordinatorOrder, activeItem])
 
   const blockedIdsMap = useMemo(() => {
     const map = new Map<number, Set<number>>()
@@ -328,67 +338,71 @@ export default function SortableTileGrid({
       const sourceId = String(event.operation.source?.id)
       const item = items.find((i) => tileId(i) === sourceId)
       setActiveItem(item ?? null)
+      onDragActiveChange?.(true)
     },
-    [items],
+    [items, onDragActiveChange],
   )
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
-      setActiveItem(null)
+      try {
+        const { operation } = event
+        if (operation.canceled) return
 
-      const { operation } = event
-      if (operation.canceled) return
+        const source = operation.source
+        const target = operation.target
+        if (!source || !target) return
 
-      const source = operation.source
-      const target = operation.target
-      if (!source || !target) return
+        const sourceId = String(source.id)
+        const targetId = String(target.id)
 
-      const sourceId = String(source.id)
-      const targetId = String(target.id)
-
-      if (targetId.startsWith(DROP_PREFIX)) {
-        const targetCatId = Number(targetId.slice(DROP_PREFIX.length))
-        if (sourceId.startsWith('img-')) {
-          onDropImageOnCategory?.(Number(sourceId.slice(4)), targetCatId)
-        } else if (sourceId.startsWith('cat-')) {
-          onDropCategoryOnCategory?.(Number(sourceId.slice(4)), targetCatId)
+        if (targetId.startsWith(DROP_PREFIX)) {
+          const targetCatId = Number(targetId.slice(DROP_PREFIX.length))
+          if (sourceId.startsWith('img-')) {
+            onDropImageOnCategory?.(Number(sourceId.slice(4)), targetCatId)
+          } else if (sourceId.startsWith('cat-')) {
+            onDropCategoryOnCategory?.(Number(sourceId.slice(4)), targetCatId)
+          }
+          return
         }
-        return
-      }
 
-      // ── Reorder (optimistic sortable reflow) ──
-      // The target is the sortable tile the pointer settled on. `move`
-      // derives the new order from the source's reflowed sortable index,
-      // so the committed order matches the on-screen preview exactly.
-      const ids = items.map(tileId)
-      const reorderedIds = move(ids, event)
-      if (reorderedIds.length === ids.length && reorderedIds.every((id, i) => id === ids[i])) {
-        return
-      }
-      const itemById = new Map(items.map((item) => [tileId(item), item] as const))
-      const reordered = reorderedIds
-        .map((id) => itemById.get(id))
-        .filter((item): item is TileItem => item !== undefined)
-      if (reordered.length !== items.length) return
+        // ── Reorder (optimistic sortable reflow) ──
+        // The target is the sortable tile the pointer settled on. `move`
+        // derives the new order from the source's reflowed sortable index,
+        // so the committed order matches the on-screen preview exactly.
+        const ids = items.map(tileId)
+        const reorderedIds = move(ids, event)
+        if (reorderedIds.length === ids.length && reorderedIds.every((id, i) => id === ids[i])) {
+          return
+        }
+        const itemById = new Map(items.map((item) => [tileId(item), item] as const))
+        const reordered = reorderedIds
+          .map((id) => itemById.get(id))
+          .filter((item): item is TileItem => item !== undefined)
+        if (reordered.length !== items.length) return
 
-      // Coordinator mode (issue #979): apply locally and report the new
-      // order. Queueing, coalescing, persistence, and save-state UX are
-      // owned above the grid; nothing is discarded here.
-      setItems(reordered)
-      tileOrdering.reportOrder(
-        reordered.map((item) => ({ type: item.type, id: item.data.id })),
-        gridGenerationRef.current ?? undefined,
-        // Drag detail rides along so lifecycle telemetry keeps per-drag
-        // context (which tile moved, from/to index) on this surface.
-        {
-          itemType: sourceId.startsWith('img-') ? 'image' : 'category',
-          itemId: Number(sourceId.slice(4)),
-          fromIndex: ids.indexOf(sourceId),
-          toIndex: reorderedIds.indexOf(sourceId),
-        },
-      )
+        // Coordinator mode (issue #979): apply locally and report the new
+        // order. Queueing, coalescing, persistence, and save-state UX are
+        // owned above the grid; nothing is discarded here.
+        setItems(reordered)
+        tileOrdering.reportOrder(
+          reordered.map((item) => ({ type: item.type, id: item.data.id })),
+          gridGenerationRef.current ?? undefined,
+          // Drag detail rides along so lifecycle telemetry keeps per-drag
+          // context (which tile moved, from/to index) on this surface.
+          {
+            itemType: sourceId.startsWith('img-') ? 'image' : 'category',
+            itemId: Number(sourceId.slice(4)),
+            fromIndex: ids.indexOf(sourceId),
+            toIndex: reorderedIds.indexOf(sourceId),
+          },
+        )
+      } finally {
+        setActiveItem(null)
+        onDragActiveChange?.(false)
+      }
     },
-    [items, tileOrdering, onDropCategoryOnCategory, onDropImageOnCategory],
+    [items, tileOrdering, onDropCategoryOnCategory, onDropImageOnCategory, onDragActiveChange],
   )
 
   const renderCategoryTile = useCallback(

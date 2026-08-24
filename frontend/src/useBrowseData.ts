@@ -58,9 +58,10 @@ export function apiTreeToCategory(node: ApiCategoryTree): Category {
 export interface UseBrowseDataDeps {
   path: Category[]
   currentUser: User | null
+  dragActive?: boolean
 }
 
-export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
+export function useBrowseData({ path, currentUser, dragActive = false }: UseBrowseDataDeps) {
   const [categories, setCategories] = useState<Category[]>([])
   const [categoriesLoading, setCategoriesLoading] = useState(true)
   const [uncategorizedImages, setUncategorizedImages] = useState<ImageItem[]>([])
@@ -362,10 +363,23 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
     },
     [loadCategories, loadUncategorizedImages],
   )
-  const invalidateBackground = useBackgroundRefresh(backgroundRefresh, currentUser != null)
+  const invalidateBackground = useBackgroundRefresh(
+    backgroundRefresh,
+    currentUser != null && !dragActive,
+  )
   useEffect(() => {
     invalidateRef.current = invalidateBackground
   })
+
+  // Abort any in-flight data refreshes when a drag starts so the grid
+  // does not receive new props (and new sortable indices) mid-drag.
+  useEffect(() => {
+    if (!dragActive) return
+    categoriesAbortRef.current?.abort()
+    uncategorizedAbortRef.current?.abort()
+    categoriesRefreshAbortRef.current?.abort()
+    uncategorizedRefreshAbortRef.current?.abort()
+  }, [dragActive])
 
   // Resolve the live children/images from the categories state tree
   // so newly added categories appear immediately.
