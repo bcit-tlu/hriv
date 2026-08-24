@@ -51,6 +51,13 @@ still contain duplicates or gaps from before normalization:
 }
 ```
 
+The response carries `Cache-Control: no-store, no-cache, must-revalidate`
+and `Pragma: no-cache` headers, and the frontend's `getTileOrder` request
+uses `cache: 'no-store'`. Because `GET /api/tile-order` seeds the
+`expected_revision` CAS token for the following `PUT`, a stale cached
+response would cause false `409` conflicts and silent persistence failures
+on subsequent drags.
+
 ### `PUT /api/tile-order`
 
 ```json
@@ -240,6 +247,12 @@ order. Foreground reads and authoritative refreshes
 (`refreshCategories`/`refreshUncategorizedImages`) also abort the previous
 read for the same data via `AbortController`; aborted requests are treated
 as expected control flow (no error state, no console noise).
+
+`GET /api/tile-order` is similarly protected: the backend sets
+`Cache-Control: no-store, no-cache, must-revalidate` and `Pragma: no-cache`,
+and the frontend calls it with `cache: 'no-store'`. This prevents a stale
+revision from seeding `expected_revision` after `releaseCleanScopes` drops
+the in-memory CAS token (issue #1083 / epic #975).
 
 Background polling is paused for reads while the tile-ordering coordinator
 reports unsaved work: the poll callback in `useBrowseData` returns early

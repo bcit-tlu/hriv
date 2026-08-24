@@ -720,6 +720,42 @@ describe('TileOrderingCoordinator', () => {
     expect(mockedPut).toHaveBeenLastCalledWith(null, 5, refs(1, 2), expect.any(String))
   })
 
+  it('a stale cached seeding revision after releaseCleanScopes surfaces conflict and queues later drops', async () => {
+    // First save seeds from GET revision 1 and commits to revision 2.
+    mockedPut.mockResolvedValueOnce(response(2, refs(2, 1, 3)))
+    coordinator.reportOrder(null, refs(2, 1, 3))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('saved')
+    expect(mockedGet).toHaveBeenCalledTimes(1)
+
+    // As in App.tsx after a successful commit: authoritative refresh data has
+    // landed, so the cached display order and CAS revision are released.
+    coordinator.releaseCleanScopes(coordinator.marker())
+    expect(coordinator.getScope(null).revision).toBeNull()
+
+    // A browser/proxy cache returning the pre-save revision (1) causes the
+    // next PUT to 409 with the server's current revision (2).
+    mockedGet.mockResolvedValueOnce(response(1, refs(1, 2, 3)))
+    mockedPut.mockRejectedValueOnce(conflictError(response(2, refs(2, 1, 3))))
+    coordinator.reportOrder(null, refs(3, 2, 1))
+    await flushMicrotasks()
+
+    expect(mockedGet).toHaveBeenCalledTimes(2)
+    expect(mockedPut).toHaveBeenCalledTimes(2)
+    expect(mockedPut).toHaveBeenLastCalledWith(null, 1, refs(3, 2, 1), expect.any(String))
+    const conflictState = coordinator.getScope(null)
+    expect(conflictState.status).toBe('conflict')
+    expect(conflictState.revision).toBe(2)
+
+    // Subsequent drags update the local display order but are not persisted
+    // until the conflict is resolved — matching the reported "drags work but no
+    // Order saved notification" symptom.
+    coordinator.reportOrder(null, refs(1, 3, 2))
+    await flushMicrotasks()
+    expect(mockedPut).toHaveBeenCalledTimes(2)
+    expect(coordinator.getScope(null).displayOrder).toEqual(refs(1, 3, 2))
+  })
+
   it('queues drops that land during revision seeding', async () => {
     const seed = deferred<TileOrderResponse>()
     mockedGet.mockReturnValueOnce(seed.promise)

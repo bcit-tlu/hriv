@@ -511,7 +511,10 @@ export interface TileOrderResponse {
 
 export function getTileOrder(parentCategoryId: number | null): Promise<TileOrderResponse> {
   const qs = parentCategoryId != null ? `?parent_category_id=${parentCategoryId}` : ''
-  return request(`/tile-order${qs}`)
+  // Cache-bust: the revision returned by this endpoint seeds the CAS token
+  // for the next PUT, so a stale cached response would cause 409s and silent
+  // conflict state on subsequent drags (issue #1083 / epic #975).
+  return request(`/tile-order${qs}`, { cache: 'no-store' })
 }
 
 export function putTileOrder(
