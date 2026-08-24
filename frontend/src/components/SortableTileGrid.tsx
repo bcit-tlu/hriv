@@ -20,7 +20,7 @@ import type { DragEndEvent, DragStartEvent } from '@dnd-kit/react'
 import type { Category, Group, ImageItem, Program } from '../types'
 import type { TileOrderItemRef } from '../api'
 import type { ReorderDragContext } from '../tileOrdering'
-import { logDrag, useDnDMonitor } from '../dndInstrumentation'
+import { DndMonitor, logDrag } from '../dndInstrumentation'
 import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
 import { getCategoryHiddenStateFromPath } from '../treeUtils'
 import CategoryTile from './CategoryTile'
@@ -306,7 +306,6 @@ export default function SortableTileGrid({
     onDragActiveChangeRef.current = onDragActiveChange
   })
 
-  useDnDMonitor()
   const claimGeneration = tileOrdering.claimGeneration
   // Claim a fresh grid-instance generation per scope so callbacks from an
   // unmounted grid (SPA navigation) cannot overwrite a remounted one.
@@ -545,42 +544,45 @@ export default function SortableTileGrid({
 
   return (
     <DragDropProvider sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-      <Box
-        role="region"
-        aria-label="Sortable tile grid"
-        sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}
-        onDragOver={onGridDragOver}
-        onDrop={onGridDrop}
-      >
-        {items.map((item, index) => (
-          <GridTile
-            key={tileId(item)}
-            item={item}
-            index={index}
-            disabled={!canEditContent}
-            renderCategoryTile={renderCategoryTile}
-            renderImageTile={renderImageTile}
-          />
-        ))}
-        {canEditContent && <FileDropZone isDragActive={fileDragActive} onDrop={onFilesDrop} />}
-      </Box>
+      <>
+        <DndMonitor />
+        <Box
+          role="region"
+          aria-label="Sortable tile grid"
+          sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}
+          onDragOver={onGridDragOver}
+          onDrop={onGridDrop}
+        >
+          {items.map((item, index) => (
+            <GridTile
+              key={tileId(item)}
+              item={item}
+              index={index}
+              disabled={!canEditContent}
+              renderCategoryTile={renderCategoryTile}
+              renderImageTile={renderImageTile}
+            />
+          ))}
+          {canEditContent && <FileDropZone isDragActive={fileDragActive} onDrop={onFilesDrop} />}
+        </Box>
 
-      <DragOverlay dropAnimation={null}>
-        {activeItem ? (
-          <Box
-            sx={{
-              opacity: 0.85,
-              width: 300,
-              pointerEvents: 'none',
-              cursor: 'grabbing',
-            }}
-          >
-            {activeItem.type === 'category'
-              ? renderCategoryTile(activeItem.data)
-              : renderImageTile(activeItem.data)}
-          </Box>
-        ) : null}
-      </DragOverlay>
+        <DragOverlay dropAnimation={null}>
+          {activeItem ? (
+            <Box
+              sx={{
+                opacity: 0.85,
+                width: 300,
+                pointerEvents: 'none',
+                cursor: 'grabbing',
+              }}
+            >
+              {activeItem.type === 'category'
+                ? renderCategoryTile(activeItem.data)
+                : renderImageTile(activeItem.data)}
+            </Box>
+          ) : null}
+        </DragOverlay>
+      </>
     </DragDropProvider>
   )
 }

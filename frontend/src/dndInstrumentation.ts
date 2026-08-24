@@ -32,6 +32,11 @@ const THROTTLE_MS = 150
  * Place this component (or call the hook) inside the `DragDropProvider` whose
  * events you want to trace.
  */
+export function DndMonitor(): null {
+  useDnDMonitor()
+  return null
+}
+
 export function useDnDMonitor(): void {
   const lastMoveLogRef = useRef(0)
   const lastCollisionLogRef = useRef(0)
