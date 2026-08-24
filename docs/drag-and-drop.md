@@ -144,6 +144,21 @@ between-category-tile behaviour. Edge cases verified mechanically: corner entrie
 (axis chosen by the dominant delta component) and wrapped-grid vertical
 neighbours.
 
+## Instrumentation
+
+Dev-mode DnD tracing can be enabled in the browser console with:
+
+```js
+localStorage.setItem('hriv-dnd-trace', '1')
+```
+
+Reload the page, then drag a tile. The trace logs `dragstart`, throttled
+`dragmove`/`collision`, `dragover`, and `dragend` events, plus grid-level
+`handleDragStart` / `handleDragEnd` details (source, target, reordered indexes)
+and `App.handleReorderComplete` (coordinator refresh start/end/deferred). This is
+off in production and only logs when `import.meta.env.DEV` is true or the
+`localStorage` flag is set.
+
 ## Process gate (feel cannot be proven by a recording)
 
 Any change to collision detection, drop zones, collision priority, or activation

@@ -20,6 +20,7 @@ import type { DragEndEvent, DragStartEvent } from '@dnd-kit/react'
 import type { Category, Group, ImageItem, Program } from '../types'
 import type { TileOrderItemRef } from '../api'
 import type { ReorderDragContext } from '../tileOrdering'
+import { logDrag, useDnDMonitor } from '../dndInstrumentation'
 import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
 import { getCategoryHiddenStateFromPath } from '../treeUtils'
 import CategoryTile from './CategoryTile'
@@ -304,6 +305,8 @@ export default function SortableTileGrid({
   useEffect(() => {
     onDragActiveChangeRef.current = onDragActiveChange
   })
+
+  useDnDMonitor()
   const claimGeneration = tileOrdering.claimGeneration
   // Claim a fresh grid-instance generation per scope so callbacks from an
   // unmounted grid (SPA navigation) cannot overwrite a remounted one.
@@ -350,6 +353,10 @@ export default function SortableTileGrid({
   const handleDragStart = useCallback(
     (event: DragStartEvent) => {
       const sourceId = String(event.operation.source?.id)
+      logDrag('SortableTileGrid.handleDragStart', {
+        sourceId,
+        itemFound: items.some((i) => tileId(i) === sourceId),
+      })
       const item = items.find((i) => tileId(i) === sourceId)
       if (item) {
         dragEndedRef.current = false
@@ -364,19 +371,28 @@ export default function SortableTileGrid({
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
+      const { operation } = event
+      logDrag('SortableTileGrid.handleDragEnd', {
+        canceled: event.canceled,
+        source: operation.source?.id,
+        target: operation.target?.id,
+      })
       try {
-        const { operation } = event
         if (operation.canceled) return
 
         const source = operation.source
         const target = operation.target
-        if (!source || !target) return
+        if (!source || !target) {
+          logDrag('SortableTileGrid.handleDragEnd no target', {})
+          return
+        }
 
         const sourceId = String(source.id)
         const targetId = String(target.id)
 
         if (targetId.startsWith(DROP_PREFIX)) {
           const targetCatId = Number(targetId.slice(DROP_PREFIX.length))
+          logDrag('SortableTileGrid.handleDragEnd move-zone', { sourceId, targetId, targetCatId })
           if (sourceId.startsWith('img-')) {
             onDropImageOnCategory?.(Number(sourceId.slice(4)), targetCatId)
           } else if (sourceId.startsWith('cat-')) {
@@ -392,6 +408,7 @@ export default function SortableTileGrid({
         const ids = items.map(tileId)
         const reorderedIds = move(ids, event)
         if (reorderedIds.length === ids.length && reorderedIds.every((id, i) => id === ids[i])) {
+          logDrag('SortableTileGrid.handleDragEnd no reorder change', { sourceId, reorderedIds })
           return
         }
         const itemById = new Map(items.map((item) => [tileId(item), item] as const))
@@ -404,6 +421,15 @@ export default function SortableTileGrid({
         // order. Queueing, coalescing, persistence, and save-state UX are
         // owned above the grid; nothing is discarded here.
         setItems(reordered)
+        const fromIndex = ids.indexOf(sourceId)
+        const toIndex = reorderedIds.indexOf(sourceId)
+        logDrag('SortableTileGrid.handleDragEnd reportOrder', {
+          sourceId,
+          fromIndex,
+          toIndex,
+          itemCount: reordered.length,
+          generation: gridGenerationRef.current,
+        })
         tileOrdering.reportOrder(
           reordered.map((item) => ({ type: item.type, id: item.data.id })),
           gridGenerationRef.current ?? undefined,
@@ -412,8 +438,8 @@ export default function SortableTileGrid({
           {
             itemType: sourceId.startsWith('img-') ? 'image' : 'category',
             itemId: Number(sourceId.slice(4)),
-            fromIndex: ids.indexOf(sourceId),
-            toIndex: reorderedIds.indexOf(sourceId),
+            fromIndex,
+            toIndex,
           },
         )
       } finally {

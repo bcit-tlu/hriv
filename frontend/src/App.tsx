@@ -100,6 +100,7 @@ import { useAnnouncementModal } from './useAnnouncementModal'
 import { useUserProfile } from './useUserProfile'
 import { useMostSevereScope, useTileOrdering } from './useTileOrdering'
 import { tileOrderingCoordinator } from './tileOrdering'
+import { logDrag } from './dndInstrumentation'
 
 const COLLAPSED_BREADCRUMB_CATEGORY_DEPTH = 2
 
@@ -1069,8 +1070,10 @@ export default function App() {
   }, [])
 
   const handleReorderComplete = useCallback(async () => {
+    logDrag('App.handleReorderComplete start', { dragActive: dragActiveRef.current })
     if (dragActiveRef.current) {
       pendingRefreshRef.current = true
+      logDrag('App.handleReorderComplete deferred', { reason: 'dragActive' })
       return
     }
     pendingRefreshRef.current = false
@@ -1081,6 +1084,11 @@ export default function App() {
       refreshCategories(),
       refreshUncategorizedImages(),
     ])
+    logDrag('App.handleReorderComplete fetched', {
+      categories: catResult.status,
+      images: imgResult.status,
+      dragActive: dragActiveRef.current,
+    })
     if (catResult.status === 'rejected') {
       setWarnSnack('Could not refresh categories after reorder.')
     }
@@ -1092,6 +1100,7 @@ export default function App() {
     // re-run for after the drag ends.
     if (dragActiveRef.current) {
       pendingRefreshRef.current = true
+      logDrag('App.handleReorderComplete deferred', { reason: 'dragActive after fetch' })
       return
     }
     // Once fresh authoritative data landed, drop the coordinator's cached
@@ -1099,6 +1108,7 @@ export default function App() {
     // Categories) become visible immediately instead of on the next poll.
     if (catResult.status === 'fulfilled' && imgResult.status === 'fulfilled') {
       tileOrderingCoordinator.releaseCleanScopes(marker)
+      logDrag('App.handleReorderComplete released clean scopes', { marker })
     }
   }, [refreshCategories, refreshUncategorizedImages])
 
