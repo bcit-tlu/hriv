@@ -166,12 +166,15 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/images/1
 
 #### Category Dropdown Image Counts
 
-The category dropdown (`CategoryPickerSelect`) shows direct image counts next to
-each category name — e.g. `Architecture (0)`, `Italian (1)`. These are **direct**
-counts (images directly in that category), not subtree sums. When testing:
+The category dropdown (`CategoryPickerSelect`) shows **total descendant** image
+counts next to each category name — e.g. `Architecture (3)`, `Italian (2)`,
+`Gothic (1)`. When testing:
 
-- Verify Architecture shows `(0)` not `(3)` — it has no direct images
-- Verify leaf categories (American, Italian, Gothic, Panoramas) each show `(1)`
+- Verify Architecture shows `(3)` because it has three descendant images
+- Verify Italian shows `(2)` because it has two descendant images
+- Verify leaf categories with a single direct image show `(1)` (American,
+  Gothic, Panoramas)
+- Verify an empty leaf category shows `(0)`
 
 #### Program Chip Toggles
 
