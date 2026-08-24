@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import require_role
-from ..authz import can_manage_group
+from ..authz import can_manage_group, user_has_admin_program
 from ..database import get_db
 from ..models import Group, User
 from ..schemas import (
@@ -173,7 +173,10 @@ async def list_members(
     db: AsyncSession = Depends(get_db),
 ):
     group = await _get_group_or_404(db, group_id)
-    return sorted(group.members, key=lambda u: u.name)
+    members = sorted(group.members, key=lambda u: u.name)
+    if _user.role != "admin":
+        members = [m for m in members if not user_has_admin_program(m)]
+    return members
 
 
 @router.post("/{group_id}/members/bulk", response_model=GroupOut)
@@ -255,7 +258,10 @@ async def list_instructors(
     db: AsyncSession = Depends(get_db),
 ):
     group = await _get_group_or_404(db, group_id)
-    return sorted(group.instructors, key=lambda u: u.name)
+    instructors = sorted(group.instructors, key=lambda u: u.name)
+    if _user.role != "admin":
+        instructors = [i for i in instructors if not user_has_admin_program(i)]
+    return instructors
 
 
 @router.post("/{group_id}/instructors/bulk", response_model=GroupOut)

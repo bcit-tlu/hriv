@@ -208,6 +208,26 @@ async def test_list_members_sorted() -> None:
     assert [u.name for u in result] == ["Amy", "Zoe"]
 
 
+async def test_list_members_hides_admin_program_for_instructor() -> None:
+    normal = _user("student", id=2)
+    normal.programs = [SimpleNamespace(name="Biology")]
+    admin_program = _user("student", id=3)
+    admin_program.programs = [SimpleNamespace(name="Admin")]
+    group = _group(1, members=[normal, admin_program])
+    db = _mock_db(group=group)
+    result = await list_members(1, _user("instructor"), db=db)
+    assert [u.id for u in result] == [2]
+
+
+async def test_list_members_admin_program_visible_to_admin() -> None:
+    admin_program = _user("student", id=3)
+    admin_program.programs = [SimpleNamespace(name="Admin")]
+    group = _group(1, members=[admin_program])
+    db = _mock_db(group=group)
+    result = await list_members(1, _user("admin"), db=db)
+    assert [u.id for u in result] == [3]
+
+
 async def test_add_member_success() -> None:
     group = _group(1, instructors=[_user("instructor", id=7)])
     student = _user("student", id=2)
@@ -302,6 +322,26 @@ async def test_list_instructors_sorted() -> None:
     db = _mock_db(group=group)
     result = await list_instructors(1, _user("instructor"), db=db)
     assert [u.name for u in result] == ["Amy", "Zoe"]
+
+
+async def test_list_instructors_hides_admin_program_for_instructor() -> None:
+    normal = _user("instructor", id=7)
+    normal.programs = [SimpleNamespace(name="Nursing")]
+    admin_program = _user("instructor", id=8)
+    admin_program.programs = [SimpleNamespace(name="Admin")]
+    group = _group(1, instructors=[normal, admin_program])
+    db = _mock_db(group=group)
+    result = await list_instructors(1, _user("instructor"), db=db)
+    assert [u.id for u in result] == [7]
+
+
+async def test_list_instructors_admin_program_visible_to_admin() -> None:
+    admin_program = _user("instructor", id=8)
+    admin_program.programs = [SimpleNamespace(name="Admin")]
+    group = _group(1, instructors=[admin_program])
+    db = _mock_db(group=group)
+    result = await list_instructors(1, _user("admin"), db=db)
+    assert [u.id for u in result] == [8]
 
 
 async def test_remove_instructor_last_one_409() -> None:

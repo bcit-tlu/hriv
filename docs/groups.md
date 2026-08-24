@@ -91,12 +91,12 @@ Base path `/api/groups` (router `backend/app/routers/groups.py`,
 | GET    | `/api/groups/{id}`                       | instructor          | Fetch one. **404** if missing.                                                         |
 | PATCH  | `/api/groups/{id}`                       | instructor + manage | Rename / edit description. **409** on duplicate name.                                  |
 | DELETE | `/api/groups/{id}`                       | instructor + manage | **409** if attached to any category.                                                   |
-| GET    | `/api/groups/{id}/members`               | instructor          | List member students (minimal fields).                                                 |
+| GET    | `/api/groups/{id}/members`               | instructor          | List member students (minimal fields). Users in the special `Admin` program are hidden from non-admin callers. |
 | POST   | `/api/groups/{id}/members/bulk`          | instructor + manage | Add many students in one call. **422** on non-student / unknown id.                    |
 | DELETE | `/api/groups/{id}/members/bulk`          | instructor + manage | Remove many students in one call.                                                      |
 | POST   | `/api/groups/{id}/members/{user_id}`     | instructor + manage | Add one student.                                                                       |
 | DELETE | `/api/groups/{id}/members/{user_id}`     | instructor + manage | Remove one student.                                                                    |
-| GET    | `/api/groups/{id}/instructors`           | instructor          | List co-owner instructors (minimal fields).                                            |
+| GET    | `/api/groups/{id}/instructors`           | instructor          | List co-owner instructors (minimal fields). Users in the special `Admin` program are hidden from non-admin callers. |
 | POST   | `/api/groups/{id}/instructors/bulk`      | instructor + manage | Add many co-owners in one call.                                                        |
 | DELETE | `/api/groups/{id}/instructors/bulk`      | instructor + manage | Remove many co-owners. **409** if it would remove the last instructor.                 |
 | POST   | `/api/groups/{id}/instructors/{user_id}` | instructor + manage | Add one co-owner.                                                                      |

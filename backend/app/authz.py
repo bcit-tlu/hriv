@@ -19,6 +19,17 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 
+ADMIN_PROGRAM_NAME = "Admin"
+
+
+def user_has_admin_program(user) -> bool:
+    """Return True when the user is associated with the special Admin program."""
+    return any(
+        p.name == ADMIN_PROGRAM_NAME
+        for p in getattr(user, "programs", [])
+    )
+
+
 def can_edit_category(user) -> bool:
     """Any admin or instructor may edit any category (global edit authority)."""
     return user.role in ("admin", "instructor")
