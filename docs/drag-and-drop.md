@@ -148,12 +148,15 @@ neighbours.
 
 **Live DOM rect for collision detection.** `farHalfReorderCollision` and
 `nearHalfMoveCollision` in `frontend/src/components/sortableTileGridUtils.ts`
-re-measure the droppable element's bounding client rect on every collision
-check (`getLiveShape`). The cached `droppable.shape` is only used as a fallback
-when the element is not connected or has a zero-size rect. This avoids the
-75 ms `PositionObserver` throttle and any stale shape left behind when a
-neighbour slides during an optimistic reflow. The far-half/near-half move-vs-
-reorder contract is unchanged.
+re-measure the droppable element on every collision check (`getLiveShape`).
+When the Web Animations API is available, `getLiveShape` uses dnd-kit's
+`DOMRectangle`, which finishes in-flight CSS animations, reads their final
+keyframes, and projects the element's rect to its settled layout position.
+Otherwise it falls back to a plain `Rectangle` from `element.getBoundingClientRect()`.
+The cached `droppable.shape` is only used when the element is not connected or
+has a zero-size rect. This avoids the 75 ms `PositionObserver` throttle and
+any stale shape left behind when a neighbour slides during an optimistic
+reflow. The far-half/near-half move-vs-reorder contract is unchanged.
 
 **Drag-active drop-zone scale suppression.** The `SortableTileGrid` container
 sets a `data-drag-active` attribute while a drag is active. `DroppableCategoryZone`

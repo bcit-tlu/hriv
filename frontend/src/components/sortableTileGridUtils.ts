@@ -1,5 +1,6 @@
 import { CollisionPriority, CollisionType } from '@dnd-kit/abstract'
 import type { CollisionDetector } from '@dnd-kit/abstract'
+import { DOMRectangle } from '@dnd-kit/dom/utilities'
 import { Rectangle } from '@dnd-kit/geometry'
 import type { Shape } from '@dnd-kit/geometry'
 
@@ -126,14 +127,28 @@ export function orderTileItems(
 // throttled to 75 ms. During a drag, neighbours that slide because of an
 // optimistic reflow can have a stale `shape` by the time `CollisionObserver`
 // evaluates the next pointer move. For the two collision detectors below we
-// re-measure the element's live bounding client rect (which reflects the
-// current CSS transform, including any in-flight reflow animation) and fall
-// back to the cached `droppable.shape` when the element is not connected.
+// re-measure the element with `DOMRectangle`, which projects running CSS
+// transforms to the final layout rect, and fall back to the cached
+// `droppable.shape` when the element is not connected.
 
 export function getLiveShape(droppable: { element?: Element; shape?: Shape }): Shape | null {
   const element = droppable.element
   if (!element || !element.isConnected) {
     return droppable.shape ?? null
+  }
+  const hasAnimationApi =
+    typeof element.getAnimations === 'function' &&
+    typeof element.ownerDocument?.getAnimations === 'function'
+  if (hasAnimationApi) {
+    try {
+      const rect = new DOMRectangle(element)
+      if (!rect.width || !rect.height) {
+        return droppable.shape ?? null
+      }
+      return rect
+    } catch {
+      return droppable.shape ?? null
+    }
   }
   const rect = element.getBoundingClientRect()
   if (!rect.width || !rect.height) {
