@@ -65,6 +65,9 @@ Two capability flags in `AuthContext.tsx` drive all gating:
   breadcrumb, **Then** the `path` truncates to that ancestor and the grid shows
   its children. **When** they click a child tile, **Then** its id is appended to
   `path`.
+- The rightmost (current) breadcrumb segment shows the category's total
+  descendant sub-category and image count in the same `<N sub-categories · M
+images> / Empty` format used on category tiles.
 
 ### Category visibility (dual gate)
 
@@ -132,10 +135,12 @@ Two capability flags in `AuthContext.tsx` drive all gating:
   the current browser user. Collapsing a branch in one surface keeps it
   collapsed in the others until it is re-expanded.
 - **Manage Categories dialog:** the list also renders each category label as a
-  link that navigates the app to that category in Browse. The dialog uses the
-  medium desktop width so longer category titles use the available horizontal
-  space before wrapping, while the category rows retain enough right-side space
-  for their action icons.
+  link that navigates the app to that category in Browse, and shows the category's
+  total descendant sub-category and image count next to the label in the same
+  `<N sub-categories · M images> / Empty` format used on category tiles. The
+  dialog uses the medium desktop width so longer category titles use the
+  available horizontal space before wrapping, while the category rows retain
+  enough right-side space for their action icons.
 - **Delete:** confirmation required; deleting a category cascades to children and
   detaches images (`category_id → NULL`). See [domain-model.md](domain-model.md).
 
@@ -290,7 +295,9 @@ committed on Save) in the edit modals.
 - The `Category` filter is a collapsible checkbox tree. Checking a parent
   matches the whole subtree, the tree shares its expand/collapse state with
   `ManageCategoriesDialog`, and selected categories persist per user between
-  logins using localStorage.
+  logins using localStorage. Each node shows the category's total descendant
+  sub-category and image count next to its label in the same `<N sub-categories ·
+M images> / Empty` format used on category tiles.
 - Filter selections persist per user between logins using localStorage, in the
   same style as table column visibility and category-tree collapse preferences.
 - **Pagination controls render at both the top and bottom of the table** so

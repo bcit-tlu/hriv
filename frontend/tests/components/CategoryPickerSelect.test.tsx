@@ -478,4 +478,26 @@ describe('CategoryPickerSelect — action buttons', () => {
     await user.click(screen.getByRole('combobox'))
     expect(screen.getByText('(3)')).toBeInTheDocument()
   })
+
+  it('renders total descendant image count for nested categories', async () => {
+    const user = userEvent.setup()
+    const categories = [
+      makeCategory({
+        id: 1,
+        label: 'Parent',
+        images: [makeImage({ id: 1 })],
+        children: [
+          makeCategory({
+            id: 2,
+            label: 'Child',
+            parentId: 1,
+            images: [makeImage({ id: 2 }), makeImage({ id: 3 })],
+          }),
+        ],
+      }),
+    ]
+    render(<CategoryPickerSelect categories={categories} value={null} onChange={vi.fn()} />)
+    await user.click(screen.getByRole('combobox'))
+    expect(screen.getByText('(3)')).toBeInTheDocument()
+  })
 })
