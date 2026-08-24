@@ -7,6 +7,7 @@ import {
   collectDescendantIds,
   findCategory,
   buildTileItems,
+  buildDescendantMap,
   farHalfReorderCollision,
   nearHalfMoveCollision,
   isPastTileCenterAlongDrag,
@@ -82,6 +83,35 @@ describe('sortableTileGridUtils', () => {
 
     expect(result.map((r) => r.type)).toEqual(['category', 'category', 'image'])
     expect(result.map((r) => r.data.id)).toEqual([2, 5, 10])
+  })
+
+  it('returns the same tile array for the same input object references', () => {
+    const cat = makeCategory({ id: 5, sortOrder: 0 })
+    const img = makeImage({ id: 10, sortOrder: 1 })
+    const a = buildTileItems([cat], [img])
+    const b = buildTileItems([cat], [img])
+    expect(a).toBe(b)
+    expect(a[0]).toBe(b[0])
+    expect(a[1]).toBe(b[1])
+  })
+
+  it('returns a different tile array when input object references change', () => {
+    const a = buildTileItems([makeCategory({ id: 5, sortOrder: 0 })], [])
+    const b = buildTileItems([makeCategory({ id: 5, sortOrder: 0 })], [])
+    expect(a).not.toBe(b)
+  })
+
+  it('builds a descendant map covering self and all descendants', () => {
+    const grandchild = makeCategory({ id: 4 })
+    const child = makeCategory({ id: 3, children: [grandchild] })
+    const root = makeCategory({ id: 1, children: [makeCategory({ id: 2 }), child] })
+
+    const map = buildDescendantMap([root])
+
+    expect(map.get(1)).toEqual(new Set([1, 2, 3, 4]))
+    expect(map.get(2)).toEqual(new Set([2]))
+    expect(map.get(3)).toEqual(new Set([3, 4]))
+    expect(map.get(4)).toEqual(new Set([4]))
   })
 })
 
@@ -240,5 +270,16 @@ describe('orderTileItems', () => {
       { type: 'image', id: 1 },
     ])
     expect(ordered.map(tileId).sort()).toEqual(items.map(tileId).sort())
+  })
+
+  it('returns the same array for the same items and order references', () => {
+    const order = [
+      { type: 'image' as const, id: 2 },
+      { type: 'category' as const, id: 1 },
+      { type: 'image' as const, id: 1 },
+    ]
+    const a = orderTileItems(items, order)
+    const b = orderTileItems(items, order)
+    expect(a).toBe(b)
   })
 })

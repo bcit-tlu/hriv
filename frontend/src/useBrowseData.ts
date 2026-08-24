@@ -55,6 +55,158 @@ export function apiTreeToCategory(node: ApiCategoryTree): Category {
   }
 }
 
+interface StableCaches {
+  imageByKey: Map<string, ImageItem>
+  imageById: Map<number, ImageItem>
+  categoryByKey: Map<string, Category>
+  categoryById: Map<number, Category>
+  itemToKey: WeakMap<Category | ImageItem, string>
+}
+
+function createStableCaches(): StableCaches {
+  return {
+    imageByKey: new Map(),
+    imageById: new Map(),
+    categoryByKey: new Map(),
+    categoryById: new Map(),
+    itemToKey: new WeakMap(),
+  }
+}
+
+function stableStringify(value: unknown): string {
+  return JSON.stringify(value, (_key, val) => {
+    if (val && typeof val === 'object' && !Array.isArray(val)) {
+      const sorted: Record<string, unknown> = {}
+      for (const k of Object.keys(val).sort()) {
+        sorted[k] = val[k]
+      }
+      return sorted
+    }
+    return val
+  })
+}
+
+function imageIdentityKey(img: ApiImage): string {
+  return stableStringify([
+    img.id,
+    img.version,
+    img.sort_order,
+    img.category_id,
+    img.name,
+    img.thumb,
+    img.tile_sources,
+    img.copyright,
+    img.note,
+    img.active,
+    img.metadata_extra,
+    img.width,
+    img.height,
+    img.file_size,
+    img.created_at,
+    img.updated_at,
+  ])
+}
+
+function categoryIdentityKey(
+  node: ApiCategoryTree,
+  childKeys: string[],
+  imageKeys: string[],
+): string {
+  const meta = node.metadata_extra as Record<string, unknown> | null
+  const cardImageId = typeof meta?.card_image_id === 'number' ? meta.card_image_id : null
+  return stableStringify([
+    node.id,
+    node.version,
+    node.sort_order,
+    node.parent_id,
+    node.label,
+    node.status,
+    cardImageId,
+    meta,
+    [...(node.program_ids ?? [])].sort((a, b) => a - b),
+    [...(node.group_ids ?? [])].sort((a, b) => a - b),
+    childKeys,
+    imageKeys,
+    node.created_at,
+    node.updated_at,
+  ])
+}
+
+function stableApiImageToItem(img: ApiImage, caches: StableCaches): ImageItem {
+  const key = imageIdentityKey(img)
+  const cached = caches.imageByKey.get(key)
+  if (cached) return cached
+
+  const item: ImageItem = {
+    id: img.id,
+    name: img.name,
+    thumb: img.thumb,
+    tileSources: img.tile_sources,
+    categoryId: img.category_id,
+    copyright: img.copyright,
+    note: img.note,
+    active: img.active,
+    sortOrder: img.sort_order,
+    version: img.version,
+    createdAt: img.created_at,
+    updatedAt: img.updated_at,
+    metadataExtra: img.metadata_extra,
+    width: img.width,
+    height: img.height,
+    fileSize: img.file_size,
+  }
+
+  caches.imageByKey.set(key, item)
+  const existing = caches.imageById.get(item.id)
+  if (existing) {
+    const oldKey = caches.itemToKey.get(existing)
+    if (oldKey) caches.imageByKey.delete(oldKey)
+  }
+  caches.imageById.set(item.id, item)
+  caches.itemToKey.set(item, key)
+  return item
+}
+
+function stableApiTreeToCategory(node: ApiCategoryTree, caches: StableCaches): Category {
+  const childCategories = node.children.map((child) => stableApiTreeToCategory(child, caches))
+  const imageItems = node.images.map((img) => stableApiImageToItem(img, caches))
+  const childKeys = childCategories.map((c) => caches.itemToKey.get(c) ?? '')
+  const imageKeys = imageItems.map((i) => caches.itemToKey.get(i) ?? '')
+
+  const key = categoryIdentityKey(node, childKeys, imageKeys)
+  let category = caches.categoryByKey.get(key)
+  if (!category) {
+    const meta = node.metadata_extra as Record<string, unknown> | null
+    category = {
+      id: node.id,
+      label: node.label,
+      parentId: node.parent_id,
+      children: childCategories,
+      images: imageItems,
+      programIds: [...(node.program_ids ?? [])],
+      groupIds: [...(node.group_ids ?? [])],
+      status: node.status,
+      sortOrder: node.sort_order,
+      version: node.version,
+      cardImageId: typeof meta?.card_image_id === 'number' ? meta.card_image_id : null,
+      metadataExtra: meta ?? null,
+    }
+    caches.categoryByKey.set(key, category)
+    const existing = caches.categoryById.get(category.id)
+    if (existing) {
+      const oldKey = caches.itemToKey.get(existing)
+      if (oldKey) caches.categoryByKey.delete(oldKey)
+    }
+    caches.categoryById.set(category.id, category)
+    caches.itemToKey.set(category, key)
+  }
+  return category
+}
+
+function arraysReferentiallyEqual<T>(a: readonly T[], b: readonly T[]): boolean {
+  return a.length === b.length && a.every((x, i) => x === b[i])
+}
+
 export interface UseBrowseDataDeps {
   path: Category[]
   currentUser: User | null
@@ -68,6 +220,11 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
   const [programs, setPrograms] = useState<Program[]>([])
   const [groups, setGroups] = useState<Group[]>([])
   const uncategorizedLoaded = useRef(false)
+
+  // Stable entity caches: unchanged categories and images reuse the same
+  // object references across polls and refreshes, so downstream memoization
+  // and React.memo prevent spurious re-renders during drags.
+  const stableCachesRef = useRef<StableCaches>(createStableCaches())
 
   // Ref holds the invalidateBackground function once the hook mounts.
   // loadCategories reads it to cancel in-flight background requests on
@@ -185,7 +342,13 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
           return true
         }
         if (effectiveSignal?.aborted || gen !== categoriesReadGen.current) return false
-        setCategories(tree.map(apiTreeToCategory))
+        const nextCategories = tree.map((node) =>
+          stableApiTreeToCategory(node, stableCachesRef.current),
+        )
+        if (!arraysReferentiallyEqual(nextCategories, categoriesRef.current)) {
+          setCategories(nextCategories)
+          categoriesRef.current = nextCategories
+        }
         if (receivedHeaders.status !== 0) {
           lastCategoryTree.current = {
             etag: receivedHeaders.etag,
@@ -232,7 +395,11 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
           ...(effectiveSignal ? { signal: effectiveSignal } : {}),
         })
         if (effectiveSignal?.aborted || gen !== uncategorizedReadGen.current) return false
-        setUncategorizedImages(imgs.map(apiImageToItem))
+        const nextImages = imgs.map((img) => stableApiImageToItem(img, stableCachesRef.current))
+        if (!arraysReferentiallyEqual(nextImages, uncategorizedRef.current)) {
+          setUncategorizedImages(nextImages)
+          uncategorizedRef.current = nextImages
+        }
         uncategorizedLoaded.current = true
         return true
       } catch (err) {
@@ -328,14 +495,17 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
           if (newest !== null && newest.gen > gen) return newest.promise
           return categoriesRef.current
         }
-        const cats = tree.map(apiTreeToCategory)
+        const cats = tree.map((node) => stableApiTreeToCategory(node, stableCachesRef.current))
         if (gen === categoriesReadGen.current) {
           // Drag abort or unmount: the latest committed state is safer than
           // a stale network response.
           if (ac.signal.aborted) {
             return categoriesRef.current
           }
-          setCategories(cats)
+          if (!arraysReferentiallyEqual(cats, categoriesRef.current)) {
+            setCategories(cats)
+            categoriesRef.current = cats
+          }
           if (receivedHeaders.status !== 0) {
             lastCategoryTree.current = {
               etag: receivedHeaders.etag,
@@ -384,14 +554,17 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
     const run = (async (): Promise<ImageItem[]> => {
       try {
         const imgs = await fetchUncategorizedImages({ cache: 'reload', signal: ac.signal })
-        const items = imgs.map(apiImageToItem)
+        const items = imgs.map((img) => stableApiImageToItem(img, stableCachesRef.current))
         if (gen === uncategorizedReadGen.current) {
           // Drag abort or unmount: the latest committed state is safer than
           // a stale network response.
           if (ac.signal.aborted) {
             return uncategorizedRef.current
           }
-          setUncategorizedImages(items)
+          if (!arraysReferentiallyEqual(items, uncategorizedRef.current)) {
+            setUncategorizedImages(items)
+            uncategorizedRef.current = items
+          }
           uncategorizedLoaded.current = true
           return items
         }
