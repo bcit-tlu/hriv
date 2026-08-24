@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.46.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.45.0...frontend-v0.46.0) (2026-08-24)
+
+
+### Features
+
+* **backend,frontend:** add monotonic browse revision and 304 short-circuit ([#1108](https://github.com/bcit-tlu/hriv/issues/1108)) ([641c1a7](https://github.com/bcit-tlu/hriv/commit/641c1a76169744ef25f7ff198c651992d3b28846))
+
+
+### Bug Fixes
+
+* **frontend:** stop mid-drag grid state churn ([#1105](https://github.com/bcit-tlu/hriv/issues/1105)) ([6158e26](https://github.com/bcit-tlu/hriv/commit/6158e265ba46844124d0d538907125b47ef37cb1))
+
 ## [0.45.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.44.0...frontend-v0.45.0) (2026-08-24)
 
 
