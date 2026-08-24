@@ -274,8 +274,8 @@ app.add_middleware(
     allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*", "X-Request-ID", "X-Session-ID"],
-    expose_headers=["X-Request-ID", "X-Total-Count"],
+    allow_headers=["*", "X-Request-ID", "X-Session-ID", "If-None-Match"],
+    expose_headers=["X-Request-ID", "X-Total-Count", "ETag", "X-Browse-Revision"],
 )
 
 app.include_router(auth.router, prefix="/api")

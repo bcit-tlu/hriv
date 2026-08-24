@@ -335,6 +335,48 @@ describe('useBrowseData', () => {
       expect(result.current.categories).toEqual([])
     })
 
+    it('skips setCategories when server returns 304 (null)', async () => {
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+
+      const tree = [makeApiTree({ id: 1, label: 'Fresh' })]
+      mockFetchCategoryTree.mockResolvedValue(tree)
+      await act(async () => {
+        await result.current.loadCategories()
+      })
+      expect(result.current.categories[0].label).toBe('Fresh')
+
+      // 304 Not Modified: fetchCategoryTree returns null
+      mockFetchCategoryTree.mockResolvedValue(null)
+      let fresh = false
+      await act(async () => {
+        fresh = await result.current.loadCategories()
+      })
+
+      expect(fresh).toBe(true)
+      expect(result.current.categories[0].label).toBe('Fresh')
+    })
+
+    it('refreshCategories resolves current categories on 304 without overwriting state', async () => {
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+
+      const tree = [makeApiTree({ id: 1, label: 'Fresh' })]
+      mockFetchCategoryTree.mockResolvedValue(tree)
+      await act(async () => {
+        await result.current.loadCategories()
+      })
+
+      mockFetchCategoryTree.mockResolvedValue(null)
+      let refreshed: Category[] = []
+      await act(async () => {
+        refreshed = await result.current.refreshCategories()
+      })
+
+      expect(refreshed[0].label).toBe('Fresh')
+      expect(result.current.categories[0].label).toBe('Fresh')
+    })
+
     it('does not call invalidateRef when signal is provided', async () => {
       // This test verifies the contract: background refresh passes a signal,
       // and foreground loads do not — only foreground loads invalidate.
@@ -352,6 +394,52 @@ describe('useBrowseData', () => {
       })
 
       expect(result.current.categories[0].label).toBe('WithSignal')
+    })
+
+    it('does not store a newer ETag when a response is aborted before state commits', async () => {
+      const initialTree = [makeApiTree({ id: 1, label: 'Old' })]
+      mockFetchCategoryTree.mockImplementation(async (_init, onHeaders) => {
+        onHeaders?.({ etag: '"old-etag"', revision: 1, status: 200 })
+        return initialTree
+      })
+
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+
+      await act(async () => {
+        await result.current.loadCategories()
+      })
+      expect(result.current.categories[0].label).toBe('Old')
+
+      // A response that resolves while dragActive becomes true is aborted before
+      // setCategories runs, but its onHeaders has already fired with a new ETag.
+      let staleIfNoneMatch: string | undefined
+      mockFetchCategoryTree.mockImplementation(async (init, onHeaders) => {
+        staleIfNoneMatch = init?.headers?.['If-None-Match'] as string | undefined
+        onHeaders?.({ etag: '"new-etag"', revision: 2, status: 200 })
+        return [makeApiTree({ id: 2, label: 'New' })]
+      })
+      const controller = new AbortController()
+      await act(async () => {
+        const loadPromise = result.current.loadCategories({ signal: controller.signal })
+        controller.abort()
+        await loadPromise
+      })
+      expect(result.current.categories[0].label).toBe('Old')
+      expect(staleIfNoneMatch).toBe('"old-etag"')
+
+      // A later refresh must still use the old etag, not the aborted new one.
+      let refreshIfNoneMatch: string | undefined
+      mockFetchCategoryTree.mockImplementation(async (init, onHeaders) => {
+        refreshIfNoneMatch = init?.headers?.['If-None-Match'] as string | undefined
+        onHeaders?.({ etag: '"new-etag"', revision: 2, status: 200 })
+        return [makeApiTree({ id: 2, label: 'New' })]
+      })
+      await act(async () => {
+        await result.current.refreshCategories()
+      })
+      expect(refreshIfNoneMatch).toBe('"old-etag"')
+      expect(result.current.categories[0].label).toBe('New')
     })
   })
 

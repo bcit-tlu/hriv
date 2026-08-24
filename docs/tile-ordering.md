@@ -44,6 +44,7 @@ still contain duplicates or gaps from before normalization:
 {
   "scope": { "parent_category_id": 123 },
   "revision": 17,
+  "browse_revision": 42,
   "items": [
     { "type": "category", "id": 41, "sort_order": 0 },
     { "type": "image", "id": 901, "sort_order": 1 }
@@ -51,12 +52,14 @@ still contain duplicates or gaps from before normalization:
 }
 ```
 
-The response carries `Cache-Control: no-store, no-cache, must-revalidate`
-and `Pragma: no-cache` headers, and the frontend's `getTileOrder` request
-uses `cache: 'no-store'`. Because `GET /api/tile-order` seeds the
-`expected_revision` CAS token for the following `PUT`, a stale cached
-response would cause false `409` conflicts and silent persistence failures
-on subsequent drags.
+The response carries `Cache-Control: no-store, no-cache, must-revalidate`,
+`Pragma: no-cache`, and `X-Browse-Revision` headers, and the frontend's
+`getTileOrder` request uses `cache: 'no-store'`. The `browse_revision` field
+and header expose the current global browse revision so callers can decide
+whether a full category-tree reload is needed. Because `GET /api/tile-order`
+seeds the `expected_revision` CAS token for the following `PUT`, a stale
+cached response would cause false `409` conflicts and silent persistence
+failures on subsequent drags.
 
 ### `PUT /api/tile-order`
 
@@ -96,7 +99,9 @@ Within **one database transaction** the endpoint:
    requests;
 5. rewrites positions with **one set-based `UPDATE … FROM (VALUES …)` per
    entity type** (statement count is constant regardless of item count);
-6. increments the scope revision and commits.
+6. increments the scope revision and the global `browse_state.revision`
+   (so the category-tree endpoint can `304` short-circuit unchanged trees)
+   and commits.
 
 Any failure rolls back both entity types — partial persistence is
 impossible. Two writers holding the same revision can never both succeed.

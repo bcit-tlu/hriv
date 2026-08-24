@@ -255,7 +255,8 @@ vi.mock('openseadragon', () => {
 })
 
 // Now import the component (after mocks are registered)
-import CanvasOverlay, { wrapCanvasText } from '../../src/components/CanvasOverlay'
+import CanvasOverlay from '../../src/components/CanvasOverlay'
+import { wrapCanvasText } from '../../src/components/canvasText'
 
 describe('wrapCanvasText', () => {
   const context = {

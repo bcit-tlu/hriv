@@ -37,6 +37,7 @@ from .backup_access import (
     restore_snapshot_file,
 )
 from .component_versions import get_app_version
+from .browse_state import bump_browse_revision
 from .database import get_async_session, settings
 from .tile_order import INITIAL_SCOPE_REVISION
 from .worker import TaskQueueUnavailableError, enqueue_admin_task
@@ -1506,7 +1507,11 @@ async def run_db_import(task_id: int) -> None:
                         )
                     )
 
-                # Single atomic commit for all data changes
+                # Single atomic commit for all data changes. The browse_state row
+                # is intentionally left intact (not deleted above) so the revision
+                # counter stays monotonic; resetting it would let clients holding
+                # old low-revision ETags get a stale 304 after the restore.
+                await bump_browse_revision(data_session)
                 await data_session.commit()
 
                 summary = (

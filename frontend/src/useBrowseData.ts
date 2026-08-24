@@ -5,7 +5,7 @@ import {
   fetchPrograms as apiFetchPrograms,
   fetchGroups as apiFetchGroups,
 } from './api'
-import type { ApiCategoryTree, ApiImage } from './api'
+import type { ApiCategoryTree, ApiImage, CategoryTreeHeaders } from './api'
 import type { Category, Group, ImageItem, Program, User } from './types'
 import { narrowProgramIds, narrowGroupIds, resolvePathNode } from './categoryUtils'
 import { apiGroupToGroup } from './groupUtils'
@@ -111,6 +111,17 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
     promise: Promise<ImageItem[]>
     settled: boolean
   } | null>(null)
+
+  // Last-known category-tree revision/ETag so background polls and post-reorder
+  // refreshes can skip re-rendering when the tree hasn't changed (issue #1066).
+  const lastCategoryTree = useRef<{ etag: string | null; revision: number | null }>({
+    etag: null,
+    revision: null,
+  })
+  // The stored ETag/revision is updated only when a category-tree response is
+  // actually committed to React state, so an aborted or out-of-order response
+  // can never leave a newer ETag paired with stale displayed data.
+
   useEffect(() => {
     categoriesRef.current = categories
   }, [categories])
@@ -147,14 +158,40 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
         effectiveSignal = ac.signal
       }
       const visibleGen = silent ? 0 : ++visibleCategoriesLoadGen.current
+      const ifNoneMatch = lastCategoryTree.current.etag
+      let receivedHeaders: CategoryTreeHeaders = { etag: null, revision: null, status: 0 }
       try {
         if (!silent) setCategoriesLoading(true)
-        const tree = await fetchCategoryTree({
-          ...(bypassHttpCache ? { cache: 'reload' as const } : {}),
-          ...(effectiveSignal ? { signal: effectiveSignal } : {}),
-        })
+        const onCategoryTreeHeaders = (headers: CategoryTreeHeaders) => {
+          receivedHeaders = headers
+        }
+        const tree = await fetchCategoryTree(
+          {
+            ...(bypassHttpCache ? { cache: 'reload' as const } : {}),
+            ...(effectiveSignal ? { signal: effectiveSignal } : {}),
+            ...(ifNoneMatch ? { headers: { 'If-None-Match': ifNoneMatch } } : {}),
+          },
+          onCategoryTreeHeaders,
+        )
+        if (tree === null) {
+          // 304 Not Modified — the tree is up to date.
+          if (effectiveSignal?.aborted || gen !== categoriesReadGen.current) return false
+          if (receivedHeaders.status !== 0) {
+            lastCategoryTree.current = {
+              etag: receivedHeaders.etag,
+              revision: receivedHeaders.revision,
+            }
+          }
+          return true
+        }
         if (effectiveSignal?.aborted || gen !== categoriesReadGen.current) return false
         setCategories(tree.map(apiTreeToCategory))
+        if (receivedHeaders.status !== 0) {
+          lastCategoryTree.current = {
+            etag: receivedHeaders.etag,
+            revision: receivedHeaders.revision,
+          }
+        }
         return true
       } catch (err) {
         if (effectiveSignal?.aborted || isAbortError(err) || gen !== categoriesReadGen.current) {
@@ -261,7 +298,36 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
     // ETag was computed before the reorder transaction committed.
     const run = (async (): Promise<Category[]> => {
       try {
-        const tree = await fetchCategoryTree({ cache: 'reload', signal: ac.signal })
+        let receivedHeaders: CategoryTreeHeaders = { etag: null, revision: null, status: 0 }
+        const onCategoryTreeHeaders = (headers: CategoryTreeHeaders) => {
+          receivedHeaders = headers
+        }
+        const tree = await fetchCategoryTree(
+          {
+            cache: 'reload',
+            signal: ac.signal,
+            headers: lastCategoryTree.current.etag
+              ? { 'If-None-Match': lastCategoryTree.current.etag }
+              : {},
+          },
+          onCategoryTreeHeaders,
+        )
+        if (tree === null) {
+          // 304 Not Modified after a reorder: the tree is unchanged.
+          if (gen === categoriesReadGen.current) {
+            if (ac.signal.aborted) return categoriesRef.current
+            if (receivedHeaders.status !== 0) {
+              lastCategoryTree.current = {
+                etag: receivedHeaders.etag,
+                revision: receivedHeaders.revision,
+              }
+            }
+            return categoriesRef.current
+          }
+          const newest = categoriesRefreshRef.current
+          if (newest !== null && newest.gen > gen) return newest.promise
+          return categoriesRef.current
+        }
         const cats = tree.map(apiTreeToCategory)
         if (gen === categoriesReadGen.current) {
           // Drag abort or unmount: the latest committed state is safer than
@@ -270,6 +336,12 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
             return categoriesRef.current
           }
           setCategories(cats)
+          if (receivedHeaders.status !== 0) {
+            lastCategoryTree.current = {
+              etag: receivedHeaders.etag,
+              revision: receivedHeaders.revision,
+            }
+          }
           return cats
         }
         // Superseded while the response was in flight: hand back the

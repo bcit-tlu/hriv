@@ -24,6 +24,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
+from .browse_state import bump_browse_revision
 from .database import async_session, settings
 from .models import Image, SourceImage
 from .queue_metrics import collect_queue_state
@@ -707,6 +708,9 @@ async def process_source_image(source_image_id: int) -> None:
                 src.status = "completed"
                 src.progress = 100
                 src.status_message = "Completed"
+                # Only images that are attached to a category appear in the tree.
+                if img.category_id is not None:
+                    await bump_browse_revision(db)
                 await db.commit()
 
             duration_ms = round((time.monotonic() - t_start) * 1000)
@@ -981,6 +985,9 @@ async def process_replace_image(
                 src.status = "completed"
                 src.progress = 100
                 src.status_message = "Completed"
+                # Only images that are attached to a category appear in the tree.
+                if img.category_id is not None:
+                    await bump_browse_revision(db)
                 await db.commit()
 
             # Remove old tiles only after the commit succeeds, so a

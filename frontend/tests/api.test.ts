@@ -651,6 +651,49 @@ describe('Category API', () => {
     expect(result).toEqual([TREE_FIXTURE])
   })
 
+  it('fetchCategoryTree returns tree and reports browse headers', async () => {
+    mockFetch.mockReturnValueOnce(
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        headers: {
+          get: (name: string) =>
+            name.toLowerCase() === 'etag'
+              ? 'W/"abc"'
+              : name.toLowerCase() === 'x-browse-revision'
+                ? '7'
+                : null,
+        },
+        json: () => Promise.resolve([TREE_FIXTURE]),
+        text: () => Promise.resolve(JSON.stringify([TREE_FIXTURE])),
+      }),
+    )
+    const onHeaders = vi.fn()
+    const result = await fetchCategoryTree(undefined, onHeaders)
+    expect(result).toEqual([TREE_FIXTURE])
+    expect(onHeaders).toHaveBeenCalledWith({ etag: 'W/"abc"', revision: 7, status: 200 })
+  })
+
+  it('fetchCategoryTree returns null on 304 and reports browse headers', async () => {
+    mockFetch.mockReturnValueOnce(
+      Promise.resolve({
+        ok: false,
+        status: 304,
+        statusText: 'Not Modified',
+        headers: {
+          get: (name: string) => (name.toLowerCase() === 'x-browse-revision' ? '7' : null),
+        },
+        json: () => Promise.resolve(null),
+        text: () => Promise.resolve(''),
+      }),
+    )
+    const onHeaders = vi.fn()
+    const result = await fetchCategoryTree(undefined, onHeaders)
+    expect(result).toBeNull()
+    expect(onHeaders).toHaveBeenCalledWith({ etag: null, revision: 7, status: 304 })
+  })
+
   it('createCategory sends POST with body', async () => {
     mockFetch.mockReturnValueOnce(jsonResponse(CATEGORY_FIXTURE))
     const result = await createCategory({ label: 'Architecture' })
