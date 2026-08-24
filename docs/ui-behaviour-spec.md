@@ -363,6 +363,20 @@ M images> / Empty` format used on category tiles.
   `requestAnimationFrame` so React's synthetic `onDrop` fires on `FileDropZone`
   before it unmounts (otherwise dropped files are silently lost).
 
+### Reorder notifications (`ReorderSnackbar`, `ReorderStatusIndicator`)
+
+- Reorder save-state feedback (`Saving order…`, `Order saved`,
+  `Order changed elsewhere`, `Could not save order — Retry`) appears as a
+  bottom-right `Snackbar` in `App.tsx`, not inline in the page header or dialog
+  title.
+- The reorder snackbar stacks above the processing/upload snackbars (e.g.
+  image-processing jobs) using the same 88 px vertical spacing, so a reorder
+  started while an image is processing is rendered elegantly above the existing
+  progress snackbar rather than overlapping it.
+- A single snackbar shows the most urgent active reorder scope across both
+  Browse and Manage Categories (`useMostSevereScope`), preserving the same
+  conflict-recovery actions (Refresh / Keep my order / Retry).
+
 ---
 
 ## See also

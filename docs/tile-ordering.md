@@ -186,7 +186,9 @@ unsaved-change flags never leak to the next user on a shared browser.
 
 The compact save-state readout is `ReorderStatusIndicator`
 (`Saving order…`, `Order saved`, `Order changed elsewhere`,
-`Could not save order — Retry`). The internal `dirty` status is transient —
+`Could not save order — Retry`). It is rendered inside a bottom-right `Snackbar`
+(`ReorderSnackbar`) that stacks above the processing/upload snackbars shown by
+`App.tsx` using the same 88 px spacing. The internal `dirty` status is transient —
 `reportOrder` flushes it into `saving` in the same synchronous step — so it
 renders as `Saving order…` rather than a separate unsaved readout.
 Coordinator transitions emit the reorder
@@ -222,10 +224,10 @@ there is no second independent ordering implementation:
   optimistically instead of snapping back to the last-loaded `sort_order`
   while a save is in flight — the same navigation-safe behaviour as the
   Browse grid.
-- The dialog shows the same `ReorderStatusIndicator` save states (unsaved,
-  saving, saved, conflict with Refresh / Keep my order, error with Retry)
-  for the affected scopes of the most recent dialog reorder; when a
-  cross-parent move touches two scopes, the indicator surfaces whichever
+- The same `ReorderStatusIndicator` save states (unsaved, saving, saved,
+  conflict with Refresh / Keep my order, error with Retry) are shown in a
+  bottom-right `Snackbar` coordinated with the processing/upload snackbars;
+  when a cross-parent move touches two scopes, the indicator surfaces whichever
   scope most urgently needs attention (conflict/error first).
 - Because Browse and Manage write through one contract, ordering is
   consistent across both interfaces after navigation and reload: whichever
