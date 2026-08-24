@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.44.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.43.1...frontend-v0.44.0) (2026-08-24)
+
+
+### Features
+
+* **frontend:** show descendant sub-category and image counts on category surfaces ([#1090](https://github.com/bcit-tlu/hriv/issues/1090)) ([d8690a8](https://github.com/bcit-tlu/hriv/commit/d8690a8ebcfaafccd144e262e6a1a614381ab890))
+
+
+### Bug Fixes
+
+* **tile-order:** prevent stale GET /tile-order from seeding stale CAS revision ([#1089](https://github.com/bcit-tlu/hriv/issues/1089)) ([db910e9](https://github.com/bcit-tlu/hriv/commit/db910e930d4e459b0500aecf2f7f65126e969c49))
+
 ## [0.43.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.43.0...frontend-v0.43.1) (2026-08-13)
 
 
