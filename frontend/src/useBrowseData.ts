@@ -118,12 +118,17 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
     etag: null,
     revision: null,
   })
-  const handleCategoryTreeHeaders = useCallback(
-    (headers: { etag: string | null; revision: number | null; status: number }) => {
-      if (headers.status !== 304 || headers.etag) {
-        lastCategoryTree.current = { etag: headers.etag, revision: headers.revision }
-      }
-    },
+  // Only the newest in-flight category-tree read may update the stored ETag,
+  // so out-of-order responses cannot leave a newer ETag paired with older
+  // displayed data (issue #1066).
+  const makeHandleCategoryTreeHeaders = useCallback(
+    (gen: number) =>
+      (headers: { etag: string | null; revision: number | null; status: number }) => {
+        if (gen !== categoriesReadGen.current) return
+        if (headers.status !== 304 || headers.etag) {
+          lastCategoryTree.current = { etag: headers.etag, revision: headers.revision }
+        }
+      },
     [],
   )
 
@@ -172,7 +177,7 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
             ...(effectiveSignal ? { signal: effectiveSignal } : {}),
             ...(ifNoneMatch ? { headers: { 'If-None-Match': ifNoneMatch } } : {}),
           },
-          handleCategoryTreeHeaders,
+          makeHandleCategoryTreeHeaders(gen),
         )
         if (tree === null) {
           // 304 Not Modified — the tree is up to date.
@@ -194,7 +199,7 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
         if (!silent && visibleGen === visibleCategoriesLoadGen.current) setCategoriesLoading(false)
       }
     },
-    [handleCategoryTreeHeaders],
+    [makeHandleCategoryTreeHeaders],
   )
 
   const loadUncategorizedImages = useCallback(
@@ -295,7 +300,7 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
               ? { 'If-None-Match': lastCategoryTree.current.etag }
               : {},
           },
-          handleCategoryTreeHeaders,
+          makeHandleCategoryTreeHeaders(gen),
         )
         if (tree === null) {
           // 304 Not Modified after a reorder: the tree is unchanged.
@@ -343,7 +348,7 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
     }
     run.then(settle, settle)
     return run
-  }, [handleCategoryTreeHeaders])
+  }, [makeHandleCategoryTreeHeaders])
 
   const refreshUncategorizedImages = useCallback(async (): Promise<ImageItem[]> => {
     // Symmetric with refreshCategories: invalidate the background poll FIRST

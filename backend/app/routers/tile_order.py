@@ -130,10 +130,10 @@ async def put_tile_order(
             )
             if error is not None:
                 raise HTTPException(status_code=400, detail=error)
-            browse_revision = await get_browse_revision(db)
             if body.expected_revision != current_revision:
+                stale_browse_revision = await get_browse_revision(db)
                 stale = await _authoritative_response(
-                    db, parent_category_id, current_revision, browse_revision
+                    db, parent_category_id, current_revision, stale_browse_revision
                 )
                 raise HTTPException(
                     status_code=409,

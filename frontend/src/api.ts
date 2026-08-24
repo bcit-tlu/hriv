@@ -327,6 +327,9 @@ async function requestRaw<T>(path: string, init?: RequestInit): Promise<RequestR
     }
     throw new ApiTransportError('Network error', { method, path })
   }
+  if (res.status === 204 || res.status === 304) {
+    return { data: undefined, response: res }
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
     const parsed = parseError(text)
@@ -335,9 +338,6 @@ async function requestRaw<T>(path: string, init?: RequestInit): Promise<RequestR
       path,
       requestId: res.headers.get('X-Request-ID'),
     })
-  }
-  if (res.status === 204 || res.status === 304) {
-    return { data: undefined, response: res }
   }
   const data = (await res.json()) as T
   return { data, response: res }

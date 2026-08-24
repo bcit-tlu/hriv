@@ -468,9 +468,11 @@ async def test_statement_count_is_bounded_by_scope_size(db_engine, db_session):
 
     # The gallery scope holds 600+ images (one entity type → one UPDATE);
     # the small mixed scope needs one UPDATE per entity type. Statement
-    # count must never grow with item count.
+    # count must never grow with item count; the browse_state revision
+    # helpers add a constant read+write overhead, so the ceiling is raised
+    # to match (issue #1066).
     assert large_count <= small_count
-    assert large_count <= 16
+    assert large_count <= 17
 
 
 @requires_db

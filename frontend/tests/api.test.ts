@@ -678,7 +678,7 @@ describe('Category API', () => {
   it('fetchCategoryTree returns null on 304 and reports browse headers', async () => {
     mockFetch.mockReturnValueOnce(
       Promise.resolve({
-        ok: true,
+        ok: false,
         status: 304,
         statusText: 'Not Modified',
         headers: {

@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import get_current_user, require_role
+from ..browse_state import bump_browse_revision
 from ..database import get_db
 from ..models import Program, User
 from ..schemas import ProgramCreate, ProgramUpdate, ProgramOut
@@ -115,4 +116,5 @@ async def delete_program(
     if not program:
         raise HTTPException(status_code=404, detail="Program not found")
     await db.delete(program)
+    await bump_browse_revision(db)
     await db.commit()
