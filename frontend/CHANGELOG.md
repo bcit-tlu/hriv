@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.47.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.46.0...frontend-v0.47.0) (2026-08-24)
+
+
+### Features
+
+* **frontend:** stabilize Browse tile references and memoization ([#1111](https://github.com/bcit-tlu/hriv/issues/1111)) ([9649e24](https://github.com/bcit-tlu/hriv/commit/9649e24e0f28228cd086e169fcaedb81b2af3915))
+
 ## [0.46.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.45.0...frontend-v0.46.0) (2026-08-24)
 
 
