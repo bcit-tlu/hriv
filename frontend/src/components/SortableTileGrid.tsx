@@ -286,6 +286,9 @@ export default function SortableTileGrid({
   })
   const [activeItem, setActiveItem] = useState<TileItem | null>(null)
   const gridGenerationRef = useRef<number | null>(null)
+  // Guards the unmount-cleanup signal so a normal drag-end does not fire
+  // onDragActiveChange(false) twice (handleDragEnd already fires it).
+  const dragEndedRef = useRef(false)
   const claimGeneration = tileOrdering.claimGeneration
   // Claim a fresh grid-instance generation per scope so callbacks from an
   // unmounted grid (SPA navigation) cannot overwrite a remounted one.
@@ -295,11 +298,11 @@ export default function SortableTileGrid({
 
   // If the grid unmounts during an active drag, reset the drag-active signal
   // so the parent does not keep background refresh and reorder refreshes
-  // deferred indefinitely.
+  // deferred indefinitely.  Only fire when handleDragEnd did not run.
   useEffect(() => {
     const wasActive = activeItem !== null
     return () => {
-      if (wasActive) {
+      if (wasActive && !dragEndedRef.current) {
         onDragActiveChange?.(false)
       }
     }
@@ -350,8 +353,13 @@ export default function SortableTileGrid({
     (event: DragStartEvent) => {
       const sourceId = String(event.operation.source?.id)
       const item = items.find((i) => tileId(i) === sourceId)
-      setActiveItem(item ?? null)
-      onDragActiveChange?.(true)
+      if (item) {
+        dragEndedRef.current = false
+        setActiveItem(item)
+        onDragActiveChange?.(true)
+      } else {
+        setActiveItem(null)
+      }
     },
     [items, onDragActiveChange],
   )
@@ -411,6 +419,7 @@ export default function SortableTileGrid({
           },
         )
       } finally {
+        dragEndedRef.current = true
         setActiveItem(null)
         onDragActiveChange?.(false)
       }
