@@ -84,27 +84,28 @@ _mutations_ additionally require manage authority on that specific group.
 Base path `/api/groups` (router `backend/app/routers/groups.py`,
 `prefix="/groups"`). All endpoints require a JWT bearer token.
 
-| Method | Endpoint                                 | Min role            | Notes                                                                                                               |
-| ------ | ---------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/groups/`                           | instructor          | List all groups.                                                                                                    |
-| POST   | `/api/groups/`                           | instructor          | Create. **409** on duplicate name. Creator (if instructor) becomes initial instructor.                              |
-| GET    | `/api/groups/{id}`                       | instructor          | Fetch one. **404** if missing.                                                                                      |
-| PATCH  | `/api/groups/{id}`                       | instructor + manage | Rename / edit description. **409** on duplicate name.                                                               |
-| DELETE | `/api/groups/{id}`                       | instructor + manage | **409** if attached to any category.                                                                                |
-| GET    | `/api/groups/{id}/members`               | instructor          | List member students (minimal fields). Users in the special `Admin` program are hidden from non-admin callers.      |
-| POST   | `/api/groups/{id}/members/bulk`          | instructor + manage | Add many students in one call. **422** on non-student / unknown id.                                                 |
-| DELETE | `/api/groups/{id}/members/bulk`          | instructor + manage | Remove many students in one call.                                                                                   |
-| POST   | `/api/groups/{id}/members/{user_id}`     | instructor + manage | Add one student.                                                                                                    |
-| DELETE | `/api/groups/{id}/members/{user_id}`     | instructor + manage | Remove one student.                                                                                                 |
-| GET    | `/api/groups/{id}/instructors`           | instructor          | List co-owner instructors (minimal fields). Users in the special `Admin` program are hidden from non-admin callers. |
-| POST   | `/api/groups/{id}/instructors/bulk`      | instructor + manage | Add many co-owners in one call.                                                                                     |
-| DELETE | `/api/groups/{id}/instructors/bulk`      | instructor + manage | Remove many co-owners. **409** if it would remove the last instructor.                                              |
-| POST   | `/api/groups/{id}/instructors/{user_id}` | instructor + manage | Add one co-owner.                                                                                                   |
-| DELETE | `/api/groups/{id}/instructors/{user_id}` | instructor + manage | Remove one co-owner. **409** if last instructor.                                                                    |
+| Method | Endpoint                                 | Min role            | Notes                                                                                                                                     |
+| ------ | ---------------------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/groups/`                           | instructor          | List all groups. `GroupOut.member_ids` / `instructor_ids` hide users in the special `Admin` program from non-admin callers.               |
+| POST   | `/api/groups/`                           | instructor          | Create. **409** on duplicate name. Creator (if instructor) becomes initial instructor.                                                    |
+| GET    | `/api/groups/{id}`                       | instructor          | Fetch one. **404** if missing. `GroupOut.member_ids` / `instructor_ids` hide users in the special `Admin` program from non-admin callers. |
+| PATCH  | `/api/groups/{id}`                       | instructor + manage | Rename / edit description. **409** on duplicate name.                                                                                     |
+| DELETE | `/api/groups/{id}`                       | instructor + manage | **409** if attached to any category.                                                                                                      |
+| GET    | `/api/groups/{id}/members`               | instructor          | List member students (minimal fields). Users in the special `Admin` program are hidden from non-admin callers.                            |
+| POST   | `/api/groups/{id}/members/bulk`          | instructor + manage | Add many students in one call. **422** on non-student / unknown id.                                                                       |
+| DELETE | `/api/groups/{id}/members/bulk`          | instructor + manage | Remove many students in one call.                                                                                                         |
+| POST   | `/api/groups/{id}/members/{user_id}`     | instructor + manage | Add one student.                                                                                                                          |
+| DELETE | `/api/groups/{id}/members/{user_id}`     | instructor + manage | Remove one student.                                                                                                                       |
+| GET    | `/api/groups/{id}/instructors`           | instructor          | List co-owner instructors (minimal fields). Users in the special `Admin` program are hidden from non-admin callers.                       |
+| POST   | `/api/groups/{id}/instructors/bulk`      | instructor + manage | Add many co-owners in one call.                                                                                                           |
+| DELETE | `/api/groups/{id}/instructors/bulk`      | instructor + manage | Remove many co-owners. **409** if it would remove the last instructor.                                                                    |
+| POST   | `/api/groups/{id}/instructors/{user_id}` | instructor + manage | Add one co-owner.                                                                                                                         |
+| DELETE | `/api/groups/{id}/instructors/{user_id}` | instructor + manage | Remove one co-owner. **409** if last instructor.                                                                                          |
 
 Mutating endpoints return the full updated `GroupOut` (with refreshed
 `member_ids` / `instructor_ids`) so the client can sync local state from the
-response without re-fetching.
+response without re-fetching. For non-admin callers those id lists exclude any
+member or instructor associated with the special `Admin` program.
 
 > **Route-ordering invariant.** In `groups.py` the `/bulk` routes **must** be
 > registered _before_ the parametric `/{user_id}` routes (for both members and
