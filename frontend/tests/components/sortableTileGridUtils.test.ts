@@ -44,12 +44,21 @@ function collisionInput(
   pointer: { x: number; y: number },
   delta: { x: number; y: number },
   id = 'tile-1',
-  options?: { element?: Element },
+  options?: { element?: Element; shapeRect?: typeof TILE },
 ) {
+  const rect = options?.shapeRect ?? TILE
   const shape = {
-    center: CENTER,
+    center: { x: (rect.left + rect.right) / 2, y: (rect.top + rect.bottom) / 2 },
+    boundingRectangle: {
+      left: rect.left,
+      top: rect.top,
+      right: rect.right,
+      bottom: rect.bottom,
+      width: rect.right - rect.left,
+      height: rect.bottom - rect.top,
+    },
     containsPoint: (p: { x: number; y: number }) =>
-      p.x >= TILE.left && p.x <= TILE.right && p.y >= TILE.top && p.y <= TILE.bottom,
+      p.x >= rect.left && p.x <= rect.right && p.y >= rect.top && p.y <= rect.bottom,
   }
   return {
     droppable: { id, shape, element: options?.element },
@@ -265,12 +274,17 @@ describe('farHalfReorderCollision (reorder only on the far half)', () => {
   })
 
   it('uses the live element rect instead of a stale cached shape', () => {
-    // The stale shape is at (100,100)-(200,200); the element has moved to
-    // (300,300)-(500,500). The pointer is in the live rect and past its centre.
+    // The element has moved to (300,300)-(500,500). The cached shape is a
+    // stale, smaller rect next to the new position that does not contain the
+    // pointer, but the live rect does and the broadphase still considers it.
     const moved = { left: 300, top: 300, right: 500, bottom: 500 }
+    const stale = { left: 300, top: 300, right: 400, bottom: 400 }
     const el = makeTileElement(moved)
     const result = farHalfReorderCollision(
-      collisionInput({ x: 420, y: 400 }, { x: 10, y: 0 }, 'tile-1', { element: el }),
+      collisionInput({ x: 420, y: 400 }, { x: 10, y: 0 }, 'tile-1', {
+        element: el,
+        shapeRect: stale,
+      }),
     )
     expect(result).not.toBeNull()
     expect(result?.id).toBe('tile-1')

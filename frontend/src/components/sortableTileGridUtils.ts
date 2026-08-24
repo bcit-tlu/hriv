@@ -157,6 +157,26 @@ export function getLiveShape(droppable: { element?: Element; shape?: Shape }): S
   return new Rectangle(rect.left, rect.top, rect.width, rect.height)
 }
 
+/**
+ * Cheap broadphase using the last `PositionObserver` shape. We only pay for a
+ * live `getBoundingClientRect` / `DOMRectangle` measurement when the pointer is
+ * close to a droppable's cached rect, which avoids a full-grid reflow on every
+ * `dragover` frame for large tile sets. The cached shape can be a few frames
+ * stale, so the search radius is a multiple of the tile's larger dimension.
+ */
+function isPointerNearCachedShape(
+  pointer: { x: number; y: number },
+  shape: Shape,
+  multiplier = 2.5,
+): boolean {
+  const { width, height } = shape.boundingRectangle
+  if (!width || !height) return true
+  const { center } = shape
+  const threshold = Math.max(width, height) * multiplier
+  const distance = Math.hypot(center.x - pointer.x, center.y - pointer.y)
+  return distance <= threshold
+}
+
 // ── Directional "far-half" collision rule (move-wins guard) ──
 //
 // The move-vs-reorder guard is expressed geometrically as a single threshold
@@ -201,6 +221,8 @@ export function isPastTileCenterAlongDrag(
 export const farHalfReorderCollision: CollisionDetector = ({ dragOperation, droppable }) => {
   const pointer = dragOperation.position.current
   if (!pointer) return null
+  const cachedShape = droppable.shape
+  if (cachedShape && !isPointerNearCachedShape(pointer, cachedShape)) return null
   const shape = getLiveShape(droppable)
   if (!shape || !shape.containsPoint(pointer)) return null
   const { center } = shape
@@ -230,6 +252,8 @@ export const farHalfReorderCollision: CollisionDetector = ({ dragOperation, drop
 export const nearHalfMoveCollision: CollisionDetector = ({ dragOperation, droppable }) => {
   const pointer = dragOperation.position.current
   if (!pointer) return null
+  const cachedShape = droppable.shape
+  if (cachedShape && !isPointerNearCachedShape(pointer, cachedShape)) return null
   const shape = getLiveShape(droppable)
   if (!shape || !shape.containsPoint(pointer)) return null
   const { center } = shape

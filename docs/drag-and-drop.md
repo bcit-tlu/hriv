@@ -153,10 +153,14 @@ When the Web Animations API is available, `getLiveShape` uses dnd-kit's
 `DOMRectangle`, which finishes in-flight CSS animations, reads their final
 keyframes, and projects the element's rect to its settled layout position.
 Otherwise it falls back to a plain `Rectangle` from `element.getBoundingClientRect()`.
-The cached `droppable.shape` is only used when the element is not connected or
-has a zero-size rect. This avoids the 75 ms `PositionObserver` throttle and
-any stale shape left behind when a neighbour slides during an optimistic
-reflow. The far-half/near-half move-vs-reorder contract is unchanged.
+To avoid a full-grid forced reflow on every `dragover` frame in large grids,
+the detectors first use the cached `droppable.shape` as a cheap broadphase and
+only call `getLiveShape` for droppables whose cached rect is within a few tile
+sizes of the pointer. The cached `droppable.shape` is only used as the final
+fallback when the element is not connected or has a zero-size rect. This
+avoids the 75 ms `PositionObserver` throttle and any stale shape left behind
+when a neighbour slides during an optimistic reflow. The far-half/near-half
+move-vs-reorder contract is unchanged.
 
 **Drag-active drop-zone scale suppression.** The `SortableTileGrid` container
 sets a `data-drag-active` attribute while a drag is active. `DroppableCategoryZone`
