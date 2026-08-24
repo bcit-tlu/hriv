@@ -164,14 +164,20 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/images/1
 - When testing auto-select, cancel without saving after verifying the dropdown value
   to avoid polluting seed data.
 
-#### Category Dropdown Image Counts
+#### Category Dropdown Counts
 
-The category dropdown (`CategoryPickerSelect`) shows direct image counts next to
-each category name — e.g. `Architecture (0)`, `Italian (1)`. These are **direct**
-counts (images directly in that category), not subtree sums. When testing:
+The category dropdown (`CategoryPickerSelect`) shows the same **total descendant**
+sub-category and image count suffix used by `ManageCategoriesDialog` — e.g.
+`Architecture (2 sub-categories · 3 images)`, `Italian (1 sub-category · 2 images)`,
+`Gothic (1 image)`. When testing:
 
-- Verify Architecture shows `(0)` not `(3)` — it has no direct images
-- Verify leaf categories (American, Italian, Gothic, Panoramas) each show `(1)`
+- Verify Architecture shows `(2 sub-categories · 3 images)` because it has two
+  descendant sub-categories and three descendant images
+- Verify Italian shows `(1 sub-category · 2 images)` because it has one
+  descendant sub-category and two descendant images
+- Verify leaf categories with a single direct image show `(1 image)` (American,
+  Gothic, Panoramas)
+- Verify an empty leaf category shows `Empty`
 
 #### Program Chip Toggles
 

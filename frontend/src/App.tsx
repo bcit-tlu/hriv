@@ -87,6 +87,7 @@ import { useBrowseData } from './useBrowseData'
 import { emitEvent, emitSessionStartedOnce } from './observability'
 import type { TelemetryNavDirection } from './observability'
 import { narrowGroupIds, narrowProgramIds } from './categoryUtils'
+import { formatCategoryItemCountsForCategory } from './components/categoryOptionUtils'
 import { getInheritedRestrictionSx } from './restrictionStyles'
 import { getSurfaceVariant, getVisibilityColors } from './theme'
 import { useNavigationHistory, buildNavHistoryState } from './useNavigationHistory'
@@ -1766,13 +1767,23 @@ export default function App() {
                           }}
                         >
                           {isLast ? (
-                            <Typography
-                              variant="body2"
-                              color="text.primary"
-                              sx={breadcrumbCurrentTextSx}
-                            >
-                              {cat.label}
-                            </Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+                              <Typography
+                                variant="body2"
+                                color="text.primary"
+                                sx={breadcrumbCurrentTextSx}
+                              >
+                                {cat.label}
+                              </Typography>
+                              <Typography
+                                component="span"
+                                variant="body2"
+                                color="text.secondary"
+                                sx={{ ml: 0.5, fontSize: '0.9em' }}
+                              >
+                                ({formatCategoryItemCountsForCategory(cat)})
+                              </Typography>
+                            </Box>
                           ) : (
                             <Link
                               component="button"

@@ -141,7 +141,7 @@ describe('ManageCategoriesDialog — basics', () => {
     ]
     renderDialog({ categories })
     expect(screen.getByText('Histology')).toBeInTheDocument()
-    expect(screen.getByText('(2)')).toBeInTheDocument()
+    expect(screen.getByText('(2 images)')).toBeInTheDocument()
   })
 
   it('renders child prefix for nested categories', () => {
@@ -370,7 +370,9 @@ describe('ManageCategoriesDialog — delete category', () => {
       .filter((btn) => btn.querySelector('svg[data-testid="DeleteIcon"]'))
     await user.click(deleteButtons[0])
 
-    expect(screen.getByText(/sub-categor/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/sub-categories that will also be permanently deleted/),
+    ).toBeInTheDocument()
   })
 })
 
