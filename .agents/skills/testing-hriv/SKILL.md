@@ -148,6 +148,29 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/images/1
 - Category tiles + uncategorized image tiles.
 - Click a tile to drill down; click an image tile to open the OpenSeadragon viewer.
 
+### Navigation edge cases
+
+When driving Browse programmatically (e.g. Playwright or the browser console),
+category tiles render a `CardActionArea` with `data-testid="category-tile-action-area"`.
+The category label is the **text content** of the `h6` inside that action area, not an
+`aria-label` attribute. To click a tile by label, select the action area by
+`data-testid` (and filter by `h6` text), or find the `h6` by `textContent` and click its
+closest `button`/`CardActionArea` ancestor.
+
+```javascript
+// Option 1: select action areas by data-testid and filter by label text
+const tile = Array.from(
+  document.querySelectorAll('[data-testid="category-tile-action-area"]'),
+).find((el) => el.querySelector('h6')?.textContent === 'Architecture')
+tile?.click()
+
+// Option 2: find the h6 by textContent and click its closest button
+const label = Array.from(document.querySelectorAll('h6')).find(
+  (el) => el.textContent === 'Architecture',
+)
+label?.closest('button')?.click()
+```
+
 ### Images Tab
 
 - Table columns: ID, Name, Category, Copyright, Note, Program, Status, Modified, Actions.
