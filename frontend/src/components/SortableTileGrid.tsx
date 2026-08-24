@@ -419,9 +419,14 @@ export default function SortableTileGrid({
           },
         )
       } finally {
-        dragEndedRef.current = true
-        setActiveItem(null)
-        onDragActiveChange?.(false)
+        // Only emit the drag-end signal if we emitted a matching start signal.
+        if (!dragEndedRef.current) {
+          dragEndedRef.current = true
+          setActiveItem(null)
+          onDragActiveChange?.(false)
+        } else {
+          setActiveItem(null)
+        }
       }
     },
     [items, tileOrdering, onDropCategoryOnCategory, onDropImageOnCategory, onDragActiveChange],
