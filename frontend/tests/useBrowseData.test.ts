@@ -395,6 +395,52 @@ describe('useBrowseData', () => {
 
       expect(result.current.categories[0].label).toBe('WithSignal')
     })
+
+    it('does not store a newer ETag when a response is aborted before state commits', async () => {
+      const initialTree = [makeApiTree({ id: 1, label: 'Old' })]
+      mockFetchCategoryTree.mockImplementation(async (_init, onHeaders) => {
+        onHeaders?.({ etag: '"old-etag"', revision: 1, status: 200 })
+        return initialTree
+      })
+
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+
+      await act(async () => {
+        await result.current.loadCategories()
+      })
+      expect(result.current.categories[0].label).toBe('Old')
+
+      // A response that resolves while dragActive becomes true is aborted before
+      // setCategories runs, but its onHeaders has already fired with a new ETag.
+      let staleIfNoneMatch: string | undefined
+      mockFetchCategoryTree.mockImplementation(async (init, onHeaders) => {
+        staleIfNoneMatch = init?.headers?.['If-None-Match'] as string | undefined
+        onHeaders?.({ etag: '"new-etag"', revision: 2, status: 200 })
+        return [makeApiTree({ id: 2, label: 'New' })]
+      })
+      const controller = new AbortController()
+      await act(async () => {
+        const loadPromise = result.current.loadCategories({ signal: controller.signal })
+        controller.abort()
+        await loadPromise
+      })
+      expect(result.current.categories[0].label).toBe('Old')
+      expect(staleIfNoneMatch).toBe('"old-etag"')
+
+      // A later refresh must still use the old etag, not the aborted new one.
+      let refreshIfNoneMatch: string | undefined
+      mockFetchCategoryTree.mockImplementation(async (init, onHeaders) => {
+        refreshIfNoneMatch = init?.headers?.['If-None-Match'] as string | undefined
+        onHeaders?.({ etag: '"new-etag"', revision: 2, status: 200 })
+        return [makeApiTree({ id: 2, label: 'New' })]
+      })
+      await act(async () => {
+        await result.current.refreshCategories()
+      })
+      expect(refreshIfNoneMatch).toBe('"old-etag"')
+      expect(result.current.categories[0].label).toBe('New')
+    })
   })
 
   describe('loadUncategorizedImages options', () => {
