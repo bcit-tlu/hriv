@@ -26,7 +26,7 @@ def user_has_admin_program(user) -> bool:
     """Return True when the user is associated with the special Admin program."""
     return any(
         p.name == ADMIN_PROGRAM_NAME
-        for p in getattr(user, "programs", [])
+        for p in user.programs
     )
 
 

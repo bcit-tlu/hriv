@@ -30,7 +30,9 @@ NOW = datetime.now(timezone.utc)
 
 
 def _user(role: str, id: int = 1) -> SimpleNamespace:
-    return SimpleNamespace(id=id, role=role, name=f"user{id}", email=f"u{id}@e.com")
+    return SimpleNamespace(
+        id=id, role=role, name=f"user{id}", email=f"u{id}@e.com", programs=[]
+    )
 
 
 def _group(
