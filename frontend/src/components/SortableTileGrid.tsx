@@ -1,4 +1,4 @@
-import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
@@ -292,6 +292,19 @@ export default function SortableTileGrid({
   useLayoutEffect(() => {
     gridGenerationRef.current = claimGeneration()
   }, [claimGeneration, parentId])
+
+  // If the grid unmounts during an active drag, reset the drag-active signal
+  // so the parent does not keep background refresh and reorder refreshes
+  // deferred indefinitely.
+  useEffect(() => {
+    const wasActive = activeItem !== null
+    return () => {
+      if (wasActive) {
+        onDragActiveChange?.(false)
+      }
+    }
+  }, [activeItem, onDragActiveChange])
+
   const syncedCategoriesRef = useRef(currentCategories)
   const syncedVisibleImagesRef = useRef(visibleImages)
   const coordinatorOrder = tileOrdering.displayOrder

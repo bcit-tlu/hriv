@@ -264,6 +264,11 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
         const tree = await fetchCategoryTree({ cache: 'reload', signal: ac.signal })
         const cats = tree.map(apiTreeToCategory)
         if (gen === categoriesReadGen.current) {
+          // Drag abort or unmount: the latest committed state is safer than
+          // a stale network response.
+          if (ac.signal.aborted) {
+            return categoriesRef.current
+          }
           setCategories(cats)
           return cats
         }
@@ -309,6 +314,11 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
         const imgs = await fetchUncategorizedImages({ cache: 'reload', signal: ac.signal })
         const items = imgs.map(apiImageToItem)
         if (gen === uncategorizedReadGen.current) {
+          // Drag abort or unmount: the latest committed state is safer than
+          // a stale network response.
+          if (ac.signal.aborted) {
+            return uncategorizedRef.current
+          }
           setUncategorizedImages(items)
           uncategorizedLoaded.current = true
           return items

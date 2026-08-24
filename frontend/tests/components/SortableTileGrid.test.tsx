@@ -30,12 +30,19 @@ type DragEndHandler = (event: {
   }
 }) => void | Promise<void>
 
+type DragStartHandler = (event: {
+  operation: {
+    source: ({ id: string | number } & SortableMeta) | null
+  }
+}) => void | Promise<void>
+
 // Build a reorder source with the reflowed index `move()` actually commits.
 function sortableSource(id: string, index: number, initialIndex = index) {
   return { id, index, initialIndex, group: 'tiles' }
 }
 
 let capturedOnDragEnd: DragEndHandler | undefined
+let capturedOnDragStart: DragStartHandler | undefined
 
 vi.mock('@dnd-kit/react', async () => {
   const actual = await vi.importActual<typeof import('@dnd-kit/react')>('@dnd-kit/react')
@@ -43,6 +50,7 @@ vi.mock('@dnd-kit/react', async () => {
     ...actual,
     DragDropProvider: (props: Record<string, unknown>) => {
       capturedOnDragEnd = props.onDragEnd as DragEndHandler | undefined
+      capturedOnDragStart = props.onDragStart as DragStartHandler | undefined
       const ActualProvider = actual.DragDropProvider as React.ComponentType<Record<string, unknown>>
       return <ActualProvider {...props} />
     },
@@ -105,6 +113,7 @@ function renderGrid(overrides: Partial<SortableTileGridProps> = {}) {
 describe('SortableTileGrid', () => {
   beforeEach(() => {
     capturedOnDragEnd = undefined
+    capturedOnDragStart = undefined
     tileOrdering = makeTileOrdering()
   })
 
@@ -666,5 +675,58 @@ describe('drag-and-drop spec contract (docs/drag-and-drop.md)', () => {
       expect.any(Number),
       expect.any(Object),
     )
+  })
+
+  it('notifies onDragActiveChange on drag start and drag end', async () => {
+    const onDragActiveChange = vi.fn()
+    renderGrid({
+      onDragActiveChange,
+      currentImages: [makeImage({ id: 1, name: 'A', sortOrder: 0 })],
+    })
+
+    expect(capturedOnDragStart).toBeDefined()
+    await act(async () => {
+      await capturedOnDragStart!({
+        operation: {
+          source: { id: 'img-1', index: 0, initialIndex: 0, group: 'tiles' },
+        },
+      })
+    })
+    expect(onDragActiveChange).toHaveBeenCalledWith(true)
+
+    expect(capturedOnDragEnd).toBeDefined()
+    await act(async () => {
+      await capturedOnDragEnd!({
+        operation: {
+          source: { id: 'img-1', index: 0, initialIndex: 0, group: 'tiles' },
+          target: null,
+          canceled: true,
+        },
+      })
+    })
+    expect(onDragActiveChange).toHaveBeenLastCalledWith(false)
+  })
+
+  it('resets onDragActiveChange if the grid unmounts while a drag is active', async () => {
+    const onDragActiveChange = vi.fn()
+    const { unmount } = renderGrid({
+      onDragActiveChange,
+      currentImages: [makeImage({ id: 2, name: 'B', sortOrder: 0 })],
+    })
+
+    await act(async () => {
+      await capturedOnDragStart!({
+        operation: {
+          source: { id: 'img-2', index: 0, initialIndex: 0, group: 'tiles' },
+        },
+      })
+    })
+    expect(onDragActiveChange).toHaveBeenCalledWith(true)
+    onDragActiveChange.mockClear()
+
+    act(() => {
+      unmount()
+    })
+    expect(onDragActiveChange).toHaveBeenCalledWith(false)
   })
 })
