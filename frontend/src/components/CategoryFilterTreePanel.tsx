@@ -9,7 +9,7 @@ import { alpha } from '@mui/material/styles'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import type { Category } from '../types'
-import { flattenCategoryOptions } from './categoryOptionUtils'
+import { flattenCategoryOptions, formatCategoryItemCounts } from './categoryOptionUtils'
 import { useCategoryTreeExpansionPreferences } from '../useCategoryTreeExpansionPreferences'
 
 interface CategoryFilterTreePanelProps {
@@ -135,6 +135,9 @@ export default function CategoryFilterTreePanel({
               />
               <Typography variant="body2" component="span">
                 {option.label}
+              </Typography>
+              <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 0.5 }}>
+                ({formatCategoryItemCounts(option.childCount, option.imageCount)})
               </Typography>
             </Box>
           )
