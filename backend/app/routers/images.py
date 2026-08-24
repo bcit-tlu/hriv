@@ -151,22 +151,26 @@ async def bulk_update_images(
                     affected.add(scope_key_for(update_data["category_id"]))
                     await bump_scopes(db, affected)
 
-            # Only bump the global browse revision when an image that is (or is
-            # becoming) categorized actually changes. Uncategorized images do not
-            # appear in the category tree.
+            # Only apply changes and bump the per-image version when this image
+            # is actually changing. Skip both the version bump and the write for
+            # unchanged rows so a no-op bulk edit does not advance versions behind
+            # a stale 304 (issue #975 / #1108).
             browse_dirty = False
+            changed_images = []
             for img in images:
                 new_category_id = update_data.get("category_id", img.category_id)
                 if img.category_id is None and new_category_id is None:
+                    # Uncategorized and staying uncategorized — still count as
+                    # changed if any provided field differs, but it cannot affect
+                    # the browse tree.
+                    if any(getattr(img, key) != value for key, value in update_data.items()):
+                        changed_images.append(img)
                     continue
-                for key, value in update_data.items():
-                    if getattr(img, key) != value:
-                        browse_dirty = True
-                        break
-                if browse_dirty:
-                    break
+                if any(getattr(img, key) != value for key, value in update_data.items()):
+                    changed_images.append(img)
+                    browse_dirty = True
 
-            for img in images:
+            for img in changed_images:
                 for key, value in update_data.items():
                     setattr(img, key, value)
                 img.version = img.version + 1

@@ -474,6 +474,35 @@ async def test_bulk_update_images_partial_move_bumps_only_moved_sources() -> Non
     assert bump.await_args.args[1] == {3, 7}
 
 
+async def test_bulk_update_images_noop_does_not_advance_versions_or_browse() -> None:
+    """A no-op bulk edit on categorized images must not bump versions or browse_state,
+    otherwise the tree can 304 with stale (too-low) versions and the next edit 409s."""
+    imgs = [
+        _make_image(id=1, category_id=7, active=True),
+        _make_image(id=2, category_id=7, active=True),
+    ]
+    original_versions = [img.version for img in imgs]
+
+    async def mock_execute(stmt):
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = imgs
+        return mock_result
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=mock_execute)
+    db.commit = AsyncMock()
+
+    body = ImageBulkUpdate(image_ids=[1, 2], category_id=7, active=True)
+    with patch("app.routers.images.bump_scopes", new=AsyncMock()) as bump:
+        await bulk_update_images(body, _make_user(), db)
+
+    bump.assert_not_awaited()
+    images_router.bump_browse_revision.assert_not_awaited()
+    db.commit.assert_awaited_once()
+    for img, version in zip(imgs, original_versions):
+        assert img.version == version
+
+
 async def test_update_image_unchanged_ordering_fields_do_not_bump_scopes() -> None:
     """Edit dialogs echo category_id/sort_order back on every save; bumping on
     presence alone would 409 clients whose cached revision is still accurate."""
