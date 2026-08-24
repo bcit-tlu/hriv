@@ -340,8 +340,9 @@ export default function SortableTileGrid({
   const blockedIdsMap = useMemo(() => {
     const map = new Map<number, Set<number>>()
     for (const cat of currentCategories) {
-      const blocked = allDescendantIds.get(cat.id)
-      map.set(cat.id, blocked ?? new Set<number>())
+      const base = allDescendantIds.get(cat.id)
+      const blocked = base ? new Set(base) : new Set<number>([cat.id])
+      map.set(cat.id, blocked)
     }
     return map
   }, [allDescendantIds, currentCategories])

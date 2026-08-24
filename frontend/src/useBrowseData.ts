@@ -102,6 +102,8 @@ function imageIdentityKey(img: ApiImage): string {
     img.width,
     img.height,
     img.file_size,
+    img.created_at,
+    img.updated_at,
   ])
 }
 
@@ -125,6 +127,8 @@ function categoryIdentityKey(
     [...(node.group_ids ?? [])].sort((a, b) => a - b),
     childKeys,
     imageKeys,
+    node.created_at,
+    node.updated_at,
   ])
 }
 
