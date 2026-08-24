@@ -1008,4 +1008,82 @@ describe('useBrowseData', () => {
       expect(result.current.groups[0].name).toBe('Cohort A')
     })
   })
+
+  describe('dragActive behavior', () => {
+    it('pauses background refresh while dragActive is true', () => {
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { rerender } = renderHook((d: UseBrowseDataDeps) => useBrowseData(d), {
+        initialProps: deps,
+      })
+
+      const initialEnabled =
+        mockUseBackgroundRefresh.mock.calls[mockUseBackgroundRefresh.mock.calls.length - 1][1]
+      expect(initialEnabled).toBe(true)
+
+      rerender({ ...deps, dragActive: true })
+      const pausedEnabled =
+        mockUseBackgroundRefresh.mock.calls[mockUseBackgroundRefresh.mock.calls.length - 1][1]
+      expect(pausedEnabled).toBe(false)
+    })
+
+    it('aborts a pending loadCategories when dragActive becomes true', async () => {
+      let resolveFetch: (value: ApiCategoryTree[]) => void = () => {}
+      mockFetchCategoryTree.mockImplementationOnce(
+        () =>
+          new Promise<ApiCategoryTree[]>((resolve) => {
+            resolveFetch = resolve
+          }),
+      )
+
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result, rerender } = renderHook((d: UseBrowseDataDeps) => useBrowseData(d), {
+        initialProps: deps,
+      })
+
+      let loadDone: Promise<boolean>
+      act(() => {
+        loadDone = result.current.loadCategories()
+      })
+      expect(result.current.categoriesLoading).toBe(true)
+
+      rerender({ ...deps, dragActive: true })
+      await act(async () => {
+        resolveFetch([makeApiTree({ id: 1, label: 'Aborted' })])
+      })
+
+      const returned = await loadDone!
+      expect(returned).toBe(false)
+      expect(result.current.categories).toEqual([])
+      expect(result.current.categoriesLoading).toBe(false)
+    })
+
+    it('aborts a pending refreshCategories when dragActive becomes true', async () => {
+      let resolveFetch: (value: ApiCategoryTree[]) => void = () => {}
+      mockFetchCategoryTree.mockImplementationOnce(
+        () =>
+          new Promise<ApiCategoryTree[]>((resolve) => {
+            resolveFetch = resolve
+          }),
+      )
+
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result, rerender } = renderHook((d: UseBrowseDataDeps) => useBrowseData(d), {
+        initialProps: deps,
+      })
+
+      let refreshDone: Promise<Category[]>
+      act(() => {
+        refreshDone = result.current.refreshCategories()
+      })
+
+      rerender({ ...deps, dragActive: true })
+      await act(async () => {
+        resolveFetch([makeApiTree({ id: 1, label: 'Aborted' })])
+      })
+
+      const returned = await refreshDone!
+      expect(returned).toEqual([])
+      expect(result.current.categories).toEqual([])
+    })
+  })
 })
