@@ -443,6 +443,92 @@ describe('useBrowseData', () => {
     })
   })
 
+  describe('stable entity conversion', () => {
+    it('reuses the same Category object when the API response is unchanged', async () => {
+      const tree = [makeApiTree({ id: 1, label: 'Cat A' })]
+      mockFetchCategoryTree.mockResolvedValue(tree)
+
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+
+      await act(async () => {
+        await result.current.loadCategories()
+      })
+      const first = result.current.categories[0]
+
+      await act(async () => {
+        await result.current.loadCategories()
+      })
+
+      expect(result.current.categories[0]).toBe(first)
+    })
+
+    it('creates a new Category object when version or content changes', async () => {
+      const firstTree = [makeApiTree({ id: 1, label: 'Cat A', version: 1 })]
+      mockFetchCategoryTree.mockResolvedValue(firstTree)
+
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+
+      await act(async () => {
+        await result.current.loadCategories()
+      })
+      const first = result.current.categories[0]
+
+      const secondTree = [makeApiTree({ id: 1, label: 'Cat A Renamed', version: 2 })]
+      mockFetchCategoryTree.mockResolvedValue(secondTree)
+
+      await act(async () => {
+        await result.current.loadCategories()
+      })
+
+      expect(result.current.categories[0]).not.toBe(first)
+      expect(result.current.categories[0].label).toBe('Cat A Renamed')
+    })
+
+    it('reuses the same ImageItem object when the API response is unchanged', async () => {
+      const imgs = [makeApiImage(10, { name: 'img-10' })]
+      mockFetchUncategorizedImages.mockResolvedValue(imgs)
+
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+
+      await act(async () => {
+        await result.current.loadUncategorizedImages()
+      })
+      const first = result.current.uncategorizedImages[0]
+
+      await act(async () => {
+        await result.current.loadUncategorizedImages()
+      })
+
+      expect(result.current.uncategorizedImages[0]).toBe(first)
+    })
+
+    it('creates a new ImageItem object when version or content changes', async () => {
+      const firstImgs = [makeApiImage(10, { name: 'img-10', version: 1 })]
+      mockFetchUncategorizedImages.mockResolvedValue(firstImgs)
+
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+
+      await act(async () => {
+        await result.current.loadUncategorizedImages()
+      })
+      const first = result.current.uncategorizedImages[0]
+
+      const secondImgs = [makeApiImage(10, { name: 'img-10-renamed', version: 2 })]
+      mockFetchUncategorizedImages.mockResolvedValue(secondImgs)
+
+      await act(async () => {
+        await result.current.loadUncategorizedImages()
+      })
+
+      expect(result.current.uncategorizedImages[0]).not.toBe(first)
+      expect(result.current.uncategorizedImages[0].name).toBe('img-10-renamed')
+    })
+  })
+
   describe('loadUncategorizedImages options', () => {
     it('aborts early when signal is already aborted', async () => {
       const deps = makeDeps({ currentUser: makeUser() })

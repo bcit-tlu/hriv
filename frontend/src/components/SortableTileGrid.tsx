@@ -26,11 +26,10 @@ import CategoryTile from './CategoryTile'
 import ImageTile from './ImageTile'
 import FileDropZone from './FileDropZone'
 import {
+  buildDescendantMap,
   buildTileItems,
-  collectDescendantIds,
   DROP_PREFIX,
   farHalfReorderCollision,
-  findCategory,
   nearHalfMoveCollision,
   orderTileItems,
   tileId,
@@ -280,10 +279,20 @@ export default function SortableTileGrid({
   const inheritedGroupIds = useMemo(() => narrowGroupIds(path), [path])
 
   const parentId = path.length > 0 ? path[path.length - 1].id : null
-  const [items, setItems] = useState<TileItem[]>(() => {
-    const built = buildTileItems(currentCategories, visibleImages)
-    return tileOrdering.displayOrder ? orderTileItems(built, tileOrdering.displayOrder) : built
-  })
+
+  const builtItems = useMemo(
+    () => buildTileItems(currentCategories, visibleImages),
+    [currentCategories, visibleImages],
+  )
+  const orderedItems = useMemo(
+    () =>
+      tileOrdering.displayOrder !== null
+        ? orderTileItems(builtItems, tileOrdering.displayOrder)
+        : builtItems,
+    [builtItems, tileOrdering.displayOrder],
+  )
+
+  const [items, setItems] = useState<TileItem[]>(() => orderedItems)
   const [activeItem, setActiveItem] = useState<TileItem | null>(null)
   const gridGenerationRef = useRef<number | null>(null)
   // Guards the unmount-cleanup signal so a normal drag-end does not fire
@@ -314,46 +323,28 @@ export default function SortableTileGrid({
     }
   }, [activeItem])
 
-  const syncedCategoriesRef = useRef(currentCategories)
-  const syncedVisibleImagesRef = useRef(visibleImages)
-  const coordinatorOrder = tileOrdering.displayOrder
-  const syncedCoordinatorOrderRef = useRef(coordinatorOrder)
+  const syncedOrderedItemsRef = useRef(orderedItems)
 
   useLayoutEffect(() => {
     // Never rebuild the tile list while a drag is active. Rebuilding would
     // write new index props into useSortable and abort dnd-kit's optimistic
     // sorting reflow, which is the "tiles don't make room" freeze.
-    if (activeItem !== null) {
-      return
+    if (activeItem !== null) return
+    if (syncedOrderedItemsRef.current !== orderedItems) {
+      syncedOrderedItemsRef.current = orderedItems
+      setItems(orderedItems)
     }
-    const membershipChanged =
-      syncedCategoriesRef.current !== currentCategories ||
-      syncedVisibleImagesRef.current !== visibleImages
-    // Coordinator-authoritative order changes (saved responses or conflict
-    // refreshes) re-sort the current tiles without a full category-tree
-    // refresh.
-    const orderChanged = syncedCoordinatorOrderRef.current !== coordinatorOrder
-    if (!membershipChanged && !orderChanged) {
-      return
-    }
-    syncedCategoriesRef.current = currentCategories
-    syncedVisibleImagesRef.current = visibleImages
-    syncedCoordinatorOrderRef.current = coordinatorOrder
+  }, [activeItem, orderedItems])
 
-    const built = buildTileItems(currentCategories, visibleImages)
-    setItems(coordinatorOrder !== null ? orderTileItems(built, coordinatorOrder) : built)
-  }, [currentCategories, visibleImages, coordinatorOrder, activeItem])
-
+  const allDescendantIds = useMemo(() => buildDescendantMap(allCategories), [allCategories])
   const blockedIdsMap = useMemo(() => {
     const map = new Map<number, Set<number>>()
     for (const cat of currentCategories) {
-      const fullCat = findCategory(allCategories, cat.id)
-      const blocked = fullCat ? collectDescendantIds(fullCat) : new Set<number>()
-      blocked.add(cat.id)
-      map.set(cat.id, blocked)
+      const blocked = allDescendantIds.get(cat.id)
+      map.set(cat.id, blocked ?? new Set<number>())
     }
     return map
-  }, [allCategories, currentCategories])
+  }, [allDescendantIds, currentCategories])
 
   const handleDragStart = useCallback(
     (event: DragStartEvent) => {
