@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.45.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.44.0...frontend-v0.45.0) (2026-08-24)
+
+
+### Features
+
+* **frontend:** move reorder status to stacked bottom-right snackbar ([#1098](https://github.com/bcit-tlu/hriv/issues/1098)) ([d3225e8](https://github.com/bcit-tlu/hriv/commit/d3225e8f9d03047272eeb8e1eb0ad622a6e7ce9d))
+
 ## [0.44.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.43.1...frontend-v0.44.0) (2026-08-24)
 
 
