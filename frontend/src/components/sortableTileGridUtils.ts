@@ -34,7 +34,11 @@ class LRUCache<K, V> {
   }
 
   get(key: K): V | undefined {
-    return this.cache.get(key)
+    if (!this.cache.has(key)) return undefined
+    const value = this.cache.get(key)!
+    this.cache.delete(key)
+    this.cache.set(key, value)
+    return value
   }
 
   set(key: K, value: V): V {
