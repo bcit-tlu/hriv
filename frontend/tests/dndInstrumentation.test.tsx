@@ -162,6 +162,27 @@ describe('dndInstrumentation', () => {
       expect(spy).toHaveBeenCalledTimes(2)
     })
 
+    it('resets move and collision throttle windows on dragstart', () => {
+      const start: DragStartEvent = {
+        operation: { source: { id: 'src' }, position: { current: { x: 0, y: 0 } } },
+      } as unknown as DragStartEvent
+      const move = makeDragMoveEvent()
+
+      capturedHandlers?.onDragMove(move)
+      expect(spy).toHaveBeenCalledTimes(1)
+
+      // Without reset, this would be throttled at the same timestamp.
+      capturedHandlers?.onDragMove(move)
+      expect(spy).toHaveBeenCalledTimes(1)
+
+      capturedHandlers?.onDragStart(start)
+      expect(spy).toHaveBeenCalledWith(expect.stringContaining('dragstart'), expect.any(Object))
+
+      // After a dragstart, the move window is reset and should log again.
+      capturedHandlers?.onDragMove(move)
+      expect(spy).toHaveBeenCalledTimes(3)
+    })
+
     it('logs every dragover event without throttling', () => {
       const over = {
         operation: {

@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import { useDragDropMonitor } from '@dnd-kit/react'
 import type {
   CollisionEvent,
@@ -33,65 +33,75 @@ const THROTTLE_MS = 150
  * events you want to trace.
  */
 export function DndMonitor(): null {
-  useDnDMonitor()
+  const enabled = isDndTraceEnabled()
+  useDnDMonitor(enabled)
   return null
 }
 
-export function useDnDMonitor(): void {
+export function useDnDMonitor(enabled: boolean = isDndTraceEnabled()): void {
   const lastMoveLogRef = useRef(0)
   const lastCollisionLogRef = useRef(0)
 
-  useDragDropMonitor({
-    onDragStart: (event: DragStartEvent) => {
-      const { operation } = event
-      logDrag('dragstart', {
-        source: operation.source?.id,
-        position: operation.position.current,
-      })
-    },
-    onDragMove: (event: DragMoveEvent) => {
-      const now = performance.now()
-      if (now - lastMoveLogRef.current < THROTTLE_MS) return
-      lastMoveLogRef.current = now
+  const handlers = useMemo(() => {
+    if (!enabled) {
+      return {}
+    }
 
-      const { operation } = event
-      logDrag('dragmove', {
-        source: operation.source?.id,
-        position: operation.position.current,
-        delta: operation.position.delta,
-        by: event.by,
-      })
-    },
-    onDragOver: (event: DragOverEvent) => {
-      const { operation } = event
-      logDrag('dragover', {
-        source: operation.source?.id,
-        target: operation.target?.id,
-        position: operation.position.current,
-      })
-    },
-    onCollision: (event: CollisionEvent) => {
-      if (!isDndTraceEnabled()) return
+    return {
+      onDragStart: (event: DragStartEvent) => {
+        lastMoveLogRef.current = 0
+        lastCollisionLogRef.current = 0
 
-      const now = performance.now()
-      if (now - lastCollisionLogRef.current < THROTTLE_MS) return
-      lastCollisionLogRef.current = now
+        const { operation } = event
+        logDrag('dragstart', {
+          source: operation.source?.id,
+          position: operation.position.current,
+        })
+      },
+      onDragMove: (event: DragMoveEvent) => {
+        const now = performance.now()
+        if (now - lastMoveLogRef.current < THROTTLE_MS) return
+        lastMoveLogRef.current = now
 
-      const collisions = event.collisions.map((c) => ({
-        id: c.id,
-        priority: c.priority,
-        value: typeof c.value === 'number' ? Number(c.value.toFixed(4)) : c.value,
-      }))
-      logDrag('collision', { collisions })
-    },
-    onDragEnd: (event: DragEndEvent) => {
-      const { operation } = event
-      logDrag('dragend', {
-        source: operation.source?.id,
-        target: operation.target?.id,
-        canceled: event.canceled,
-        position: operation.position.current,
-      })
-    },
-  })
+        const { operation } = event
+        logDrag('dragmove', {
+          source: operation.source?.id,
+          position: operation.position.current,
+          delta: operation.position.delta,
+          by: event.by,
+        })
+      },
+      onDragOver: (event: DragOverEvent) => {
+        const { operation } = event
+        logDrag('dragover', {
+          source: operation.source?.id,
+          target: operation.target?.id,
+          position: operation.position.current,
+        })
+      },
+      onCollision: (event: CollisionEvent) => {
+        const now = performance.now()
+        if (now - lastCollisionLogRef.current < THROTTLE_MS) return
+        lastCollisionLogRef.current = now
+
+        const collisions = event.collisions.map((c) => ({
+          id: c.id,
+          priority: c.priority,
+          value: typeof c.value === 'number' ? Number(c.value.toFixed(4)) : c.value,
+        }))
+        logDrag('collision', { collisions })
+      },
+      onDragEnd: (event: DragEndEvent) => {
+        const { operation } = event
+        logDrag('dragend', {
+          source: operation.source?.id,
+          target: operation.target?.id,
+          canceled: event.canceled,
+          position: operation.position.current,
+        })
+      },
+    }
+  }, [enabled])
+
+  useDragDropMonitor(handlers)
 }
