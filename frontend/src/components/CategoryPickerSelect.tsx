@@ -26,6 +26,7 @@ import CategoryRestrictionIcons from './CategoryRestrictionIcons'
 import EditCategoryDialog from './EditCategoryDialog'
 import {
   flattenCategoryOptions,
+  formatCategoryItemCounts,
   getAncestorHiddenIds,
   type FlatCategoryOption,
 } from './categoryOptionUtils'
@@ -376,9 +377,9 @@ export default function CategoryPickerSelect({
                         component="span"
                         variant="body2"
                         color="text.secondary"
-                        sx={{ ml: 0.5 }}
+                        sx={{ ml: 0.5, fontSize: '0.9em' }}
                       >
-                        ({opt.imageCount})
+                        ({formatCategoryItemCounts(opt.childCount, opt.imageCount)})
                       </Typography>
                       <CategoryRestrictionIcons
                         hasProgramRestriction={
