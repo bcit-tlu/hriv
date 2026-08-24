@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.45.0...backend-v0.46.0) (2026-08-24)
+
+
+### Features
+
+* **backend,frontend:** add monotonic browse revision and 304 short-circuit ([#1108](https://github.com/bcit-tlu/hriv/issues/1108)) ([641c1a7](https://github.com/bcit-tlu/hriv/commit/641c1a76169744ef25f7ff198c651992d3b28846))
+
 ## [0.45.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.44.0...backend-v0.45.0) (2026-08-24)
 
 
