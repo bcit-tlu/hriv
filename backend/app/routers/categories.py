@@ -21,11 +21,23 @@ from ..schemas import (
     CategoryWarning,
     ImageOut,
 )
+from ..browse_state import bump_browse_revision, get_browse_revision
 from ..tile_order import bump_scopes, scope_key_for
 from ..visibility import compute_excluded_category_ids, get_student_excluded_category_ids, is_category_visible_to_student
 
 
 router = APIRouter(prefix="/categories", tags=["categories"])
+
+
+def _viewer_etag_fragment(
+    user: User,
+    user_program_ids: set[int] | None,
+    user_group_ids: set[int] | None,
+) -> str:
+    """Stable, opaque hash of the caller's visibility context for ETags."""
+    programs = ",".join(str(i) for i in sorted(user_program_ids or ()))
+    groups = ",".join(str(i) for i in sorted(user_group_ids or ()))
+    return hashlib.md5(f"{user.role}|{programs}|{groups}".encode()).hexdigest()
 
 
 async def _resolve_programs(
@@ -274,30 +286,35 @@ async def get_category_tree(
         if _user.role == "student"
         else None
     )
+
+    # ── Browse-revision 304 short-circuit (issue #1066) ──
+    # A single monotonic revision is incremented by every mutation that could
+    # affect this tree. If the client's ETag matches, we return 304 without
+    # loading or serializing the full tree.
+    browse_revision = await get_browse_revision(db)
+    viewer_hash = _viewer_etag_fragment(_user, user_program_ids, user_group_ids)
+    browse_etag = f"browse-{browse_revision}-{viewer_hash}"
+    response.headers["ETag"] = f'W/"{browse_etag}"'
+    response.headers["Cache-Control"] = "private, no-cache"
+    response.headers["X-Browse-Revision"] = str(browse_revision)
+
+    client_etags = request.headers.get("if-none-match", "")
+    if client_etags == "*" or f'W/"{browse_etag}"' in [t.strip() for t in client_etags.split(",")]:
+        return Response(
+            status_code=304,
+            headers={
+                "ETag": f'W/"{browse_etag}"',
+                "Cache-Control": "private, no-cache",
+                "X-Browse-Revision": str(browse_revision),
+            },
+        )
+
     tree = await _load_tree(
         db, None,
         user_role=_user.role,
         user_program_ids=user_program_ids,
         user_group_ids=user_group_ids,
     )
-
-    # ── ETag / Cache-Control ──
-    # Compute a lightweight ETag from the serialised response so browsers
-    # and proxies can use conditional requests (If-None-Match) to skip
-    # redundant payload transfers when the tree hasn't changed.
-    body_bytes = _json.dumps(
-        [t.model_dump(mode="json") for t in tree],
-        sort_keys=True,
-        default=str,
-    ).encode()
-    etag = hashlib.md5(body_bytes).hexdigest()  # noqa: S324
-    response.headers["ETag"] = f'W/"{etag}"'
-    response.headers["Cache-Control"] = "private, no-cache"
-
-    client_etags = request.headers.get("if-none-match", "")
-    if client_etags == "*" or f'W/"{etag}"' in [t.strip() for t in client_etags.split(",")]:
-        return Response(status_code=304, headers={"ETag": f'W/"{etag}"', "Cache-Control": "private, no-cache"})
-
     return tree
 
 
@@ -384,6 +401,7 @@ async def create_category(
     cat.programs = progs
     cat.groups = grps
     db.add(cat)
+    await bump_browse_revision(db)
     await db.commit()
     await db.refresh(cat)
     cat._category_warnings = _intersection_warnings(progs, grps)
@@ -492,6 +510,7 @@ async def update_category(
         cat.groups = await _resolve_groups(
             db, _user, group_ids, existing_group_ids,
         )
+    await bump_browse_revision(db)
     await db.commit()
     await db.refresh(cat)
     cat._category_warnings = _intersection_warnings(
@@ -515,4 +534,5 @@ async def delete_category(
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found")
     await db.delete(cat)
+    await bump_browse_revision(db)
     await db.commit()

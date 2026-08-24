@@ -13,6 +13,7 @@ from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import get_current_user, require_role
+from ..browse_state import bump_browse_revision
 from ..database import async_session, get_db, settings
 from ..image_validation import UPLOAD_CHUNK_SIZE, is_valid_image
 from ..models import Category, Image, SourceImage, User
@@ -109,6 +110,7 @@ async def create_image(
                 file_size=body.file_size,
             )
             db.add(img)
+            await bump_browse_revision(db)
             await db.commit()
             await db.refresh(img)
             span.set_attribute("image.id", img.id)
@@ -151,6 +153,7 @@ async def bulk_update_images(
                 for key, value in update_data.items():
                     setattr(img, key, value)
                 img.version = img.version + 1
+            await bump_browse_revision(db)
             await db.commit()
             # Reload updated images
             stmt = select(Image).where(Image.id.in_(body.image_ids)).order_by(Image.sort_order, Image.name)
@@ -250,6 +253,7 @@ async def update_image(
             for key, value in update_data.items():
                 setattr(img, key, value)
 
+            await bump_browse_revision(db)
             await db.commit()
             await db.refresh(img)
 
@@ -422,6 +426,8 @@ async def replace_image(
                 image_id=image_id,
             )
             db.add(src)
+            if has_metadata:
+                await bump_browse_revision(db)
             await db.commit()
             await db.refresh(src)
 
@@ -517,6 +523,7 @@ async def replace_image(
                         )
                         if restore_result.rowcount == 1:
                             db.expire(img)
+                            await bump_browse_revision(db)
                             await db.commit()
                         else:
                             await db.rollback()
@@ -573,6 +580,7 @@ async def bulk_delete_images(
                 raise HTTPException(status_code=404, detail="One or more images not found")
             for img in images:
                 await db.delete(img)
+            await bump_browse_revision(db)
             await db.commit()
         except Exception as exc:
             record_exception_if_server_error(span, exc)
@@ -592,6 +600,7 @@ async def delete_image(
             if not img:
                 raise HTTPException(status_code=404, detail="Image not found")
             await db.delete(img)
+            await bump_browse_revision(db)
             await db.commit()
         except Exception as exc:
             record_exception_if_server_error(span, exc)

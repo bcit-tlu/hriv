@@ -193,12 +193,16 @@ def mocked_helpers(monkeypatch):
         tiles=AsyncMock(return_value=[]),
         apply=AsyncMock(),
         bump=AsyncMock(return_value=2),
+        browse_bump=AsyncMock(return_value=7),
+        browse_get=AsyncMock(return_value=5),
     )
     monkeypatch.setattr("app.routers.tile_order.lock_scope_revision", mocks.lock)
     monkeypatch.setattr("app.routers.tile_order.load_scope_members", mocks.members)
     monkeypatch.setattr("app.routers.tile_order.load_scope_tiles", mocks.tiles)
     monkeypatch.setattr("app.routers.tile_order.apply_positions", mocks.apply)
     monkeypatch.setattr("app.routers.tile_order.bump_scope_revision", mocks.bump)
+    monkeypatch.setattr("app.routers.tile_order.bump_browse_revision", mocks.browse_bump)
+    monkeypatch.setattr("app.routers.tile_order.get_browse_revision", mocks.browse_get)
     return mocks
 
 

@@ -26,6 +26,16 @@ from app.schemas import ImageCreate, ImageUpdate, ImageBulkUpdate, ImageBulkDele
 from app.worker import EnqueueResult, TaskQueueUnavailableError
 
 
+@pytest.fixture(autouse=True)
+def _patch_browse_bump(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ browse_state.bump_browse_revision is a real DB helper; unit tests mock
+    the DB layer, so stub the bump to avoid over-consumption of AsyncMock
+    execute side effects and missing scalar_one() on return values.  """
+    monkeypatch.setattr(
+        images_router, "bump_browse_revision", AsyncMock(return_value=1)
+    )
+
+
 def _make_image(
     id: int = 1,
     name: str = "test-img",

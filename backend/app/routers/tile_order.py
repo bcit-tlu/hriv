@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import require_role
+from ..browse_state import bump_browse_revision, get_browse_revision
 from ..database import get_db
 from ..models import Category, TileOrderRevision, User
 from ..reorder_telemetry import (
@@ -59,7 +60,10 @@ async def _require_scope_exists(db: AsyncSession, parent_category_id: int | None
 
 
 async def _authoritative_response(
-    db: AsyncSession, parent_category_id: int | None, revision: int
+    db: AsyncSession,
+    parent_category_id: int | None,
+    revision: int,
+    browse_revision: int,
 ) -> TileOrderResponse:
     tiles = await load_scope_tiles(db, parent_category_id)
     # ``sort_order`` is reported as the contiguous canonical position, not the
@@ -68,6 +72,7 @@ async def _authoritative_response(
     return TileOrderResponse(
         scope=TileOrderScope(parent_category_id=parent_category_id),
         revision=revision,
+        browse_revision=browse_revision,
         items=[
             TileOrderItemOut(type=t.type, id=t.id, sort_order=pos)
             for pos, t in enumerate(tiles)
@@ -90,10 +95,12 @@ async def get_tile_order(
         )
     )
     revision = result.scalar_one_or_none() or INITIAL_SCOPE_REVISION
+    browse_revision = await get_browse_revision(db)
     if response is not None:
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
         response.headers["Pragma"] = "no-cache"
-    return await _authoritative_response(db, parent_category_id, revision)
+        response.headers["X-Browse-Revision"] = str(browse_revision)
+    return await _authoritative_response(db, parent_category_id, revision, browse_revision)
 
 
 @router.put("", response_model=TileOrderResponse)
@@ -123,8 +130,11 @@ async def put_tile_order(
             )
             if error is not None:
                 raise HTTPException(status_code=400, detail=error)
+            browse_revision = await get_browse_revision(db)
             if body.expected_revision != current_revision:
-                stale = await _authoritative_response(db, parent_category_id, current_revision)
+                stale = await _authoritative_response(
+                    db, parent_category_id, current_revision, browse_revision
+                )
                 raise HTTPException(
                     status_code=409,
                     detail={
@@ -134,9 +144,11 @@ async def put_tile_order(
                 )
             await apply_positions(db, [(item.type, item.id) for item in body.items])
             new_revision = await bump_scope_revision(db, scope_key)
+            browse_revision = await bump_browse_revision(db)
             response = TileOrderResponse(
                 scope=TileOrderScope(parent_category_id=parent_category_id),
                 revision=new_revision,
+                browse_revision=browse_revision,
                 items=[
                     TileOrderItemOut(type=item.type, id=item.id, sort_order=pos)
                     for pos, item in enumerate(body.items)

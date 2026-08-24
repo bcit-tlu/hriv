@@ -335,6 +335,48 @@ describe('useBrowseData', () => {
       expect(result.current.categories).toEqual([])
     })
 
+    it('skips setCategories when server returns 304 (null)', async () => {
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+
+      const tree = [makeApiTree({ id: 1, label: 'Fresh' })]
+      mockFetchCategoryTree.mockResolvedValue(tree)
+      await act(async () => {
+        await result.current.loadCategories()
+      })
+      expect(result.current.categories[0].label).toBe('Fresh')
+
+      // 304 Not Modified: fetchCategoryTree returns null
+      mockFetchCategoryTree.mockResolvedValue(null)
+      let fresh = false
+      await act(async () => {
+        fresh = await result.current.loadCategories()
+      })
+
+      expect(fresh).toBe(true)
+      expect(result.current.categories[0].label).toBe('Fresh')
+    })
+
+    it('refreshCategories resolves current categories on 304 without overwriting state', async () => {
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+
+      const tree = [makeApiTree({ id: 1, label: 'Fresh' })]
+      mockFetchCategoryTree.mockResolvedValue(tree)
+      await act(async () => {
+        await result.current.loadCategories()
+      })
+
+      mockFetchCategoryTree.mockResolvedValue(null)
+      let refreshed: Category[] = []
+      await act(async () => {
+        refreshed = await result.current.refreshCategories()
+      })
+
+      expect(refreshed[0].label).toBe('Fresh')
+      expect(result.current.categories[0].label).toBe('Fresh')
+    })
+
     it('does not call invalidateRef when signal is provided', async () => {
       // This test verifies the contract: background refresh passes a signal,
       // and foreground loads do not — only foreground loads invalidate.

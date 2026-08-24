@@ -135,6 +135,22 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   revision rows for scope keys with no matching category.
 - See [Tile ordering](tile-ordering.md) for the API contract.
 
+### BrowseState _(added in `0020_browse_state`)_
+
+- **Purpose:** singleton counter used to short-circuit `GET /categories/tree`
+  with a cheap `304` response when no browse-affecting mutation has occurred
+  since the client's last read (issue #1066).
+- **Key fields:** `id` (always `1`); `revision` (monotonic `BigInteger`, starts
+  at `0`); `updated_at`.
+- **Lifecycle:** every mutation that can change the browse tree — category
+  create/update/delete, image create/update/delete/reorder, tile-order writes,
+  image processing completion, and admin restore/import — increments
+  `revision` inside the same transaction. `GET /categories/tree` reads the
+  revision first and returns `304` without building the tree when the
+  caller's `If-None-Match` ETag (which includes `revision` plus a hash of the
+  user's program/group visibility context) matches.
+- See [Browse state](browse-state.md) for the API/frontend contract.
+
 ## Junction tables
 
 | Table               | Composite PK                | FK behaviour   | Constraint                                                                         |
