@@ -63,7 +63,8 @@ export default function ReorderStatusIndicator({
   switch (status) {
     case 'idle':
       severity = 'error'
-      icon = <ErrorOutlineIcon fontSize="small" sx={{ color: 'inherit' }} />
+      // The crossScope box below already supplies the error icon + text.
+      icon = false
       break
     case 'dirty':
     case 'saving':
