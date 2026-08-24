@@ -50,6 +50,10 @@ anything no longer invalidates every viewer's tree cache. Image create/update/
 delete/processing only bumps the revision when the image is or becomes attached
 to a category; uncategorized images do not appear in the browse tree.
 
+The per-entity `version` used for `If-Match` optimistic concurrency is only
+incremented when the request actually changes the entity, so a no-op save does not
+stale the client's ETag.
+
 The `PUT /api/tile-order` response includes the new `browse_revision` (both in
 the JSON body and the `X-Browse-Revision` header) so the frontend can decide
 whether a full tree reload is needed.

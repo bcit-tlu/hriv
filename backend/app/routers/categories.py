@@ -420,45 +420,6 @@ async def update_category(
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found")
 
-    # An ordering write (sort_order or a parent move) must invalidate the
-    # affected scopes' tile-order revisions so a client holding an older
-    # revision gets a 409 instead of silently overwriting this change.
-    # Revision locks are taken before any row mutation, matching
-    # PUT /api/tile-order's revision-then-rows lock order
-    # (docs/tile-ordering.md).
-    # Only an actual value change invalidates: edit dialogs echo the current
-    # parent_id/sort_order back on every save, and bumping on presence alone
-    # would 409 clients whose cached revision is still accurate.
-    ordering_fields = body.model_dump(exclude_unset=True)
-    sort_changed = "sort_order" in ordering_fields and ordering_fields["sort_order"] != cat.sort_order
-    parent_changed = "parent_id" in ordering_fields and ordering_fields["parent_id"] != cat.parent_id
-    if sort_changed or parent_changed:
-        affected = {scope_key_for(cat.parent_id)}
-        if parent_changed:
-            affected.add(scope_key_for(ordering_fields["parent_id"]))
-        await bump_scopes(db, affected)
-
-    # Optimistic concurrency: same CAS pattern as image updates.
-    if_match = request.headers.get("If-Match")
-    if if_match is not None:
-        try:
-            client_version = int(if_match.strip('"'))
-        except (ValueError, TypeError):
-            raise HTTPException(status_code=400, detail="Invalid If-Match header")
-        cas = await db.execute(
-            sql_update(Category)
-            .where(Category.id == category_id, Category.version == client_version)
-            .values(version=Category.version + 1)
-        )
-        if cas.rowcount == 0:
-            raise HTTPException(
-                status_code=409,
-                detail="Resource has been modified by another client",
-            )
-        cat.version = client_version + 1
-    else:
-        cat.version = cat.version + 1
-
     update_data = body.model_dump(exclude_unset=True)
     if "parent_id" in update_data:
         new_parent_id = update_data["parent_id"]
@@ -478,6 +439,15 @@ async def update_category(
                         detail="Cannot move a category into one of its own descendants",
                     )
                 ancestor_id = ancestor.parent_id
+
+    if_match = request.headers.get("If-Match")
+    client_version: int | None = None
+    if if_match is not None:
+        try:
+            client_version = int(if_match.strip('"'))
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="Invalid If-Match header")
+
     if "label" in update_data or "parent_id" in update_data:
         new_label = update_data.get("label", cat.label)
         new_parent_id = update_data.get("parent_id", cat.parent_id)
@@ -494,38 +464,82 @@ async def update_category(
                 status_code=409,
                 detail="A category with this name already exists at this level",
             )
+
+    # An ordering write (sort_order or a parent move) must invalidate the
+    # affected scopes' tile-order revisions so a client holding an older
+    # revision gets a 409 instead of silently overwriting this change.
+    # Revision locks are taken before any row mutation, matching
+    # PUT /api/tile-order's revision-then-rows lock order
+    # (docs/tile-ordering.md).
+    # Only an actual value change invalidates: edit dialogs echo the current
+    # parent_id/sort_order back on every save, and bumping on presence alone
+    # would 409 clients whose cached revision is still accurate.
+    sort_changed = "sort_order" in update_data and update_data["sort_order"] != cat.sort_order
+    parent_changed = "parent_id" in update_data and update_data["parent_id"] != cat.parent_id
+    if sort_changed or parent_changed:
+        affected = {scope_key_for(cat.parent_id)}
+        if parent_changed:
+            affected.add(scope_key_for(update_data["parent_id"]))
+        await bump_scopes(db, affected)
+
     program_ids = update_data.pop("program_ids", None)
     group_ids = update_data.pop("group_ids", None)
     if "metadata_extra" in update_data:
         update_data["metadata_"] = update_data.pop("metadata_extra")
 
-    # Only bump the global browse revision when the edit actually changes the
-    # category tree. No-op saves from the edit dialog should not invalidate every
-    # viewer's tree cache.
-    browse_dirty = any(getattr(cat, key) != value for key, value in update_data.items())
+    # Only bump the entity version and the global browse revision when the edit
+    # actually changes data. No-op saves from the edit dialog should not stale
+    # the client's If-Match copy or invalidate every viewer's tree cache.
+    programs_changed = False
     if program_ids is not None:
         existing_program_ids = {p.id for p in cat.programs}
         new_programs = await _resolve_programs(
             db, _user, program_ids, existing_program_ids,
         )
         if {p.id for p in new_programs} != existing_program_ids:
-            browse_dirty = True
-        cat.programs = new_programs
+            programs_changed = True
+            cat.programs = new_programs
+    groups_changed = False
     if group_ids is not None:
         existing_group_ids = {g.id for g in cat.groups}
         new_groups = await _resolve_groups(
             db, _user, group_ids, existing_group_ids,
         )
         if {g.id for g in new_groups} != existing_group_ids:
-            browse_dirty = True
-        cat.groups = new_groups
+            groups_changed = True
+            cat.groups = new_groups
 
-    for key, value in update_data.items():
-        setattr(cat, key, value)
-    if browse_dirty:
+    is_dirty = any(
+        getattr(cat, key) != value for key, value in update_data.items()
+    ) or programs_changed or groups_changed
+
+    # Optimistic concurrency: if the client sends If-Match, verify the version
+    # has not changed since the client last read the resource. The version is
+    # only incremented when the request actually changes data.
+    if client_version is not None:
+        new_version = client_version + (1 if is_dirty else 0)
+        cas = await db.execute(
+            sql_update(Category)
+            .where(Category.id == category_id, Category.version == client_version)
+            .values(version=new_version)
+        )
+        if cas.rowcount == 0:
+            raise HTTPException(
+                status_code=409,
+                detail="Resource has been modified by another client",
+            )
+        cat.version = new_version
+    elif is_dirty:
+        cat.version = cat.version + 1
+
+    if is_dirty:
+        for key, value in update_data.items():
+            setattr(cat, key, value)
+
         await bump_browse_revision(db)
-    await db.commit()
-    await db.refresh(cat)
+        await db.commit()
+        await db.refresh(cat)
+
     cat._category_warnings = _intersection_warnings(
         list(cat.programs), list(cat.groups)
     )

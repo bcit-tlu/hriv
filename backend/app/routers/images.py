@@ -221,39 +221,6 @@ async def update_image(
                     affected.add(scope_key_for(ordering_fields["category_id"]))
                 await bump_scopes(db, affected)
 
-            # Optimistic concurrency: if the client sends If-Match, verify the
-            # version has not changed since the client last read the resource.
-            # The version check and increment are performed atomically via a
-            # single UPDATE … WHERE version = :client_version statement. Doing
-            # the compare-and-swap in one database round-trip closes the TOCTOU
-            # window where two concurrent writers could both observe version=N,
-            # both pass an in-memory check, and both commit version=N+1 —
-            # silently losing one update.
-            if_match = request.headers.get("If-Match")
-            if if_match is not None:
-                span.set_attribute("image.optimistic_lock", True)
-                try:
-                    client_version = int(if_match.strip('"'))
-                except (ValueError, TypeError):
-                    raise HTTPException(status_code=400, detail="Invalid If-Match header")
-                cas = await db.execute(
-                    sql_update(Image)
-                    .where(Image.id == image_id, Image.version == client_version)
-                    .values(version=Image.version + 1)
-                )
-                if cas.rowcount == 0:
-                    raise HTTPException(
-                        status_code=409,
-                        detail="Resource has been modified by another client",
-                    )
-                # Sync the in-memory instance so that SQLAlchemy's subsequent
-                # UPDATE for field changes doesn't revert the version bump.
-                img.version = client_version + 1
-            else:
-                span.set_attribute("image.optimistic_lock", False)
-                # No optimistic concurrency requested — bump version unconditionally.
-                img.version = img.version + 1
-
             update_data = body.model_dump(exclude_unset=True)
             if "metadata_extra" in update_data:
                 update_data["metadata_"] = update_data.pop("metadata_extra")
@@ -269,20 +236,58 @@ async def update_image(
                         current[key] = value
                 update_data["metadata_"] = current if current else None
             new_category_id = update_data.get("category_id", img.category_id)
+
+            # Do not bump the entity version or the browse revision when the
+            # submitted values equal the current values. A no-op save should not
+            # stale the client's If-Match copy or invalidate every viewer's tree
+            # cache.
+            is_dirty = any(getattr(img, key) != value for key, value in update_data.items())
             browse_affects_tree = (
                 img.category_id is not None or new_category_id is not None
             )
-            browse_dirty = browse_affects_tree and any(
-                getattr(img, key) != value for key, value in update_data.items()
-            )
+            browse_dirty = browse_affects_tree and is_dirty
 
-            for key, value in update_data.items():
-                setattr(img, key, value)
+            if_match = request.headers.get("If-Match")
+            client_version: int | None = None
+            if if_match is not None:
+                span.set_attribute("image.optimistic_lock", True)
+                try:
+                    client_version = int(if_match.strip('"'))
+                except (ValueError, TypeError):
+                    raise HTTPException(status_code=400, detail="Invalid If-Match header")
+            else:
+                span.set_attribute("image.optimistic_lock", False)
 
-            if browse_dirty:
-                await bump_browse_revision(db)
-            await db.commit()
-            await db.refresh(img)
+            # Optimistic concurrency: if the client sends If-Match, verify the
+            # version has not changed since the client last read the resource.
+            # The version check is performed atomically via a single
+            # UPDATE … WHERE version = :client_version statement; the version
+            # is only incremented when the request actually changes data, so
+            # no-op saves do not stale the client's If-Match copy.
+            if client_version is not None:
+                new_version = client_version + (1 if is_dirty else 0)
+                cas = await db.execute(
+                    sql_update(Image)
+                    .where(Image.id == image_id, Image.version == client_version)
+                    .values(version=new_version)
+                )
+                if cas.rowcount == 0:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Resource has been modified by another client",
+                    )
+                img.version = new_version
+            elif is_dirty:
+                img.version = img.version + 1
+
+            if is_dirty:
+                for key, value in update_data.items():
+                    setattr(img, key, value)
+
+                if browse_dirty:
+                    await bump_browse_revision(db)
+                await db.commit()
+                await db.refresh(img)
 
             response = Response(
                 content=ImageOut.model_validate(img).model_dump_json(),

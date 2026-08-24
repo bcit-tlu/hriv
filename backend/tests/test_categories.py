@@ -675,15 +675,15 @@ async def test_update_category_if_match_success() -> None:
     cat = _make_category(1, "Cat", version=2)
     body = CategoryUpdate(label="Renamed")
 
-    cas_result = MagicMock()
-    cas_result.rowcount = 1  # CAS succeeded
-
     dup_result = MagicMock()
     dup_result.scalar_one_or_none.return_value = None
 
+    cas_result = MagicMock()
+    cas_result.rowcount = 1  # CAS succeeded
+
     db = AsyncMock()
     db.get = AsyncMock(return_value=cat)
-    db.execute = AsyncMock(side_effect=[cas_result, dup_result])
+    db.execute = AsyncMock(side_effect=[dup_result, cas_result])
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
 
@@ -698,12 +698,15 @@ async def test_update_category_if_match_conflict() -> None:
     cat = _make_category(1, "Cat", version=5)
     body = CategoryUpdate(label="Renamed")
 
+    dup_result = MagicMock()
+    dup_result.scalar_one_or_none.return_value = None
+
     cas_result = MagicMock()
     cas_result.rowcount = 0  # CAS failed — version mismatch
 
     db = AsyncMock()
     db.get = AsyncMock(return_value=cat)
-    db.execute = AsyncMock(return_value=cas_result)
+    db.execute = AsyncMock(side_effect=[dup_result, cas_result])
 
     with pytest.raises(HTTPException) as exc:
         await update_category(1, body, _mock_request(if_match="3"), MagicMock(), db=db)
