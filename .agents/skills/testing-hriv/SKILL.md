@@ -621,8 +621,10 @@ contains hidden items works the same way; visibility status is preserved via
   by the drag sensor. To navigate programmatically:
 
   ```javascript
-  const el = document.querySelector('h6[aria-label="Architecture"]')
-  el?.closest('button').click()
+  const el = Array.from(document.querySelectorAll('h6')).find(
+    (h) => h.textContent.trim() === 'Architecture',
+  )
+  el?.closest('[data-testid="category-tile-action-area"]')?.click()
   ```
 
 - To return to root, click the **Home** breadcrumb or dispatch a navigation to `/`.
