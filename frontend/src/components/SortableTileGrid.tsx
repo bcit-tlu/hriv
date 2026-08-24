@@ -289,6 +289,12 @@ export default function SortableTileGrid({
   // Guards the unmount-cleanup signal so a normal drag-end does not fire
   // onDragActiveChange(false) twice (handleDragEnd already fires it).
   const dragEndedRef = useRef(false)
+  // Keep the latest parent callback without re-running the unmount effect
+  // whenever the prop identity changes mid-drag.
+  const onDragActiveChangeRef = useRef(onDragActiveChange)
+  useEffect(() => {
+    onDragActiveChangeRef.current = onDragActiveChange
+  })
   const claimGeneration = tileOrdering.claimGeneration
   // Claim a fresh grid-instance generation per scope so callbacks from an
   // unmounted grid (SPA navigation) cannot overwrite a remounted one.
@@ -303,10 +309,10 @@ export default function SortableTileGrid({
     const wasActive = activeItem !== null
     return () => {
       if (wasActive && !dragEndedRef.current) {
-        onDragActiveChange?.(false)
+        onDragActiveChangeRef.current?.(false)
       }
     }
-  }, [activeItem, onDragActiveChange])
+  }, [activeItem])
 
   const syncedCategoriesRef = useRef(currentCategories)
   const syncedVisibleImagesRef = useRef(visibleImages)
@@ -356,12 +362,12 @@ export default function SortableTileGrid({
       if (item) {
         dragEndedRef.current = false
         setActiveItem(item)
-        onDragActiveChange?.(true)
+        onDragActiveChangeRef.current?.(true)
       } else {
         setActiveItem(null)
       }
     },
-    [items, onDragActiveChange],
+    [items],
   )
 
   const handleDragEnd = useCallback(
@@ -423,13 +429,13 @@ export default function SortableTileGrid({
         if (!dragEndedRef.current) {
           dragEndedRef.current = true
           setActiveItem(null)
-          onDragActiveChange?.(false)
+          onDragActiveChangeRef.current?.(false)
         } else {
           setActiveItem(null)
         }
       }
     },
-    [items, tileOrdering, onDropCategoryOnCategory, onDropImageOnCategory, onDragActiveChange],
+    [items, tileOrdering, onDropCategoryOnCategory, onDropImageOnCategory],
   )
 
   const renderCategoryTile = useCallback(
