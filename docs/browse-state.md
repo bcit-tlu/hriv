@@ -44,6 +44,11 @@ The revision is incremented inside the same transaction as the data change for:
 - Image processing completion (`process_source_image`, `process_replace_image`)
 - Admin restore/import (`admin_ops.py`)
 
+The `browse_state` row is intentionally preserved across restore/import so the
+revision counter stays monotonic; clearing it as part of a future truncation
+would let clients holding old low-revision ETags receive a stale `304` against
+restored data.
+
 No-op category/image edits (where the submitted values equal the current values)
 do not bump the revision, so opening a dialog and clicking save without changing
 anything no longer invalidates every viewer's tree cache. Image create/update/

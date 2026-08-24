@@ -1507,7 +1507,10 @@ async def run_db_import(task_id: int) -> None:
                         )
                     )
 
-                # Single atomic commit for all data changes
+                # Single atomic commit for all data changes. The browse_state row
+                # is intentionally left intact (not deleted above) so the revision
+                # counter stays monotonic; resetting it would let clients holding
+                # old low-revision ETags get a stale 304 after the restore.
                 await bump_browse_revision(data_session)
                 await data_session.commit()
 
