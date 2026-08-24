@@ -136,7 +136,12 @@ export default function CategoryFilterTreePanel({
               <Typography variant="body2" component="span">
                 {option.label}
               </Typography>
-              <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 0.5, fontSize: '0.9em' }}>
+              <Typography
+                component="span"
+                variant="body2"
+                color="text.secondary"
+                sx={{ ml: 0.5, fontSize: '0.9em' }}
+              >
                 ({formatCategoryItemCounts(option.childCount, option.imageCount)})
               </Typography>
             </Box>
