@@ -590,8 +590,12 @@ window.fetch = async (...args) => {
       const res = await origFetch.apply(window, args)
       entry.status = res.status
       res.headers.forEach((v, k) => (entry.headers[k] = v))
-      const clone = res.clone()
-      entry.body = await clone.json().catch(() => clone.text())
+      const bodyText = await res.clone().text()
+      try {
+        entry.body = JSON.parse(bodyText)
+      } catch {
+        entry.body = bodyText
+      }
       return res
     } catch (e) {
       entry.status = 'NETWORK_ERROR'
