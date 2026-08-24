@@ -259,15 +259,17 @@ describe('getLiveShape (live DOM rect measurement)', () => {
     document.getAnimations = () => []
     el.getAnimations = () => []
 
-    const result = getLiveShape({ element: el })
+    try {
+      const result = getLiveShape({ element: el })
 
-    expect(result).not.toBeNull()
-    expect(result).toBeInstanceOf(DOMRectangle)
-    expect(result?.left).toBe(100)
-    expect(result?.top).toBe(100)
-
-    document.getAnimations = originalDocAnimations
-    el.remove()
+      expect(result).not.toBeNull()
+      expect(result).toBeInstanceOf(DOMRectangle)
+      expect(result?.left).toBe(100)
+      expect(result?.top).toBe(100)
+    } finally {
+      document.getAnimations = originalDocAnimations
+      el.remove()
+    }
   })
 })
 
