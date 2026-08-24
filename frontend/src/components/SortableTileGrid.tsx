@@ -155,6 +155,10 @@ function DroppableCategoryZone({
         transform: isDropTarget ? 'scale(1.03)' : 'scale(1)',
         transition: 'outline-color 0.2s, transform 0.15s',
         borderRadius: 'inherit',
+        '[data-drag-active] &': {
+          transform: 'scale(1)',
+          transition: 'outline-color 0.2s, transform 0s',
+        },
       }}
     >
       {children}
@@ -523,6 +527,7 @@ export default function SortableTileGrid({
         role="region"
         aria-label="Sortable tile grid"
         sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}
+        data-drag-active={activeItem !== null ? '' : undefined}
         onDragOver={onGridDragOver}
         onDrop={onGridDrop}
       >

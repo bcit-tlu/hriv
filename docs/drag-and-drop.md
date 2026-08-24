@@ -144,6 +144,25 @@ between-category-tile behaviour. Edge cases verified mechanically: corner entrie
 (axis chosen by the dominant delta component) and wrapped-grid vertical
 neighbours.
 
+## Phase 4 measurement polish
+
+**Live DOM rect for collision detection.** `farHalfReorderCollision` and
+`nearHalfMoveCollision` in `frontend/src/components/sortableTileGridUtils.ts`
+re-measure the droppable element's bounding client rect on every collision
+check (`getLiveShape`). The cached `droppable.shape` is only used as a fallback
+when the element is not connected or has a zero-size rect. This avoids the
+75 ms `PositionObserver` throttle and any stale shape left behind when a
+neighbour slides during an optimistic reflow. The far-half/near-half move-vs-
+reorder contract is unchanged.
+
+**Drag-active drop-zone scale suppression.** The `SortableTileGrid` container
+sets a `data-drag-active` attribute while a drag is active. `DroppableCategoryZone`
+uses a nested `[data-drag-active] &` `sx` selector to force
+`transform: scale(1)` and `transition: transform 0s` on every move zone while
+that attribute is present, so the zone's measured geometry cannot lag behind the
+pointer. When no drag is active the zone falls back to `scale(1.03)` with a 0.15 s
+transform, preserving the existing hover cue.
+
 ## Process gate (feel cannot be proven by a recording)
 
 Any change to collision detection, drop zones, collision priority, or activation

@@ -707,6 +707,26 @@ describe('drag-and-drop spec contract (docs/drag-and-drop.md)', () => {
     expect(onDragActiveChange).toHaveBeenLastCalledWith(false)
   })
 
+  it('sets a drag-active data attribute on the grid container while a drag is active', async () => {
+    renderGrid({
+      currentCategories: [makeCategory({ id: 1, label: 'Cat', sortOrder: 0 })],
+    })
+    const grid = screen.getByRole('region', { name: 'Sortable tile grid' })
+
+    expect(grid.getAttribute('data-drag-active')).toBeNull()
+
+    expect(capturedOnDragStart).toBeDefined()
+    await act(async () => {
+      await capturedOnDragStart!({
+        operation: {
+          source: { id: 'cat-1', index: 0, initialIndex: 0, group: 'tiles' },
+        },
+      })
+    })
+
+    expect(grid.getAttribute('data-drag-active')).toBe('')
+  })
+
   it('resets onDragActiveChange if the grid unmounts while a drag is active', async () => {
     const onDragActiveChange = vi.fn()
     const { unmount } = renderGrid({

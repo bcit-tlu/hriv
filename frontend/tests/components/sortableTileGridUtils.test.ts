@@ -11,6 +11,7 @@ import {
   farHalfReorderCollision,
   nearHalfMoveCollision,
   isPastTileCenterAlongDrag,
+  getLiveShape,
 } from '../../src/components/sortableTileGridUtils'
 import { makeCategory, makeImage } from '../helpers/fixtures'
 
@@ -18,11 +19,32 @@ import { makeCategory, makeImage } from '../helpers/fixtures'
 const TILE = { left: 100, top: 100, right: 200, bottom: 200 }
 const CENTER = { x: 150, y: 150 }
 
+function makeTileElement(rect = TILE, connected = true) {
+  const el = document.createElement('div')
+  el.getBoundingClientRect = () =>
+    ({
+      left: rect.left,
+      top: rect.top,
+      width: rect.right - rect.left,
+      height: rect.bottom - rect.top,
+      right: rect.right,
+      bottom: rect.bottom,
+      x: rect.left,
+      y: rect.top,
+      toJSON: () => rect,
+    }) as DOMRect
+  if (connected) {
+    document.body.appendChild(el)
+  }
+  return el
+}
+
 /** Build a collision input for a tile-shaped droppable. */
 function collisionInput(
   pointer: { x: number; y: number },
   delta: { x: number; y: number },
   id = 'tile-1',
+  options?: { element?: Element },
 ) {
   const shape = {
     center: CENTER,
@@ -30,7 +52,7 @@ function collisionInput(
       p.x >= TILE.left && p.x <= TILE.right && p.y >= TILE.top && p.y <= TILE.bottom,
   }
   return {
-    droppable: { id, shape },
+    droppable: { id, shape, element: options?.element },
     dragOperation: { position: { current: pointer, delta } },
   } as unknown as Parameters<typeof farHalfReorderCollision>[0]
 }
@@ -186,6 +208,42 @@ describe('isPastTileCenterAlongDrag (directional centre threshold)', () => {
   })
 })
 
+describe('getLiveShape (live DOM rect measurement)', () => {
+  it('falls back to droppable.shape when no element is provided', () => {
+    const shape = { center: CENTER, containsPoint: () => true }
+    const result = getLiveShape({ shape: shape as never })
+    expect(result).toBe(shape)
+  })
+
+  it('measures the connected element instead of the cached shape', () => {
+    const moved = { left: 300, top: 300, right: 500, bottom: 500 }
+    const el = makeTileElement(moved)
+    const staleShape = { center: CENTER, containsPoint: () => false }
+    const result = getLiveShape({ element: el, shape: staleShape as never })
+    expect(result?.left).toBe(300)
+    expect(result?.top).toBe(300)
+    expect(result?.center).toEqual({ x: 400, y: 400 })
+    el.remove()
+  })
+
+  it('falls back to droppable.shape when the element is not connected', () => {
+    const el = makeTileElement(TILE, false)
+    const shape = { center: CENTER, containsPoint: () => true }
+    expect(getLiveShape({ element: el, shape: shape as never })).toBe(shape)
+  })
+
+  it('falls back to droppable.shape for a zero-size element', () => {
+    const el = makeTileElement({ left: 0, top: 0, right: 0, bottom: 0 })
+    const shape = { center: CENTER, containsPoint: () => true }
+    expect(getLiveShape({ element: el, shape: shape as never })).toBe(shape)
+    el.remove()
+  })
+
+  it('returns null when neither element nor shape is available', () => {
+    expect(getLiveShape({})).toBeNull()
+  })
+})
+
 describe('farHalfReorderCollision (reorder only on the far half)', () => {
   it('returns a Normal-priority collision once the pointer is past centre on the far side', () => {
     const result = farHalfReorderCollision(collisionInput({ x: 170, y: 150 }, { x: 10, y: 0 }))
@@ -204,6 +262,19 @@ describe('farHalfReorderCollision (reorder only on the far half)', () => {
 
   it('returns null before any drag travel (delta ≈ 0)', () => {
     expect(farHalfReorderCollision(collisionInput({ x: 170, y: 150 }, { x: 0, y: 0 }))).toBeNull()
+  })
+
+  it('uses the live element rect instead of a stale cached shape', () => {
+    // The stale shape is at (100,100)-(200,200); the element has moved to
+    // (300,300)-(500,500). The pointer is in the live rect and past its centre.
+    const moved = { left: 300, top: 300, right: 500, bottom: 500 }
+    const el = makeTileElement(moved)
+    const result = farHalfReorderCollision(
+      collisionInput({ x: 420, y: 400 }, { x: 10, y: 0 }, 'tile-1', { element: el }),
+    )
+    expect(result).not.toBeNull()
+    expect(result?.id).toBe('tile-1')
+    el.remove()
   })
 })
 

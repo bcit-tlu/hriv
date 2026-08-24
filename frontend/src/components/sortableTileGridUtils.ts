@@ -1,5 +1,7 @@
 import { CollisionPriority, CollisionType } from '@dnd-kit/abstract'
 import type { CollisionDetector } from '@dnd-kit/abstract'
+import { Rectangle } from '@dnd-kit/geometry'
+import type { Shape } from '@dnd-kit/geometry'
 
 import type { Category, ImageItem } from '../types'
 
@@ -118,6 +120,28 @@ export function orderTileItems(
   return orderTileItemsCache.set(key, [...known.map((k) => k.item), ...unknown])
 }
 
+// ── Live shape helper ─────────────────────────────────────────
+//
+// `droppable.shape` is maintained by the global `PositionObserver` and is
+// throttled to 75 ms. During a drag, neighbours that slide because of an
+// optimistic reflow can have a stale `shape` by the time `CollisionObserver`
+// evaluates the next pointer move. For the two collision detectors below we
+// re-measure the element's live bounding client rect (which reflects the
+// current CSS transform, including any in-flight reflow animation) and fall
+// back to the cached `droppable.shape` when the element is not connected.
+
+export function getLiveShape(droppable: { element?: Element; shape?: Shape }): Shape | null {
+  const element = droppable.element
+  if (!element || !element.isConnected) {
+    return droppable.shape ?? null
+  }
+  const rect = element.getBoundingClientRect()
+  if (!rect.width || !rect.height) {
+    return droppable.shape ?? null
+  }
+  return new Rectangle(rect.left, rect.top, rect.width, rect.height)
+}
+
 // ── Directional "far-half" collision rule (move-wins guard) ──
 //
 // The move-vs-reorder guard is expressed geometrically as a single threshold
@@ -161,9 +185,10 @@ export function isPastTileCenterAlongDrag(
  */
 export const farHalfReorderCollision: CollisionDetector = ({ dragOperation, droppable }) => {
   const pointer = dragOperation.position.current
-  if (!pointer || !droppable.shape) return null
-  if (!droppable.shape.containsPoint(pointer)) return null
-  const { center } = droppable.shape
+  if (!pointer) return null
+  const shape = getLiveShape(droppable)
+  if (!shape || !shape.containsPoint(pointer)) return null
+  const { center } = shape
   if (!isPastTileCenterAlongDrag(pointer, center, dragOperation.position.delta)) return null
   const distance = Math.hypot(center.x - pointer.x, center.y - pointer.y)
   return {
@@ -189,9 +214,10 @@ export const farHalfReorderCollision: CollisionDetector = ({ dragOperation, drop
  */
 export const nearHalfMoveCollision: CollisionDetector = ({ dragOperation, droppable }) => {
   const pointer = dragOperation.position.current
-  if (!pointer || !droppable.shape) return null
-  if (!droppable.shape.containsPoint(pointer)) return null
-  const { center } = droppable.shape
+  if (!pointer) return null
+  const shape = getLiveShape(droppable)
+  if (!shape || !shape.containsPoint(pointer)) return null
+  const { center } = shape
   if (isPastTileCenterAlongDrag(pointer, center, dragOperation.position.delta)) return null
   const distance = Math.hypot(center.x - pointer.x, center.y - pointer.y)
   return {
