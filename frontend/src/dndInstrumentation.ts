@@ -12,9 +12,9 @@ import type {
  * Enable DnD tracing by setting `localStorage.setItem('hriv-dnd-trace', '1')`
  * and reloading, or run a dev build where it is on by default.
  */
-export function isDndTraceEnabled(): boolean {
+export function isDndTraceEnabled(envDev = import.meta.env.DEV): boolean {
   return (
-    import.meta.env.DEV ||
+    Boolean(envDev) ||
     (typeof localStorage !== 'undefined' && localStorage.getItem('hriv-dnd-trace') === '1')
   )
 }
@@ -71,6 +71,8 @@ export function useDnDMonitor(): void {
       })
     },
     onCollision: (event: CollisionEvent) => {
+      if (!isDndTraceEnabled()) return
+
       const now = performance.now()
       if (now - lastCollisionLogRef.current < THROTTLE_MS) return
       lastCollisionLogRef.current = now
