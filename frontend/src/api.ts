@@ -470,7 +470,10 @@ export function fetchCategoryTree(
   init?: RequestInit,
   onHeaders?: (headers: CategoryTreeHeaders) => void,
 ): Promise<ApiCategoryTree[] | null> {
-  return requestRaw<ApiCategoryTree[]>('/categories/tree', init).then(({ data, response }) => {
+  // Default to no-store so the browser never synthesizes a 200 from a
+  // revalidated cache entry; the 304 short-circuit must reach the app.
+  const treeInit = { cache: 'no-store' as const, ...init }
+  return requestRaw<ApiCategoryTree[]>('/categories/tree', treeInit).then(({ data, response }) => {
     const etag = response.headers.get('ETag') ?? response.headers.get('etag') ?? null
     const revHeader =
       response.headers.get('X-Browse-Revision') ?? response.headers.get('x-browse-revision')
