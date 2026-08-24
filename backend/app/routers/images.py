@@ -556,13 +556,17 @@ async def replace_image(
                             )
                         )
                         if restore_result.rowcount == 1:
-                            # The restore may change the image's category membership,
-                            # which affects the browse tree. Read the pending category
-                            # before expiring the instance so the comparison is safe in
-                            # an async session.
+                            # The restore reverts any browse-visible fields (name,
+                            # copyright, note, active, metadata) on a categorized image,
+                            # so the tree content can change. Bump the browse revision
+                            # whenever the image was or becomes categorized, matching
+                            # the forward-apply condition.
                             new_category_id = img.category_id
                             db.expire(img)
-                            if metadata_snapshot["category_id"] != new_category_id:
+                            if (
+                                metadata_snapshot["category_id"] is not None
+                                or new_category_id is not None
+                            ):
                                 await bump_browse_revision(db)
                             await db.commit()
                         else:
