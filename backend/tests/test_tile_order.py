@@ -13,10 +13,10 @@ Two layers, mirroring ``test_reorder_fixture.py``:
 import asyncio
 import os
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Response
 from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -116,6 +116,35 @@ def test_validate_submitted_items_rejects_missing_ids():
     assert error is not None and "Missing" in error
     error = validate_submitted_items([("image", 10)], {1}, {10})
     assert error is not None and "Missing" in error
+
+
+def test_get_tile_order_sets_no_store_cache_headers():
+    """GET /api/tile-order must never be cached: the revision seeds the
+    CAS token for the next PUT, and a stale response causes false 409s."""
+
+    async def run():
+        db = AsyncMock()
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = 5
+        db.execute = AsyncMock(return_value=result)
+        response = Response()
+
+        with patch(
+            "app.routers.tile_order.load_scope_tiles",
+            new=AsyncMock(return_value=[TileRef(type="category", id=1, sort_order=0)]),
+        ):
+            order_response = await get_tile_order(
+                SimpleNamespace(id=1, role="admin", programs=[], groups=[]),
+                None,
+                db,
+                response,
+            )
+
+        assert response.headers["Cache-Control"] == "no-store, no-cache, must-revalidate"
+        assert response.headers["Pragma"] == "no-cache"
+        assert order_response.revision == 5
+
+    asyncio.run(run())
 
 
 def test_resolve_database_url_requires_env(monkeypatch):

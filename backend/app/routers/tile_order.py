@@ -13,7 +13,7 @@ import logging
 import time
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from opentelemetry import trace
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -80,6 +80,7 @@ async def get_tile_order(
     _user: Annotated[User, Depends(require_role("admin", "instructor"))],
     parent_category_id: Annotated[int | None, Query()] = None,
     db: AsyncSession = Depends(get_db),
+    response: Response = None,  # type: ignore[assignment]
 ):
     """Current authoritative order and revision for one scope (read-only)."""
     await _require_scope_exists(db, parent_category_id)
@@ -89,6 +90,9 @@ async def get_tile_order(
         )
     )
     revision = result.scalar_one_or_none() or INITIAL_SCOPE_REVISION
+    if response is not None:
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
     return await _authoritative_response(db, parent_category_id, revision)
 
 

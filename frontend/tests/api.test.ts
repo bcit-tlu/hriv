@@ -792,17 +792,21 @@ describe('Tile order API', () => {
   })
   afterEach(() => setToken(null))
 
-  it('getTileOrder with a numeric scope appends parent_category_id query param', async () => {
+  it('getTileOrder with a numeric scope appends parent_category_id query param and bypasses cache', async () => {
     mockFetch.mockReturnValueOnce(jsonResponse(TILE_ORDER_FIXTURE))
     const result = await getTileOrder(5)
-    expect(mockFetch.mock.calls[0][0]).toBe('/api/tile-order?parent_category_id=5')
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/tile-order?parent_category_id=5')
+    expect(init.cache).toBe('no-store')
     expect(result).toEqual(TILE_ORDER_FIXTURE)
   })
 
-  it('getTileOrder with the root scope sends no query string', async () => {
+  it('getTileOrder with the root scope sends no query string and bypasses cache', async () => {
     mockFetch.mockReturnValueOnce(jsonResponse(TILE_ORDER_FIXTURE))
     await getTileOrder(null)
-    expect(mockFetch.mock.calls[0][0]).toBe('/api/tile-order')
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/tile-order')
+    expect(init.cache).toBe('no-store')
   })
 
   it('putTileOrder sends PUT with scope, expected_revision, operation_id, and items', async () => {
