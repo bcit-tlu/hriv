@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { DOMRectangle } from '@dnd-kit/dom/utilities'
 
 import {
   DROP_PREFIX,
@@ -250,6 +251,23 @@ describe('getLiveShape (live DOM rect measurement)', () => {
 
   it('returns null when neither element nor shape is available', () => {
     expect(getLiveShape({})).toBeNull()
+  })
+
+  it('uses DOMRectangle when the Web Animations API is available', () => {
+    const el = makeTileElement(TILE)
+    const originalDocAnimations = document.getAnimations
+    document.getAnimations = () => []
+    el.getAnimations = () => []
+
+    const result = getLiveShape({ element: el })
+
+    expect(result).not.toBeNull()
+    expect(result).toBeInstanceOf(DOMRectangle)
+    expect(result?.left).toBe(100)
+    expect(result?.top).toBe(100)
+
+    document.getAnimations = originalDocAnimations
+    el.remove()
   })
 })
 
