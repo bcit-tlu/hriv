@@ -525,7 +525,10 @@ current token directly and reload:
 
 ```javascript
 localStorage.setItem('hriv_token', '<instructor_token>')
-localStorage.setItem('hriv_user', JSON.stringify({ id: 2, email: 'instructor@example.ca', role: 'instructor' }))
+localStorage.setItem(
+  'hriv_user',
+  JSON.stringify({ id: 2, email: 'instructor@example.ca', role: 'instructor' }),
+)
 location.href = '/'
 ```
 
