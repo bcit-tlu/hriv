@@ -347,6 +347,7 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
         )
         if (!arraysReferentiallyEqual(nextCategories, categoriesRef.current)) {
           setCategories(nextCategories)
+          categoriesRef.current = nextCategories
         }
         if (receivedHeaders.status !== 0) {
           lastCategoryTree.current = {
@@ -397,6 +398,7 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
         const nextImages = imgs.map((img) => stableApiImageToItem(img, stableCachesRef.current))
         if (!arraysReferentiallyEqual(nextImages, uncategorizedRef.current)) {
           setUncategorizedImages(nextImages)
+          uncategorizedRef.current = nextImages
         }
         uncategorizedLoaded.current = true
         return true
@@ -502,6 +504,7 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
           }
           if (!arraysReferentiallyEqual(cats, categoriesRef.current)) {
             setCategories(cats)
+            categoriesRef.current = cats
           }
           if (receivedHeaders.status !== 0) {
             lastCategoryTree.current = {
@@ -560,6 +563,7 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
           }
           if (!arraysReferentiallyEqual(items, uncategorizedRef.current)) {
             setUncategorizedImages(items)
+            uncategorizedRef.current = items
           }
           uncategorizedLoaded.current = true
           return items
