@@ -155,7 +155,7 @@ Key checks in required mode:
 - Metrics (`/api/metrics`): `hriv_task_execution_mode_info{mode="required"} 1`,
   `hriv_task_queue_up`, `hriv_task_queue_worker_up`, `hriv_task_queue_depth`.
 - Chart liveness probe equivalent: `docker compose exec worker arq --check
-  app.worker.WorkerSettings` exits 0 with Redis up. Note: **the compose worker
+app.worker.WorkerSettings` exits 0 with Redis up. Note: **the compose worker
   container exits (code 1) when Redis goes down**, so to prove the non-zero
   check use a one-off container:
   `docker compose run --rm --no-deps worker arq --check app.worker.WorkerSettings`
