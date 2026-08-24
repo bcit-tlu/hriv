@@ -465,7 +465,7 @@ describe('CategoryPickerSelect — action buttons', () => {
     expect(screen.getByLabelText('Visibility: Show category')).toBeInTheDocument()
   })
 
-  it('renders image count next to category name', async () => {
+  it('renders item count next to category name', async () => {
     const user = userEvent.setup()
     const categories = [
       makeCategory({
@@ -476,7 +476,7 @@ describe('CategoryPickerSelect — action buttons', () => {
     ]
     render(<CategoryPickerSelect categories={categories} value={null} onChange={vi.fn()} />)
     await user.click(screen.getByRole('combobox'))
-    expect(screen.getByText('(3)')).toBeInTheDocument()
+    expect(screen.getByText('(3 images)')).toBeInTheDocument()
   })
 
   it('renders total descendant image count for nested categories', async () => {
@@ -498,6 +498,6 @@ describe('CategoryPickerSelect — action buttons', () => {
     ]
     render(<CategoryPickerSelect categories={categories} value={null} onChange={vi.fn()} />)
     await user.click(screen.getByRole('combobox'))
-    expect(screen.getByText('(3)')).toBeInTheDocument()
+    expect(screen.getByText('(1 sub-category · 3 images)')).toBeInTheDocument()
   })
 })

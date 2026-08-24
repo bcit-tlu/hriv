@@ -251,11 +251,14 @@ committed on Save) in the edit modals.
   - `ManageCategoriesDialog`: disabled `VisibilityOff` icon with "Hidden by
     parent category" tooltip, dimmed text, dimmed delete icon.
 
-### Category picker & image counts (`CategoryPickerSelect.test.tsx`)
+### Category picker & item counts (`CategoryPickerSelect.test.tsx`)
 
 - `CategoryPickerSelect` renders the category tree as an indented,
-  collapsible list and shows each category's **total descendant** image count.
-  Restricted categories render a lock icon —
+  collapsible list and shows each category's total descendant sub-category and
+  image count in the same `<N sub-categories · M images> / Empty` format used on
+  category tiles. It is used by the Add Images and Edit Image details dialogs,
+  which have the same medium desktop width as the Manage Categories dialog so
+  the longer count suffixes still fit. Restricted categories render a lock icon —
   per accessibility convention (see [`REVIEW.md`](../REVIEW.md)), the lock is a
   non-interactive `<span role="img" aria-label="…">` **without** `tabIndex`
   (query via `getByLabelText`, not `getByTitle`).

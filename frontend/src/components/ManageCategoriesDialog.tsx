@@ -777,7 +777,7 @@ export default function ManageCategoriesDialog({
                           component="span"
                           variant="body2"
                           color="text.secondary"
-                          sx={{ ml: 0.5 }}
+                          sx={{ ml: 0.5, fontSize: '0.9em' }}
                         >
                           ({formatCategoryItemCounts(opt.childCount, opt.imageCount)})
                         </Typography>
