@@ -11,7 +11,7 @@ import {
   useDroppable,
 } from '@dnd-kit/react'
 import { useSortable } from '@dnd-kit/react/sortable'
-import { move } from '@dnd-kit/helpers'
+import { arrayMove, move } from '@dnd-kit/helpers'
 import { CollisionPriority } from '@dnd-kit/abstract'
 import { PointerActivationConstraints } from '@dnd-kit/dom'
 import type { Draggable } from '@dnd-kit/abstract'
@@ -380,10 +380,38 @@ export default function SortableTileGrid({
         if (operation.canceled) return
 
         const source = operation.source
-        const target = operation.target
-        if (!source || !target) {
-          logDrag('SortableTileGrid.handleDragEnd no target', {})
+        if (!source) {
+          logDrag('SortableTileGrid.handleDragEnd no source', {})
           return
+        }
+
+        let target = operation.target
+        let sourceIndex: number | undefined
+        let sourceInitialIndex: number | undefined
+        let usedSourceFallback = false
+        if (!target) {
+          // If `OptimisticSortingPlugin` reflowed the source but the far-half
+          // detector can no longer report it (pointer on the near half of the
+          // new position), fall back to the source itself so the previewed
+          // order still commits.
+          sourceIndex = (source as { index?: number }).index
+          sourceInitialIndex = (source as { initialIndex?: number }).initialIndex
+          if (
+            typeof sourceIndex === 'number' &&
+            typeof sourceInitialIndex === 'number' &&
+            sourceIndex !== sourceInitialIndex
+          ) {
+            logDrag('SortableTileGrid.handleDragEnd target fallback to source', {
+              sourceId: String(source.id),
+              sourceIndex,
+              sourceInitialIndex,
+            })
+            usedSourceFallback = true
+            target = source as unknown as NonNullable<typeof target>
+          } else {
+            logDrag('SortableTileGrid.handleDragEnd no target', {})
+            return
+          }
         }
 
         const sourceId = String(source.id)
@@ -405,7 +433,17 @@ export default function SortableTileGrid({
         // derives the new order from the source's reflowed sortable index,
         // so the committed order matches the on-screen preview exactly.
         const ids = items.map(tileId)
-        const reorderedIds = move(ids, event)
+        let reorderedIds: string[]
+        if (usedSourceFallback) {
+          // When the far-half detector cleared the target because the pointer
+          // landed on the near half of the reflowed source tile, we still know
+          // the source's projected index. Reorder directly so we don't have to
+          // mutate dnd-kit's dispatched event object or rely on a synthetic
+          // event being accepted by a future library version.
+          reorderedIds = arrayMove(ids, sourceInitialIndex as number, sourceIndex as number)
+        } else {
+          reorderedIds = move(ids, event)
+        }
         if (reorderedIds.length === ids.length && reorderedIds.every((id, i) => id === ids[i])) {
           logDrag('SortableTileGrid.handleDragEnd no reorder change', { sourceId, reorderedIds })
           return

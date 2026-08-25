@@ -55,12 +55,14 @@ always wins; reorder can only win once the pointer crosses the centre.
 3. Reorder only becomes possible once `farHalfReorderCollision` reports a tile
    (pointer past its centre along the drag axis); the near half and the
    inter-tile gap never produce a reorder target at runtime.
-4. Null target and canceled drags are explicit no-ops. After optimistic reflow,
-   the collision detector may resolve the target as the source itself
-   (`source.id === target.id`); this is **not** short-circuited — `move()` still
-   computes the correct reordered array using the source's projected sortable
-   index. True self-drops (no actual movement) are caught downstream by the
-   identity check (`reorderedIds.every((id, i) => id === ids[i])`).
+4. Null target and canceled drags are explicit no-ops **unless** the source has
+   been optimistically reflowed (`source.index !== source.initialIndex`). After a
+   reflow the source tile itself is a valid reorder target, so `farHalfReorderCollision`
+   bypasses the far-half check when the droppable is the source, and
+   `handleDragEnd` falls back to `target = source` when `operation.target` is
+   otherwise missing. `move()` then computes the correct reordered array using the
+   source's projected sortable index. True self-drops (no actual movement) are
+   still caught downstream by the identity check (`reorderedIds.every((id, i) => id === ids[i])`).
 
 ## Live preview
 
@@ -121,10 +123,18 @@ keyed on `isPastTileCenterAlongDrag(pointer, center, delta)`:
 - `farHalfReorderCollision` (passed to every tile's `useSortable`): returns a
   `Normal` collision only when the pointer is **inside** a tile **and** past its
   centre on the side opposite the entry edge. On the near half it returns
-  `null`, so the plugin has nothing to reflow against.
+  `null`, so the plugin has nothing to reflow against. The **source tile is an
+  exception**: after `OptimisticSortingPlugin` reflows the source to a new slot,
+  the pointer can land on its near half while `delta` is still anchored to the
+  original drag start. The far-half rule would then reject the source and clear
+  `operation.target`, so the source always collides while the pointer is inside
+  it, regardless of which half the pointer is on.
 - `nearHalfMoveCollision` (passed to `DroppableCategoryZone`'s full-rect
   `useDroppable`, `High` priority): the exact complement — collides only on the
-  near half, so "Move here" owns the entry side of a category tile.
+  near half, so "Move here" owns the entry side of a category tile. The source
+  category's own move zone is explicitly excluded, because a category tile is
+  both a sortable and a move-zone droppable and the two detectors would otherwise
+  overlap on the dragged tile.
 
 `DroppableCategoryZone` wraps the **full tile rect** (no inset), so the move-zone
 shape is the whole tile and "Move here" detection works.
