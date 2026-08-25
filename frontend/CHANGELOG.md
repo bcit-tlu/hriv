@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.48.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.47.0...frontend-v0.48.0) (2026-08-25)
+
+
+### Features
+
+* **frontend:** queue final reorder snackbars with fade and auto-hide ([#1120](https://github.com/bcit-tlu/hriv/issues/1120)) ([779a3cc](https://github.com/bcit-tlu/hriv/commit/779a3ccec6c04f7bdb37c7862dc19ba9010a0b46))
+* **frontend:** revert live-rect measurement and add dev-mode DnD instrumentation ([#1117](https://github.com/bcit-tlu/hriv/issues/1117)) ([5f26401](https://github.com/bcit-tlu/hriv/commit/5f26401be5ec48356cc8677d4053157aed6fc414))
+
+
+### Bug Fixes
+
+* **frontend:** prevent reflowed source tile from losing collision target ([#1119](https://github.com/bcit-tlu/hriv/issues/1119)) ([32d12d7](https://github.com/bcit-tlu/hriv/commit/32d12d7be4a5e28097af4ce77c3cd56914277086))
+
 ## [0.47.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.46.0...frontend-v0.47.0) (2026-08-24)
 
 
