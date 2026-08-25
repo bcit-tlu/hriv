@@ -149,7 +149,9 @@ export default function AnnouncementBanner({
       }
       sx={alertSx}
     >
-      <ClampableMessage message={message} />
+      {/* key on the message so a new announcement remounts with fresh
+          expand/overflow state (no stale "Less" toggle after an edit). */}
+      <ClampableMessage key={message} message={message} />
     </Alert>
   )
 }
