@@ -253,12 +253,7 @@ describe('nearHalfMoveCollision (move wins on the near half)', () => {
     // detector could be masked by a High-priority move collision.
     expect(
       nearHalfMoveCollision(
-        collisionInput(
-          { x: 130, y: 150 },
-          { x: 10, y: 0 },
-          `${DROP_PREFIX}1`,
-          'cat-1',
-        ),
+        collisionInput({ x: 130, y: 150 }, { x: 10, y: 0 }, `${DROP_PREFIX}1`, 'cat-1'),
       ),
     ).toBeNull()
   })
