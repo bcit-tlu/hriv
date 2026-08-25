@@ -34,7 +34,10 @@ function ClampableMessage({ message }: { message: string }) {
     // Re-measure whenever the text box is re-laid-out (container width or
     // orientation change). ResizeObserver fires after reflow, so the reading
     // is never stale — unlike a window "resize" handler.
-    const ro = new ResizeObserver(measure)
+    const onResize: ResizeObserverCallback = () => {
+      measure()
+    }
+    const ro = new ResizeObserver(onResize)
     ro.observe(el)
     return () => ro.disconnect()
   }, [message, expanded])
