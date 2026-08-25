@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import Fade from '@mui/material/Fade'
 import Snackbar from '@mui/material/Snackbar'
 
@@ -161,9 +161,18 @@ export default function ReorderSnackbar({
     otherScopesFailed ?? false,
   )
 
+  const onCountChangeRef = useRef(onCountChange)
   useEffect(() => {
-    onCountChange?.(notifications.length)
-  }, [onCountChange, notifications.length])
+    onCountChangeRef.current = onCountChange
+  })
+  useEffect(() => {
+    onCountChangeRef.current?.(notifications.length)
+  }, [notifications.length])
+  useEffect(() => {
+    return () => {
+      onCountChangeRef.current?.(0)
+    }
+  }, [])
 
   if (notifications.length === 0) {
     return null

@@ -70,6 +70,23 @@ describe('ReorderSnackbar', () => {
     expect(screen.getAllByRole('status')).toHaveLength(3)
   })
 
+  it('reports the notification count and resets on unmount', () => {
+    const onCountChange = vi.fn()
+    const { unmount } = render(
+      <ReorderSnackbar
+        offsetIndex={2}
+        status="saved"
+        otherScopesFailed={false}
+        onCountChange={onCountChange}
+        {...noopHandlers}
+      />,
+    )
+    expect(onCountChange).toHaveBeenLastCalledWith(1)
+
+    unmount()
+    expect(onCountChange).toHaveBeenLastCalledWith(0)
+  })
+
   it('renders a cross-scope failure notification when other scopes fail', () => {
     renderSnackbar('idle', true)
     expect(screen.getByText('Unresolved order changes in another category')).toBeInTheDocument()
