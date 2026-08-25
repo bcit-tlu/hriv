@@ -18,12 +18,14 @@ interface Notification {
   key: number
   status: TileOrderStatus
   otherScopesFailed: boolean
+  open: boolean
 }
 
 interface NotificationStore {
   subscribe: (listener: () => void) => () => void
   getSnapshot: () => Notification[]
   update: (status: TileOrderStatus, otherScopesFailed: boolean) => void
+  close: (key: number) => void
   remove: (key: number) => void
 }
 
@@ -56,14 +58,14 @@ function createNotificationStore(): NotificationStore {
 
       if (previousStatus !== status) {
         if (NOTIFICATION_STATUSES.has(status)) {
-          toAdd.push({ key: ++key, status, otherScopesFailed: false })
+          toAdd.push({ key: ++key, status, otherScopesFailed: false, open: true })
         }
         previousStatus = status
       }
 
       if (previousOtherFailed !== otherScopesFailed) {
         if (otherScopesFailed) {
-          toAdd.push({ key: ++key, status: 'idle', otherScopesFailed: true })
+          toAdd.push({ key: ++key, status: 'idle', otherScopesFailed: true, open: true })
         }
         previousOtherFailed = otherScopesFailed
       }
@@ -71,6 +73,14 @@ function createNotificationStore(): NotificationStore {
       if (toAdd.length === 0) return
 
       notifications = [...notifications, ...toAdd]
+      emit()
+    },
+    close(keyToClose) {
+      const next = notifications.map((n) =>
+        n.key === keyToClose && n.open ? { ...n, open: false } : n,
+      )
+      if (next.every((n, i) => n === notifications[i])) return
+      notifications = next
       emit()
     },
     remove(keyToRemove) {
@@ -85,7 +95,7 @@ function createNotificationStore(): NotificationStore {
 function useReorderNotifications(
   status: TileOrderStatus,
   otherScopesFailed: boolean,
-): { notifications: Notification[]; remove: (key: number) => void } {
+): { notifications: Notification[]; close: (key: number) => void; remove: (key: number) => void } {
   const [store] = useState(createNotificationStore)
 
   useEffect(() => {
@@ -94,7 +104,7 @@ function useReorderNotifications(
 
   const notifications = useSyncExternalStore(store.subscribe, store.getSnapshot)
 
-  return { notifications, remove: store.remove }
+  return { notifications, close: store.close, remove: store.remove }
 }
 
 /**
@@ -112,7 +122,10 @@ function useReorderNotifications(
  */
 export default function ReorderSnackbar({ offsetIndex, ...indicatorProps }: ReorderSnackbarProps) {
   const { status, otherScopesFailed } = indicatorProps
-  const { notifications, remove } = useReorderNotifications(status, otherScopesFailed ?? false)
+  const { notifications, close, remove } = useReorderNotifications(
+    status,
+    otherScopesFailed ?? false,
+  )
 
   if (notifications.length === 0) {
     return null
@@ -125,15 +138,17 @@ export default function ReorderSnackbar({ offsetIndex, ...indicatorProps }: Reor
         return (
           <Snackbar
             key={notification.key}
-            open
+            open={notification.open}
             autoHideDuration={isTransient ? 1200 : null}
             onClose={(_event, reason) => {
-              // Persistent notifications stay until the user explicitly acts
-              // or dismisses them so action buttons remain reachable.
-              if (!isTransient && reason === 'timeout') return
-              // Removing from the external store triggers a re-render.
-              // This callback is not in an effect, so the mutation is safe.
-              remove(notification.key)
+              // Persistent action snackbars must stay reachable. Only timeout
+              // (which cannot fire when autoHideDuration is null) and stray
+              // clicks outside are suppressed; Escape still dismisses.
+              if (!isTransient && (reason === 'timeout' || reason === 'clickaway')) return
+              close(notification.key)
+            }}
+            TransitionProps={{
+              onExited: () => remove(notification.key),
             }}
             anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
             TransitionComponent={Fade}
