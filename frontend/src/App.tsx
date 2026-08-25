@@ -219,6 +219,7 @@ export default function App() {
     message: string
     onUndo: () => void
   } | null>(null)
+  const [reorderCount, setReorderCount] = useState(0)
   // Report issue modal state
   const [reportIssueOpen, setReportIssueOpen] = useState(false)
 
@@ -949,8 +950,6 @@ export default function App() {
   )
   const activeReorderScope = useMostSevereScope(allReorderScopes)
   const activeTileOrdering = useTileOrdering(activeReorderScope ?? null)
-  const reorderOpen =
-    canEditContent && (activeTileOrdering.status !== 'idle' || activeTileOrdering.otherScopesFailed)
 
   // Once the Manage Categories dialog is closed and every tracked scope has
   // settled, stop tracking, so a reopened dialog starts without a stale save
@@ -2318,7 +2317,7 @@ export default function App() {
         sx={{
           zIndex: 1500,
           bottom: {
-            xs: `${24 + (visibleJobs.length + (reorderOpen ? 1 : 0)) * 88}px !important`,
+            xs: `${24 + (visibleJobs.length + reorderCount) * 88}px !important`,
           },
         }}
       />
@@ -2596,6 +2595,7 @@ export default function App() {
           onReapplyLocalOrder={activeTileOrdering.reapplyLocalOrder}
           otherScopesFailed={activeTileOrdering.otherScopesFailed}
           onRetryFailedScopes={activeTileOrdering.retryFailedScopes}
+          onCountChange={setReorderCount}
         />
       )}
     </AppShell>
