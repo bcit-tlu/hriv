@@ -201,12 +201,23 @@ export const farHalfReorderCollision: CollisionDetector = ({ dragOperation, drop
  * of `farHalfReorderCollision`, so a category tile splits cleanly into "Move
  * here" on the entry side and reorder on the far side — they never overlap.
  * Kept at High priority so move wins over any reorder collision on the near
- * half.
+ * half. The source category's own move zone is explicitly excluded so the
+ * reorder detector owns the dragged tile.
  */
 export const nearHalfMoveCollision: CollisionDetector = ({ dragOperation, droppable }) => {
   const pointer = dragOperation.position.current
   if (!pointer || !droppable.shape) return null
   if (!droppable.shape.containsPoint(pointer)) return null
+
+  // Never claim the source category's own move zone. A category source is both a
+  // sortable (reorder) and wrapped by a move-zone droppable, and `accept` alone
+  // is not always enough to keep the two detectors from overlapping on release.
+  const sourceId = String(dragOperation.source?.id ?? '')
+  if (sourceId.startsWith('cat-')) {
+    const sourceCatId = Number(sourceId.slice(4))
+    if (droppable.id === `${DROP_PREFIX}${sourceCatId}`) return null
+  }
+
   const { center } = droppable.shape
   if (isPastTileCenterAlongDrag(pointer, center, dragOperation.position.delta)) return null
   const distance = Math.hypot(center.x - pointer.x, center.y - pointer.y)

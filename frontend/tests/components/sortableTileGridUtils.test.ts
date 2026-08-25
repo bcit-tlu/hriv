@@ -246,6 +246,22 @@ describe('nearHalfMoveCollision (move wins on the near half)', () => {
       expect(Boolean(move) !== Boolean(reorder)).toBe(true)
     }
   })
+
+  it('returns null for the source category own move zone', () => {
+    // A category tile is both a sortable and a move-zone droppable. The source
+    // category's own zone must not claim the pointer, otherwise the reorder
+    // detector could be masked by a High-priority move collision.
+    expect(
+      nearHalfMoveCollision(
+        collisionInput(
+          { x: 130, y: 150 },
+          { x: 10, y: 0 },
+          `${DROP_PREFIX}1`,
+          'cat-1',
+        ),
+      ),
+    ).toBeNull()
+  })
 })
 
 describe('orderTileItems', () => {

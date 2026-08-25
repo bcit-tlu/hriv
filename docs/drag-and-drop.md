@@ -131,7 +131,10 @@ keyed on `isPastTileCenterAlongDrag(pointer, center, delta)`:
   it, regardless of which half the pointer is on.
 - `nearHalfMoveCollision` (passed to `DroppableCategoryZone`'s full-rect
   `useDroppable`, `High` priority): the exact complement — collides only on the
-  near half, so "Move here" owns the entry side of a category tile.
+  near half, so "Move here" owns the entry side of a category tile. The source
+  category's own move zone is explicitly excluded, because a category tile is
+  both a sortable and a move-zone droppable and the two detectors would otherwise
+  overlap on the dragged tile.
 
 `DroppableCategoryZone` wraps the **full tile rect** (no inset), so the move-zone
 shape is the whole tile and "Move here" detection works.
