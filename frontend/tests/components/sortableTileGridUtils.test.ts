@@ -23,6 +23,7 @@ function collisionInput(
   pointer: { x: number; y: number },
   delta: { x: number; y: number },
   id = 'tile-1',
+  sourceId?: string,
 ) {
   const shape = {
     center: CENTER,
@@ -31,7 +32,10 @@ function collisionInput(
   }
   return {
     droppable: { id, shape },
-    dragOperation: { position: { current: pointer, delta } },
+    dragOperation: {
+      position: { current: pointer, delta },
+      source: sourceId ? { id: sourceId } : undefined,
+    },
   } as unknown as Parameters<typeof farHalfReorderCollision>[0]
 }
 
@@ -204,6 +208,17 @@ describe('farHalfReorderCollision (reorder only on the far half)', () => {
 
   it('returns null before any drag travel (delta ≈ 0)', () => {
     expect(farHalfReorderCollision(collisionInput({ x: 170, y: 150 }, { x: 0, y: 0 }))).toBeNull()
+  })
+
+  it('always collides with the source tile, even on the near half, after a reflow', () => {
+    // Pointer is on the left (near) half of the source tile while dragging
+    // right. Without the source exception the far-half rule would reject this.
+    const result = farHalfReorderCollision(
+      collisionInput({ x: 130, y: 150 }, { x: 10, y: 0 }, 'tile-1', 'tile-1'),
+    )
+    expect(result).not.toBeNull()
+    expect(result?.id).toBe('tile-1')
+    expect(result?.priority).toBe(2) // CollisionPriority.Normal
   })
 })
 

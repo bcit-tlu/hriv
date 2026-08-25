@@ -380,10 +380,34 @@ export default function SortableTileGrid({
         if (operation.canceled) return
 
         const source = operation.source
-        const target = operation.target
-        if (!source || !target) {
-          logDrag('SortableTileGrid.handleDragEnd no target', {})
+        if (!source) {
+          logDrag('SortableTileGrid.handleDragEnd no source', {})
           return
+        }
+
+        let target = operation.target
+        if (!target) {
+          // If `OptimisticSortingPlugin` reflowed the source but the far-half
+          // detector can no longer report it (pointer on the near half of the
+          // new position), fall back to the source itself so the previewed
+          // order still commits.
+          const sourceIndex = (source as { index?: number }).index
+          const sourceInitialIndex = (source as { initialIndex?: number }).initialIndex
+          if (
+            typeof sourceIndex === 'number' &&
+            typeof sourceInitialIndex === 'number' &&
+            sourceIndex !== sourceInitialIndex
+          ) {
+            logDrag('SortableTileGrid.handleDragEnd target fallback to source', {
+              sourceId: String(source.id),
+              sourceIndex,
+              sourceInitialIndex,
+            })
+            target = source as unknown as NonNullable<typeof target>
+          } else {
+            logDrag('SortableTileGrid.handleDragEnd no target', {})
+            return
+          }
         }
 
         const sourceId = String(source.id)
@@ -405,6 +429,11 @@ export default function SortableTileGrid({
         // derives the new order from the source's reflowed sortable index,
         // so the committed order matches the on-screen preview exactly.
         const ids = items.map(tileId)
+        if (target !== operation.target) {
+          // `move()` reads `operation.target`; inject the source fallback so
+          // the reflowed index is still committed.
+          Object.assign(event.operation, { target })
+        }
         const reorderedIds = move(ids, event)
         if (reorderedIds.length === ids.length && reorderedIds.every((id, i) => id === ids[i])) {
           logDrag('SortableTileGrid.handleDragEnd no reorder change', { sourceId, reorderedIds })

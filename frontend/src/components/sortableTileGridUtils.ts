@@ -163,16 +163,32 @@ export const farHalfReorderCollision: CollisionDetector = ({ dragOperation, drop
   const pointer = dragOperation.position.current
   if (!pointer || !droppable.shape) return null
   if (!droppable.shape.containsPoint(pointer)) return null
+
   const { center } = droppable.shape
-  if (!isPastTileCenterAlongDrag(pointer, center, dragOperation.position.delta)) return null
   const distance = Math.hypot(center.x - pointer.x, center.y - pointer.y)
+
+  // The source tile is the one being dragged. After `OptimisticSortingPlugin`
+  // reflows it to a new position the pointer can sit on its near half, which
+  // would make the far-half rule reject it and clear `operation.target`. Always
+  // accept the source itself so a drag that ends over the reflowed tile still
+  // commits the previewed order.
+  if (String(dragOperation.source?.id) === String(droppable.id)) {
+    return {
+      id: droppable.id,
+      value: 1 / (distance || 1),
+      // Both detectors are pointer-inside-tile checks, so both report
+      // PointerIntersection — keeps them consistent if a future dnd-kit
+      // version starts filtering collisions by type. Resolution today sorts
+      // by priority then value and ignores type.
+      type: CollisionType.PointerIntersection,
+      priority: CollisionPriority.Normal,
+    }
+  }
+
+  if (!isPastTileCenterAlongDrag(pointer, center, dragOperation.position.delta)) return null
   return {
     id: droppable.id,
     value: 1 / (distance || 1),
-    // Both detectors are pointer-inside-tile checks, so both report
-    // PointerIntersection — keeps them consistent if a future dnd-kit
-    // version starts filtering collisions by type. Resolution today sorts
-    // by priority then value and ignores type.
     type: CollisionType.PointerIntersection,
     priority: CollisionPriority.Normal,
   }

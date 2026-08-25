@@ -515,6 +515,34 @@ describe('handleDragEnd — reorder branches', () => {
     )
   })
 
+  it('reorders using the source as fallback when target is null but the source was reflowed', async () => {
+    renderGrid({
+      currentImages: [
+        makeImage({ id: 10, name: 'A', sortOrder: 0 }),
+        makeImage({ id: 11, name: 'B', sortOrder: 1 }),
+      ],
+    })
+
+    await act(async () => {
+      await capturedOnDragEnd!({
+        operation: {
+          source: sortableSource('img-11', 0, 1),
+          target: null,
+          canceled: false,
+        },
+      })
+    })
+
+    expect(tileOrdering.reportOrder).toHaveBeenCalledWith(
+      [
+        { type: 'image', id: 11 },
+        { type: 'image', id: 10 },
+      ],
+      expect.any(Number),
+      expect.any(Object),
+    )
+  })
+
   it('renders items in the coordinator display order when provided', () => {
     tileOrdering.displayOrder = [
       { type: 'image', id: 11 },
