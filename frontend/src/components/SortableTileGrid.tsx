@@ -429,12 +429,12 @@ export default function SortableTileGrid({
         // derives the new order from the source's reflowed sortable index,
         // so the committed order matches the on-screen preview exactly.
         const ids = items.map(tileId)
-        if (target !== operation.target) {
-          // `move()` reads `operation.target`; inject the source fallback so
-          // the reflowed index is still committed.
-          Object.assign(event.operation, { target })
-        }
-        const reorderedIds = move(ids, event)
+        // `move()` reads `operation.target`; if we fell back to the source,
+        // create a new event so `move()` sees the reflowed target without
+        // mutating dnd-kit's dispatched event object.
+        const moveEvent =
+          target === operation.target ? event : { ...event, operation: { ...operation, target } }
+        const reorderedIds = move(ids, moveEvent)
         if (reorderedIds.length === ids.length && reorderedIds.every((id, i) => id === ids[i])) {
           logDrag('SortableTileGrid.handleDragEnd no reorder change', { sourceId, reorderedIds })
           return
