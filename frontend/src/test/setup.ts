@@ -1,6 +1,21 @@
 import '@testing-library/jest-dom/vitest'
 import { beforeAll } from 'vitest'
 
+// Node >= 26 emits an ExperimentalWarning the first time the native
+// `localStorage`/`sessionStorage` global is *accessed* without the
+// `--localstorage-file` flag. The storage shim below reads those globals to
+// decide whether it needs to install an in-memory fallback, and that read
+// alone trips the warning — once per test file, flooding `npm run test`
+// output with what looks like errors. Filter out just that one warning here;
+// every other warning is forwarded to Node untouched. (No-op on CI's Node 22,
+// which doesn't have the native global and never emits it.)
+const originalEmitWarning = process.emitWarning.bind(process)
+process.emitWarning = ((warning: string | Error, ...rest: unknown[]) => {
+  const message = typeof warning === 'string' ? warning : warning.message
+  if (message.includes('--localstorage-file')) return
+  ;(originalEmitWarning as (...args: unknown[]) => void)(warning, ...rest)
+}) as typeof process.emitWarning
+
 // @dnd-kit/dom requires ResizeObserver which jsdom does not provide.
 if (typeof globalThis.ResizeObserver === 'undefined') {
   globalThis.ResizeObserver = class ResizeObserver {
