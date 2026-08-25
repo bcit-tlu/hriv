@@ -96,6 +96,18 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
     color: 'text.secondary',
   }
 
+  // Desktop keeps MUI's standard (underline) fields with the floating notch
+  // label, but adopts the same font scale as mobile: 14px labels and 17px
+  // typed-in text. Applies to the standard-variant class names.
+  const desktopFieldSx = {
+    '& .MuiInputBase-input': {
+      fontSize: 17,
+    },
+    '& .MuiInputLabel-root': {
+      fontSize: 14,
+    },
+  }
+
   useEffect(() => {
     fetchOidcEnabled()
       .then((res) => setOidcEnabled(res.enabled))
@@ -224,13 +236,13 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
               </Typography>
             </Box>
 
-            {/* Mobile: a divider visually separates the brand lockup from the
-                credential form, with generous space above (brand-box mb) and
-                below (divider mb). Desktop keeps the original ungrouped layout. */}
-            {/* scaleY(0.5) renders the 1px line as a ~0.5px hairline on hi-DPI
-                mobile screens — the thinnest a divider can practically get. The
-                mb (spacing) is unaffected by the transform. */}
-            {isMobile && <Divider sx={{ mb: 3, transform: 'scaleY(0.5)' }} />}
+            {/* A divider visually separates the brand lockup from the credential
+                form, with generous space above (brand-box mb) and below
+                (divider mb). Shown on both mobile and desktop. */}
+            {/* Mobile only: scaleY(0.5) renders the 1px line as a ~0.5px hairline
+                on hi-DPI phone screens — the thinnest a divider can practically
+                get. The mb (spacing) is unaffected by the transform. */}
+            <Divider sx={{ mb: 3, ...(isMobile && { transform: 'scaleY(0.5)' }) }} />
 
             {/* Section heading introducing the credential form below. */}
             <Typography
@@ -328,7 +340,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
                     autoFocus
                     autoComplete="email"
                     variant={isMobile ? 'outlined' : 'standard'}
-                    sx={isMobile ? mobileFieldSx : undefined}
+                    sx={isMobile ? mobileFieldSx : desktopFieldSx}
                   />
                 </Box>
 
@@ -354,7 +366,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
                     fullWidth
                     autoComplete="current-password"
                     variant={isMobile ? 'outlined' : 'standard'}
-                    sx={isMobile ? mobileFieldSx : undefined}
+                    sx={isMobile ? mobileFieldSx : desktopFieldSx}
                     slotProps={{
                       input: {
                         endAdornment: (
@@ -402,8 +414,9 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
                     sx={{
                       fontWeight: 600,
                       letterSpacing: 1,
-                      // Larger LOGIN label on mobile for a clearer primary action.
-                      ...(isMobile && { fontSize: 17 }),
+                      // Larger LOGIN label for a clearer primary action, matched
+                      // across mobile and desktop.
+                      fontSize: 17,
                     }}
                   >
                     {loading ? 'Signing in...' : 'LOGIN'}
