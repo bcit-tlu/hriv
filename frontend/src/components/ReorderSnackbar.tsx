@@ -8,6 +8,8 @@ import type { TileOrderStatus } from '../tileOrdering'
 export interface ReorderSnackbarProps extends ReorderStatusIndicatorProps {
   /** Position in the bottom-right stack (0 = just above the screen edge). */
   offsetIndex: number
+  /** Called whenever the number of mounted reorder snackbars changes. */
+  onCountChange?: (count: number) => void
 }
 
 const NOTIFICATION_STATUSES: ReadonlySet<TileOrderStatus> = new Set(['saved', 'error', 'conflict'])
@@ -42,7 +44,7 @@ function createNotificationStore(): NotificationStore {
     }
   }
 
-  function closeByStatus(statusToClose: TileOrderStatus) {
+  function closeByStatus(statusToClose: TileOrderStatus): boolean {
     let changed = false
     const next = notifications.map((n) => {
       if (n.status === statusToClose && n.open) {
@@ -51,9 +53,9 @@ function createNotificationStore(): NotificationStore {
       }
       return n
     })
-    if (!changed) return
+    if (!changed) return false
     notifications = next
-    emit()
+    return true
   }
 
   return {
@@ -89,16 +91,19 @@ function createNotificationStore(): NotificationStore {
         }
       }
 
-      notifications = [...notifications, ...toAdd]
+      let changed = toAdd.length > 0
+      if (changed) {
+        notifications = [...notifications, ...toAdd]
+      }
 
       // Stale persistent notifications (e.g. an error that was just retried, or a
       // cross-scope warning that was resolved) should fade out so their action
       // buttons don't linger inert while the new state is shown.
-      if (status !== 'error') closeByStatus('error')
-      if (status !== 'conflict') closeByStatus('conflict')
-      if (!otherScopesFailed) closeByStatus('idle')
+      if (status !== 'error') changed = closeByStatus('error') || changed
+      if (status !== 'conflict') changed = closeByStatus('conflict') || changed
+      if (!otherScopesFailed) changed = closeByStatus('idle') || changed
 
-      emit()
+      if (changed) emit()
     },
     close(keyToClose) {
       const next = notifications.map((n) =>
@@ -145,12 +150,20 @@ function useReorderNotifications(
  * on or dismisses them. Stacking uses the same 88 px vertical spacing: pass an
  * `offsetIndex` one greater than the last processing job index.
  */
-export default function ReorderSnackbar({ offsetIndex, ...indicatorProps }: ReorderSnackbarProps) {
+export default function ReorderSnackbar({
+  offsetIndex,
+  onCountChange,
+  ...indicatorProps
+}: ReorderSnackbarProps) {
   const { status, otherScopesFailed } = indicatorProps
   const { notifications, close, remove } = useReorderNotifications(
     status,
     otherScopesFailed ?? false,
   )
+
+  useEffect(() => {
+    onCountChange?.(notifications.length)
+  }, [onCountChange, notifications.length])
 
   if (notifications.length === 0) {
     return null
