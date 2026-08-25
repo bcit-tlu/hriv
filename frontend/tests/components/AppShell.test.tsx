@@ -538,14 +538,52 @@ describe('AppShell', () => {
       expect(onOpenCategories).toHaveBeenCalled()
     })
 
-    it('removes the theme toggle from the bar when collapsed', () => {
+    it('keeps the theme toggle in the bar on compact viewports', () => {
       render(<AppShell {...makeProps({ profileOpen: false })} />)
-      expect(screen.queryByRole('button', { name: 'Toggle theme' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Toggle theme' })).toBeInTheDocument()
     })
 
-    it('shows a theme row in the profile menu on compact viewports', () => {
+    it('has no theme row in the menu (theme lives in the bar)', () => {
+      render(<AppShell {...makeProps()} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
+      expect(screen.queryByRole('menuitem', { name: /Theme:/ })).not.toBeInTheDocument()
+    })
+
+    it('moves profile content and Logout into the drawer', () => {
+      render(<AppShell {...makeProps()} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
+      // Profile identity is shown at the top of the drawer...
+      expect(screen.getByText('test@example.com')).toBeInTheDocument()
+      // ...and Logout is a menu item (moved out of the avatar popover).
+      expect(screen.getByRole('menuitem', { name: 'Logout' })).toBeInTheDocument()
+    })
+
+    it('does not render the avatar/profile popover on compact viewports', () => {
       render(<AppShell {...makeProps({ profileOpen: true })} />)
-      expect(screen.getByRole('menuitem', { name: /Theme:/ })).toBeInTheDocument()
+      expect(screen.queryByTestId('user-card')).not.toBeInTheDocument()
+    })
+
+    it('hides program/group chips for students but shows them for staff', () => {
+      const student = {
+        name: 'Sam Student',
+        email: 'stu@example.ca',
+        role: 'student' as const,
+        program_names: ['Medical Lab'],
+        group_names: ['Lab A2'],
+      }
+      const { rerender } = render(
+        <AppShell
+          {...makeProps({ canEditContent: false, canManageUsers: false, currentUser: student })}
+        />,
+      )
+      expect(screen.getByText('stu@example.ca')).toBeInTheDocument()
+      expect(screen.queryByText('Medical Lab')).not.toBeInTheDocument()
+      expect(screen.queryByText('Lab A2')).not.toBeInTheDocument()
+
+      // Same chips DO render for an instructor/admin.
+      rerender(<AppShell {...makeProps({ currentUser: { ...student, role: 'admin' } })} />)
+      expect(screen.getByText('Medical Lab')).toBeInTheDocument()
+      expect(screen.getByText('Lab A2')).toBeInTheDocument()
     })
 
     it('keeps the role and program/group pills in the profile menu', () => {
@@ -568,10 +606,14 @@ describe('AppShell', () => {
       expect(screen.getByText('Administration')).toBeInTheDocument()
     })
 
-    it('keeps a single Home tab inline for students instead of collapsing', () => {
+    it('collapses into a hamburger for students too (Home lives in the drawer)', () => {
       render(<AppShell {...makeProps({ canEditContent: false, canManageUsers: false })} />)
-      expect(screen.queryByRole('button', { name: 'Open navigation menu' })).not.toBeInTheDocument()
-      expect(screen.getByRole('tab', { name: 'Home' })).toBeInTheDocument()
+      const hamburger = screen.getByRole('button', { name: 'Open navigation menu' })
+      expect(hamburger).toBeInTheDocument()
+      // No inline tabs on mobile — Home is inside the drawer.
+      expect(screen.queryByRole('tab', { name: 'Home' })).not.toBeInTheDocument()
+      fireEvent.click(hamburger)
+      expect(screen.getByRole('menuitem', { name: 'Home' })).toBeInTheDocument()
     })
 
     it('closes the drawer when the close button is clicked', () => {
