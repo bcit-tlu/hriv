@@ -35,13 +35,13 @@ describe('ReorderSnackbar', () => {
 
   it('renders a saved outcome notification', () => {
     renderSnackbar('saved')
-    expect(screen.getByRole('status', { name: 'Reorder save state' })).toBeInTheDocument()
+    expect(screen.getByRole('status', { name: /Reorder save state/ })).toBeInTheDocument()
     expect(screen.getByText('Order saved')).toBeInTheDocument()
   })
 
   it('renders an error outcome notification', () => {
     renderSnackbar('error')
-    expect(screen.getByRole('status', { name: 'Reorder save state' })).toBeInTheDocument()
+    expect(screen.getByRole('status', { name: /Reorder save state/ })).toBeInTheDocument()
     expect(screen.getByText('Could not save order')).toBeInTheDocument()
   })
 
@@ -73,5 +73,23 @@ describe('ReorderSnackbar', () => {
   it('renders a cross-scope failure notification when other scopes fail', () => {
     renderSnackbar('idle', true)
     expect(screen.getByText('Unresolved order changes in another category')).toBeInTheDocument()
+  })
+
+  it('fades out a stale error notification when the status resolves', async () => {
+    const { rerender } = renderSnackbar('error')
+    expect(screen.getByText('Could not save order')).toBeInTheDocument()
+
+    rerender(
+      <ReorderSnackbar
+        offsetIndex={2}
+        status="saved"
+        otherScopesFailed={false}
+        {...noopHandlers}
+      />,
+    )
+
+    // A new saved notification is added while the old error notification closes.
+    expect(screen.getByText('Order saved')).toBeInTheDocument()
+    expect(screen.getAllByRole('status', { name: /Reorder save state/ })).toHaveLength(2)
   })
 })

@@ -42,6 +42,20 @@ function createNotificationStore(): NotificationStore {
     }
   }
 
+  function closeByStatus(statusToClose: TileOrderStatus) {
+    let changed = false
+    const next = notifications.map((n) => {
+      if (n.status === statusToClose && n.open) {
+        changed = true
+        return { ...n, open: false }
+      }
+      return n
+    })
+    if (!changed) return
+    notifications = next
+    emit()
+  }
+
   return {
     subscribe(listener) {
       listeners.push(listener)
@@ -54,25 +68,36 @@ function createNotificationStore(): NotificationStore {
       return notifications
     },
     update(status, otherScopesFailed) {
+      const statusChanged = previousStatus !== status
+      const otherFailedChanged = previousOtherFailed !== otherScopesFailed
+
+      if (!statusChanged && !otherFailedChanged) return
+
       const toAdd: Notification[] = []
 
-      if (previousStatus !== status) {
+      if (statusChanged) {
+        previousStatus = status
         if (NOTIFICATION_STATUSES.has(status)) {
           toAdd.push({ key: ++key, status, otherScopesFailed: false, open: true })
         }
-        previousStatus = status
       }
 
-      if (previousOtherFailed !== otherScopesFailed) {
+      if (otherFailedChanged) {
+        previousOtherFailed = otherScopesFailed
         if (otherScopesFailed) {
           toAdd.push({ key: ++key, status: 'idle', otherScopesFailed: true, open: true })
         }
-        previousOtherFailed = otherScopesFailed
       }
 
-      if (toAdd.length === 0) return
-
       notifications = [...notifications, ...toAdd]
+
+      // Stale persistent notifications (e.g. an error that was just retried, or a
+      // cross-scope warning that was resolved) should fade out so their action
+      // buttons don't linger inert while the new state is shown.
+      if (status !== 'error') closeByStatus('error')
+      if (status !== 'conflict') closeByStatus('conflict')
+      if (!otherScopesFailed) closeByStatus('idle')
+
       emit()
     },
     close(keyToClose) {
@@ -161,6 +186,7 @@ export default function ReorderSnackbar({ offsetIndex, ...indicatorProps }: Reor
               {...indicatorProps}
               status={notification.status}
               otherScopesFailed={notification.otherScopesFailed}
+              ariaLabel={`Reorder save state ${index + 1}`}
             />
           </Snackbar>
         )
