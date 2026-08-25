@@ -1,10 +1,11 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import require_role, hash_password
+from ..authz import ADMIN_PROGRAM_NAME
 from ..database import get_db
 from ..models import Program, User
 from ..schemas import UserCreate, UserUpdate, UserBulkUpdate, UserBulkRoleUpdate, UserBulkDelete, UserOut
@@ -86,6 +87,13 @@ async def list_users(
         )
     elif role is not None:
         conditions.append(User.role == role)
+
+    # Users associated with the special Admin program are hidden from
+    # non-admin callers (instructors and students).
+    if _user.role != "admin":
+        conditions.append(
+            not_(User.programs.any(Program.name == ADMIN_PROGRAM_NAME))
+        )
 
     if program_id:
         conditions.append(User.programs.any(Program.id.in_(program_id)))

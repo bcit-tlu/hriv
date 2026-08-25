@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.46.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.45.0...backend-v0.46.0) (2026-08-24)
+
+
+### Features
+
+* **backend,frontend:** add monotonic browse revision and 304 short-circuit ([#1108](https://github.com/bcit-tlu/hriv/issues/1108)) ([641c1a7](https://github.com/bcit-tlu/hriv/commit/641c1a76169744ef25f7ff198c651992d3b28846))
+
+## [0.45.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.44.0...backend-v0.45.0) (2026-08-24)
+
+
+### Features
+
+* **backend:** make dedicated worker execution mandatory in production ([#1077](https://github.com/bcit-tlu/hriv/issues/1077)) ([8959c32](https://github.com/bcit-tlu/hriv/commit/8959c328ac68a057b6188b0df0e28ab38dca7af0))
+
+
+### Bug Fixes
+
+* **backend:** hide Admin-program users from non-admin callers ([#1087](https://github.com/bcit-tlu/hriv/issues/1087)) ([d417711](https://github.com/bcit-tlu/hriv/commit/d4177111626aa3c5703d248280f8495e74168057))
+* **tile-order:** prevent stale GET /tile-order from seeding stale CAS revision ([#1089](https://github.com/bcit-tlu/hriv/issues/1089)) ([db910e9](https://github.com/bcit-tlu/hriv/commit/db910e930d4e459b0500aecf2f7f65126e969c49))
+
 ## [0.44.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.43.0...backend-v0.44.0) (2026-08-12)
 
 

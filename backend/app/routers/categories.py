@@ -21,11 +21,23 @@ from ..schemas import (
     CategoryWarning,
     ImageOut,
 )
+from ..browse_state import bump_browse_revision, get_browse_revision
 from ..tile_order import bump_scopes, scope_key_for
 from ..visibility import compute_excluded_category_ids, get_student_excluded_category_ids, is_category_visible_to_student
 
 
 router = APIRouter(prefix="/categories", tags=["categories"])
+
+
+def _viewer_etag_fragment(
+    user: User,
+    user_program_ids: set[int] | None,
+    user_group_ids: set[int] | None,
+) -> str:
+    """Stable, opaque hash of the caller's visibility context for ETags."""
+    programs = ",".join(str(i) for i in sorted(user_program_ids or ()))
+    groups = ",".join(str(i) for i in sorted(user_group_ids or ()))
+    return hashlib.md5(f"{user.role}|{programs}|{groups}".encode()).hexdigest()
 
 
 async def _resolve_programs(
@@ -274,30 +286,35 @@ async def get_category_tree(
         if _user.role == "student"
         else None
     )
+
+    # ── Browse-revision 304 short-circuit (issue #1066) ──
+    # A single monotonic revision is incremented by every mutation that could
+    # affect this tree. If the client's ETag matches, we return 304 without
+    # loading or serializing the full tree.
+    browse_revision = await get_browse_revision(db)
+    viewer_hash = _viewer_etag_fragment(_user, user_program_ids, user_group_ids)
+    browse_etag = f"browse-{browse_revision}-{viewer_hash}"
+    response.headers["ETag"] = f'W/"{browse_etag}"'
+    response.headers["Cache-Control"] = "private, no-cache"
+    response.headers["X-Browse-Revision"] = str(browse_revision)
+
+    client_etags = request.headers.get("if-none-match", "")
+    if client_etags == "*" or f'W/"{browse_etag}"' in [t.strip() for t in client_etags.split(",")]:
+        return Response(
+            status_code=304,
+            headers={
+                "ETag": f'W/"{browse_etag}"',
+                "Cache-Control": "private, no-cache",
+                "X-Browse-Revision": str(browse_revision),
+            },
+        )
+
     tree = await _load_tree(
         db, None,
         user_role=_user.role,
         user_program_ids=user_program_ids,
         user_group_ids=user_group_ids,
     )
-
-    # ── ETag / Cache-Control ──
-    # Compute a lightweight ETag from the serialised response so browsers
-    # and proxies can use conditional requests (If-None-Match) to skip
-    # redundant payload transfers when the tree hasn't changed.
-    body_bytes = _json.dumps(
-        [t.model_dump(mode="json") for t in tree],
-        sort_keys=True,
-        default=str,
-    ).encode()
-    etag = hashlib.md5(body_bytes).hexdigest()  # noqa: S324
-    response.headers["ETag"] = f'W/"{etag}"'
-    response.headers["Cache-Control"] = "private, no-cache"
-
-    client_etags = request.headers.get("if-none-match", "")
-    if client_etags == "*" or f'W/"{etag}"' in [t.strip() for t in client_etags.split(",")]:
-        return Response(status_code=304, headers={"ETag": f'W/"{etag}"', "Cache-Control": "private, no-cache"})
-
     return tree
 
 
@@ -384,6 +401,7 @@ async def create_category(
     cat.programs = progs
     cat.groups = grps
     db.add(cat)
+    await bump_browse_revision(db)
     await db.commit()
     await db.refresh(cat)
     cat._category_warnings = _intersection_warnings(progs, grps)
@@ -401,45 +419,6 @@ async def update_category(
     cat = await db.get(Category, category_id)
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found")
-
-    # An ordering write (sort_order or a parent move) must invalidate the
-    # affected scopes' tile-order revisions so a client holding an older
-    # revision gets a 409 instead of silently overwriting this change.
-    # Revision locks are taken before any row mutation, matching
-    # PUT /api/tile-order's revision-then-rows lock order
-    # (docs/tile-ordering.md).
-    # Only an actual value change invalidates: edit dialogs echo the current
-    # parent_id/sort_order back on every save, and bumping on presence alone
-    # would 409 clients whose cached revision is still accurate.
-    ordering_fields = body.model_dump(exclude_unset=True)
-    sort_changed = "sort_order" in ordering_fields and ordering_fields["sort_order"] != cat.sort_order
-    parent_changed = "parent_id" in ordering_fields and ordering_fields["parent_id"] != cat.parent_id
-    if sort_changed or parent_changed:
-        affected = {scope_key_for(cat.parent_id)}
-        if parent_changed:
-            affected.add(scope_key_for(ordering_fields["parent_id"]))
-        await bump_scopes(db, affected)
-
-    # Optimistic concurrency: same CAS pattern as image updates.
-    if_match = request.headers.get("If-Match")
-    if if_match is not None:
-        try:
-            client_version = int(if_match.strip('"'))
-        except (ValueError, TypeError):
-            raise HTTPException(status_code=400, detail="Invalid If-Match header")
-        cas = await db.execute(
-            sql_update(Category)
-            .where(Category.id == category_id, Category.version == client_version)
-            .values(version=Category.version + 1)
-        )
-        if cas.rowcount == 0:
-            raise HTTPException(
-                status_code=409,
-                detail="Resource has been modified by another client",
-            )
-        cat.version = client_version + 1
-    else:
-        cat.version = cat.version + 1
 
     update_data = body.model_dump(exclude_unset=True)
     if "parent_id" in update_data:
@@ -460,6 +439,15 @@ async def update_category(
                         detail="Cannot move a category into one of its own descendants",
                     )
                 ancestor_id = ancestor.parent_id
+
+    if_match = request.headers.get("If-Match")
+    client_version: int | None = None
+    if if_match is not None:
+        try:
+            client_version = int(if_match.strip('"'))
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="Invalid If-Match header")
+
     if "label" in update_data or "parent_id" in update_data:
         new_label = update_data.get("label", cat.label)
         new_parent_id = update_data.get("parent_id", cat.parent_id)
@@ -476,24 +464,82 @@ async def update_category(
                 status_code=409,
                 detail="A category with this name already exists at this level",
             )
+
+    # An ordering write (sort_order or a parent move) must invalidate the
+    # affected scopes' tile-order revisions so a client holding an older
+    # revision gets a 409 instead of silently overwriting this change.
+    # Revision locks are taken before any row mutation, matching
+    # PUT /api/tile-order's revision-then-rows lock order
+    # (docs/tile-ordering.md).
+    # Only an actual value change invalidates: edit dialogs echo the current
+    # parent_id/sort_order back on every save, and bumping on presence alone
+    # would 409 clients whose cached revision is still accurate.
+    sort_changed = "sort_order" in update_data and update_data["sort_order"] != cat.sort_order
+    parent_changed = "parent_id" in update_data and update_data["parent_id"] != cat.parent_id
+    if sort_changed or parent_changed:
+        affected = {scope_key_for(cat.parent_id)}
+        if parent_changed:
+            affected.add(scope_key_for(update_data["parent_id"]))
+        await bump_scopes(db, affected)
+
     program_ids = update_data.pop("program_ids", None)
     group_ids = update_data.pop("group_ids", None)
     if "metadata_extra" in update_data:
         update_data["metadata_"] = update_data.pop("metadata_extra")
-    for key, value in update_data.items():
-        setattr(cat, key, value)
+
+    # Only bump the entity version and the global browse revision when the edit
+    # actually changes data. No-op saves from the edit dialog should not stale
+    # the client's If-Match copy or invalidate every viewer's tree cache.
+    programs_changed = False
     if program_ids is not None:
         existing_program_ids = {p.id for p in cat.programs}
-        cat.programs = await _resolve_programs(
+        new_programs = await _resolve_programs(
             db, _user, program_ids, existing_program_ids,
         )
+        if {p.id for p in new_programs} != existing_program_ids:
+            programs_changed = True
+            cat.programs = new_programs
+    groups_changed = False
     if group_ids is not None:
         existing_group_ids = {g.id for g in cat.groups}
-        cat.groups = await _resolve_groups(
+        new_groups = await _resolve_groups(
             db, _user, group_ids, existing_group_ids,
         )
-    await db.commit()
-    await db.refresh(cat)
+        if {g.id for g in new_groups} != existing_group_ids:
+            groups_changed = True
+            cat.groups = new_groups
+
+    is_dirty = any(
+        getattr(cat, key) != value for key, value in update_data.items()
+    ) or programs_changed or groups_changed
+
+    # Optimistic concurrency: if the client sends If-Match, verify the version
+    # has not changed since the client last read the resource. The version is
+    # only incremented when the request actually changes data.
+    if client_version is not None:
+        new_version = client_version + (1 if is_dirty else 0)
+        cas = await db.execute(
+            sql_update(Category)
+            .where(Category.id == category_id, Category.version == client_version)
+            .values(version=new_version)
+        )
+        if cas.rowcount == 0:
+            raise HTTPException(
+                status_code=409,
+                detail="Resource has been modified by another client",
+            )
+        cat.version = new_version
+    elif is_dirty:
+        cat.version = cat.version + 1
+
+    if is_dirty:
+        for key, value in update_data.items():
+            setattr(cat, key, value)
+
+        await bump_browse_revision(db)
+        await db.commit()
+        await db.refresh(cat)
+
     cat._category_warnings = _intersection_warnings(
         list(cat.programs), list(cat.groups)
     )
@@ -515,4 +561,5 @@ async def delete_category(
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found")
     await db.delete(cat)
+    await bump_browse_revision(db)
     await db.commit()

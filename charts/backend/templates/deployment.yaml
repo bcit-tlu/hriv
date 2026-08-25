@@ -1,6 +1,15 @@
 {{- if and .Values.tiles.enabled (not .Values.persistence.enabled) }}
 {{- fail "tiles.enabled requires persistence.enabled — the sidecar serves tiles from the PVC" }}
 {{- end }}
+{{- if not (has .Values.tasks.executionMode (list "local" "required")) }}
+{{- fail "tasks.executionMode must be 'local' or 'required'" }}
+{{- end }}
+{{- if and (eq .Values.tasks.executionMode "required") (not .Values.redis.enabled) }}
+{{- fail "tasks.executionMode=required requires redis.enabled — required mode rejects queue-backed work with 503 when Redis is unavailable, so a deployment without Redis could never run background tasks" }}
+{{- end }}
+{{- if and (eq .Values.tasks.executionMode "required") (not .Values.redis.worker.enabled) }}
+{{- fail "tasks.executionMode=required requires redis.worker.enabled — required mode never falls back to in-process execution, so queued jobs would wait forever without a dedicated worker Deployment" }}
+{{- end }}
 {{- $backupVersionMountPath := trimSuffix "/" .Values.backupVersionConfigMap.mountPath -}}
 {{- $frontendVersionMountPath := trimSuffix "/" .Values.frontendVersionConfigMap.mountPath -}}
 {{- if and .Values.backupVersionConfigMap.enabled .Values.frontendVersionConfigMap.enabled (eq $backupVersionMountPath $frontendVersionMountPath) }}
@@ -191,6 +200,18 @@ spec:
             {{- if .Values.redis.enabled }}
             - name: REDIS_URL
               value: {{ .Values.redis.url | quote }}
+            {{- end }}
+            - name: TASK_EXECUTION_MODE
+              value: {{ .Values.tasks.executionMode | quote }}
+            # WORKER_MAX_JOBS also bounds the in-process fallback
+            # concurrency used by local-mode bulk imports, and
+            # WORKER_TOTAL_SLOTS feeds bulk-import starvation detection
+            # on the API side, so both render on the API pod too.
+            - name: WORKER_MAX_JOBS
+              value: {{ .Values.redis.worker.maxJobs | quote }}
+            {{- if .Values.redis.worker.totalSlots }}
+            - name: WORKER_TOTAL_SLOTS
+              value: {{ .Values.redis.worker.totalSlots | quote }}
             {{- end }}
             - name: JWT_SECRET
               valueFrom:

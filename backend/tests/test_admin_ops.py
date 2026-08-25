@@ -10,6 +10,7 @@ import os
 import tarfile
 import tempfile
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,8 +19,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from sqlalchemy.sql.dml import Update
 
+from app import admin_ops
 from app.database import settings
 from app.models import AdminTask
+from app.worker import EnqueueResult, TaskQueueUnavailableError
 
 from app.admin_ops import (
     FILES_EXPORT_FORMAT_VERSION,
@@ -1519,6 +1522,76 @@ async def test_run_files_export_success(tmp_path) -> None:
         assert not any("/tiles/" in name or name.endswith("/tiles") for name in names)
 
 
+async def test_run_files_export_stages_archive_in_tasks_dir(tmp_path) -> None:
+    """The archive is staged on the tasks dir (data PVC), not /tmp."""
+    data_dir = tmp_path / "data"
+    source_dir = data_dir / "source_images"
+    source_dir.mkdir(parents=True)
+    tiles_dir = data_dir / "tiles"
+    tiles_dir.mkdir()
+    (source_dir / "source.jpg").write_text("data")
+
+    task = SimpleNamespace(
+        id=1, task_type="files_export", status="pending", progress=0, log="",
+        result_filename=None, result_path=None, input_path=None, error_message=None,
+    )
+
+    mock_session = AsyncMock()
+    mock_session.get = AsyncMock(return_value=task)
+    mock_session.commit = AsyncMock()
+    mock_session_factory = MagicMock()
+    mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    tasks_dir = str(tmp_path / "admin_tasks")
+    staged_dests: list[str] = []
+    real_create_tar_file = admin_ops._create_tar_file
+
+    def _capture_dest(data_dir_arg, dest, **kwargs):
+        staged_dests.append(dest)
+        return real_create_tar_file(data_dir_arg, dest, **kwargs)
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=mock_session_factory),
+        patch("app.admin_ops.settings") as mock_settings,
+        patch("app.admin_ops._TASKS_DIR", tasks_dir),
+        patch("app.admin_ops._create_tar_file", side_effect=_capture_dest),
+    ):
+        mock_settings.tiles_dir = str(tiles_dir)
+        mock_settings.export_pigz_threads = 2
+        await run_files_export(1)
+
+    assert task.status == "completed"
+    assert len(staged_dests) == 1
+    assert os.path.dirname(staged_dests[0]) == tasks_dir
+    assert os.path.basename(staged_dests[0]).startswith(".export-staging-")
+    # The staging file was renamed to the final artifact.
+    assert not os.path.exists(staged_dests[0])
+    assert os.path.exists(os.path.join(tasks_dir, task.result_filename))
+
+
+def test_cleanup_stale_export_staging_files(tmp_path) -> None:
+    """Abandoned staging archives are removed; fresh ones survive."""
+    tasks_dir = tmp_path / "admin_tasks"
+    tasks_dir.mkdir()
+    old_staging = tasks_dir / ".export-staging-abc.tar.gz"
+    old_staging.write_bytes(b"partial")
+    stale_mtime = time.time() - 3600
+    os.utime(old_staging, (stale_mtime, stale_mtime))
+    fresh_staging = tasks_dir / ".export-staging-def.tar.gz"
+    fresh_staging.write_bytes(b"partial")
+    retained = tasks_dir / "hriv-files-20260101-000000.tar.gz"
+    retained.write_bytes(b"archive")
+    os.utime(retained, (stale_mtime, stale_mtime))
+
+    with patch("app.admin_ops._TASKS_DIR", str(tasks_dir)):
+        admin_ops._cleanup_stale_export_staging_files(900)
+
+    assert not old_staging.exists()
+    assert fresh_staging.exists()
+    assert retained.exists()
+
+
 def test_iter_export_files_skips_admin_tasks_and_tiles(tmp_path) -> None:
     """``_iter_export_files`` reports sizes and omits tiles/admin_tasks."""
     data_dir = tmp_path / "data"
@@ -1900,7 +1973,7 @@ async def test_run_files_import_uses_import_staging_dir_and_preserves_data(tmp_p
         patch("app.admin_ops.settings") as mock_settings,
         patch("app.admin_ops._IMPORT_STAGING_DIR", str(data_dir / ".import-staging")),
         patch("app.admin_ops.tempfile.TemporaryDirectory", side_effect=_recording_tempdir),
-        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=True),
+        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=EnqueueResult("queued", "submitted")),
         patch("app.admin_ops._ensure_tasks_dir", return_value=str(tasks_dir)),
     ):
         mock_settings.data_dir = str(data_dir)
@@ -2209,7 +2282,7 @@ async def _run_files_import_with_checksum(tmp_path, checksum_for):
         patch("app.admin_ops.get_async_session", return_value=mock_session_factory),
         patch("app.admin_ops.settings") as mock_settings,
         patch("app.admin_ops._IMPORT_STAGING_DIR", str(data_dir / ".import-staging")),
-        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=True),
+        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=EnqueueResult("queued", "submitted")),
         patch("app.admin_ops._ensure_tasks_dir", return_value=str(tasks_dir)),
     ):
         mock_settings.data_dir = str(data_dir)
@@ -2901,7 +2974,7 @@ async def test_queue_rebuild_tiles_after_import_marks_failed_on_enqueue_error(tm
 
     with (
         patch("app.admin_ops.get_async_session", return_value=session_factory),
-        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=False),
+        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=EnqueueResult("fallback", "queue_unavailable")),
         patch("app.admin_ops._ensure_tasks_dir", return_value=str(tmp_path)),
     ):
         message = await _queue_rebuild_tiles_after_import(import_task)
@@ -2910,6 +2983,42 @@ async def test_queue_rebuild_tiles_after_import_marks_failed_on_enqueue_error(tm
     assert not any(tmp_path.glob("rebuild-after-import-*.json"))
     assert session.execute.await_count == 3  # select, insert, update
     session.commit.assert_awaited()
+
+
+async def test_queue_rebuild_tiles_after_import_logs_expected_rejection_without_traceback(
+    tmp_path,
+    caplog,
+) -> None:
+    """Required-mode queue rejection is warning-level without a traceback."""
+    import logging
+
+    import_task = SimpleNamespace(
+        input_path=str(tmp_path / "import.tar.gz"),
+        created_by=1,
+    )
+    session, session_factory = _queue_session_factory(insert_id=99)
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=session_factory),
+        patch(
+            "app.admin_ops.enqueue_admin_task",
+            new_callable=AsyncMock,
+            side_effect=TaskQueueUnavailableError("queue_unavailable"),
+        ),
+        patch("app.admin_ops._ensure_tasks_dir", return_value=str(tmp_path)),
+        caplog.at_level(logging.WARNING, logger="app.admin_ops"),
+    ):
+        message = await _queue_rebuild_tiles_after_import(import_task)
+
+    assert "Could not queue automatic tile rebuild" in message
+    rejection_records = [
+        record
+        for record in caplog.records
+        if record.message.startswith("Failed to enqueue rebuild task")
+    ]
+    assert rejection_records
+    assert all(record.exc_info is None for record in rejection_records)
+    assert session.execute.await_count == 3
 
 
 async def test_queue_rebuild_tiles_after_import_queues_on_success(tmp_path) -> None:
@@ -2922,7 +3031,7 @@ async def test_queue_rebuild_tiles_after_import_queues_on_success(tmp_path) -> N
 
     with (
         patch("app.admin_ops.get_async_session", return_value=session_factory),
-        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=True),
+        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=EnqueueResult("queued", "submitted")),
         patch("app.admin_ops._ensure_tasks_dir", return_value=str(tmp_path)),
     ):
         message = await _queue_rebuild_tiles_after_import(import_task)
@@ -2947,7 +3056,7 @@ async def test_queue_rebuild_tiles_after_import_falls_back_to_background_tasks(t
 
     with (
         patch("app.admin_ops.get_async_session", return_value=session_factory),
-        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=False),
+        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=EnqueueResult("fallback", "queue_unavailable")),
         patch("app.admin_ops._ensure_tasks_dir", return_value=str(tmp_path)),
     ):
         message = await _queue_rebuild_tiles_after_import(import_task, bg)

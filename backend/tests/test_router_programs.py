@@ -16,6 +16,18 @@ from app.routers.programs import (
 from app.schemas import ProgramCreate, ProgramUpdate
 
 
+@pytest.fixture(autouse=True)
+def _patch_browse_bump(monkeypatch):
+    """The real browse-state helper expects an AsyncSession; unit mocks do not
+    provide the SQLAlchemy result API it calls, so stub it out across the
+    router tests.
+    """
+    monkeypatch.setattr(
+        "app.routers.programs.bump_browse_revision",
+        AsyncMock(return_value=1),
+    )
+
+
 async def test_list_programs() -> None:
     progs = [SimpleNamespace(id=1, name="Bio"), SimpleNamespace(id=2, name="Chem")]
     mock_result = MagicMock()

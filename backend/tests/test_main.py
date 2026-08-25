@@ -7,6 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture(autouse=True)
@@ -37,6 +39,104 @@ async def test_health_endpoint() -> None:
 
     result = await health()
     assert result == {"status": "ok", "version": app.version}
+
+
+async def test_lifespan_continues_when_bulk_import_reconciliation_fails(
+    caplog,
+    monkeypatch,
+) -> None:
+    from app import main
+    from app.database import settings
+
+    session = AsyncMock()
+    context = MagicMock()
+    context.__aenter__ = AsyncMock(return_value=session)
+    context.__aexit__ = AsyncMock(return_value=False)
+    session_factory = MagicMock(return_value=context)
+
+    monkeypatch.setattr(settings, "task_execution_mode", "local")
+    monkeypatch.setattr(main, "setup_logging", MagicMock())
+    monkeypatch.setattr(main, "_check_oidc_connectivity", AsyncMock())
+    monkeypatch.setattr(main, "get_async_session", MagicMock(return_value=session_factory))
+    monkeypatch.setattr(main, "reconcile_stale_tasks", AsyncMock())
+    monkeypatch.setattr(main, "enforce_files_import_archive_retention", AsyncMock())
+    monkeypatch.setattr(main, "reconcile_stale_source_images", AsyncMock())
+    monkeypatch.setattr(
+        main,
+        "reconcile_stale_bulk_import_jobs",
+        AsyncMock(side_effect=RuntimeError("database unavailable")),
+    )
+
+    async with main.lifespan(main.app):
+        pass
+
+    assert "Stale bulk-import reconciliation failed" in caplog.text
+
+
+async def test_queue_health_returns_minimal_status(monkeypatch) -> None:
+    from app.main import queue_health_endpoint
+    from app.database import settings
+
+    monkeypatch.setattr(
+        "app.main.queue_health",
+        AsyncMock(
+            return_value={
+                "queue_up": True,
+                "depth": 4,
+                "oldest_pending_age_seconds": 3.0,
+                "worker_heartbeat_age_seconds": 1.0,
+                "worker_up": True,
+                "degraded": False,
+                "mode": "required",
+            },
+        ),
+    )
+    monkeypatch.setattr(settings, "task_execution_mode", "required")
+
+    assert await queue_health_endpoint() == {"status": "ok"}
+
+
+async def test_queue_health_returns_minimal_503_when_required_mode_is_degraded(
+    monkeypatch,
+) -> None:
+    from fastapi import HTTPException
+
+    from app.main import queue_health_endpoint
+    from app.database import settings
+
+    monkeypatch.setattr(
+        "app.main.queue_health",
+        AsyncMock(return_value={"degraded": True}),
+    )
+    monkeypatch.setattr(settings, "task_execution_mode", "required")
+
+    with pytest.raises(HTTPException) as exc_info:
+        await queue_health_endpoint()
+
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.detail == {"status": "degraded"}
+
+
+def test_task_queue_unavailable_handler_asgi_contract() -> None:
+    from app.main import task_queue_unavailable_handler
+    from app.worker import TaskQueueUnavailableError
+
+    test_app = FastAPI()
+    test_app.add_exception_handler(
+        TaskQueueUnavailableError,
+        task_queue_unavailable_handler,
+    )
+
+    @test_app.get("/queue")
+    async def raise_queue_unavailable():
+        raise TaskQueueUnavailableError("submission_failed")
+
+    with TestClient(test_app) as client:
+        response = client.get("/queue")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Task queue unavailable"}
+    assert response.headers["Retry-After"] == "30"
 
 
 # ── _check_oidc_connectivity tests ──────────────────────

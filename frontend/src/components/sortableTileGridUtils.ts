@@ -3,6 +3,79 @@ import type { CollisionDetector } from '@dnd-kit/abstract'
 
 import type { Category, ImageItem } from '../types'
 
+// ── Content-addressable memoization for tile lists ────────────
+//
+// `useBrowseData` now normalizes API responses into a stable identity map,
+// so unchanged categories and images keep the same object reference. These
+// caches key the computed tile lists by those object identities, not by the
+// transient array references that React creates for derived arrays. This keeps
+// `TileItem` object references stable across renders and lets `GridTile`'s
+// `React.memo` actually skip re-renders.
+
+const objectIdMap = new WeakMap<object, number>()
+let nextObjectId = 1
+
+function getObjectId(obj: object): number {
+  let id = objectIdMap.get(obj)
+  if (id === undefined) {
+    id = nextObjectId++
+    objectIdMap.set(obj, id)
+  }
+  return id
+}
+
+class LRUCache<K, V> {
+  private cache: Map<K, V>
+  private max: number
+
+  constructor(max: number) {
+    this.cache = new Map()
+    this.max = max
+  }
+
+  get(key: K): V | undefined {
+    if (!this.cache.has(key)) return undefined
+    const value = this.cache.get(key)!
+    this.cache.delete(key)
+    this.cache.set(key, value)
+    return value
+  }
+
+  set(key: K, value: V): V {
+    if (this.cache.has(key)) {
+      this.cache.delete(key)
+    } else if (this.cache.size >= this.max) {
+      const first = this.cache.keys().next().value
+      if (first !== undefined) this.cache.delete(first)
+    }
+    this.cache.set(key, value)
+    return value
+  }
+}
+
+const orderTileItemsCache = new LRUCache<string, TileItem[]>(16)
+
+function orderTileItemsContentKey(
+  items: TileItem[],
+  order: Array<{ type: 'category' | 'image'; id: number }>,
+): string {
+  let key = ''
+  for (const item of items) key += `${getObjectId(item)},`
+  key += '|'
+  for (const ref of order) key += `${ref.type}:${ref.id},`
+  return key
+}
+
+const buildTileItemsCache = new LRUCache<string, TileItem[]>(16)
+
+function buildTileItemsContentKey(categories: Category[], images: ImageItem[]): string {
+  let key = ''
+  for (const c of categories) key += `${getObjectId(c)},`
+  key += '|'
+  for (const i of images) key += `${getObjectId(i)},`
+  return key
+}
+
 // ── Tile item union type ────────────────────────────────────
 
 export type TileItem =
@@ -29,6 +102,10 @@ export function orderTileItems(
   items: TileItem[],
   order: Array<{ type: 'category' | 'image'; id: number }>,
 ): TileItem[] {
+  const key = orderTileItemsContentKey(items, order)
+  const cached = orderTileItemsCache.get(key)
+  if (cached) return cached
+
   const position = new Map(order.map((ref, i) => [`${ref.type}-${ref.id}`, i] as const))
   const known: Array<{ item: TileItem; pos: number }> = []
   const unknown: TileItem[] = []
@@ -38,7 +115,7 @@ export function orderTileItems(
     else known.push({ item, pos })
   }
   known.sort((a, b) => a.pos - b.pos)
-  return [...known.map((k) => k.item), ...unknown]
+  return orderTileItemsCache.set(key, [...known.map((k) => k.item), ...unknown])
 }
 
 // ── Directional "far-half" collision rule (move-wins guard) ──
@@ -86,16 +163,32 @@ export const farHalfReorderCollision: CollisionDetector = ({ dragOperation, drop
   const pointer = dragOperation.position.current
   if (!pointer || !droppable.shape) return null
   if (!droppable.shape.containsPoint(pointer)) return null
+
   const { center } = droppable.shape
-  if (!isPastTileCenterAlongDrag(pointer, center, dragOperation.position.delta)) return null
   const distance = Math.hypot(center.x - pointer.x, center.y - pointer.y)
+
+  // The source tile is the one being dragged. After `OptimisticSortingPlugin`
+  // reflows it to a new position the pointer can sit on its near half, which
+  // would make the far-half rule reject it and clear `operation.target`. Always
+  // accept the source itself so a drag that ends over the reflowed tile still
+  // commits the previewed order.
+  if (String(dragOperation.source?.id) === String(droppable.id)) {
+    return {
+      id: droppable.id,
+      value: 1 / (distance || 1),
+      // Both detectors are pointer-inside-tile checks, so both report
+      // PointerIntersection — keeps them consistent if a future dnd-kit
+      // version starts filtering collisions by type. Resolution today sorts
+      // by priority then value and ignores type.
+      type: CollisionType.PointerIntersection,
+      priority: CollisionPriority.Normal,
+    }
+  }
+
+  if (!isPastTileCenterAlongDrag(pointer, center, dragOperation.position.delta)) return null
   return {
     id: droppable.id,
     value: 1 / (distance || 1),
-    // Both detectors are pointer-inside-tile checks, so both report
-    // PointerIntersection — keeps them consistent if a future dnd-kit
-    // version starts filtering collisions by type. Resolution today sorts
-    // by priority then value and ignores type.
     type: CollisionType.PointerIntersection,
     priority: CollisionPriority.Normal,
   }
@@ -108,12 +201,23 @@ export const farHalfReorderCollision: CollisionDetector = ({ dragOperation, drop
  * of `farHalfReorderCollision`, so a category tile splits cleanly into "Move
  * here" on the entry side and reorder on the far side — they never overlap.
  * Kept at High priority so move wins over any reorder collision on the near
- * half.
+ * half. The source category's own move zone is explicitly excluded so the
+ * reorder detector owns the dragged tile.
  */
 export const nearHalfMoveCollision: CollisionDetector = ({ dragOperation, droppable }) => {
   const pointer = dragOperation.position.current
   if (!pointer || !droppable.shape) return null
   if (!droppable.shape.containsPoint(pointer)) return null
+
+  // Never claim the source category's own move zone. A category source is both a
+  // sortable (reorder) and wrapped by a move-zone droppable, and `accept` alone
+  // is not always enough to keep the two detectors from overlapping on release.
+  const sourceId = String(dragOperation.source?.id ?? '')
+  if (sourceId.startsWith('cat-')) {
+    const sourceCatId = Number(sourceId.slice(4))
+    if (droppable.id === `${DROP_PREFIX}${sourceCatId}`) return null
+  }
+
   const { center } = droppable.shape
   if (isPastTileCenterAlongDrag(pointer, center, dragOperation.position.delta)) return null
   const distance = Math.hypot(center.x - pointer.x, center.y - pointer.y)
@@ -152,6 +256,10 @@ export function findCategory(cats: Category[], id: number): Category | undefined
 
 /** Build an interleaved, sorted list of categories and images. */
 export function buildTileItems(categories: Category[], images: ImageItem[]): TileItem[] {
+  const key = buildTileItemsContentKey(categories, images)
+  const cached = buildTileItemsCache.get(key)
+  if (cached) return cached
+
   const items: TileItem[] = [
     ...categories.map(
       (c): TileItem => ({
@@ -176,5 +284,26 @@ export function buildTileItems(categories: Category[], images: ImageItem[]): Til
     return a.data.id - b.data.id
   })
 
-  return items
+  return buildTileItemsCache.set(key, items)
+}
+
+/** Build a map from every category id to the set of ids it contains
+ *  (including itself and all descendants). Walks the tree once and
+ *  reuses subtree results so each node is processed exactly once. */
+export function buildDescendantMap(categories: Category[]): Map<number, Set<number>> {
+  const map = new Map<number, Set<number>>()
+  const walk = (cat: Category): Set<number> => {
+    let ids = map.get(cat.id)
+    if (ids) return ids
+    ids = new Set<number>()
+    ids.add(cat.id)
+    for (const child of cat.children) {
+      const childIds = walk(child)
+      for (const id of childIds) ids.add(id)
+    }
+    map.set(cat.id, ids)
+    return ids
+  }
+  for (const cat of categories) walk(cat)
+  return map
 }
