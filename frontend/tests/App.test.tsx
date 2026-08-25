@@ -437,7 +437,15 @@ vi.mock('../src/components/ManageCategoriesDialog', () => ({
 vi.mock('../src/components/AdminPage', () => ({ default: () => null }))
 vi.mock('../src/components/PeoplePage', () => ({ default: () => null }))
 vi.mock('../src/components/ManagePage', () => ({ default: () => null }))
-vi.mock('../src/components/LoginScreen', () => ({ default: () => null }))
+// Capture the props App passes to LoginScreen so we can assert the
+// announcement wiring without rendering the real screen.
+const loginScreenSpy = vi.hoisted(() => vi.fn())
+vi.mock('../src/components/LoginScreen', () => ({
+  default: (props: Record<string, unknown>) => {
+    loginScreenSpy(props)
+    return null
+  },
+}))
 vi.mock('../src/components/EditImageModal', () => ({ default: () => null }))
 vi.mock('../src/components/ProgramManagementModal', () => ({
   default: ({
@@ -902,6 +910,24 @@ describe('App breadcrumbs', () => {
 
     await screen.findByRole('progressbar')
     expect(announcementModalMock.loadAnnouncement).not.toHaveBeenCalled()
+  })
+
+  it('passes the announcement and dismiss handler to the login screen when unauthenticated', async () => {
+    const original = announcementModalMock.announcement
+    announcementModalMock.announcement = 'Scheduled maintenance'
+    authState = { ...authState, currentUser: null, loading: false }
+    try {
+      render(<App />)
+      await waitFor(() => expect(loginScreenSpy).toHaveBeenCalled())
+      const props = loginScreenSpy.mock.calls.at(-1)?.[0] as {
+        announcement?: string
+        onDismissAnnouncement?: unknown
+      }
+      expect(props.announcement).toBe('Scheduled maintenance')
+      expect(typeof props.onDismissAnnouncement).toBe('function')
+    } finally {
+      announcementModalMock.announcement = original
+    }
   })
 
   it('fetches component versions for instructors (canEditContent)', async () => {
