@@ -58,7 +58,10 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
   // All login-page tweaks in this block are phone-only (small form factor);
   // the desktop layout is intentionally left unchanged.
   const theme = useTheme()
-  const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
+  // `noSsr: true` evaluates the query synchronously in a layout effect before
+  // first paint, so phones don't briefly flash the desktop layout on initial
+  // render. Safe here because this is a client-only (Vite SPA) app.
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'), { noSsr: true })
 
   // Mobile-only field treatment: rounded, surface-filled inputs with the
   // thinnest possible outline (1px in every state — default, hover, and focus,
@@ -325,7 +328,14 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
                       htmlFor="login-username"
                       sx={mobileFieldLabelSx}
                     >
-                      Username *
+                      {/* Asterisk is decorative: aria-hidden so the accessible
+                          name stays "Username"; the required state is conveyed
+                          by the input's `required` attribute (MUI desktop
+                          parity). */}
+                      Username{' '}
+                      <Box component="span" aria-hidden="true">
+                        *
+                      </Box>
                     </Typography>
                   )}
                   <TextField
@@ -352,7 +362,11 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
                       htmlFor="login-password"
                       sx={mobileFieldLabelSx}
                     >
-                      Password *
+                      {/* See the username label above re: aria-hidden asterisk. */}
+                      Password{' '}
+                      <Box component="span" aria-hidden="true">
+                        *
+                      </Box>
                     </Typography>
                   )}
                   <TextField

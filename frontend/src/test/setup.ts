@@ -12,7 +12,9 @@ import { beforeAll } from 'vitest'
 const originalEmitWarning = process.emitWarning.bind(process)
 process.emitWarning = ((warning: string | Error, ...rest: unknown[]) => {
   const message = typeof warning === 'string' ? warning : warning.message
-  if (message.includes('--localstorage-file')) return
+  // Match narrowly on BOTH tokens of the known Node message so unrelated
+  // future warnings that merely mention the flag aren't silently swallowed.
+  if (message.includes('localStorage') && message.includes('--localstorage-file')) return
   ;(originalEmitWarning as (...args: unknown[]) => void)(warning, ...rest)
 }) as typeof process.emitWarning
 

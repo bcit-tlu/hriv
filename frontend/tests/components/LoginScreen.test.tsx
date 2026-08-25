@@ -347,12 +347,27 @@ describe('LoginScreen', () => {
 
     it('renders field labels as standalone <label>s above the inputs on mobile', async () => {
       await renderMobileOidcDisabled()
-      const usernameLabel = screen.getByText('Username *')
+      // The required asterisk is an aria-hidden span, so each label's own text
+      // is just "Username"/"Password" (getByText matches direct text only).
+      const usernameLabel = screen.getByText('Username')
       expect(usernameLabel.tagName).toBe('LABEL')
       expect(usernameLabel).toHaveAttribute('for', 'login-username')
-      const passwordLabel = screen.getByText('Password *')
+      const passwordLabel = screen.getByText('Password')
       expect(passwordLabel.tagName).toBe('LABEL')
       expect(passwordLabel).toHaveAttribute('for', 'login-password')
+      // Required state is conveyed by the input attribute, not the label text,
+      // so screen readers announce "Username"/"Password", not "... star".
+      expect(getUsernameField()).toBeRequired()
+      expect(getPasswordField()).toBeRequired()
+    })
+
+    it('renders standard (underline) credential fields on desktop', async () => {
+      await renderOidcDisabled() // desktop (default breakpoint)
+      // Desktop keeps MUI's standard variant; the outlined treatment is
+      // mobile-only. Asserting the variant switch guards the layout branch.
+      expect(getUsernameField().closest('.MuiInput-root')).not.toBeNull()
+      expect(getUsernameField().closest('.MuiOutlinedInput-root')).toBeNull()
+      expect(getPasswordField().closest('.MuiInput-root')).not.toBeNull()
     })
   })
 })
