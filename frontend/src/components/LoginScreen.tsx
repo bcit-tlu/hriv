@@ -232,6 +232,24 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
                 mb (spacing) is unaffected by the transform. */}
             {isMobile && <Divider sx={{ mb: 3, transform: 'scaleY(0.5)' }} />}
 
+            {/* Section heading introducing the credential form below. */}
+            <Typography
+              component="h2"
+              sx={{
+                mb: 3,
+                textAlign: 'center',
+                fontWeight: 700,
+                fontSize: '1.25rem',
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                // Match the brand title, which uses the default primary text
+                // color so it tracks the active theme (light/dark).
+                color: 'text.primary',
+              }}
+            >
+              Log In
+            </Typography>
+
             {oidcErrorMessage && (
               <Alert severity="error" onClose={clearOidcError} sx={{ mb: 2 }}>
                 {oidcErrorMessage}
