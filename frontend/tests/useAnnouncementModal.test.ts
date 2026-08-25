@@ -277,6 +277,50 @@ describe('useAnnouncementModal', () => {
     })
   })
 
+  describe('cross-auth dismissal migration', () => {
+    const ANON_KEY = 'dismissed_announcement'
+
+    it('carries a sign-in-page (anonymous) dismissal over to the per-user key after login', async () => {
+      mockFetchAnnouncement.mockResolvedValue(
+        makeAnnouncement({
+          message: 'Maintenance tonight',
+          enabled: true,
+          updated_at: '2026-06-01T00:00:00Z',
+        }),
+      )
+      // Dismissed on the sign-in page: only the anonymous key is set.
+      localStorage.setItem(ANON_KEY, '2026-06-01T00:00:00Z')
+
+      // Now signed in (userId known).
+      const { result } = renderHook(() => useAnnouncementModal(TEST_USER_ID))
+      await act(async () => {
+        await result.current.loadAnnouncement()
+      })
+
+      // Banner stays hidden, and the dismissal is now recorded per-user so it
+      // persists on subsequent authenticated loads.
+      expect(result.current.announcement).toBe('')
+      expect(localStorage.getItem(DISMISSED_KEY)).toBe('2026-06-01T00:00:00Z')
+    })
+
+    it('does not migrate a stale anonymous dismissal for an older announcement', async () => {
+      mockFetchAnnouncement.mockResolvedValue(
+        makeAnnouncement({ message: 'Newer', enabled: true, updated_at: '2026-06-02T00:00:00Z' }),
+      )
+      // Anonymous dismissal was for an OLDER version.
+      localStorage.setItem(ANON_KEY, '2026-06-01T00:00:00Z')
+
+      const { result } = renderHook(() => useAnnouncementModal(TEST_USER_ID))
+      await act(async () => {
+        await result.current.loadAnnouncement()
+      })
+
+      // The newer announcement shows and no stale per-user key is written.
+      expect(result.current.announcement).toBe('Newer')
+      expect(localStorage.getItem(DISMISSED_KEY)).toBeNull()
+    })
+  })
+
   describe('setters', () => {
     it('setAnnModalOpen controls modal visibility', () => {
       const { result } = renderHook(() => useAnnouncementModal())

@@ -19,6 +19,17 @@ export function useAnnouncementModal(userId?: number) {
     try {
       const ann = await fetchAnnouncement()
       annUpdatedAt.current = ann.updated_at
+      // A dismissal made while signed out is stored under the anonymous key.
+      // Once a user is identified, carry that dismissal over to their per-user
+      // key so a notice dismissed on the sign-in page doesn't pop back up the
+      // moment they sign in (keyed by updated_at, so a newer announcement still
+      // reappears as expected).
+      if (userId) {
+        const anonDismissed = localStorage.getItem(DISMISSED_PREFIX)
+        if (anonDismissed === ann.updated_at) {
+          localStorage.setItem(dismissedKey, anonDismissed)
+        }
+      }
       const dismissed = localStorage.getItem(dismissedKey)
       const visible = ann.enabled && dismissed !== ann.updated_at
       setAnnouncement(visible ? ann.message : '')
@@ -27,7 +38,7 @@ export function useAnnouncementModal(userId?: number) {
     } catch {
       // Silently ignore — announcement is non-critical
     }
-  }, [dismissedKey])
+  }, [dismissedKey, userId])
 
   const openAnnModal = useCallback(() => {
     setAnnDraftMessage(annMessage)

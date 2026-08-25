@@ -218,8 +218,11 @@ export default function LoginScreen({
                 variant="h5"
                 sx={{
                   fontWeight: 400,
-                  // Mobile: larger + bold, no-wrap so the title stays on one line.
-                  ...(isMobile && { fontSize: 21, fontWeight: 700, whiteSpace: 'nowrap' }),
+                  // Mobile: larger + bold, centered. Allowed to wrap so the title
+                  // never overflows horizontally on the narrowest phones (<320px,
+                  // where the one-line width exceeds the viewport) — it stays on
+                  // one line wherever it fits and wraps only when it must.
+                  ...(isMobile && { fontSize: 21, fontWeight: 700, textAlign: 'center' }),
                 }}
               >
                 {isMobile
