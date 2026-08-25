@@ -35,6 +35,11 @@ Other fields: `progress` (0–100), `log` (append-only text), `result_filename` 
   **409** if another task of the **same type** is already in an active status
   (`uploading`, `pending`, `running`, `cancelling`).
 
+When `TASK_EXECUTION_MODE=required`, a Redis outage or enqueue submission
+failure marks the newly created task `failed` before the API returns HTTP 503;
+the task is never run in the API process. In `local` mode, the existing
+BackgroundTasks fallback remains available.
+
 ## Cancellation semantics
 
 The cancel endpoint behaves differently depending on the current status:

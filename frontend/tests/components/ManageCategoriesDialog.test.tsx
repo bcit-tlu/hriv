@@ -100,6 +100,20 @@ describe('ManageCategoriesDialog — basics', () => {
     expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument()
   })
 
+  it('uses the medium full-width dialog so long category labels have more room before wrapping', () => {
+    renderDialog({
+      categories: [
+        makeCategory({
+          label: 'A category title long enough to benefit from the wider management dialog',
+        }),
+      ],
+    })
+
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toHaveClass('MuiDialog-paperWidthMd')
+    expect(dialog).toHaveClass('MuiDialog-paperFullWidth')
+  })
+
   it('calls onClose when Close button is clicked', async () => {
     const user = userEvent.setup()
     const { onClose } = renderDialog()
@@ -127,7 +141,7 @@ describe('ManageCategoriesDialog — basics', () => {
     ]
     renderDialog({ categories })
     expect(screen.getByText('Histology')).toBeInTheDocument()
-    expect(screen.getByText('(2)')).toBeInTheDocument()
+    expect(screen.getByText('(2 images)')).toBeInTheDocument()
   })
 
   it('renders child prefix for nested categories', () => {
@@ -356,7 +370,9 @@ describe('ManageCategoriesDialog — delete category', () => {
       .filter((btn) => btn.querySelector('svg[data-testid="DeleteIcon"]'))
     await user.click(deleteButtons[0])
 
-    expect(screen.getByText(/sub-categor/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/sub-categories that will also be permanently deleted/),
+    ).toBeInTheDocument()
   })
 })
 

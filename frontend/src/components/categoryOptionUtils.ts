@@ -31,12 +31,35 @@ export function getAncestorHiddenIds(options: FlatCategoryOption[]): Set<number>
   return ids
 }
 
-function countDescendants(node: Category): number {
+export function countDescendantSubcategories(node: Category): number {
   let count = node.children.length
   for (const child of node.children) {
-    count += countDescendants(child)
+    count += countDescendantSubcategories(child)
   }
   return count
+}
+
+function countDescendantImages(node: Category): number {
+  let count = node.images.length
+  for (const child of node.children) {
+    count += countDescendantImages(child)
+  }
+  return count
+}
+
+export function formatCategoryItemCounts(childCount: number, imageCount: number): string {
+  const parts: string[] = []
+  if (childCount > 0) {
+    parts.push(`${childCount} sub-${childCount === 1 ? 'category' : 'categories'}`)
+  }
+  if (imageCount > 0) {
+    parts.push(`${imageCount} ${imageCount === 1 ? 'image' : 'images'}`)
+  }
+  return parts.length > 0 ? parts.join(' \u00b7 ') : 'Empty'
+}
+
+export function formatCategoryItemCountsForCategory(node: Category): string {
+  return formatCategoryItemCounts(countDescendantSubcategories(node), countDescendantImages(node))
 }
 
 export function flattenCategoryOptions(
@@ -58,8 +81,8 @@ export function flattenCategoryOptions(
       depth,
       status: node.status ?? 'active',
       parentId,
-      imageCount: node.images.length,
-      childCount: countDescendants(node),
+      imageCount: countDescendantImages(node),
+      childCount: countDescendantSubcategories(node),
       programIds: node.programIds,
       groupIds: node.groupIds,
       inheritedProgramRestriction: !hasOwnProgramRestriction && ancestorProgramRestricted,

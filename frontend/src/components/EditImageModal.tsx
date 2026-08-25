@@ -634,7 +634,7 @@ export default function EditImageModal({
   const formKey = image ? `edit-${image.id}` : 'closed'
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
       {open && (
         <EditImageForm
           key={formKey}

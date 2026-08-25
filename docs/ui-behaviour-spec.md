@@ -65,6 +65,9 @@ Two capability flags in `AuthContext.tsx` drive all gating:
   breadcrumb, **Then** the `path` truncates to that ancestor and the grid shows
   its children. **When** they click a child tile, **Then** its id is appended to
   `path`.
+- The rightmost (current) breadcrumb segment shows the category's total
+  descendant sub-category and image count in the same `<N sub-categories · M
+images> / Empty` format used on category tiles.
 
 ### Category visibility (dual gate)
 
@@ -132,7 +135,12 @@ Two capability flags in `AuthContext.tsx` drive all gating:
   the current browser user. Collapsing a branch in one surface keeps it
   collapsed in the others until it is re-expanded.
 - **Manage Categories dialog:** the list also renders each category label as a
-  link that navigates the app to that category in Browse.
+  link that navigates the app to that category in Browse, and shows the category's
+  total descendant sub-category and image count next to the label in the same
+  `<N sub-categories · M images> / Empty` format used on category tiles. The
+  dialog uses the medium desktop width so longer category titles use the
+  available horizontal space before wrapping, while the category rows retain
+  enough right-side space for their action icons.
 - **Delete:** confirmation required; deleting a category cascades to children and
   detaches images (`category_id → NULL`). See [domain-model.md](domain-model.md).
 
@@ -243,11 +251,14 @@ committed on Save) in the edit modals.
   - `ManageCategoriesDialog`: disabled `VisibilityOff` icon with "Hidden by
     parent category" tooltip, dimmed text, dimmed delete icon.
 
-### Category picker & direct image counts (`CategoryPickerSelect.test.tsx`)
+### Category picker & item counts (`CategoryPickerSelect.test.tsx`)
 
 - `CategoryPickerSelect` renders the category tree as an indented,
-  collapsible list and shows each category's **direct** image count.
-  Restricted categories render a lock icon —
+  collapsible list and shows each category's total descendant sub-category and
+  image count in the same `<N sub-categories · M images> / Empty` format used on
+  category tiles. It is used by the Add Images and Edit Image details dialogs,
+  which have the same medium desktop width as the Manage Categories dialog so
+  the longer count suffixes still fit. Restricted categories render a lock icon —
   per accessibility convention (see [`REVIEW.md`](../REVIEW.md)), the lock is a
   non-interactive `<span role="img" aria-label="…">` **without** `tabIndex`
   (query via `getByLabelText`, not `getByTitle`).
@@ -287,7 +298,9 @@ committed on Save) in the edit modals.
 - The `Category` filter is a collapsible checkbox tree. Checking a parent
   matches the whole subtree, the tree shares its expand/collapse state with
   `ManageCategoriesDialog`, and selected categories persist per user between
-  logins using localStorage.
+  logins using localStorage. Each node shows the category's total descendant
+  sub-category and image count next to its label in the same `<N sub-categories ·
+M images> / Empty` format used on category tiles.
 - Filter selections persist per user between logins using localStorage, in the
   same style as table column visibility and category-tree collapse preferences.
 - **Pagination controls render at both the top and bottom of the table** so
@@ -349,6 +362,20 @@ committed on Save) in the edit modals.
 - The `setFileDragActive(false)` reset is deferred one frame via
   `requestAnimationFrame` so React's synthetic `onDrop` fires on `FileDropZone`
   before it unmounts (otherwise dropped files are silently lost).
+
+### Reorder notifications (`ReorderSnackbar`, `ReorderStatusIndicator`)
+
+- Reorder save-state feedback (`Saving order…`, `Order saved`,
+  `Order changed elsewhere`, `Could not save order — Retry`) appears as a
+  bottom-right `Snackbar` in `App.tsx`, not inline in the page header or dialog
+  title.
+- The reorder snackbar stacks above the processing/upload snackbars (e.g.
+  image-processing jobs) using the same 88 px vertical spacing, so a reorder
+  started while an image is processing is rendered elegantly above the existing
+  progress snackbar rather than overlapping it.
+- A single snackbar shows the most urgent active reorder scope across both
+  Browse and Manage Categories (`useMostSevereScope`), preserving the same
+  conflict-recovery actions (Refresh / Keep my order / Retry).
 
 ---
 

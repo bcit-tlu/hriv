@@ -148,6 +148,29 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/images/1
 - Category tiles + uncategorized image tiles.
 - Click a tile to drill down; click an image tile to open the OpenSeadragon viewer.
 
+### Navigation edge cases
+
+When driving Browse programmatically (e.g. Playwright or the browser console),
+category tiles render a `CardActionArea` with `data-testid="category-tile-action-area"`.
+The category label is the **text content** of the `h6` inside that action area, not an
+`aria-label` attribute. To click a tile by label, select the action area by
+`data-testid` (and filter by `h6` text), or find the `h6` by `textContent` and click its
+closest `button`/`CardActionArea` ancestor.
+
+```javascript
+// Option 1: select action areas by data-testid and filter by label text
+const tile = Array.from(
+  document.querySelectorAll('[data-testid="category-tile-action-area"]'),
+).find((el) => el.querySelector('h6')?.textContent === 'Architecture')
+tile?.click()
+
+// Option 2: find the h6 by textContent and click its closest button
+const label = Array.from(document.querySelectorAll('h6')).find(
+  (el) => el.textContent === 'Architecture',
+)
+label?.closest('button')?.click()
+```
+
 ### Images Tab
 
 - Table columns: ID, Name, Category, Copyright, Note, Program, Status, Modified, Actions.
@@ -164,14 +187,20 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/images/1
 - When testing auto-select, cancel without saving after verifying the dropdown value
   to avoid polluting seed data.
 
-#### Category Dropdown Image Counts
+#### Category Dropdown Counts
 
-The category dropdown (`CategoryPickerSelect`) shows direct image counts next to
-each category name — e.g. `Architecture (0)`, `Italian (1)`. These are **direct**
-counts (images directly in that category), not subtree sums. When testing:
+The category dropdown (`CategoryPickerSelect`) shows the same **total descendant**
+sub-category and image count suffix used by `ManageCategoriesDialog` — e.g.
+`Architecture (2 sub-categories · 3 images)`, `Italian (1 sub-category · 2 images)`,
+`Gothic (1 image)`. When testing:
 
-- Verify Architecture shows `(0)` not `(3)` — it has no direct images
-- Verify leaf categories (American, Italian, Gothic, Panoramas) each show `(1)`
+- Verify Architecture shows `(2 sub-categories · 3 images)` because it has two
+  descendant sub-categories and three descendant images
+- Verify Italian shows `(1 sub-category · 2 images)` because it has one
+  descendant sub-category and two descendant images
+- Verify leaf categories with a single direct image show `(1 image)` (American,
+  Gothic, Panoramas)
+- Verify an empty leaf category shows `Empty`
 
 #### Program Chip Toggles
 
@@ -511,6 +540,151 @@ All drag interactions are gated behind `canEditContent` — students see no drag
 > reproduce the acceleration/jitter where feel bugs live. Any change to collision detection, drop
 > zones, collision priority, or activation constraints must be **feel-tested by a human** before
 > merge; a green recording is only a mechanics smoke-test, not feel validation.
+
+### Testing Browse Tile Reorder Persistence (PR #1089 / `tile-order` cache fix)
+
+Use this flow to verify drag-and-drop reorder persists and does not silently 409
+after `releaseCleanScopes` clears a stale cached `GET /api/tile-order`.
+
+#### Auth shortcut
+
+The MUI `LoginScreen` `TextField` controlled state may not enable the **LOGIN**
+button when credentials are typed via automation. Fastest path is to inject a
+current token directly and reload:
+
+```javascript
+localStorage.setItem('hriv_token', '<instructor_token>')
+localStorage.setItem(
+  'hriv_user',
+  JSON.stringify({ id: 2, email: 'instructor@example.ca', role: 'instructor' }),
+)
+location.href = '/'
+```
+
+#### Root, Architecture, and Italian seed orders
+
+- **Root:** Architecture (cat 1), Panoramas (cat 2)
+- **Architecture scope:** Italian (cat 3), American (cat 4)
+- **Italian scope:** Gothic (cat 5), Duomo di Milano (image 1)
+
+#### Dragging mechanics
+
+Browse reorders use `@dnd-kit/react` v2 pointer sensors and `farHalfReorderCollision`.
+When using computer-use:
+
+- Use the **gap between tiles** as the starting point, not the middle of the tile,
+  to avoid a click being interpreted as a tile click / edit.
+- Drag **well past the target tile's center** in the direction of travel.
+- A small pointer wiggle is normal; the collision detector needs a clear delta
+  before it commits a reorder.
+
+#### Verifying the server state
+
+UI status text is transient. To prove persistence and detect a stale revision
+symptom, verify directly with the API after each drag:
+
+```bash
+TOKEN=<jwt>
+# root
+curl -sS -D - -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/tile-order
+# scope
+curl -sS -H "Authorization: Bearer $TOKEN" 'http://localhost:8000/api/tile-order?parent_category_id=1'
+```
+
+Expected:
+
+- `Cache-Control: no-store, no-cache, must-revalidate`
+- `Pragma: no-cache`
+- `revision` increments after each successful `PUT /api/tile-order`
+- `PUT /api/tile-order` returns 200 with the new order; no `409 Conflict`
+
+#### Network capture without DevTools
+
+Patching `window.fetch` in the browser console captures `tile-order` calls, but
+the patch is lost on full page reload. If you need a continuous trace across a
+reload, use CDP `Network` or log at the Vite proxy / server side.
+
+Example interceptor:
+
+```javascript
+window.__tileOrderLogs = window.__tileOrderLogs || []
+const origFetch = window.fetch
+window.fetch = async (...args) => {
+  const [req, init] = args
+  const url = typeof req === 'string' ? req : req.url
+  if (url.includes('tile-order')) {
+    const entry = { method: init?.method || 'GET', url, status: null, headers: {}, body: null }
+    window.__tileOrderLogs.push(entry)
+    try {
+      const res = await origFetch.apply(window, args)
+      entry.status = res.status
+      res.headers.forEach((v, k) => (entry.headers[k] = v))
+      const bodyText = await res.clone().text()
+      try {
+        entry.body = JSON.parse(bodyText)
+      } catch {
+        entry.body = bodyText
+      }
+      return res
+    } catch (e) {
+      entry.status = 'NETWORK_ERROR'
+      throw e
+    }
+  }
+  return origFetch.apply(window, args)
+}
+```
+
+Re-inject this **after every reload**.
+
+#### Hidden categories/images
+
+A hidden category/image is still visible to instructors/administrators with a
+`VisibilityOff` icon and `filter: grayscale(100%)` style. Reordering a scope that
+contains hidden items works the same way; visibility status is preserved via
+`PATCH /api/categories/:id` (or the image endpoint).
+
+#### Navigation edge cases
+
+- Clicking the category **title** may open the "Edit name" modal or be intercepted
+  by the drag sensor. To navigate programmatically:
+
+  ```javascript
+  const el = Array.from(document.querySelectorAll('h6')).find(
+    (h) => h.textContent.trim() === 'Architecture',
+  )
+  el?.closest('[data-testid="category-tile-action-area"]')?.click()
+  ```
+
+- To return to root, click the **Home** breadcrumb or dispatch a navigation to `/`.
+
+#### Cleanup / restoring seed order
+
+After testing, reset each scope to the seed order using the current `revision`:
+
+```bash
+TOKEN=<jwt>
+# root rev=<current_rev>
+curl -sS -X PUT http://localhost:8000/api/tile-order \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"scope":{"parent_category_id":null},"expected_revision":<rev>,"items":[{"type":"category","id":1},{"type":"category","id":2}]}'
+# architecture
+curl -sS -X PUT 'http://localhost:8000/api/tile-order?parent_category_id=1' \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"scope":{"parent_category_id":1},"expected_revision":<rev>,"items":[{"type":"category","id":3},{"type":"category","id":4}]}'
+# italian
+curl -sS -X PUT 'http://localhost:8000/api/tile-order?parent_category_id=3' \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"scope":{"parent_category_id":3},"expected_revision":<rev>,"items":[{"type":"category","id":5},{"type":"image","id":1}]}'
+```
+
+If you hid any categories, unhide them:
+
+```bash
+curl -sS -X PATCH http://localhost:8000/api/categories/1 \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"status":"active"}'
+```
 
 ### Custom MIME Types
 

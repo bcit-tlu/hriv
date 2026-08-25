@@ -162,14 +162,27 @@ postgres:
     storageClass: ''
     size: 5Gi
 
+# ── Task execution mode ───────────────────────────────────────
+# Rendered as TASK_EXECUTION_MODE on both the API and worker pods.
+#   local    — prefer Redis/arq when available, but fall back to
+#              in-process BackgroundTasks when the queue is down
+#              (dev/test default; matches the historical behavior).
+#   required — queue-backed work MUST run in dedicated worker pods;
+#              enqueue failures return HTTP 503 instead of running
+#              expensive jobs inside the API process. Rendering fails
+#              unless redis.enabled=true and redis.worker.enabled=true.
+tasks:
+  executionMode: 'local'
+
 # ── Redis / arq background worker ────────────────────────────
 # When enabled, the chart injects REDIS_URL into the backend pod and
 # optionally deploys a dedicated arq worker Deployment that processes
 # image-generation and admin tasks off the main API process.
 #
-# Without Redis the backend gracefully degrades: image processing
-# runs in-process via FastAPI BackgroundTasks and login rate limiting
-# is disabled.  Enabling Redis adds:
+# Without Redis the backend gracefully degrades (in local execution
+# mode only): image processing runs in-process via FastAPI
+# BackgroundTasks and login rate limiting is disabled.  Enabling
+# Redis adds:
 #   • Job persistence — in-flight tasks survive pod restarts
 #   • Resource isolation — tile generation runs in a separate worker pod
 #   • Login rate limiting — brute-force protection via token bucket
@@ -185,6 +198,44 @@ redis:
   worker:
     enabled: false
     replicaCount: 1
+    # Maximum concurrent arq jobs per worker pod (WORKER_MAX_JOBS,
+    # minimum 2). A bulk-import coordinator occupies one slot for the
+    # whole batch while it waits on its child jobs, so keep this above
+    # the number of concurrent bulk imports you expect.
+    maxJobs: 4
+    # Cluster-wide worker-slot capacity (WORKER_TOTAL_SLOTS), used by
+    # bulk-import starvation detection. Leave empty to default to
+    # maxJobs at runtime — correct for a single worker replica. Set it
+    # explicitly to replicas × maxJobs when running (or autoscaling to)
+    # multiple worker replicas.
+    totalSlots: ''
+    # SQLAlchemy pool sizing for the worker process (DB_POOL_SIZE /
+    # DB_MAX_OVERFLOW). The backend defaults (10/20) are sized for the
+    # API; a worker running at most maxJobs jobs needs far fewer
+    # connections.
+    db:
+      poolSize: 5
+      maxOverflow: 5
+    # How long Kubernetes waits after SIGTERM before force-killing the
+    # worker pod. The Kubernetes default (30s) interrupts in-flight
+    # tile-generation and import/export jobs on every rollout; 300s
+    # gives short jobs a chance to drain.
+    terminationGracePeriodSeconds: 300
+    # ── Worker liveness probe ─────────────────────────────────
+    # Execs `arq --check`, which verifies the arq health key in Redis
+    # is fresh, so a wedged worker main loop is restarted instead of
+    # sitting idle while the queue grows. The health key is shared per
+    # queue, so with multiple replicas the probe only detects the case
+    # where every worker stopped heartbeating; the generous
+    # failureThreshold also tolerates brief Redis outages without
+    # restarting workers mid-job.
+    probes:
+      liveness:
+        enabled: true
+        initialDelaySeconds: 60
+        periodSeconds: 60
+        timeoutSeconds: 15
+        failureThreshold: 10
     resources:
       requests:
         memory: '512Mi'
@@ -192,21 +243,22 @@ redis:
         ephemeral-storage: '256Mi'
       limits:
         memory: '4Gi'
+        cpu: '2'
         ephemeral-storage: '1Gi'
     # ── Worker Horizontal Pod Autoscaler ──────────────────────
     # Scales worker replicas based on CPU/memory utilisation so that
     # concurrent image-processing jobs are distributed across pods.
-    # Each worker handles max_jobs=4 tasks, so 3 replicas = 12
-    # parallel processing slots.
+    # Each worker handles maxJobs (default 4) tasks, so 3 replicas =
+    # 12 parallel processing slots. Remember to set totalSlots when
+    # autoscaling above one replica.
     #
     # Prerequisites:
     #   - Kubernetes Metrics Server must be running
     #   - PVC must be ReadWriteMany when minReplicas > 1 (or use an
     #     RWX-capable StorageClass)
     #
-    # For queue-depth-based scaling (recommended for production),
-    # install KEDA and use a ScaledObject targeting the arq Redis
-    # queue length instead of this HPA.
+    # Queue depth is exported as hriv_task_queue_depth for
+    # observability and alerting; it is not used as a scaling signal.
     autoscaling:
       enabled: false
       minReplicas: 1

@@ -30,7 +30,9 @@ NOW = datetime.now(timezone.utc)
 
 
 def _user(role: str, id: int = 1) -> SimpleNamespace:
-    return SimpleNamespace(id=id, role=role, name=f"user{id}", email=f"u{id}@e.com")
+    return SimpleNamespace(
+        id=id, role=role, name=f"user{id}", email=f"u{id}@e.com", programs=[]
+    )
 
 
 def _group(
@@ -53,17 +55,31 @@ def _group(
     )
 
 
+def _ensure_defaults(obj: object) -> None:
+    """Set placeholder id/timestamps on ORM objects created in unit tests."""
+    if hasattr(obj, "id") and getattr(obj, "id") is None:
+        setattr(obj, "id", 1)
+    if hasattr(obj, "created_at") and getattr(obj, "created_at") is None:
+        setattr(obj, "created_at", NOW)
+    if hasattr(obj, "updated_at") and getattr(obj, "updated_at") is None:
+        setattr(obj, "updated_at", NOW)
+
+
 def _mock_db(
     group: SimpleNamespace | None = None,
     users: list | None = None,
     dup: object = None,
 ) -> AsyncMock:
+    async def _refresh(*args, **kwargs):
+        if args:
+            _ensure_defaults(args[0])
+
     db = AsyncMock()
     db.get = AsyncMock(return_value=group)
     db.add = MagicMock()
     db.flush = AsyncMock()
     db.commit = AsyncMock()
-    db.refresh = AsyncMock()
+    db.refresh = AsyncMock(side_effect=_refresh)
     db.delete = AsyncMock()
     result = MagicMock()
     result.scalar_one_or_none.return_value = dup
@@ -105,7 +121,7 @@ async def test_create_group_instructor_becomes_owner() -> None:
         GroupCreate(name="New", description="d"), creator, db=db
     )
     assert result.created_by_user_id == 7
-    assert creator in result.instructors
+    assert creator.id in result.instructor_ids
     db.commit.assert_awaited()
 
 
@@ -113,7 +129,7 @@ async def test_create_group_admin_not_added_as_instructor() -> None:
     db = _mock_db(dup=None)
     admin = _user("admin", id=1)
     result = await create_group(GroupCreate(name="New"), admin, db=db)
-    assert admin not in result.instructors
+    assert admin.id not in result.instructor_ids
 
 
 async def test_create_group_duplicate_name_409() -> None:
@@ -208,12 +224,32 @@ async def test_list_members_sorted() -> None:
     assert [u.name for u in result] == ["Amy", "Zoe"]
 
 
+async def test_list_members_hides_admin_program_for_instructor() -> None:
+    normal = _user("student", id=2)
+    normal.programs = [SimpleNamespace(name="Biology")]
+    admin_program = _user("student", id=3)
+    admin_program.programs = [SimpleNamespace(name="Admin")]
+    group = _group(1, members=[normal, admin_program])
+    db = _mock_db(group=group)
+    result = await list_members(1, _user("instructor"), db=db)
+    assert [u.id for u in result] == [2]
+
+
+async def test_list_members_admin_program_visible_to_admin() -> None:
+    admin_program = _user("student", id=3)
+    admin_program.programs = [SimpleNamespace(name="Admin")]
+    group = _group(1, members=[admin_program])
+    db = _mock_db(group=group)
+    result = await list_members(1, _user("admin"), db=db)
+    assert [u.id for u in result] == [3]
+
+
 async def test_add_member_success() -> None:
     group = _group(1, instructors=[_user("instructor", id=7)])
     student = _user("student", id=2)
     db = _mock_db(group=group, users=[student])
     result = await add_member(1, 2, _user("instructor", id=7), db=db)
-    assert student in result.members
+    assert student.id in result.member_ids
 
 
 async def test_add_member_role_mismatch_422() -> None:
@@ -246,7 +282,7 @@ async def test_remove_member_success() -> None:
     group = _group(1, instructors=[_user("instructor", id=7)], members=[student])
     db = _mock_db(group=group)
     result = await remove_member(1, 2, _user("instructor", id=7), db=db)
-    assert student not in result.members
+    assert student.id not in result.member_ids
 
 
 async def test_add_members_bulk_dedupes() -> None:
@@ -257,7 +293,7 @@ async def test_add_members_bulk_dedupes() -> None:
     result = await add_members_bulk(
         1, GroupMembersBulk(user_ids=[2, 3]), _user("instructor", id=7), db=db
     )
-    assert [m.id for m in result.members] == [2, 3]
+    assert result.member_ids == [2, 3]
 
 
 async def test_remove_members_bulk() -> None:
@@ -270,7 +306,7 @@ async def test_remove_members_bulk() -> None:
     result = await remove_members_bulk(
         1, GroupMembersBulk(user_ids=[2]), _user("instructor", id=7), db=db
     )
-    assert [m.id for m in result.members] == [3]
+    assert result.member_ids == [3]
 
 
 # ── instructors ───────────────────────────────────────────
@@ -281,7 +317,7 @@ async def test_add_instructor_success() -> None:
     new_instr = _user("instructor", id=8)
     db = _mock_db(group=group, users=[new_instr])
     result = await add_instructor(1, 8, _user("instructor", id=7), db=db)
-    assert new_instr in result.instructors
+    assert new_instr.id in result.instructor_ids
 
 
 async def test_add_instructor_role_mismatch_422() -> None:
@@ -304,6 +340,56 @@ async def test_list_instructors_sorted() -> None:
     assert [u.name for u in result] == ["Amy", "Zoe"]
 
 
+async def test_list_instructors_hides_admin_program_for_instructor() -> None:
+    normal = _user("instructor", id=7)
+    normal.programs = [SimpleNamespace(name="Nursing")]
+    admin_program = _user("instructor", id=8)
+    admin_program.programs = [SimpleNamespace(name="Admin")]
+    group = _group(1, instructors=[normal, admin_program])
+    db = _mock_db(group=group)
+    result = await list_instructors(1, _user("instructor"), db=db)
+    assert [u.id for u in result] == [7]
+
+
+async def test_list_instructors_admin_program_visible_to_admin() -> None:
+    admin_program = _user("instructor", id=8)
+    admin_program.programs = [SimpleNamespace(name="Admin")]
+    group = _group(1, instructors=[admin_program])
+    db = _mock_db(group=group)
+    result = await list_instructors(1, _user("admin"), db=db)
+    assert [u.id for u in result] == [8]
+
+
+async def test_get_group_hides_admin_program_ids_from_instructor() -> None:
+    normal_student = _user("student", id=2)
+    admin_student = _user("student", id=3)
+    admin_student.programs = [SimpleNamespace(name="Admin")]
+    normal_instructor = _user("instructor", id=7)
+    admin_instructor = _user("instructor", id=8)
+    admin_instructor.programs = [SimpleNamespace(name="Admin")]
+    group = _group(
+        1,
+        members=[normal_student, admin_student],
+        instructors=[normal_instructor, admin_instructor],
+    )
+    db = _mock_db(group=group)
+    result = await get_group(1, _user("instructor"), db=db)
+    assert result.member_ids == [2]
+    assert result.instructor_ids == [7]
+
+
+async def test_get_group_shows_all_ids_to_admin() -> None:
+    admin_student = _user("student", id=3)
+    admin_student.programs = [SimpleNamespace(name="Admin")]
+    admin_instructor = _user("instructor", id=8)
+    admin_instructor.programs = [SimpleNamespace(name="Admin")]
+    group = _group(1, members=[admin_student], instructors=[admin_instructor])
+    db = _mock_db(group=group)
+    result = await get_group(1, _user("admin"), db=db)
+    assert result.member_ids == [3]
+    assert result.instructor_ids == [8]
+
+
 async def test_remove_instructor_last_one_409() -> None:
     group = _group(1, instructors=[_user("instructor", id=7)])
     db = _mock_db(group=group)
@@ -318,7 +404,7 @@ async def test_remove_instructor_success_when_multiple() -> None:
     group = _group(1, instructors=[keep, drop])
     db = _mock_db(group=group)
     result = await remove_instructor(1, 8, _user("admin"), db=db)
-    assert [i.id for i in result.instructors] == [7]
+    assert result.instructor_ids == [7]
 
 
 async def test_add_instructors_bulk() -> None:
@@ -329,7 +415,7 @@ async def test_add_instructors_bulk() -> None:
     result = await add_instructors_bulk(
         1, GroupMembersBulk(user_ids=[7, 8]), _user("admin"), db=db
     )
-    assert [i.id for i in result.instructors] == [7, 8]
+    assert result.instructor_ids == [7, 8]
 
 
 async def test_remove_instructors_bulk_blocks_emptying() -> None:
@@ -352,7 +438,7 @@ async def test_remove_instructors_bulk_noop_on_empty_group() -> None:
     result = await remove_instructors_bulk(
         1, GroupMembersBulk(user_ids=[7]), _user("admin"), db=db
     )
-    assert list(result.instructors) == []
+    assert result.instructor_ids == []
 
 
 async def test_remove_instructors_bulk_partial_ok() -> None:
@@ -364,7 +450,7 @@ async def test_remove_instructors_bulk_partial_ok() -> None:
     result = await remove_instructors_bulk(
         1, GroupMembersBulk(user_ids=[8]), _user("admin"), db=db
     )
-    assert [i.id for i in result.instructors] == [7]
+    assert result.instructor_ids == [7]
 
 
 def test_bulk_routes_not_shadowed_by_param_routes() -> None:

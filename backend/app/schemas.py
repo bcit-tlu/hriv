@@ -281,6 +281,7 @@ class TileOrderItemOut(TileOrderItemRef):
 class TileOrderResponse(BaseModel):
     scope: TileOrderScope
     revision: int
+    browse_revision: int
     items: list[TileOrderItemOut]
 
 

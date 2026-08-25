@@ -23,7 +23,7 @@ from fastapi import (
 )
 from fastapi.responses import StreamingResponse
 from jose import JWTError, jwt
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..backup_access import (
@@ -58,7 +58,7 @@ from ..component_versions import (
     get_synthetic_version,
     get_worker_version,
 )
-from ..database import get_db
+from ..database import async_session, get_db
 from ..maintenance import disable_maintenance_mode, enable_maintenance_mode, is_maintenance_mode
 from ..models import ACTIVE_TASK_STATUSES, AdminTask, User
 from ..schemas import (
@@ -72,7 +72,7 @@ from ..schemas import (
     UploadStatusResponse,
 )
 from ..synthetic_result import load_stored_synthetic_result_state
-from ..worker import enqueue_admin_task
+from ..worker import TaskQueueUnavailableError, enqueue_admin_task
 
 logger = logging.getLogger(__name__)
 
@@ -168,13 +168,59 @@ async def _kick_off(
     bg: BackgroundTasks,
 ) -> None:
     """Enqueue the task via arq, falling back to BackgroundTasks."""
-    enqueued = await enqueue_admin_task(task.id, task.task_type)
-    if not enqueued:
+    task_id = task.id
+    task_type = task.task_type
+    try:
+        enqueue_result = await enqueue_admin_task(task_id, task_type)
+    except TaskQueueUnavailableError:
+        detail = "Task queue unavailable; task was not started."
+        bookkeeping_committed = False
+        try:
+            async with async_session() as db:
+                result = await db.execute(
+                    update(AdminTask)
+                    .where(
+                        AdminTask.id == task_id,
+                        AdminTask.status.in_(_ACTIVE_STATUSES),
+                    )
+                    .values(
+                        status="failed",
+                        error_message=detail,
+                        log=func.coalesce(AdminTask.log, "") + f"ERROR: {detail}\n",
+                        updated_at=func.now(),
+                    )
+                )
+                await db.commit()
+                bookkeeping_committed = result.rowcount == 1
+        except Exception:
+            logger.exception(
+                "Failed to mark admin task as failed after queue rejection",
+                extra={
+                    "event": "admin.task_queue_rejection_bookkeeping_failed",
+                    "task_id": task_id,
+                    "task_type": task_type,
+                },
+            )
+        if (
+            bookkeeping_committed
+            and task_type in {"db_import", "rebuild_tiles", "file_restore"}
+            and task.input_path
+        ):
+            try:
+                os.unlink(task.input_path)
+            except OSError as cleanup_exc:
+                logger.debug(
+                    "Failed to remove rejected admin task input %s: %s",
+                    task.input_path,
+                    cleanup_exc,
+                )
+        raise
+    if not enqueue_result.queued:
         # Redis unavailable — run in-process
-        if task.task_type == "files_import":
+        if task_type == "files_import":
             # Pass the BackgroundTasks object so the import can schedule the
             # automatic rebuild_tiles task that runs after it.
-            bg.add_task(run_files_import, task.id, bg)
+            bg.add_task(run_files_import, task_id, bg)
         else:
             runner = {
                 "db_export": run_db_export,
@@ -182,8 +228,8 @@ async def _kick_off(
                 "file_restore": run_file_restore,
                 "files_export": run_files_export,
                 "rebuild_tiles": run_rebuild_tiles,
-            }[task.task_type]
-            bg.add_task(runner, task.id)
+            }[task_type]
+            bg.add_task(runner, task_id)
 
 
 def _task_to_dict(task: AdminTask) -> dict:

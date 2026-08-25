@@ -303,7 +303,12 @@ function parseError(text: string): { message: string; data?: unknown } {
   return { message, data }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+interface RequestRawResult<T> {
+  data: T | undefined
+  response: Response
+}
+
+async function requestRaw<T>(path: string, init?: RequestInit): Promise<RequestRawResult<T>> {
   const { headers: initHeaders, ...restInit } = init ?? {}
   const method = init?.method ?? 'GET'
   let res: Response
@@ -322,6 +327,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new ApiTransportError('Network error', { method, path })
   }
+  if (res.status === 204 || res.status === 304) {
+    return { data: undefined, response: res }
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
     const parsed = parseError(text)
@@ -331,8 +339,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       requestId: res.headers.get('X-Request-ID'),
     })
   }
-  if (res.status === 204) return undefined as unknown as T
-  return res.json() as Promise<T>
+  const data = (await res.json()) as T
+  return { data, response: res }
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const { data } = await requestRaw<T>(path, init)
+  return data as T
 }
 
 // ── Types matching the backend schemas ────────────────────
@@ -447,8 +460,28 @@ export async function fetchStatus(): Promise<ApiStatus> {
 
 // ── Categories ───────────────────────────────────────────
 
-export function fetchCategoryTree(init?: RequestInit): Promise<ApiCategoryTree[]> {
-  return request('/categories/tree', init)
+export interface CategoryTreeHeaders {
+  etag: string | null
+  revision: number | null
+  status: number
+}
+
+export function fetchCategoryTree(
+  init?: RequestInit,
+  onHeaders?: (headers: CategoryTreeHeaders) => void,
+): Promise<ApiCategoryTree[] | null> {
+  // Default to no-store so the browser never synthesizes a 200 from a
+  // revalidated cache entry; the 304 short-circuit must reach the app.
+  const treeInit = { cache: 'no-store' as const, ...init }
+  return requestRaw<ApiCategoryTree[]>('/categories/tree', treeInit).then(({ data, response }) => {
+    const etag = response.headers.get('ETag') ?? response.headers.get('etag') ?? null
+    const revHeader =
+      response.headers.get('X-Browse-Revision') ?? response.headers.get('x-browse-revision')
+    const revision = revHeader ? Number(revHeader) : null
+    onHeaders?.({ etag, revision, status: response.status })
+    if (response.status === 304) return null
+    return (data as ApiCategoryTree[] | undefined) ?? null
+  })
 }
 
 export function createCategory(body: {
@@ -506,12 +539,17 @@ export interface TileOrderItem extends TileOrderItemRef {
 export interface TileOrderResponse {
   scope: { parent_category_id: number | null }
   revision: number
+  /** Global browse revision at the time of this order snapshot (issue #1066). */
+  browse_revision: number
   items: TileOrderItem[]
 }
 
 export function getTileOrder(parentCategoryId: number | null): Promise<TileOrderResponse> {
   const qs = parentCategoryId != null ? `?parent_category_id=${parentCategoryId}` : ''
-  return request(`/tile-order${qs}`)
+  // Cache-bust: the revision returned by this endpoint seeds the CAS token
+  // for the next PUT, so a stale cached response would cause 409s and silent
+  // conflict state on subsequent drags (issue #1083 / epic #975).
+  return request(`/tile-order${qs}`, { cache: 'no-store' })
 }
 
 export function putTileOrder(

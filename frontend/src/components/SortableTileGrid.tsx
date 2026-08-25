@@ -1,4 +1,4 @@
-import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
@@ -11,7 +11,7 @@ import {
   useDroppable,
 } from '@dnd-kit/react'
 import { useSortable } from '@dnd-kit/react/sortable'
-import { move } from '@dnd-kit/helpers'
+import { arrayMove, move } from '@dnd-kit/helpers'
 import { CollisionPriority } from '@dnd-kit/abstract'
 import { PointerActivationConstraints } from '@dnd-kit/dom'
 import type { Draggable } from '@dnd-kit/abstract'
@@ -20,17 +20,17 @@ import type { DragEndEvent, DragStartEvent } from '@dnd-kit/react'
 import type { Category, Group, ImageItem, Program } from '../types'
 import type { TileOrderItemRef } from '../api'
 import type { ReorderDragContext } from '../tileOrdering'
+import { DndMonitor, logDrag } from '../dndInstrumentation'
 import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
 import { getCategoryHiddenStateFromPath } from '../treeUtils'
 import CategoryTile from './CategoryTile'
 import ImageTile from './ImageTile'
 import FileDropZone from './FileDropZone'
 import {
+  buildDescendantMap,
   buildTileItems,
-  collectDescendantIds,
   DROP_PREFIX,
   farHalfReorderCollision,
-  findCategory,
   nearHalfMoveCollision,
   orderTileItems,
   tileId,
@@ -240,6 +240,9 @@ export interface SortableTileGridProps {
     ) => void
     claimGeneration: () => number
   }
+
+  /** Called when a tile drag starts or ends so the app can pause refreshes. */
+  onDragActiveChange?: (active: boolean) => void
 }
 
 export default function SortableTileGrid({
@@ -265,6 +268,7 @@ export default function SortableTileGrid({
   onGridDragOver,
   onGridDrop,
   tileOrdering,
+  onDragActiveChange,
 }: SortableTileGridProps) {
   const visibleImages = useMemo(
     () => (path.length === 0 ? [...uncategorizedImages, ...currentImages] : currentImages),
@@ -276,117 +280,215 @@ export default function SortableTileGrid({
   const inheritedGroupIds = useMemo(() => narrowGroupIds(path), [path])
 
   const parentId = path.length > 0 ? path[path.length - 1].id : null
-  const [items, setItems] = useState<TileItem[]>(() => {
-    const built = buildTileItems(currentCategories, visibleImages)
-    return tileOrdering.displayOrder ? orderTileItems(built, tileOrdering.displayOrder) : built
-  })
+
+  const builtItems = useMemo(
+    () => buildTileItems(currentCategories, visibleImages),
+    [currentCategories, visibleImages],
+  )
+  const orderedItems = useMemo(
+    () =>
+      tileOrdering.displayOrder !== null
+        ? orderTileItems(builtItems, tileOrdering.displayOrder)
+        : builtItems,
+    [builtItems, tileOrdering.displayOrder],
+  )
+
+  const [items, setItems] = useState<TileItem[]>(() => orderedItems)
   const [activeItem, setActiveItem] = useState<TileItem | null>(null)
   const gridGenerationRef = useRef<number | null>(null)
+  // Guards the unmount-cleanup signal so a normal drag-end does not fire
+  // onDragActiveChange(false) twice (handleDragEnd already fires it).
+  const dragEndedRef = useRef(false)
+  // Keep the latest parent callback without re-running the unmount effect
+  // whenever the prop identity changes mid-drag.
+  const onDragActiveChangeRef = useRef(onDragActiveChange)
+  useEffect(() => {
+    onDragActiveChangeRef.current = onDragActiveChange
+  })
+
   const claimGeneration = tileOrdering.claimGeneration
   // Claim a fresh grid-instance generation per scope so callbacks from an
   // unmounted grid (SPA navigation) cannot overwrite a remounted one.
   useLayoutEffect(() => {
     gridGenerationRef.current = claimGeneration()
   }, [claimGeneration, parentId])
-  const syncedCategoriesRef = useRef(currentCategories)
-  const syncedVisibleImagesRef = useRef(visibleImages)
-  const coordinatorOrder = tileOrdering.displayOrder
-  const syncedCoordinatorOrderRef = useRef(coordinatorOrder)
+
+  // If the grid unmounts during an active drag, reset the drag-active signal
+  // so the parent does not keep background refresh and reorder refreshes
+  // deferred indefinitely.  Only fire when handleDragEnd did not run.
+  useEffect(() => {
+    const wasActive = activeItem !== null
+    return () => {
+      if (wasActive && !dragEndedRef.current) {
+        onDragActiveChangeRef.current?.(false)
+      }
+    }
+  }, [activeItem])
+
+  const syncedOrderedItemsRef = useRef(orderedItems)
 
   useLayoutEffect(() => {
-    const membershipChanged =
-      syncedCategoriesRef.current !== currentCategories ||
-      syncedVisibleImagesRef.current !== visibleImages
-    // Coordinator-authoritative order changes (saved responses or conflict
-    // refreshes) re-sort the current tiles without a full category-tree
-    // refresh.
-    const orderChanged = syncedCoordinatorOrderRef.current !== coordinatorOrder
-    if (!membershipChanged && !orderChanged) {
-      return
+    // Never rebuild the tile list while a drag is active. Rebuilding would
+    // write new index props into useSortable and abort dnd-kit's optimistic
+    // sorting reflow, which is the "tiles don't make room" freeze.
+    if (activeItem !== null) return
+    if (syncedOrderedItemsRef.current !== orderedItems) {
+      syncedOrderedItemsRef.current = orderedItems
+      setItems(orderedItems)
     }
-    syncedCategoriesRef.current = currentCategories
-    syncedVisibleImagesRef.current = visibleImages
-    syncedCoordinatorOrderRef.current = coordinatorOrder
+  }, [activeItem, orderedItems])
 
-    const built = buildTileItems(currentCategories, visibleImages)
-    setItems(coordinatorOrder !== null ? orderTileItems(built, coordinatorOrder) : built)
-  }, [currentCategories, visibleImages, coordinatorOrder])
-
+  const allDescendantIds = useMemo(() => buildDescendantMap(allCategories), [allCategories])
   const blockedIdsMap = useMemo(() => {
     const map = new Map<number, Set<number>>()
     for (const cat of currentCategories) {
-      const fullCat = findCategory(allCategories, cat.id)
-      const blocked = fullCat ? collectDescendantIds(fullCat) : new Set<number>()
-      blocked.add(cat.id)
+      const base = allDescendantIds.get(cat.id)
+      const blocked = base ? new Set(base) : new Set<number>([cat.id])
       map.set(cat.id, blocked)
     }
     return map
-  }, [allCategories, currentCategories])
+  }, [allDescendantIds, currentCategories])
 
   const handleDragStart = useCallback(
     (event: DragStartEvent) => {
       const sourceId = String(event.operation.source?.id)
+      logDrag('SortableTileGrid.handleDragStart', {
+        sourceId,
+        itemFound: items.some((i) => tileId(i) === sourceId),
+      })
       const item = items.find((i) => tileId(i) === sourceId)
-      setActiveItem(item ?? null)
+      if (item) {
+        dragEndedRef.current = false
+        setActiveItem(item)
+        onDragActiveChangeRef.current?.(true)
+      } else {
+        setActiveItem(null)
+      }
     },
     [items],
   )
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
-      setActiveItem(null)
-
       const { operation } = event
-      if (operation.canceled) return
+      logDrag('SortableTileGrid.handleDragEnd', {
+        canceled: event.canceled,
+        source: operation.source?.id,
+        target: operation.target?.id,
+      })
+      try {
+        if (operation.canceled) return
 
-      const source = operation.source
-      const target = operation.target
-      if (!source || !target) return
-
-      const sourceId = String(source.id)
-      const targetId = String(target.id)
-
-      if (targetId.startsWith(DROP_PREFIX)) {
-        const targetCatId = Number(targetId.slice(DROP_PREFIX.length))
-        if (sourceId.startsWith('img-')) {
-          onDropImageOnCategory?.(Number(sourceId.slice(4)), targetCatId)
-        } else if (sourceId.startsWith('cat-')) {
-          onDropCategoryOnCategory?.(Number(sourceId.slice(4)), targetCatId)
+        const source = operation.source
+        if (!source) {
+          logDrag('SortableTileGrid.handleDragEnd no source', {})
+          return
         }
-        return
-      }
 
-      // ── Reorder (optimistic sortable reflow) ──
-      // The target is the sortable tile the pointer settled on. `move`
-      // derives the new order from the source's reflowed sortable index,
-      // so the committed order matches the on-screen preview exactly.
-      const ids = items.map(tileId)
-      const reorderedIds = move(ids, event)
-      if (reorderedIds.length === ids.length && reorderedIds.every((id, i) => id === ids[i])) {
-        return
-      }
-      const itemById = new Map(items.map((item) => [tileId(item), item] as const))
-      const reordered = reorderedIds
-        .map((id) => itemById.get(id))
-        .filter((item): item is TileItem => item !== undefined)
-      if (reordered.length !== items.length) return
+        let target = operation.target
+        let sourceIndex: number | undefined
+        let sourceInitialIndex: number | undefined
+        let usedSourceFallback = false
+        if (!target) {
+          // If `OptimisticSortingPlugin` reflowed the source but the far-half
+          // detector can no longer report it (pointer on the near half of the
+          // new position), fall back to the source itself so the previewed
+          // order still commits.
+          sourceIndex = (source as { index?: number }).index
+          sourceInitialIndex = (source as { initialIndex?: number }).initialIndex
+          if (
+            typeof sourceIndex === 'number' &&
+            typeof sourceInitialIndex === 'number' &&
+            sourceIndex !== sourceInitialIndex
+          ) {
+            logDrag('SortableTileGrid.handleDragEnd target fallback to source', {
+              sourceId: String(source.id),
+              sourceIndex,
+              sourceInitialIndex,
+            })
+            usedSourceFallback = true
+            target = source as unknown as NonNullable<typeof target>
+          } else {
+            logDrag('SortableTileGrid.handleDragEnd no target', {})
+            return
+          }
+        }
 
-      // Coordinator mode (issue #979): apply locally and report the new
-      // order. Queueing, coalescing, persistence, and save-state UX are
-      // owned above the grid; nothing is discarded here.
-      setItems(reordered)
-      tileOrdering.reportOrder(
-        reordered.map((item) => ({ type: item.type, id: item.data.id })),
-        gridGenerationRef.current ?? undefined,
-        // Drag detail rides along so lifecycle telemetry keeps per-drag
-        // context (which tile moved, from/to index) on this surface.
-        {
-          itemType: sourceId.startsWith('img-') ? 'image' : 'category',
-          itemId: Number(sourceId.slice(4)),
-          fromIndex: ids.indexOf(sourceId),
-          toIndex: reorderedIds.indexOf(sourceId),
-        },
-      )
+        const sourceId = String(source.id)
+        const targetId = String(target.id)
+
+        if (targetId.startsWith(DROP_PREFIX)) {
+          const targetCatId = Number(targetId.slice(DROP_PREFIX.length))
+          logDrag('SortableTileGrid.handleDragEnd move-zone', { sourceId, targetId, targetCatId })
+          if (sourceId.startsWith('img-')) {
+            onDropImageOnCategory?.(Number(sourceId.slice(4)), targetCatId)
+          } else if (sourceId.startsWith('cat-')) {
+            onDropCategoryOnCategory?.(Number(sourceId.slice(4)), targetCatId)
+          }
+          return
+        }
+
+        // ── Reorder (optimistic sortable reflow) ──
+        // The target is the sortable tile the pointer settled on. `move`
+        // derives the new order from the source's reflowed sortable index,
+        // so the committed order matches the on-screen preview exactly.
+        const ids = items.map(tileId)
+        let reorderedIds: string[]
+        if (usedSourceFallback) {
+          // When the far-half detector cleared the target because the pointer
+          // landed on the near half of the reflowed source tile, we still know
+          // the source's projected index. Reorder directly so we don't have to
+          // mutate dnd-kit's dispatched event object or rely on a synthetic
+          // event being accepted by a future library version.
+          reorderedIds = arrayMove(ids, sourceInitialIndex as number, sourceIndex as number)
+        } else {
+          reorderedIds = move(ids, event)
+        }
+        if (reorderedIds.length === ids.length && reorderedIds.every((id, i) => id === ids[i])) {
+          logDrag('SortableTileGrid.handleDragEnd no reorder change', { sourceId, reorderedIds })
+          return
+        }
+        const itemById = new Map(items.map((item) => [tileId(item), item] as const))
+        const reordered = reorderedIds
+          .map((id) => itemById.get(id))
+          .filter((item): item is TileItem => item !== undefined)
+        if (reordered.length !== items.length) return
+
+        // Coordinator mode (issue #979): apply locally and report the new
+        // order. Queueing, coalescing, persistence, and save-state UX are
+        // owned above the grid; nothing is discarded here.
+        setItems(reordered)
+        const fromIndex = ids.indexOf(sourceId)
+        const toIndex = reorderedIds.indexOf(sourceId)
+        logDrag('SortableTileGrid.handleDragEnd reportOrder', {
+          sourceId,
+          fromIndex,
+          toIndex,
+          itemCount: reordered.length,
+          generation: gridGenerationRef.current,
+        })
+        tileOrdering.reportOrder(
+          reordered.map((item) => ({ type: item.type, id: item.data.id })),
+          gridGenerationRef.current ?? undefined,
+          // Drag detail rides along so lifecycle telemetry keeps per-drag
+          // context (which tile moved, from/to index) on this surface.
+          {
+            itemType: sourceId.startsWith('img-') ? 'image' : 'category',
+            itemId: Number(sourceId.slice(4)),
+            fromIndex,
+            toIndex,
+          },
+        )
+      } finally {
+        // Only emit the drag-end signal if we emitted a matching start signal.
+        if (!dragEndedRef.current) {
+          dragEndedRef.current = true
+          setActiveItem(null)
+          onDragActiveChangeRef.current?.(false)
+        } else {
+          setActiveItem(null)
+        }
+      }
     },
     [items, tileOrdering, onDropCategoryOnCategory, onDropImageOnCategory],
   )
@@ -480,42 +582,45 @@ export default function SortableTileGrid({
 
   return (
     <DragDropProvider sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-      <Box
-        role="region"
-        aria-label="Sortable tile grid"
-        sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}
-        onDragOver={onGridDragOver}
-        onDrop={onGridDrop}
-      >
-        {items.map((item, index) => (
-          <GridTile
-            key={tileId(item)}
-            item={item}
-            index={index}
-            disabled={!canEditContent}
-            renderCategoryTile={renderCategoryTile}
-            renderImageTile={renderImageTile}
-          />
-        ))}
-        {canEditContent && <FileDropZone isDragActive={fileDragActive} onDrop={onFilesDrop} />}
-      </Box>
+      <>
+        <DndMonitor />
+        <Box
+          role="region"
+          aria-label="Sortable tile grid"
+          sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}
+          onDragOver={onGridDragOver}
+          onDrop={onGridDrop}
+        >
+          {items.map((item, index) => (
+            <GridTile
+              key={tileId(item)}
+              item={item}
+              index={index}
+              disabled={!canEditContent}
+              renderCategoryTile={renderCategoryTile}
+              renderImageTile={renderImageTile}
+            />
+          ))}
+          {canEditContent && <FileDropZone isDragActive={fileDragActive} onDrop={onFilesDrop} />}
+        </Box>
 
-      <DragOverlay dropAnimation={null}>
-        {activeItem ? (
-          <Box
-            sx={{
-              opacity: 0.85,
-              width: 300,
-              pointerEvents: 'none',
-              cursor: 'grabbing',
-            }}
-          >
-            {activeItem.type === 'category'
-              ? renderCategoryTile(activeItem.data)
-              : renderImageTile(activeItem.data)}
-          </Box>
-        ) : null}
-      </DragOverlay>
+        <DragOverlay dropAnimation={null}>
+          {activeItem ? (
+            <Box
+              sx={{
+                opacity: 0.85,
+                width: 300,
+                pointerEvents: 'none',
+                cursor: 'grabbing',
+              }}
+            >
+              {activeItem.type === 'category'
+                ? renderCategoryTile(activeItem.data)
+                : renderImageTile(activeItem.data)}
+            </Box>
+          ) : null}
+        </DragOverlay>
+      </>
     </DragDropProvider>
   )
 }

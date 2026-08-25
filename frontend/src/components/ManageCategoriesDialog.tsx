@@ -32,6 +32,7 @@ import CategoryRestrictionIcons from './CategoryRestrictionIcons'
 import EditCategoryDialog from './EditCategoryDialog'
 import {
   flattenCategoryOptions,
+  formatCategoryItemCounts,
   getAncestorHiddenIds,
   type FlatCategoryOption,
 } from './categoryOptionUtils'
@@ -174,8 +175,6 @@ interface ManageCategoriesDialogProps {
    */
   onReorderTiles?: (moves: ParentMove[], scopes: ScopeOrder[]) => Promise<void> | void
   onReorderComplete?: () => Promise<void> | void
-  /** Save-state readout for the coordinator scope(s) touched by this dialog. */
-  reorderStatus?: React.ReactNode
 }
 
 export default function ManageCategoriesDialog({
@@ -190,7 +189,6 @@ export default function ManageCategoriesDialog({
   onToggleVisibility,
   onReorderTiles,
   onReorderComplete,
-  reorderStatus,
   programs = [],
   groups = [],
 }: ManageCategoriesDialogProps) {
@@ -568,24 +566,9 @@ export default function ManageCategoriesDialog({
 
   return (
     <>
-      <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-        {/* The save-state indicator (a live region with buttons) must not
-            live inside DialogTitle's <h2>, so it sits in a flex row beside
-            it. That breaks MUI's `.MuiDialogTitle-root +
-            .MuiDialogContent-root` padding-top reset, re-applied below. */}
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 1,
-            pr: 3,
-          }}
-        >
-          <DialogTitle>Manage Categories</DialogTitle>
-          {reorderStatus}
-        </Box>
-        <DialogContent sx={{ pt: 0 }}>
+      <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+        <DialogTitle>Manage Categories</DialogTitle>
+        <DialogContent>
           <List
             dense
             disablePadding
@@ -776,9 +759,9 @@ export default function ManageCategoriesDialog({
                           component="span"
                           variant="body2"
                           color="text.secondary"
-                          sx={{ ml: 0.5 }}
+                          sx={{ ml: 0.5, fontSize: '0.9em' }}
                         >
-                          ({opt.imageCount})
+                          ({formatCategoryItemCounts(opt.childCount, opt.imageCount)})
                         </Typography>
                         <CategoryRestrictionIcons
                           hasProgramRestriction={
