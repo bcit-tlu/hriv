@@ -33,7 +33,6 @@ import Toolbar from '@mui/material/Toolbar'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import Divider from '@mui/material/Divider'
-import ListSubheader from '@mui/material/ListSubheader'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import { useTheme } from '@mui/material/styles'
 import MenuIcon from '@mui/icons-material/Menu'
@@ -177,18 +176,13 @@ export default function AppShell(props: AppShellProps) {
   // Standard iOS tuning for SwipeableDrawer (native-feeling open/close).
   const iOS = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent)
 
-  // Collapsed-nav menu, built as ordered sections. Empty sections are dropped
-  // and dividers are only inserted *between* non-empty sections, so the menu
-  // stays correct for any role combination (no leading/trailing/double
-  // dividers even if the role invariants change).
+  // Collapsed-nav menu: every destination in a single flat group — no section
+  // subheaders or dividers — so the whole nav reads as one list on mobile.
   const renderNavMenuItems = () => {
     const closeThen = (fn: () => void) => () => {
       setNavDrawerOpen(false)
       fn()
     }
-    // Icon + text per MUI's Menu composition (ListItemIcon + ListItemText).
-    // Icons give the tappable items a clear visual structure, so the icon-less
-    // uppercased ListSubheader unambiguously reads as a section label.
     const makeItem = (
       key: string,
       label: string,
@@ -201,9 +195,7 @@ export default function AppShell(props: AppShellProps) {
         <ListItemText>{label}</ListItemText>
       </MenuItem>
     )
-    const sections: ReactNode[][] = []
-
-    const pages: ReactNode[] = [
+    const items: ReactNode[] = [
       makeItem(
         'browse',
         'Home',
@@ -213,7 +205,7 @@ export default function AppShell(props: AppShellProps) {
       ),
     ]
     if (canEditContent) {
-      pages.push(
+      items.push(
         makeItem(
           'manage',
           'Images',
@@ -221,34 +213,14 @@ export default function AppShell(props: AppShellProps) {
           () => onTabChange('manage'),
           page === 'manage',
         ),
+        makeItem('categories', 'Categories', <FolderIcon fontSize="small" />, onOpenCategories),
       )
     }
-    sections.push(pages)
-
+    if (canManageUsers) {
+      items.push(makeItem('programs', 'Programs', <SchoolIcon fontSize="small" />, onOpenPrograms))
+    }
     if (canEditContent) {
-      const manage: ReactNode[] = [
-        <ListSubheader
-          key="manage-header"
-          sx={{
-            bgcolor: 'transparent',
-            lineHeight: '36px',
-            textTransform: 'uppercase',
-            letterSpacing: '0.14em',
-            fontWeight: 700,
-            fontSize: '0.875rem',
-            color: 'text.secondary',
-          }}
-        >
-          Manage
-        </ListSubheader>,
-        makeItem('categories', 'Categories', <FolderIcon fontSize="small" />, onOpenCategories),
-      ]
-      if (canManageUsers) {
-        manage.push(
-          makeItem('programs', 'Programs', <SchoolIcon fontSize="small" />, onOpenPrograms),
-        )
-      }
-      manage.push(
+      items.push(
         makeItem('groups', 'Groups', <GroupsIcon fontSize="small" />, onOpenGroups),
         makeItem(
           'announcement',
@@ -257,11 +229,9 @@ export default function AppShell(props: AppShellProps) {
           onOpenAnnouncement,
         ),
       )
-      sections.push(manage)
     }
-
     if (canManageUsers) {
-      sections.push([
+      items.push(
         makeItem(
           'people',
           'People',
@@ -276,12 +246,9 @@ export default function AppShell(props: AppShellProps) {
           () => onTabChange('admin'),
           page === 'admin',
         ),
-      ])
+      )
     }
-
-    return sections.flatMap((items, i) =>
-      i === 0 ? items : [<Divider key={`nav-divider-${i}`} />, ...items],
-    )
+    return items
   }
 
   return (
@@ -426,65 +393,60 @@ export default function AppShell(props: AppShellProps) {
               disableDiscovery={iOS}
             >
               <Box sx={{ width: 'min(82vw, 300px)', maxWidth: '100%' }} role="presentation">
-                {/* Profile content at the top, with the close (×) aligned to
-                    the same top edge as where the profile content starts. */}
-                <Box
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    justifyContent: 'space-between',
-                    gap: 1,
-                    pl: 2,
-                    pr: 1,
-                    pt: 1,
-                    pb: 1.5,
-                  }}
-                >
-                  <Box data-testid="drawer-profile">
-                    <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                {/* Profile content at the top. The name shares a vertically
+                    centered row with the close (×) so the icon lines up with the
+                    name line. */}
+                <Box data-testid="drawer-profile" sx={{ pl: 2, pr: 1, pt: 1, pb: 1.5 }}>
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 1,
+                    }}
+                  >
+                    <Typography sx={{ fontWeight: 700, fontSize: '1.25rem', lineHeight: 1.3 }}>
                       {currentUser.name}
                     </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {currentUser.email}
-                    </Typography>
-                    <Typography
-                      variant="body2"
-                      color="text.secondary"
-                      sx={{ textTransform: 'capitalize' }}
-                    >
-                      {currentUser.role}
-                    </Typography>
-                    {/* Program/group chips are shown for staff roles only. */}
-                    {!isStudent && currentUser.program_names.length > 0 && (
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
-                        {currentUser.program_names.map((name) => (
-                          <Chip key={name} label={name} size="small" color="primary" />
-                        ))}
-                      </Box>
-                    )}
-                    {!isStudent && currentUser.group_names.length > 0 && (
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
-                        {currentUser.group_names.map((name) => (
-                          <Chip
-                            key={name}
-                            label={name}
-                            size="small"
-                            sx={{ bgcolor: groupColors.solidBg, color: groupColors.solidText }}
-                          />
-                        ))}
-                      </Box>
-                    )}
+                    <Tooltip title="Close menu">
+                      <IconButton
+                        onClick={() => setNavDrawerOpen(false)}
+                        aria-label="Close navigation menu"
+                        sx={{ mr: 0.25 }}
+                      >
+                        <CloseIcon />
+                      </IconButton>
+                    </Tooltip>
                   </Box>
-                  <Tooltip title="Close menu">
-                    <IconButton
-                      onClick={() => setNavDrawerOpen(false)}
-                      aria-label="Close navigation menu"
-                      edge="end"
-                      sx={{ mt: -0.5 }}
-                    >
-                      <CloseIcon />
-                    </IconButton>
-                  </Tooltip>
+                  <Typography color="text.secondary" sx={{ fontSize: '1rem' }}>
+                    {currentUser.email}
+                  </Typography>
+                  <Typography
+                    color="text.secondary"
+                    sx={{ fontSize: '1rem', textTransform: 'lowercase' }}
+                  >
+                    {currentUser.role}
+                  </Typography>
+                  {/* Program/group chips are shown for staff roles only. */}
+                  {!isStudent && currentUser.program_names.length > 0 && (
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                      {currentUser.program_names.map((name) => (
+                        <Chip key={name} label={name} size="small" color="primary" />
+                      ))}
+                    </Box>
+                  )}
+                  {!isStudent && currentUser.group_names.length > 0 && (
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                      {currentUser.group_names.map((name) => (
+                        <Chip
+                          key={name}
+                          label={name}
+                          size="small"
+                          sx={{ bgcolor: groupColors.solidBg, color: groupColors.solidText }}
+                        />
+                      ))}
+                    </Box>
+                  )}
                 </Box>
                 <Divider />
                 {/* Navigation tabs */}
@@ -505,7 +467,11 @@ export default function AppShell(props: AppShellProps) {
                       <ListItemText>Update</ListItemText>
                     </MenuItem>
                   )}
-                  {showViewAnnLink && (
+                  {/* Read-only announcement access for everyone (students
+                      included) whenever an announcement is configured. Posting/
+                      editing stays gated behind the Announcement nav item above,
+                      which only staff (canEditContent) see. */}
+                  {annEnabled && (
                     <MenuItem
                       sx={{ py: 1.25 }}
                       onClick={() => {

@@ -514,14 +514,33 @@ describe('AppShell', () => {
       }
     })
 
-    it('renders the Manage section heading as a distinct uppercased label', () => {
+    it('renders the nav as one flat group with no section subheaders', () => {
       render(<AppShell {...makeProps()} />)
       fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
-      const heading = screen.getByText('Manage')
-      expect(heading).toBeInTheDocument()
-      // Not a clickable menu item — it's a section label.
-      expect(heading).not.toHaveAttribute('role', 'menuitem')
-      expect(heading).toHaveStyle({ textTransform: 'uppercase' })
+      // No "Manage" (or any) section label — every destination is a menu item.
+      expect(screen.queryByText('Manage')).not.toBeInTheDocument()
+    })
+
+    it('lets students read the announcement (view-only) with no edit entry', () => {
+      render(
+        <AppShell
+          {...makeProps({
+            canEditContent: false,
+            canManageUsers: false,
+            annEnabled: true,
+            annMessage: 'Scheduled downtime',
+          })}
+        />,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
+      // Read-only access is present for the student...
+      const view = screen.getByRole('menuitem', { name: 'View Announcement' })
+      expect(view).toBeInTheDocument()
+      // ...but the editable "Announcement" nav item (staff only) is not.
+      expect(screen.queryByRole('menuitem', { name: 'Announcement' })).not.toBeInTheDocument()
+      // Opening it surfaces the details in a read-only dialog.
+      fireEvent.click(view)
+      expect(screen.getByText('Scheduled downtime')).toBeInTheDocument()
     })
 
     it('navigates and opens dialogs from the collapsed menu', () => {
