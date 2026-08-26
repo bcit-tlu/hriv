@@ -557,14 +557,14 @@ describe('AppShell', () => {
       expect(onOpenCategories).toHaveBeenCalled()
     })
 
-    it('keeps the theme toggle in the bar on compact viewports', () => {
+    it('moves the theme toggle out of the bar and into the drawer (icon only)', () => {
       render(<AppShell {...makeProps({ profileOpen: false })} />)
-      expect(screen.getByRole('button', { name: 'Toggle theme' })).toBeInTheDocument()
-    })
-
-    it('has no theme row in the menu (theme lives in the bar)', () => {
-      render(<AppShell {...makeProps()} />)
+      // No theme toggle in the app bar on mobile...
+      expect(screen.queryByRole('button', { name: 'Toggle theme' })).not.toBeInTheDocument()
+      // ...instead the icon-only toggle lives at the foot of the drawer.
       fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
+      expect(screen.getByRole('button', { name: 'Toggle theme' })).toBeInTheDocument()
+      // It is an icon, not a labelled "Theme:" row.
       expect(screen.queryByRole('menuitem', { name: /Theme:/ })).not.toBeInTheDocument()
     })
 
@@ -573,8 +573,8 @@ describe('AppShell', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
       // Profile identity is shown at the top of the drawer...
       expect(screen.getByText('test@example.com')).toBeInTheDocument()
-      // ...and Logout is a menu item (moved out of the avatar popover).
-      expect(screen.getByRole('menuitem', { name: 'Logout' })).toBeInTheDocument()
+      // ...and Logout is a button at the foot of the drawer.
+      expect(screen.getByRole('button', { name: 'Logout' })).toBeInTheDocument()
     })
 
     it('does not render the avatar/profile popover on compact viewports', () => {

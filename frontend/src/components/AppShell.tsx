@@ -11,6 +11,7 @@ import Alert from '@mui/material/Alert'
 import AppBar from '@mui/material/AppBar'
 import Avatar from '@mui/material/Avatar'
 import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
 import Collapse from '@mui/material/Collapse'
 import Container from '@mui/material/Container'
 import Card from '@mui/material/Card'
@@ -392,7 +393,16 @@ export default function AppShell(props: AppShellProps) {
               disableBackdropTransition={!iOS}
               disableDiscovery={iOS}
             >
-              <Box sx={{ width: 'min(82vw, 300px)', maxWidth: '100%' }} role="presentation">
+              <Box
+                sx={{
+                  width: 'min(82vw, 300px)',
+                  maxWidth: '100%',
+                  height: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                }}
+                role="presentation"
+              >
                 {/* Profile content at the top. The name shares a vertically
                     centered row with the close (×) so the icon lines up with the
                     name line. */}
@@ -451,59 +461,82 @@ export default function AppShell(props: AppShellProps) {
                 <Divider />
                 {/* Navigation tabs */}
                 <MenuList sx={{ pt: 1 }}>{renderNavMenuItems()}</MenuList>
-                {/* Secondary actions below the tabs, with Logout pinned last */}
-                <MenuList sx={{ py: 0 }}>
-                  {canManageUsers && (
-                    <MenuItem
-                      sx={{ py: 1.25 }}
-                      onClick={() => {
-                        setNavDrawerOpen(false)
-                        openEditProfile()
-                      }}
-                    >
-                      <ListItemIcon sx={{ minWidth: 36 }}>
-                        <ManageAccountsIcon fontSize="small" />
-                      </ListItemIcon>
-                      <ListItemText>Update</ListItemText>
-                    </MenuItem>
-                  )}
-                  {/* Read-only announcement access for everyone (students
-                      included) whenever an announcement is configured. Posting/
-                      editing stays gated behind the Announcement nav item above,
-                      which only staff (canEditContent) see. */}
-                  {annEnabled && (
-                    <MenuItem
-                      sx={{ py: 1.25 }}
-                      onClick={() => {
-                        setNavDrawerOpen(false)
-                        setViewAnnOpen(true)
-                      }}
-                    >
-                      <ListItemIcon sx={{ minWidth: 36 }}>
-                        <CampaignIcon fontSize="small" />
-                      </ListItemIcon>
-                      <ListItemText>View Announcement</ListItemText>
-                    </MenuItem>
-                  )}
-                  <MenuItem
-                    sx={{ py: 1.25, color: 'primary.main' }}
+                {/* Secondary actions below the tabs. Read-only announcement
+                    access is available to everyone (students included) whenever
+                    an announcement is configured; posting/editing stays gated
+                    behind the Announcement nav item above (staff only). */}
+                {(canManageUsers || annEnabled) && (
+                  <MenuList sx={{ py: 0 }}>
+                    {canManageUsers && (
+                      <MenuItem
+                        sx={{ py: 1.25 }}
+                        onClick={() => {
+                          setNavDrawerOpen(false)
+                          openEditProfile()
+                        }}
+                      >
+                        <ListItemIcon sx={{ minWidth: 36 }}>
+                          <ManageAccountsIcon fontSize="small" />
+                        </ListItemIcon>
+                        <ListItemText>Update</ListItemText>
+                      </MenuItem>
+                    )}
+                    {annEnabled && (
+                      <MenuItem
+                        sx={{ py: 1.25 }}
+                        onClick={() => {
+                          setNavDrawerOpen(false)
+                          setViewAnnOpen(true)
+                        }}
+                      >
+                        <ListItemIcon sx={{ minWidth: 36 }}>
+                          <CampaignIcon fontSize="small" />
+                        </ListItemIcon>
+                        <ListItemText>View Announcement</ListItemText>
+                      </MenuItem>
+                    )}
+                  </MenuList>
+                )}
+                {/* Foot of the drawer: Logout on the left, theme toggle (icon
+                    only) on the right, pinned to the bottom via mt: auto. */}
+                <Box
+                  sx={{
+                    mt: 'auto',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    px: 1,
+                    py: 1,
+                    borderTop: 1,
+                    borderColor: 'divider',
+                  }}
+                >
+                  <Button
                     onClick={() => {
                       setNavDrawerOpen(false)
                       logout()
                     }}
+                    startIcon={<LogoutIcon />}
+                    sx={{
+                      color: 'primary.main',
+                      textTransform: 'none',
+                      fontSize: '1.05rem',
+                      '& .MuiButton-startIcon > *': { fontSize: 26 },
+                    }}
                   >
-                    <ListItemIcon sx={{ minWidth: 36, color: 'primary.main' }}>
-                      <LogoutIcon fontSize="small" />
-                    </ListItemIcon>
-                    <ListItemText>Logout</ListItemText>
-                  </MenuItem>
-                </MenuList>
+                    Logout
+                  </Button>
+                  <ColorModeToggle />
+                </Box>
               </Box>
             </SwipeableDrawer>
           )}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: appBarClusterGap }}>
-            {/* Theme + Search live top-right on every viewport (mobile too). */}
-            <ColorModeToggle iconButtonSx={{ color: 'inherit', ...appBarIconButtonSx }} />
+            {/* Desktop keeps the theme toggle in the bar; on mobile it lives in
+                the drawer under the profile section. Search stays here always. */}
+            {!collapseNav && (
+              <ColorModeToggle iconButtonSx={{ color: 'inherit', ...appBarIconButtonSx }} />
+            )}
             <Tooltip title="Search">
               <IconButton
                 onClick={onSearchOpen}
