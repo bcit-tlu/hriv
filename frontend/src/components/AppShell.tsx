@@ -534,7 +534,17 @@ export default function AppShell(props: AppShellProps) {
               </Box>
             </SwipeableDrawer>
           )}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: appBarClusterGap }}>
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: appBarClusterGap,
+              // Mobile: pull the cluster toward the edge so the rightmost icon
+              // sits the same distance from the screen edge as the edge="start"
+              // hamburger on the left (symmetric gutters).
+              ...(collapseNav && { mr: -1.5 }),
+            }}
+          >
             {/* Desktop keeps the theme toggle in the bar; on mobile it lives in
                 the drawer under the profile section. Search stays here always. */}
             {!collapseNav && (
