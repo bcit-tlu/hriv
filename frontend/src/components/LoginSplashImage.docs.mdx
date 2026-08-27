@@ -1,0 +1,44 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as LoginSplashImageStories from './LoginSplashImage.stories'
+
+<Meta of={LoginSplashImageStories} />
+
+<Title />
+
+<Subtitle>Decorative responsive image panel used on the desktop login screen.</Subtitle>
+
+## When to use
+
+Use `LoginSplashImage` as the right-hand visual panel in the login layout. It is decorative (`aria-hidden`) and hidden below the medium breakpoint so mobile users focus on the form.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={LoginSplashImageStories.Basic} />
+
+## Guidance
+
+- Keep the image decorative; do not place text or essential meaning only in the image.
+- Pair it with a form column in desktop layouts.
+- Hide it on narrow screens to preserve space for credentials and recovery actions.
+
+## Desktop split
+
+<Canvas of={LoginSplashImageStories.DesktopSplit} />
+
+## Image only
+
+<Canvas of={LoginSplashImageStories.ImageOnly} />
+
+## Stories
+
+<Stories includePrimary={false} />

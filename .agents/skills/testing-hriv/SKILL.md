@@ -95,6 +95,7 @@ All use password: `password`
   - Italian (id=3)
     - Gothic (id=5)
 - Panoramas (id=2)
+- Synthetic Monitoring (id=6)
 
 ### Programs
 
@@ -106,23 +107,26 @@ All use password: `password`
 
 ### Images
 
-| ID  | Name                            | Category  | Program        | Source                 |
-| --- | ------------------------------- | --------- | -------------- | ---------------------- |
-| 1   | Duomo di Milano                 | Italian   | Digital Design | OpenSeadragon examples |
-| 2   | Duomo di Milano (Gothic Detail) | Gothic    | Digital Design | OpenSeadragon examples |
-| 3   | Highsmith Panorama              | American  | Photography    | Library of Congress    |
-| 4   | Library of Congress             | Panoramas | Photography    | Library of Congress    |
+| ID  | Name                            | Category             | Program        | Source                 |
+| --- | ------------------------------- | -------------------- | -------------- | ---------------------- |
+| 1   | Duomo di Milano                 | Italian              | Digital Design | OpenSeadragon examples |
+| 2   | Duomo di Milano (Gothic Detail) | Gothic               | Digital Design | OpenSeadragon examples |
+| 3   | Highsmith Panorama              | American             | Photography    | Library of Congress    |
+| 4   | Library of Congress             | Panoramas            | Photography    | Library of Congress    |
+| 5   | Synthetic Monitoring Image      | Synthetic Monitoring | unrestricted   | local seed asset       |
 
 ### Direct Image Counts per Category
 
 These are direct (first-child) counts, not subtree sums:
-| Category | Direct Image Count |
-|---|---|
-| Architecture | 0 |
-| American | 1 |
-| Italian | 1 |
-| Gothic | 1 |
-| Panoramas | 1 |
+
+| Category             | Direct Image Count |
+| -------------------- | ------------------ |
+| Architecture         | 0                  |
+| American             | 1                  |
+| Italian              | 1                  |
+| Gothic               | 1                  |
+| Panoramas            | 1                  |
+| Synthetic Monitoring | 1                  |
 
 ## Getting an API Auth Token
 

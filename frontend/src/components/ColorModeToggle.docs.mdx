@@ -1,0 +1,53 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as ColorModeToggleStories from './ColorModeToggle.stories'
+
+<Meta of={ColorModeToggleStories} />
+
+<Title />
+
+<Subtitle>Theme picker icon button for Light, Dark, and Auto colour-mode preferences.</Subtitle>
+
+## When to use
+
+Use `ColorModeToggle` in the app bar and on the login screen to let users cycle through light, dark, and auto theme preferences.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={ColorModeToggleStories.Basic} />
+
+## Guidance
+
+- Light preference shows the light-mode icon and advances to dark on click.
+- Dark preference shows the dark-mode icon and advances to auto on click.
+- Auto preference shows the auto icon and follows the system-resolved colour mode.
+- Use inherited/contrast colour in the app bar and `text.secondary` on the login screen.
+
+## Light preference
+
+<Canvas of={ColorModeToggleStories.LightPreference} />
+
+## Dark preference
+
+<Canvas of={ColorModeToggleStories.DarkPreference} />
+
+## Auto preference
+
+<Canvas of={ColorModeToggleStories.AutoPreference} />
+
+## Placement variants
+
+<Canvas of={ColorModeToggleStories.PlacementVariants} />
+
+## Stories
+
+<Stories includePrimary={false} />

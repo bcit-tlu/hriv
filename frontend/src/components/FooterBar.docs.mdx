@@ -1,0 +1,51 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as FooterBarStories from './FooterBar.stories'
+
+<Meta of={FooterBarStories} />
+
+<Title />
+
+<Subtitle>
+  Application footer with repository, release-version, and report-issue link affordances.
+</Subtitle>
+
+## When to use
+
+Use `FooterBar` at the bottom of the application shell and login screen. It exposes additional version links only to users who can manage users/admin areas.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={FooterBarStories.Basic} />
+
+## Guidance
+
+- Non-admin/student views show the repository link and optional report-issue action.
+- Admin-capable views include frontend, backend, and backup component versions.
+- Version links point to releases when a concrete version is known, and to the repository when the value is `dev` or unavailable.
+- Link styling follows the footer variants documented in `Components/Link`.
+
+## Student footer
+
+<Canvas of={FooterBarStories.StudentFooter} />
+
+## Admin footer with versions
+
+<Canvas of={FooterBarStories.AdminFooterWithVersions} />
+
+## Admin footer loading versions
+
+<Canvas of={FooterBarStories.AdminFooterLoadingVersions} />
+
+## Stories
+
+<Stories includePrimary={false} />

@@ -68,17 +68,7 @@ export type TelemetryUnit = 'ms' | 'score'
 export type TelemetryUploadMode = 'single' | 'bulk'
 /** Bounded upload file types; keep in lockstep with the backend allowlist. */
 export type TelemetryFileType =
-  | 'jpg'
-  | 'jpeg'
-  | 'png'
-  | 'gif'
-  | 'webp'
-  | 'tif'
-  | 'tiff'
-  | 'svs'
-  | 'zip'
-  | 'mixed'
-  | 'other'
+  'jpg' | 'jpeg' | 'png' | 'gif' | 'webp' | 'tif' | 'tiff' | 'svs' | 'zip' | 'mixed' | 'other'
 export type TelemetryErrorCode =
   | 'api_http_4xx'
   | 'api_http_5xx'
@@ -320,8 +310,7 @@ function supportsPerformanceEntry(entryType: string): boolean {
 function emitApplicationLoadMetric(): void {
   if (!isBrowser() || _appLoadMetricSent || typeof performance === 'undefined') return
   const navigationEntry = performance.getEntriesByType('navigation')[0] as
-    | PerformanceNavigationTiming
-    | undefined
+    PerformanceNavigationTiming | undefined
   const loadEnd = navigationEntry?.loadEventEnd ?? 0
   if (!loadEnd) return
   _appLoadMetricSent = true

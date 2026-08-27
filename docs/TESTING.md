@@ -8,16 +8,18 @@ This document describes the manual test cases used to verify the HRIV applicatio
 - Frontend available at http://localhost:5173
 - Backend API available at http://localhost:8000
 - Database seeded with default users (see [Test Credentials](#test-credentials))
+- `db/seed-assets/synthetic-monitoring-image.jpeg` present so the `seed-media` compose service can generate the local synthetic monitoring tile set
 
 ## Test Credentials
 
 All seed users share the password `password`.
 
-| User                  | Email                 | Password | Role       |
-| --------------------- | --------------------- | -------- | ---------- |
-| Haruki Tanaka         | admin@example.ca      | password | admin      |
-| Carlos Henrique Souza | instructor@example.ca | password | instructor |
-| Mira Patel            | student@example.ca    | password | student    |
+| User                  | Email                        | Password | Role       |
+| --------------------- | ---------------------------- | -------- | ---------- |
+| Haruki Tanaka         | admin@example.ca             | password | admin      |
+| Carlos Henrique Souza | instructor@example.ca        | password | instructor |
+| Mira Patel            | student@example.ca           | password | student    |
+| Synthetic Student     | synthetic.student@example.ca | password | student    |
 
 ---
 

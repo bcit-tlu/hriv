@@ -12,17 +12,18 @@ docker compose up --build
 
 Open [http://localhost:5173](http://localhost:5173) to view the app.
 
-Source files in `frontend/src/` and `backend/app/` are bind-mounted into the containers, so edits are reflected immediately via hot-reload.
+Source files in `frontend/src/` and `backend/app/` are bind-mounted into the containers, so edits are reflected immediately via hot-reload. The local compose seed also generates a `Synthetic Monitoring Image` tile set from `db/seed-assets/synthetic-monitoring-image.jpeg` for the synthetic Playwright journey.
 
 ## Test Credentials
 
 All seed users share the password `password`.
 
-| **User**              | **Email**             | **Password** | **Role**   |
-| --------------------- | --------------------- | ------------ | ---------- |
-| Haruki Tanaka         | admin@example.ca      | password     | admin      |
-| Carlos Henrique Souza | instructor@example.ca | password     | instructor |
-| Mira Patel            | student@example.ca    | password     | student    |
+| **User**              | **Email**                    | **Password** | **Role**   |
+| --------------------- | ---------------------------- | ------------ | ---------- |
+| Haruki Tanaka         | admin@example.ca             | password     | admin      |
+| Carlos Henrique Souza | instructor@example.ca        | password     | instructor |
+| Mira Patel            | student@example.ca           | password     | student    |
+| Synthetic Student     | synthetic.student@example.ca | password     | student    |
 
 ### Role Capabilities
 

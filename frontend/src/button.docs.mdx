@@ -1,0 +1,61 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as ButtonStories from './button.stories'
+
+<Meta of={ButtonStories} />
+
+<Title />
+
+<Subtitle>
+  HRIV button guidance for primary actions, secondary actions, text actions, icons, sizes, and
+  loading affordances.
+</Subtitle>
+
+## How to use buttons
+
+HRIV uses MUI `Button` directly. Prefer MUI variants and theme colours before adding custom styles. Use custom `sx` sparingly for layout-specific affordances such as the login form's text actions.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={ButtonStories.Basic} />
+
+## Guidance
+
+- Use `contained` for primary call-to-action buttons, including OIDC sign-in.
+- Use `outlined` for secondary actions that still need visible affordance.
+- Use `text` for compact inline actions, links, and low-emphasis form actions.
+- Use `startIcon` for actions whose purpose benefits from a visual cue.
+- Disable buttons while async work is pending; pair with a spinner when progress is useful.
+
+## Variants
+
+<Canvas of={ButtonStories.Variants} />
+
+## Sizes
+
+<Canvas of={ButtonStories.Sizes} />
+
+## Dialog actions
+
+<Canvas of={ButtonStories.DialogActions} />
+
+## Theme picker button
+
+<Canvas of={ButtonStories.ThemePickerButton} />
+
+## Login actions
+
+<Canvas of={ButtonStories.LoginActions} />
+
+## Stories
+
+<Stories includePrimary={false} />

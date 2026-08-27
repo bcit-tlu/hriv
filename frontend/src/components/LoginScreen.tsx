@@ -18,6 +18,7 @@ import ColorModeToggle from './ColorModeToggle'
 import { fetchOidcEnabled, getOidcLoginUrl } from '../api'
 import { useAuth } from '../useAuth'
 import FooterBar from './FooterBar'
+import LoginSplashImage from './LoginSplashImage'
 
 interface LoginScreenProps {
   onLogin: (email: string, password: string) => Promise<void>
@@ -301,16 +302,7 @@ export default function LoginScreen({ onLogin, announcement }: LoginScreenProps)
           </DialogContent>
         </Dialog>
 
-        {/* Right side — splash image */}
-        <Box
-          sx={{
-            flex: '0 0 50%',
-            backgroundImage: 'url(/hriv-splash2.jpg)',
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-            display: { xs: 'none', md: 'block' },
-          }}
-        />
+        <LoginSplashImage />
       </Box>
       <FooterBar canManageUsers={false} />
     </Box>

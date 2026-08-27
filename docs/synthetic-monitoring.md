@@ -94,8 +94,8 @@ authoritative gauges backward.
 | `BASE_URL`                    | `http://localhost:5173`        | Target environment base URL                 |
 | `SYNTHETIC_EMAIL`             | `synthetic.student@example.ca` | Login email for the monitor account         |
 | `SYNTHETIC_PASSWORD`          | `password`                     | Login password for the monitor account      |
-| `SYNTHETIC_CATEGORY_PATH`     | `Architecture/Italian`         | Slash-separated category labels to navigate |
-| `SYNTHETIC_IMAGE_NAME`        | `Duomo di Milano`              | Exact image name to open                    |
+| `SYNTHETIC_CATEGORY_PATH`     | `Synthetic Monitoring`         | Slash-separated category labels to navigate |
+| `SYNTHETIC_IMAGE_NAME`        | `Synthetic Monitoring Image`   | Exact image name to open                    |
 | `SYNTHETIC_COMPONENT_VERSION` | package version                | Version string attached to logs and results |
 
 The monitor account should be a dedicated user whose database `metadata_`
@@ -104,8 +104,11 @@ telemetry and login events as synthetic server-side, so dashboards and reports
 can exclude monitor traffic (see
 [`observability-conventions.md`](observability-conventions.md)).
 
-Production environments must use a dedicated, stable category and image rather
-than the development seed data. The image must be active, visible to the
+Local `docker compose up --build` development seeds a dedicated `Synthetic Monitoring`
+root category and generates local DZI tiles for `Synthetic Monitoring Image` from
+`db/seed-assets/synthetic-monitoring-image.jpeg` via the `seed-media` compose
+service. Production environments must use a dedicated, stable category and image
+rather than the development seed data. The image must be active, visible to the
 monitor account, and uploaded through HRIV so processing produces a
 `/api/tiles/...` DZI descriptor and tile set. Category labels in
 `SYNTHETIC_CATEGORY_PATH` must not contain `/`.
@@ -119,8 +122,8 @@ npx playwright install --with-deps chromium
 BASE_URL=http://localhost:5173 \
 SYNTHETIC_EMAIL=synthetic.student@example.ca \
 SYNTHETIC_PASSWORD=password \
-SYNTHETIC_CATEGORY_PATH=Architecture/Italian \
-SYNTHETIC_IMAGE_NAME='Duomo di Milano' \
+SYNTHETIC_CATEGORY_PATH='Synthetic Monitoring' \
+SYNTHETIC_IMAGE_NAME='Synthetic Monitoring Image' \
   npm test
 ```
 
