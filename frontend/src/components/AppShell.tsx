@@ -431,12 +431,15 @@ export default function AppShell(props: AppShellProps) {
                   <Typography color="text.secondary" sx={{ fontSize: '1rem' }}>
                     {currentUser.email}
                   </Typography>
-                  <Typography
-                    color="text.secondary"
-                    sx={{ fontSize: '1rem', textTransform: 'lowercase' }}
-                  >
-                    {currentUser.role}
-                  </Typography>
+                  {/* Role is redundant for students, so it's shown for staff only. */}
+                  {!isStudent && (
+                    <Typography
+                      color="text.secondary"
+                      sx={{ fontSize: '1rem', textTransform: 'lowercase' }}
+                    >
+                      {currentUser.role}
+                    </Typography>
+                  )}
                   {/* Program/group chips are shown for staff roles only. */}
                   {!isStudent && currentUser.program_names.length > 0 && (
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
@@ -703,7 +706,16 @@ export default function AppShell(props: AppShellProps) {
 
       {/* Read-only announcement dialog (for dismissed announcements) */}
       <Dialog open={viewAnnOpen} onClose={() => setViewAnnOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Announcement</DialogTitle>
+        {/* Close (X) in the top-right corner, positioned against the dialog
+            paper (which is position: relative). */}
+        <IconButton
+          aria-label="close"
+          onClick={() => setViewAnnOpen(false)}
+          sx={{ position: 'absolute', right: 8, top: 8, color: 'text.secondary' }}
+        >
+          <CloseIcon />
+        </IconButton>
+        <DialogTitle sx={{ pr: 6 }}>Announcement</DialogTitle>
         <DialogContent>
           <Alert severity="info" sx={{ mt: 1 }}>
             {annMessage}

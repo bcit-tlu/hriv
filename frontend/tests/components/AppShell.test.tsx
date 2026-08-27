@@ -477,6 +477,26 @@ describe('AppShell', () => {
       expect(screen.getByText('Announcement')).toBeInTheDocument()
       expect(screen.getByText('Scheduled maintenance')).toBeInTheDocument()
     })
+
+    it('closes the announcement dialog via its top-right close button', async () => {
+      render(
+        <AppShell
+          {...makeProps({
+            profileOpen: true,
+            annEnabled: true,
+            annMessage: 'Scheduled maintenance',
+            announcement: '',
+          })}
+        />,
+      )
+      fireEvent.click(screen.getByText('View Announcement'))
+      expect(screen.getByText('Scheduled maintenance')).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'close' }))
+      await waitFor(() => {
+        expect(screen.queryByText('Scheduled maintenance')).not.toBeInTheDocument()
+      })
+    })
   })
 
   describe('compact viewport navigation', () => {
@@ -598,11 +618,14 @@ describe('AppShell', () => {
       expect(screen.getByText('stu@example.ca')).toBeInTheDocument()
       expect(screen.queryByText('Medical Lab')).not.toBeInTheDocument()
       expect(screen.queryByText('Lab A2')).not.toBeInTheDocument()
+      // The role label is redundant for students, so it is not shown.
+      expect(screen.queryByText('student')).not.toBeInTheDocument()
 
-      // Same chips DO render for an instructor/admin.
+      // Chips and the role label DO render for an instructor/admin.
       rerender(<AppShell {...makeProps({ currentUser: { ...student, role: 'admin' } })} />)
       expect(screen.getByText('Medical Lab')).toBeInTheDocument()
       expect(screen.getByText('Lab A2')).toBeInTheDocument()
+      expect(screen.getByText('admin')).toBeInTheDocument()
     })
 
     it('keeps the role and program/group pills in the profile menu', () => {
