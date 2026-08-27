@@ -725,8 +725,7 @@ export default function CanvasOverlay({
         // colour, so we use the first character's styled fill when present and
         // fall back to the object-level fill otherwise.
         const styles = textObj.styles as
-          | Record<number, Record<number, { fill?: string }>>
-          | undefined
+          Record<number, Record<number, { fill?: string }>> | undefined
         const firstCharFill = styles?.[0]?.[0]?.fill
         base.color = firstCharFill || (textObj.fill as string) || '#000000'
         const angle = transform?.angle ?? obj.angle ?? 0

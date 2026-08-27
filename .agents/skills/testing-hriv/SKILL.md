@@ -118,14 +118,15 @@ All use password: `password`
 ### Direct Image Counts per Category
 
 These are direct (first-child) counts, not subtree sums:
-| Category | Direct Image Count |
-|---|---|
-| Architecture | 0 |
-| American | 1 |
-| Italian | 1 |
-| Gothic | 1 |
-| Panoramas | 1 |
-| Synthetic Monitoring | 1 |
+
+| Category             | Direct Image Count |
+| -------------------- | ------------------ |
+| Architecture         | 0                  |
+| American             | 1                  |
+| Italian              | 1                  |
+| Gothic               | 1                  |
+| Panoramas            | 1                  |
+| Synthetic Monitoring | 1                  |
 
 ## Getting an API Auth Token
 
