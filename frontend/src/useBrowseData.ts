@@ -5,7 +5,7 @@ import {
   fetchPrograms as apiFetchPrograms,
   fetchGroups as apiFetchGroups,
 } from './api'
-import type { ApiCategoryTree, ApiImage } from './api'
+import type { ApiCategoryTree, ApiImage, CategoryTreeHeaders } from './api'
 import type { Category, Group, ImageItem, Program, User } from './types'
 import { narrowProgramIds, narrowGroupIds, resolvePathNode } from './categoryUtils'
 import { apiGroupToGroup } from './groupUtils'
@@ -55,18 +55,176 @@ export function apiTreeToCategory(node: ApiCategoryTree): Category {
   }
 }
 
+interface StableCaches {
+  imageByKey: Map<string, ImageItem>
+  imageById: Map<number, ImageItem>
+  categoryByKey: Map<string, Category>
+  categoryById: Map<number, Category>
+  itemToKey: WeakMap<Category | ImageItem, string>
+}
+
+function createStableCaches(): StableCaches {
+  return {
+    imageByKey: new Map(),
+    imageById: new Map(),
+    categoryByKey: new Map(),
+    categoryById: new Map(),
+    itemToKey: new WeakMap(),
+  }
+}
+
+function stableStringify(value: unknown): string {
+  return JSON.stringify(value, (_key, val) => {
+    if (val && typeof val === 'object' && !Array.isArray(val)) {
+      const sorted: Record<string, unknown> = {}
+      for (const k of Object.keys(val).sort()) {
+        sorted[k] = val[k]
+      }
+      return sorted
+    }
+    return val
+  })
+}
+
+function imageIdentityKey(img: ApiImage): string {
+  return stableStringify([
+    img.id,
+    img.version,
+    img.sort_order,
+    img.category_id,
+    img.name,
+    img.thumb,
+    img.tile_sources,
+    img.copyright,
+    img.note,
+    img.active,
+    img.metadata_extra,
+    img.width,
+    img.height,
+    img.file_size,
+    img.created_at,
+    img.updated_at,
+  ])
+}
+
+function categoryIdentityKey(
+  node: ApiCategoryTree,
+  childKeys: string[],
+  imageKeys: string[],
+): string {
+  const meta = node.metadata_extra as Record<string, unknown> | null
+  const cardImageId = typeof meta?.card_image_id === 'number' ? meta.card_image_id : null
+  return stableStringify([
+    node.id,
+    node.version,
+    node.sort_order,
+    node.parent_id,
+    node.label,
+    node.status,
+    cardImageId,
+    meta,
+    [...(node.program_ids ?? [])].sort((a, b) => a - b),
+    [...(node.group_ids ?? [])].sort((a, b) => a - b),
+    childKeys,
+    imageKeys,
+    node.created_at,
+    node.updated_at,
+  ])
+}
+
+function stableApiImageToItem(img: ApiImage, caches: StableCaches): ImageItem {
+  const key = imageIdentityKey(img)
+  const cached = caches.imageByKey.get(key)
+  if (cached) return cached
+
+  const item: ImageItem = {
+    id: img.id,
+    name: img.name,
+    thumb: img.thumb,
+    tileSources: img.tile_sources,
+    categoryId: img.category_id,
+    copyright: img.copyright,
+    note: img.note,
+    active: img.active,
+    sortOrder: img.sort_order,
+    version: img.version,
+    createdAt: img.created_at,
+    updatedAt: img.updated_at,
+    metadataExtra: img.metadata_extra,
+    width: img.width,
+    height: img.height,
+    fileSize: img.file_size,
+  }
+
+  caches.imageByKey.set(key, item)
+  const existing = caches.imageById.get(item.id)
+  if (existing) {
+    const oldKey = caches.itemToKey.get(existing)
+    if (oldKey) caches.imageByKey.delete(oldKey)
+  }
+  caches.imageById.set(item.id, item)
+  caches.itemToKey.set(item, key)
+  return item
+}
+
+function stableApiTreeToCategory(node: ApiCategoryTree, caches: StableCaches): Category {
+  const childCategories = node.children.map((child) => stableApiTreeToCategory(child, caches))
+  const imageItems = node.images.map((img) => stableApiImageToItem(img, caches))
+  const childKeys = childCategories.map((c) => caches.itemToKey.get(c) ?? '')
+  const imageKeys = imageItems.map((i) => caches.itemToKey.get(i) ?? '')
+
+  const key = categoryIdentityKey(node, childKeys, imageKeys)
+  let category = caches.categoryByKey.get(key)
+  if (!category) {
+    const meta = node.metadata_extra as Record<string, unknown> | null
+    category = {
+      id: node.id,
+      label: node.label,
+      parentId: node.parent_id,
+      children: childCategories,
+      images: imageItems,
+      programIds: [...(node.program_ids ?? [])],
+      groupIds: [...(node.group_ids ?? [])],
+      status: node.status,
+      sortOrder: node.sort_order,
+      version: node.version,
+      cardImageId: typeof meta?.card_image_id === 'number' ? meta.card_image_id : null,
+      metadataExtra: meta ?? null,
+    }
+    caches.categoryByKey.set(key, category)
+    const existing = caches.categoryById.get(category.id)
+    if (existing) {
+      const oldKey = caches.itemToKey.get(existing)
+      if (oldKey) caches.categoryByKey.delete(oldKey)
+    }
+    caches.categoryById.set(category.id, category)
+    caches.itemToKey.set(category, key)
+  }
+  return category
+}
+
+function arraysReferentiallyEqual<T>(a: readonly T[], b: readonly T[]): boolean {
+  return a.length === b.length && a.every((x, i) => x === b[i])
+}
+
 export interface UseBrowseDataDeps {
   path: Category[]
   currentUser: User | null
+  dragActive?: boolean
 }
 
-export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
+export function useBrowseData({ path, currentUser, dragActive = false }: UseBrowseDataDeps) {
   const [categories, setCategories] = useState<Category[]>([])
   const [categoriesLoading, setCategoriesLoading] = useState(true)
   const [uncategorizedImages, setUncategorizedImages] = useState<ImageItem[]>([])
   const [programs, setPrograms] = useState<Program[]>([])
   const [groups, setGroups] = useState<Group[]>([])
   const uncategorizedLoaded = useRef(false)
+
+  // Stable entity caches: unchanged categories and images reuse the same
+  // object references across polls and refreshes, so downstream memoization
+  // and React.memo prevent spurious re-renders during drags.
+  const stableCachesRef = useRef<StableCaches>(createStableCaches())
 
   // Ref holds the invalidateBackground function once the hook mounts.
   // loadCategories reads it to cancel in-flight background requests on
@@ -110,6 +268,17 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
     promise: Promise<ImageItem[]>
     settled: boolean
   } | null>(null)
+
+  // Last-known category-tree revision/ETag so background polls and post-reorder
+  // refreshes can skip re-rendering when the tree hasn't changed (issue #1066).
+  const lastCategoryTree = useRef<{ etag: string | null; revision: number | null }>({
+    etag: null,
+    revision: null,
+  })
+  // The stored ETag/revision is updated only when a category-tree response is
+  // actually committed to React state, so an aborted or out-of-order response
+  // can never leave a newer ETag paired with stale displayed data.
+
   useEffect(() => {
     categoriesRef.current = categories
   }, [categories])
@@ -146,14 +315,46 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
         effectiveSignal = ac.signal
       }
       const visibleGen = silent ? 0 : ++visibleCategoriesLoadGen.current
+      const ifNoneMatch = lastCategoryTree.current.etag
+      let receivedHeaders: CategoryTreeHeaders = { etag: null, revision: null, status: 0 }
       try {
         if (!silent) setCategoriesLoading(true)
-        const tree = await fetchCategoryTree({
-          ...(bypassHttpCache ? { cache: 'reload' as const } : {}),
-          ...(effectiveSignal ? { signal: effectiveSignal } : {}),
-        })
+        const onCategoryTreeHeaders = (headers: CategoryTreeHeaders) => {
+          receivedHeaders = headers
+        }
+        const tree = await fetchCategoryTree(
+          {
+            ...(bypassHttpCache ? { cache: 'reload' as const } : {}),
+            ...(effectiveSignal ? { signal: effectiveSignal } : {}),
+            ...(ifNoneMatch ? { headers: { 'If-None-Match': ifNoneMatch } } : {}),
+          },
+          onCategoryTreeHeaders,
+        )
+        if (tree === null) {
+          // 304 Not Modified — the tree is up to date.
+          if (effectiveSignal?.aborted || gen !== categoriesReadGen.current) return false
+          if (receivedHeaders.status !== 0) {
+            lastCategoryTree.current = {
+              etag: receivedHeaders.etag,
+              revision: receivedHeaders.revision,
+            }
+          }
+          return true
+        }
         if (effectiveSignal?.aborted || gen !== categoriesReadGen.current) return false
-        setCategories(tree.map(apiTreeToCategory))
+        const nextCategories = tree.map((node) =>
+          stableApiTreeToCategory(node, stableCachesRef.current),
+        )
+        if (!arraysReferentiallyEqual(nextCategories, categoriesRef.current)) {
+          setCategories(nextCategories)
+          categoriesRef.current = nextCategories
+        }
+        if (receivedHeaders.status !== 0) {
+          lastCategoryTree.current = {
+            etag: receivedHeaders.etag,
+            revision: receivedHeaders.revision,
+          }
+        }
         return true
       } catch (err) {
         if (effectiveSignal?.aborted || isAbortError(err) || gen !== categoriesReadGen.current) {
@@ -194,7 +395,11 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
           ...(effectiveSignal ? { signal: effectiveSignal } : {}),
         })
         if (effectiveSignal?.aborted || gen !== uncategorizedReadGen.current) return false
-        setUncategorizedImages(imgs.map(apiImageToItem))
+        const nextImages = imgs.map((img) => stableApiImageToItem(img, stableCachesRef.current))
+        if (!arraysReferentiallyEqual(nextImages, uncategorizedRef.current)) {
+          setUncategorizedImages(nextImages)
+          uncategorizedRef.current = nextImages
+        }
         uncategorizedLoaded.current = true
         return true
       } catch (err) {
@@ -260,10 +465,53 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
     // ETag was computed before the reorder transaction committed.
     const run = (async (): Promise<Category[]> => {
       try {
-        const tree = await fetchCategoryTree({ cache: 'reload', signal: ac.signal })
-        const cats = tree.map(apiTreeToCategory)
+        let receivedHeaders: CategoryTreeHeaders = { etag: null, revision: null, status: 0 }
+        const onCategoryTreeHeaders = (headers: CategoryTreeHeaders) => {
+          receivedHeaders = headers
+        }
+        const tree = await fetchCategoryTree(
+          {
+            cache: 'reload',
+            signal: ac.signal,
+            headers: lastCategoryTree.current.etag
+              ? { 'If-None-Match': lastCategoryTree.current.etag }
+              : {},
+          },
+          onCategoryTreeHeaders,
+        )
+        if (tree === null) {
+          // 304 Not Modified after a reorder: the tree is unchanged.
+          if (gen === categoriesReadGen.current) {
+            if (ac.signal.aborted) return categoriesRef.current
+            if (receivedHeaders.status !== 0) {
+              lastCategoryTree.current = {
+                etag: receivedHeaders.etag,
+                revision: receivedHeaders.revision,
+              }
+            }
+            return categoriesRef.current
+          }
+          const newest = categoriesRefreshRef.current
+          if (newest !== null && newest.gen > gen) return newest.promise
+          return categoriesRef.current
+        }
+        const cats = tree.map((node) => stableApiTreeToCategory(node, stableCachesRef.current))
         if (gen === categoriesReadGen.current) {
-          setCategories(cats)
+          // Drag abort or unmount: the latest committed state is safer than
+          // a stale network response.
+          if (ac.signal.aborted) {
+            return categoriesRef.current
+          }
+          if (!arraysReferentiallyEqual(cats, categoriesRef.current)) {
+            setCategories(cats)
+            categoriesRef.current = cats
+          }
+          if (receivedHeaders.status !== 0) {
+            lastCategoryTree.current = {
+              etag: receivedHeaders.etag,
+              revision: receivedHeaders.revision,
+            }
+          }
           return cats
         }
         // Superseded while the response was in flight: hand back the
@@ -306,9 +554,17 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
     const run = (async (): Promise<ImageItem[]> => {
       try {
         const imgs = await fetchUncategorizedImages({ cache: 'reload', signal: ac.signal })
-        const items = imgs.map(apiImageToItem)
+        const items = imgs.map((img) => stableApiImageToItem(img, stableCachesRef.current))
         if (gen === uncategorizedReadGen.current) {
-          setUncategorizedImages(items)
+          // Drag abort or unmount: the latest committed state is safer than
+          // a stale network response.
+          if (ac.signal.aborted) {
+            return uncategorizedRef.current
+          }
+          if (!arraysReferentiallyEqual(items, uncategorizedRef.current)) {
+            setUncategorizedImages(items)
+            uncategorizedRef.current = items
+          }
           uncategorizedLoaded.current = true
           return items
         }
@@ -362,10 +618,23 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
     },
     [loadCategories, loadUncategorizedImages],
   )
-  const invalidateBackground = useBackgroundRefresh(backgroundRefresh, currentUser != null)
+  const invalidateBackground = useBackgroundRefresh(
+    backgroundRefresh,
+    currentUser != null && !dragActive,
+  )
   useEffect(() => {
     invalidateRef.current = invalidateBackground
   })
+
+  // Abort any in-flight data refreshes when a drag starts so the grid
+  // does not receive new props (and new sortable indices) mid-drag.
+  useEffect(() => {
+    if (!dragActive) return
+    categoriesAbortRef.current?.abort()
+    uncategorizedAbortRef.current?.abort()
+    categoriesRefreshAbortRef.current?.abort()
+    uncategorizedRefreshAbortRef.current?.abort()
+  }, [dragActive])
 
   // Resolve the live children/images from the categories state tree
   // so newly added categories appear immediately.

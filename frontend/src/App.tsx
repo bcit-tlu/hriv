@@ -30,7 +30,7 @@ import HomeIcon from '@mui/icons-material/Home'
 import LinkIcon from '@mui/icons-material/Link'
 import ImageViewer from './components/ImageViewer'
 import SortableTileGrid from './components/SortableTileGrid'
-import ReorderStatusIndicator from './components/ReorderStatusIndicator'
+import ReorderSnackbar from './components/ReorderSnackbar'
 import NoteDisplay from './components/NoteDisplay'
 import ManageCategoriesDialog from './components/ManageCategoriesDialog'
 import AdminPage from './components/AdminPage'
@@ -87,6 +87,7 @@ import { useBrowseData } from './useBrowseData'
 import { emitEvent, emitSessionStartedOnce } from './observability'
 import type { TelemetryNavDirection } from './observability'
 import { narrowGroupIds, narrowProgramIds } from './categoryUtils'
+import { formatCategoryItemCountsForCategory } from './components/categoryOptionUtils'
 import { getInheritedRestrictionSx } from './restrictionStyles'
 import { getSurfaceVariant, getVisibilityColors } from './theme'
 import { useNavigationHistory, buildNavHistoryState } from './useNavigationHistory'
@@ -99,6 +100,7 @@ import { useAnnouncementModal } from './useAnnouncementModal'
 import { useUserProfile } from './useUserProfile'
 import { useMostSevereScope, useTileOrdering } from './useTileOrdering'
 import { tileOrderingCoordinator } from './tileOrdering'
+import { logDrag } from './dndInstrumentation'
 
 const COLLAPSED_BREADCRUMB_CATEGORY_DEPTH = 2
 
@@ -201,6 +203,9 @@ export default function App() {
   const [fileDropCategoryId, setFileDropCategoryId] = useState<number | null>(null)
   const [droppedFiles, setDroppedFiles] = useState<File[]>([])
   const [fileDragActive, setFileDragActive] = useState(false)
+  const [dragActive, setDragActive] = useState(false)
+  const dragActiveRef = useRef(false)
+  const pendingRefreshRef = useRef(false)
   const fileDragCounter = useRef(0)
   const [manageUploadOpen, setManageUploadOpen] = useState(false)
   const [addCatOpen, setAddCatOpen] = useState(false)
@@ -214,6 +219,7 @@ export default function App() {
     message: string
     onUndo: () => void
   } | null>(null)
+  const [reorderCount, setReorderCount] = useState(0)
   // Report issue modal state
   const [reportIssueOpen, setReportIssueOpen] = useState(false)
 
@@ -253,7 +259,7 @@ export default function App() {
     getPathGroupRestriction,
     ancestorGroupIds,
     currentCategories,
-  } = useBrowseData({ path, currentUser })
+  } = useBrowseData({ path, currentUser, dragActive })
 
   // Navigation-safe reorder coordinator for the current Browse scope
   // (epic #975, issue #979).
@@ -934,46 +940,20 @@ export default function App() {
     setMoveSnack,
   })
 
-  // Save-state readout for the scopes most recently reordered from the
-  // Manage Categories dialog (epic #975, issue #982). A cross-parent move
-  // touches two scopes; surface whichever needs attention most.
-  const manageAttentionScope = useMostSevereScope(manageReorderScopes)
-  const manageTileOrdering = useTileOrdering(manageAttentionScope ?? null)
+  // Coordinate a single bottom-right reorder snackbar across the browsed
+  // scope and any scopes touched by the Manage Categories dialog (epic #975,
+  // issue #982). A cross-parent move touches two scopes; surface whichever
+  // needs attention most.
+  const allReorderScopes = useMemo(
+    () => (manageReorderScopes ? [browseScopeId, ...manageReorderScopes] : [browseScopeId]),
+    [browseScopeId, manageReorderScopes],
+  )
+  const activeReorderScope = useMostSevereScope(allReorderScopes)
+  const activeTileOrdering = useTileOrdering(activeReorderScope ?? null)
 
-  // The Manage dialog's save-state indicator unmounts with the dialog, so a
-  // reorder that fails after the user closed it would otherwise be invisible.
-  // Surface it globally and point the user back at the dialog, where the
-  // Retry / Use server order actions remain available.
-  useEffect(() => {
-    if (dialogOpen || manageAttentionScope === undefined) return
-    // Latch per status transition so a dismissed snackbar is not re-set by
-    // unrelated coordinator notifications while the status is unchanged.
-    let surfacedStatus: string | null = null
-    const surface = () => {
-      const status = tileOrderingCoordinator.getScope(manageAttentionScope).status
-      if (status !== 'conflict' && status !== 'error') {
-        surfacedStatus = null
-        return
-      }
-      if (status === surfacedStatus) return
-      surfacedStatus = status
-      if (status === 'conflict') {
-        setErrorSnack('Category order changed elsewhere — reopen Manage Categories to resolve.')
-      } else {
-        setErrorSnack('Category order could not be saved — reopen Manage Categories to retry.')
-      }
-    }
-    surface()
-    return tileOrderingCoordinator.subscribe(surface)
-  }, [dialogOpen, manageAttentionScope])
-
-  // Once the dialog is closed and every tracked scope has settled, stop
-  // tracking, so the snackbar above stops firing for later conflicts the
-  // dialog didn't cause (e.g. a Browse reorder of the same scope) and a
-  // reopened dialog starts without a stale save-state readout. While a
-  // tracked scope is still unsettled, a Browse-caused failure of that same
-  // scope can still trip the snackbar — accepted, since the scope also
-  // carries the dialog's unsaved intent at that point.
+  // Once the Manage Categories dialog is closed and every tracked scope has
+  // settled, stop tracking, so a reopened dialog starts without a stale save
+  // state readout.
   useEffect(() => {
     if (dialogOpen || manageReorderScopes === null) return
     let cancelled = false
@@ -985,7 +965,7 @@ export default function App() {
       })
       if (settled) setManageReorderScopes(null)
     }
-    queueMicrotask(clearWhenSettled)
+    clearWhenSettled()
     const unsubscribe = tileOrderingCoordinator.subscribe(clearWhenSettled)
     return () => {
       cancelled = true
@@ -1089,6 +1069,13 @@ export default function App() {
   }, [])
 
   const handleReorderComplete = useCallback(async () => {
+    logDrag('App.handleReorderComplete start', { dragActive: dragActiveRef.current })
+    if (dragActiveRef.current) {
+      pendingRefreshRef.current = true
+      logDrag('App.handleReorderComplete deferred', { reason: 'dragActive' })
+      return
+    }
+    pendingRefreshRef.current = false
     // Capture before fetching: a save committing while these requests are in
     // flight is newer than the fetched data and must survive the release.
     const marker = tileOrderingCoordinator.marker()
@@ -1096,19 +1083,47 @@ export default function App() {
       refreshCategories(),
       refreshUncategorizedImages(),
     ])
+    logDrag('App.handleReorderComplete fetched', {
+      categories: catResult.status,
+      images: imgResult.status,
+      dragActive: dragActiveRef.current,
+    })
     if (catResult.status === 'rejected') {
       setWarnSnack('Could not refresh categories after reorder.')
     }
     if (imgResult.status === 'rejected') {
       setWarnSnack('Could not refresh images after reorder.')
     }
+    // If a new drag started while we were refreshing, the grid must not see
+    // stale prop churn and this refresh may have been aborted, so queue a
+    // re-run for after the drag ends.
+    if (dragActiveRef.current) {
+      pendingRefreshRef.current = true
+      logDrag('App.handleReorderComplete deferred', { reason: 'dragActive after fetch' })
+      return
+    }
     // Once fresh authoritative data landed, drop the coordinator's cached
     // order for clean scopes so order changes made elsewhere (e.g. Manage
     // Categories) become visible immediately instead of on the next poll.
     if (catResult.status === 'fulfilled' && imgResult.status === 'fulfilled') {
       tileOrderingCoordinator.releaseCleanScopes(marker)
+      logDrag('App.handleReorderComplete released clean scopes', { marker })
     }
   }, [refreshCategories, refreshUncategorizedImages])
+
+  const handleDragActiveChange = useCallback((active: boolean) => {
+    setDragActive(active)
+    dragActiveRef.current = active
+  }, [])
+
+  // Run any coordinator-commit refresh that was deferred while a drag was
+  // active as soon as the drag ends.
+  useEffect(() => {
+    if (!dragActive && pendingRefreshRef.current) {
+      pendingRefreshRef.current = false
+      void handleReorderComplete()
+    }
+  }, [dragActive, handleReorderComplete])
 
   // Every successful coordinator save refreshes the shared category tree and
   // uncategorized images so all consumers (e.g. Manage Categories, which can
@@ -1119,22 +1134,11 @@ export default function App() {
     [handleReorderComplete],
   )
 
-  // Adopting the server's order can stem from membership drift (a 400
-  // conflict): reload the browse data too so tiles added or removed
-  // elsewhere appear alongside the adopted order.
-  const acceptServerOrder = tileOrdering.acceptServerOrder
-  const handleAcceptServerOrder = useCallback(() => {
-    acceptServerOrder()
+  const handleActiveAcceptServerOrder = useCallback(() => {
+    if (activeReorderScope === undefined) return
+    tileOrderingCoordinator.acceptServerOrder(activeReorderScope)
     void handleReorderComplete()
-  }, [acceptServerOrder, handleReorderComplete])
-
-  // Manage Categories counterpart: adopting the server order there can also
-  // stem from membership drift, so reload the shared browse data too.
-  const manageAcceptServerOrder = manageTileOrdering.acceptServerOrder
-  const handleManageAcceptServerOrder = useCallback(() => {
-    manageAcceptServerOrder()
-    void handleReorderComplete()
-  }, [manageAcceptServerOrder, handleReorderComplete])
+  }, [activeReorderScope, handleReorderComplete])
 
   const navigateToDepth = (depth: number) => {
     setPath((prev) => prev.slice(0, depth))
@@ -1766,13 +1770,23 @@ export default function App() {
                           }}
                         >
                           {isLast ? (
-                            <Typography
-                              variant="body2"
-                              color="text.primary"
-                              sx={breadcrumbCurrentTextSx}
-                            >
-                              {cat.label}
-                            </Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+                              <Typography
+                                variant="body2"
+                                color="text.primary"
+                                sx={breadcrumbCurrentTextSx}
+                              >
+                                {cat.label}
+                              </Typography>
+                              <Typography
+                                component="span"
+                                variant="body2"
+                                color="text.secondary"
+                                sx={{ ml: 0.5, fontSize: '0.9em' }}
+                              >
+                                ({formatCategoryItemCountsForCategory(cat)})
+                              </Typography>
+                            </Box>
                           ) : (
                             <Link
                               component="button"
@@ -1898,21 +1912,6 @@ export default function App() {
                   })()}
               </Box>
 
-              {canEditContent &&
-                (tileOrdering.status !== 'idle' || tileOrdering.otherScopesFailed) && (
-                  <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
-                    <ReorderStatusIndicator
-                      status={tileOrdering.status}
-                      serverOrderAvailable={tileOrdering.serverOrderAvailable}
-                      onRetry={tileOrdering.retry}
-                      onAcceptServerOrder={handleAcceptServerOrder}
-                      onReapplyLocalOrder={tileOrdering.reapplyLocalOrder}
-                      otherScopesFailed={tileOrdering.otherScopesFailed}
-                      onRetryFailedScopes={tileOrdering.retryFailedScopes}
-                    />
-                  </Box>
-                )}
-
               {/* Tile grid */}
               <SortableTileGrid
                 allCategories={categories}
@@ -1956,6 +1955,7 @@ export default function App() {
                     : undefined
                 }
                 tileOrdering={browseTileOrderingProp}
+                onDragActiveChange={handleDragActiveChange}
               />
 
               {categoriesLoading ? (
@@ -2001,18 +2001,6 @@ export default function App() {
         onToggleVisibility={toggleCategoryVisibility}
         onReorderTiles={reorderTilesFromManage}
         onReorderComplete={handleReorderComplete}
-        reorderStatus={
-          manageAttentionScope !== undefined ? (
-            <ReorderStatusIndicator
-              ariaLabel="Manage Categories reorder save state"
-              status={manageTileOrdering.status}
-              serverOrderAvailable={manageTileOrdering.serverOrderAvailable}
-              onRetry={manageTileOrdering.retry}
-              onAcceptServerOrder={handleManageAcceptServerOrder}
-              onReapplyLocalOrder={manageTileOrdering.reapplyLocalOrder}
-            />
-          ) : undefined
-        }
         programs={programs}
         groups={groups}
       />
@@ -2329,7 +2317,7 @@ export default function App() {
         sx={{
           zIndex: 1500,
           bottom: {
-            xs: `${24 + visibleJobs.length * 88}px !important`,
+            xs: `${24 + (visibleJobs.length + reorderCount) * 88}px !important`,
           },
         }}
       />
@@ -2596,6 +2584,20 @@ export default function App() {
           </Snackbar>
         )
       })}
+
+      {canEditContent && (
+        <ReorderSnackbar
+          offsetIndex={visibleJobs.length}
+          status={activeTileOrdering.status}
+          serverOrderAvailable={activeTileOrdering.serverOrderAvailable}
+          onRetry={activeTileOrdering.retry}
+          onAcceptServerOrder={handleActiveAcceptServerOrder}
+          onReapplyLocalOrder={activeTileOrdering.reapplyLocalOrder}
+          otherScopesFailed={activeTileOrdering.otherScopesFailed}
+          onRetryFailedScopes={activeTileOrdering.retryFailedScopes}
+          onCountChange={setReorderCount}
+        />
+      )}
     </AppShell>
   )
 }

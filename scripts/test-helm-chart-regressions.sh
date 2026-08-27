@@ -162,6 +162,84 @@ assert_contains "$backend_worker_deployment" 'value: "hriv-backend-worker"' \
 assert_contains "$backend_worker_deployment" 'name: WORKER_IMAGE_TAG' \
   "backend worker deployment should surface the worker image tag for build-info metrics"
 
+backend_mode_default_manifest="$(helm template test charts/backend)"
+backend_mode_default_deployment="$(extract_yaml_doc "$backend_mode_default_manifest" "Deployment" "test-hriv-backend")"
+assert_contains "$backend_mode_default_deployment" 'name: TASK_EXECUTION_MODE' \
+  "backend deployment should always render TASK_EXECUTION_MODE"
+assert_contains "$backend_mode_default_deployment" 'value: "local"' \
+  "backend deployment should default TASK_EXECUTION_MODE to local"
+assert_contains "$backend_mode_default_deployment" 'name: WORKER_MAX_JOBS' \
+  "backend deployment should render WORKER_MAX_JOBS for the in-process fallback concurrency"
+assert_not_contains "$backend_mode_default_deployment" 'name: WORKER_TOTAL_SLOTS' \
+  "backend deployment should omit WORKER_TOTAL_SLOTS when redis.worker.totalSlots is unset"
+
+backend_required_manifest="$(helm template test charts/backend \
+  --set tasks.executionMode=required \
+  --set redis.enabled=true \
+  --set redis.worker.enabled=true \
+  --set redis.worker.totalSlots=8)"
+
+backend_required_api="$(extract_yaml_doc "$backend_required_manifest" "Deployment" "test-hriv-backend")"
+assert_contains "$backend_required_api" 'value: "required"' \
+  "backend deployment should render TASK_EXECUTION_MODE=required"
+assert_contains "$backend_required_api" 'name: WORKER_TOTAL_SLOTS' \
+  "backend deployment should render WORKER_TOTAL_SLOTS when redis.worker.totalSlots is set"
+
+backend_required_worker="$(extract_yaml_doc "$backend_required_manifest" "Deployment" "test-hriv-backend-worker")"
+assert_contains "$backend_required_worker" 'name: TASK_EXECUTION_MODE' \
+  "worker deployment should render TASK_EXECUTION_MODE"
+assert_contains "$backend_required_worker" 'value: "required"' \
+  "worker deployment should render TASK_EXECUTION_MODE=required"
+assert_contains "$backend_required_worker" 'name: WORKER_MAX_JOBS' \
+  "worker deployment should render WORKER_MAX_JOBS"
+assert_contains "$backend_required_worker" 'value: "8"' \
+  "worker deployment should render the configured WORKER_TOTAL_SLOTS value"
+assert_contains "$backend_required_worker" 'name: DB_POOL_SIZE' \
+  "worker deployment should render the worker-specific DB_POOL_SIZE"
+assert_contains "$backend_required_worker" 'name: DB_MAX_OVERFLOW' \
+  "worker deployment should render the worker-specific DB_MAX_OVERFLOW"
+assert_contains "$backend_required_worker" 'terminationGracePeriodSeconds: 300' \
+  "worker deployment should default terminationGracePeriodSeconds to 300"
+assert_contains "$backend_required_worker" '"arq", "--check", "app.worker.WorkerSettings"' \
+  "worker deployment should render the arq --check liveness probe by default"
+
+backend_worker_no_probe_manifest="$(helm template test charts/backend \
+  --set redis.enabled=true \
+  --set redis.worker.enabled=true \
+  --set redis.worker.probes.liveness.enabled=false)"
+backend_worker_no_probe="$(extract_yaml_doc "$backend_worker_no_probe_manifest" "Deployment" "test-hriv-backend-worker")"
+assert_not_contains "$backend_worker_no_probe" 'livenessProbe:' \
+  "worker deployment should omit the liveness probe when redis.worker.probes.liveness.enabled=false"
+
+if backend_required_no_redis_output="$(helm template test charts/backend \
+  --set tasks.executionMode=required 2>&1)"; then
+  fail "expected tasks.executionMode=required without redis.enabled to be rejected"
+fi
+assert_contains "$backend_required_no_redis_output" "requires redis.enabled" \
+  "backend chart should explain that required execution mode needs Redis"
+
+if backend_required_no_worker_output="$(helm template test charts/backend \
+  --set tasks.executionMode=required \
+  --set redis.enabled=true 2>&1)"; then
+  fail "expected tasks.executionMode=required without redis.worker.enabled to be rejected"
+fi
+assert_contains "$backend_required_no_worker_output" "requires redis.worker.enabled" \
+  "backend chart should explain that required execution mode needs the worker Deployment"
+
+if backend_low_max_jobs_output="$(helm template test charts/backend \
+  --set redis.worker.maxJobs=1 2>&1)"; then
+  fail "expected redis.worker.maxJobs below 2 to be rejected"
+fi
+assert_contains "$backend_low_max_jobs_output" "must be at least 2" \
+  "backend chart should explain the redis.worker.maxJobs floor"
+
+if backend_bad_mode_output="$(helm template test charts/backend \
+  --set tasks.executionMode=worker 2>&1)"; then
+  fail "expected an unknown tasks.executionMode value to be rejected"
+fi
+assert_contains "$backend_bad_mode_output" "must be 'local' or 'required'" \
+  "backend chart should explain the valid tasks.executionMode values"
+
 backend_frontend_version_manifest="$(helm template test charts/backend \
   --set frontendVersionConfigMap.enabled=true)"
 assert_contains "$backend_frontend_version_manifest" 'name: frontend-version' \

@@ -651,6 +651,49 @@ describe('Category API', () => {
     expect(result).toEqual([TREE_FIXTURE])
   })
 
+  it('fetchCategoryTree returns tree and reports browse headers', async () => {
+    mockFetch.mockReturnValueOnce(
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        headers: {
+          get: (name: string) =>
+            name.toLowerCase() === 'etag'
+              ? 'W/"abc"'
+              : name.toLowerCase() === 'x-browse-revision'
+                ? '7'
+                : null,
+        },
+        json: () => Promise.resolve([TREE_FIXTURE]),
+        text: () => Promise.resolve(JSON.stringify([TREE_FIXTURE])),
+      }),
+    )
+    const onHeaders = vi.fn()
+    const result = await fetchCategoryTree(undefined, onHeaders)
+    expect(result).toEqual([TREE_FIXTURE])
+    expect(onHeaders).toHaveBeenCalledWith({ etag: 'W/"abc"', revision: 7, status: 200 })
+  })
+
+  it('fetchCategoryTree returns null on 304 and reports browse headers', async () => {
+    mockFetch.mockReturnValueOnce(
+      Promise.resolve({
+        ok: false,
+        status: 304,
+        statusText: 'Not Modified',
+        headers: {
+          get: (name: string) => (name.toLowerCase() === 'x-browse-revision' ? '7' : null),
+        },
+        json: () => Promise.resolve(null),
+        text: () => Promise.resolve(''),
+      }),
+    )
+    const onHeaders = vi.fn()
+    const result = await fetchCategoryTree(undefined, onHeaders)
+    expect(result).toBeNull()
+    expect(onHeaders).toHaveBeenCalledWith({ etag: null, revision: 7, status: 304 })
+  })
+
   it('createCategory sends POST with body', async () => {
     mockFetch.mockReturnValueOnce(jsonResponse(CATEGORY_FIXTURE))
     const result = await createCategory({ label: 'Architecture' })
@@ -792,17 +835,21 @@ describe('Tile order API', () => {
   })
   afterEach(() => setToken(null))
 
-  it('getTileOrder with a numeric scope appends parent_category_id query param', async () => {
+  it('getTileOrder with a numeric scope appends parent_category_id query param and bypasses cache', async () => {
     mockFetch.mockReturnValueOnce(jsonResponse(TILE_ORDER_FIXTURE))
     const result = await getTileOrder(5)
-    expect(mockFetch.mock.calls[0][0]).toBe('/api/tile-order?parent_category_id=5')
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/tile-order?parent_category_id=5')
+    expect(init.cache).toBe('no-store')
     expect(result).toEqual(TILE_ORDER_FIXTURE)
   })
 
-  it('getTileOrder with the root scope sends no query string', async () => {
+  it('getTileOrder with the root scope sends no query string and bypasses cache', async () => {
     mockFetch.mockReturnValueOnce(jsonResponse(TILE_ORDER_FIXTURE))
     await getTileOrder(null)
-    expect(mockFetch.mock.calls[0][0]).toBe('/api/tile-order')
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/tile-order')
+    expect(init.cache).toBe('no-store')
   })
 
   it('putTileOrder sends PUT with scope, expected_revision, operation_id, and items', async () => {

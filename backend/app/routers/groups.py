@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import require_role
-from ..authz import can_manage_group
+from ..authz import can_manage_group, user_has_admin_program
 from ..database import get_db
 from ..models import Group, User
 from ..schemas import (
@@ -42,6 +42,27 @@ def _require_manage(user: User, group: Group) -> None:
             status_code=403,
             detail="You do not have permission to manage this group",
         )
+
+
+def _group_out_for_user(group: Group, user: User) -> GroupOut:
+    """Build a GroupOut for *user*, hiding Admin-program members/instructors
+    from non-admin callers.
+    """
+    members = group.members
+    instructors = group.instructors
+    if user.role != "admin":
+        members = [m for m in members if not user_has_admin_program(m)]
+        instructors = [i for i in instructors if not user_has_admin_program(i)]
+    return GroupOut(
+        id=group.id,
+        name=group.name,
+        description=group.description,
+        created_by_user_id=group.created_by_user_id,
+        member_ids=[m.id for m in members],
+        instructor_ids=[i.id for i in instructors],
+        created_at=group.created_at,
+        updated_at=group.updated_at,
+    )
 
 
 async def _load_users(
@@ -76,7 +97,8 @@ async def list_groups(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Group).order_by(Group.name))
-    return result.scalars().unique().all()
+    groups = result.scalars().unique().all()
+    return [_group_out_for_user(g, _user) for g in groups]
 
 
 @router.post("/", response_model=GroupOut, status_code=201)
@@ -103,7 +125,7 @@ async def create_group(
         group.instructors.append(user)
     await db.commit()
     await db.refresh(group, ["members", "instructors"])
-    return group
+    return _group_out_for_user(group, user)
 
 
 @router.get("/{group_id}", response_model=GroupOut)
@@ -112,7 +134,8 @@ async def get_group(
     _user: Annotated[User, Depends(_editor)],
     db: AsyncSession = Depends(get_db),
 ):
-    return await _get_group_or_404(db, group_id)
+    group = await _get_group_or_404(db, group_id)
+    return _group_out_for_user(group, _user)
 
 
 @router.patch("/{group_id}", response_model=GroupOut)
@@ -137,7 +160,7 @@ async def update_group(
         setattr(group, key, value)
     await db.commit()
     await db.refresh(group, ["members", "instructors"])
-    return group
+    return _group_out_for_user(group, user)
 
 
 @router.delete("/{group_id}", status_code=204)
@@ -173,7 +196,10 @@ async def list_members(
     db: AsyncSession = Depends(get_db),
 ):
     group = await _get_group_or_404(db, group_id)
-    return sorted(group.members, key=lambda u: u.name)
+    members = sorted(group.members, key=lambda u: u.name)
+    if _user.role != "admin":
+        members = [m for m in members if not user_has_admin_program(m)]
+    return members
 
 
 @router.post("/{group_id}/members/bulk", response_model=GroupOut)
@@ -192,7 +218,7 @@ async def add_members_bulk(
             group.members.append(student)
     await db.commit()
     await db.refresh(group, ["members", "instructors"])
-    return group
+    return _group_out_for_user(group, user)
 
 
 @router.delete("/{group_id}/members/bulk", response_model=GroupOut)
@@ -208,7 +234,7 @@ async def remove_members_bulk(
     group.members = [m for m in group.members if m.id not in to_remove]
     await db.commit()
     await db.refresh(group, ["members", "instructors"])
-    return group
+    return _group_out_for_user(group, user)
 
 
 @router.post("/{group_id}/members/{user_id}", response_model=GroupOut, status_code=201)
@@ -225,7 +251,7 @@ async def add_member(
         group.members.append(student)
         await db.commit()
         await db.refresh(group, ["members", "instructors"])
-    return group
+    return _group_out_for_user(group, user)
 
 
 @router.delete("/{group_id}/members/{user_id}", response_model=GroupOut)
@@ -242,7 +268,7 @@ async def remove_member(
         group.members.remove(member)
         await db.commit()
         await db.refresh(group, ["members", "instructors"])
-    return group
+    return _group_out_for_user(group, user)
 
 
 # ── Instructors (owners) ──────────────────────────────────
@@ -255,7 +281,10 @@ async def list_instructors(
     db: AsyncSession = Depends(get_db),
 ):
     group = await _get_group_or_404(db, group_id)
-    return sorted(group.instructors, key=lambda u: u.name)
+    instructors = sorted(group.instructors, key=lambda u: u.name)
+    if _user.role != "admin":
+        instructors = [i for i in instructors if not user_has_admin_program(i)]
+    return instructors
 
 
 @router.post("/{group_id}/instructors/bulk", response_model=GroupOut)
@@ -274,7 +303,7 @@ async def add_instructors_bulk(
             group.instructors.append(instructor)
     await db.commit()
     await db.refresh(group, ["members", "instructors"])
-    return group
+    return _group_out_for_user(group, user)
 
 
 @router.delete("/{group_id}/instructors/bulk", response_model=GroupOut)
@@ -298,7 +327,7 @@ async def remove_instructors_bulk(
     group.instructors = remaining
     await db.commit()
     await db.refresh(group, ["members", "instructors"])
-    return group
+    return _group_out_for_user(group, user)
 
 
 @router.post(
@@ -317,7 +346,7 @@ async def add_instructor(
         group.instructors.append(instructor)
         await db.commit()
         await db.refresh(group, ["members", "instructors"])
-    return group
+    return _group_out_for_user(group, user)
 
 
 @router.delete("/{group_id}/instructors/{user_id}", response_model=GroupOut)
@@ -341,4 +370,4 @@ async def remove_instructor(
         group.instructors.remove(instructor)
         await db.commit()
         await db.refresh(group, ["members", "instructors"])
-    return group
+    return _group_out_for_user(group, user)

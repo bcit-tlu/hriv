@@ -44,12 +44,22 @@ still contain duplicates or gaps from before normalization:
 {
   "scope": { "parent_category_id": 123 },
   "revision": 17,
+  "browse_revision": 42,
   "items": [
     { "type": "category", "id": 41, "sort_order": 0 },
     { "type": "image", "id": 901, "sort_order": 1 }
   ]
 }
 ```
+
+The response carries `Cache-Control: no-store, no-cache, must-revalidate`,
+`Pragma: no-cache`, and `X-Browse-Revision` headers, and the frontend's
+`getTileOrder` request uses `cache: 'no-store'`. The `browse_revision` field
+and header expose the current global browse revision so callers can decide
+whether a full category-tree reload is needed. Because `GET /api/tile-order`
+seeds the `expected_revision` CAS token for the following `PUT`, a stale
+cached response would cause false `409` conflicts and silent persistence
+failures on subsequent drags.
 
 ### `PUT /api/tile-order`
 
@@ -89,7 +99,9 @@ Within **one database transaction** the endpoint:
    requests;
 5. rewrites positions with **one set-based `UPDATE … FROM (VALUES …)` per
    entity type** (statement count is constant regardless of item count);
-6. increments the scope revision and commits.
+6. increments the scope revision and the global `browse_state.revision`
+   (so the category-tree endpoint can `304` short-circuit unchanged trees)
+   and commits.
 
 Any failure rolls back both entity types — partial persistence is
 impossible. Two writers holding the same revision can never both succeed.
@@ -179,7 +191,9 @@ unsaved-change flags never leak to the next user on a shared browser.
 
 The compact save-state readout is `ReorderStatusIndicator`
 (`Saving order…`, `Order saved`, `Order changed elsewhere`,
-`Could not save order — Retry`). The internal `dirty` status is transient —
+`Could not save order — Retry`). It is rendered inside a bottom-right `Snackbar`
+(`ReorderSnackbar`) that stacks above the processing/upload snackbars shown by
+`App.tsx` using the same 88 px spacing. The internal `dirty` status is transient —
 `reportOrder` flushes it into `saving` in the same synchronous step — so it
 renders as `Saving order…` rather than a separate unsaved readout.
 Coordinator transitions emit the reorder
@@ -215,10 +229,10 @@ there is no second independent ordering implementation:
   optimistically instead of snapping back to the last-loaded `sort_order`
   while a save is in flight — the same navigation-safe behaviour as the
   Browse grid.
-- The dialog shows the same `ReorderStatusIndicator` save states (unsaved,
-  saving, saved, conflict with Refresh / Keep my order, error with Retry)
-  for the affected scopes of the most recent dialog reorder; when a
-  cross-parent move touches two scopes, the indicator surfaces whichever
+- The same `ReorderStatusIndicator` save states (unsaved, saving, saved,
+  conflict with Refresh / Keep my order, error with Retry) are shown in a
+  bottom-right `Snackbar` coordinated with the processing/upload snackbars;
+  when a cross-parent move touches two scopes, the indicator surfaces whichever
   scope most urgently needs attention (conflict/error first).
 - Because Browse and Manage write through one contract, ordering is
   consistent across both interfaces after navigation and reload: whichever
@@ -240,6 +254,12 @@ order. Foreground reads and authoritative refreshes
 (`refreshCategories`/`refreshUncategorizedImages`) also abort the previous
 read for the same data via `AbortController`; aborted requests are treated
 as expected control flow (no error state, no console noise).
+
+`GET /api/tile-order` is similarly protected: the backend sets
+`Cache-Control: no-store, no-cache, must-revalidate` and `Pragma: no-cache`,
+and the frontend calls it with `cache: 'no-store'`. This prevents a stale
+revision from seeding `expected_revision` after `releaseCleanScopes` drops
+the in-memory CAS token (issue #1083 / epic #975).
 
 Background polling is paused for reads while the tile-ordering coordinator
 reports unsaved work: the poll callback in `useBrowseData` returns early

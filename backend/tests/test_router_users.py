@@ -212,6 +212,58 @@ async def test_list_users_pagination_sets_total_count_header() -> None:
     assert response.headers["X-Total-Count"] == "42"
 
 
+async def test_list_users_instructor_excludes_admin_program() -> None:
+    """Instructors must not see users associated with the Admin program."""
+    admin_prog = _make_program(1, "Admin")
+    normal_prog = _make_program(2, "Biology")
+    users = [
+        _make_user(id=1, programs=[normal_prog]),
+        _make_user(id=2, email="synthetic@example.com", programs=[admin_prog]),
+    ]
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.unique.return_value.all.return_value = users
+    mock_result.scalar_one.return_value = 2
+
+    statements: list = []
+
+    async def mock_execute(stmt):
+        statements.append(stmt)
+        return mock_result
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=mock_execute)
+
+    instructor = _make_user(id=99, role="instructor")
+    await list_users(instructor, db)
+
+    # Two SQL calls: count and select.
+    assert len(statements) == 2
+    compiled = str(statements[1].compile(compile_kwargs={"literal_binds": True}))
+    assert "Admin" in compiled
+    assert "NOT EXISTS" in compiled or "NOT" in compiled
+
+
+async def test_list_users_admin_does_not_filter_admin_program() -> None:
+    """Admins must still see every user, including Admin-program members."""
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.unique.return_value.all.return_value = []
+    mock_result.scalar_one.return_value = 0
+
+    statements: list = []
+
+    async def mock_execute(stmt):
+        statements.append(stmt)
+        return mock_result
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=mock_execute)
+
+    await list_users(_make_user(role="admin"), db)
+
+    compiled = str(statements[1].compile(compile_kwargs={"literal_binds": True}))
+    assert "Admin" not in compiled
+
+
 async def test_get_user_found() -> None:
     user = _make_user()
     mock_result = MagicMock()

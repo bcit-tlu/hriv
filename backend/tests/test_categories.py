@@ -1,5 +1,6 @@
 """Tests for the optimised two-query category tree builder and CRUD endpoints."""
 
+import hashlib
 import json as _json
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -7,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 
 import app.auth as auth
 from app.routers import categories as categories_router
@@ -18,8 +19,19 @@ from app.routers.categories import (
     create_category,
     update_category,
     delete_category,
+    get_category_tree,
 )
 from app.schemas import CategoryCreate, CategoryUpdate
+
+
+@pytest.fixture(autouse=True)
+def _patch_browse_bump(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ browse_state.bump_browse_revision is a real DB helper; unit tests
+    mock the DB layer, so stub the bump to avoid over-consumption of
+    AsyncMock.execute side effects.  """
+    monkeypatch.setattr(
+        categories_router, "bump_browse_revision", AsyncMock(return_value=1)
+    )
 
 
 def _make_program(id: int = 1, name: str = "Test Program") -> SimpleNamespace:
@@ -251,6 +263,77 @@ async def test_load_tree_preserves_category_version() -> None:
     tree = await _load_tree(db, None, user_role="admin")
 
     assert tree[0].version == 7
+
+
+def _expected_browse_etag(
+    revision: int,
+    role: str,
+    programs: list[int] | None = None,
+    groups: list[int] | None = None,
+) -> str:
+    programs_str = ",".join(str(i) for i in sorted(programs or []))
+    groups_str = ",".join(str(i) for i in sorted(groups or []))
+    fragment = hashlib.md5(f"{role}|{programs_str}|{groups_str}".encode()).hexdigest()
+    return f'W/"browse-{revision}-{fragment}"'
+
+
+async def test_get_category_tree_returns_tree_and_browse_headers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = _make_user("admin")
+    request = MagicMock()
+    request.headers = {}
+    response = Response()
+    tree = [_make_category(1, "Root")]
+    monkeypatch.setattr(categories_router, "get_browse_revision", AsyncMock(return_value=7))
+    monkeypatch.setattr(categories_router, "_load_tree", AsyncMock(return_value=tree))
+
+    result = await get_category_tree(request, response, user, AsyncMock())
+
+    assert result == tree
+    assert response.headers["X-Browse-Revision"] == "7"
+    assert response.headers["ETag"] == _expected_browse_etag(7, "admin")
+
+
+async def test_get_category_tree_304_short_circuits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Matching If-None-Match must skip the expensive tree load entirely."""
+    user = _make_user("admin")
+    etag = _expected_browse_etag(7, "admin")
+    request = MagicMock()
+    request.headers = {"if-none-match": etag}
+    response = Response()
+    load_tree_mock = AsyncMock(return_value=[])
+    monkeypatch.setattr(categories_router, "get_browse_revision", AsyncMock(return_value=7))
+    monkeypatch.setattr(categories_router, "_load_tree", load_tree_mock)
+
+    result = await get_category_tree(request, response, user, AsyncMock())
+
+    assert result.status_code == 304
+    assert result.headers["ETag"] == etag
+    assert result.headers["X-Browse-Revision"] == "7"
+    load_tree_mock.assert_not_awaited()
+
+
+async def test_get_category_tree_bumps_browse_revision_on_category_create(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """create_category should bump the global browse revision before commit."""
+    body = CategoryCreate(label="New Cat", parent_id=None)
+    dup_result = MagicMock()
+    dup_result.scalar_one_or_none.return_value = None
+    bump_mock = AsyncMock(return_value=99)
+    monkeypatch.setattr(categories_router, "bump_browse_revision", bump_mock)
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=dup_result)
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    await create_category(body, _make_user("admin"), db=db)
+
+    bump_mock.assert_awaited_once_with(db)
 
 
 # ── CRUD endpoint tests ──────────────────────────────────────
@@ -592,15 +675,15 @@ async def test_update_category_if_match_success() -> None:
     cat = _make_category(1, "Cat", version=2)
     body = CategoryUpdate(label="Renamed")
 
-    cas_result = MagicMock()
-    cas_result.rowcount = 1  # CAS succeeded
-
     dup_result = MagicMock()
     dup_result.scalar_one_or_none.return_value = None
 
+    cas_result = MagicMock()
+    cas_result.rowcount = 1  # CAS succeeded
+
     db = AsyncMock()
     db.get = AsyncMock(return_value=cat)
-    db.execute = AsyncMock(side_effect=[cas_result, dup_result])
+    db.execute = AsyncMock(side_effect=[dup_result, cas_result])
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
 
@@ -615,12 +698,15 @@ async def test_update_category_if_match_conflict() -> None:
     cat = _make_category(1, "Cat", version=5)
     body = CategoryUpdate(label="Renamed")
 
+    dup_result = MagicMock()
+    dup_result.scalar_one_or_none.return_value = None
+
     cas_result = MagicMock()
     cas_result.rowcount = 0  # CAS failed — version mismatch
 
     db = AsyncMock()
     db.get = AsyncMock(return_value=cat)
-    db.execute = AsyncMock(return_value=cas_result)
+    db.execute = AsyncMock(side_effect=[dup_result, cas_result])
 
     with pytest.raises(HTTPException) as exc:
         await update_category(1, body, _mock_request(if_match="3"), MagicMock(), db=db)
