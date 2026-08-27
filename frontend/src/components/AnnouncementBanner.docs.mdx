@@ -1,0 +1,60 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as AnnouncementBannerStories from './AnnouncementBanner.stories'
+
+<Meta of={AnnouncementBannerStories} />
+
+<Title />
+
+<Subtitle>
+  Use announcements to surface short, application-wide messages in either the authenticated app
+  shell or the login screen.
+</Subtitle>
+
+## When to use
+
+Use `AnnouncementBanner` for the active HRIV announcement fetched from the backend. It intentionally stays small: the component renders the message, chooses the app or login placement, and optionally exposes a dismiss action in the app shell.
+
+## Interactive example
+
+`Basic` is the best place to explore supported props. Designers and developers can use controls to try the HRIV placement variant and the curated MUI `Alert` presentation options.
+
+<Primary />
+
+<Controls of={AnnouncementBannerStories.Basic} />
+
+## Implementation guidance
+
+- Keep `variant="app"` for banners displayed inside the authenticated application shell.
+- Use `variant="login"` when the banner appears above the login form.
+- `alertVariant`, `severity`, and `color` are intentionally exposed because they map to safe MUI `Alert` presentation variants.
+- `onDismiss` is callback behavior, so it is shown through the `With Dismiss Action` story rather than as a control.
+
+## Examples
+
+Use these reference examples to compare the states HRIV currently renders.
+
+### With dismiss action
+
+This story includes a `play` function. It demonstrates the recommended lightweight interaction-test pattern: assert the initial state, perform a user action, then assert the visible result.
+
+<Canvas of={AnnouncementBannerStories.WithDismissAction} />
+
+### Login screen
+
+<Canvas of={AnnouncementBannerStories.LoginScreen} />
+
+### Empty message
+
+<Canvas of={AnnouncementBannerStories.EmptyMessage} />
+
+## Stories
+
+<Stories includePrimary={false} />

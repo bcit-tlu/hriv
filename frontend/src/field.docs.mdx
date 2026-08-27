@@ -1,0 +1,60 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as FieldStories from './field.stories'
+
+<Meta of={FieldStories} />
+
+<Title />
+
+<Subtitle>
+  HRIV field guidance for text inputs, login credentials, helper text, error states, and adornments.
+</Subtitle>
+
+## How to use fields
+
+HRIV uses MUI `TextField` directly. Prefer `variant="standard"` for login and compact form fields unless a denser or more prominent form layout requires `outlined` or `filled`.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={FieldStories.Basic} />
+
+## Guidance
+
+- Use clear labels; placeholders should provide examples, not replace labels.
+- Use `helperText` for validation or clarification that helps users complete the field.
+- Use `error` with helper text so the failure is visible and understandable.
+- Use adornments for field-specific actions such as toggling password visibility.
+- Keep credential fields full-width in the login column.
+
+## Variants
+
+<Canvas of={FieldStories.Variants} />
+
+## States
+
+<Canvas of={FieldStories.States} />
+
+## Dialog fields
+
+<Canvas of={FieldStories.DialogFields} />
+
+## Select fields
+
+<Canvas of={FieldStories.SelectFields} />
+
+## Login fields
+
+<Canvas of={FieldStories.LoginFields} />
+
+## Stories
+
+<Stories includePrimary={false} />

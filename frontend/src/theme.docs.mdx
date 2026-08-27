@@ -1,0 +1,34 @@
+import { Canvas, Meta, Stories, Subtitle, Title } from '@storybook/addon-docs/blocks'
+import * as ThemeStories from './theme.stories'
+
+<Meta of={ThemeStories} />
+
+<Title />
+
+<Subtitle>
+  HRIV colour foundations for designers and developers: light palette, dark palette, semantic
+  tokens, opacity treatments, and common component variants.
+</Subtitle>
+
+## How to use this section
+
+Use `Foundations/Theme` as the first stop when choosing or reviewing UI colours. The palette stories render directly from `frontend/src/theme.ts`, so the swatches reflect the same tokens used by the application and component stories.
+
+## Theme stories
+
+- `Light Theme` shows HRIV's light-mode palette, semantic tokens, and common component variants.
+- `Dark Theme` shows the matching dark-mode palette.
+
+These stories are fixed references rather than prop-driven components, so controls are intentionally disabled. This docs page is the side-by-side reference for both palettes. Use the Storybook theme toolbar to switch the global preview theme while reviewing other component stories.
+
+## Light theme
+
+<Canvas of={ThemeStories.LightTheme} />
+
+## Dark theme
+
+<Canvas of={ThemeStories.DarkTheme} />
+
+## Stories
+
+<Stories includePrimary={false} />

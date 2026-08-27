@@ -1,0 +1,53 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as LinkStories from './link.stories'
+
+<Meta of={LinkStories} />
+
+<Title />
+
+<Subtitle>
+  HRIV link guidance for anchors, button-style links, breadcrumbs, footer links, and status/log
+  actions.
+</Subtitle>
+
+## How to use links
+
+HRIV uses MUI `Link` for both true anchors and button-style navigation actions. Use real anchors for external destinations and `component="button"` for in-app actions that do not navigate by URL.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={LinkStories.Basic} />
+
+## Guidance
+
+- Use `underline="hover"` for most navigation and footer links.
+- Use `underline="always"` for compact status/log actions that need stronger affordance.
+- Use `variant="caption"` with `color="text.secondary"` in the footer.
+- Use `component="button"` for breadcrumbs and in-app state transitions.
+- External links should include `target="_blank"` and `rel="noopener noreferrer"`.
+
+## Footer links
+
+<Canvas of={LinkStories.FooterLinks} />
+
+## Button links
+
+<Canvas of={LinkStories.ButtonLinks} />
+
+## Breadcrumb links
+
+<Canvas of={LinkStories.BreadcrumbLinks} />
+
+## Stories
+
+<Stories includePrimary={false} />

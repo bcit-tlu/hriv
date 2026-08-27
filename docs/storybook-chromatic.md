@@ -165,9 +165,72 @@ Storybook should complement, not replace, existing tests:
 - Chromatic: visual diffs, responsive snapshots, interaction completion, and
   accessibility checks from the story catalog.
 
+## Current implementation
+
+The initial frontend setup now includes:
+
+- Storybook React/Vite config in `frontend/.storybook/main.ts`.
+- The Storybook MUI themes addon (`@storybook/addon-themes`) configured in
+  `frontend/.storybook/preview.tsx` with HRIV's `buildTheme('light')` and
+  `buildTheme('dark')`, plus MUI `ThemeProvider` and `CssBaseline`.
+- Storybook quality addons for local review:
+  - `@chromatic-com/storybook` provides the Visual Tests panel for Chromatic
+    visual regression review.
+  - `@storybook/addon-a11y` provides the Accessibility panel for axe-based checks
+    while browsing stories.
+- Frontend scripts: `npm run storybook`, `npm run build-storybook`,
+  `npm run chromatic`, and `npm run test:storybook`.
+- Foundation stories at `frontend/src/theme.stories.tsx` and
+  `frontend/src/typography.stories.tsx` document HRIV's light/dark palettes,
+  typography variants, custom semantic tokens, opacity treatments, and common
+  MUI component variants.
+- Component stories at
+  `frontend/src/components/AnnouncementBanner.stories.tsx`,
+  `frontend/src/components/CategoryTile.stories.tsx`,
+  `frontend/src/components/CategoryRestrictionIcons.stories.tsx`,
+  `frontend/src/components/ColorModeToggle.stories.tsx`,
+  `frontend/src/components/FooterBar.stories.tsx`,
+  `frontend/src/components/LoginSplashImage.stories.tsx`,
+  `frontend/src/button.stories.tsx`, `frontend/src/field.stories.tsx`, and
+  `frontend/src/link.stories.tsx` use a Grafana-inspired docs pattern for simple
+  component stories:
+  - Group components by purpose in the sidebar, e.g.
+    `Information/AnnouncementBanner`.
+  - Add an attached `*.docs.mdx` page for each documented component/section so
+    the sidebar includes a Grafana-style `Docs` entry with usage guidance,
+    canvases, and controls.
+  - Make `Basic` the first story and keep it close to the default production
+    usage.
+  - Expose meaningful underlying UI-library variants as controls on `Basic` when
+    they are safe for consumers to use. For example, `AnnouncementBanner`
+    exposes curated MUI `Alert` presentation props such as `alertVariant`,
+    `severity`, and `color`; `CategoryTile` exposes HRIV browse-tile states such
+    as visibility, card image, restrictions, counts, and admin/instructor
+    actions.
+  - Add focused, named example stories for meaningful states such as `With
+Dismiss Action`, `Login Screen`, and `Empty Message`.
+  - Use the attached `*.docs.mdx` page as the showcase/reference surface: add
+    explicit `Canvas` blocks for the examples designers and developers should
+    compare, rather than creating a separate `Examples` story.
+  - Prefer `play` functions for small, deterministic user interactions that do
+    not require live backend state. `AnnouncementBanner`'s `With Dismiss Action`
+    story is the first example: it clicks the dismiss button and asserts the
+    dismissed state.
+  - When a story intentionally disables controls, explain why in the component's
+    attached `*.docs.mdx` page and point readers back to `Basic` for interactive
+    controls.
+
+Because the frontend currently uses Vite 8, the Storybook packages are pinned to
+Storybook 10.6 beta versions, which are the available versions whose React/Vite
+framework advertises Vite 8 peer support. Storybook's Vitest addon is configured
+with `frontend/vitest.config.ts` and runs story tests in Chromium via
+`@vitest/browser-playwright`; install the browser once with
+`npx playwright install chromium` before running `npm run test:storybook` on a
+fresh machine.
+
 ## First implementation slice
 
-A useful first PR should stay intentionally small:
+The original recommended first PR was intentionally small:
 
 1. Install Storybook React + Vite dependencies.
 2. Add `storybook` and `build-storybook` scripts.

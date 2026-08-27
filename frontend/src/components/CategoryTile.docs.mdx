@@ -1,0 +1,74 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as CategoryTileStories from './CategoryTile.stories'
+
+<Meta of={CategoryTileStories} />
+
+<Title />
+
+<Subtitle>
+  Browse-page category tile showing category counts, visibility, restriction chips, thumbnails, and
+  instructor/admin affordances.
+</Subtitle>
+
+## When to use
+
+Use `CategoryTile` inside browse tile grids whenever a category needs to be represented as a clickable card. The component reflects HRIV-specific state: hidden categories, inherited hidden state, program and group visibility chips, selected card images, and content-management actions.
+
+## Interactive example
+
+`Basic` exposes story-friendly controls that map to the states HRIV currently supports. Use it to explore combinations without needing to construct nested category data by hand.
+
+<Primary />
+
+<Controls of={CategoryTileStories.Basic} />
+
+## Implementation guidance
+
+- Use the focused `With…` stories to inspect individual behaviours before combining them.
+- Program and group controls model both direct and inherited restrictions. Inherited chips use the lower-emphasis visual treatment from the app.
+- Action controls represent instructor/admin affordances. Students should normally see the tile without edit, move, or card-image actions.
+- `parentHidden` models a hidden ancestor; this desaturates the tile even if the category itself is active.
+
+## Examples
+
+Use these reference examples to compare the browse-tile states HRIV currently renders.
+
+### With card image
+
+<Canvas of={CategoryTileStories.WithCardImage} />
+
+### With restrictions
+
+<Canvas of={CategoryTileStories.WithRestrictions} />
+
+### Hidden
+
+<Canvas of={CategoryTileStories.Hidden} />
+
+### With inherited hidden state
+
+<Canvas of={CategoryTileStories.WithInheritedHiddenState} />
+
+### With actions
+
+<Canvas of={CategoryTileStories.WithActions} />
+
+### Long title
+
+<Canvas of={CategoryTileStories.LongTitle} />
+
+### Empty
+
+<Canvas of={CategoryTileStories.Empty} />
+
+## Stories
+
+<Stories includePrimary={false} />

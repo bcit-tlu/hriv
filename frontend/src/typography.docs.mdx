@@ -1,0 +1,63 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as TypographyStories from './typography.stories'
+
+<Meta of={TypographyStories} />
+
+<Title />
+
+<Subtitle>
+  HRIV typography foundations for headings, body copy, metadata, dense UI labels, and theme-aware
+  text colours.
+</Subtitle>
+
+## How to use Typography
+
+HRIV uses MUI `Typography` with a shared Roboto font stack from `frontend/src/theme.ts`. Prefer semantic MUI variants over ad-hoc font sizes so text stays consistent across the app and Storybook.
+
+## Interactive example
+
+`Basic` exposes the Typography controls designers and developers most often need: variant, colour, alignment, common font weights, and spacing/wrapping behaviours.
+
+<Primary />
+
+<Controls of={TypographyStories.Basic} />
+
+## Variant guidance
+
+- `h4`: large page or foundation headings. Use sparingly.
+- `h5`: dialog headings, login headings, and major page sections.
+- `h6`: card titles, category/image tile labels, and compact section headings.
+- `subtitle1`: rare supporting heading treatment.
+- `subtitle2`: compact headings near metadata or table content.
+- `body1`: default prose, explanatory text, and empty-state messages.
+- `body2`: dense metadata, breadcrumbs, helper text, and tile counts.
+- `caption`: footers, timestamps, status details, and compact labels.
+- `overline`: Storybook/reference labels and small uppercase section labels.
+
+## Scale
+
+<Canvas of={TypographyStories.Scale} />
+
+## Usage examples
+
+<Canvas of={TypographyStories.UsageExamples} />
+
+## Light theme
+
+<Canvas of={TypographyStories.LightTheme} />
+
+## Dark theme
+
+<Canvas of={TypographyStories.DarkTheme} />
+
+## Stories
+
+<Stories includePrimary={false} />

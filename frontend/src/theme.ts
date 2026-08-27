@@ -98,8 +98,14 @@ const sharedTypography: ThemeOptions['typography'] = {
   fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
 }
 
-export function buildTheme(mode: 'light' | 'dark') {
-  const palette = mode === 'dark' ? darkPalette : lightPalette
+export type HrivThemeMode = 'light' | 'dark'
+
+export function getThemePalette(mode: HrivThemeMode): typeof lightPalette {
+  return mode === 'dark' ? darkPalette : lightPalette
+}
+
+export function buildTheme(mode: HrivThemeMode) {
+  const palette = getThemePalette(mode)
 
   return createTheme({
     palette: {
@@ -120,7 +126,7 @@ export function buildTheme(mode: 'light' | 'dark') {
  * Retrieve the custom surfaceVariant colour for the current mode.
  * Use this for the People / Admin page backgrounds instead of a hard-coded hex.
  */
-export function getSurfaceVariant(mode: 'light' | 'dark'): string {
+export function getSurfaceVariant(mode: HrivThemeMode): string {
   return mode === 'dark' ? darkPalette.surfaceVariant : lightPalette.surfaceVariant
 }
 
@@ -129,7 +135,7 @@ export function getSurfaceVariant(mode: 'light' | 'dark'): string {
  * treatment; `subtle*` is the lower-emphasis version for inherited/read-only
  * states that still meets WCAG-AA contrast.
  */
-export function getGroupChipColors(mode: 'light' | 'dark'): {
+export function getGroupChipColors(mode: HrivThemeMode): {
   solidBg: string
   solidText: string
   subtleBg: string
@@ -144,7 +150,7 @@ export function getGroupChipColors(mode: 'light' | 'dark'): {
  * WCAG-AA grey with built-in alpha so it can be used directly as a CSS
  * colour value.
  */
-export function getVisibilityColors(mode: 'light' | 'dark'): {
+export function getVisibilityColors(mode: HrivThemeMode): {
   active: string
   inactive: string
   inactiveChipBg: string

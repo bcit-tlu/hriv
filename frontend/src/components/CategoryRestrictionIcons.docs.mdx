@@ -1,0 +1,77 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as CategoryRestrictionIconsStories from './CategoryRestrictionIcons.stories'
+
+<Meta of={CategoryRestrictionIconsStories} />
+
+<Title />
+
+<Subtitle>
+  Compact category restriction indicators for program locks, group locks, inherited access rules,
+  hidden categories, and clickable management affordances.
+</Subtitle>
+
+## When to use
+
+Use `CategoryRestrictionIcons` next to category labels in dense category-picker and category-management rows. The icons summarize backend-enforced visibility rules without replacing the detailed restriction controls in edit dialogs.
+
+## Interactive example
+
+`Basic` exposes the supported HRIV states as controls: program restrictions, group restrictions, inherited restriction styling, hidden-category muted styling, and clickable management affordances.
+
+<Primary />
+
+<Controls of={CategoryRestrictionIconsStories.Basic} />
+
+## Implementation guidance
+
+- Program restrictions use the primary colour and the tooltip `Restricted to specific programs`.
+- Group restrictions use the secondary colour and the tooltip `Restricted to specific groups`.
+- Inherited restrictions use the inherited opacity treatment and tooltip copy that names the parent source.
+- Hidden categories mute both lock colours to the same action colour while preserving inherited opacity.
+- In management contexts, pass click handlers so the locks render as MUI `IconButton` affordances. In read-only picker contexts, omit handlers so they render as labelled static icons.
+
+## Examples
+
+### Program restriction
+
+<Canvas of={CategoryRestrictionIconsStories.ProgramRestriction} />
+
+### Group restriction
+
+<Canvas of={CategoryRestrictionIconsStories.GroupRestriction} />
+
+### Program and group restrictions
+
+<Canvas of={CategoryRestrictionIconsStories.ProgramAndGroupRestrictions} />
+
+### Inherited restrictions
+
+<Canvas of={CategoryRestrictionIconsStories.InheritedRestrictions} />
+
+### Hidden category
+
+<Canvas of={CategoryRestrictionIconsStories.HiddenCategory} />
+
+### Clickable management affordance
+
+<Canvas of={CategoryRestrictionIconsStories.ClickableManagementAffordance} />
+
+### In category picker row
+
+<Canvas of={CategoryRestrictionIconsStories.InCategoryPickerRow} />
+
+### State matrix
+
+<Canvas of={CategoryRestrictionIconsStories.StateMatrix} />
+
+## Stories
+
+<Stories includePrimary={false} />
