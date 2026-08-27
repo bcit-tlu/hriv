@@ -1,5 +1,56 @@
 # Changelog
 
+## [0.48.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.47.0...frontend-v0.48.0) (2026-08-25)
+
+
+### Features
+
+* **frontend:** queue final reorder snackbars with fade and auto-hide ([#1120](https://github.com/bcit-tlu/hriv/issues/1120)) ([779a3cc](https://github.com/bcit-tlu/hriv/commit/779a3ccec6c04f7bdb37c7862dc19ba9010a0b46))
+* **frontend:** revert live-rect measurement and add dev-mode DnD instrumentation ([#1117](https://github.com/bcit-tlu/hriv/issues/1117)) ([5f26401](https://github.com/bcit-tlu/hriv/commit/5f26401be5ec48356cc8677d4053157aed6fc414))
+
+
+### Bug Fixes
+
+* **frontend:** prevent reflowed source tile from losing collision target ([#1119](https://github.com/bcit-tlu/hriv/issues/1119)) ([32d12d7](https://github.com/bcit-tlu/hriv/commit/32d12d7be4a5e28097af4ce77c3cd56914277086))
+
+## [0.47.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.46.0...frontend-v0.47.0) (2026-08-24)
+
+
+### Features
+
+* **frontend:** stabilize Browse tile references and memoization ([#1111](https://github.com/bcit-tlu/hriv/issues/1111)) ([9649e24](https://github.com/bcit-tlu/hriv/commit/9649e24e0f28228cd086e169fcaedb81b2af3915))
+
+## [0.46.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.45.0...frontend-v0.46.0) (2026-08-24)
+
+
+### Features
+
+* **backend,frontend:** add monotonic browse revision and 304 short-circuit ([#1108](https://github.com/bcit-tlu/hriv/issues/1108)) ([641c1a7](https://github.com/bcit-tlu/hriv/commit/641c1a76169744ef25f7ff198c651992d3b28846))
+
+
+### Bug Fixes
+
+* **frontend:** stop mid-drag grid state churn ([#1105](https://github.com/bcit-tlu/hriv/issues/1105)) ([6158e26](https://github.com/bcit-tlu/hriv/commit/6158e265ba46844124d0d538907125b47ef37cb1))
+
+## [0.45.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.44.0...frontend-v0.45.0) (2026-08-24)
+
+
+### Features
+
+* **frontend:** move reorder status to stacked bottom-right snackbar ([#1098](https://github.com/bcit-tlu/hriv/issues/1098)) ([d3225e8](https://github.com/bcit-tlu/hriv/commit/d3225e8f9d03047272eeb8e1eb0ad622a6e7ce9d))
+
+## [0.44.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.43.1...frontend-v0.44.0) (2026-08-24)
+
+
+### Features
+
+* **frontend:** show descendant sub-category and image counts on category surfaces ([#1090](https://github.com/bcit-tlu/hriv/issues/1090)) ([d8690a8](https://github.com/bcit-tlu/hriv/commit/d8690a8ebcfaafccd144e262e6a1a614381ab890))
+
+
+### Bug Fixes
+
+* **tile-order:** prevent stale GET /tile-order from seeding stale CAS revision ([#1089](https://github.com/bcit-tlu/hriv/issues/1089)) ([db910e9](https://github.com/bcit-tlu/hriv/commit/db910e930d4e459b0500aecf2f7f65126e969c49))
+
 ## [0.43.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.43.0...frontend-v0.43.1) (2026-08-13)
 
 

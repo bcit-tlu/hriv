@@ -1,4 +1,5 @@
 import contextlib
+from copy import deepcopy
 import errno
 import json
 import logging
@@ -12,7 +13,8 @@ from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import get_current_user, require_role
-from ..database import get_db, settings
+from ..browse_state import bump_browse_revision
+from ..database import async_session, get_db, settings
 from ..image_validation import UPLOAD_CHUNK_SIZE, is_valid_image
 from ..models import Category, Image, SourceImage, User
 from ..schemas import (
@@ -28,6 +30,7 @@ from ..schemas import (
 from ..tile_order import bump_scopes, scope_key_for
 from ..tracing import record_exception_if_server_error
 from ..visibility import get_student_excluded_category_ids, is_category_visible_to_student
+from ..worker import TaskQueueUnavailableError
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -107,6 +110,8 @@ async def create_image(
                 file_size=body.file_size,
             )
             db.add(img)
+            if body.category_id is not None:
+                await bump_browse_revision(db)
             await db.commit()
             await db.refresh(img)
             span.set_attribute("image.id", img.id)
@@ -145,10 +150,32 @@ async def bulk_update_images(
                     affected = {scope_key_for(img.category_id) for img in moved}
                     affected.add(scope_key_for(update_data["category_id"]))
                     await bump_scopes(db, affected)
+
+            # Only apply changes and bump the per-image version when this image
+            # is actually changing. Skip both the version bump and the write for
+            # unchanged rows so a no-op bulk edit does not advance versions behind
+            # a stale 304 (issue #975 / #1108).
+            browse_dirty = False
+            changed_images = []
             for img in images:
+                new_category_id = update_data.get("category_id", img.category_id)
+                if img.category_id is None and new_category_id is None:
+                    # Uncategorized and staying uncategorized — still count as
+                    # changed if any provided field differs, but it cannot affect
+                    # the browse tree.
+                    if any(getattr(img, key) != value for key, value in update_data.items()):
+                        changed_images.append(img)
+                    continue
+                if any(getattr(img, key) != value for key, value in update_data.items()):
+                    changed_images.append(img)
+                    browse_dirty = True
+
+            for img in changed_images:
                 for key, value in update_data.items():
                     setattr(img, key, value)
                 img.version = img.version + 1
+            if browse_dirty:
+                await bump_browse_revision(db)
             await db.commit()
             # Reload updated images
             stmt = select(Image).where(Image.id.in_(body.image_ids)).order_by(Image.sort_order, Image.name)
@@ -198,39 +225,6 @@ async def update_image(
                     affected.add(scope_key_for(ordering_fields["category_id"]))
                 await bump_scopes(db, affected)
 
-            # Optimistic concurrency: if the client sends If-Match, verify the
-            # version has not changed since the client last read the resource.
-            # The version check and increment are performed atomically via a
-            # single UPDATE … WHERE version = :client_version statement. Doing
-            # the compare-and-swap in one database round-trip closes the TOCTOU
-            # window where two concurrent writers could both observe version=N,
-            # both pass an in-memory check, and both commit version=N+1 —
-            # silently losing one update.
-            if_match = request.headers.get("If-Match")
-            if if_match is not None:
-                span.set_attribute("image.optimistic_lock", True)
-                try:
-                    client_version = int(if_match.strip('"'))
-                except (ValueError, TypeError):
-                    raise HTTPException(status_code=400, detail="Invalid If-Match header")
-                cas = await db.execute(
-                    sql_update(Image)
-                    .where(Image.id == image_id, Image.version == client_version)
-                    .values(version=Image.version + 1)
-                )
-                if cas.rowcount == 0:
-                    raise HTTPException(
-                        status_code=409,
-                        detail="Resource has been modified by another client",
-                    )
-                # Sync the in-memory instance so that SQLAlchemy's subsequent
-                # UPDATE for field changes doesn't revert the version bump.
-                img.version = client_version + 1
-            else:
-                span.set_attribute("image.optimistic_lock", False)
-                # No optimistic concurrency requested — bump version unconditionally.
-                img.version = img.version + 1
-
             update_data = body.model_dump(exclude_unset=True)
             if "metadata_extra" in update_data:
                 update_data["metadata_"] = update_data.pop("metadata_extra")
@@ -245,11 +239,59 @@ async def update_image(
                     else:
                         current[key] = value
                 update_data["metadata_"] = current if current else None
-            for key, value in update_data.items():
-                setattr(img, key, value)
+            new_category_id = update_data.get("category_id", img.category_id)
 
-            await db.commit()
-            await db.refresh(img)
+            # Do not bump the entity version or the browse revision when the
+            # submitted values equal the current values. A no-op save should not
+            # stale the client's If-Match copy or invalidate every viewer's tree
+            # cache.
+            is_dirty = any(getattr(img, key) != value for key, value in update_data.items())
+            browse_affects_tree = (
+                img.category_id is not None or new_category_id is not None
+            )
+            browse_dirty = browse_affects_tree and is_dirty
+
+            if_match = request.headers.get("If-Match")
+            client_version: int | None = None
+            if if_match is not None:
+                span.set_attribute("image.optimistic_lock", True)
+                try:
+                    client_version = int(if_match.strip('"'))
+                except (ValueError, TypeError):
+                    raise HTTPException(status_code=400, detail="Invalid If-Match header")
+            else:
+                span.set_attribute("image.optimistic_lock", False)
+
+            # Optimistic concurrency: if the client sends If-Match, verify the
+            # version has not changed since the client last read the resource.
+            # The version check is performed atomically via a single
+            # UPDATE … WHERE version = :client_version statement; the version
+            # is only incremented when the request actually changes data, so
+            # no-op saves do not stale the client's If-Match copy.
+            if client_version is not None:
+                new_version = client_version + (1 if is_dirty else 0)
+                cas = await db.execute(
+                    sql_update(Image)
+                    .where(Image.id == image_id, Image.version == client_version)
+                    .values(version=new_version)
+                )
+                if cas.rowcount == 0:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Resource has been modified by another client",
+                    )
+                img.version = new_version
+            elif is_dirty:
+                img.version = img.version + 1
+
+            if is_dirty:
+                for key, value in update_data.items():
+                    setattr(img, key, value)
+
+                if browse_dirty:
+                    await bump_browse_revision(db)
+                await db.commit()
+                await db.refresh(img)
 
             response = Response(
                 content=ImageOut.model_validate(img).model_dump_json(),
@@ -288,6 +330,9 @@ async def replace_image(
     When metadata fields are included in the multipart form, the image record
     is updated in the same transaction as the source-image creation, ensuring
     both succeed or both fail.
+
+    In required task-execution mode, a rejected enqueue restores the target
+    metadata and version when no concurrent image update has superseded it.
     """
     with tracer.start_as_current_span("image.replace") as span:
         try:
@@ -368,12 +413,18 @@ async def replace_image(
 
             file_size = os.path.getsize(stored_path)
 
-            # ── Apply optional metadata updates atomically ──────────
-            # Done after the upload loop so the revision lock below is
-            # held only for the short transaction, never across client
-            # I/O; and before any row mutation so the session is clean
-            # while the lock is taken, preserving the revision-then-rows
-            # lock order (docs/tile-ordering.md).
+            metadata_snapshot = {
+                "name": img.name,
+                "category_id": img.category_id,
+                "copyright": img.copyright,
+                "note": img.note,
+                "active": img.active,
+                "metadata_": deepcopy(img.metadata_),
+                "version": img.version,
+            }
+
+            # Apply metadata before creating the SourceImage so the target
+            # update and source-image insert remain one transaction.
             if has_metadata:
                 if category_id is not None and parsed_cat != img.category_id:
                     # A category move changes scope membership: invalidate
@@ -411,6 +462,10 @@ async def replace_image(
                 image_id=image_id,
             )
             db.add(src)
+            if has_metadata and (
+                metadata_snapshot["category_id"] is not None or img.category_id is not None
+            ):
+                await bump_browse_revision(db)
             await db.commit()
             await db.refresh(src)
 
@@ -430,10 +485,125 @@ async def replace_image(
             from ..processing import process_replace_image
             from ..worker import enqueue_replace_image
 
-            enqueued = await enqueue_replace_image(src.id, image_id)
-            span.set_attribute("image.enqueued", enqueued)
-            if not enqueued:
-                background_tasks.add_task(process_replace_image, src.id, image_id)
+            source_image_id = src.id
+            target_image_id = image_id
+            try:
+                enqueue_result = await enqueue_replace_image(
+                    source_image_id,
+                    target_image_id,
+                )
+            except TaskQueueUnavailableError:
+                bookkeeping_committed = False
+                try:
+                    src.status = "failed"
+                    src.status_message = "Failed"
+                    src.error_message = (
+                        "Task queue unavailable; image replacement was not started."
+                    )
+                    await db.commit()
+                    bookkeeping_committed = True
+                except Exception:
+                    logger.exception(
+                        "Failed to mark replacement source image after queue rejection",
+                        extra={
+                            "event": "replace.queue_rejection_bookkeeping_failed",
+                            "source_image_id": source_image_id,
+                            "target_image_id": target_image_id,
+                        },
+                    )
+                    with contextlib.suppress(Exception):
+                        await db.rollback()
+                    try:
+                        async with async_session() as recovery_db:
+                            await recovery_db.execute(
+                                sql_update(SourceImage)
+                                .where(
+                                    SourceImage.id == source_image_id,
+                                    SourceImage.status == "pending",
+                                )
+                                .values(
+                                    status="failed",
+                                    status_message="Failed",
+                                    error_message=(
+                                        "Task queue unavailable; image replacement "
+                                        "was not started."
+                                    ),
+                                )
+                            )
+                            await recovery_db.commit()
+                            bookkeeping_committed = True
+                    except Exception:
+                        logger.exception(
+                            "Fresh-session replacement source-image bookkeeping failed",
+                            extra={
+                                "event": "replace.queue_rejection_recovery_failed",
+                                "source_image_id": source_image_id,
+                                "target_image_id": target_image_id,
+                            },
+                        )
+                if has_metadata:
+                    try:
+                        restore_result = await db.execute(
+                            sql_update(Image)
+                            .where(
+                                Image.id == target_image_id,
+                                Image.version == metadata_snapshot["version"] + 1,
+                            )
+                            .values(
+                                name=metadata_snapshot["name"],
+                                category_id=metadata_snapshot["category_id"],
+                                copyright=metadata_snapshot["copyright"],
+                                note=metadata_snapshot["note"],
+                                active=metadata_snapshot["active"],
+                                metadata_=metadata_snapshot["metadata_"],
+                                version=metadata_snapshot["version"],
+                            )
+                        )
+                        if restore_result.rowcount == 1:
+                            # The restore reverts any browse-visible fields (name,
+                            # copyright, note, active, metadata) on a categorized image,
+                            # so the tree content can change. Bump the browse revision
+                            # whenever the image was or becomes categorized, matching
+                            # the forward-apply condition.
+                            new_category_id = img.category_id
+                            db.expire(img)
+                            if (
+                                metadata_snapshot["category_id"] is not None
+                                or new_category_id is not None
+                            ):
+                                await bump_browse_revision(db)
+                            await db.commit()
+                        else:
+                            await db.rollback()
+                            logger.warning(
+                                "Skipped replacement metadata restore after a concurrent update",
+                                extra={
+                                    "event": "replace.metadata_restore_skipped",
+                                    "source_image_id": source_image_id,
+                                    "target_image_id": target_image_id,
+                                    "expected_version": metadata_snapshot["version"] + 1,
+                                },
+                            )
+                    except Exception:
+                        logger.exception(
+                            "Replacement metadata restore failed after queue rejection",
+                            extra={
+                                "event": "replace.metadata_restore_failed",
+                                "source_image_id": source_image_id,
+                                "target_image_id": target_image_id,
+                            },
+                        )
+                if bookkeeping_committed:
+                    with contextlib.suppress(OSError):
+                        os.unlink(stored_path)
+                raise
+            span.set_attribute("image.enqueued", enqueue_result.queued)
+            if not enqueue_result.queued:
+                background_tasks.add_task(
+                    process_replace_image,
+                    source_image_id,
+                    target_image_id,
+                )
 
             return src
         except Exception as exc:
@@ -456,8 +626,11 @@ async def bulk_delete_images(
             images = result.scalars().all()
             if len(images) != len(set(body.image_ids)):
                 raise HTTPException(status_code=404, detail="One or more images not found")
+            browse_dirty = any(img.category_id is not None for img in images)
             for img in images:
                 await db.delete(img)
+            if browse_dirty:
+                await bump_browse_revision(db)
             await db.commit()
         except Exception as exc:
             record_exception_if_server_error(span, exc)
@@ -477,6 +650,8 @@ async def delete_image(
             if not img:
                 raise HTTPException(status_code=404, detail="Image not found")
             await db.delete(img)
+            if img.category_id is not None:
+                await bump_browse_revision(db)
             await db.commit()
         except Exception as exc:
             record_exception_if_server_error(span, exc)

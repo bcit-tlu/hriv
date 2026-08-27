@@ -132,6 +132,38 @@ To verify trace context propagation from API to arq worker:
 
 `app/otel_bootstrap.py` ensures the OTEL SDK is configured in uvicorn's `--reload` child process. Without it, `inject(carrier)` produces an empty dict because the child inherits env vars but not the SDK state from `opentelemetry-instrument`. The module detects `ProxyTracerProvider` and re-runs `initialize()`. In production (`--workers 1`, no `--reload`), it's a no-op.
 
+## Testing TASK_EXECUTION_MODE=required
+
+To run the whole local stack in required mode, write `TASK_EXECUTION_MODE=required`
+into `backend/.env` (picked up by both `backend` and `worker` via `env_file`) and
+`docker compose up -d`. Verify inside the containers with
+`docker compose exec backend env | grep TASK_EXECUTION`.
+
+Key checks in required mode:
+
+- All queue-backed work (uploads, replace, bulk import, admin export/import) runs
+  in the `worker` container — `docker compose logs worker` shows
+  `worker.task_started` / `worker.admin_task_started`; backend logs show no
+  `processing.started`.
+- With Redis stopped, task-producing endpoints return HTTP 503
+  `{"detail": "Task queue unavailable"}` with `Retry-After: 30`, and the
+  pre-created source-image/task rows are marked `failed`. The UI shows an
+  "Upload failed" inline error in the Add Images modal.
+- The plain `/api/health` endpoint stays `ok` when the queue is down; the
+  **queue-aware endpoint is `/api/health/queue`**, which returns 503
+  `{"detail":{"status":"degraded"}}` in required mode.
+- Metrics (`/api/metrics`): `hriv_task_execution_mode_info{mode="required"} 1`,
+  `hriv_task_queue_up`, `hriv_task_queue_worker_up`, `hriv_task_queue_depth`.
+- Chart liveness probe equivalent: `docker compose exec worker arq --check
+app.worker.WorkerSettings` exits 0 with Redis up. Note: **the compose worker
+  container exits (code 1) when Redis goes down**, so to prove the non-zero
+  check use a one-off container:
+  `docker compose run --rm --no-deps worker arq --check app.worker.WorkerSettings`
+  (capture `$?` directly — don't pipe to `tail` or you read the wrong exit code).
+  After restarting Redis, bring the worker back with `docker compose up -d worker`.
+- Filesystem export stages its archive under `/data/admin_tasks/` in the backend
+  container (data volume, not `/tmp`).
+
 ## Testing Graceful Degradation
 
 ### Redis down — BackgroundTasks fallback
@@ -139,12 +171,16 @@ To verify trace context propagation from API to arq worker:
 ```bash
 docker compose stop redis
 # Upload an image — should succeed, processed in backend container
-docker compose logs backend | grep 'worker.enqueue_failed\|processing.started'
+docker compose logs backend | grep 'worker.queue_unavailable\|worker.submission_failed\|processing.started'
 # Restart redis
 docker compose start redis
 ```
 
-Verify: `worker.enqueue_failed` event in backend logs, followed by `processing.started` in backend (not worker). Image completes successfully.
+Verify: `worker.queue_unavailable` or `worker.submission_failed` in backend logs,
+followed by `processing.started` in backend (not worker). This
+BackgroundTasks fallback applies only when `TASK_EXECUTION_MODE=local`; required
+mode returns HTTP 503 and does not start processing in the backend. Image
+completes successfully in local mode.
 
 ### Redis down — rate limiting
 

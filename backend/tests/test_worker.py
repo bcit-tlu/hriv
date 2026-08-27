@@ -6,14 +6,24 @@ from types import ModuleType
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
+from fakeredis import aioredis
+from arq.constants import abort_jobs_ss, job_key_prefix
+from arq.jobs import serialize_job
+from arq.utils import timestamp_ms
+from arq.worker import Worker, func
 from opentelemetry.trace import StatusCode
 
+from app.database import settings
 from app.worker import (
+    EnqueueResult,
+    TaskQueueUnavailableError,
     WorkerSettings,
     admin_task_runner,
     bulk_import_task,
     enqueue_admin_task,
     enqueue_process_source_image,
+    get_pool,
+    _parse_redis_settings,
     on_startup,
     process_source_image_task,
     replace_image_task,
@@ -21,11 +31,11 @@ from app.worker import (
 
 
 async def test_enqueue_falls_back_when_redis_unavailable() -> None:
-    """When get_pool returns None, enqueue returns False (fallback)."""
+    """When get_pool returns None, local mode returns an explicit fallback."""
     with patch("app.worker.get_pool", new_callable=AsyncMock, return_value=None):
         result = await enqueue_process_source_image(42)
 
-    assert result is False
+    assert result == EnqueueResult("fallback", "queue_unavailable")
 
 
 async def test_enqueue_succeeds_when_redis_available() -> None:
@@ -36,21 +46,155 @@ async def test_enqueue_succeeds_when_redis_available() -> None:
     with patch("app.worker.get_pool", new_callable=AsyncMock, return_value=mock_pool):
         result = await enqueue_process_source_image(42)
 
-    assert result is True
+    assert result.queued
+    assert result.job is mock_pool.enqueue_job.return_value
+    assert result.queued_at is not None
     mock_pool.enqueue_job.assert_awaited_once_with(
         "process_source_image_task", 42, ANY,
     )
 
 
-async def test_enqueue_returns_false_on_enqueue_failure() -> None:
-    """If enqueue_job raises, return False for fallback."""
+async def test_abort_latch_survives_pruning_and_is_consumed_before_job_start() -> None:
+    """Pin arq's past-dated abort marker behavior used by bulk imports."""
+
+    executed = False
+
+    async def noop(_ctx: dict[str, object]) -> None:
+        nonlocal executed
+        executed = True
+
+    job_payload = serialize_job("noop", (), {}, None, timestamp_ms() - 1_000)
+    redis = aioredis.FakeRedis()
+    await redis.set(job_key_prefix + "latch-job", job_payload)
+    await redis.zadd(abort_jobs_ss, {"latch-job": timestamp_ms() - 1_000})
+    worker = Worker(
+        [func(noop)],
+        queue_name="arq:queue",
+        redis_pool=redis,
+        allow_abort_jobs=True,
+        handle_signals=False,
+    )
+    worker.finish_failed_job = AsyncMock()
+
+    await worker._cancel_aborted_jobs()
+    assert abort_jobs_ss == "arq:abort"
+    marker_score = await redis.zscore(abort_jobs_ss, "latch-job")
+    assert marker_score is not None
+    assert marker_score < timestamp_ms() + 60
+
+    await worker.run_job("latch-job", timestamp_ms())
+
+    assert await redis.zscore(abort_jobs_ss, "latch-job") is None
+    assert executed is False
+    worker.finish_failed_job.assert_awaited_once()
+    await redis.aclose()
+
+
+def test_api_redis_settings_use_low_retry_budget() -> None:
+    """API submissions fail fast while worker settings retain arq defaults."""
+    api_settings = _parse_redis_settings(api_pool=True)
+    worker_settings = _parse_redis_settings()
+
+    assert api_settings.conn_retries == 0
+    assert api_settings.conn_retry_delay == 0
+    assert worker_settings.conn_retries == 5
+    assert worker_settings.conn_retry_delay == 1
+
+
+async def test_enqueue_returns_fallback_on_enqueue_failure() -> None:
+    """If enqueue_job raises, local mode returns an explicit fallback."""
     mock_pool = AsyncMock()
     mock_pool.enqueue_job = AsyncMock(side_effect=Exception("connection lost"))
 
     with patch("app.worker.get_pool", new_callable=AsyncMock, return_value=mock_pool):
         result = await enqueue_process_source_image(99)
 
-    assert result is False
+    assert result == EnqueueResult("fallback", "submission_failed")
+
+
+async def test_enqueue_uses_shared_pool() -> None:
+    """Task submissions use the shared API pool without a reconnect gate."""
+    mock_pool = AsyncMock()
+    with patch("app.worker.get_pool", new_callable=AsyncMock, return_value=mock_pool) as get_pool_mock:
+        result = await enqueue_process_source_image(42)
+
+    assert result.queued
+    get_pool_mock.assert_awaited_once_with()
+
+
+async def test_get_pool_publishes_only_after_successful_ping() -> None:
+    """An unverified pool is closed and never published globally."""
+    worker_module = sys.modules["app.worker"]
+    original_pool = worker_module._pool
+    pool = AsyncMock()
+    pool.ping = AsyncMock(side_effect=RuntimeError("ping failed"))
+    worker_module._pool = None
+    try:
+        with patch("app.worker.create_pool", new_callable=AsyncMock, return_value=pool):
+            result = await get_pool()
+
+        assert result is None
+        assert worker_module._pool is None
+        pool.aclose.assert_awaited_once()
+    finally:
+        worker_module._pool = original_pool
+
+
+async def test_get_pool_closes_duplicate_after_concurrent_publication() -> None:
+    """Concurrent healthy connects publish one pool and close the loser."""
+    worker_module = sys.modules["app.worker"]
+    original_pool = worker_module._pool
+    pools = [AsyncMock(), AsyncMock()]
+    create_count = 0
+    both_created = asyncio.Event()
+
+    async def create_candidate(_settings):
+        nonlocal create_count
+        pool = pools[create_count]
+        create_count += 1
+        if create_count == len(pools):
+            both_created.set()
+        await both_created.wait()
+        return pool
+
+    worker_module._pool = None
+    try:
+        with patch("app.worker.create_pool", side_effect=create_candidate):
+            results = await asyncio.gather(get_pool(), get_pool())
+
+        assert results[0] is results[1]
+        assert results[0] in pools
+        loser = pools[0] if results[0] is pools[1] else pools[1]
+        loser.aclose.assert_awaited_once()
+    finally:
+        worker_module._pool = original_pool
+
+
+async def test_enqueue_rejects_in_required_mode() -> None:
+    """Required mode raises instead of allowing in-process execution."""
+    with (
+        patch("app.worker.get_pool", new_callable=AsyncMock, return_value=None),
+        patch.object(settings, "task_execution_mode", "required"),
+    ):
+        with pytest.raises(TaskQueueUnavailableError) as exc_info:
+            await enqueue_process_source_image(42)
+
+    assert exc_info.value.reason == "queue_unavailable"
+
+
+async def test_enqueue_submission_rejects_in_required_mode() -> None:
+    """Required mode rejects submission errors without a fallback."""
+    mock_pool = AsyncMock()
+    mock_pool.enqueue_job = AsyncMock(side_effect=ConnectionError("lost"))
+    with (
+        patch("app.worker.get_pool", new_callable=AsyncMock, return_value=mock_pool),
+        patch.object(settings, "task_execution_mode", "required"),
+    ):
+        with pytest.raises(TaskQueueUnavailableError) as exc_info:
+            await enqueue_process_source_image(42)
+
+    assert exc_info.value.reason == "submission_failed"
+    mock_pool.aclose.assert_not_awaited()
 
 
 async def test_process_source_image_task_calls_processing() -> None:
@@ -96,11 +240,18 @@ async def test_on_startup_logs_worker_identity() -> None:
 def test_worker_settings_only_extend_timeout_for_admin_tasks() -> None:
     """Long timeout should apply to admin tasks without widening all jobs."""
     assert WorkerSettings.job_timeout == 7200
-    assert WorkerSettings.functions[:3] == [
+    assert WorkerSettings.max_jobs == 4
+    assert WorkerSettings.allow_abort_jobs is True
+    assert WorkerSettings.health_check_interval == 30
+    assert WorkerSettings.health_check_key == "arq:queue:health-check"
+    assert not hasattr(WorkerSettings, "cron_jobs")
+    assert WorkerSettings.functions[:2] == [
         process_source_image_task,
         replace_image_task,
-        bulk_import_task,
     ]
+    bulk_import_fn = WorkerSettings.functions[2]
+    assert bulk_import_fn.coroutine == bulk_import_task
+    assert bulk_import_fn.max_tries == 1
     admin_fn = WorkerSettings.functions[3]
     assert admin_fn.name == "admin_task_runner"
     assert admin_fn.timeout_s == 86400
@@ -114,7 +265,7 @@ async def test_enqueue_admin_task_redis_unavailable() -> None:
     with patch("app.worker.get_pool", new_callable=AsyncMock, return_value=None):
         result = await enqueue_admin_task(1, "db_export")
 
-    assert result is False
+    assert result == EnqueueResult("fallback", "queue_unavailable")
 
 
 async def test_enqueue_admin_task_succeeds() -> None:
@@ -125,7 +276,7 @@ async def test_enqueue_admin_task_succeeds() -> None:
     with patch("app.worker.get_pool", new_callable=AsyncMock, return_value=mock_pool):
         result = await enqueue_admin_task(1, "db_export")
 
-    assert result is True
+    assert result.queued
     mock_pool.enqueue_job.assert_awaited_once_with(
         "admin_task_runner", 1, "db_export", ANY,
     )
@@ -139,7 +290,7 @@ async def test_enqueue_admin_task_failure() -> None:
     with patch("app.worker.get_pool", new_callable=AsyncMock, return_value=mock_pool):
         result = await enqueue_admin_task(1, "files_export")
 
-    assert result is False
+    assert result == EnqueueResult("fallback", "submission_failed")
 
 
 # ── Admin task runner tests ───────────────────────────────

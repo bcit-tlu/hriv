@@ -7,6 +7,7 @@ from app.authz import (
     can_attach_program_to_category,
     can_edit_category,
     can_manage_group,
+    user_has_admin_program,
 )
 
 
@@ -82,3 +83,21 @@ def test_can_attach_group_instructor_owner_only() -> None:
 
 def test_can_attach_group_student_denied() -> None:
     assert can_attach_group_to_category(_user("student", id=5), [5]) is False
+
+
+# ── user_has_admin_program ────────────────────────────────
+
+
+def test_user_has_admin_program_true_when_admin_program() -> None:
+    user = SimpleNamespace(programs=[SimpleNamespace(name="Admin")])
+    assert user_has_admin_program(user) is True
+
+
+def test_user_has_admin_program_false_for_other_programs() -> None:
+    user = SimpleNamespace(programs=[SimpleNamespace(name="Nursing")])
+    assert user_has_admin_program(user) is False
+
+
+def test_user_has_admin_program_false_when_no_programs() -> None:
+    user = SimpleNamespace(programs=[])
+    assert user_has_admin_program(user) is False

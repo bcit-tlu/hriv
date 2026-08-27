@@ -754,3 +754,66 @@ coincide with user-visible outage alerts.
 
 **Resolution verification:** Restart count stops climbing and the workload stays
 healthy across at least one alerting interval.
+
+## Task Queue Unavailable or Worker Stale
+
+The backend exposes `hriv_task_queue_up`,
+`hriv_task_queue_depth`,
+`hriv_task_queue_oldest_pending_age_seconds`, and
+`hriv_task_queue_worker_heartbeat_age_seconds`, and
+`hriv_task_queue_worker_up` on `/api/metrics`. The queue health endpoint
+(`/api/health/queue`) is an unauthenticated minimal status check; use
+`/api/metrics` for queue depth, worker liveness, heartbeat age, and
+execution-mode details. In `required` execution mode, `/api/health/queue`
+returns HTTP 503 when Redis or the dedicated worker is degraded. In local mode,
+the absent dedicated-worker heartbeat does not make the queue health status
+degraded. The worker heartbeat age is derived from the remaining TTL of arq's
+`arq:queue:health-check` key; the worker's arq main loop refreshes that key
+independently of job slots.
+Kubernetes checks the same contract with
+`arq app.worker.WorkerSettings --check`.
+
+Queue depth, oldest-pending age, and worker-heartbeat age intentionally render
+as `NaN` while Redis is unavailable. PromQL comparisons against `NaN` are
+false, so alerts based on those gauges remain silent during an outage;
+`hriv_task_queue_up` is the explicit availability signal and should drive
+Redis-outage alerting. In required mode, use
+`hriv_task_queue_worker_up` for dedicated-worker liveness; its `0` value means
+the heartbeat key is absent, while the `NaN` value means Redis could not be
+queried. In local mode, an absent dedicated-worker heartbeat is expected.
+
+The bulk-import endpoint's HTTP 409 conflict is evidence-based: a live
+coordinator registration, or a processing row still inside the short
+registration window, blocks a second import. Stale timestamps alone and
+unreadable Redis liveness data fail open, so an abandoned coordinator cannot
+permanently prevent new imports.
+
+Distinguish the four failure classes in structured logs:
+
+- `worker.queue_unavailable`: Redis could not be reached.
+- `worker.submission_failed`: Redis was reachable but enqueue failed.
+- dedicated-worker heartbeat failure: inspect
+  `hriv_task_queue_worker_up` on `/api/metrics`; use the heartbeat-age gauge
+  for diagnostic timing.
+- task execution failure: inspect the task-specific worker error event and
+  trace for the runner exception.
+
+For required-mode enqueue failures, verify the API returned HTTP 503 with
+`Retry-After: 30`, then confirm the corresponding `SourceImage` or
+`AdminTask` is terminal rather than pending. Bulk imports record the rejection
+in the job's `errors` list and mark the job failed.
+
+When a bulk-import worker recovers after the no-worker detector writes an abort
+latch, look for `bulk_import.source_job_worker_recovered`. The latch-write,
+row-reread, and removal sequence closes the usual race, but a worker can still
+consume the latch in the sub-poll interval before the reread's `zrem`. The
+symptom is a child that fails with a generic processing error during a worker
+flap, without an abort-specific message. Retry the bulk import; do not treat
+that narrow race as evidence of a bad source image.
+
+If `bulk_import.source_job_capacity_starvation` appears, the event records
+that the child remained queued while the queue and worker were healthy and all
+configured worker-hosted coordinator slots were occupied. The coordinator
+liveness check excludes stale abandoned import rows and API-hosted local
+coordinators, so this is distinct from a child waiting behind unrelated work.
+Retry the import after capacity is available.

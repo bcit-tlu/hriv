@@ -101,6 +101,54 @@ runtime paths stored in the database:
 For multi-replica API or worker deployments, both PVCs must use
 `ReadWriteMany`.
 
+## Task execution mode (`tasks.executionMode`)
+
+`tasks.executionMode` renders `TASK_EXECUTION_MODE` on both the API and worker
+pods and governs what happens when queue-backed work (image processing, bulk
+import, admin tasks) cannot be submitted to Redis/arq:
+
+- `local` (default) — prefer Redis/arq when available, but fall back to
+  in-process FastAPI BackgroundTasks when the queue is down. This matches the
+  historical chart behavior and keeps dev/test installs working without Redis.
+- `required` — queue-backed work must run in dedicated worker pods. Enqueue
+  failures return HTTP 503 (`Retry-After: 30`) instead of running expensive
+  jobs inside the API process, and `/api/health` reports degraded when the
+  queue or worker heartbeat is missing.
+
+Chart rendering fails when `tasks.executionMode=required` and either
+`redis.enabled` or `redis.worker.enabled` is false — required mode without a
+Redis-backed worker Deployment could never execute background work. Production
+overlays should set `required`; leave `local` everywhere else.
+
+## Worker configuration
+
+Beyond resources, the worker Deployment exposes:
+
+- `redis.worker.maxJobs` (default `4`, minimum 2) — rendered as
+  `WORKER_MAX_JOBS`, the max concurrent arq jobs per worker pod. A bulk-import
+  coordinator holds one slot for its whole batch, so keep this above the number
+  of concurrent bulk imports. Also rendered on the API pod, where it bounds the
+  in-process fallback concurrency in local mode.
+- `redis.worker.totalSlots` (default empty) — rendered as `WORKER_TOTAL_SLOTS`
+  on both pods when set. Bulk-import starvation detection compares live
+  coordinators against cluster-wide slot capacity; the runtime default
+  (`maxJobs`) is only correct for a single worker replica, so set this to
+  `replicas × maxJobs` when running or autoscaling multiple worker replicas.
+- `redis.worker.db.poolSize` / `redis.worker.db.maxOverflow` (defaults `5`/`5`)
+  — rendered as `DB_POOL_SIZE` / `DB_MAX_OVERFLOW`. The backend defaults
+  (10/20) are sized for the API; a worker running at most `maxJobs` jobs needs
+  far fewer connections.
+- `redis.worker.terminationGracePeriodSeconds` (default `300`) — the
+  Kubernetes default of 30s interrupts in-flight tile-generation and
+  import/export jobs on every rollout.
+- `redis.worker.probes.liveness` (enabled by default) — an exec probe running
+  `arq --check app.worker.WorkerSettings`, which verifies the arq health key
+  in Redis is fresh. A wedged worker main loop gets restarted instead of
+  sitting idle while the queue grows. Caveats: the health key is shared per
+  queue, so with multiple replicas the probe only catches the case where every
+  worker stopped heartbeating, and the generous `failureThreshold` (10 × 60s)
+  is deliberate so a brief Redis outage does not restart workers mid-job.
+
 ## Health probes and worker resources
 
 The backend pod's probe settings are configurable through `probes.backend.*`.

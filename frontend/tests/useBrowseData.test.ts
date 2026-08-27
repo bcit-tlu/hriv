@@ -335,6 +335,48 @@ describe('useBrowseData', () => {
       expect(result.current.categories).toEqual([])
     })
 
+    it('skips setCategories when server returns 304 (null)', async () => {
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+
+      const tree = [makeApiTree({ id: 1, label: 'Fresh' })]
+      mockFetchCategoryTree.mockResolvedValue(tree)
+      await act(async () => {
+        await result.current.loadCategories()
+      })
+      expect(result.current.categories[0].label).toBe('Fresh')
+
+      // 304 Not Modified: fetchCategoryTree returns null
+      mockFetchCategoryTree.mockResolvedValue(null)
+      let fresh = false
+      await act(async () => {
+        fresh = await result.current.loadCategories()
+      })
+
+      expect(fresh).toBe(true)
+      expect(result.current.categories[0].label).toBe('Fresh')
+    })
+
+    it('refreshCategories resolves current categories on 304 without overwriting state', async () => {
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+
+      const tree = [makeApiTree({ id: 1, label: 'Fresh' })]
+      mockFetchCategoryTree.mockResolvedValue(tree)
+      await act(async () => {
+        await result.current.loadCategories()
+      })
+
+      mockFetchCategoryTree.mockResolvedValue(null)
+      let refreshed: Category[] = []
+      await act(async () => {
+        refreshed = await result.current.refreshCategories()
+      })
+
+      expect(refreshed[0].label).toBe('Fresh')
+      expect(result.current.categories[0].label).toBe('Fresh')
+    })
+
     it('does not call invalidateRef when signal is provided', async () => {
       // This test verifies the contract: background refresh passes a signal,
       // and foreground loads do not — only foreground loads invalidate.
@@ -352,6 +394,138 @@ describe('useBrowseData', () => {
       })
 
       expect(result.current.categories[0].label).toBe('WithSignal')
+    })
+
+    it('does not store a newer ETag when a response is aborted before state commits', async () => {
+      const initialTree = [makeApiTree({ id: 1, label: 'Old' })]
+      mockFetchCategoryTree.mockImplementation(async (_init, onHeaders) => {
+        onHeaders?.({ etag: '"old-etag"', revision: 1, status: 200 })
+        return initialTree
+      })
+
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+
+      await act(async () => {
+        await result.current.loadCategories()
+      })
+      expect(result.current.categories[0].label).toBe('Old')
+
+      // A response that resolves while dragActive becomes true is aborted before
+      // setCategories runs, but its onHeaders has already fired with a new ETag.
+      let staleIfNoneMatch: string | undefined
+      mockFetchCategoryTree.mockImplementation(async (init, onHeaders) => {
+        staleIfNoneMatch = init?.headers?.['If-None-Match'] as string | undefined
+        onHeaders?.({ etag: '"new-etag"', revision: 2, status: 200 })
+        return [makeApiTree({ id: 2, label: 'New' })]
+      })
+      const controller = new AbortController()
+      await act(async () => {
+        const loadPromise = result.current.loadCategories({ signal: controller.signal })
+        controller.abort()
+        await loadPromise
+      })
+      expect(result.current.categories[0].label).toBe('Old')
+      expect(staleIfNoneMatch).toBe('"old-etag"')
+
+      // A later refresh must still use the old etag, not the aborted new one.
+      let refreshIfNoneMatch: string | undefined
+      mockFetchCategoryTree.mockImplementation(async (init, onHeaders) => {
+        refreshIfNoneMatch = init?.headers?.['If-None-Match'] as string | undefined
+        onHeaders?.({ etag: '"new-etag"', revision: 2, status: 200 })
+        return [makeApiTree({ id: 2, label: 'New' })]
+      })
+      await act(async () => {
+        await result.current.refreshCategories()
+      })
+      expect(refreshIfNoneMatch).toBe('"old-etag"')
+      expect(result.current.categories[0].label).toBe('New')
+    })
+  })
+
+  describe('stable entity conversion', () => {
+    it('reuses the same Category object when the API response is unchanged', async () => {
+      const tree = [makeApiTree({ id: 1, label: 'Cat A' })]
+      mockFetchCategoryTree.mockResolvedValue(tree)
+
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+
+      await act(async () => {
+        await result.current.loadCategories()
+      })
+      const first = result.current.categories[0]
+
+      await act(async () => {
+        await result.current.loadCategories()
+      })
+
+      expect(result.current.categories[0]).toBe(first)
+    })
+
+    it('creates a new Category object when version or content changes', async () => {
+      const firstTree = [makeApiTree({ id: 1, label: 'Cat A', version: 1 })]
+      mockFetchCategoryTree.mockResolvedValue(firstTree)
+
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+
+      await act(async () => {
+        await result.current.loadCategories()
+      })
+      const first = result.current.categories[0]
+
+      const secondTree = [makeApiTree({ id: 1, label: 'Cat A Renamed', version: 2 })]
+      mockFetchCategoryTree.mockResolvedValue(secondTree)
+
+      await act(async () => {
+        await result.current.loadCategories()
+      })
+
+      expect(result.current.categories[0]).not.toBe(first)
+      expect(result.current.categories[0].label).toBe('Cat A Renamed')
+    })
+
+    it('reuses the same ImageItem object when the API response is unchanged', async () => {
+      const imgs = [makeApiImage(10, { name: 'img-10' })]
+      mockFetchUncategorizedImages.mockResolvedValue(imgs)
+
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+
+      await act(async () => {
+        await result.current.loadUncategorizedImages()
+      })
+      const first = result.current.uncategorizedImages[0]
+
+      await act(async () => {
+        await result.current.loadUncategorizedImages()
+      })
+
+      expect(result.current.uncategorizedImages[0]).toBe(first)
+    })
+
+    it('creates a new ImageItem object when version or content changes', async () => {
+      const firstImgs = [makeApiImage(10, { name: 'img-10', version: 1 })]
+      mockFetchUncategorizedImages.mockResolvedValue(firstImgs)
+
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+
+      await act(async () => {
+        await result.current.loadUncategorizedImages()
+      })
+      const first = result.current.uncategorizedImages[0]
+
+      const secondImgs = [makeApiImage(10, { name: 'img-10-renamed', version: 2 })]
+      mockFetchUncategorizedImages.mockResolvedValue(secondImgs)
+
+      await act(async () => {
+        await result.current.loadUncategorizedImages()
+      })
+
+      expect(result.current.uncategorizedImages[0]).not.toBe(first)
+      expect(result.current.uncategorizedImages[0].name).toBe('img-10-renamed')
     })
   })
 
@@ -1006,6 +1180,84 @@ describe('useBrowseData', () => {
       expect(mockFetchGroups).toHaveBeenCalled()
       expect(result.current.groups).toHaveLength(1)
       expect(result.current.groups[0].name).toBe('Cohort A')
+    })
+  })
+
+  describe('dragActive behavior', () => {
+    it('pauses background refresh while dragActive is true', () => {
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { rerender } = renderHook((d: UseBrowseDataDeps) => useBrowseData(d), {
+        initialProps: deps,
+      })
+
+      const initialEnabled =
+        mockUseBackgroundRefresh.mock.calls[mockUseBackgroundRefresh.mock.calls.length - 1][1]
+      expect(initialEnabled).toBe(true)
+
+      rerender({ ...deps, dragActive: true })
+      const pausedEnabled =
+        mockUseBackgroundRefresh.mock.calls[mockUseBackgroundRefresh.mock.calls.length - 1][1]
+      expect(pausedEnabled).toBe(false)
+    })
+
+    it('aborts a pending loadCategories when dragActive becomes true', async () => {
+      let resolveFetch: (value: ApiCategoryTree[]) => void = () => {}
+      mockFetchCategoryTree.mockImplementationOnce(
+        () =>
+          new Promise<ApiCategoryTree[]>((resolve) => {
+            resolveFetch = resolve
+          }),
+      )
+
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result, rerender } = renderHook((d: UseBrowseDataDeps) => useBrowseData(d), {
+        initialProps: deps,
+      })
+
+      let loadDone: Promise<boolean>
+      act(() => {
+        loadDone = result.current.loadCategories()
+      })
+      expect(result.current.categoriesLoading).toBe(true)
+
+      rerender({ ...deps, dragActive: true })
+      await act(async () => {
+        resolveFetch([makeApiTree({ id: 1, label: 'Aborted' })])
+      })
+
+      const returned = await loadDone!
+      expect(returned).toBe(false)
+      expect(result.current.categories).toEqual([])
+      expect(result.current.categoriesLoading).toBe(false)
+    })
+
+    it('aborts a pending refreshCategories when dragActive becomes true', async () => {
+      let resolveFetch: (value: ApiCategoryTree[]) => void = () => {}
+      mockFetchCategoryTree.mockImplementationOnce(
+        () =>
+          new Promise<ApiCategoryTree[]>((resolve) => {
+            resolveFetch = resolve
+          }),
+      )
+
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result, rerender } = renderHook((d: UseBrowseDataDeps) => useBrowseData(d), {
+        initialProps: deps,
+      })
+
+      let refreshDone: Promise<Category[]>
+      act(() => {
+        refreshDone = result.current.refreshCategories()
+      })
+
+      rerender({ ...deps, dragActive: true })
+      await act(async () => {
+        resolveFetch([makeApiTree({ id: 1, label: 'Aborted' })])
+      })
+
+      const returned = await refreshDone!
+      expect(returned).toEqual([])
+      expect(result.current.categories).toEqual([])
     })
   })
 })
