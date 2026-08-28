@@ -43,18 +43,20 @@ SELECT setval('categories_id_seq', GREATEST((SELECT MAX(id) FROM categories), 1)
 --       Gothic    -> (none — inherits via Italian -> Architecture)
 --     American    -> Digital Design               (narrows parent's set)
 --   Panoramas    -> Photography                   (independent parent)
+--   Synthetic Monitoring -> Digital Design        (monitor account access)
 --
 -- Clear seed-managed rows first so re-runs don't leave stale associations
 -- from previous seed versions (e.g. children that no longer have direct
 -- restrictions).
-DELETE FROM category_programs WHERE category_id IN (1, 2, 3, 4, 5);
+DELETE FROM category_programs WHERE category_id IN (1, 2, 3, 4, 5, 6);
 
 INSERT INTO category_programs (category_id, program_id)
 VALUES
   (1, 2),  -- Architecture -> Digital Design  (parent restriction)
   (1, 3),  -- Architecture -> Photography     (parent restriction)
   (2, 3),  -- Panoramas    -> Photography     (independent parent)
-  (4, 2)   -- American     -> Digital Design  (narrows parent's {DD, Photo})
+  (4, 2),  -- American     -> Digital Design  (narrows parent's {DD, Photo})
+  (6, 2)   -- Synthetic Monitoring -> Digital Design (monitor account access)
 ON CONFLICT (category_id, program_id) DO NOTHING;
 
 -- ── Images ────────────────────────────────────────────────

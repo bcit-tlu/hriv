@@ -119,6 +119,7 @@ async def seed_media() -> None:
             await session.flush()
         else:
             category.status = "active"
+            category.sort_order = 100
 
         source = await _get_or_create_source(session, category.id, stored_path, file_size)
         await session.commit()
