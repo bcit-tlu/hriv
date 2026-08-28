@@ -138,6 +138,13 @@ Add Chromatic after the first representative stories build locally. The first
 CI version should be non-blocking or review-only until the team accepts a
 baseline.
 
+The repository now has a dedicated GitHub Actions workflow at
+`.github/workflows/chromatic.yml`. This is separate from the Chromatic GitHub
+App: the App supplies project/repository integration and PR UI, while the
+Action runs the Storybook build and uploads the result for pushes that change files under `frontend/`.
+The workflow uses `CHROMATIC_PROJECT_TOKEN` from GitHub Actions secrets; the
+secret value is never committed to the repository.
+
 Recommended rollout:
 
 1. Add the Chromatic project and configure `CHROMATIC_PROJECT_TOKEN` as a
@@ -180,6 +187,10 @@ The initial frontend setup now includes:
     while browsing stories.
 - Frontend scripts: `npm run storybook`, `npm run build-storybook`,
   `npm run chromatic`, and `npm run test:storybook`.
+- GitHub Actions automation in `.github/workflows/chromatic.yml` publishes the
+  frontend Storybook on pushes using `chromaui/action@latest` and the
+  `CHROMATIC_PROJECT_TOKEN` repository secret. The workflow also supports manual
+  runs through `workflow_dispatch`.
 - Foundation stories at `frontend/src/theme.stories.tsx` and
   `frontend/src/typography.stories.tsx` document HRIV's light/dark palettes,
   typography variants, custom semantic tokens, opacity treatments, and common
