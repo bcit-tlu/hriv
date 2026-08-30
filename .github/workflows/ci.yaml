@@ -241,6 +241,7 @@ jobs:
       image_name: hriv-backup
       context: ./backup
       target: stable
+      extra_watch_paths: ./charts/backup
       trivyignore: .trivyignore
     secrets: inherit
 

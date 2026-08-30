@@ -10,6 +10,7 @@ import shutil
 import sys
 import tarfile
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
@@ -632,6 +633,37 @@ class StatusTestCase(_BackupTestCase):
 
         with patch.object(backup, "_blob_container_client", return_value=fake_container), self.assertNoLogs("hriv-backup", level="ERROR"):
             self.assertIsNone(backup._read_last_success_marker())
+
+
+class AtomicWriteTestCase(unittest.TestCase):
+    """Concurrency behaviour of the atomic write helper."""
+
+    def test_concurrent_writers_do_not_collide(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "BACKUP_STATE.json"
+            errors: list[Exception] = []
+            barrier = threading.Barrier(2)
+
+            def writer(payload: bytes) -> None:
+                barrier.wait()
+                for _ in range(200):
+                    try:
+                        backup._atomic_write_bytes(target, payload)
+                    except Exception as exc:  # pragma: no cover - failure path
+                        errors.append(exc)
+
+            threads = [
+                threading.Thread(target=writer, args=(b'{"writer": "a"}',)),
+                threading.Thread(target=writer, args=(b'{"writer": "b"}',)),
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+
+            self.assertEqual(errors, [])
+            self.assertIn(target.read_bytes(), (b'{"writer": "a"}', b'{"writer": "b"}'))
+            self.assertEqual([p.name for p in Path(tmpdir).iterdir()], [target.name])
 
 
 if __name__ == "__main__":
