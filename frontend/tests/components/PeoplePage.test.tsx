@@ -116,7 +116,7 @@ function createDeferred<T>() {
 
 describe('PeoplePage', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     localStorage.clear()
     localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
     vi.mocked(fetchUsers).mockResolvedValue(USERS)

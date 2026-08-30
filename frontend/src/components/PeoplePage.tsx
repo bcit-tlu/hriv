@@ -748,9 +748,9 @@ export default function PeoplePage({
       await bulkDeleteUsers({
         user_ids: Array.from(selected),
       })
-      await loadData()
       setBulkDeleteOpen(false)
       setSelected(new Set())
+      await loadData()
     } catch (err) {
       console.error('Failed to bulk delete', err)
       setBulkDeleteError(userMessage(err, 'Failed to delete. Please try again.'))
