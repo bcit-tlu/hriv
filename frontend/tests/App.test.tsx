@@ -383,6 +383,7 @@ vi.mock('../src/components/SortableTileGrid', () => ({
     onCategoryClick,
     onFilesDrop,
     fileDragActive,
+    onDragActiveChange,
   }: {
     currentImages: (typeof mockImage)[]
     currentCategories: typeof mockCategories
@@ -390,6 +391,7 @@ vi.mock('../src/components/SortableTileGrid', () => ({
     onCategoryClick: (category: (typeof mockCategories)[number]) => void
     onFilesDrop: (files: File[]) => void
     fileDragActive: boolean
+    onDragActiveChange?: (active: boolean) => void
   }) => (
     <>
       {fileDragActive && <div>File drag active</div>}
@@ -403,6 +405,12 @@ vi.mock('../src/components/SortableTileGrid', () => ({
         }
       >
         Drop files on grid
+      </button>
+      <button type="button" onClick={() => onDragActiveChange?.(true)}>
+        Start browse drag
+      </button>
+      <button type="button" onClick={() => onDragActiveChange?.(false)}>
+        End browse drag
       </button>
       {currentImages.map((image, index) => (
         <button key={image.id} type="button" onClick={() => onImageClick(image)}>
@@ -428,10 +436,24 @@ vi.mock('../src/components/ImageViewer', () => ({
 }))
 
 vi.mock('../src/components/ManageCategoriesDialog', () => ({
-  default: ({ onReorderComplete }: { onReorderComplete: () => Promise<void> }) => (
-    <button type="button" onClick={() => void onReorderComplete()}>
-      Manage reorder complete
-    </button>
+  default: ({
+    onReorderComplete,
+    onDragActiveChange,
+  }: {
+    onReorderComplete: () => Promise<void>
+    onDragActiveChange?: (active: boolean) => void
+  }) => (
+    <>
+      <button type="button" onClick={() => void onReorderComplete()}>
+        Manage reorder complete
+      </button>
+      <button type="button" onClick={() => onDragActiveChange?.(true)}>
+        Start manage drag
+      </button>
+      <button type="button" onClick={() => onDragActiveChange?.(false)}>
+        End manage drag
+      </button>
+    </>
   ),
 }))
 vi.mock('../src/components/AdminPage', () => ({ default: () => null }))
@@ -1139,6 +1161,28 @@ describe('App grid file drops and reorder feedback', () => {
     fireEvent(window, dropEvent)
     expect(dropEvent.defaultPrevented).toBe(true)
     await waitFor(() => expect(screen.queryByText('File drag active')).not.toBeInTheDocument())
+  })
+
+  it('keeps a pending reorder refresh deferred while any drag surface is still active', async () => {
+    render(<App />)
+
+    // Start a Manage drag and queue a reorder refresh.
+    fireEvent.click(screen.getByRole('button', { name: 'Start manage drag' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Manage reorder complete' }))
+
+    // Start a Browse drag before the Manage drag finishes.
+    fireEvent.click(screen.getByRole('button', { name: 'Start browse drag' }))
+    fireEvent.click(screen.getByRole('button', { name: 'End manage drag' }))
+
+    // Refresh must still be deferred because the Browse drag is active.
+    expect(browseDataFns.refreshCategories).not.toHaveBeenCalled()
+    expect(browseDataFns.refreshUncategorizedImages).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'End browse drag' }))
+    await waitFor(() => {
+      expect(browseDataFns.refreshCategories).toHaveBeenCalled()
+      expect(browseDataFns.refreshUncategorizedImages).toHaveBeenCalled()
+    })
   })
 })
 
