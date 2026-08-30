@@ -350,8 +350,9 @@ export default function PeoplePage({
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- standard data-fetch trigger on dependency change; errors are caught below
     loadData({ showLoading: true }).catch((err) => {
-      if (!(err instanceof DOMException && err.name === 'AbortError')) {
-        console.error('Failed to load data', err)
+      // Abort errors are expected when the component unmounts; loadData already logs other errors.
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        return
       }
     })
   }, [loadData])
@@ -625,7 +626,9 @@ export default function PeoplePage({
         return
       }
       console.error('Failed to bulk update', err)
-      setErrorSnack(userMessage(err, 'Failed to update programs. Please try again.'))
+      if (bulkEditSaveTokenRef.current === token) {
+        setErrorSnack(userMessage(err, 'Failed to update programs. Please try again.'))
+      }
     } finally {
       if (bulkEditSaveAbortRef.current === abortController) {
         bulkEditSaveAbortRef.current = null
@@ -695,10 +698,14 @@ export default function PeoplePage({
       }
       return []
     } catch (err) {
-      if (!(err instanceof DOMException && err.name === 'AbortError')) {
-        console.error('Failed to bulk add to groups', err)
-        setErrorSnack(userMessage(err, 'Failed to refresh people list. Please try again.'))
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        return []
       }
+      console.error('Failed to bulk add to groups', err)
+      if (bulkGroupSaveTokenRef.current !== token) {
+        return []
+      }
+      setErrorSnack(userMessage(err, 'Failed to refresh people list. Please try again.'))
       throw err
     }
   }
@@ -732,7 +739,9 @@ export default function PeoplePage({
         return
       }
       console.error('Failed to bulk update role', err)
-      setErrorSnack(userMessage(err, 'Failed to update roles. Please try again.'))
+      if (bulkRoleSaveTokenRef.current === token) {
+        setErrorSnack(userMessage(err, 'Failed to update roles. Please try again.'))
+      }
     } finally {
       if (bulkRoleSaveAbortRef.current === abortController) {
         bulkRoleSaveAbortRef.current = null
@@ -750,7 +759,14 @@ export default function PeoplePage({
       })
       setBulkDeleteOpen(false)
       setSelected(new Set())
-      await loadData()
+      try {
+        await loadData()
+      } catch (refreshErr) {
+        if (!(refreshErr instanceof DOMException && refreshErr.name === 'AbortError')) {
+          console.error('Failed to refresh people list after bulk delete', refreshErr)
+          setErrorSnack(userMessage(refreshErr, 'Failed to refresh people list. Please try again.'))
+        }
+      }
     } catch (err) {
       console.error('Failed to bulk delete', err)
       setBulkDeleteError(userMessage(err, 'Failed to delete. Please try again.'))
@@ -1384,8 +1400,22 @@ export default function PeoplePage({
                       next.delete(deleteConfirmUser.id)
                       return next
                     })
-                    await loadData()
                     setDeleteConfirmOpen(false)
+                    try {
+                      await loadData()
+                    } catch (refreshErr) {
+                      if (!(
+                        refreshErr instanceof DOMException && refreshErr.name === 'AbortError'
+                      )) {
+                        console.error('Failed to refresh people list after delete', refreshErr)
+                        setErrorSnack(
+                          userMessage(
+                            refreshErr,
+                            'Failed to refresh people list. Please try again.',
+                          ),
+                        )
+                      }
+                    }
                   } catch (err) {
                     console.error('Failed to delete person', err)
                     setDeleteError(userMessage(err, 'Failed to delete. Please try again.'))
