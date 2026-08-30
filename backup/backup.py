@@ -29,6 +29,7 @@ import sys
 import tarfile
 import tempfile
 import time
+import uuid
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -161,7 +162,7 @@ def _restore_state_blob_name() -> str:
 
 def _atomic_write_bytes(path: Path, payload: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_name(f".{path.name}.tmp")
+    tmp_path = path.with_name(f".{path.name}.{uuid.uuid4()}.tmp")
     tmp_path.write_bytes(payload)
     tmp_path.replace(path)
 

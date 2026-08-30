@@ -76,6 +76,17 @@ the full `/data` tree.
 See [backup/README.md](../backup/README.md) for the full backup service
 configuration, environment variables, and Docker Compose usage.
 
+### Concurrent backup runs
+
+State files (`BACKUP_STATE.json`, `RESTORE_STATE.json`, `LAST_SUCCESS.json`, and
+local manifest sidecars) are written atomically through a per-writer temporary
+file in the backups directory, so an on-demand run
+(`docker compose --profile backup run --rm backup backup` locally, or
+`kubectl exec` in Kubernetes) can share the `/backups` volume with the scheduled
+cron loop without the two clobbering each other's temporary files. Backup and
+restore operations themselves are still not serialized; avoid running a restore
+while a backup is in flight.
+
 ## Restore order and decision points
 
 After a failure or data loss, follow this order:
