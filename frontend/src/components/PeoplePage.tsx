@@ -91,24 +91,10 @@ function buildPeopleFilterSnapshot(
 }
 
 type SortableColumn =
-  | 'id'
-  | 'name'
-  | 'email'
-  | 'role'
-  | 'program'
-  | 'group'
-  | 'last_access'
-  | 'created_at'
+  'id' | 'name' | 'email' | 'role' | 'program' | 'group' | 'last_access' | 'created_at'
 type SortDirection = 'asc' | 'desc'
 type PeopleTableColumn =
-  | 'id'
-  | 'name'
-  | 'email'
-  | 'role'
-  | 'program'
-  | 'group'
-  | 'last_access'
-  | 'created_at'
+  'id' | 'name' | 'email' | 'role' | 'program' | 'group' | 'last_access' | 'created_at'
 
 const ROLES: Role[] = ['admin', 'instructor', 'student']
 const PEOPLE_COLUMN_OPTIONS: readonly ColumnVisibilityOption<PeopleTableColumn>[] = [
