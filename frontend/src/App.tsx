@@ -205,6 +205,8 @@ export default function App() {
   const [fileDragActive, setFileDragActive] = useState(false)
   const [dragActive, setDragActive] = useState(false)
   const dragActiveRef = useRef(false)
+  const browseDragActiveRef = useRef(false)
+  const manageDragActiveRef = useRef(false)
   const pendingRefreshRef = useRef(false)
   const fileDragCounter = useRef(0)
   const [manageUploadOpen, setManageUploadOpen] = useState(false)
@@ -1115,10 +1117,27 @@ export default function App() {
     }
   }, [refreshCategories, refreshUncategorizedImages])
 
-  const handleDragActiveChange = useCallback((active: boolean) => {
-    setDragActive(active)
-    dragActiveRef.current = active
+  const handleDragActiveChange = useCallback((source: 'browse' | 'manage', active: boolean) => {
+    if (source === 'browse') {
+      browseDragActiveRef.current = active
+    } else {
+      manageDragActiveRef.current = active
+    }
+    const combined = browseDragActiveRef.current || manageDragActiveRef.current
+    if (combined !== dragActiveRef.current) {
+      setDragActive(combined)
+      dragActiveRef.current = combined
+    }
   }, [])
+
+  const handleBrowseDragActiveChange = useCallback(
+    (active: boolean) => handleDragActiveChange('browse', active),
+    [handleDragActiveChange],
+  )
+  const handleManageDragActiveChange = useCallback(
+    (active: boolean) => handleDragActiveChange('manage', active),
+    [handleDragActiveChange],
+  )
 
   // Run any coordinator-commit refresh that was deferred while a drag was
   // active as soon as the drag ends.
@@ -1959,7 +1978,7 @@ export default function App() {
                     : undefined
                 }
                 tileOrdering={browseTileOrderingProp}
-                onDragActiveChange={handleDragActiveChange}
+                onDragActiveChange={handleBrowseDragActiveChange}
               />
 
               {categoriesLoading ? (
@@ -2005,6 +2024,7 @@ export default function App() {
         onToggleVisibility={toggleCategoryVisibility}
         onReorderTiles={reorderTilesFromManage}
         onReorderComplete={handleReorderComplete}
+        onDragActiveChange={handleManageDragActiveChange}
         programs={programs}
         groups={groups}
       />
