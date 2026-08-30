@@ -102,7 +102,7 @@ def _is_enospc(exc: Exception) -> bool:
 
 _MAX_FAILURE_DETAIL_CHARS = 300
 
-_ABSOLUTE_PATH_RE = re.compile(r"(?:/[\w.@+\-]+){2,}")
+_ABSOLUTE_PATH_RE = re.compile(r"(?:/[^/\s:][^/:]*){2,}")
 
 
 def _failure_detail(exc: Exception) -> str:
@@ -113,7 +113,7 @@ def _failure_detail(exc: Exception) -> str:
     disclosed, and truncates the result.
     """
     text = " ".join(str(exc).split())
-    text = _ABSOLUTE_PATH_RE.sub(lambda m: m.group(0).rsplit("/", 1)[-1], text)
+    text = _ABSOLUTE_PATH_RE.sub(lambda m: m.group(0).rsplit("/", 1)[-1].strip(), text)
     if len(text) > _MAX_FAILURE_DETAIL_CHARS:
         text = text[: _MAX_FAILURE_DETAIL_CHARS - 1].rstrip() + "…"
     return text or type(exc).__name__

@@ -203,6 +203,14 @@ def test_processing_failure_message_for_unreadable_image() -> None:
     )
 
 
+def test_processing_failure_message_redacts_paths_with_spaces() -> None:
+    """Paths containing spaces or non-ASCII segments are reduced to a basename."""
+    exc = Exception("/srv/hriv/source images/échantillon 1.tif: unsupported")
+    assert _processing_failure_message(exc) == (
+        "Tile generation failed: échantillon 1.tif: unsupported"
+    )
+
+
 def test_processing_failure_message_truncates_long_details() -> None:
     """Very long error text is truncated instead of flooding the snackbar."""
     message = _processing_failure_message(Exception("x" * 500))
