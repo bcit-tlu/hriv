@@ -43,7 +43,8 @@ failures (including libvips write errors that carry the strerror text) become
 "Insufficient storage — the tiles volume is full"; every other failure keeps the
 underlying exception text after `Tile generation failed:` /
 `Image replacement failed:`, collapsed to one line, with absolute paths reduced
-to their basename and the detail truncated to 300 characters. The frontend
+to their basename, the generated storage name swapped for the uploaded
+filename, and the detail truncated to 300 characters. The frontend
 polls the source image and shows that message in the processing snackbar; for
 bulk imports the per-file entries of `BulkImportJob.errors` are listed instead.
 

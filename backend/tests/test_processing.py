@@ -35,6 +35,7 @@ from app.processing import (
     select_rebuild_targets,
     tiles_present_on_disk,
 )
+from app.models import SourceImage
 
 
 # ── ProgressTracker tests ────────────────────────────────
@@ -200,6 +201,23 @@ def test_processing_failure_message_for_unreadable_image() -> None:
     assert _processing_failure_message(exc) == (
         "Tile generation failed: unable to call dzsave broken.tif: "
         "is not a known file format"
+    )
+
+
+def test_processing_failure_message_uses_uploaded_filename() -> None:
+    """The generated storage name is swapped for the name the admin uploaded."""
+    src = SourceImage(
+        original_filename="slide-a.tif",
+        stored_path="/srv/hriv/source-images/7bdf96e6.tif",
+        status="failed",
+    )
+    exc = Exception(
+        'unable to load from file /srv/hriv/source-images/7bdf96e6.tif\n'
+        '  VipsForeignLoad: "7bdf96e6.tif" is not a known file format'
+    )
+    assert _processing_failure_message(exc, src=src) == (
+        "Tile generation failed: unable to load from file slide-a.tif "
+        'VipsForeignLoad: "slide-a.tif" is not a known file format'
     )
 
 
