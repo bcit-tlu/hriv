@@ -1261,10 +1261,13 @@ export interface ReportIssueResponse {
   issue_url: string | null
 }
 
-export function reportIssue(body: {
+export interface ReportIssueBody {
   description: string
   page_url: string
-}): Promise<ReportIssueResponse> {
+  feedback_type: 'problem_or_issue' | 'comment_or_suggestion'
+}
+
+export function reportIssue(body: ReportIssueBody): Promise<ReportIssueResponse> {
   return request('/issues/report', {
     method: 'POST',
     body: JSON.stringify(body),

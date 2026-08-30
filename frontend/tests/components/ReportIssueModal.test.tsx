@@ -32,9 +32,12 @@ describe('ReportIssueModal', () => {
 
   it('renders title and form elements when open', () => {
     render(<ReportIssueModal open onClose={vi.fn()} page="browse" />)
-    expect(screen.getByText('Report an Issue')).toBeInTheDocument()
+    expect(screen.getByText('Send Feedback')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /cancel/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /submit/i })).toBeInTheDocument()
+    expect(screen.getByRole('radiogroup', { name: 'Feedback type' })).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'Problem or issue' })).toBeChecked()
+    expect(screen.getByRole('radio', { name: 'Comment or suggestion' })).not.toBeChecked()
     expect(emitEventMock).toHaveBeenCalledWith(
       expect.objectContaining({
         event: 'feedback.report_issue_opened',
@@ -43,6 +46,20 @@ describe('ReportIssueModal', () => {
         page: 'browse',
       }),
     )
+  })
+
+  it('defaults feedback type to problem_or_issue', () => {
+    render(<ReportIssueModal open onClose={vi.fn()} page="browse" />)
+    expect(screen.getByRole('radio', { name: 'Problem or issue' })).toBeChecked()
+  })
+
+  it('allows changing feedback type', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(<ReportIssueModal open onClose={vi.fn()} page="browse" />)
+
+    await user.click(screen.getByRole('radio', { name: 'Comment or suggestion' }))
+    expect(screen.getByRole('radio', { name: 'Comment or suggestion' })).toBeChecked()
+    expect(screen.getByRole('radio', { name: 'Problem or issue' })).not.toBeChecked()
   })
 
   it('submit button is disabled when description is empty', () => {
@@ -67,25 +84,27 @@ describe('ReportIssueModal', () => {
     expect(emitEventMock).toHaveBeenCalledTimes(1)
   })
 
-  it('calls reportIssue and shows success message with a tracking link', async () => {
+  it('calls reportIssue with description, page_url and feedback_type', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     vi.mocked(reportIssue).mockResolvedValue({
       destination: 'github',
-      tracking_url: 'https://github.com/bcit-tlu/hriv/issues/999',
-      issue_url: 'https://github.com/bcit-tlu/hriv/issues/999',
+      tracking_url: null,
+      issue_url: null,
     })
-    render(<ReportIssueModal open onClose={vi.fn()} page="browse" />)
+    const onSuccess = vi.fn()
+    render(<ReportIssueModal open onClose={vi.fn()} page="browse" onSuccess={onSuccess} />)
 
     const textfield = screen.getByRole('textbox')
     await user.type(textfield, 'Button is broken')
+    await user.click(screen.getByRole('radio', { name: 'Comment or suggestion' }))
     await user.click(screen.getByRole('button', { name: /submit/i }))
 
     await waitFor(() => {
-      expect(screen.getByText(/Your feedback was received successfully/)).toBeInTheDocument()
-    })
-    expect(reportIssue).toHaveBeenCalledWith({
-      description: 'Button is broken',
-      page_url: expect.any(String),
+      expect(reportIssue).toHaveBeenCalledWith({
+        description: 'Button is broken',
+        page_url: expect.any(String),
+        feedback_type: 'comment_or_suggestion',
+      })
     })
     expect(emitEventMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -95,30 +114,28 @@ describe('ReportIssueModal', () => {
         page: 'browse',
       }),
     )
-    const link = screen.getByRole('link', { name: /track your report/i })
-    expect(link).toHaveAttribute('href', 'https://github.com/bcit-tlu/hriv/issues/999')
-    expect(link).toHaveAttribute('target', '_blank')
-    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+    expect(onSuccess).toHaveBeenCalledWith('Thanks! Your feedback has been received.', null)
   })
 
-  it('shows success without a link and auto-closes for providers without tracking URLs', async () => {
+  it('auto-closes after success once the auto-close delay elapses', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     const onClose = vi.fn()
+    const onSuccess = vi.fn()
     vi.mocked(reportIssue).mockResolvedValue({
       destination: 'teams',
       tracking_url: null,
       issue_url: null,
     })
-    render(<ReportIssueModal open onClose={onClose} page="browse" />)
+    render(<ReportIssueModal open onClose={onClose} page="browse" onSuccess={onSuccess} />)
 
     const textfield = screen.getByRole('textbox')
     await user.type(textfield, 'Button is broken')
     await user.click(screen.getByRole('button', { name: /submit/i }))
 
     await waitFor(() => {
-      expect(screen.getByText(/Your feedback was received successfully/)).toBeInTheDocument()
+      expect(onSuccess).toHaveBeenCalledWith('Thanks! Your feedback has been received.', null)
     })
-    expect(screen.queryByRole('link', { name: /track your report/i })).not.toBeInTheDocument()
+    expect(onClose).not.toHaveBeenCalled()
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(AUTO_CLOSE_DELAY_MS + 500)
@@ -126,69 +143,73 @@ describe('ReportIssueModal', () => {
     expect(onClose).toHaveBeenCalledOnce()
   })
 
-  it('ignores non-http(s) tracking URLs and falls back to the auto-close flow', async () => {
+  it('passes a safe tracking URL to onSuccess and still auto-closes', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     const onClose = vi.fn()
-    vi.mocked(reportIssue).mockResolvedValue({
-      destination: 'github',
-      tracking_url: 'javascript:alert(1)',
-      issue_url: null,
-    })
-    render(<ReportIssueModal open onClose={onClose} page="browse" />)
-
-    const textfield = screen.getByRole('textbox')
-    await user.type(textfield, 'Button is broken')
-    await user.click(screen.getByRole('button', { name: /submit/i }))
-
-    await waitFor(() => {
-      expect(screen.getByText(/Your feedback was received successfully/)).toBeInTheDocument()
-    })
-    expect(screen.queryByRole('link', { name: /track your report/i })).not.toBeInTheDocument()
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(AUTO_CLOSE_DELAY_MS + 500)
-    })
-    expect(onClose).toHaveBeenCalledOnce()
-  })
-
-  it('does not auto-close when a tracking link is shown', async () => {
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
-    const onClose = vi.fn()
+    const onSuccess = vi.fn()
     vi.mocked(reportIssue).mockResolvedValue({
       destination: 'github',
       tracking_url: 'https://github.com/bcit-tlu/hriv/issues/999',
       issue_url: 'https://github.com/bcit-tlu/hriv/issues/999',
     })
-    render(<ReportIssueModal open onClose={onClose} page="browse" />)
+    render(<ReportIssueModal open onClose={onClose} page="browse" onSuccess={onSuccess} />)
 
     const textfield = screen.getByRole('textbox')
     await user.type(textfield, 'Button is broken')
     await user.click(screen.getByRole('button', { name: /submit/i }))
 
     await waitFor(() => {
-      expect(screen.getByRole('link', { name: /track your report/i })).toBeInTheDocument()
+      expect(onSuccess).toHaveBeenCalledWith(
+        'Thanks! Your feedback has been received.',
+        'https://github.com/bcit-tlu/hriv/issues/999',
+      )
+    })
+    expect(onClose).not.toHaveBeenCalled()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(AUTO_CLOSE_DELAY_MS + 500)
+    })
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  it('ignores non-http(s) tracking URLs and passes null to onSuccess', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const onClose = vi.fn()
+    const onSuccess = vi.fn()
+    vi.mocked(reportIssue).mockResolvedValue({
+      destination: 'github',
+      tracking_url: 'javascript:alert(1)',
+      issue_url: null,
+    })
+    render(<ReportIssueModal open onClose={onClose} page="browse" onSuccess={onSuccess} />)
+
+    const textfield = screen.getByRole('textbox')
+    await user.type(textfield, 'Button is broken')
+    await user.click(screen.getByRole('button', { name: /submit/i }))
+
+    await waitFor(() => {
+      expect(onSuccess).toHaveBeenCalledWith('Thanks! Your feedback has been received.', null)
     })
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(AUTO_CLOSE_DELAY_MS + 500)
     })
-    expect(onClose).not.toHaveBeenCalled()
-
-    await user.click(screen.getByRole('button', { name: /close/i }))
     expect(onClose).toHaveBeenCalledOnce()
   })
 
-  it('shows error message when reportIssue fails', async () => {
+  it('calls onError and keeps the modal open when reportIssue fails', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const onClose = vi.fn()
+    const onError = vi.fn()
     vi.mocked(reportIssue).mockRejectedValue(new Error('Network error'))
-    render(<ReportIssueModal open onClose={vi.fn()} page="browse" />)
+    render(<ReportIssueModal open onClose={onClose} page="browse" onError={onError} />)
 
     const textfield = screen.getByRole('textbox')
     await user.type(textfield, 'Some issue')
     await user.click(screen.getByRole('button', { name: /submit/i }))
 
     await waitFor(() => {
-      expect(screen.getByText('Failed to submit report.')).toBeInTheDocument()
+      expect(onError).toHaveBeenCalledWith('Failed to send feedback. Please try again later.')
     })
     expect(emitEventMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -198,6 +219,7 @@ describe('ReportIssueModal', () => {
         page: 'browse',
       }),
     )
+    expect(onClose).not.toHaveBeenCalled()
   })
 
   it('cancel button calls onClose', async () => {
@@ -209,47 +231,23 @@ describe('ReportIssueModal', () => {
     expect(onClose).toHaveBeenCalledOnce()
   })
 
-  it('auto-closes after success once the auto-close delay elapses', async () => {
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
-    const onClose = vi.fn()
-    vi.mocked(reportIssue).mockResolvedValue({
-      destination: 'teams',
-      tracking_url: null,
-      issue_url: null,
-    })
-    render(<ReportIssueModal open onClose={onClose} page="browse" />)
-
-    const textfield = screen.getByRole('textbox')
-    await user.type(textfield, 'Button is broken')
-    await user.click(screen.getByRole('button', { name: /submit/i }))
-
-    await waitFor(() => {
-      expect(screen.getByText(/Your feedback was received successfully/)).toBeInTheDocument()
-    })
-    expect(onClose).not.toHaveBeenCalled()
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(AUTO_CLOSE_DELAY_MS + 500)
-    })
-    expect(onClose).toHaveBeenCalledOnce()
-  })
-
   it('cancelling after success clears the pending auto-close timer', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     const onClose = vi.fn()
+    const onSuccess = vi.fn()
     vi.mocked(reportIssue).mockResolvedValue({
       destination: 'teams',
       tracking_url: null,
       issue_url: null,
     })
-    render(<ReportIssueModal open onClose={onClose} page="browse" />)
+    render(<ReportIssueModal open onClose={onClose} page="browse" onSuccess={onSuccess} />)
 
     const textfield = screen.getByRole('textbox')
     await user.type(textfield, 'Button is broken')
     await user.click(screen.getByRole('button', { name: /submit/i }))
 
     await waitFor(() => {
-      expect(screen.getByText(/Your feedback was received successfully/)).toBeInTheDocument()
+      expect(onSuccess).toHaveBeenCalled()
     })
 
     await user.click(screen.getByRole('button', { name: /cancel/i }))

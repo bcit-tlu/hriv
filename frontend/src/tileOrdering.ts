@@ -30,7 +30,13 @@ import {
 
 /** Save-state vocabulary shown to the user (see issue #979). */
 export type TileOrderStatus =
-  'idle' | 'dirty' | 'saving' | 'dirty-while-saving' | 'saved' | 'conflict' | 'error'
+  | 'idle'
+  | 'dirty'
+  | 'saving'
+  | 'dirty-while-saving'
+  | 'saved'
+  | 'conflict'
+  | 'error'
 
 /** Ordering scope key: the parent category ID, or null for the root scope. */
 export type ScopeId = number | null
