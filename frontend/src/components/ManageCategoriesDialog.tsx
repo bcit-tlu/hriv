@@ -236,9 +236,11 @@ export default function ManageCategoriesDialog({
   const [dragId, setDragId] = useState<number | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
   const listRef = useRef<HTMLUListElement>(null)
-  // Tracks whether a drop was handled so handleDragEnd does not also signal
-  // drag-active=false; the drop handler signals false after onReorderComplete.
-  const dropHandledRef = useRef(false)
+  // Track drag generations so an older drop that resolves during a newer drag
+  // cannot emit onDragActiveChange(false) and clear the newer drag.
+  const dragGenRef = useRef(0)
+  const currentDragGenRef = useRef<number | null>(null)
+  const activeDropGensRef = useRef<Set<number>>(new Set())
 
   /** Set of category IDs whose ancestor is hidden (for cascading visibility). */
   const ancestorHiddenIds = useMemo(() => getAncestorHiddenIds(options), [options])
@@ -403,7 +405,9 @@ export default function ManageCategoriesDialog({
 
   const handleDragStart = useCallback(
     (e: React.DragEvent, id: number) => {
-      dropHandledRef.current = false
+      const gen = ++dragGenRef.current
+      currentDragGenRef.current = gen
+      activeDropGensRef.current.delete(gen)
       setDragId(id)
       onDragActiveChange?.(true)
       e.dataTransfer.effectAllowed = 'move'
@@ -413,9 +417,11 @@ export default function ManageCategoriesDialog({
   )
 
   const handleDragEnd = useCallback(() => {
+    const gen = currentDragGenRef.current
     setDragId(null)
     setDropTarget(null)
-    if (!dropHandledRef.current) {
+    if (gen != null && !activeDropGensRef.current.has(gen) && gen === dragGenRef.current) {
+      currentDragGenRef.current = null
       onDragActiveChange?.(false)
     }
   }, [onDragActiveChange])
@@ -441,9 +447,11 @@ export default function ManageCategoriesDialog({
   const handleDrop = useCallback(
     async (e: React.DragEvent) => {
       e.preventDefault()
-      // Mark the drop as handled so handleDragEnd does not signal drag-active=false;
-      // this handler keeps App-level drag state true until onReorderComplete finishes.
-      dropHandledRef.current = true
+      // Track this drop's generation so the finally block only signals
+      // onDragActiveChange(false) for the current drag, and so an older drop
+      // that resolves during a newer drag cannot clear the newer drag.
+      const gen = currentDragGenRef.current
+      if (gen != null) activeDropGensRef.current.add(gen)
       try {
         setDragId(null)
         setDropTarget(null)
@@ -515,7 +523,11 @@ export default function ManageCategoriesDialog({
         // coordinator state safe from the re-fetched data).
         if (moves.length > 0) await onReorderComplete?.()
       } finally {
-        onDragActiveChange?.(false)
+        if (gen != null) activeDropGensRef.current.delete(gen)
+        if (gen != null && gen === dragGenRef.current) {
+          currentDragGenRef.current = null
+          onDragActiveChange?.(false)
+        }
       }
     },
     [

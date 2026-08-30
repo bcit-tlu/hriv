@@ -599,6 +599,61 @@ describe('ManageCategoriesDialog — drop → onReorderTiles', () => {
     await waitFor(() => expect(onReorderTiles).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(onDragActiveChange).toHaveBeenLastCalledWith(false))
   })
+
+  it('does not emit drag-active=false for an old drop that resolves during a newer drag', async () => {
+    let resolveFirst: (() => void) | undefined
+    let resolveSecond: (() => void) | undefined
+    const firstPromise = new Promise<void>((resolve) => {
+      resolveFirst = resolve
+    })
+    const secondPromise = new Promise<void>((resolve) => {
+      resolveSecond = resolve
+    })
+    const onReorderTiles = vi
+      .fn()
+      .mockReturnValueOnce(firstPromise)
+      .mockReturnValueOnce(secondPromise)
+    const onDragActiveChange = vi.fn()
+    renderDialog({
+      categories: categories(),
+      onReorderTiles,
+      onDragActiveChange,
+    })
+
+    const item1 = document.querySelector('[data-category-id="1"]')!
+    const list = item1.closest('ul')!
+
+    // First drag starts and drops (promise stays pending).
+    fireDrag(item1, 'dragstart', 0, 0)
+    fireDrag(list, 'dragover', 0, 100)
+    fireDrag(list, 'drop', 0, 100)
+    await waitFor(() => expect(onDragActiveChange).toHaveBeenCalledWith(true))
+    // dragend fires synchronously after drop; no false should be emitted yet.
+    fireDrag(item1, 'dragend', 0, 0)
+    expect(onDragActiveChange).toHaveBeenCalledTimes(1)
+
+    // Second drag starts before the first drop resolves.
+    const item2 = document.querySelector('[data-category-id="2"]')!
+    fireDrag(item2, 'dragstart', 0, 0)
+    fireDrag(list, 'dragover', 0, 100)
+    fireDrag(list, 'drop', 0, 100)
+    await waitFor(() => expect(onDragActiveChange).toHaveBeenCalledTimes(2))
+
+    // Resolve the first (now stale) drop: it must not emit false.
+    await act(async () => {
+      resolveFirst?.()
+    })
+    expect(onDragActiveChange).not.toHaveBeenCalledWith(false)
+
+    fireDrag(item2, 'dragend', 0, 0)
+
+    // Resolve the second drop: this is the only lifecycle that should signal false.
+    await act(async () => {
+      resolveSecond?.()
+    })
+    await waitFor(() => expect(onDragActiveChange).toHaveBeenLastCalledWith(false))
+    expect(onDragActiveChange.mock.calls.filter(([v]) => v === false).length).toBe(1)
+  })
 })
 
 // ---------------------------------------------------------------------------
