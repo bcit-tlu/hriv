@@ -270,53 +270,46 @@ redis:
 # The backend accepts in-app feedback submissions via
 # POST /api/issues/report, then routes them through a provider.
 #
-# Supported providers today:
+# Supported providers:
 #   - "" / disabled
-#   - github
+#   - email
 #   - teams
 #
-# Providers planned in follow-up work:
-#   - servicenow
+# To enable email delivery, create a secret with the SMTP credentials:
+#   kubectl create secret generic hriv-feedback-email \
+#     --from-literal=smtp_server=smtp.example.com \
+#     --from-literal=smtp_port=587 \
+#     --from-literal=username=hriv-feedback \
+#     --from-literal=password=YOUR_PASSWORD -n <namespace>
 #
-# To enable GitHub delivery with the new generic config:
+# Then set:
 #   feedback:
-#     provider: github
-#     github:
-#       repository: bcit-tlu/hriv
-#       token:
-#         existingSecret: github-report-issue-token
-#
-# To supply a PAT:
-#   kubectl create secret generic github-report-issue-token \
-#     --from-literal=token=ghp_YOUR_SCOPED_PAT -n <namespace>
+#     provider: email
+#     email:
+#       existingSecret: hriv-feedback-email
+#       to: tlu_techops@bcit.ca
+#       from: hriv-feedback@example.com
 #
 # To enable Teams delivery with a channel webhook:
+#   kubectl create secret generic hriv-feedback-teams-webhook \
+#     --from-literal=url=https://outlook.office.com/webhook/... -n <namespace>
+#
+# Then set:
 #   feedback:
 #     provider: teams
 #     teams:
 #       webhook:
 #         existingSecret: hriv-feedback-teams-webhook
-#
-#   kubectl create secret generic hriv-feedback-teams-webhook \
-#     --from-literal=url=https://outlook.office.com/webhook/... -n <namespace>
 feedback:
   provider: ''
-  github:
-    repository: ''
-    token:
-      existingSecret: ''
+  email:
+    existingSecret: ''
+    to: ''
+    from: ''
+    smtpSecurity: ''
   teams:
     webhook:
       existingSecret: ''
-
-# Deprecated legacy GitHub-only config kept for upgrade compatibility.
-# If feedback.provider is empty and github-issue.enabled=true, the chart
-# still configures GitHub feedback delivery from these values.
-github-issue:
-  enabled: false
-  repository: ''
-  token:
-    existingSecret: ''
 
 # Vault / external secret-management toggle.
 vault:
