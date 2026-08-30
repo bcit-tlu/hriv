@@ -54,25 +54,17 @@ user-chosen build metadata segment) are not mis-matched.
 {{- end -}}
 
 {{/*
-Resolve feedback delivery settings while preserving the legacy github-issue
-values as a fallback during the config migration.
+Resolve feedback delivery settings from values.
 */}}
 {{- define "hriv-backend.feedbackConfig" -}}
 {{- $feedback := dict
       "provider" (.Values.feedback.provider | default "")
-      "githubRepository" (.Values.feedback.github.repository | default "")
-      "githubSecret" (.Values.feedback.github.token.existingSecret | default "")
+      "emailSecret" (.Values.feedback.email.existingSecret | default "")
+      "emailTo" (.Values.feedback.email.to | default "")
+      "emailFrom" (.Values.feedback.email.from | default "")
+      "emailSmtpSecurity" (.Values.feedback.email.smtpSecurity | default "")
       "teamsSecret" (.Values.feedback.teams.webhook.existingSecret | default "")
   -}}
-{{- if and (not (get $feedback "provider")) (index .Values "github-issue" "enabled") -}}
-  {{- $_ := set $feedback "provider" "github" -}}
-{{- end -}}
-{{- if and (eq (get $feedback "provider") "github") (not (get $feedback "githubRepository")) -}}
-  {{- $_ := set $feedback "githubRepository" ((index .Values "github-issue" "repository") | default "") -}}
-{{- end -}}
-{{- if and (eq (get $feedback "provider") "github") (not (get $feedback "githubSecret")) -}}
-  {{- $_ := set $feedback "githubSecret" ((index .Values "github-issue" "token" "existingSecret") | default "") -}}
-{{- end -}}
 {{- toYaml $feedback -}}
 {{- end -}}
 

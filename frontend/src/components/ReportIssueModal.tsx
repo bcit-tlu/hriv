@@ -5,9 +5,12 @@ import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import TextField from '@mui/material/TextField'
-import Alert from '@mui/material/Alert'
 import CircularProgress from '@mui/material/CircularProgress'
-import Link from '@mui/material/Link'
+import FormControl from '@mui/material/FormControl'
+import FormControlLabel from '@mui/material/FormControlLabel'
+import FormLabel from '@mui/material/FormLabel'
+import Radio from '@mui/material/Radio'
+import RadioGroup from '@mui/material/RadioGroup'
 import { reportIssue, userMessage } from '../api'
 import type { FrontendPage } from '../observability'
 import { emitEvent } from '../observability'
@@ -16,6 +19,8 @@ interface ReportIssueModalProps {
   open: boolean
   onClose: () => void
   page: FrontendPage
+  onSuccess?: (message: string, trackingUrl?: string | null) => void
+  onError?: (message: string) => void
 }
 
 export const AUTO_CLOSE_DELAY_MS = 2000
@@ -30,14 +35,22 @@ function safeTrackingUrl(raw: string | null): string | null {
   }
 }
 
-export default function ReportIssueModal({ open, onClose, page }: ReportIssueModalProps) {
+export default function ReportIssueModal({
+  open,
+  onClose,
+  page,
+  onSuccess,
+  onError,
+}: ReportIssueModalProps) {
   const [description, setDescription] = useState('')
+  const [feedbackType, setFeedbackType] = useState<'problem_or_issue' | 'comment_or_suggestion'>(
+    'problem_or_issue',
+  )
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
-  const [trackingUrl, setTrackingUrl] = useState<string | null>(null)
+  const [submitted, setSubmitted] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hasEmittedOpenRef = useRef(false)
+  const busy = submitting || submitted
 
   useEffect(
     () => () => {
@@ -68,29 +81,30 @@ export default function ReportIssueModal({ open, onClose, page }: ReportIssueMod
       timerRef.current = null
     }
     setDescription('')
-    setError('')
-    setSuccess('')
-    setTrackingUrl(null)
+    setFeedbackType('problem_or_issue')
+    setSubmitted(false)
     onClose()
+  }
+
+  const handleDialogClose = (_event: object, reason: 'backdropClick' | 'escapeKeyDown') => {
+    if (submitting) return
+    if (reason === 'backdropClick' || reason === 'escapeKeyDown') {
+      handleClose()
+    }
   }
 
   const handleSubmit = async () => {
     const trimmed = description.trim()
-    if (!trimmed) {
-      setError('Please describe the issue or suggestion.')
-      return
-    }
+    if (!trimmed) return
 
     setSubmitting(true)
-    setError('')
-    setSuccess('')
-    setTrackingUrl(null)
     const startedAt = performance.now()
 
     try {
       const result = await reportIssue({
         description: trimmed,
         page_url: window.location.href,
+        feedback_type: feedbackType,
       })
       emitEvent({
         event: 'feedback.report_issue_submitted',
@@ -99,20 +113,14 @@ export default function ReportIssueModal({ open, onClose, page }: ReportIssueMod
         duration_ms: Math.round(performance.now() - startedAt),
         page,
       })
-      setSuccess('Your feedback was received successfully. Thanks!')
-      setDescription('')
       const safeUrl = safeTrackingUrl(result.tracking_url)
-      if (safeUrl) {
-        // Keep the dialog open so the user can follow the tracking link.
-        setTrackingUrl(safeUrl)
-      } else {
-        // Auto-close after a short delay
-        timerRef.current = setTimeout(() => {
-          timerRef.current = null
-          setSuccess('')
-          handleClose()
-        }, AUTO_CLOSE_DELAY_MS)
-      }
+      onSuccess?.('Thanks! Your feedback has been received.', safeUrl)
+      setSubmitted(true)
+      setDescription('')
+      timerRef.current = setTimeout(() => {
+        timerRef.current = null
+        handleClose()
+      }, AUTO_CLOSE_DELAY_MS)
     } catch (err) {
       emitEvent({
         event: 'feedback.report_issue_submitted',
@@ -121,61 +129,58 @@ export default function ReportIssueModal({ open, onClose, page }: ReportIssueMod
         duration_ms: Math.round(performance.now() - startedAt),
         page,
       })
-      setError(userMessage(err, 'Failed to submit report.'))
+      onError?.(userMessage(err, 'Failed to send feedback. Please try again later.'))
     } finally {
       setSubmitting(false)
     }
   }
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Report an Issue</DialogTitle>
+    <Dialog open={open} onClose={handleDialogClose} maxWidth="sm" fullWidth>
+      <DialogTitle>Send Feedback</DialogTitle>
       <DialogContent>
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
-        )}
-        {success && (
-          <Alert severity="success" sx={{ mb: 2 }}>
-            {success}
-            {trackingUrl && (
-              <>
-                {' '}
-                <Link href={trackingUrl} target="_blank" rel="noopener noreferrer">
-                  Track your report
-                </Link>
-              </>
-            )}
-          </Alert>
-        )}
+        <FormControl component="fieldset" sx={{ mb: 2, mt: 1 }} disabled={busy}>
+          <FormLabel component="legend">What kind of feedback is this?</FormLabel>
+          <RadioGroup
+            aria-label="Feedback type"
+            name="feedback_type"
+            value={feedbackType}
+            onChange={(e) =>
+              setFeedbackType(e.target.value as 'problem_or_issue' | 'comment_or_suggestion')
+            }
+          >
+            <FormControlLabel
+              value="problem_or_issue"
+              control={<Radio />}
+              label="Problem or issue"
+            />
+            <FormControlLabel
+              value="comment_or_suggestion"
+              control={<Radio />}
+              label="Comment or suggestion"
+            />
+          </RadioGroup>
+        </FormControl>
         <TextField
           autoFocus
           multiline
           minRows={3}
           maxRows={8}
           fullWidth
-          label="Did you notice an issue or have a suggestion?"
+          label="Please describe your feedback"
           value={description}
-          onChange={(e) => {
-            setDescription(e.target.value)
-            if (error) setError('')
-          }}
-          disabled={submitting}
+          onChange={(e) => setDescription(e.target.value)}
+          disabled={busy}
           sx={{ mt: 1 }}
           slotProps={{ htmlInput: { maxLength: 2000 } }}
         />
       </DialogContent>
       <DialogActions>
         <Button onClick={handleClose} disabled={submitting}>
-          {trackingUrl ? 'Close' : 'Cancel'}
+          {submitted ? 'Close' : 'Cancel'}
         </Button>
-        <Button
-          onClick={handleSubmit}
-          variant="contained"
-          disabled={submitting || !description.trim()}
-        >
-          {submitting ? <CircularProgress size={20} /> : 'Submit'}
+        <Button onClick={handleSubmit} variant="contained" disabled={busy || !description.trim()}>
+          {submitting ? <CircularProgress size={20} /> : submitted ? 'Sent' : 'Submit'}
         </Button>
       </DialogActions>
     </Dialog>

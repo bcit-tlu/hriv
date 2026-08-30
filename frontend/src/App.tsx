@@ -214,6 +214,10 @@ export default function App() {
   const [editNameCategory, setEditNameCategory] = useState<Category | null>(null)
 
   const [errorSnack, setErrorSnack] = useState<string | null>(null)
+  const [successSnack, setSuccessSnack] = useState<{
+    message: string
+    trackingUrl?: string | null
+  } | null>(null)
   const [warnSnack, setWarnSnack] = useState<string | null>(null)
   const [moveSnack, setMoveSnack] = useState<{
     message: string
@@ -2253,6 +2257,10 @@ export default function App() {
         open={reportIssueOpen}
         onClose={() => setReportIssueOpen(false)}
         page={page}
+        onSuccess={(message, trackingUrl) => {
+          setSuccessSnack({ message, trackingUrl })
+        }}
+        onError={(message) => setErrorSnack(message)}
       />
 
       {/* Search modal */}
@@ -2370,6 +2378,39 @@ export default function App() {
       >
         <Alert severity="error" onClose={() => setErrorSnack(null)} variant="filled">
           {errorSnack}
+        </Alert>
+      </Snackbar>
+
+      {/* Success snackbar */}
+      <Snackbar
+        open={successSnack !== null}
+        autoHideDuration={6000}
+        onClose={(_event, reason) => {
+          if (reason === 'clickaway') return
+          setSuccessSnack(null)
+        }}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        sx={{ zIndex: 1500 }}
+      >
+        <Alert
+          severity="success"
+          onClose={() => setSuccessSnack(null)}
+          variant="filled"
+          action={
+            successSnack?.trackingUrl ? (
+              <Button
+                size="small"
+                color="inherit"
+                href={successSnack.trackingUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Track
+              </Button>
+            ) : undefined
+          }
+        >
+          {successSnack?.message}
         </Alert>
       </Snackbar>
 
