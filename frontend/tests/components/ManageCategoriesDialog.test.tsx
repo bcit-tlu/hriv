@@ -632,11 +632,12 @@ describe('ManageCategoriesDialog — drop → onReorderTiles', () => {
     fireDrag(item1, 'dragend', 0, 0)
     expect(onDragActiveChange).toHaveBeenCalledTimes(1)
 
-    // Second drag starts before the first drop resolves.
+    // Second drag starts before the first drop resolves. Drop item 2 before
+    // item 1 (negative clientY) so the move is a real reorder, not a no-op.
     const item2 = document.querySelector('[data-category-id="2"]')!
     fireDrag(item2, 'dragstart', 0, 0)
-    fireDrag(list, 'dragover', 0, 100)
-    fireDrag(list, 'drop', 0, 100)
+    fireDrag(list, 'dragover', 0, -10)
+    fireDrag(list, 'drop', 0, -10)
     await waitFor(() => expect(onDragActiveChange).toHaveBeenCalledTimes(2))
 
     // Resolve the first (now stale) drop: it must not emit false.
