@@ -3,101 +3,108 @@
 ## Summary
 
 HRIV exposes a single in-app feedback entrypoint through `POST /api/issues/report`
-and the frontend "Report Issue" modal. The product goal is to keep that user
+and the frontend "Send Feedback" modal. The product goal is to keep that user
 experience low-friction while allowing deployments to route submissions
 differently by environment.
 
-Issue [#757](https://github.com/bcit-tlu/hriv/issues/757) defines the redesign
+Issue [#757](https://github.com/bcit-tlu/hriv/issues/757) defined the redesign
 goal: decouple the in-app submission flow from the downstream destination so
 pre-production and production can use different triage workflows without a UI
-rewrite. Issue [#713](https://github.com/bcit-tlu/hriv/issues/713) and issue
-[#789](https://github.com/bcit-tlu/hriv/issues/789) added the submission-outcome
-UX: when the provider returns a tracking URL, the modal shows a "Track your
-report" link after submission.
+rewrite. Issue [#788](https://github.com/bcit-tlu/hriv/issues/788) switched the
+primary destination from GitHub issues to email via the BCIT SMTP relay, while
+keeping the MS Teams webhook provider available for future use.
 
 ## Current Architecture
 
-Backend foundation introduced in issue `#786`:
+The modal now asks the user what kind of feedback they are submitting:
 
-- the router still accepts `description` and `page_url`
-- rate limiting and sanitization still happen before delivery
-- a feedback delivery provider is resolved at runtime
-- the provider returns a generic delivery result:
-  - `destination`
-  - `tracking_url`
-  - legacy `issue_url` alias for GitHub compatibility
+- `problem_or_issue`
+- `comment_or_suggestion`
 
-This keeps the API stable enough for the current frontend while making it
-possible to add non-GitHub providers behind the same endpoint.
+That `feedback_type` is sent with `description` and `page_url` to
+`POST /api/issues/report`. The backend sanitizes the text, applies per-user rate
+limiting, and delegates delivery to a runtime provider.
+
+Backend delivery is abstracted in `backend/app/feedback.py`:
+
+- `FeedbackSubmission` carries `feedback_type`, `description`, `page_url`,
+  user id/role, app version, and submission timestamp.
+- `FeedbackDelivery` is a `Protocol` with `submit()` returning a
+  `FeedbackDeliveryResult` (`destination`, optional `tracking_url`,
+  optional `external_id`).
+- `EmailFeedbackDelivery` sends a `text/plain` message through the configured
+  SMTP relay using Python stdlib `smtplib`.
+- `TeamsFeedbackDelivery` posts an Adaptive Card to a webhook URL.
+- `get_feedback_delivery()` resolves the provider from `FEEDBACK_DELIVERY_PROVIDER`
+  (`email` or `teams`); unsupported providers raise `FeedbackNotConfiguredError`.
+
+The GitHub issue provider and all related env/chart wiring were removed.
+
+## API Contract
+
+`POST /api/issues/report` body:
+
+```json
+{
+  "description": "string (1-2000 chars)",
+  "page_url": "string (1-2000 chars)",
+  "feedback_type": "problem_or_issue" | "comment_or_suggestion"
+}
+```
+
+`ReportIssueResponse`:
+
+```json
+{
+  "destination": "email",
+  "tracking_url": null,
+  "issue_url": null
+}
+```
+
+`issue_url` remains part of the schema for backward compatibility but is always
+`null` now that GitHub delivery is gone.
 
 ## Delivery Policy
 
 The intended routing policy is:
 
-- `latest` / pre-production: route directly into the developer workflow
-  (currently GitHub)
-- `stable` / production: route into institutional support and triage systems
-  instead of creating public GitHub issues
+- `latest` / pre-production: route to `email` (TLU TechOps inbox) for triage.
+- `stable` / production: route to `email` (TLU TechOps inbox) for triage.
 
-That production policy is what drives the follow-up provider work for MS Teams
-and ServiceNow.
+The MS Teams provider is retained for future routing but is not enabled by
+default.
 
 ## Provider Configuration
 
-The backend chart now uses a generic `feedback` block:
+### Email
+
+Runtime environment variables (injected from a Kubernetes secret):
+
+- `FEEDBACK_EMAIL_SMTP_SERVER` — e.g. `smtp.relay.bcit.ca`
+- `FEEDBACK_EMAIL_SMTP_PORT` — plain integer or a JSON object like
+  `{"ssl": 465, "tls": [25, 587]}`
+- `FEEDBACK_EMAIL_USERNAME` — SMTP auth username
+- `FEEDBACK_EMAIL_PASSWORD` — SMTP auth password
+- `FEEDBACK_EMAIL_FROM` — defaults to the username
+- `FEEDBACK_EMAIL_TO` — defaults to `tlu_techops@bcit.ca`
+- `FEEDBACK_EMAIL_SMTP_SECURITY` — optional `starttls`, `ssl`, `none`, or `auto`
+
+`EmailFeedbackDelivery` resolves the port and security mode automatically. Port
+465 uses SSL; other ports default to STARTTLS unless overridden.
+
+Chart configuration:
 
 ```yaml
 feedback:
-  provider: github
-  github:
-    repository: bcit-tlu/hriv
-    token:
-      existingSecret: github-report-issue-token
+  provider: email
+  email:
+    existingSecret: hriv-feedback-smtp-relay
+    to: tlu_techops@bcit.ca
+    from: hriv-no-reply@bcit.ca
 ```
 
-Supported providers today:
-
-- `""` / disabled
-- `github`
-- `teams`
-
-Planned providers tracked in follow-up issues:
-
-- `servicenow` (`#788`)
-
-Legacy `github-issue.*` chart values are still accepted as a fallback while
-overlays move to the new config.
-
-For non-chart or transitional environments, the backend also honors legacy
-`GITHUB_TOKEN` plus `GITHUB_REPO` environment variables when
-`FEEDBACK_DELIVERY_PROVIDER` is unset. That implicit GitHub path exists only for
-upgrade compatibility and should not be treated as the preferred long-term
-configuration shape.
-
-## Planned Issue Split
-
-- `#786` feedback foundation: abstract delivery and config
-- `#787` feedback delivery: add MS Teams provider
-- `#788` feedback delivery: add ServiceNow provider
-- `#789` feedback UX: show submission outcome and tracking link
-
-## MS Teams Provider
-
-Issue `#787` adds a production-oriented Teams provider that posts to a channel
-webhook URL configured in the backend chart. The provider uses a compact
-Adaptive Card payload so the channel receives triage-friendly structure instead
-of an unformatted text blob.
-
-Delivered fields:
-
-- submission text
-- role
-- internal user id
-- page URL
-- deployed app version
-- submission timestamp (UTC)
-
-Chart configuration:
+### MS Teams
 
 ```yaml
 feedback:
@@ -110,30 +117,21 @@ feedback:
 The referenced secret must expose key `url`, which becomes
 `FEEDBACK_TEAMS_WEBHOOK_URL` in the backend pod.
 
-This implementation targets a Teams channel webhook endpoint. It does not
-create a user-visible tracking link (`tracking_url` is `null`), so the modal
-shows a plain success confirmation and auto-closes as before.
-
 ## Submission Outcome UX
 
-Issue `#789` (with `#713`) defines the provider-aware outcome behavior of the
-"Report Issue" modal:
+The modal title is "Send Feedback". Successful submissions display a success
+snackbar with "Thanks! Your feedback has been received." and auto-close the
+modal. Submission failures display an error snackbar with a status-aware message
+from the backend.
 
-- Every successful submission shows a success confirmation.
-- When the response includes a `tracking_url` (e.g. the GitHub provider), the
-  modal additionally shows a "Track your report" link that opens in a new tab,
-  and stays open (no auto-close) so the user can follow the link. The dismiss
-  button reads "Close" in this state.
-- When no tracking URL is returned (e.g. the Teams provider), the modal shows
-  the plain success state and auto-closes after a short delay.
-- Only absolute `http(s)` tracking URLs are surfaced. Any other value
-  (non-http(s) scheme, relative path, or unparseable URL) is discarded and the
-  modal falls back to the no-link auto-close behavior — provider authors must
-  return absolute `http(s)` URLs for the link to appear.
+`tracking_url` is not expected for email or Teams delivery, so the modal does
+not show a "Track your report" link for those providers. If a future provider
+returns an absolute `http(s)` URL, the modal will still surface it and keep
+the modal open until the user dismisses it.
 
 ## Notes For Future Providers
 
 - Providers must accept already-sanitized text and page metadata from the router.
 - Providers should return a tracking URL only when it is safe and useful to show
   to the submitting user.
-- The frontend should not assume every provider behaves like GitHub.
+- The frontend should not assume any specific provider behavior.

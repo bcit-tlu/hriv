@@ -43,20 +43,20 @@ describe('FooterBar', () => {
     expect(screen.queryByRole('link', { name: 'MPL-2.0' })).not.toBeInTheDocument()
   })
 
-  it('invokes onReportIssue when Report issue is clicked', async () => {
+  it('invokes onReportIssue when Send Feedback is clicked', async () => {
     const onReportIssue = vi.fn()
     const user = userEvent.setup()
 
     render(<FooterBar canManageUsers={false} onReportIssue={onReportIssue} />)
 
-    await user.click(screen.getByRole('button', { name: 'Report issue' }))
+    await user.click(screen.getByRole('button', { name: 'Send Feedback' }))
     expect(onReportIssue).toHaveBeenCalledTimes(1)
   })
 
-  it('hides Report issue when no callback is provided', () => {
+  it('hides Send Feedback when no callback is provided', () => {
     render(<FooterBar canManageUsers={false} />)
 
-    expect(screen.queryByRole('button', { name: 'Report issue' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Send Feedback' })).not.toBeInTheDocument()
   })
 
   it('shows admin version links pointing at releases for real versions', () => {

@@ -119,7 +119,7 @@ export default function FooterBar({
           onClick={onReportIssue}
           sx={{ cursor: 'pointer' }}
         >
-          Report issue
+          Send Feedback
         </Link>
       )}
     </Box>
