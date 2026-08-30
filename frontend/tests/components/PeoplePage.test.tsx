@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 vi.mock('../../src/api', async (importOriginal) => {
@@ -853,5 +853,52 @@ describe('PeoplePage', () => {
     const dialog = screen.getByRole('dialog')
     expect(within(dialog).getByText('Lab B1')).toBeInTheDocument()
     expect(within(dialog).queryByText('Lab A2')).not.toBeInTheDocument()
+  })
+
+  it('does not clobber page state from a stale bulk group save after the dialog is closed', async () => {
+    const user = userEvent.setup()
+    const { promise, resolve } = createDeferred<ApiGroup>()
+    vi.mocked(addGroupMembersBulk).mockReturnValue(promise)
+    render(<PeoplePage programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    const checkboxes = screen.getAllByRole('checkbox')
+    await user.click(checkboxes[1])
+
+    await user.click(screen.getByText('Bulk Groups (1)'))
+    expect(screen.getByText('Bulk Add to Groups')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('combobox'))
+    await user.click(screen.getByRole('option', { name: 'Lab A2' }))
+    await user.keyboard('{Escape}')
+    await user.click(screen.getByRole('button', { name: 'Add to Groups' }))
+
+    // Close the dialog while the request is still in flight.
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => {
+      expect(screen.queryByText('Bulk Add to Groups')).not.toBeInTheDocument()
+    })
+
+    // Resolve the abandoned request.
+    const apiGroup: ApiGroup = {
+      id: 7,
+      name: 'Lab A2',
+      description: null,
+      created_by_user_id: null,
+      member_ids: [1, 2],
+      instructor_ids: [],
+      created_at: '',
+      updated_at: '',
+    }
+    await act(async () => {
+      resolve(apiGroup)
+    })
+
+    // The stale success must not surface a snackbar or reopen the dialog.
+    expect(screen.queryByText('Bulk Add to Groups')).not.toBeInTheDocument()
+    expect(screen.queryByText('Added to group(s).')).not.toBeInTheDocument()
   })
 })

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -91,10 +91,24 @@ function buildPeopleFilterSnapshot(
 }
 
 type SortableColumn =
-  'id' | 'name' | 'email' | 'role' | 'program' | 'group' | 'last_access' | 'created_at'
+  | 'id'
+  | 'name'
+  | 'email'
+  | 'role'
+  | 'program'
+  | 'group'
+  | 'last_access'
+  | 'created_at'
 type SortDirection = 'asc' | 'desc'
 type PeopleTableColumn =
-  'id' | 'name' | 'email' | 'role' | 'program' | 'group' | 'last_access' | 'created_at'
+  | 'id'
+  | 'name'
+  | 'email'
+  | 'role'
+  | 'program'
+  | 'group'
+  | 'last_access'
+  | 'created_at'
 
 const ROLES: Role[] = ['admin', 'instructor', 'student']
 const PEOPLE_COLUMN_OPTIONS: readonly ColumnVisibilityOption<PeopleTableColumn>[] = [
@@ -213,6 +227,12 @@ export default function PeoplePage({
   // Success snackbar
   const [successSnack, setSuccessSnack] = useState<string | null>(null)
   const [errorSnack, setErrorSnack] = useState<string | null>(null)
+
+  // Tokens for page-level bulk save handlers so a late-settling request cannot
+  // clobber state after the user has dismissed and reopened the dialog.
+  const bulkEditSaveTokenRef = useRef(0)
+  const bulkGroupSaveTokenRef = useRef(0)
+  const bulkRoleSaveTokenRef = useRef(0)
 
   const selectedProgramOptions = useMemo(
     () => programs.filter((program) => selectedPrograms.has(program.id)),
@@ -560,14 +580,17 @@ export default function PeoplePage({
 
   // Bulk edit program handler
   const handleBulkSave = async (programIds: number[]) => {
+    const token = ++bulkEditSaveTokenRef.current
     try {
       await bulkUpdateUserProgram({
         user_ids: Array.from(selected),
         program_ids: programIds,
       })
-      setBulkEditOpen(false)
-      setSelected(new Set())
-      await loadData()
+      if (bulkEditSaveTokenRef.current === token) {
+        setBulkEditOpen(false)
+        setSelected(new Set())
+        await loadData()
+      }
     } catch (err) {
       console.error('Failed to bulk update', err)
     }
@@ -576,6 +599,7 @@ export default function PeoplePage({
   // Bulk add-to-group handler. Resolves with the group ids that failed so the
   // modal can prune succeeded groups from the selection for retry.
   const handleBulkGroupSave = async (groupIds: number[]): Promise<number[]> => {
+    const token = ++bulkGroupSaveTokenRef.current
     try {
       const results = await Promise.allSettled(
         groupIds.map((groupId) => addGroupMembersBulk(groupId, Array.from(selected))),
@@ -613,16 +637,20 @@ export default function PeoplePage({
           succeededCount > 0
             ? `Added to ${succeededCount} ${succeededCount === 1 ? 'group' : 'groups'}, but failed`
             : 'Failed'
-        setErrorSnack(
-          `${successPrefix} to add ${selectionWord} to ${failedGroupIds.length} of ${groupIds.length} ${groupWord}. ${reasonsText}`,
-        )
+        if (bulkGroupSaveTokenRef.current === token) {
+          setErrorSnack(
+            `${successPrefix} to add ${selectionWord} to ${failedGroupIds.length} of ${groupIds.length} ${groupWord}. ${reasonsText}`,
+          )
+        }
         return failedGroupIds
       }
 
-      setBulkGroupOpen(false)
-      setSelected(new Set())
-      setErrorSnack(null)
-      setSuccessSnack('Added to group(s).')
+      if (bulkGroupSaveTokenRef.current === token) {
+        setBulkGroupOpen(false)
+        setSelected(new Set())
+        setErrorSnack(null)
+        setSuccessSnack('Added to group(s).')
+      }
       return []
     } catch (err) {
       console.error('Failed to bulk add to groups', err)
@@ -632,15 +660,18 @@ export default function PeoplePage({
 
   // Bulk role update handler
   const handleBulkRoleSave = async () => {
+    const token = ++bulkRoleSaveTokenRef.current
     try {
       await bulkUpdateUserRole({
         user_ids: Array.from(selected),
         role: bulkRole,
       })
-      setBulkRoleOpen(false)
-      setBulkRole('student')
-      setSelected(new Set())
-      await loadData()
+      if (bulkRoleSaveTokenRef.current === token) {
+        setBulkRoleOpen(false)
+        setBulkRole('student')
+        setSelected(new Set())
+        await loadData()
+      }
     } catch (err) {
       console.error('Failed to bulk update role', err)
     }
@@ -1121,7 +1152,10 @@ export default function PeoplePage({
 
       <BulkEditModal
         open={bulkEditOpen}
-        onClose={() => setBulkEditOpen(false)}
+        onClose={() => {
+          bulkEditSaveTokenRef.current++
+          setBulkEditOpen(false)
+        }}
         onSave={handleBulkSave}
         programs={programs}
         selectedCount={selected.size}
@@ -1130,6 +1164,7 @@ export default function PeoplePage({
       <BulkGroupModal
         open={bulkGroupOpen}
         onClose={() => {
+          bulkGroupSaveTokenRef.current++
           setBulkGroupOpen(false)
           setErrorSnack(null)
         }}
@@ -1139,7 +1174,15 @@ export default function PeoplePage({
       />
 
       {/* Bulk Role Update Dialog */}
-      <Dialog open={bulkRoleOpen} onClose={() => setBulkRoleOpen(false)} maxWidth="xs" fullWidth>
+      <Dialog
+        open={bulkRoleOpen}
+        onClose={() => {
+          bulkRoleSaveTokenRef.current++
+          setBulkRoleOpen(false)
+        }}
+        maxWidth="xs"
+        fullWidth
+      >
         <DialogTitle>Bulk Update Role</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
           <Typography variant="body2" color="text.secondary">
@@ -1159,7 +1202,14 @@ export default function PeoplePage({
           </FormControl>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setBulkRoleOpen(false)}>Cancel</Button>
+          <Button
+            onClick={() => {
+              bulkRoleSaveTokenRef.current++
+              setBulkRoleOpen(false)
+            }}
+          >
+            Cancel
+          </Button>
           <Button onClick={handleBulkRoleSave} variant="contained">
             Save
           </Button>
