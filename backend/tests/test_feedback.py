@@ -142,6 +142,20 @@ def test_get_feedback_delivery_rejects_invalid_smtp_port(
         get_feedback_delivery()
 
 
+def test_get_feedback_delivery_rejects_invalid_smtp_security(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FEEDBACK_DELIVERY_PROVIDER", "email")
+    monkeypatch.setenv("FEEDBACK_EMAIL_SMTP_SERVER", "smtp.example.com")
+    monkeypatch.setenv("FEEDBACK_EMAIL_SMTP_PORT", "587")
+    monkeypatch.setenv("FEEDBACK_EMAIL_USERNAME", "user@example.com")
+    monkeypatch.setenv("FEEDBACK_EMAIL_PASSWORD", "secret")
+    monkeypatch.setenv("FEEDBACK_EMAIL_SMTP_SECURITY", "invalid")
+
+    with pytest.raises(FeedbackNotConfiguredError):
+        get_feedback_delivery()
+
+
 def test_get_feedback_delivery_uses_teams_provider_when_configured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

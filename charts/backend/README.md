@@ -35,9 +35,11 @@ When `feedback.provider: email`:
 - `FEEDBACK_EMAIL_SMTP_SERVER`, `FEEDBACK_EMAIL_SMTP_PORT`,
   `FEEDBACK_EMAIL_USERNAME`, and `FEEDBACK_EMAIL_PASSWORD` are read from
   `feedback.email.existingSecret`
-- `FEEDBACK_EMAIL_TO`, `FEEDBACK_EMAIL_FROM`, and `FEEDBACK_EMAIL_SMTP_SECURITY`
-  are injected from the chart values when set, or left unset so the backend
-  defaults apply
+- `FEEDBACK_EMAIL_TO` and `FEEDBACK_EMAIL_FROM` are injected from chart values
+  when set, or sourced from the same `existingSecret` under keys `to` and `from`
+  (optional); otherwise they are left unset so the backend defaults apply
+- `FEEDBACK_EMAIL_SMTP_SECURITY` is injected from chart values when set, or left
+  unset so the backend defaults apply
 - chart render fails if the SMTP secret is missing
 
 When `feedback.provider: teams`:

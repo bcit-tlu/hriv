@@ -2386,7 +2386,7 @@ export default function App() {
         open={successSnack !== null}
         autoHideDuration={6000}
         onClose={(_event, reason) => {
-          if (reason === 'clickaway' && successSnack?.trackingUrl) return
+          if (reason === 'clickaway') return
           setSuccessSnack(null)
         }}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}

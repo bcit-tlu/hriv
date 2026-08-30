@@ -145,13 +145,29 @@ spec:
                 secretKeyRef:
                   name: {{ get $feedback "emailSecret" }}
                   key: password
-            {{- if get $feedback "emailTo" }}
+            {{- if or (get $feedback "emailTo") (get $feedback "emailSecret") }}
             - name: FEEDBACK_EMAIL_TO
+              {{- if get $feedback "emailTo" }}
               value: {{ get $feedback "emailTo" | quote }}
+              {{- else }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ get $feedback "emailSecret" }}
+                  key: to
+                  optional: true
+              {{- end }}
             {{- end }}
-            {{- if get $feedback "emailFrom" }}
+            {{- if or (get $feedback "emailFrom") (get $feedback "emailSecret") }}
             - name: FEEDBACK_EMAIL_FROM
+              {{- if get $feedback "emailFrom" }}
               value: {{ get $feedback "emailFrom" | quote }}
+              {{- else }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ get $feedback "emailSecret" }}
+                  key: from
+                  optional: true
+              {{- end }}
             {{- end }}
             {{- if get $feedback "emailSmtpSecurity" }}
             - name: FEEDBACK_EMAIL_SMTP_SECURITY

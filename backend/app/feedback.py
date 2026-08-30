@@ -315,15 +315,18 @@ def get_feedback_delivery() -> FeedbackDelivery:
         if security in {"", "auto"}:
             security = default_security
 
-        return EmailFeedbackDelivery(
-            smtp_server=smtp_server,
-            smtp_port=port,
-            username=username,
-            password=password,
-            from_addr=from_addr,
-            to_addr=to_addr,
-            security=security,
-        )
+        try:
+            return EmailFeedbackDelivery(
+                smtp_server=smtp_server,
+                smtp_port=port,
+                username=username,
+                password=password,
+                from_addr=from_addr,
+                to_addr=to_addr,
+                security=security,
+            )
+        except ValueError as exc:
+            raise FeedbackNotConfiguredError(str(exc)) from exc
 
     if provider == "teams":
         webhook_url = os.environ.get("FEEDBACK_TEAMS_WEBHOOK_URL", "").strip()
