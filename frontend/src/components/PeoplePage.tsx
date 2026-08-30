@@ -336,6 +336,7 @@ export default function PeoplePage({
         return
       }
       console.error('Failed to load data', err)
+      throw err
     } finally {
       if (showLoading) {
         loadDataLoadingCountRef.current--
@@ -347,7 +348,12 @@ export default function PeoplePage({
   }, [])
 
   useEffect(() => {
-    loadData({ showLoading: true }) // eslint-disable-line react-hooks/set-state-in-effect -- standard data-fetch trigger on dependency change
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- standard data-fetch trigger on dependency change; errors are caught below
+    loadData({ showLoading: true }).catch((err) => {
+      if (!(err instanceof DOMException && err.name === 'AbortError')) {
+        console.error('Failed to load data', err)
+      }
+    })
   }, [loadData])
 
   useEffect(() => {
@@ -582,7 +588,13 @@ export default function PeoplePage({
     setAddEditOpen(false)
     setEditingUser(null)
     setSuccessSnack(editingUser ? 'Person updated.' : 'Person added.')
-    await loadData()
+    try {
+      await loadData()
+    } catch (err) {
+      if (!(err instanceof DOMException && err.name === 'AbortError')) {
+        setErrorSnack(userMessage(err, 'Failed to refresh people list. Please try again.'))
+      }
+    }
   }
 
   // Bulk edit program handler
@@ -613,6 +625,7 @@ export default function PeoplePage({
         return
       }
       console.error('Failed to bulk update', err)
+      setErrorSnack(userMessage(err, 'Failed to update programs. Please try again.'))
     } finally {
       if (bulkEditSaveAbortRef.current === abortController) {
         bulkEditSaveAbortRef.current = null
@@ -682,7 +695,10 @@ export default function PeoplePage({
       }
       return []
     } catch (err) {
-      console.error('Failed to bulk add to groups', err)
+      if (!(err instanceof DOMException && err.name === 'AbortError')) {
+        console.error('Failed to bulk add to groups', err)
+        setErrorSnack(userMessage(err, 'Failed to refresh people list. Please try again.'))
+      }
       throw err
     }
   }
@@ -716,6 +732,7 @@ export default function PeoplePage({
         return
       }
       console.error('Failed to bulk update role', err)
+      setErrorSnack(userMessage(err, 'Failed to update roles. Please try again.'))
     } finally {
       if (bulkRoleSaveAbortRef.current === abortController) {
         bulkRoleSaveAbortRef.current = null
@@ -731,9 +748,9 @@ export default function PeoplePage({
       await bulkDeleteUsers({
         user_ids: Array.from(selected),
       })
+      await loadData()
       setBulkDeleteOpen(false)
       setSelected(new Set())
-      await loadData()
     } catch (err) {
       console.error('Failed to bulk delete', err)
       setBulkDeleteError(userMessage(err, 'Failed to delete. Please try again.'))

@@ -1084,4 +1084,34 @@ describe('PeoplePage', () => {
     expect(screen.getByText('B User')).toBeInTheDocument()
     expect(screen.queryByText('A User')).not.toBeInTheDocument()
   })
+
+  it('keeps the bulk program dialog open and shows an error when the refresh fails', async () => {
+    const user = userEvent.setup()
+    vi.mocked(bulkUpdateUserProgram).mockResolvedValue(USERS)
+    vi.mocked(fetchUsers)
+      .mockResolvedValueOnce(USERS)
+      .mockRejectedValueOnce(new ApiError(500, 'Refresh failed'))
+
+    render(<PeoplePage programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    const checkboxes = screen.getAllByRole('checkbox')
+    await user.click(checkboxes[1])
+
+    await user.click(screen.getByText('Bulk Programs (1)'))
+    expect(screen.getByText('Bulk Edit Programs')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('combobox'))
+    await user.click(screen.getByRole('option', { name: 'Medical Lab' }))
+    await user.keyboard('{Escape}')
+    await user.click(screen.getByRole('button', { name: /save/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Bulk Edit Programs')).toBeInTheDocument()
+      expect(screen.getByText('Failed to update programs. Please try again.')).toBeInTheDocument()
+    })
+  })
 })
