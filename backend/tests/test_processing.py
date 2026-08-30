@@ -229,6 +229,17 @@ def test_processing_failure_message_redacts_paths_with_spaces() -> None:
     )
 
 
+def test_processing_failure_message_redacts_each_path_separately() -> None:
+    """Prose between two absolute paths survives redaction."""
+    exc = Exception(
+        "copy /srv/hriv/source images/a.tif failed reading "
+        "/var/lib/hriv/tiles/b.dzi: permission denied"
+    )
+    assert _processing_failure_message(exc) == (
+        "Tile generation failed: copy a.tif failed reading b.dzi: permission denied"
+    )
+
+
 def test_processing_failure_message_truncates_long_details() -> None:
     """Very long error text is truncated instead of flooding the snackbar."""
     message = _processing_failure_message(Exception("x" * 500))

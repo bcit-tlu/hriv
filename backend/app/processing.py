@@ -102,7 +102,7 @@ def _is_enospc(exc: Exception) -> bool:
 
 _MAX_FAILURE_DETAIL_CHARS = 300
 
-_ABSOLUTE_PATH_RE = re.compile(r"(?:/[^/\s:][^/:]*){2,}")
+_ABSOLUTE_PATH_RE = re.compile(r"(?:/[^/\s:]+(?: [^/\s:]+)*){2,}")
 
 
 def _failure_detail(exc: Exception, src: SourceImage | None = None) -> str:
