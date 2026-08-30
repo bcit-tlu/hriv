@@ -10,6 +10,7 @@ Spaces and non-ASCII characters are preserved: they are legitimate parts of a
 filename. The value is deliberately *not* HTML-escaped — renderers escape.
 """
 
+import os
 import unicodedata
 
 # ``SourceImage.original_filename`` / ``AdminTask.original_filename`` are
@@ -19,6 +20,12 @@ MAX_FILENAME_LENGTH = 500
 # Used when normalization leaves nothing usable (empty, all control
 # characters, or a bare path such as ``../``).
 FILENAME_PLACEHOLDER = "unnamed"
+
+# Longest client-supplied suffix reused for an on-disk name. A file accepted
+# on its MIME type alone can carry a suffix far beyond the 255-byte limit for
+# a single path component, so anything longer falls back to ``.bin``.
+MAX_STORAGE_EXTENSION_LENGTH = 32
+DEFAULT_STORAGE_EXTENSION = ".bin"
 
 
 def sanitize_upload_filename(
@@ -55,5 +62,15 @@ def sanitize_upload_filename(
     if cleaned in ("", ".", ".."):
         return placeholder
 
-    cleaned = cleaned[:max_length].strip()
+    # Dropping format characters can expose combining sequences that are no
+    # longer composed, so re-normalize before enforcing the column limit.
+    cleaned = unicodedata.normalize("NFC", cleaned)[:max_length].strip()
     return cleaned or placeholder
+
+
+def storage_extension(filename: str) -> str:
+    """Return a bounded, filesystem-safe suffix for a stored copy of *filename*."""
+    ext = os.path.splitext(filename)[1]
+    if not ext or len(ext.encode("utf-8")) > MAX_STORAGE_EXTENSION_LENGTH:
+        return DEFAULT_STORAGE_EXTENSION
+    return ext

@@ -3,9 +3,11 @@
 import unicodedata
 
 from app.filenames import (
+    DEFAULT_STORAGE_EXTENSION,
     FILENAME_PLACEHOLDER,
     MAX_FILENAME_LENGTH,
     sanitize_upload_filename,
+    storage_extension,
 )
 
 
@@ -65,6 +67,19 @@ def test_placeholder_when_nothing_usable_remains() -> None:
     assert sanitize_upload_filename("\x00\x01") == FILENAME_PLACEHOLDER
     assert sanitize_upload_filename("..") == FILENAME_PLACEHOLDER
     assert sanitize_upload_filename(".") == FILENAME_PLACEHOLDER
+
+
+def test_nfc_normalized_after_control_characters_are_removed() -> None:
+    # A format character between the base letter and its combining accent keeps
+    # the pair from composing until the value is normalized again.
+    assert sanitize_upload_filename("cafe\u200d\u0301.tif") == "café.tif"
+
+
+def test_storage_extension_bounds_client_supplied_suffix() -> None:
+    assert storage_extension("slide.tif") == ".tif"
+    assert storage_extension("slide") == DEFAULT_STORAGE_EXTENSION
+    assert storage_extension("slide." + "t" * 300) == DEFAULT_STORAGE_EXTENSION
+    assert storage_extension("café.tïf") == ".tïf"
 
 
 def test_custom_max_length_and_placeholder() -> None:

@@ -40,6 +40,10 @@ back to `unnamed` when nothing usable remains. Spaces and non-ASCII characters
 are preserved, and the value is stored as plain text — markup is **not**
 HTML-escaped at ingestion; renderers escape.
 
+The on-disk copy is named from a UUID plus a bounded suffix
+(`storage_extension()`); a client suffix longer than 32 bytes falls back to
+`.bin`, so an over-long display name cannot produce an invalid path component.
+
 ## Status transitions
 
 | Status       | Progress | Description                                          |

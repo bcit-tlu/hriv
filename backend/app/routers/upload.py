@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import require_role
 from ..database import async_session, get_db, settings
-from ..filenames import sanitize_upload_filename
+from ..filenames import sanitize_upload_filename, storage_extension
 from ..image_validation import UPLOAD_CHUNK_SIZE, is_valid_image
 from ..models import SourceImage, User
 from ..processing import process_source_image
@@ -64,7 +64,7 @@ async def upload_source_image(
                 )
 
             # Generate a unique filename to avoid collisions
-            ext = os.path.splitext(original_filename)[1] or ".bin"
+            ext = storage_extension(original_filename)
             unique_name = f"{uuid.uuid4().hex}{ext}"
             stored_path = os.path.join(settings.source_images_dir, unique_name)
 
