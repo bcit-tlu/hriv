@@ -180,14 +180,41 @@ def test_processing_failure_message_for_pyvips_enospc() -> None:
     )
 
 
-def test_processing_failure_message_generic() -> None:
-    """Non-ENOSPC failures keep the generic operator messages."""
+def test_processing_failure_message_includes_exception_text() -> None:
+    """Non-ENOSPC failures surface the underlying error text."""
     exc = Exception("something else broke")
     assert _processing_failure_message(exc) == (
-        "Tile generation failed. Check server logs."
+        "Tile generation failed: something else broke"
     )
     assert _processing_failure_message(exc, replacement=True) == (
-        "Image replacement failed. Check server logs."
+        "Image replacement failed: something else broke"
+    )
+
+
+def test_processing_failure_message_for_unreadable_image() -> None:
+    """A corrupt/unreadable image keeps the libvips diagnosis, minus paths."""
+    exc = Exception(
+        "unable to call dzsave\n  /srv/hriv/source-images/broken.tif: "
+        "is not a known file format"
+    )
+    assert _processing_failure_message(exc) == (
+        "Tile generation failed: unable to call dzsave broken.tif: "
+        "is not a known file format"
+    )
+
+
+def test_processing_failure_message_truncates_long_details() -> None:
+    """Very long error text is truncated instead of flooding the snackbar."""
+    message = _processing_failure_message(Exception("x" * 500))
+    detail = message.removeprefix("Tile generation failed: ")
+    assert len(detail) == 300
+    assert detail.endswith("…")
+
+
+def test_processing_failure_message_without_text() -> None:
+    """An exception with no message falls back to its type name."""
+    assert _processing_failure_message(RuntimeError()) == (
+        "Tile generation failed: RuntimeError"
     )
 
 

@@ -79,6 +79,24 @@ const IMAGE_POLL_AUTH_FAILURE_MESSAGE =
 const BULK_IMPORT_AUTH_FAILURE_MESSAGE =
   'Bulk import status tracking stopped because your session ended or became invalid. The import may still complete on the server. Log back in and refresh to confirm.'
 
+/** Number of per-file errors listed before the rest are summarised as a count. */
+const BULK_IMPORT_ERRORS_SHOWN = 3
+
+/** Build a failure message listing the per-file errors reported by the server. */
+export function bulkImportFailureMessage(
+  errors: Array<{ filename: string; error: string }> | null | undefined,
+): string {
+  if (!errors || errors.length === 0) return 'Bulk import failed.'
+  const shown = errors
+    .slice(0, BULK_IMPORT_ERRORS_SHOWN)
+    .map((e) => `${e.filename}: ${e.error}`)
+    .join('; ')
+  const remaining = errors.length - BULK_IMPORT_ERRORS_SHOWN
+  return remaining > 0
+    ? `Bulk import failed. ${shown} (and ${remaining} more)`
+    : `Bulk import failed. ${shown}`
+}
+
 export function useProcessingJobs(deps: UseProcessingJobsDeps) {
   const {
     fetchSourceImage,
@@ -359,7 +377,8 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
                   completedCount: bulkJob.completed_count,
                   failedCount: bulkJob.failed_count,
                   errors: bulkJob.errors,
-                  errorMessage: status === 'failed' ? 'Bulk import failed.' : undefined,
+                  errorMessage:
+                    status === 'failed' ? bulkImportFailureMessage(bulkJob.errors) : undefined,
                 }
               : j,
           )
@@ -386,7 +405,8 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
             completedCount: bulkJob.completed_count,
             failedCount: bulkJob.failed_count,
             errors: bulkJob.errors,
-            errorMessage: status === 'failed' ? 'Bulk import failed.' : undefined,
+            errorMessage:
+              status === 'failed' ? bulkImportFailureMessage(bulkJob.errors) : undefined,
           },
         ]
       })

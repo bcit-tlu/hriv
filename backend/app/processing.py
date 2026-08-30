@@ -10,6 +10,7 @@ import errno
 import logging
 import math
 import os
+import re
 import shutil
 import threading
 import time
@@ -99,13 +100,31 @@ def _is_enospc(exc: Exception) -> bool:
     return "no space left on device" in str(exc).lower()
 
 
+_MAX_FAILURE_DETAIL_CHARS = 300
+
+_ABSOLUTE_PATH_RE = re.compile(r"(?:/[\w.@+\-]+){2,}")
+
+
+def _failure_detail(exc: Exception) -> str:
+    """Summarise *exc* for display to an admin uploading an image.
+
+    Collapses the multi-line libvips error text into a single line, replaces
+    absolute filesystem paths with their basename so server layout is not
+    disclosed, and truncates the result.
+    """
+    text = " ".join(str(exc).split())
+    text = _ABSOLUTE_PATH_RE.sub(lambda m: m.group(0).rsplit("/", 1)[-1], text)
+    if len(text) > _MAX_FAILURE_DETAIL_CHARS:
+        text = text[: _MAX_FAILURE_DETAIL_CHARS - 1].rstrip() + "…"
+    return text or type(exc).__name__
+
+
 def _processing_failure_message(exc: Exception, *, replacement: bool = False) -> str:
     """Translate common processing failures into operator-facing messages."""
     if _is_enospc(exc):
         return "Insufficient storage — the tiles volume is full"
-    if replacement:
-        return "Image replacement failed. Check server logs."
-    return "Tile generation failed. Check server logs."
+    base = "Image replacement failed" if replacement else "Tile generation failed"
+    return f"{base}: {_failure_detail(exc)}"
 
 
 # ── Pyramidal image detection ─────────────────────────────
