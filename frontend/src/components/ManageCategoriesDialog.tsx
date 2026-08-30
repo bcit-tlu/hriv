@@ -175,6 +175,8 @@ interface ManageCategoriesDialogProps {
    */
   onReorderTiles?: (moves: ParentMove[], scopes: ScopeOrder[]) => Promise<void> | void
   onReorderComplete?: () => Promise<void> | void
+  /** Called when a category drag starts or ends so the app can pause refreshes. */
+  onDragActiveChange?: (active: boolean) => void
 }
 
 export default function ManageCategoriesDialog({
@@ -189,6 +191,7 @@ export default function ManageCategoriesDialog({
   onToggleVisibility,
   onReorderTiles,
   onReorderComplete,
+  onDragActiveChange,
   programs = [],
   groups = [],
 }: ManageCategoriesDialogProps) {
@@ -233,6 +236,9 @@ export default function ManageCategoriesDialog({
   const [dragId, setDragId] = useState<number | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
   const listRef = useRef<HTMLUListElement>(null)
+  // Tracks whether a drop was handled so handleDragEnd does not also signal
+  // drag-active=false; the drop handler signals false after onReorderComplete.
+  const dropHandledRef = useRef(false)
 
   /** Set of category IDs whose ancestor is hidden (for cascading visibility). */
   const ancestorHiddenIds = useMemo(() => getAncestorHiddenIds(options), [options])
@@ -395,16 +401,24 @@ export default function ManageCategoriesDialog({
 
   // ── Drag-and-drop handlers ──────────────────────────────
 
-  const handleDragStart = useCallback((e: React.DragEvent, id: number) => {
-    setDragId(id)
-    e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/plain', String(id))
-  }, [])
+  const handleDragStart = useCallback(
+    (e: React.DragEvent, id: number) => {
+      dropHandledRef.current = false
+      setDragId(id)
+      onDragActiveChange?.(true)
+      e.dataTransfer.effectAllowed = 'move'
+      e.dataTransfer.setData('text/plain', String(id))
+    },
+    [onDragActiveChange],
+  )
 
   const handleDragEnd = useCallback(() => {
     setDragId(null)
     setDropTarget(null)
-  }, [])
+    if (!dropHandledRef.current) {
+      onDragActiveChange?.(false)
+    }
+  }, [onDragActiveChange])
 
   const handleDragOver = useCallback(
     (e: React.DragEvent) => {
@@ -427,80 +441,82 @@ export default function ManageCategoriesDialog({
   const handleDrop = useCallback(
     async (e: React.DragEvent) => {
       e.preventDefault()
-      if (dragId == null || dropTarget == null || !onReorderTiles) {
-        setDragId(null)
-        setDropTarget(null)
-        return
-      }
-
-      const descendantIds = getDescendantIds(options, dragId)
-      const draggedIdx = options.findIndex((o) => o.id === dragId)
-      if (draggedIdx < 0) {
-        setDragId(null)
-        setDropTarget(null)
-        return
-      }
-
-      const draggedItems: FlatOption[] = [options[draggedIdx]]
-      for (let i = draggedIdx + 1; i < options.length; i++) {
-        if (options[i].depth <= options[draggedIdx].depth) break
-        draggedItems.push(options[i])
-      }
-
-      const remaining = options.filter((o) => o.id !== dragId && !descendantIds.has(o.id))
-
-      const depthDelta = dropTarget.depth - draggedItems[0].depth
-      const adjustedDragged = draggedItems.map((item, idx) => ({
-        ...item,
-        depth: item.depth + depthDelta,
-        parentId: idx === 0 ? dropTarget.parentId : item.parentId,
-      }))
-
-      let insertIdx = remaining.length
-      for (let i = 0; i < remaining.length; i++) {
-        const origIdx = options.findIndex((o) => o.id === remaining[i].id)
-        if (origIdx >= dropTarget.index) {
-          insertIdx = i
-          break
-        }
-      }
-
-      const newList = [
-        ...remaining.slice(0, insertIdx),
-        ...adjustedDragged,
-        ...remaining.slice(insertIdx),
-      ]
-
-      const imagesByParent = collectImagesByParent(categories, uncategorizedImages)
-      const moves = diffParentMoves(newList, options)
-      const scopes = interleavedTileOrders(
-        newList,
-        options,
-        imagesByParent,
-        (parentId) => tileOrderingCoordinator.getScope(parentId).displayOrder,
-        dragId,
-      )
-
-      setDragId(null)
-      setDropTarget(null)
-
-      if (moves.length === 0 && scopes.length === 0) return
+      // Mark the drop as handled so handleDragEnd does not signal drag-active=false;
+      // this handler keeps App-level drag state true until onReorderComplete finishes.
+      dropHandledRef.current = true
       try {
-        await onReorderTiles(moves, scopes)
-      } catch {
-        // Error already surfaced by the handler; refresh authoritative state.
-        await onReorderComplete?.()
-        return
+        setDragId(null)
+        setDropTarget(null)
+        if (dragId == null || dropTarget == null || !onReorderTiles) {
+          return
+        }
+
+        const descendantIds = getDescendantIds(options, dragId)
+        const draggedIdx = options.findIndex((o) => o.id === dragId)
+        if (draggedIdx < 0) {
+          return
+        }
+
+        const draggedItems: FlatOption[] = [options[draggedIdx]]
+        for (let i = draggedIdx + 1; i < options.length; i++) {
+          if (options[i].depth <= options[draggedIdx].depth) break
+          draggedItems.push(options[i])
+        }
+
+        const remaining = options.filter((o) => o.id !== dragId && !descendantIds.has(o.id))
+
+        const depthDelta = dropTarget.depth - draggedItems[0].depth
+        const adjustedDragged = draggedItems.map((item, idx) => ({
+          ...item,
+          depth: item.depth + depthDelta,
+          parentId: idx === 0 ? dropTarget.parentId : item.parentId,
+        }))
+
+        let insertIdx = remaining.length
+        for (let i = 0; i < remaining.length; i++) {
+          const origIdx = options.findIndex((o) => o.id === remaining[i].id)
+          if (origIdx >= dropTarget.index) {
+            insertIdx = i
+            break
+          }
+        }
+
+        const newList = [
+          ...remaining.slice(0, insertIdx),
+          ...adjustedDragged,
+          ...remaining.slice(insertIdx),
+        ]
+
+        const imagesByParent = collectImagesByParent(categories, uncategorizedImages)
+        const moves = diffParentMoves(newList, options)
+        const scopes = interleavedTileOrders(
+          newList,
+          options,
+          imagesByParent,
+          (parentId) => tileOrderingCoordinator.getScope(parentId).displayOrder,
+          dragId,
+        )
+
+        if (moves.length === 0 && scopes.length === 0) return
+        try {
+          await onReorderTiles(moves, scopes)
+        } catch {
+          // Error already surfaced by the handler; refresh authoritative state.
+          await onReorderComplete?.()
+          return
+        }
+        // Success path: for pure reorders the coordinator persists
+        // asynchronously and triggers the authoritative refresh itself once
+        // the save commits (via its committed listener), so refreshing here
+        // would only re-fetch pre-save data. Parent moves, however, were
+        // already durably committed by the awaited PATCH and get no commit
+        // notification if the follow-up order save conflicts/fails, so they
+        // need their refresh here (releaseCleanScopes keeps any newer
+        // coordinator state safe from the re-fetched data).
+        if (moves.length > 0) await onReorderComplete?.()
+      } finally {
+        onDragActiveChange?.(false)
       }
-      // Success path: for pure reorders the coordinator persists
-      // asynchronously and triggers the authoritative refresh itself once
-      // the save commits (via its committed listener), so refreshing here
-      // would only re-fetch pre-save data. Parent moves, however, were
-      // already durably committed by the awaited PATCH and get no commit
-      // notification if the follow-up order save conflicts/fails, so they
-      // need their refresh here (releaseCleanScopes keeps any newer
-      // coordinator state safe from the re-fetched data).
-      if (moves.length > 0) await onReorderComplete?.()
     },
     [
       dragId,
@@ -510,6 +526,7 @@ export default function ManageCategoriesDialog({
       uncategorizedImages,
       onReorderTiles,
       onReorderComplete,
+      onDragActiveChange,
     ],
   )
 

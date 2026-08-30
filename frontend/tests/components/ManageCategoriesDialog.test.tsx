@@ -19,7 +19,7 @@
 
 import { StrictMode } from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ManageCategoriesDialog from '../../src/components/ManageCategoriesDialog'
 import type { ParentMove, ScopeOrder } from '../../src/components/manageCategoriesDialogUtils'
@@ -62,6 +62,7 @@ function renderDialog(overrides: Partial<Parameters<typeof ManageCategoriesDialo
   const onToggleVisibility = overrides.onToggleVisibility ?? undefined
   const onReorderTiles = overrides.onReorderTiles ?? undefined
   const onReorderComplete = overrides.onReorderComplete ?? undefined
+  const onDragActiveChange = overrides.onDragActiveChange ?? undefined
   const onCategoryNavigate = overrides.onCategoryNavigate ?? undefined
   return {
     onClose,
@@ -82,6 +83,7 @@ function renderDialog(overrides: Partial<Parameters<typeof ManageCategoriesDialo
         onToggleVisibility={onToggleVisibility}
         onReorderTiles={onReorderTiles}
         onReorderComplete={onReorderComplete}
+        onDragActiveChange={onDragActiveChange}
         programs={overrides.programs ?? programs}
         groups={overrides.groups ?? []}
       />,
@@ -568,6 +570,34 @@ describe('ManageCategoriesDialog — drop → onReorderTiles', () => {
     dragToEnd(1, 0)
 
     await waitFor(() => expect(onReorderComplete).toHaveBeenCalledTimes(1))
+  })
+
+  it('reports drag-active through the drop lifecycle and signals false after onReorderTiles completes', async () => {
+    let resolveReorder: (() => void) | undefined
+    const reorderPromise = new Promise<void>((resolve) => {
+      resolveReorder = resolve
+    })
+    const onReorderTiles = vi.fn().mockReturnValue(reorderPromise)
+    const onDragActiveChange = vi.fn()
+    const onReorderComplete = vi.fn().mockResolvedValue(undefined)
+    renderDialog({
+      categories: categories(),
+      onReorderTiles,
+      onReorderComplete,
+      onDragActiveChange,
+    })
+
+    dragToEnd(1, 0)
+
+    await waitFor(() => expect(onDragActiveChange).toHaveBeenCalledWith(true))
+    expect(onDragActiveChange).not.toHaveBeenCalledWith(false)
+
+    await act(async () => {
+      resolveReorder?.()
+    })
+
+    await waitFor(() => expect(onReorderTiles).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(onDragActiveChange).toHaveBeenLastCalledWith(false))
   })
 })
 

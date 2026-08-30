@@ -2001,6 +2001,7 @@ export default function App() {
         onToggleVisibility={toggleCategoryVisibility}
         onReorderTiles={reorderTilesFromManage}
         onReorderComplete={handleReorderComplete}
+        onDragActiveChange={handleDragActiveChange}
         programs={programs}
         groups={groups}
       />
