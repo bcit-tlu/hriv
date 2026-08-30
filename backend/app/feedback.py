@@ -2,28 +2,29 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import os
+import smtplib
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from email.message import EmailMessage
 from typing import Protocol
 
 import httpx
 
 from .component_versions import get_app_version
 
+
+_FEEDBACK_TYPE_LABELS = {
+    "problem_or_issue": "Problem or issue",
+    "comment_or_suggestion": "Comment or suggestion",
+}
+
 logger = logging.getLogger(__name__)
 
 _TEAMS_RATE_LIMIT_SIGNAL = "Microsoft Teams endpoint returned HTTP error 429"
-
-
-def normalize_github_repo(raw: str) -> str:
-    """Normalize a full GitHub URL to ``owner/repo`` format."""
-    return (
-        raw.removeprefix("https://github.com/")
-        .removeprefix("http://github.com/")
-        .strip("/")
-    )
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,7 @@ class FeedbackSubmission:
     user_role: str
     app_version: str
     submitted_at: str
+    feedback_type: str
 
 
 @dataclass(frozen=True)
@@ -56,76 +58,66 @@ class FeedbackDeliveryError(RuntimeError):
     """Raised when a configured feedback provider fails."""
 
 
-class GitHubFeedbackDelivery:
-    """Deliver feedback by creating GitHub issues."""
+class EmailFeedbackDelivery:
+    """Deliver feedback by sending email via SMTP."""
 
-    def __init__(self, *, token: str, repo: str) -> None:
-        self.token = token
-        self.repo = normalize_github_repo(repo)
+    def __init__(
+        self,
+        *,
+        smtp_server: str,
+        smtp_port: int,
+        username: str,
+        password: str,
+        from_addr: str,
+        to_addr: str,
+        security: str = "auto",
+    ) -> None:
+        self.smtp_server = smtp_server
+        self.smtp_port = smtp_port
+        self.username = username
+        self.password = password
+        self.from_addr = from_addr
+        self.to_addr = to_addr
+        self.security = _resolve_email_security(
+            security.lower().strip(), self.smtp_port
+        )
 
     async def submit(self, submission: FeedbackSubmission) -> FeedbackDeliveryResult:
-        issue_number, tracking_url = await self._create_issue(submission)
-        return FeedbackDeliveryResult(
-            destination="github",
-            tracking_url=tracking_url,
-            external_id=str(issue_number),
+        await asyncio.to_thread(self._send, submission)
+        return FeedbackDeliveryResult(destination="email")
+
+    def _send(self, submission: FeedbackSubmission) -> None:
+        label = _FEEDBACK_TYPE_LABELS.get(
+            submission.feedback_type, submission.feedback_type
+        )
+        msg = EmailMessage()
+        msg["Subject"] = f"HRIV feedback: {label}"
+        msg["From"] = self.from_addr
+        msg["To"] = self.to_addr
+        msg.set_content(
+            f"Feedback type: {label}\n\n"
+            f"Description:\n{submission.description}\n\n"
+            f"Page URL: {submission.page_url}\n"
+            f"User role: {submission.user_role}\n"
+            f"User ID: {submission.user_id}\n"
+            f"App version: {submission.app_version}\n"
+            f"Submitted at: {submission.submitted_at}"
         )
 
-    async def _create_issue(self, submission: FeedbackSubmission) -> tuple[int, str]:
-        issue_body = (
-            f"{submission.description}\n\n"
-            f"---\n\n"
-            f"**Reported by:** {submission.user_role} (user \u200b#{submission.user_id})\n"
-            f"**Page:** {submission.page_url}\n"
-            f"**App version:** {submission.app_version}\n"
-            f"**Submitted:** {submission.submitted_at}"
-        )
-        headers = {
-            "Authorization": f"Bearer {self.token}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        }
+        try:
+            if self.security == "ssl":
+                server = smtplib.SMTP_SSL(self.smtp_server, self.smtp_port)
+            else:
+                server = smtplib.SMTP(self.smtp_server, self.smtp_port)
 
-        async with httpx.AsyncClient() as client:
-            try:
-                create_resp = await client.post(
-                    f"https://api.github.com/repos/{self.repo}/issues",
-                    headers=headers,
-                    json={
-                        "title": f"feedback: Issue report from {submission.user_role}",
-                        "body": issue_body,
-                    },
-                    timeout=15.0,
-                )
-            except httpx.HTTPError as exc:
-                raise FeedbackDeliveryError(
-                    f"GitHub API request failed: {exc}"
-                ) from exc
-            if create_resp.status_code != 201:
-                raise FeedbackDeliveryError(
-                    f"GitHub API error creating issue: {create_resp.status_code}"
-                )
-
-            data = create_resp.json()
-            issue_number = data["number"]
-
-            # Best-effort label application — do not fail the submission if the
-            # label is missing or the token cannot apply it.
-            try:
-                await client.post(
-                    f"https://api.github.com/repos/{self.repo}/issues/{issue_number}/labels",
-                    headers=headers,
-                    json={"labels": ["feedback"]},
-                    timeout=10.0,
-                )
-            except Exception:
-                logger.warning(
-                    "Failed to apply feedback label on GitHub issue",
-                    extra={"repo": self.repo, "issue_number": issue_number},
-                    exc_info=True,
-                )
-
-        return issue_number, data["html_url"]
+            with server:
+                if self.security == "starttls":
+                    server.starttls()
+                if self.username and self.password:
+                    server.login(self.username, self.password)
+                server.send_message(msg)
+        except (smtplib.SMTPException, OSError) as exc:
+            raise FeedbackDeliveryError(f"Failed to send feedback email: {exc}") from exc
 
 
 class TeamsFeedbackDelivery:
@@ -214,6 +206,45 @@ class TeamsFeedbackDelivery:
         return FeedbackDeliveryResult(destination="teams")
 
 
+def _resolve_email_security(security: str, port: int) -> str:
+    """Resolve an explicit or 'auto' SMTP security mode."""
+    if security in {"", "auto"}:
+        return "ssl" if port == 465 else "starttls"
+    if security not in {"starttls", "ssl", "none"}:
+        raise ValueError(f"Invalid SMTP security mode: {security!r}")
+    return security
+
+
+def _parse_smtp_port(raw: str) -> tuple[int, str]:
+    """Return (port, inferred_security) from an integer or JSON port value."""
+    raw = raw.strip()
+    try:
+        return int(raw), "auto"
+    except ValueError:
+        pass
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid SMTP port value: {raw!r}") from exc
+
+    if not isinstance(data, dict):
+        raise ValueError(f"Invalid SMTP port value: {raw!r}")
+
+    tls_ports = data.get("tls")
+    ssl_port = data.get("ssl")
+
+    if tls_ports is not None:
+        if isinstance(tls_ports, list) and tls_ports:
+            return int(tls_ports[0]), "starttls"
+        raise ValueError(f"Invalid SMTP port value: {raw!r}")
+
+    if ssl_port is not None:
+        return int(ssl_port), "ssl"
+
+    raise ValueError(f"Invalid SMTP port value: {raw!r}")
+
+
 def get_feedback_app_version() -> str:
     """Return the deployed app version for provider payloads."""
     return get_app_version()
@@ -228,30 +259,61 @@ def get_feedback_delivery() -> FeedbackDelivery:
     """Resolve the configured feedback delivery provider."""
     provider = os.environ.get("FEEDBACK_DELIVERY_PROVIDER", "").strip().lower()
 
-    # Backward compatibility for older deployments that only set GITHUB_*.
-    if not provider and (
-        os.environ.get("FEEDBACK_GITHUB_TOKEN") or os.environ.get("GITHUB_TOKEN")
-    ) and (
-        os.environ.get("FEEDBACK_GITHUB_REPOSITORY") or os.environ.get("GITHUB_REPO")
-    ):
-        provider = "github"
-
     if provider in {"", "disabled", "none"}:
         raise FeedbackNotConfiguredError("Feedback delivery is not configured")
 
-    if provider == "github":
-        token = os.environ.get("FEEDBACK_GITHUB_TOKEN") or os.environ.get(
-            "GITHUB_TOKEN", ""
-        )
-        repo = os.environ.get("FEEDBACK_GITHUB_REPOSITORY") or os.environ.get(
-            "GITHUB_REPO", ""
-        )
-        repo = normalize_github_repo(repo)
-        if not token or not repo:
+    if provider == "email":
+        smtp_server = os.environ.get("FEEDBACK_EMAIL_SMTP_SERVER", "").strip()
+        smtp_port = os.environ.get("FEEDBACK_EMAIL_SMTP_PORT", "").strip()
+        username = os.environ.get("FEEDBACK_EMAIL_USERNAME", "").strip()
+        password = os.environ.get("FEEDBACK_EMAIL_PASSWORD", "")
+        from_addr = os.environ.get("FEEDBACK_EMAIL_FROM", username).strip()
+        to_addr = os.environ.get("FEEDBACK_EMAIL_TO", "tlu_techops@bcit.ca").strip()
+        security = os.environ.get("FEEDBACK_EMAIL_SMTP_SECURITY", "auto").strip()
+
+        if not smtp_server:
             raise FeedbackNotConfiguredError(
-                "GitHub feedback delivery is not fully configured"
+                "Email feedback delivery is not fully configured: SMTP server is missing"
             )
-        return GitHubFeedbackDelivery(token=token, repo=repo)
+        if not smtp_port:
+            raise FeedbackNotConfiguredError(
+                "Email feedback delivery is not fully configured: SMTP port is missing"
+            )
+        if not username:
+            raise FeedbackNotConfiguredError(
+                "Email feedback delivery is not fully configured: username is missing"
+            )
+        if not password:
+            raise FeedbackNotConfiguredError(
+                "Email feedback delivery is not fully configured: password is missing"
+            )
+        if not from_addr:
+            raise FeedbackNotConfiguredError(
+                "Email feedback delivery is not fully configured: from address is missing"
+            )
+        if not to_addr:
+            raise FeedbackNotConfiguredError(
+                "Email feedback delivery is not fully configured: to address is missing"
+            )
+
+        try:
+            port, default_security = _parse_smtp_port(smtp_port)
+        except ValueError as exc:
+            raise FeedbackNotConfiguredError(str(exc)) from exc
+
+        if security in {"", "auto"}:
+            security = default_security
+
+        return EmailFeedbackDelivery(
+            smtp_server=smtp_server,
+            smtp_port=port,
+            username=username,
+            password=password,
+            from_addr=from_addr,
+            to_addr=to_addr,
+            security=security,
+        )
+
     if provider == "teams":
         webhook_url = os.environ.get("FEEDBACK_TEAMS_WEBHOOK_URL", "").strip()
         if not webhook_url:

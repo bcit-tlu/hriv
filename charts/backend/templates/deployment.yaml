@@ -24,14 +24,11 @@
 {{- $sourceImagesAccessModes := get $sourceImages "accessModes" -}}
 {{- $tilesAccessModes := get $tiles "accessModes" -}}
 {{- $feedbackProvider := get $feedback "provider" -}}
-{{- if and $feedbackProvider (not (has $feedbackProvider (list "github" "teams"))) }}
-{{- fail "feedback.provider currently supports only 'github', 'teams', or empty/disabled while ServiceNow is still unimplemented" }}
+{{- if and $feedbackProvider (not (has $feedbackProvider (list "email" "teams"))) }}
+{{- fail "feedback.provider currently supports only 'email', 'teams', or empty/disabled" }}
 {{- end }}
-{{- if and (eq $feedbackProvider "github") (not (get $feedback "githubRepository")) }}
-{{- fail "feedback.provider=github requires feedback.github.repository (or legacy github-issue.repository)" }}
-{{- end }}
-{{- if and (eq $feedbackProvider "github") (not (get $feedback "githubSecret")) }}
-{{- fail "feedback.provider=github requires feedback.github.token.existingSecret (or legacy github-issue.token.existingSecret); secret must contain key 'token'" }}
+{{- if and (eq $feedbackProvider "email") (not (get $feedback "emailSecret")) }}
+{{- fail "feedback.provider=email requires feedback.email.existingSecret; secret must contain keys 'smtp_server', 'smtp_port', 'username', and 'password'" }}
 {{- end }}
 {{- if and (eq $feedbackProvider "teams") (not (get $feedback "teamsSecret")) }}
 {{- fail "feedback.provider=teams requires feedback.teams.webhook.existingSecret; secret must contain key 'url'" }}
@@ -127,14 +124,35 @@ spec:
             - name: FEEDBACK_DELIVERY_PROVIDER
               value: {{ $feedbackProvider | quote }}
             {{- end }}
-            {{- if eq $feedbackProvider "github" }}
-            - name: FEEDBACK_GITHUB_TOKEN
+            {{- if eq $feedbackProvider "email" }}
+            - name: FEEDBACK_EMAIL_SMTP_SERVER
               valueFrom:
                 secretKeyRef:
-                  name: {{ get $feedback "githubSecret" }}
-                  key: token
-            - name: FEEDBACK_GITHUB_REPOSITORY
-              value: {{ get $feedback "githubRepository" | quote }}
+                  name: {{ get $feedback "emailSecret" }}
+                  key: smtp_server
+            - name: FEEDBACK_EMAIL_SMTP_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ get $feedback "emailSecret" }}
+                  key: smtp_port
+            - name: FEEDBACK_EMAIL_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ get $feedback "emailSecret" }}
+                  key: username
+            - name: FEEDBACK_EMAIL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ get $feedback "emailSecret" }}
+                  key: password
+            {{- if get $feedback "emailTo" }}
+            - name: FEEDBACK_EMAIL_TO
+              value: {{ get $feedback "emailTo" | quote }}
+            {{- end }}
+            {{- if get $feedback "emailFrom" }}
+            - name: FEEDBACK_EMAIL_FROM
+              value: {{ get $feedback "emailFrom" | quote }}
+            {{- end }}
             {{- end }}
             {{- if eq $feedbackProvider "teams" }}
             - name: FEEDBACK_TEAMS_WEBHOOK_URL
