@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import {
+  bulkImportErrorSummary,
   bulkImportFailureMessage,
   useProcessingJobs,
   type UseProcessingJobsDeps,
@@ -431,6 +432,56 @@ describe('useProcessingJobs', () => {
         errorMessage:
           'Bulk import failed. slide-a.tif: Tile generation failed: is not a known file format; ' +
           'slide-b.tif: Tile generation failed: Premature end of JPEG file',
+      })
+    })
+
+    it('keeps the per-file errors of a partially failed bulk import', async () => {
+      const deps = makeDeps({
+        fetchBulkImportJob: vi.fn().mockResolvedValue({
+          id: 6,
+          status: 'completed',
+          total_count: 2,
+          completed_count: 1,
+          failed_count: 1,
+          errors: [
+            {
+              filename: 'slide-b.tif',
+              error: 'Tile generation failed: Premature end of JPEG file',
+            },
+          ],
+        } as ApiBulkImportJob),
+      })
+      const { result } = renderHook(() => useProcessingJobs(deps))
+
+      act(() => {
+        result.current.handleBulkImportStarted(
+          {
+            id: 6,
+            status: 'importing',
+            total_count: 2,
+            completed_count: 0,
+            failed_count: 0,
+            errors: null,
+          },
+          'archive.zip',
+          50_000,
+        )
+      })
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000)
+      })
+
+      expect(result.current.processingJobs[0]).toMatchObject({
+        kind: 'bulk-import',
+        status: 'completed',
+        failedCount: 1,
+        errors: [
+          {
+            filename: 'slide-b.tif',
+            error: 'Tile generation failed: Premature end of JPEG file',
+          },
+        ],
       })
     })
 
@@ -956,6 +1007,21 @@ describe('useProcessingJobs', () => {
       // Should not throw on unmount
       unmount()
     })
+  })
+})
+
+describe('bulkImportErrorSummary', () => {
+  it('is empty when the server reported no errors', () => {
+    expect(bulkImportErrorSummary(null)).toBe('')
+    expect(bulkImportErrorSummary([])).toBe('')
+  })
+
+  it('lists per-file errors without a failure prefix', () => {
+    expect(
+      bulkImportErrorSummary([
+        { filename: 'b.tif', error: 'Tile generation failed: Premature end of JPEG file' },
+      ]),
+    ).toBe('b.tif: Tile generation failed: Premature end of JPEG file')
   })
 })
 

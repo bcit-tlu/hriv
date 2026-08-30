@@ -82,19 +82,25 @@ const BULK_IMPORT_AUTH_FAILURE_MESSAGE =
 /** Number of per-file errors listed before the rest are summarised as a count. */
 const BULK_IMPORT_ERRORS_SHOWN = 3
 
-/** Build a failure message listing the per-file errors reported by the server. */
-export function bulkImportFailureMessage(
+/** List the per-file errors reported by the server, or '' when there are none. */
+export function bulkImportErrorSummary(
   errors: Array<{ filename: string; error: string }> | null | undefined,
 ): string {
-  if (!errors || errors.length === 0) return 'Bulk import failed.'
+  if (!errors || errors.length === 0) return ''
   const shown = errors
     .slice(0, BULK_IMPORT_ERRORS_SHOWN)
     .map((e) => `${e.filename}: ${e.error}`)
     .join('; ')
   const remaining = errors.length - BULK_IMPORT_ERRORS_SHOWN
-  return remaining > 0
-    ? `Bulk import failed. ${shown} (and ${remaining} more)`
-    : `Bulk import failed. ${shown}`
+  return remaining > 0 ? `${shown} (and ${remaining} more)` : shown
+}
+
+/** Build a failure message listing the per-file errors reported by the server. */
+export function bulkImportFailureMessage(
+  errors: Array<{ filename: string; error: string }> | null | undefined,
+): string {
+  const summary = bulkImportErrorSummary(errors)
+  return summary ? `Bulk import failed. ${summary}` : 'Bulk import failed.'
 }
 
 export function useProcessingJobs(deps: UseProcessingJobsDeps) {
