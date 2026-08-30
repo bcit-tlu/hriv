@@ -220,6 +220,16 @@ export default function PeoplePage({
   const bulkGroupSaveTokenRef = useRef(0)
   const bulkRoleSaveTokenRef = useRef(0)
 
+  // Generation token and loading counter for loadData so an older fetch cannot
+  // overwrite a newer one and loading state is correct across overlapping calls.
+  const loadDataTokenRef = useRef(0)
+  const loadDataLoadingCountRef = useRef(0)
+
+  // AbortControllers for in-flight bulk saves; canceled/replaced saves are aborted
+  // so they cannot become the final server write.
+  const bulkEditSaveAbortRef = useRef<AbortController | null>(null)
+  const bulkRoleSaveAbortRef = useRef<AbortController | null>(null)
+
   const selectedProgramOptions = useMemo(
     () => programs.filter((program) => selectedPrograms.has(program.id)),
     [programs, selectedPrograms],
@@ -310,17 +320,28 @@ export default function PeoplePage({
   }, [filters, selectedGroupOptions, selectedProgramOptions, selectedRoles])
 
   const loadData = useCallback(async ({ showLoading = false }: { showLoading?: boolean } = {}) => {
+    const token = ++loadDataTokenRef.current
+    if (showLoading) {
+      loadDataLoadingCountRef.current++
+      setLoading(true)
+    }
     try {
-      if (showLoading) {
-        setLoading(true)
-      }
       const usersData = await fetchUsers()
+      if (loadDataTokenRef.current !== token) {
+        return
+      }
       setUsers(usersData)
     } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        return
+      }
       console.error('Failed to load data', err)
     } finally {
       if (showLoading) {
-        setLoading(false)
+        loadDataLoadingCountRef.current--
+        if (loadDataLoadingCountRef.current === 0) {
+          setLoading(false)
+        }
       }
     }
   }, [])
@@ -567,18 +588,35 @@ export default function PeoplePage({
   // Bulk edit program handler
   const handleBulkSave = async (programIds: number[]) => {
     const token = ++bulkEditSaveTokenRef.current
+    const abortController = new AbortController()
+    bulkEditSaveAbortRef.current = abortController
     try {
-      await bulkUpdateUserProgram({
-        user_ids: Array.from(selected),
-        program_ids: programIds,
-      })
-      if (bulkEditSaveTokenRef.current === token) {
-        setBulkEditOpen(false)
-        setSelected(new Set())
-        await loadData()
+      await bulkUpdateUserProgram(
+        {
+          user_ids: Array.from(selected),
+          program_ids: programIds,
+        },
+        { signal: abortController.signal },
+      )
+      if (bulkEditSaveTokenRef.current !== token) {
+        return
       }
+      await loadData()
+      if (bulkEditSaveTokenRef.current !== token) {
+        return
+      }
+      setBulkEditOpen(false)
+      setSelected(new Set())
+      setSuccessSnack('Programs updated.')
     } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        return
+      }
       console.error('Failed to bulk update', err)
+    } finally {
+      if (bulkEditSaveAbortRef.current === abortController) {
+        bulkEditSaveAbortRef.current = null
+      }
     }
   }
 
@@ -592,8 +630,13 @@ export default function PeoplePage({
       )
       const failedGroupIds = groupIds.filter((_, i) => results[i]?.status === 'rejected')
 
-      // loadData swallows its own errors, so the reporting below always runs
+      if (bulkGroupSaveTokenRef.current !== token) {
+        return []
+      }
       await loadData()
+      if (bulkGroupSaveTokenRef.current !== token) {
+        return []
+      }
 
       if (failedGroupIds.length > 0) {
         const distinctReasons = [
@@ -647,19 +690,36 @@ export default function PeoplePage({
   // Bulk role update handler
   const handleBulkRoleSave = async () => {
     const token = ++bulkRoleSaveTokenRef.current
+    const abortController = new AbortController()
+    bulkRoleSaveAbortRef.current = abortController
     try {
-      await bulkUpdateUserRole({
-        user_ids: Array.from(selected),
-        role: bulkRole,
-      })
-      if (bulkRoleSaveTokenRef.current === token) {
-        setBulkRoleOpen(false)
-        setBulkRole('student')
-        setSelected(new Set())
-        await loadData()
+      await bulkUpdateUserRole(
+        {
+          user_ids: Array.from(selected),
+          role: bulkRole,
+        },
+        { signal: abortController.signal },
+      )
+      if (bulkRoleSaveTokenRef.current !== token) {
+        return
       }
+      await loadData()
+      if (bulkRoleSaveTokenRef.current !== token) {
+        return
+      }
+      setBulkRoleOpen(false)
+      setBulkRole('student')
+      setSelected(new Set())
+      setSuccessSnack('Roles updated.')
     } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        return
+      }
       console.error('Failed to bulk update role', err)
+    } finally {
+      if (bulkRoleSaveAbortRef.current === abortController) {
+        bulkRoleSaveAbortRef.current = null
+      }
     }
   }
 
@@ -1140,6 +1200,7 @@ export default function PeoplePage({
         open={bulkEditOpen}
         onClose={() => {
           bulkEditSaveTokenRef.current++
+          bulkEditSaveAbortRef.current?.abort()
           setBulkEditOpen(false)
         }}
         onSave={handleBulkSave}
@@ -1164,6 +1225,7 @@ export default function PeoplePage({
         open={bulkRoleOpen}
         onClose={() => {
           bulkRoleSaveTokenRef.current++
+          bulkRoleSaveAbortRef.current?.abort()
           setBulkRoleOpen(false)
         }}
         maxWidth="xs"
@@ -1191,6 +1253,7 @@ export default function PeoplePage({
           <Button
             onClick={() => {
               bulkRoleSaveTokenRef.current++
+              bulkRoleSaveAbortRef.current?.abort()
               setBulkRoleOpen(false)
             }}
           >

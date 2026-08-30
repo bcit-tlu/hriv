@@ -757,18 +757,26 @@ export function deleteUser(id: number): Promise<void> {
   return request(`/users/${id}`, { method: 'DELETE' })
 }
 
-export function bulkUpdateUserProgram(body: {
-  user_ids: number[]
-  program_ids: number[]
-}): Promise<ApiUser[]> {
+export function bulkUpdateUserProgram(
+  body: {
+    user_ids: number[]
+    program_ids: number[]
+  },
+  init?: RequestInit,
+): Promise<ApiUser[]> {
   return request('/users/bulk/program', {
+    ...init,
     method: 'PATCH',
     body: JSON.stringify(body),
   })
 }
 
-export function bulkUpdateUserRole(body: { user_ids: number[]; role: string }): Promise<ApiUser[]> {
+export function bulkUpdateUserRole(
+  body: { user_ids: number[]; role: string },
+  init?: RequestInit,
+): Promise<ApiUser[]> {
   return request('/users/bulk/role', {
+    ...init,
     method: 'PATCH',
     body: JSON.stringify(body),
   })

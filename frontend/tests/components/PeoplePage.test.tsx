@@ -28,7 +28,7 @@ import {
   addGroupMembersBulk,
   ApiError,
 } from '../../src/api'
-import type { ApiGroup } from '../../src/api'
+import type { ApiGroup, ApiUser } from '../../src/api'
 import type { Program, Group } from '../../src/types'
 import PeoplePage from '../../src/components/PeoplePage'
 
@@ -88,6 +88,22 @@ const USERS = [
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
   },
+]
+
+const USERS_A: ApiUser[] = [
+  {
+    ...USERS[0],
+    name: 'A User',
+  },
+  USERS[1],
+]
+
+const USERS_B: ApiUser[] = [
+  {
+    ...USERS[0],
+    name: 'B User',
+  },
+  USERS[1],
 ]
 
 function createDeferred<T>() {
@@ -320,10 +336,13 @@ describe('PeoplePage', () => {
     await user.click(screen.getByRole('button', { name: /save/i }))
 
     await waitFor(() => {
-      expect(bulkUpdateUserRole).toHaveBeenCalledWith({
-        user_ids: [1],
-        role: 'student',
-      })
+      expect(bulkUpdateUserRole).toHaveBeenCalledWith(
+        {
+          user_ids: [1],
+          role: 'student',
+        },
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      )
     })
   })
 
@@ -900,5 +919,171 @@ describe('PeoplePage', () => {
     // The stale success must not surface a snackbar or reopen the dialog.
     expect(screen.queryByText('Bulk Add to Groups')).not.toBeInTheDocument()
     expect(screen.queryByText('Added to group(s).')).not.toBeInTheDocument()
+  })
+
+  it('does not overwrite newer user data when overlapping loadData fetches resolve in reverse order', async () => {
+    const user = userEvent.setup()
+    const { promise: p1, resolve: resolveP1 } = createDeferred<ApiUser[]>()
+    const { promise: p2, resolve: resolveP2 } = createDeferred<ApiUser[]>()
+
+    vi.mocked(fetchUsers)
+      .mockResolvedValueOnce(USERS)
+      .mockImplementationOnce(() => p1)
+      .mockImplementationOnce(() => p2)
+    vi.mocked(bulkDeleteUsers).mockResolvedValue(undefined)
+    vi.mocked(bulkUpdateUserProgram).mockResolvedValue(USERS)
+
+    render(<PeoplePage programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    const checkboxes = screen.getAllByRole('checkbox')
+
+    // First action starts a loadData fetch that will resolve later.
+    await user.click(checkboxes[1])
+    await user.click(screen.getByText('Delete (1)'))
+    await user.click(screen.getByRole('button', { name: /delete 1 user/i }))
+
+    // While that fetch is in flight, select the user and trigger a second loadData.
+    await user.click(checkboxes[1])
+    await user.click(screen.getByText('Bulk Programs (1)'))
+    await user.click(screen.getByRole('combobox'))
+    await user.click(screen.getByRole('option', { name: 'Medical Lab' }))
+    await user.keyboard('{Escape}')
+    await user.click(screen.getByRole('button', { name: /save/i }))
+
+    // Resolve the newer fetch first, then the older one.
+    await act(async () => {
+      resolveP2(USERS_B)
+    })
+    await waitFor(() => {
+      expect(screen.getByText('B User')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('A User')).not.toBeInTheDocument()
+
+    await act(async () => {
+      resolveP1(USERS_A)
+    })
+    await act(async () => {})
+    expect(screen.getByText('B User')).toBeInTheDocument()
+    expect(screen.queryByText('A User')).not.toBeInTheDocument()
+  })
+
+  it('does not clobber state when the bulk program dialog is closed while saving', async () => {
+    const user = userEvent.setup()
+    const { promise, resolve } = createDeferred<ApiUser[]>()
+    vi.mocked(bulkUpdateUserProgram).mockReturnValue(promise)
+
+    render(<PeoplePage programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    const checkboxes = screen.getAllByRole('checkbox')
+    await user.click(checkboxes[1])
+
+    await user.click(screen.getByText('Bulk Programs (1)'))
+    await user.click(screen.getByRole('combobox'))
+    await user.click(screen.getByRole('option', { name: 'Medical Lab' }))
+    await user.keyboard('{Escape}')
+    await user.click(screen.getByRole('button', { name: /save/i }))
+
+    // Close the dialog while the request is still in flight.
+    await user.click(screen.getByRole('button', { name: /cancel/i }))
+    await waitFor(() => {
+      expect(screen.queryByText('Bulk Edit Programs')).not.toBeInTheDocument()
+    })
+
+    await act(async () => {
+      resolve(USERS_A)
+    })
+    await act(async () => {})
+
+    expect(screen.queryByText('Bulk Edit Programs')).not.toBeInTheDocument()
+    expect(screen.queryByText('Programs updated.')).not.toBeInTheDocument()
+    expect(screen.getByText('Bulk Programs (1)')).toBeInTheDocument()
+    expect(fetchUsers).toHaveBeenCalledOnce()
+  })
+
+  it('does not clobber state when the bulk role dialog is closed while saving', async () => {
+    const user = userEvent.setup()
+    const { promise, resolve } = createDeferred<typeof USERS>()
+    vi.mocked(bulkUpdateUserRole).mockReturnValue(promise)
+
+    render(<PeoplePage programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    const checkboxes = screen.getAllByRole('checkbox')
+    await user.click(checkboxes[1])
+
+    await user.click(screen.getByText('Bulk Role (1)'))
+    await user.click(screen.getByRole('button', { name: /save/i }))
+
+    // Close the dialog while the request is still in flight.
+    await user.click(screen.getByRole('button', { name: /cancel/i }))
+    await waitFor(() => {
+      expect(screen.queryByText('Bulk Update Role')).not.toBeInTheDocument()
+    })
+
+    await act(async () => {
+      resolve(USERS_A as typeof USERS)
+    })
+    await act(async () => {})
+
+    expect(screen.queryByText('Bulk Update Role')).not.toBeInTheDocument()
+    expect(screen.queryByText('Roles updated.')).not.toBeInTheDocument()
+    expect(screen.getByText('Bulk Role (1)')).toBeInTheDocument()
+    expect(fetchUsers).toHaveBeenCalledOnce()
+  })
+
+  it('ignores a stale bulk role request superseded by a newer save', async () => {
+    const user = userEvent.setup()
+    const { promise: p1, resolve: resolveP1 } = createDeferred<typeof USERS>()
+    const { promise: p2, resolve: resolveP2 } = createDeferred<typeof USERS>()
+
+    vi.mocked(bulkUpdateUserRole)
+      .mockReturnValueOnce(p1)
+      .mockReturnValueOnce(p2)
+    vi.mocked(fetchUsers)
+      .mockResolvedValueOnce(USERS)
+      .mockResolvedValueOnce(USERS_B as typeof USERS)
+
+    render(<PeoplePage programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    const checkboxes = screen.getAllByRole('checkbox')
+    await user.click(checkboxes[1])
+
+    await user.click(screen.getByText('Bulk Role (1)'))
+
+    // Trigger two saves without waiting for the first to finish.
+    await user.click(screen.getByRole('button', { name: /save/i }))
+    await user.click(screen.getByRole('button', { name: /save/i }))
+
+    // Resolve the newer request first.
+    await act(async () => {
+      resolveP2(USERS_B as typeof USERS)
+    })
+    await waitFor(() => {
+      expect(screen.getByText('B User')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('A User')).not.toBeInTheDocument()
+
+    // Resolve the stale older request; it must not overwrite the newer result.
+    await act(async () => {
+      resolveP1(USERS_A as typeof USERS)
+    })
+    await act(async () => {})
+    expect(screen.getByText('B User')).toBeInTheDocument()
+    expect(screen.queryByText('A User')).not.toBeInTheDocument()
   })
 })
