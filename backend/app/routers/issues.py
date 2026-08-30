@@ -4,7 +4,7 @@ import re
 import time
 import unicodedata
 from collections import defaultdict
-from typing import Annotated
+from typing import Annotated, Literal
 from urllib.parse import urlparse, urlencode, parse_qs
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -158,6 +158,7 @@ def _check_rate_limit(user_id: int) -> None:
 class ReportIssueRequest(BaseModel):
     description: str = Field(..., min_length=1, max_length=2000)
     page_url: str = Field(..., min_length=1, max_length=2000)
+    feedback_type: Literal["problem_or_issue", "comment_or_suggestion"]
 
 
 class ReportIssueResponse(BaseModel):
@@ -201,6 +202,7 @@ async def report_issue(
         user_role=current_user.role,
         app_version=get_feedback_app_version(),
         submitted_at=get_feedback_submission_timestamp(),
+        feedback_type=body.feedback_type,
     )
 
     try:

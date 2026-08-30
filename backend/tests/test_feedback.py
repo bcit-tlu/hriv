@@ -1,83 +1,142 @@
 """Tests for feedback delivery providers and configuration."""
+import smtplib
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
 from app.feedback import (
+    EmailFeedbackDelivery,
     FeedbackDeliveryError,
     FeedbackNotConfiguredError,
     FeedbackSubmission,
-    GitHubFeedbackDelivery,
     TeamsFeedbackDelivery,
-    get_feedback_delivery,
     get_feedback_app_version,
+    get_feedback_delivery,
     get_feedback_submission_timestamp,
-    normalize_github_repo,
 )
 
 
-@pytest.mark.parametrize(
-    "raw,expected",
-    [
-        ("owner/repo", "owner/repo"),
-        ("https://github.com/owner/repo", "owner/repo"),
-        ("http://github.com/owner/repo", "owner/repo"),
-        ("https://github.com/owner/repo/", "owner/repo"),
-        ("", ""),
-    ],
-)
-def test_github_repo_normalization(raw: str, expected: str) -> None:
-    assert normalize_github_repo(raw) == expected
+def _make_submission(feedback_type: str = "problem_or_issue") -> FeedbackSubmission:
+    return FeedbackSubmission(
+        description="Found a bug",
+        page_url="http://localhost/page",
+        user_id=123,
+        user_role="student",
+        app_version="0.27.1",
+        submitted_at="2026-07-03T00:00:00Z",
+        feedback_type=feedback_type,
+    )
 
 
-def test_get_feedback_delivery_uses_github_provider_when_configured(
+def test_get_feedback_delivery_uses_email_provider_when_configured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("FEEDBACK_DELIVERY_PROVIDER", "github")
-    monkeypatch.setenv("FEEDBACK_GITHUB_TOKEN", "token")
-    monkeypatch.setenv("FEEDBACK_GITHUB_REPOSITORY", "owner/repo")
+    monkeypatch.setenv("FEEDBACK_DELIVERY_PROVIDER", "email")
+    monkeypatch.setenv("FEEDBACK_EMAIL_SMTP_SERVER", "smtp.example.com")
+    monkeypatch.setenv("FEEDBACK_EMAIL_SMTP_PORT", "587")
+    monkeypatch.setenv("FEEDBACK_EMAIL_USERNAME", "user@example.com")
+    monkeypatch.setenv("FEEDBACK_EMAIL_PASSWORD", "secret")
 
     provider = get_feedback_delivery()
 
-    assert isinstance(provider, GitHubFeedbackDelivery)
-    assert provider.repo == "owner/repo"
+    assert isinstance(provider, EmailFeedbackDelivery)
+    assert provider.smtp_server == "smtp.example.com"
+    assert provider.smtp_port == 587
+    assert provider.username == "user@example.com"
+    assert provider.password == "secret"
+    assert provider.from_addr == "user@example.com"
+    assert provider.to_addr == "tlu_techops@bcit.ca"
 
 
-def test_get_feedback_delivery_supports_legacy_github_env_vars(
+def test_get_feedback_delivery_uses_custom_from_and_to(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("FEEDBACK_DELIVERY_PROVIDER", raising=False)
-    monkeypatch.delenv("FEEDBACK_GITHUB_TOKEN", raising=False)
-    monkeypatch.delenv("FEEDBACK_GITHUB_REPOSITORY", raising=False)
-    monkeypatch.setenv("GITHUB_TOKEN", "token")
-    monkeypatch.setenv("GITHUB_REPO", "https://github.com/owner/repo")
+    monkeypatch.setenv("FEEDBACK_DELIVERY_PROVIDER", "email")
+    monkeypatch.setenv("FEEDBACK_EMAIL_SMTP_SERVER", "smtp.example.com")
+    monkeypatch.setenv("FEEDBACK_EMAIL_SMTP_PORT", "465")
+    monkeypatch.setenv("FEEDBACK_EMAIL_USERNAME", "user@example.com")
+    monkeypatch.setenv("FEEDBACK_EMAIL_PASSWORD", "secret")
+    monkeypatch.setenv("FEEDBACK_EMAIL_FROM", "hriv@example.com")
+    monkeypatch.setenv("FEEDBACK_EMAIL_TO", "support@example.com")
 
     provider = get_feedback_delivery()
 
-    assert isinstance(provider, GitHubFeedbackDelivery)
-    assert provider.repo == "owner/repo"
+    assert isinstance(provider, EmailFeedbackDelivery)
+    assert provider.from_addr == "hriv@example.com"
+    assert provider.to_addr == "support@example.com"
+    assert provider.security == "ssl"
 
 
-def test_get_feedback_delivery_requires_complete_github_config(
+def test_get_feedback_delivery_parses_json_smtp_port(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("FEEDBACK_DELIVERY_PROVIDER", "github")
-    monkeypatch.delenv("FEEDBACK_GITHUB_TOKEN", raising=False)
-    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
-    monkeypatch.setenv("FEEDBACK_GITHUB_REPOSITORY", "owner/repo")
-    monkeypatch.delenv("GITHUB_REPO", raising=False)
+    monkeypatch.setenv("FEEDBACK_DELIVERY_PROVIDER", "email")
+    monkeypatch.setenv("FEEDBACK_EMAIL_SMTP_SERVER", "smtp.example.com")
+    monkeypatch.setenv("FEEDBACK_EMAIL_SMTP_PORT", '{"ssl": 465, "tls": [587, 25]}')
+    monkeypatch.setenv("FEEDBACK_EMAIL_USERNAME", "user@example.com")
+    monkeypatch.setenv("FEEDBACK_EMAIL_PASSWORD", "secret")
+
+    provider = get_feedback_delivery()
+
+    assert isinstance(provider, EmailFeedbackDelivery)
+    assert provider.smtp_port == 587
+    assert provider.security == "starttls"
+
+
+def test_get_feedback_delivery_parses_ssl_only_json_smtp_port(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FEEDBACK_DELIVERY_PROVIDER", "email")
+    monkeypatch.setenv("FEEDBACK_EMAIL_SMTP_SERVER", "smtp.example.com")
+    monkeypatch.setenv("FEEDBACK_EMAIL_SMTP_PORT", '{"ssl": 465}')
+    monkeypatch.setenv("FEEDBACK_EMAIL_USERNAME", "user@example.com")
+    monkeypatch.setenv("FEEDBACK_EMAIL_PASSWORD", "secret")
+
+    provider = get_feedback_delivery()
+
+    assert isinstance(provider, EmailFeedbackDelivery)
+    assert provider.smtp_port == 465
+    assert provider.security == "ssl"
+
+
+def test_get_feedback_delivery_security_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FEEDBACK_DELIVERY_PROVIDER", "email")
+    monkeypatch.setenv("FEEDBACK_EMAIL_SMTP_SERVER", "smtp.example.com")
+    monkeypatch.setenv("FEEDBACK_EMAIL_SMTP_PORT", "25")
+    monkeypatch.setenv("FEEDBACK_EMAIL_USERNAME", "user@example.com")
+    monkeypatch.setenv("FEEDBACK_EMAIL_PASSWORD", "secret")
+    monkeypatch.setenv("FEEDBACK_EMAIL_SMTP_SECURITY", "none")
+
+    provider = get_feedback_delivery()
+
+    assert isinstance(provider, EmailFeedbackDelivery)
+    assert provider.security == "none"
+
+
+def test_get_feedback_delivery_email_requires_complete_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FEEDBACK_DELIVERY_PROVIDER", "email")
+    monkeypatch.delenv("FEEDBACK_EMAIL_SMTP_SERVER", raising=False)
+    monkeypatch.delenv("FEEDBACK_EMAIL_SMTP_PORT", raising=False)
+    monkeypatch.delenv("FEEDBACK_EMAIL_USERNAME", raising=False)
+    monkeypatch.delenv("FEEDBACK_EMAIL_PASSWORD", raising=False)
 
     with pytest.raises(FeedbackNotConfiguredError):
         get_feedback_delivery()
 
 
-def test_get_feedback_delivery_rejects_domain_only_github_url(
+def test_get_feedback_delivery_rejects_invalid_smtp_port(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("FEEDBACK_DELIVERY_PROVIDER", "github")
-    monkeypatch.setenv("FEEDBACK_GITHUB_TOKEN", "token")
-    monkeypatch.setenv("FEEDBACK_GITHUB_REPOSITORY", "https://github.com/")
+    monkeypatch.setenv("FEEDBACK_DELIVERY_PROVIDER", "email")
+    monkeypatch.setenv("FEEDBACK_EMAIL_SMTP_SERVER", "smtp.example.com")
+    monkeypatch.setenv("FEEDBACK_EMAIL_SMTP_PORT", "not-a-port")
+    monkeypatch.setenv("FEEDBACK_EMAIL_USERNAME", "user@example.com")
+    monkeypatch.setenv("FEEDBACK_EMAIL_PASSWORD", "secret")
 
     with pytest.raises(FeedbackNotConfiguredError):
         get_feedback_delivery()
@@ -108,7 +167,7 @@ def test_get_feedback_delivery_requires_complete_teams_config(
 def test_get_feedback_delivery_rejects_unknown_provider(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("FEEDBACK_DELIVERY_PROVIDER", "email")
+    monkeypatch.setenv("FEEDBACK_DELIVERY_PROVIDER", "github")
 
     with pytest.raises(FeedbackNotConfiguredError) as exc:
         get_feedback_delivery()
@@ -116,152 +175,98 @@ def test_get_feedback_delivery_rejects_unknown_provider(
     assert "Unsupported feedback delivery provider" in str(exc.value)
 
 
-async def test_github_feedback_delivery_success() -> None:
-    submission = FeedbackSubmission(
-        description="Found a bug",
-        page_url="http://localhost/page",
-        user_id=123,
-        user_role="student",
-        app_version="0.27.1",
-        submitted_at="2026-07-03T00:00:00Z",
+async def test_email_feedback_delivery_success() -> None:
+    submission = _make_submission(feedback_type="problem_or_issue")
+    mock_server = MagicMock()
+    mock_server.__enter__ = MagicMock(return_value=mock_server)
+    mock_server.__exit__ = MagicMock(return_value=False)
+
+    delivery = EmailFeedbackDelivery(
+        smtp_server="smtp.example.com",
+        smtp_port=587,
+        username="user@example.com",
+        password="secret",
+        from_addr="hriv@example.com",
+        to_addr="tlu_techops@bcit.ca",
+        security="starttls",
     )
-    create_resp = MagicMock()
-    create_resp.status_code = 201
-    create_resp.json.return_value = {
-        "html_url": "https://github.com/repo/issues/1",
-        "number": 1,
-    }
-    label_resp = MagicMock()
-    label_resp.status_code = 200
 
-    mock_client = AsyncMock()
-    mock_client.post = AsyncMock(side_effect=[create_resp, label_resp])
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
-
-    delivery = GitHubFeedbackDelivery(token="fake-token", repo="owner/repo")
-
-    with patch("app.feedback.httpx.AsyncClient", return_value=mock_client):
+    with patch("app.feedback.smtplib.SMTP") as mock_smtp_class:
+        mock_smtp_class.return_value = mock_server
         result = await delivery.submit(submission)
 
-    assert result.destination == "github"
-    assert result.tracking_url == "https://github.com/repo/issues/1"
-    assert result.external_id == "1"
+    assert result.destination == "email"
+    assert result.tracking_url is None
+    assert result.external_id is None
 
-    create_call = mock_client.post.call_args_list[0]
-    payload = create_call.kwargs["json"]
-    assert payload["title"] == "feedback: Issue report from student"
-    assert "labels" not in payload
-    body_text = payload["body"]
-    sep_pos = body_text.index("---")
-    assert body_text.index("Found a bug") < sep_pos
-    assert body_text.index("**Reported by:**") > sep_pos
-    assert body_text.index("**Page:**") > sep_pos
-    assert body_text.index("**App version:**") > sep_pos
-    assert body_text.index("**Submitted:**") > sep_pos
-    assert "student (user \u200b#123)" in body_text
-    assert "0.27.1" in body_text
-    assert "2026-07-03T00:00:00Z" in body_text
+    mock_smtp_class.assert_called_once_with("smtp.example.com", 587)
+    mock_server.starttls.assert_called_once()
+    mock_server.login.assert_called_once_with("user@example.com", "secret")
+    mock_server.send_message.assert_called_once()
 
-    label_call = mock_client.post.call_args_list[1]
-    assert "/issues/1/labels" in label_call.args[0]
-    assert label_call.kwargs["json"] == {"labels": ["feedback"]}
+    sent_msg = mock_server.send_message.call_args[0][0]
+    assert sent_msg["Subject"] == "HRIV feedback: Problem or issue"
+    assert sent_msg["From"] == "hriv@example.com"
+    assert sent_msg["To"] == "tlu_techops@bcit.ca"
+    assert "Found a bug" in sent_msg.get_content()
+    assert "http://localhost/page" in sent_msg.get_content()
+    assert "student" in sent_msg.get_content()
+    assert "123" in sent_msg.get_content()
+    assert "0.27.1" in sent_msg.get_content()
+    assert "2026-07-03T00:00:00Z" in sent_msg.get_content()
 
 
-async def test_github_feedback_delivery_label_failure_still_succeeds() -> None:
-    submission = FeedbackSubmission(
-        description="Bug report",
-        page_url="http://localhost/page",
-        user_id=456,
-        user_role="instructor",
-        app_version="0.27.1",
-        submitted_at="2026-07-03T00:00:00Z",
+async def test_email_feedback_delivery_ssl() -> None:
+    submission = _make_submission()
+    mock_server = MagicMock()
+    mock_server.__enter__ = MagicMock(return_value=mock_server)
+    mock_server.__exit__ = MagicMock(return_value=False)
+
+    delivery = EmailFeedbackDelivery(
+        smtp_server="smtp.example.com",
+        smtp_port=465,
+        username="user@example.com",
+        password="secret",
+        from_addr="hriv@example.com",
+        to_addr="tlu_techops@bcit.ca",
+        security="ssl",
     )
-    create_resp = MagicMock()
-    create_resp.status_code = 201
-    create_resp.json.return_value = {
-        "html_url": "https://github.com/repo/issues/2",
-        "number": 2,
-    }
 
-    mock_client = AsyncMock()
-    mock_client.post = AsyncMock(
-        side_effect=[create_resp, httpx.TimeoutException("label timed out")]
+    with patch("app.feedback.smtplib.SMTP_SSL") as mock_smtp_ssl_class:
+        mock_smtp_ssl_class.return_value = mock_server
+        result = await delivery.submit(submission)
+
+    assert result.destination == "email"
+    mock_smtp_ssl_class.assert_called_once_with("smtp.example.com", 465)
+    mock_server.starttls.assert_not_called()
+    mock_server.login.assert_called_once()
+    mock_server.send_message.assert_called_once()
+
+
+async def test_email_feedback_delivery_smtp_error() -> None:
+    submission = _make_submission()
+
+    delivery = EmailFeedbackDelivery(
+        smtp_server="smtp.example.com",
+        smtp_port=587,
+        username="user@example.com",
+        password="secret",
+        from_addr="hriv@example.com",
+        to_addr="tlu_techops@bcit.ca",
     )
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
 
-    delivery = GitHubFeedbackDelivery(token="fake-token", repo="owner/repo")
-
-    with (
-        patch("app.feedback.httpx.AsyncClient", return_value=mock_client),
-        patch("app.feedback.logger.warning") as mock_warning,
+    with patch(
+        "app.feedback.smtplib.SMTP",
+        side_effect=smtplib.SMTPConnectError(421, "Unable to connect"),
     ):
-        result = await delivery.submit(submission)
-
-    assert result.tracking_url == "https://github.com/repo/issues/2"
-    mock_warning.assert_called_once()
-
-
-async def test_github_feedback_delivery_create_error() -> None:
-    submission = FeedbackSubmission(
-        description="Bug",
-        page_url="http://localhost/page",
-        user_id=789,
-        user_role="admin",
-        app_version="0.27.1",
-        submitted_at="2026-07-03T00:00:00Z",
-    )
-    create_resp = MagicMock()
-    create_resp.status_code = 500
-
-    mock_client = AsyncMock()
-    mock_client.post = AsyncMock(return_value=create_resp)
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
-
-    delivery = GitHubFeedbackDelivery(token="fake-token", repo="owner/repo")
-
-    with patch("app.feedback.httpx.AsyncClient", return_value=mock_client):
         with pytest.raises(FeedbackDeliveryError) as exc:
             await delivery.submit(submission)
 
-    assert "GitHub API error creating issue: 500" in str(exc.value)
-
-
-async def test_github_feedback_delivery_create_transport_error() -> None:
-    submission = FeedbackSubmission(
-        description="Bug",
-        page_url="http://localhost/page",
-        user_id=790,
-        user_role="admin",
-        app_version="0.27.1",
-        submitted_at="2026-07-03T00:00:00Z",
-    )
-
-    mock_client = AsyncMock()
-    mock_client.post = AsyncMock(side_effect=httpx.TimeoutException("request timed out"))
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
-
-    delivery = GitHubFeedbackDelivery(token="fake-token", repo="owner/repo")
-
-    with patch("app.feedback.httpx.AsyncClient", return_value=mock_client):
-        with pytest.raises(FeedbackDeliveryError) as exc:
-            await delivery.submit(submission)
-
-    assert "GitHub API request failed:" in str(exc.value)
+    assert "Failed to send feedback email" in str(exc.value)
 
 
 async def test_teams_feedback_delivery_success() -> None:
-    submission = FeedbackSubmission(
-        description="Found a bug",
-        page_url="https://hriv.example.ca/images/12",
-        user_id=123,
-        user_role="student",
-        app_version="0.27.1",
-        submitted_at="2026-07-03T00:00:00Z",
-    )
+    submission = _make_submission()
     response = MagicMock()
     response.is_success = True
     response.text = "1"
@@ -294,7 +299,7 @@ async def test_teams_feedback_delivery_success() -> None:
     assert facts == {
         "Role": "student",
         "Internal user id": "123",
-        "Page": "https://hriv.example.ca/images/12",
+        "Page": "http://localhost/page",
         "App version": "0.27.1",
         "Submitted": "2026-07-03T00:00:00Z",
     }
@@ -302,20 +307,13 @@ async def test_teams_feedback_delivery_success() -> None:
         {
             "type": "Action.OpenUrl",
             "title": "Open reported page",
-            "url": "https://hriv.example.ca/images/12",
+            "url": "http://localhost/page",
         }
     ]
 
 
 async def test_teams_feedback_delivery_rate_limit_signal_in_body() -> None:
-    submission = FeedbackSubmission(
-        description="Found a bug",
-        page_url="https://hriv.example.ca/images/12",
-        user_id=123,
-        user_role="student",
-        app_version="0.27.1",
-        submitted_at="2026-07-03T00:00:00Z",
-    )
+    submission = _make_submission()
     response = MagicMock()
     response.is_success = True
     response.text = "Microsoft Teams endpoint returned HTTP error 429"
@@ -335,14 +333,7 @@ async def test_teams_feedback_delivery_rate_limit_signal_in_body() -> None:
 
 
 async def test_teams_feedback_delivery_http_error() -> None:
-    submission = FeedbackSubmission(
-        description="Found a bug",
-        page_url="https://hriv.example.ca/images/12",
-        user_id=123,
-        user_role="student",
-        app_version="0.27.1",
-        submitted_at="2026-07-03T00:00:00Z",
-    )
+    submission = _make_submission()
     response = MagicMock()
     response.is_success = False
     response.status_code = 500
@@ -363,14 +354,7 @@ async def test_teams_feedback_delivery_http_error() -> None:
 
 
 async def test_teams_feedback_delivery_transport_error() -> None:
-    submission = FeedbackSubmission(
-        description="Found a bug",
-        page_url="https://hriv.example.ca/images/12",
-        user_id=123,
-        user_role="student",
-        app_version="0.27.1",
-        submitted_at="2026-07-03T00:00:00Z",
-    )
+    submission = _make_submission()
 
     mock_client = AsyncMock()
     mock_client.post = AsyncMock(side_effect=httpx.ConnectTimeout("request timed out"))
