@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth import get_current_user, require_role
 from ..browse_state import bump_browse_revision
 from ..database import async_session, get_db, settings
+from ..filenames import sanitize_upload_filename
 from ..image_validation import UPLOAD_CHUNK_SIZE, is_valid_image
 from ..models import Category, Image, SourceImage, User
 from ..schemas import (
@@ -347,6 +348,8 @@ async def replace_image(
             if not is_valid_image(file.filename, file.content_type):
                 raise HTTPException(status_code=400, detail="File must be an image")
 
+            original_filename = sanitize_upload_filename(file.filename)
+
             # ── Apply optional metadata updates atomically ──────────
             has_metadata = any(
                 v is not None
@@ -381,7 +384,7 @@ async def replace_image(
 
             os.makedirs(settings.source_images_dir, exist_ok=True)
 
-            ext = os.path.splitext(file.filename)[1] or ".bin"
+            ext = os.path.splitext(original_filename)[1] or ".bin"
             unique_name = f"{uuid.uuid4().hex}{ext}"
             stored_path = os.path.join(settings.source_images_dir, unique_name)
 
@@ -401,7 +404,7 @@ async def replace_image(
                         extra={
                             "event": "replace.enospc",
                             "image_id": image_id,
-                            "original_filename": file.filename,
+                            "original_filename": original_filename,
                             "stored_path": stored_path,
                         },
                     )
@@ -450,7 +453,7 @@ async def replace_image(
                 img.version = img.version + 1
 
             src = SourceImage(
-                original_filename=file.filename,
+                original_filename=original_filename,
                 stored_path=stored_path,
                 status="pending",
                 name=img.name,
@@ -478,7 +481,7 @@ async def replace_image(
                     "event": "replace.accepted",
                     "source_image_id": src.id,
                     "target_image_id": image_id,
-                    "original_filename": file.filename,
+                    "original_filename": original_filename,
                 },
             )
 
