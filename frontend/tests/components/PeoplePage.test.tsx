@@ -1047,9 +1047,7 @@ describe('PeoplePage', () => {
     const { promise: p1, resolve: resolveP1 } = createDeferred<typeof USERS>()
     const { promise: p2, resolve: resolveP2 } = createDeferred<typeof USERS>()
 
-    vi.mocked(bulkUpdateUserRole)
-      .mockReturnValueOnce(p1)
-      .mockReturnValueOnce(p2)
+    vi.mocked(bulkUpdateUserRole).mockReturnValueOnce(p1).mockReturnValueOnce(p2)
     vi.mocked(fetchUsers)
       .mockResolvedValueOnce(USERS)
       .mockResolvedValueOnce(USERS_B as typeof USERS)
