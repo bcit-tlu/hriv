@@ -153,6 +153,10 @@ spec:
             - name: FEEDBACK_EMAIL_FROM
               value: {{ get $feedback "emailFrom" | quote }}
             {{- end }}
+            {{- if get $feedback "emailSmtpSecurity" }}
+            - name: FEEDBACK_EMAIL_SMTP_SECURITY
+              value: {{ get $feedback "emailSmtpSecurity" | quote }}
+            {{- end }}
             {{- end }}
             {{- if eq $feedbackProvider "teams" }}
             - name: FEEDBACK_TEAMS_WEBHOOK_URL

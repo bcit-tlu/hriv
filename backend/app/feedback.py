@@ -106,9 +106,13 @@ class EmailFeedbackDelivery:
 
         try:
             if self.security == "ssl":
-                server = smtplib.SMTP_SSL(self.smtp_server, self.smtp_port)
+                server = smtplib.SMTP_SSL(
+                    self.smtp_server, self.smtp_port, timeout=15.0
+                )
             else:
-                server = smtplib.SMTP(self.smtp_server, self.smtp_port)
+                server = smtplib.SMTP(
+                    self.smtp_server, self.smtp_port, timeout=15.0
+                )
 
             with server:
                 if self.security == "starttls":
@@ -152,6 +156,13 @@ class TeamsFeedbackDelivery:
                             {
                                 "type": "FactSet",
                                 "facts": [
+                                    {
+                                        "title": "Feedback type",
+                                        "value": _FEEDBACK_TYPE_LABELS.get(
+                                            submission.feedback_type,
+                                            submission.feedback_type,
+                                        ),
+                                    },
                                     {"title": "Role", "value": submission.user_role},
                                     {
                                         "title": "Internal user id",

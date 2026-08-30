@@ -2385,7 +2385,10 @@ export default function App() {
       <Snackbar
         open={successSnack !== null}
         autoHideDuration={6000}
-        onClose={() => setSuccessSnack(null)}
+        onClose={(_event, reason) => {
+          if (reason === 'clickaway' && successSnack?.trackingUrl) return
+          setSuccessSnack(null)
+        }}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
         sx={{ zIndex: 1500 }}
       >

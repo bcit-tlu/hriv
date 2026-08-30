@@ -172,6 +172,18 @@ assert_contains "$backend_mode_default_deployment" 'name: WORKER_MAX_JOBS' \
   "backend deployment should render WORKER_MAX_JOBS for the in-process fallback concurrency"
 assert_not_contains "$backend_mode_default_deployment" 'name: WORKER_TOTAL_SLOTS' \
   "backend deployment should omit WORKER_TOTAL_SLOTS when redis.worker.totalSlots is unset"
+assert_not_contains "$backend_mode_default_deployment" 'name: FEEDBACK_EMAIL_SMTP_SECURITY' \
+  "backend deployment should omit FEEDBACK_EMAIL_SMTP_SECURITY when feedback.email.smtpSecurity is unset"
+
+backend_feedback_security_manifest="$(helm template test charts/backend \
+  --set feedback.provider=email \
+  --set feedback.email.existingSecret=hriv-feedback-smtp-relay \
+  --set feedback.email.smtpSecurity=none)"
+backend_feedback_security_deployment="$(extract_yaml_doc "$backend_feedback_security_manifest" "Deployment" "test-hriv-backend")"
+assert_contains "$backend_feedback_security_deployment" 'name: FEEDBACK_EMAIL_SMTP_SECURITY' \
+  "backend deployment should render FEEDBACK_EMAIL_SMTP_SECURITY when feedback.email.smtpSecurity is set"
+assert_contains "$backend_feedback_security_deployment" 'value: "none"' \
+  "backend deployment should pass the configured SMTP security mode"
 
 backend_required_manifest="$(helm template test charts/backend \
   --set tasks.executionMode=required \

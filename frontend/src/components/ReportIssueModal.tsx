@@ -47,8 +47,10 @@ export default function ReportIssueModal({
     'problem_or_issue',
   )
   const [submitting, setSubmitting] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hasEmittedOpenRef = useRef(false)
+  const busy = submitting || submitted
 
   useEffect(
     () => () => {
@@ -80,7 +82,15 @@ export default function ReportIssueModal({
     }
     setDescription('')
     setFeedbackType('problem_or_issue')
+    setSubmitted(false)
     onClose()
+  }
+
+  const handleDialogClose = (_event: object, reason: 'backdropClick' | 'escapeKeyDown') => {
+    if (submitting) return
+    if (reason === 'backdropClick' || reason === 'escapeKeyDown') {
+      handleClose()
+    }
   }
 
   const handleSubmit = async () => {
@@ -105,6 +115,7 @@ export default function ReportIssueModal({
       })
       const safeUrl = safeTrackingUrl(result.tracking_url)
       onSuccess?.('Thanks! Your feedback has been received.', safeUrl)
+      setSubmitted(true)
       setDescription('')
       timerRef.current = setTimeout(() => {
         timerRef.current = null
@@ -125,10 +136,10 @@ export default function ReportIssueModal({
   }
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
+    <Dialog open={open} onClose={handleDialogClose} maxWidth="sm" fullWidth>
       <DialogTitle>Send Feedback</DialogTitle>
       <DialogContent>
-        <FormControl component="fieldset" sx={{ mb: 2, mt: 1 }} disabled={submitting}>
+        <FormControl component="fieldset" sx={{ mb: 2, mt: 1 }} disabled={busy}>
           <FormLabel component="legend">What kind of feedback is this?</FormLabel>
           <RadioGroup
             aria-label="Feedback type"
@@ -159,21 +170,17 @@ export default function ReportIssueModal({
           label="Please describe your feedback"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          disabled={submitting}
+          disabled={busy}
           sx={{ mt: 1 }}
           slotProps={{ htmlInput: { maxLength: 2000 } }}
         />
       </DialogContent>
       <DialogActions>
         <Button onClick={handleClose} disabled={submitting}>
-          Cancel
+          {submitted ? 'Close' : 'Cancel'}
         </Button>
-        <Button
-          onClick={handleSubmit}
-          variant="contained"
-          disabled={submitting || !description.trim()}
-        >
-          {submitting ? <CircularProgress size={20} /> : 'Submit'}
+        <Button onClick={handleSubmit} variant="contained" disabled={busy || !description.trim()}>
+          {submitting ? <CircularProgress size={20} /> : submitted ? 'Sent' : 'Submit'}
         </Button>
       </DialogActions>
     </Dialog>

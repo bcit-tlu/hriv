@@ -62,6 +62,7 @@ Resolve feedback delivery settings from values.
       "emailSecret" (.Values.feedback.email.existingSecret | default "")
       "emailTo" (.Values.feedback.email.to | default "")
       "emailFrom" (.Values.feedback.email.from | default "")
+      "emailSmtpSecurity" (.Values.feedback.email.smtpSecurity | default "")
       "teamsSecret" (.Values.feedback.teams.webhook.existingSecret | default "")
   -}}
 {{- toYaml $feedback -}}

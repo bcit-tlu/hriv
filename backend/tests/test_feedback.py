@@ -199,7 +199,7 @@ async def test_email_feedback_delivery_success() -> None:
     assert result.tracking_url is None
     assert result.external_id is None
 
-    mock_smtp_class.assert_called_once_with("smtp.example.com", 587)
+    mock_smtp_class.assert_called_once_with("smtp.example.com", 587, timeout=15.0)
     mock_server.starttls.assert_called_once()
     mock_server.login.assert_called_once_with("user@example.com", "secret")
     mock_server.send_message.assert_called_once()
@@ -237,7 +237,7 @@ async def test_email_feedback_delivery_ssl() -> None:
         result = await delivery.submit(submission)
 
     assert result.destination == "email"
-    mock_smtp_ssl_class.assert_called_once_with("smtp.example.com", 465)
+    mock_smtp_ssl_class.assert_called_once_with("smtp.example.com", 465, timeout=15.0)
     mock_server.starttls.assert_not_called()
     mock_server.login.assert_called_once()
     mock_server.send_message.assert_called_once()
@@ -297,6 +297,7 @@ async def test_teams_feedback_delivery_success() -> None:
     assert card["body"][1]["text"] == "Found a bug"
     facts = {fact["title"]: fact["value"] for fact in card["body"][2]["facts"]}
     assert facts == {
+        "Feedback type": "Problem or issue",
         "Role": "student",
         "Internal user id": "123",
         "Page": "http://localhost/page",
@@ -310,6 +311,30 @@ async def test_teams_feedback_delivery_success() -> None:
             "url": "http://localhost/page",
         }
     ]
+
+
+async def test_teams_feedback_delivery_comment_or_suggestion_label() -> None:
+    submission = _make_submission(feedback_type="comment_or_suggestion")
+    response = MagicMock()
+    response.is_success = True
+    response.text = "1"
+
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(return_value=response)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    delivery = TeamsFeedbackDelivery(webhook_url="https://teams.example/webhook")
+
+    with patch("app.feedback.httpx.AsyncClient", return_value=mock_client):
+        result = await delivery.submit(submission)
+
+    assert result.destination == "teams"
+    post_call = mock_client.post.call_args
+    payload = post_call.kwargs["json"]
+    card = payload["attachments"][0]["content"]
+    facts = {fact["title"]: fact["value"] for fact in card["body"][2]["facts"]}
+    assert facts["Feedback type"] == "Comment or suggestion"
 
 
 async def test_teams_feedback_delivery_rate_limit_signal_in_body() -> None:

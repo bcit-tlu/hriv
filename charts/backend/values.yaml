@@ -306,6 +306,7 @@ feedback:
     existingSecret: ''
     to: ''
     from: ''
+    smtpSecurity: ''
   teams:
     webhook:
       existingSecret: ''

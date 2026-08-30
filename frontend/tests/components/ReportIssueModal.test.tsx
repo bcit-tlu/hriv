@@ -231,7 +231,7 @@ describe('ReportIssueModal', () => {
     expect(onClose).toHaveBeenCalledOnce()
   })
 
-  it('cancelling after success clears the pending auto-close timer', async () => {
+  it('disables form controls after success and the close button clears the auto-close timer', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     const onClose = vi.fn()
     const onSuccess = vi.fn()
@@ -250,7 +250,14 @@ describe('ReportIssueModal', () => {
       expect(onSuccess).toHaveBeenCalled()
     })
 
-    await user.click(screen.getByRole('button', { name: /cancel/i }))
+    expect(screen.getByRole('textbox')).toBeDisabled()
+    expect(screen.getByRole('radio', { name: 'Problem or issue' })).toBeDisabled()
+    expect(screen.getByRole('radio', { name: 'Comment or suggestion' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /sent/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /close/i })).toBeInTheDocument()
+    expect(onClose).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: /close/i }))
     expect(onClose).toHaveBeenCalledOnce()
 
     await act(async () => {

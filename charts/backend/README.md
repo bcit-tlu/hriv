@@ -17,6 +17,9 @@ uses `feedback.provider`. Email is the primary delivery method for the in-app
   `tlu_techops@bcit.ca` when empty
 - `feedback.email.from` (string, default `""`) — sender address; defaults to the
   SMTP username when empty
+- `feedback.email.smtpSecurity` (string, default `""`) — SMTP security mode
+  (`starttls`, `ssl`, `none`); defaults to `auto` when empty, which infers
+  `ssl` for port `465` and `starttls` otherwise
 - `feedback.teams.webhook.existingSecret` (string, default `""`)
 
 ### Behavior
@@ -32,8 +35,9 @@ When `feedback.provider: email`:
 - `FEEDBACK_EMAIL_SMTP_SERVER`, `FEEDBACK_EMAIL_SMTP_PORT`,
   `FEEDBACK_EMAIL_USERNAME`, and `FEEDBACK_EMAIL_PASSWORD` are read from
   `feedback.email.existingSecret`
-- `FEEDBACK_EMAIL_TO` and `FEEDBACK_EMAIL_FROM` are injected from the chart
-  values when set, or left unset so the backend defaults apply
+- `FEEDBACK_EMAIL_TO`, `FEEDBACK_EMAIL_FROM`, and `FEEDBACK_EMAIL_SMTP_SECURITY`
+  are injected from the chart values when set, or left unset so the backend
+  defaults apply
 - chart render fails if the SMTP secret is missing
 
 When `feedback.provider: teams`:
@@ -52,6 +56,7 @@ feedback:
     existingSecret: hriv-feedback-smtp-relay
     to: tlu_techops@bcit.ca
     from: hriv-no-reply@bcit.ca
+    smtpSecurity: starttls
 ```
 
 Create the referenced secret:
