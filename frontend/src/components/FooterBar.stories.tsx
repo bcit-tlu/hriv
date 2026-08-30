@@ -32,7 +32,7 @@ const meta = {
     docs: {
       description: {
         component:
-          'Application footer showing the repository link, optional admin-visible component versions, and optional report-issue action.',
+          'Application footer showing the repository link, optional admin-visible component versions, and optional send-feedback action.',
       },
     },
   },

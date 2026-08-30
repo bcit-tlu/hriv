@@ -59,7 +59,11 @@ def test_check_rate_limit_prunes_old_entries() -> None:
 
 async def test_report_issue_not_configured() -> None:
     user = SimpleNamespace(id=1, name="Test", email="t@example.com", role="student")
-    body = ReportIssueRequest(description="Bug", page_url="http://localhost/page")
+    body = ReportIssueRequest(
+        description="Bug",
+        page_url="http://localhost/page",
+        feedback_type="problem_or_issue",
+    )
 
     with patch(
         "app.routers.issues.get_feedback_delivery",
@@ -74,13 +78,17 @@ async def test_report_issue_success() -> None:
     user_id = 8888
     _user_timestamps.pop(user_id, None)
     user = SimpleNamespace(id=user_id, name="Test User", email="t@example.com", role="student")
-    body = ReportIssueRequest(description="Found a bug", page_url="http://localhost/page")
+    body = ReportIssueRequest(
+        description="Found a bug",
+        page_url="http://localhost/page",
+        feedback_type="problem_or_issue",
+    )
 
     delivery = AsyncMock()
     delivery.submit.return_value = FeedbackDeliveryResult(
-        destination="github",
-        tracking_url="https://github.com/repo/issues/1",
-        external_id="1",
+        destination="email",
+        tracking_url=None,
+        external_id=None,
     )
 
     with patch("app.routers.issues.get_feedback_delivery", return_value=delivery):
@@ -93,9 +101,9 @@ async def test_report_issue_success() -> None:
         ):
             result = await report_issue(body, user)
 
-    assert result.destination == "github"
-    assert result.tracking_url == "https://github.com/repo/issues/1"
-    assert result.issue_url == "https://github.com/repo/issues/1"
+    assert result.destination == "email"
+    assert result.tracking_url is None
+    assert result.issue_url is None
     delivery.submit.assert_awaited_once()
     submission = delivery.submit.await_args.args[0]
     assert submission.description == "Found a bug"
@@ -104,15 +112,20 @@ async def test_report_issue_success() -> None:
     assert submission.user_id == 8888
     assert submission.app_version == "0.27.1"
     assert submission.submitted_at == "2026-07-03T00:00:00Z"
+    assert submission.feedback_type == "problem_or_issue"
 
     _user_timestamps.pop(user_id, None)
 
 
-async def test_report_issue_returns_generic_result_for_non_github_destination() -> None:
+async def test_report_issue_returns_generic_result() -> None:
     user_id = 8886
     _user_timestamps.pop(user_id, None)
     user = SimpleNamespace(id=user_id, name="Test User", email="t@example.com", role="instructor")
-    body = ReportIssueRequest(description="Bug report", page_url="http://localhost/page")
+    body = ReportIssueRequest(
+        description="Bug report",
+        page_url="http://localhost/page",
+        feedback_type="comment_or_suggestion",
+    )
 
     delivery = AsyncMock()
     delivery.submit.return_value = FeedbackDeliveryResult(
@@ -134,6 +147,9 @@ async def test_report_issue_returns_generic_result_for_non_github_destination() 
     assert result.destination == "servicenow"
     assert result.tracking_url == "https://servicenow.example/ticket/INC001"
     assert result.issue_url is None
+    delivery.submit.assert_awaited_once()
+    submission = delivery.submit.await_args.args[0]
+    assert submission.feedback_type == "comment_or_suggestion"
     _user_timestamps.pop(user_id, None)
 
 
@@ -141,10 +157,14 @@ async def test_report_issue_delivery_error() -> None:
     user_id = 8887
     _user_timestamps.pop(user_id, None)
     user = SimpleNamespace(id=user_id, name="Test", email="t@example.com", role="admin")
-    body = ReportIssueRequest(description="Bug", page_url="http://localhost/page")
+    body = ReportIssueRequest(
+        description="Bug",
+        page_url="http://localhost/page",
+        feedback_type="problem_or_issue",
+    )
 
     delivery = AsyncMock()
-    delivery.submit.side_effect = FeedbackDeliveryError("GitHub API error creating issue: 500")
+    delivery.submit.side_effect = FeedbackDeliveryError("SMTP server unavailable")
 
     with patch("app.routers.issues.get_feedback_delivery", return_value=delivery):
         with (

@@ -1296,18 +1296,29 @@ describe('Issue API', () => {
   it('reportIssue sends POST', async () => {
     mockFetch.mockReturnValueOnce(
       jsonResponse({
-        destination: 'github',
-        tracking_url: 'https://github.com/...',
-        issue_url: 'https://github.com/...',
+        destination: 'email',
+        tracking_url: null,
+        issue_url: null,
       }),
     )
-    const result = await reportIssue({ description: 'Bug', page_url: 'http://localhost' })
+    const result = await reportIssue({
+      description: 'Bug',
+      page_url: 'http://localhost',
+      feedback_type: 'problem_or_issue',
+    })
     const [url, init] = mockFetch.mock.calls[0]
     expect(url).toBe('/api/issues/report')
     expect(init.method).toBe('POST')
-    expect(result.destination).toBe('github')
-    expect(result.tracking_url).toBe('https://github.com/...')
-    expect(result.issue_url).toBe('https://github.com/...')
+    expect(init.body).toBe(
+      JSON.stringify({
+        description: 'Bug',
+        page_url: 'http://localhost',
+        feedback_type: 'problem_or_issue',
+      }),
+    )
+    expect(result.destination).toBe('email')
+    expect(result.tracking_url).toBeNull()
+    expect(result.issue_url).toBeNull()
   })
 })
 

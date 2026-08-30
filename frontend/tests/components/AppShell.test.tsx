@@ -112,9 +112,9 @@ describe('AppShell', () => {
       expect(screen.queryByText('Maintenance tonight')).not.toBeInTheDocument()
     })
 
-    it('renders footer with report issue link', () => {
+    it('renders footer with Send Feedback link', () => {
       render(<AppShell {...makeProps()} />)
-      expect(screen.getByText('Report issue')).toBeInTheDocument()
+      expect(screen.getByText('Send Feedback')).toBeInTheDocument()
     })
 
     it('renders version info in footer for admin users', () => {
@@ -314,10 +314,10 @@ describe('AppShell', () => {
       expect(screen.getByText('JD')).toBeInTheDocument()
     })
 
-    it('calls onReportIssue when Report issue link is clicked', () => {
+    it('calls onReportIssue when Send Feedback link is clicked', () => {
       const props = makeProps()
       render(<AppShell {...props} />)
-      fireEvent.click(screen.getByText('Report issue'))
+      fireEvent.click(screen.getByText('Send Feedback'))
       expect(props.onReportIssue).toHaveBeenCalled()
     })
   })
