@@ -124,7 +124,7 @@ export const FooterLinks: Story = {
           underline="hover"
           variant="caption"
         >
-          Report issue
+          Send Feedback
         </Link>
       </Typography>
     </Paper>

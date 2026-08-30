@@ -87,7 +87,7 @@ describe('ReportIssueModal', () => {
   it('calls reportIssue with description, page_url and feedback_type', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     vi.mocked(reportIssue).mockResolvedValue({
-      destination: 'github',
+      destination: 'email',
       tracking_url: null,
       issue_url: null,
     })
@@ -148,9 +148,9 @@ describe('ReportIssueModal', () => {
     const onClose = vi.fn()
     const onSuccess = vi.fn()
     vi.mocked(reportIssue).mockResolvedValue({
-      destination: 'github',
-      tracking_url: 'https://github.com/bcit-tlu/hriv/issues/999',
-      issue_url: 'https://github.com/bcit-tlu/hriv/issues/999',
+      destination: 'email',
+      tracking_url: 'https://tracker.example/feedback/999',
+      issue_url: null,
     })
     render(<ReportIssueModal open onClose={onClose} page="browse" onSuccess={onSuccess} />)
 
@@ -161,7 +161,7 @@ describe('ReportIssueModal', () => {
     await waitFor(() => {
       expect(onSuccess).toHaveBeenCalledWith(
         'Thanks! Your feedback has been received.',
-        'https://github.com/bcit-tlu/hriv/issues/999',
+        'https://tracker.example/feedback/999',
       )
     })
     expect(onClose).not.toHaveBeenCalled()
@@ -177,7 +177,7 @@ describe('ReportIssueModal', () => {
     const onClose = vi.fn()
     const onSuccess = vi.fn()
     vi.mocked(reportIssue).mockResolvedValue({
-      destination: 'github',
+      destination: 'email',
       tracking_url: 'javascript:alert(1)',
       issue_url: null,
     })

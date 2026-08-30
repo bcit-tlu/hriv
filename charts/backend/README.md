@@ -3,36 +3,38 @@
 ## Feedback delivery (`feedback.provider`)
 
 The backend accepts in-app feedback via `POST /api/issues/report`, then routes
-the submission through the configured delivery provider. The new generic chart
-config uses `feedback.provider`, with GitHub and Teams currently implemented.
+the submission through the configured delivery provider. The generic chart config
+uses `feedback.provider`. Email is the primary delivery method for the in-app
+"Send Feedback" flow, and the MS Teams provider is retained for future use.
 
 ### Values
 
-- `feedback.provider` (string, default `""`; supported: `github`, `teams`)
-- `feedback.github.repository` (string, default `""`, format `owner/repo`)
-- `feedback.github.token.existingSecret` (string, default `""`)
+- `feedback.provider` (string, default `""`; supported: `email`, `teams`)
+- `feedback.email.existingSecret` (string, default `""`) — secret containing SMTP
+  relay credentials (`smtp_server`, `smtp_port`, `username`, `password`) and
+  optional `from` / `to` overrides
+- `feedback.email.to` (string, default `""`) — recipient address; defaults to
+  `tlu_techops@bcit.ca` when empty
+- `feedback.email.from` (string, default `""`) — sender address; defaults to the
+  SMTP username when empty
 - `feedback.teams.webhook.existingSecret` (string, default `""`)
-
-Legacy fallback values are still honored for upgrade compatibility:
-
-- `github-issue.enabled`
-- `github-issue.repository`
-- `github-issue.token.existingSecret`
 
 ### Behavior
 
-When `feedback.provider: ""` and `github-issue.enabled: false`:
+When `feedback.provider: ""`:
 
 - no feedback delivery env vars are injected
 - no feedback secret is referenced
 
-When `feedback.provider: github`:
+When `feedback.provider: email`:
 
-- `FEEDBACK_DELIVERY_PROVIDER=github` is injected
-- `FEEDBACK_GITHUB_REPOSITORY` is injected from `feedback.github.repository`
-- `FEEDBACK_GITHUB_TOKEN` is read from secret
-  `feedback.github.token.existingSecret`, key `token`
-- chart render fails if either required value is missing
+- `FEEDBACK_DELIVERY_PROVIDER=email` is injected
+- `FEEDBACK_EMAIL_SMTP_SERVER`, `FEEDBACK_EMAIL_SMTP_PORT`,
+  `FEEDBACK_EMAIL_USERNAME`, and `FEEDBACK_EMAIL_PASSWORD` are read from
+  `feedback.email.existingSecret`
+- `FEEDBACK_EMAIL_TO` and `FEEDBACK_EMAIL_FROM` are injected from the chart
+  values when set, or left unset so the backend defaults apply
+- chart render fails if the SMTP secret is missing
 
 When `feedback.provider: teams`:
 
@@ -41,30 +43,31 @@ When `feedback.provider: teams`:
   `feedback.teams.webhook.existingSecret`, key `url`
 - chart render fails if the webhook secret is missing
 
-When `feedback.provider` is empty but `github-issue.enabled: true`:
-
-- the chart maps the legacy GitHub-only values into the new generic runtime env
-- this fallback is intended only for upgrade compatibility while overlays move
-  to the `feedback.*` config
-
-### Example (enabled)
+### Example (email)
 
 ```yaml
 feedback:
-  provider: github
-  github:
-    repository: bcit-tlu/hriv
-    token:
-      existingSecret: github-report-issue-token
+  provider: email
+  email:
+    existingSecret: hriv-feedback-smtp-relay
+    to: tlu_techops@bcit.ca
+    from: hriv-no-reply@bcit.ca
 ```
 
 Create the referenced secret:
 
 ```bash
-kubectl create secret generic github-report-issue-token \
-  --from-literal=token=ghp_YOUR_SCOPED_PAT \
+kubectl create secret generic hriv-feedback-smtp-relay \
+  --from-literal=smtp_server=smtp.relay.bcit.ca \
+  --from-literal=smtp_port=587 \
+  --from-literal=username=tlu_alertmanager@relay.bcit.ca \
+  --from-literal=password='YOUR_SMTP_PASSWORD' \
+  --from-literal=from=tlu_alertmanager@relay.bcit.ca \
+  --from-literal=to=tlu_techops@bcit.ca \
   -n <namespace>
 ```
+
+`Flux` users typically create this secret with a `VaultStaticSecret` instead.
 
 ### Example (Teams)
 
