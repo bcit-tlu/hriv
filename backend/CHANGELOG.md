@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.49.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.48.0...backend-v0.49.0) (2026-08-31)
+
+
+### Features
+
+* **backend:** add user deactivation controls ([#1148](https://github.com/bcit-tlu/hriv/issues/1148)) ([21d0501](https://github.com/bcit-tlu/hriv/commit/21d0501c99d11ce2ff03c788b4120de7c8c6dc2f))
+* **backend:** enforce tile authorization with image-scoped HMAC tokens ([#1159](https://github.com/bcit-tlu/hriv/issues/1159)) ([0a432cc](https://github.com/bcit-tlu/hriv/commit/0a432cc581473c3a427f3e97dc0a1ebec9b32ce6))
+
+
+### Bug Fixes
+
+* address review follow-up issues ([#1167](https://github.com/bcit-tlu/hriv/issues/1167)) ([24aa09c](https://github.com/bcit-tlu/hriv/commit/24aa09cb5ee6a63de748183e360a3ec86494d7ca))
+
 ## [0.48.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.47.0...backend-v0.48.0) (2026-08-31)
 
 
