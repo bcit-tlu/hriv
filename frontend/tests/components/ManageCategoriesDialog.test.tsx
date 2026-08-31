@@ -19,7 +19,7 @@
 
 import { StrictMode } from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ManageCategoriesDialog from '../../src/components/ManageCategoriesDialog'
 import type { ParentMove, ScopeOrder } from '../../src/components/manageCategoriesDialogUtils'
@@ -62,6 +62,7 @@ function renderDialog(overrides: Partial<Parameters<typeof ManageCategoriesDialo
   const onToggleVisibility = overrides.onToggleVisibility ?? undefined
   const onReorderTiles = overrides.onReorderTiles ?? undefined
   const onReorderComplete = overrides.onReorderComplete ?? undefined
+  const onDragActiveChange = overrides.onDragActiveChange ?? undefined
   const onCategoryNavigate = overrides.onCategoryNavigate ?? undefined
   return {
     onClose,
@@ -82,6 +83,7 @@ function renderDialog(overrides: Partial<Parameters<typeof ManageCategoriesDialo
         onToggleVisibility={onToggleVisibility}
         onReorderTiles={onReorderTiles}
         onReorderComplete={onReorderComplete}
+        onDragActiveChange={onDragActiveChange}
         programs={overrides.programs ?? programs}
         groups={overrides.groups ?? []}
       />,
@@ -568,6 +570,90 @@ describe('ManageCategoriesDialog — drop → onReorderTiles', () => {
     dragToEnd(1, 0)
 
     await waitFor(() => expect(onReorderComplete).toHaveBeenCalledTimes(1))
+  })
+
+  it('reports drag-active through the drop lifecycle and signals false after onReorderTiles completes', async () => {
+    let resolveReorder: (() => void) | undefined
+    const reorderPromise = new Promise<void>((resolve) => {
+      resolveReorder = resolve
+    })
+    const onReorderTiles = vi.fn().mockReturnValue(reorderPromise)
+    const onDragActiveChange = vi.fn()
+    const onReorderComplete = vi.fn().mockResolvedValue(undefined)
+    renderDialog({
+      categories: categories(),
+      onReorderTiles,
+      onReorderComplete,
+      onDragActiveChange,
+    })
+
+    dragToEnd(1, 0)
+
+    await waitFor(() => expect(onDragActiveChange).toHaveBeenCalledWith(true))
+    expect(onDragActiveChange).not.toHaveBeenCalledWith(false)
+
+    await act(async () => {
+      resolveReorder?.()
+    })
+
+    await waitFor(() => expect(onReorderTiles).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(onDragActiveChange).toHaveBeenLastCalledWith(false))
+  })
+
+  it('does not emit drag-active=false for an old drop that resolves during a newer drag', async () => {
+    let resolveFirst: (() => void) | undefined
+    let resolveSecond: (() => void) | undefined
+    const firstPromise = new Promise<void>((resolve) => {
+      resolveFirst = resolve
+    })
+    const secondPromise = new Promise<void>((resolve) => {
+      resolveSecond = resolve
+    })
+    const onReorderTiles = vi
+      .fn()
+      .mockReturnValueOnce(firstPromise)
+      .mockReturnValueOnce(secondPromise)
+    const onDragActiveChange = vi.fn()
+    renderDialog({
+      categories: categories(),
+      onReorderTiles,
+      onDragActiveChange,
+    })
+
+    const item1 = document.querySelector('[data-category-id="1"]')!
+    const list = item1.closest('ul')!
+
+    // First drag starts and drops (promise stays pending).
+    fireDrag(item1, 'dragstart', 0, 0)
+    fireDrag(list, 'dragover', 0, 100)
+    fireDrag(list, 'drop', 0, 100)
+    await waitFor(() => expect(onDragActiveChange).toHaveBeenCalledWith(true))
+    // dragend fires synchronously after drop; no false should be emitted yet.
+    fireDrag(item1, 'dragend', 0, 0)
+    expect(onDragActiveChange).toHaveBeenCalledTimes(1)
+
+    // Second drag starts before the first drop resolves. Drop item 2 before
+    // item 1 (negative clientY) so the move is a real reorder, not a no-op.
+    const item2 = document.querySelector('[data-category-id="2"]')!
+    fireDrag(item2, 'dragstart', 0, 0)
+    fireDrag(list, 'dragover', 0, -10)
+    fireDrag(list, 'drop', 0, -10)
+    await waitFor(() => expect(onDragActiveChange).toHaveBeenCalledTimes(2))
+
+    // Resolve the first (now stale) drop: it must not emit false.
+    await act(async () => {
+      resolveFirst?.()
+    })
+    expect(onDragActiveChange).not.toHaveBeenCalledWith(false)
+
+    fireDrag(item2, 'dragend', 0, 0)
+
+    // Resolve the second drop: this is the only lifecycle that should signal false.
+    await act(async () => {
+      resolveSecond?.()
+    })
+    await waitFor(() => expect(onDragActiveChange).toHaveBeenLastCalledWith(false))
+    expect(onDragActiveChange.mock.calls.filter(([v]) => v === false).length).toBe(1)
   })
 })
 

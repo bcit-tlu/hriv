@@ -81,6 +81,29 @@ for i in $(seq 1 15); do docker compose exec db pg_isready -U hriv && break; sle
    ```
 3. Third backup should log: "Local retention policy: keeping 2, deleting 1 old snapshot(s)"
 4. List should show exactly 2 snapshots
+   - Retention and `list` order by the `YYYYMMDD-HHMMSS` stamp in the snapshot
+     name (full name as tie-break), not by file mtime, so a `touch`ed old
+     archive is still the one deleted.
+
+### Test 3: Concurrent Backups (same second)
+
+1. Clear old backups: `docker run --rm -v hriv_backup_data:/backups alpine rm -f /backups/hriv-backup-*.tar.gz`
+2. Start two backups at once:
+   ```bash
+   docker compose --profile backup run --rm backup backup &
+   docker compose --profile backup run --rm backup backup &
+   wait
+   ```
+3. Both runs should succeed and produce two distinct
+   `hriv-backup-<YYYYMMDD-HHMMSS>-<8 hex>.tar.gz` archives, each with its own
+   `.manifest.json` sidecar:
+   ```bash
+   docker run --rm -v hriv_backup_data:/backups alpine sh -c "ls -1 /backups"
+   ```
+4. Restore by unambiguous prefix should fail with an "ambiguous" error when both
+   archives share the same second; restoring by full name should succeed.
+5. `/backups/.staging` should be empty after the runs (archives are staged there,
+   not in pod-local `/tmp`, and published with a rename).
 
 ## Troubleshooting
 

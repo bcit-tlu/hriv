@@ -170,19 +170,22 @@ def _legacy_backup_state_from_marker(marker: dict | None) -> dict | None:
         return None
 
     created_at = marker.get("created_at")
+    # created_at names the snapshot; completed_at (when present) is when the
+    # snapshot actually became restorable.
+    completed_at = marker.get("completed_at") or created_at
     archive_size = marker.get("archive_size")
     snapshot_name = marker.get("snapshot_name")
     archive_key = f"{_backup_prefix()}{snapshot_name}.tar.gz" if snapshot_name else None
 
     section = {
         "started_at": created_at,
-        "completed_at": created_at,
+        "completed_at": completed_at,
         "success": True,
         "duration_seconds": None,
         "size_bytes": archive_size,
         "archive_key": archive_key,
         "last_success_started_at": created_at,
-        "last_success_completed_at": created_at,
+        "last_success_completed_at": completed_at,
         "last_success_duration_seconds": None,
         "last_success_size_bytes": archive_size,
         "last_success_archive_key": archive_key,

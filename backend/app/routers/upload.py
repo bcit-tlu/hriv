@@ -7,13 +7,23 @@ import os
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+)
 from opentelemetry import trace
 from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import require_role
 from ..database import async_session, get_db, settings
+from ..filenames import sanitize_upload_filename, storage_extension
 from ..image_validation import UPLOAD_CHUNK_SIZE, is_valid_image
 from ..models import SourceImage, User
 from ..processing import process_source_image
@@ -46,6 +56,8 @@ async def upload_source_image(
     if not is_valid_image(file.filename, file.content_type):
         raise HTTPException(status_code=400, detail="File must be an image")
 
+    original_filename = sanitize_upload_filename(file.filename)
+
     with tracer.start_as_current_span("upload_source_image") as span:
         try:
             # Ensure the source images directory exists
@@ -61,7 +73,7 @@ async def upload_source_image(
                 )
 
             # Generate a unique filename to avoid collisions
-            ext = os.path.splitext(file.filename)[1] or ".bin"
+            ext = storage_extension(original_filename)
             unique_name = f"{uuid.uuid4().hex}{ext}"
             stored_path = os.path.join(settings.source_images_dir, unique_name)
 
@@ -81,7 +93,7 @@ async def upload_source_image(
                         "Upload failed: no space left on device",
                         extra={
                             "event": "upload.enospc",
-                            "original_filename": file.filename,
+                            "original_filename": original_filename,
                             "stored_path": stored_path,
                         },
                     )
@@ -96,7 +108,7 @@ async def upload_source_image(
 
             # Create the source image record
             src = SourceImage(
-                original_filename=file.filename,
+                original_filename=original_filename,
                 stored_path=stored_path,
                 status="pending",
                 name=name,
@@ -111,7 +123,7 @@ async def upload_source_image(
             await db.refresh(src)
 
             span.set_attribute("source_image.id", src.id)
-            span.set_attribute("source_image.original_filename", file.filename)
+            span.set_attribute("source_image.original_filename", original_filename)
             span.set_attribute("source_image.file_size", file_size)
 
             logger.info(
@@ -119,7 +131,7 @@ async def upload_source_image(
                 extra={
                     "event": "upload.accepted",
                     "source_image_id": src.id,
-                    "original_filename": file.filename,
+                    "original_filename": original_filename,
                     "category_id": category_id,
                 },
             )
@@ -193,10 +205,21 @@ async def upload_source_image(
 @router.get("/", response_model=list[SourceImageOut])
 async def list_source_images(
     _user: Annotated[User, Depends(require_role("admin", "instructor"))],
+    status: Annotated[str | None, Query(max_length=50)] = None,
+    limit: Annotated[int | None, Query(ge=1, le=500)] = None,
     db: AsyncSession = Depends(get_db),
 ) -> list[SourceImage]:
-    """List all source images with their processing status."""
+    """List source images with their processing status, newest first.
+
+    ``status`` narrows the result to a single processing state and ``limit``
+    caps the number of rows returned, so callers that only care about recent
+    failures do not have to download the whole table.
+    """
     stmt = select(SourceImage).order_by(SourceImage.created_at.desc())
+    if status is not None:
+        stmt = stmt.where(SourceImage.status == status)
+    if limit is not None:
+        stmt = stmt.limit(limit)
     result = await db.execute(stmt)
     return list(result.scalars().all())
 

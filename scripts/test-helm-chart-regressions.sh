@@ -92,6 +92,19 @@ assert_not_contains "$backup_no_volumes_manifest" "volumeMounts:" \
 assert_not_contains "$backup_no_volumes_manifest" "volumes:" \
   "backup deployment should omit volumes when every backup chart data volume is disabled"
 
+backup_default_manifest="$(helm template test charts/backup)"
+backup_deployment="$(extract_yaml_doc "$backup_default_manifest" "Deployment" "test-hriv-backup")"
+assert_contains "$backup_deployment" "ephemeral-storage:" \
+  "backup deployment should set explicit ephemeral-storage requests and limits so an archive staging fallback to pod-local /tmp fails as a limit error"
+assert_not_contains "$backup_deployment" "BACKUP_STAGING_DIR" \
+  "backup deployment should omit BACKUP_STAGING_DIR so the service keeps its <backups volume>/.staging default"
+
+backup_staging_deployment="$(extract_yaml_doc \
+  "$(helm template test charts/backup --set env.BACKUP_STAGING_DIR=/mnt/staging)" \
+  "Deployment" "test-hriv-backup")"
+assert_contains "$backup_staging_deployment" 'value: "/mnt/staging"' \
+  "backup deployment should render an explicit env.BACKUP_STAGING_DIR override"
+
 backend_zone_aa_manifest="$(helm template test charts/backend \
   --set scheduling.zoneAntiAffinity.enabled=true \
   --set replicaCount=2 \
@@ -172,6 +185,52 @@ assert_contains "$backend_mode_default_deployment" 'name: WORKER_MAX_JOBS' \
   "backend deployment should render WORKER_MAX_JOBS for the in-process fallback concurrency"
 assert_not_contains "$backend_mode_default_deployment" 'name: WORKER_TOTAL_SLOTS' \
   "backend deployment should omit WORKER_TOTAL_SLOTS when redis.worker.totalSlots is unset"
+assert_not_contains "$backend_mode_default_deployment" 'name: FEEDBACK_EMAIL_SMTP_SECURITY' \
+  "backend deployment should omit FEEDBACK_EMAIL_SMTP_SECURITY when feedback.email.smtpSecurity is unset"
+assert_not_contains "$backend_mode_default_deployment" 'name: FEEDBACK_EMAIL_TO' \
+  "backend deployment should omit FEEDBACK_EMAIL_TO when no email secret or chart value is set"
+assert_not_contains "$backend_mode_default_deployment" 'name: FEEDBACK_EMAIL_FROM' \
+  "backend deployment should omit FEEDBACK_EMAIL_FROM when no email secret or chart value is set"
+
+backend_feedback_security_manifest="$(helm template test charts/backend \
+  --set feedback.provider=email \
+  --set feedback.email.existingSecret=hriv-feedback-smtp-relay \
+  --set feedback.email.smtpSecurity=none)"
+backend_feedback_security_deployment="$(extract_yaml_doc "$backend_feedback_security_manifest" "Deployment" "test-hriv-backend")"
+assert_contains "$backend_feedback_security_deployment" 'name: FEEDBACK_EMAIL_SMTP_SECURITY' \
+  "backend deployment should render FEEDBACK_EMAIL_SMTP_SECURITY when feedback.email.smtpSecurity is set"
+assert_contains "$backend_feedback_security_deployment" 'value: "none"' \
+  "backend deployment should pass the configured SMTP security mode"
+
+backend_feedback_secret_to_from_manifest="$(helm template test charts/backend \
+  --set feedback.provider=email \
+  --set feedback.email.existingSecret=hriv-feedback-smtp-relay)"
+backend_feedback_secret_to_from_deployment="$(extract_yaml_doc "$backend_feedback_secret_to_from_manifest" "Deployment" "test-hriv-backend")"
+assert_contains "$backend_feedback_secret_to_from_deployment" 'name: FEEDBACK_EMAIL_TO' \
+  "backend deployment should render FEEDBACK_EMAIL_TO when an existingSecret is set"
+assert_contains "$backend_feedback_secret_to_from_deployment" 'key: to' \
+  "backend deployment should source FEEDBACK_EMAIL_TO from the existingSecret"
+assert_contains "$backend_feedback_secret_to_from_deployment" 'name: FEEDBACK_EMAIL_FROM' \
+  "backend deployment should render FEEDBACK_EMAIL_FROM when an existingSecret is set"
+assert_contains "$backend_feedback_secret_to_from_deployment" 'key: from' \
+  "backend deployment should source FEEDBACK_EMAIL_FROM from the existingSecret"
+assert_contains "$backend_feedback_secret_to_from_deployment" 'optional: true' \
+  "backend deployment should mark optional secret to/from keys as optional"
+
+backend_feedback_values_to_from_manifest="$(helm template test charts/backend \
+  --set feedback.provider=email \
+  --set feedback.email.existingSecret=hriv-feedback-smtp-relay \
+  --set feedback.email.to=override@example.com \
+  --set feedback.email.from=sender@example.com)"
+backend_feedback_values_to_from_deployment="$(extract_yaml_doc "$backend_feedback_values_to_from_manifest" "Deployment" "test-hriv-backend")"
+assert_contains "$backend_feedback_values_to_from_deployment" 'value: "override@example.com"' \
+  "backend deployment should use chart value for FEEDBACK_EMAIL_TO"
+assert_contains "$backend_feedback_values_to_from_deployment" 'value: "sender@example.com"' \
+  "backend deployment should use chart value for FEEDBACK_EMAIL_FROM"
+assert_not_contains "$backend_feedback_values_to_from_deployment" 'key: to' \
+  "backend deployment should not use secretKeyRef for FEEDBACK_EMAIL_TO when chart value is set"
+assert_not_contains "$backend_feedback_values_to_from_deployment" 'key: from' \
+  "backend deployment should not use secretKeyRef for FEEDBACK_EMAIL_FROM when chart value is set"
 
 backend_required_manifest="$(helm template test charts/backend \
   --set tasks.executionMode=required \

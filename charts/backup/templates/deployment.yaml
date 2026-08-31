@@ -66,6 +66,10 @@ spec:
               value: {{ .Values.env.BACKUP_STALE_HOURS | quote }}
             - name: BACKUP_MODE
               value: {{ .Values.env.BACKUP_MODE | quote }}
+            {{- with .Values.env.BACKUP_STAGING_DIR }}
+            - name: BACKUP_STAGING_DIR
+              value: {{ . | quote }}
+            {{- end }}
             - name: AZURE_STORAGE_CONNECTION_STRING
               valueFrom:
                 secretKeyRef:

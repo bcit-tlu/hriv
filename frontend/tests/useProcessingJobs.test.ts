@@ -1,11 +1,40 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import {
+  MAX_REHYDRATED_FAILURES,
+  bulkImportErrorSummary,
+  bulkImportFailureMessage,
   useProcessingJobs,
   type UseProcessingJobsDeps,
   type ProcessingJob,
 } from '../src/useProcessingJobs'
-import { ApiError, type ApiBulkImportJob } from '../src/api'
+import { ApiError, type ApiBulkImportJob, type ApiSourceImage } from '../src/api'
+
+function makeFailedSourceImage(overrides: Partial<ApiSourceImage> = {}): ApiSourceImage {
+  const now = new Date().toISOString()
+  return {
+    id: 7,
+    original_filename: 'broken.tiff',
+    status: 'failed',
+    progress: 40,
+    error_message: 'Processing failed: unsupported format',
+    status_message: null,
+    name: null,
+    category_id: null,
+    copyright: null,
+    note: null,
+    active: true,
+    image_id: null,
+    file_size: 1234,
+    source_checksum: null,
+    tile_settings_hash: null,
+    tiles_generated_at: null,
+    tile_cache_status: 'missing',
+    created_at: now,
+    updated_at: now,
+    ...overrides,
+  }
+}
 
 async function flushMicrotasks() {
   await Promise.resolve()
@@ -48,6 +77,7 @@ function makeDeps(overrides: Partial<UseProcessingJobsDeps> = {}): UseProcessing
       height: 1000,
       file_size: 5000,
     }),
+    listFailedSourceImages: vi.fn().mockResolvedValue([]),
     loadCategories: vi.fn().mockResolvedValue(undefined),
     loadUncategorizedImages: vi.fn().mockResolvedValue(undefined),
     selectedImageRef: { current: null },
@@ -111,6 +141,29 @@ describe('useProcessingJobs', () => {
       })
 
       expect(result.current.processingJobs).toHaveLength(5)
+    })
+
+    it('surfaces the backend error message when processing fails', async () => {
+      const deps = makeDeps({
+        fetchSourceImage: vi.fn().mockResolvedValue({
+          status: 'failed',
+          progress: 40,
+          status_message: 'Failed',
+          error_message: 'Tile generation failed: broken.tif: is not a known file format',
+          image_id: null,
+        }),
+      })
+      const { result } = renderHook(() => useProcessingJobs(deps))
+
+      await act(async () => {
+        result.current.addProcessingJob(42, 'broken.tif', 5000)
+      })
+
+      expect(result.current.processingJobs[0]).toMatchObject({
+        status: 'failed',
+        serverProgress: 40,
+        errorMessage: 'Tile generation failed: broken.tif: is not a known file format',
+      })
     })
   })
 
@@ -360,6 +413,106 @@ describe('useProcessingJobs', () => {
       })
     })
 
+    it('surfaces the per-file errors of a failed bulk import', async () => {
+      const deps = makeDeps({
+        fetchBulkImportJob: vi.fn().mockResolvedValue({
+          id: 5,
+          status: 'failed',
+          total_count: 2,
+          completed_count: 0,
+          failed_count: 2,
+          errors: [
+            {
+              filename: 'slide-a.tif',
+              error: 'Tile generation failed: is not a known file format',
+            },
+            {
+              filename: 'slide-b.tif',
+              error: 'Tile generation failed: Premature end of JPEG file',
+            },
+          ],
+        } as ApiBulkImportJob),
+      })
+      const { result } = renderHook(() => useProcessingJobs(deps))
+
+      act(() => {
+        result.current.handleBulkImportStarted(
+          {
+            id: 5,
+            status: 'importing',
+            total_count: 2,
+            completed_count: 0,
+            failed_count: 0,
+            errors: null,
+          },
+          'archive.zip',
+          50_000,
+        )
+      })
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000)
+      })
+
+      expect(result.current.processingJobs[0]).toMatchObject({
+        kind: 'bulk-import',
+        status: 'failed',
+        errorMessage:
+          'Bulk import failed. slide-a.tif: Tile generation failed: is not a known file format; ' +
+          'slide-b.tif: Tile generation failed: Premature end of JPEG file',
+      })
+    })
+
+    it('keeps the per-file errors of a partially failed bulk import', async () => {
+      const deps = makeDeps({
+        fetchBulkImportJob: vi.fn().mockResolvedValue({
+          id: 6,
+          status: 'completed',
+          total_count: 2,
+          completed_count: 1,
+          failed_count: 1,
+          errors: [
+            {
+              filename: 'slide-b.tif',
+              error: 'Tile generation failed: Premature end of JPEG file',
+            },
+          ],
+        } as ApiBulkImportJob),
+      })
+      const { result } = renderHook(() => useProcessingJobs(deps))
+
+      act(() => {
+        result.current.handleBulkImportStarted(
+          {
+            id: 6,
+            status: 'importing',
+            total_count: 2,
+            completed_count: 0,
+            failed_count: 0,
+            errors: null,
+          },
+          'archive.zip',
+          50_000,
+        )
+      })
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000)
+      })
+
+      expect(result.current.processingJobs[0]).toMatchObject({
+        kind: 'bulk-import',
+        status: 'completed',
+        failedCount: 1,
+        errors: [
+          {
+            filename: 'slide-b.tif',
+            error: 'Tile generation failed: Premature end of JPEG file',
+          },
+        ],
+      })
+    })
+
     it('stops polling and surfaces an auth error when bulk import status returns 401', async () => {
       const deps = makeDeps({
         fetchBulkImportJob: vi.fn().mockRejectedValue(new ApiError(401, 'Unauthorized')),
@@ -523,6 +676,186 @@ describe('useProcessingJobs', () => {
         result.current.dismissJob(42)
       })
       expect(result.current.processingJobs).toHaveLength(0)
+    })
+  })
+
+  describe('rehydrateFailedJobs', () => {
+    beforeEach(() => {
+      localStorage.clear()
+    })
+
+    it('restores persisted failures as terminal failed jobs without polling', async () => {
+      const src = makeFailedSourceImage()
+      const deps = makeDeps({ listFailedSourceImages: vi.fn().mockResolvedValue([src]) })
+      const { result } = renderHook(() => useProcessingJobs(deps))
+
+      await act(async () => {
+        await result.current.rehydrateFailedJobs()
+      })
+
+      expect(result.current.processingJobs).toEqual([
+        expect.objectContaining({
+          id: src.id,
+          filename: src.original_filename,
+          status: 'failed',
+          kind: 'image',
+          origin: 'rehydrated',
+          errorMessage: src.error_message,
+        }),
+      ])
+      // Terminal failures must not start a processing poller.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000)
+      })
+      expect(deps.fetchSourceImage).not.toHaveBeenCalled()
+    })
+
+    it('runs only once per session but retries after a failed fetch', async () => {
+      const listFailedSourceImages = vi
+        .fn()
+        .mockRejectedValueOnce(new Error('offline'))
+        .mockResolvedValue([makeFailedSourceImage()])
+      const deps = makeDeps({ listFailedSourceImages })
+      const { result } = renderHook(() => useProcessingJobs(deps))
+
+      await act(async () => {
+        await result.current.rehydrateFailedJobs()
+      })
+      expect(result.current.processingJobs).toHaveLength(0)
+
+      await act(async () => {
+        await result.current.rehydrateFailedJobs()
+      })
+      await act(async () => {
+        await result.current.rehydrateFailedJobs()
+      })
+      expect(listFailedSourceImages).toHaveBeenCalledTimes(2)
+      expect(result.current.processingJobs).toHaveLength(1)
+    })
+
+    it('ignores failures older than the recency cutoff', async () => {
+      const stale = makeFailedSourceImage({
+        created_at: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      const deps = makeDeps({ listFailedSourceImages: vi.fn().mockResolvedValue([stale]) })
+      const { result } = renderHook(() => useProcessingJobs(deps))
+
+      await act(async () => {
+        await result.current.rehydrateFailedJobs()
+      })
+      expect(result.current.processingJobs).toHaveLength(0)
+    })
+
+    it('does not duplicate a failure already tracked live', async () => {
+      const src = makeFailedSourceImage({ id: 42 })
+      const deps = makeDeps({ listFailedSourceImages: vi.fn().mockResolvedValue([src]) })
+      const { result } = renderHook(() => useProcessingJobs(deps))
+
+      act(() => {
+        result.current.addProcessingJob(42, 'test.tiff', 5000)
+      })
+      await act(async () => {
+        await result.current.rehydrateFailedJobs()
+      })
+      expect(result.current.processingJobs).toHaveLength(1)
+    })
+
+    it('caps the number of restored failures', async () => {
+      const many = Array.from({ length: MAX_REHYDRATED_FAILURES + 5 }, (_, i) =>
+        makeFailedSourceImage({ id: i + 1 }),
+      )
+      const deps = makeDeps({ listFailedSourceImages: vi.fn().mockResolvedValue(many) })
+      const { result } = renderHook(() => useProcessingJobs(deps))
+
+      await act(async () => {
+        await result.current.rehydrateFailedJobs()
+      })
+      expect(result.current.processingJobs).toHaveLength(MAX_REHYDRATED_FAILURES)
+    })
+
+    it('does not restore failures the user dismissed, across reloads', async () => {
+      const src = makeFailedSourceImage()
+      const deps = makeDeps({ listFailedSourceImages: vi.fn().mockResolvedValue([src]) })
+      const first = renderHook(() => useProcessingJobs(deps))
+
+      await act(async () => {
+        await first.result.current.rehydrateFailedJobs()
+      })
+      act(() => {
+        first.result.current.dismissJob(src.id)
+      })
+      expect(first.result.current.processingJobs).toHaveLength(0)
+
+      // A fresh hook instance stands in for a page reload.
+      const second = renderHook(() => useProcessingJobs(deps))
+      await act(async () => {
+        await second.result.current.rehydrateFailedJobs()
+      })
+      expect(second.result.current.processingJobs).toHaveLength(0)
+    })
+
+    it('rehydrates again after resetAll so a new user gets their own failures', async () => {
+      const listFailedSourceImages = vi.fn().mockResolvedValue([makeFailedSourceImage()])
+      const deps = makeDeps({ listFailedSourceImages })
+      const { result } = renderHook(() => useProcessingJobs(deps))
+
+      await act(async () => {
+        await result.current.rehydrateFailedJobs()
+      })
+      act(() => {
+        result.current.resetAll()
+      })
+      await act(async () => {
+        await result.current.rehydrateFailedJobs()
+      })
+      expect(listFailedSourceImages).toHaveBeenCalledTimes(2)
+      expect(result.current.processingJobs).toHaveLength(1)
+    })
+
+    it('leaves restored failures out of the active job cap', async () => {
+      const many = Array.from({ length: 6 }, (_, i) => makeFailedSourceImage({ id: i + 1 }))
+      const deps = makeDeps({ listFailedSourceImages: vi.fn().mockResolvedValue(many) })
+      const { result } = renderHook(() => useProcessingJobs(deps))
+
+      await act(async () => {
+        await result.current.rehydrateFailedJobs()
+      })
+      act(() => {
+        result.current.handleUploadStarted(101, 'new.tiff', 100)
+      })
+      expect(result.current.processingJobs.some((job) => job.status === 'uploading')).toBe(true)
+    })
+
+    it('restores a failure whose lost status tracking was dismissed earlier', async () => {
+      const src = makeFailedSourceImage()
+      const deps = makeDeps({
+        fetchSourceImage: vi.fn().mockRejectedValue(new ApiError(401, 'Unauthorized')),
+        listFailedSourceImages: vi.fn().mockResolvedValue([src]),
+      })
+      const first = renderHook(() => useProcessingJobs(deps))
+
+      act(() => {
+        first.result.current.addProcessingJob(src.id, src.original_filename, 1234)
+      })
+      await act(async () => {
+        await flushMicrotasks()
+      })
+      expect(first.result.current.processingJobs[0]).toMatchObject({
+        status: 'failed',
+        errorMessage: expect.stringContaining('status tracking stopped'),
+      })
+
+      act(() => {
+        first.result.current.dismissJob(src.id)
+      })
+
+      // The server later confirms the failure, so it must still surface.
+      const second = renderHook(() => useProcessingJobs(deps))
+      await act(async () => {
+        await second.result.current.rehydrateFailedJobs()
+      })
+      expect(second.result.current.processingJobs).toHaveLength(1)
     })
   })
 
@@ -882,5 +1215,43 @@ describe('useProcessingJobs', () => {
       // Should not throw on unmount
       unmount()
     })
+  })
+})
+
+describe('bulkImportErrorSummary', () => {
+  it('is empty when the server reported no errors', () => {
+    expect(bulkImportErrorSummary(null)).toBe('')
+    expect(bulkImportErrorSummary([])).toBe('')
+  })
+
+  it('lists per-file errors without a failure prefix', () => {
+    expect(
+      bulkImportErrorSummary([
+        { filename: 'b.tif', error: 'Tile generation failed: Premature end of JPEG file' },
+      ]),
+    ).toBe('b.tif: Tile generation failed: Premature end of JPEG file')
+  })
+})
+
+describe('bulkImportFailureMessage', () => {
+  it('falls back to a generic message when the server reported no errors', () => {
+    expect(bulkImportFailureMessage(null)).toBe('Bulk import failed.')
+    expect(bulkImportFailureMessage([])).toBe('Bulk import failed.')
+  })
+
+  it('lists per-file errors', () => {
+    expect(
+      bulkImportFailureMessage([{ filename: 'a.tif', error: 'is not a known file format' }]),
+    ).toBe('Bulk import failed. a.tif: is not a known file format')
+  })
+
+  it('summarises the remainder beyond the first three errors', () => {
+    const errors = ['a', 'b', 'c', 'd', 'e'].map((name) => ({
+      filename: `${name}.tif`,
+      error: 'boom',
+    }))
+    expect(bulkImportFailureMessage(errors)).toBe(
+      'Bulk import failed. a.tif: boom; b.tif: boom; c.tif: boom (and 2 more)',
+    )
   })
 })

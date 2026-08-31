@@ -32,6 +32,10 @@ env:
   BACKUP_CRON_SCHEDULE: '0 2 * * *'
   BACKUP_RETENTION_COUNT: '30'
   BACKUP_STALE_HOURS: '26'
+  # Archives are staged here while they are built (and restores download and
+  # extract here), then published with a same-filesystem rename. Defaults to
+  # <backups volume>/.staging; override only to move staging off the backups PVC.
+  # BACKUP_STAGING_DIR: /backups/.staging
   # BACKUP_MODE controls what the Python backup service archives and restores:
   # - development: DB + source images + generated tiles (for local/manual use)
   # - production:  DB + source images only; generated tiles are excluded and
@@ -99,7 +103,19 @@ persistence:
     accessModes:
       - ReadWriteOnce
 
-resources: {}
+# Backups and restores stage on the /backups PVC (see BACKUP_STAGING_DIR), so
+# pod-local ephemeral storage only holds logs and pg_dump/psql scratch. The explicit
+# ephemeral-storage limit makes an unexpected /tmp fallback fail as a clear
+# limit error instead of a mid-archive node-pressure eviction.
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+    ephemeral-storage: 256Mi
+  limits:
+    cpu: '1'
+    memory: 1Gi
+    ephemeral-storage: 1Gi
 
 nodeSelector: {}
 tolerations: []

@@ -757,18 +757,26 @@ export function deleteUser(id: number): Promise<void> {
   return request(`/users/${id}`, { method: 'DELETE' })
 }
 
-export function bulkUpdateUserProgram(body: {
-  user_ids: number[]
-  program_ids: number[]
-}): Promise<ApiUser[]> {
+export function bulkUpdateUserProgram(
+  body: {
+    user_ids: number[]
+    program_ids: number[]
+  },
+  init?: RequestInit,
+): Promise<ApiUser[]> {
   return request('/users/bulk/program', {
+    ...init,
     method: 'PATCH',
     body: JSON.stringify(body),
   })
 }
 
-export function bulkUpdateUserRole(body: { user_ids: number[]; role: string }): Promise<ApiUser[]> {
+export function bulkUpdateUserRole(
+  body: { user_ids: number[]; role: string },
+  init?: RequestInit,
+): Promise<ApiUser[]> {
   return request('/users/bulk/role', {
+    ...init,
     method: 'PATCH',
     body: JSON.stringify(body),
   })
@@ -1071,6 +1079,17 @@ export function fetchSourceImage(id: number): Promise<ApiSourceImage> {
   return request(`/source-images/${id}`)
 }
 
+/** List source images (newest first), optionally narrowed by status. */
+export function listSourceImages(
+  opts: { status?: string; limit?: number } = {},
+): Promise<ApiSourceImage[]> {
+  const params = new URLSearchParams()
+  if (opts.status !== undefined) params.set('status', opts.status)
+  if (opts.limit !== undefined) params.set('limit', String(opts.limit))
+  const query = params.toString()
+  return request(`/source-images/${query ? `?${query}` : ''}`)
+}
+
 export async function replaceImage(
   imageId: number,
   file: File,
@@ -1261,10 +1280,13 @@ export interface ReportIssueResponse {
   issue_url: string | null
 }
 
-export function reportIssue(body: {
+export interface ReportIssueBody {
   description: string
   page_url: string
-}): Promise<ReportIssueResponse> {
+  feedback_type: 'problem_or_issue' | 'comment_or_suggestion'
+}
+
+export function reportIssue(body: ReportIssueBody): Promise<ReportIssueResponse> {
   return request('/issues/report', {
     method: 'POST',
     body: JSON.stringify(body),

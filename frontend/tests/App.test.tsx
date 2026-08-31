@@ -2,6 +2,7 @@ import { createRef, useEffect, type ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import App from '../src/App'
+import type { ProcessingJob } from '../src/useProcessingJobs'
 import {
   createGroup,
   createProgram,
@@ -172,6 +173,8 @@ function resetFixtures() {
     canEditContent: true,
   }
   mockInitialPath = []
+  visibleJobsMock = []
+  processingJobsMock.rehydrateFailedJobs.mockResolvedValue(undefined)
   mockCategories.splice(0, mockCategories.length, {
     id: 1,
     label: 'Slides',
@@ -198,11 +201,29 @@ const browseDataFns = {
   refreshUncategorizedImages: vi.fn(),
 }
 
+let visibleJobsMock: ProcessingJob[] = []
+
+function makeFailedJob(id: number): ProcessingJob {
+  return {
+    id,
+    filename: `broken-${id}.tiff`,
+    status: 'failed',
+    kind: 'image',
+    origin: 'rehydrated',
+    serverFailed: true,
+    errorMessage: `Processing failed: reason ${id}`,
+    serverProgress: 0,
+    fileSize: 100,
+    startedAt: Date.now(),
+  }
+}
+
 const processingJobsMock = {
   getDisplayProgress: vi.fn(),
   getStatusMessage: vi.fn(),
   getUploadProgress: vi.fn(),
-  getVisibleJobs: () => [],
+  getVisibleJobs: () => visibleJobsMock,
+  rehydrateFailedJobs: vi.fn().mockResolvedValue(undefined),
   getReplaceUploadProgress: () => undefined,
   addProcessingJob: vi.fn(),
   handleUploadStarted: vi.fn(),
@@ -383,6 +404,7 @@ vi.mock('../src/components/SortableTileGrid', () => ({
     onCategoryClick,
     onFilesDrop,
     fileDragActive,
+    onDragActiveChange,
   }: {
     currentImages: (typeof mockImage)[]
     currentCategories: typeof mockCategories
@@ -390,6 +412,7 @@ vi.mock('../src/components/SortableTileGrid', () => ({
     onCategoryClick: (category: (typeof mockCategories)[number]) => void
     onFilesDrop: (files: File[]) => void
     fileDragActive: boolean
+    onDragActiveChange?: (active: boolean) => void
   }) => (
     <>
       {fileDragActive && <div>File drag active</div>}
@@ -403,6 +426,12 @@ vi.mock('../src/components/SortableTileGrid', () => ({
         }
       >
         Drop files on grid
+      </button>
+      <button type="button" onClick={() => onDragActiveChange?.(true)}>
+        Start browse drag
+      </button>
+      <button type="button" onClick={() => onDragActiveChange?.(false)}>
+        End browse drag
       </button>
       {currentImages.map((image, index) => (
         <button key={image.id} type="button" onClick={() => onImageClick(image)}>
@@ -428,10 +457,24 @@ vi.mock('../src/components/ImageViewer', () => ({
 }))
 
 vi.mock('../src/components/ManageCategoriesDialog', () => ({
-  default: ({ onReorderComplete }: { onReorderComplete: () => Promise<void> }) => (
-    <button type="button" onClick={() => void onReorderComplete()}>
-      Manage reorder complete
-    </button>
+  default: ({
+    onReorderComplete,
+    onDragActiveChange,
+  }: {
+    onReorderComplete: () => Promise<void>
+    onDragActiveChange?: (active: boolean) => void
+  }) => (
+    <>
+      <button type="button" onClick={() => void onReorderComplete()}>
+        Manage reorder complete
+      </button>
+      <button type="button" onClick={() => onDragActiveChange?.(true)}>
+        Start manage drag
+      </button>
+      <button type="button" onClick={() => onDragActiveChange?.(false)}>
+        End manage drag
+      </button>
+    </>
   ),
 }))
 vi.mock('../src/components/AdminPage', () => ({ default: () => null }))
@@ -564,6 +607,8 @@ vi.mock('../src/useNavigationHistory', () => ({
 
 vi.mock('../src/useProcessingJobs', () => ({
   useProcessingJobs: () => processingJobsMock,
+  MAX_REHYDRATED_FAILURES: 20,
+  FAILURE_COLLAPSE_THRESHOLD: 5,
 }))
 
 vi.mock('../src/useShareableImageState', () => ({
@@ -925,6 +970,61 @@ describe('App breadcrumbs', () => {
   })
 })
 
+describe('App failure notifications', () => {
+  beforeEach(resetFixtures)
+
+  it('rehydrates persisted failures for users who can edit content', async () => {
+    render(<App />)
+    await waitFor(() => expect(processingJobsMock.rehydrateFailedJobs).toHaveBeenCalled())
+  })
+
+  it('does not rehydrate failures for users without edit rights', () => {
+    authState = { ...authState, canEditContent: false }
+    render(<App />)
+    expect(processingJobsMock.rehydrateFailedJobs).not.toHaveBeenCalled()
+  })
+
+  it('shows one snackbar per failure below the collapse threshold', () => {
+    visibleJobsMock = [makeFailedJob(1), makeFailedJob(2), makeFailedJob(3), makeFailedJob(4)]
+    render(<App />)
+
+    expect(screen.getByText('Processing failed: reason 1')).toBeInTheDocument()
+    expect(screen.getByText('Processing failed: reason 4')).toBeInTheDocument()
+    expect(screen.queryByText(/uploads failed/)).not.toBeInTheDocument()
+  })
+
+  it('keeps client-side upload failures out of the collapsed summary', () => {
+    visibleJobsMock = [1, 2, 3, 4, 5].map((id) => ({
+      ...makeFailedJob(id),
+      origin: 'live' as const,
+      serverFailed: undefined,
+    }))
+    render(<App />)
+
+    expect(screen.getByText('Processing failed: reason 1')).toBeInTheDocument()
+    expect(screen.queryByText(/uploads failed/)).not.toBeInTheDocument()
+  })
+
+  it('collapses five or more failures into one summary that opens the failed uploads list', async () => {
+    visibleJobsMock = [1, 2, 3, 4, 5].map(makeFailedJob)
+    render(<App />)
+
+    expect(screen.getByText('5 uploads failed.')).toBeInTheDocument()
+    expect(screen.queryByText('Processing failed: reason 1')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Details' }))
+    expect(await screen.findByRole('dialog', { name: 'Failed uploads' })).toBeInTheDocument()
+  })
+
+  it('dismisses every collapsed failure at once', () => {
+    visibleJobsMock = [1, 2, 3, 4, 5].map(makeFailedJob)
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss failed uploads' }))
+    expect(processingJobsMock.dismissJob.mock.calls.map(([id]) => id)).toEqual([1, 2, 3, 4, 5])
+  })
+})
+
 describe('App shell interactions', () => {
   beforeEach(resetFixtures)
 
@@ -1139,6 +1239,28 @@ describe('App grid file drops and reorder feedback', () => {
     fireEvent(window, dropEvent)
     expect(dropEvent.defaultPrevented).toBe(true)
     await waitFor(() => expect(screen.queryByText('File drag active')).not.toBeInTheDocument())
+  })
+
+  it('keeps a pending reorder refresh deferred while any drag surface is still active', async () => {
+    render(<App />)
+
+    // Start a Manage drag and queue a reorder refresh.
+    fireEvent.click(screen.getByRole('button', { name: 'Start manage drag' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Manage reorder complete' }))
+
+    // Start a Browse drag before the Manage drag finishes.
+    fireEvent.click(screen.getByRole('button', { name: 'Start browse drag' }))
+    fireEvent.click(screen.getByRole('button', { name: 'End manage drag' }))
+
+    // Refresh must still be deferred because the Browse drag is active.
+    expect(browseDataFns.refreshCategories).not.toHaveBeenCalled()
+    expect(browseDataFns.refreshUncategorizedImages).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'End browse drag' }))
+    await waitFor(() => {
+      expect(browseDataFns.refreshCategories).toHaveBeenCalled()
+      expect(browseDataFns.refreshUncategorizedImages).toHaveBeenCalled()
+    })
   })
 })
 
