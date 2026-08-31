@@ -24,6 +24,26 @@ Serve
      Thumbnail at /api/tiles/<source_id>/thumbnail.jpeg
 ```
 
+## Filename normalization
+
+Client-supplied filenames are normalized once at ingestion by
+`sanitize_upload_filename()` (`backend/app/filenames.py`) before they are
+persisted as `SourceImage.original_filename` or `AdminTask.original_filename`.
+It applies to single uploads, image replacement, bulk-import members (including
+ZIP entries), and filesystem-import archives, so the API, logs, span
+attributes, and processing error messages all show the same value.
+
+Normalization takes the basename (dropping `/` and `\` components), removes
+control characters and newlines, collapses whitespace runs to single spaces,
+NFC-normalizes unicode, truncates to the 500-character column limit, and falls
+back to `unnamed` when nothing usable remains. Spaces and non-ASCII characters
+are preserved, and the value is stored as plain text — markup is **not**
+HTML-escaped at ingestion; renderers escape.
+
+The on-disk copy is named from a UUID plus a bounded suffix
+(`storage_extension()`); a client suffix longer than 32 bytes falls back to
+`.bin`, so an over-long display name cannot produce an invalid path component.
+
 ## Status transitions
 
 | Status       | Progress | Description                                          |
