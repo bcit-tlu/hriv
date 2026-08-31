@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.49.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.48.0...frontend-v0.49.0) (2026-08-31)
+
+
+### Features
+
+* **feedback:** switch "Report Issue" to "Send Feedback" with email delivery ([#1126](https://github.com/bcit-tlu/hriv/issues/1126)) ([6b97615](https://github.com/bcit-tlu/hriv/commit/6b97615b6169dfc4ec113624eba03d751755f50f))
+
+
+### Bug Fixes
+
+* **backend/frontend:** surface source-image and bulk-import processing errors ([#1134](https://github.com/bcit-tlu/hriv/issues/1134)) ([79011d2](https://github.com/bcit-tlu/hriv/commit/79011d22e44576356f17b83de0eb457742e55eae))
+* **frontend:** apply drag-active guard to Manage Categories dialog ([#1129](https://github.com/bcit-tlu/hriv/issues/1129)) ([a3aa64f](https://github.com/bcit-tlu/hriv/commit/a3aa64f5f3bbbc12d025b3edc963ce29f4f54f49))
+* **frontend:** guard PeoplePage bulk save state against stale in-flight requests ([#1128](https://github.com/bcit-tlu/hriv/issues/1128)) ([f1b3abd](https://github.com/bcit-tlu/hriv/commit/f1b3abd48a611c284bc413656f841741412324f0))
+* **frontend:** surface failed image processing after reload ([#1142](https://github.com/bcit-tlu/hriv/issues/1142)) ([650687d](https://github.com/bcit-tlu/hriv/commit/650687d3db82483ccd5b349f3745f2ac8ae2d3d6))
+
 ## [0.48.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.47.0...frontend-v0.48.0) (2026-08-25)
 
 
