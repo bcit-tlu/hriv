@@ -16,12 +16,20 @@ from app.routers.users import (
     update_user,
     bulk_update_program,
     bulk_update_role,
+    bulk_update_active,
     bulk_delete_users,
     delete_user,
 )
 from fastapi import Response
 
-from app.schemas import UserCreate, UserUpdate, UserBulkUpdate, UserBulkRoleUpdate, UserBulkDelete
+from app.schemas import (
+    UserCreate,
+    UserUpdate,
+    UserBulkUpdate,
+    UserBulkRoleUpdate,
+    UserBulkActiveUpdate,
+    UserBulkDelete,
+)
 from app.serializers import user_to_mini_out, user_to_out
 
 
@@ -34,6 +42,7 @@ def _make_user(
     name: str = "Test User",
     email: str = "test@example.com",
     role: str = "student",
+    active: bool = True,
     programs: list | None = None,
     groups: list | None = None,
 ) -> SimpleNamespace:
@@ -44,6 +53,7 @@ def _make_user(
         email=email,
         password_hash="hashed",
         role=role,
+        active=active,
         programs=programs or [],
         groups=groups or [],
         metadata_=None,
@@ -64,6 +74,7 @@ def test_user_to_out_with_programs() -> None:
 def test_user_to_out_without_programs() -> None:
     user = _make_user()
     data = user_to_out(user)
+    assert data["active"] is True
     assert data["program_names"] == []
     assert data["program_ids"] == []
 
@@ -345,6 +356,17 @@ async def test_update_user_not_found() -> None:
     assert exc.value.status_code == 404
 
 
+async def test_update_user_self_deactivate_rejected() -> None:
+    admin = _make_user(id=7, role="admin", active=True)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=admin)
+
+    with pytest.raises(HTTPException) as exc:
+        await update_user(7, UserUpdate(active=False), admin, db)
+    assert exc.value.status_code == 400
+    assert "own account" in exc.value.detail
+
+
 async def test_update_user_with_password() -> None:
     user = _make_user()
 
@@ -520,6 +542,39 @@ async def test_bulk_update_role_not_found() -> None:
     with pytest.raises(HTTPException) as exc:
         await bulk_update_role(body, MagicMock(), db)
     assert exc.value.status_code == 404
+
+
+# ── Bulk Active Update ───────────────────────────────────
+
+
+async def test_bulk_update_active_success() -> None:
+    users = [_make_user(id=1, active=True), _make_user(id=2, email="two@example.com", active=True)]
+
+    async def mock_execute(_stmt):
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.unique.return_value.all.return_value = users
+        return mock_result
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=mock_execute)
+    db.commit = AsyncMock()
+
+    body = UserBulkActiveUpdate(user_ids=[1, 2], active=False)
+    result = await bulk_update_active(body, _make_user(id=99, role="admin"), db)
+
+    assert len(result) == 2
+    assert users[0].active is False
+    assert users[1].active is False
+
+
+async def test_bulk_update_active_self_deactivate_rejected() -> None:
+    db = AsyncMock()
+
+    body = UserBulkActiveUpdate(user_ids=[1, 2], active=False)
+    with pytest.raises(HTTPException) as exc:
+        await bulk_update_active(body, _make_user(id=1, role="admin"), db)
+    assert exc.value.status_code == 400
+    assert "own account" in exc.value.detail
 
 
 # ── Bulk Delete ──────────────────────────────────────────
