@@ -10,11 +10,25 @@
  * 6. Visibility toggle — renders toggle button, calls callback, correct icon states
  */
 
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+
+const apiMocks = vi.hoisted(() => ({
+  fetchImage: vi.fn(),
+}))
+
+vi.mock('../../src/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/api')>()
+  return {
+    ...actual,
+    fetchImage: apiMocks.fetchImage,
+  }
+})
+
 import ImageTile from '../../src/components/ImageTile'
 import { makeImage } from '../helpers/fixtures'
+import { resetTileTokenRenewalCacheForTests } from '../../src/tileTokenRenewal'
 
 const expectEffectiveOpacity = (element: Element | null, opacity: string) => {
   expect(element).toBeInTheDocument()
@@ -26,6 +40,11 @@ const expectEffectiveOpacity = (element: Element | null, opacity: string) => {
 // ---------------------------------------------------------------------------
 
 describe('ImageTile', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetTileTokenRenewalCacheForTests()
+  })
+
   // ─── Basic rendering ──────────────────────────────────────────────
 
   describe('basic rendering', () => {
@@ -39,6 +58,43 @@ describe('ImageTile', () => {
       const img = screen.getByAltText('Test Image')
       expect(img).toBeInTheDocument()
       expect(img).toHaveAttribute('src', '/thumbs/test.jpg')
+      expect(img).toHaveStyle({ height: '160px' })
+    })
+
+    it('renews an expired thumbnail URL once when the image fails to load', async () => {
+      apiMocks.fetchImage.mockResolvedValue({
+        id: 100,
+        name: 'Test Image',
+        thumb: '/thumbs/test.jpg?tile_token=fresh',
+        tile_sources: '/tiles/test.dzi?tile_token=fresh',
+        category_id: null,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 0,
+        metadata_extra: null,
+        version: 2,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '',
+        updated_at: '',
+      })
+      const onImageRenewed = vi.fn()
+      render(<ImageTile image={makeImage()} onClick={vi.fn()} onImageRenewed={onImageRenewed} />)
+      const img = screen.getByAltText('Test Image')
+
+      fireEvent.error(img)
+
+      await waitFor(() => expect(img).toHaveAttribute('src', '/thumbs/test.jpg?tile_token=fresh'))
+      expect(apiMocks.fetchImage).toHaveBeenCalledTimes(1)
+      expect(apiMocks.fetchImage).toHaveBeenCalledWith(100)
+      expect(onImageRenewed).toHaveBeenCalledWith(
+        expect.objectContaining({ thumb: '/thumbs/test.jpg?tile_token=fresh' }),
+      )
+
+      fireEvent.error(img)
+      expect(apiMocks.fetchImage).toHaveBeenCalledTimes(1)
     })
 
     it('calls onClick when the card is clicked', async () => {

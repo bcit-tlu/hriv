@@ -55,6 +55,7 @@ import {
   getCategoryHiddenStateInTree,
   isCategoryHiddenInTree,
   resolveCategoryPath,
+  updateImageInTree,
 } from './treeUtils'
 import UploadImageModal from './components/UploadImageModal'
 import { isAcceptedFile } from './fileUtils'
@@ -76,7 +77,8 @@ import {
   deleteGroup,
   userMessage,
 } from './api'
-import type { ApiUser } from './api'
+import type { ApiImage, ApiUser } from './api'
+import { mergeRenewedImageItemUrls } from './tileTokenRenewal'
 import MoveCategoryDialog from './components/MoveCategoryDialog'
 import MoveRestrictionConfirmDialog from './components/MoveRestrictionConfirmDialog'
 import FailedUploadsDialog from './components/FailedUploadsDialog'
@@ -1055,6 +1057,23 @@ export default function App() {
     [pushNavState],
   )
 
+  const handleImageRenewed = useCallback(
+    (img: ApiImage) => {
+      setCategories((prev) =>
+        updateImageInTree(prev, img.id, (current) => mergeRenewedImageItemUrls(current, img)),
+      )
+      setUncategorizedImages((prev) =>
+        prev.map((current) =>
+          current.id === img.id ? mergeRenewedImageItemUrls(current, img) : current,
+        ),
+      )
+      setSelectedImage((prev) =>
+        prev?.id === img.id ? mergeRenewedImageItemUrls(prev, img) : prev,
+      )
+    },
+    [setCategories, setUncategorizedImages],
+  )
+
   const navigateToCategory = useCallback((cat: Category) => {
     setPath((prev) => [...prev, cat])
   }, [])
@@ -1407,6 +1426,7 @@ export default function App() {
               onBulkImportStarted={handleBulkImportStarted}
               onUploadFailed={handleUploadFailed}
               onUploadOpenChange={setManageUploadOpen}
+              onImageRenewed={handleImageRenewed}
               onSearchProgram={(programName) => {
                 setSearchInitialQuery(programName)
                 setSearchInitialTypeFilter('program')
@@ -1622,6 +1642,8 @@ export default function App() {
                   tileSources={selectedImage.tileSources}
                   imageId={selectedImage.id}
                   categoryId={selectedImage.categoryId ?? undefined}
+                  onTileSourceRenewed={handleImageRenewed}
+                  onError={(message) => setErrorSnack(message)}
                   initialViewport={initialViewport}
                   onViewportChange={handleViewportChange}
                   measurement={selectedImageMeasurement}
@@ -1995,6 +2017,7 @@ export default function App() {
                 onDropFilesOnCategory={handleFilesDropOnCategory}
                 onImageClick={handleImageClick}
                 onEditImageDetails={setBrowseEditImage}
+                onImageRenewed={handleImageRenewed}
                 onFilesDrop={handleFilesDropOnGrid}
                 onGridDragOver={
                   canEditContent
@@ -2359,6 +2382,7 @@ export default function App() {
             image.id,
           )
         }}
+        onImageRenewed={handleImageRenewed}
         onSelectProgram={(programName) => {
           if (canEditContent) {
             setManageProgramFilter(programName)

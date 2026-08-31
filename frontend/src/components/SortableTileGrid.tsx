@@ -18,7 +18,7 @@ import type { Draggable } from '@dnd-kit/abstract'
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/react'
 
 import type { Category, Group, ImageItem, Program } from '../types'
-import type { TileOrderItemRef } from '../api'
+import type { ApiImage, TileOrderItemRef } from '../api'
 import type { ReorderDragContext } from '../tileOrdering'
 import { DndMonitor, logDrag } from '../dndInstrumentation'
 import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
@@ -219,6 +219,7 @@ export interface SortableTileGridProps {
 
   onImageClick: (img: ImageItem) => void
   onEditImageDetails?: (img: ImageItem) => void
+  onImageRenewed?: (image: ApiImage) => void
   onFilesDrop: (files: File[]) => void
   onGridDragOver?: React.DragEventHandler
   onGridDrop?: React.DragEventHandler
@@ -264,6 +265,7 @@ export default function SortableTileGrid({
   onDropFilesOnCategory,
   onImageClick,
   onEditImageDetails,
+  onImageRenewed,
   onFilesDrop,
   onGridDragOver,
   onGridDrop,
@@ -508,6 +510,7 @@ export default function SortableTileGrid({
           inheritedGroupIds={inheritedGroupIds}
           parentHidden={pathHiddenState.hidden}
           onDropFiles={canEditContent ? onDropFilesOnCategory : undefined}
+          onImageRenewed={onImageRenewed}
         />
       )
 
@@ -536,6 +539,7 @@ export default function SortableTileGrid({
       onSetCardImage,
       onEditCategoryName,
       onDropFilesOnCategory,
+      onImageRenewed,
     ],
   )
 
@@ -545,10 +549,11 @@ export default function SortableTileGrid({
         image={img}
         onClick={onImageClick}
         onEditDetails={canEditContent ? onEditImageDetails : undefined}
+        onImageRenewed={onImageRenewed}
         categoryHidden={pathHiddenState.hidden}
       />
     ),
-    [canEditContent, pathHiddenState, onImageClick, onEditImageDetails],
+    [canEditContent, pathHiddenState, onImageClick, onEditImageDetails, onImageRenewed],
   )
 
   const sensors = useMemo(
