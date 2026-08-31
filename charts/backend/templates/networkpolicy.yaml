@@ -1,0 +1,51 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "hriv-backend.fullname" . }}
+  labels:
+    {{- include "hriv-backend.labels" . | nindent 4 }}
+spec:
+  # API pods only — the worker deployment uses distinct selector labels
+  # (hriv-backend-worker) and accepts no ingress traffic.
+  podSelector:
+    matchLabels:
+      {{- include "hriv-backend.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    # Frontend proxy → API port (and the tiles sidecar when enabled).
+    # This is the only path application traffic is meant to take; it is
+    # what enforces "cluster-internal" for /api/metrics, which the
+    # frontend nginx blocks with a 404 at the edge (see
+    # docs/unauthenticated-routes.md).
+    - from:
+        - podSelector:
+            {{- toYaml .Values.networkPolicy.frontend.podSelector | nindent 12 }}
+          {{- with .Values.networkPolicy.frontend.namespaceSelector }}
+          namespaceSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      ports:
+        - port: http
+          protocol: TCP
+        {{- if .Values.tiles.enabled }}
+        - port: tiles
+          protocol: TCP
+        {{- end }}
+    # Metrics scraper (Prometheus via ServiceMonitor) → /api/metrics on
+    # the API port, scraped directly from the pods.
+    - from:
+        - namespaceSelector:
+            {{- toYaml .Values.networkPolicy.metricsScraper.namespaceSelector | nindent 12 }}
+          {{- with .Values.networkPolicy.metricsScraper.podSelector }}
+          podSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      ports:
+        - port: http
+          protocol: TCP
+    {{- with .Values.networkPolicy.extraIngress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}

@@ -315,6 +315,43 @@ feedback:
 vault:
   enabled: false
 
+# ── NetworkPolicy ─────────────────────────────────────────────
+# Restricts ingress to the API pods so only the frontend proxy and the
+# metrics scraper can reach the backend Service. This is the enforcement
+# layer that makes the "cluster-internal" /api/metrics route real (the
+# frontend nginx already 404s it at the edge; without this policy any
+# in-cluster client can read it) — see docs/unauthenticated-routes.md
+# (added in PR #1151).
+# Disabled by default because the peer selectors are cluster-specific;
+# enable it in the deployment overlay. Kubelet probes are unaffected.
+networkPolicy:
+  enabled: false
+  # Pods allowed to reach the API port (and the tiles sidecar port when
+  # tiles.enabled): the frontend proxy.
+  frontend:
+    podSelector:
+      matchLabels:
+        app.kubernetes.io/name: hriv-frontend
+    # Set when the frontend runs in another namespace, e.g.
+    #   matchLabels: { kubernetes.io/metadata.name: hriv-frontend-ns }
+    # Empty = same namespace only.
+    namespaceSelector: {}
+  # Prometheus scrapes /api/metrics directly from the pods (see
+  # observability.serviceMonitor). NOTE: NetworkPolicy cannot filter by
+  # HTTP path, so any pod matched here can reach every backend endpoint —
+  # keep the selection as narrow as possible. The default matches only
+  # Prometheus pods (kube-prometheus-stack labels) in the monitoring
+  # namespace; adjust both selectors to your cluster.
+  metricsScraper:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: monitoring
+    podSelector:
+      matchLabels:
+        app.kubernetes.io/name: prometheus
+  # Additional raw NetworkPolicy ingress rules appended verbatim.
+  extraIngress: []
+
 # Nginx sidecar for serving /api/tiles directly from the PVC,
 # bypassing the Python process.  Tiles are immutable and cache-friendly,
 # but they are authorized content: the sidecar validates an image-scoped
