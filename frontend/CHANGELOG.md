@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.51.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.50.0...frontend-v0.51.0) (2026-08-31)
+
+
+### Features
+
+* **frontend:** add people user activation controls ([#1149](https://github.com/bcit-tlu/hriv/issues/1149)) ([4a3391f](https://github.com/bcit-tlu/hriv/commit/4a3391f80309f6828617ca2ac163837881641ea7))
+* **frontend:** renew expired tile tokens in viewer and thumbnails ([#1165](https://github.com/bcit-tlu/hriv/issues/1165)) ([a6e920a](https://github.com/bcit-tlu/hriv/commit/a6e920a3f9f98b6fd775055d056046f5777c3b25))
+
+
+### Bug Fixes
+
+* address review follow-up issues ([#1167](https://github.com/bcit-tlu/hriv/issues/1167)) ([24aa09c](https://github.com/bcit-tlu/hriv/commit/24aa09cb5ee6a63de748183e360a3ec86494d7ca))
+* **frontend:** confirm restriction-changing moves on manage page ([#1164](https://github.com/bcit-tlu/hriv/issues/1164)) ([0ae6c90](https://github.com/bcit-tlu/hriv/commit/0ae6c904f4b11387320a018d33721ac1dee2aea5))
+* **frontend:** derive drawer story open-state reset during render ([#1158](https://github.com/bcit-tlu/hriv/issues/1158)) ([90f1695](https://github.com/bcit-tlu/hriv/commit/90f16955296f92558934465099be8762f96c042b))
+* **frontend:** guard page-level bulk add-to-groups state writes against stale in-flight saves ([#1156](https://github.com/bcit-tlu/hriv/issues/1156)) ([9e2716a](https://github.com/bcit-tlu/hriv/commit/9e2716ac5f930c1a91bff172043d641d6c1f3166))
+
 ## [0.50.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.49.0...frontend-v0.50.0) (2026-08-31)
 
 
