@@ -101,6 +101,34 @@ records `completed_at` (when the snapshot became restorable) in addition to
 `created_at`, and freshness checks use it. See
 [backup/README.md](../backup/README.md) for the full merge rules.
 
+Each run also gets its own snapshot identity,
+`hriv-backup-<YYYYMMDD-HHMMSS>-<8 hex chars>`, so two backups starting in the
+same second produce distinct archives, manifest sidecars, and blob keys. The
+timestamp prefix stays fixed-width and leading, so `list`, retention, and
+"latest snapshot" selection sort chronologically by the name (with the full name
+as tie-break) instead of by modification time; snapshots created under the old
+timestamp-only naming still list, sort, and restore. Archive uploads use
+`overwrite=False`, so a genuine key collision fails the run loudly rather than
+replacing an existing archive. Restore accepts a full archive name, a name
+without the `.tar.gz` suffix, or an unambiguous prefix such as the bare
+timestamp; ambiguous prefixes are rejected.
+
+### Archive staging and ephemeral storage
+
+Archives are built in `BACKUP_STAGING_DIR` (default `/backups/.staging`, on the
+backups PVC) and published with a same-filesystem rename, so a backup does not
+consume pod-local ephemeral storage proportional to the archive and does not
+need a second full copy to publish locally. Restores stage there too: the blob
+download and the extracted snapshot land in the same directory rather than in
+pod-local `/tmp`. Size the backups PVC for `retention count × archive size`
+plus one in-flight archive plus one extracted snapshot (uncompressed) for
+restores. If the staging directory is unusable the run degrades to pod-local
+`/tmp` and logs a warning;
+`charts/backup/values.yaml` sets explicit `ephemeral-storage` requests and
+limits so that fallback fails as a clear limit error rather than as node
+disk-pressure eviction. Staging directories left behind by an interrupted
+backup or restore are swept after 24 hours.
+
 ## Restore order and decision points
 
 After a failure or data loss, follow this order:

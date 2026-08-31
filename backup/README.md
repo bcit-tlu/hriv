@@ -41,8 +41,25 @@ docker compose --profile backup run --rm backup restore
 ### Restore a specific snapshot
 
 ```bash
-docker compose --profile backup run --rm backup restore hriv-backup-20260101-020000
+docker compose --profile backup run --rm backup restore hriv-backup-20260101-020000-9f3c1ab2
 ```
+
+A snapshot may be named by its full archive name, by its name without the
+`.tar.gz` suffix, or by an unambiguous prefix (for example the timestamp
+`hriv-backup-20260101-020000`). An ambiguous prefix is rejected rather than
+resolved arbitrarily.
+
+## Snapshot Naming
+
+Snapshots are named `hriv-backup-<YYYYMMDD-HHMMSS>-<8 hex chars>`, e.g.
+`hriv-backup-20260101-020000-9f3c1ab2`. The random suffix gives concurrent
+invocations distinct archives, manifests, and blob keys; the fixed-width
+timestamp prefix keeps lexical ordering chronological, so `list`, retention, and
+"latest snapshot" selection all sort by the timestamp in the name (with the full
+name as tie-break) rather than by file or blob modification time.
+
+Snapshots created before this scheme (timestamp only, no suffix) remain listable
+and restorable, and sort alongside suffixed names.
 
 ## What's in a Snapshot
 
@@ -100,17 +117,18 @@ For Longhorn-backed Kubernetes deployments, protect each volume according to its
 
 All settings are controlled via environment variables in `docker-compose.yml` or the Helm chart:
 
-| Variable                          | Default                                                   | Description                                                                        |
-| --------------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `DATABASE_URL`                    | `postgresql://hriv:hriv@db:5432/hriv`                     | PostgreSQL connection string                                                       |
-| `DATA_DIR`                        | `/data`                                                   | Path to the image data volume                                                      |
-| `BACKUP_CRON_SCHEDULE`            | `0 2 * * *`                                               | Cron expression for scheduled backups                                              |
-| `BACKUP_RETENTION_COUNT`          | `30`                                                      | Number of snapshots to keep (older ones are deleted)                               |
-| `BACKUP_STALE_HOURS`              | `26`                                                      | Freshness threshold for the `status` command before a backup is considered stale   |
-| `BACKUP_MODE`                     | `development` (docker-compose), `production` (Helm chart) | `development` = DB + source images + tiles; `production` = DB + source images only |
-| `AZURE_STORAGE_CONNECTION_STRING` | _(empty)_                                                 | Azure Blob Storage connection string                                               |
-| `AZURE_STORAGE_CONTAINER`         | _(empty)_                                                 | Azure Blob Storage container name                                                  |
-| `AZURE_BLOB_PREFIX`               | `hriv-backups`                                            | Blob name prefix (folder) inside the container                                     |
+| Variable                          | Default                                                   | Description                                                                                                                      |
+| --------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                    | `postgresql://hriv:hriv@db:5432/hriv`                     | PostgreSQL connection string                                                                                                     |
+| `DATA_DIR`                        | `/data`                                                   | Path to the image data volume                                                                                                    |
+| `BACKUP_CRON_SCHEDULE`            | `0 2 * * *`                                               | Cron expression for scheduled backups                                                                                            |
+| `BACKUP_RETENTION_COUNT`          | `30`                                                      | Number of snapshots to keep (older ones are deleted)                                                                             |
+| `BACKUP_STAGING_DIR`              | `/backups/.staging`                                       | Directory archives are built in before publication, and restores download/extract in; falls back to pod-local `/tmp` if unusable |
+| `BACKUP_STALE_HOURS`              | `26`                                                      | Freshness threshold for the `status` command before a backup is considered stale                                                 |
+| `BACKUP_MODE`                     | `development` (docker-compose), `production` (Helm chart) | `development` = DB + source images + tiles; `production` = DB + source images only                                               |
+| `AZURE_STORAGE_CONNECTION_STRING` | _(empty)_                                                 | Azure Blob Storage connection string                                                                                             |
+| `AZURE_STORAGE_CONTAINER`         | _(empty)_                                                 | Azure Blob Storage container name                                                                                                |
+| `AZURE_BLOB_PREFIX`               | `hriv-backups`                                            | Blob name prefix (folder) inside the container                                                                                   |
 
 ## Observability markers
 
@@ -199,15 +217,13 @@ and `persistence.tiles.*` keys. The old backend chart PVC named
 
 ### Pod Resources
 
-The chart sets explicit `resources` for the backup pod. Snapshots are staged on
-the pod filesystem before upload, so `ephemeral-storage` is requested rather
-than borrowed from the node: the request reserves scheduling headroom and the
-limit (8Gi by default) caps a runaway archive instead of letting it push the
-node into disk pressure. Raise both for a large source-image set or for
-`BACKUP_MODE=development`, which keeps generated tiles in the archive. Marker
-state and the lock sidecar live on the `/backups` PVC, so they do not consume
-ephemeral storage. There is no CPU limit — throttling a run mid-archive only
-makes it longer.
+The chart sets explicit `resources` for the backup pod. Snapshots are staged in
+`BACKUP_STAGING_DIR` on the `/backups` PVC, and marker state and the lock
+sidecar live there too, so neither scales with pod-local `ephemeral-storage`;
+the explicit request and limit exist so an unexpected `/tmp` fallback fails as
+a clear limit error rather than as node disk-pressure eviction. Raise them if
+you run with staging disabled, with a large source-image set, or with
+`BACKUP_MODE=development`, which keeps generated tiles in the archive.
 
 ### Local-Only Mode
 
