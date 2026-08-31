@@ -246,10 +246,15 @@ function CategoryTile({
           {cardImage ? (
             <RenewingThumbnail
               image={cardImage}
-              height="140"
               alt={category.label}
               onImageRenewed={onImageRenewed}
-              sx={{ objectFit: 'cover', objectPosition: 'center' }}
+              sx={{
+                display: 'block',
+                width: '100%',
+                height: 140,
+                objectFit: 'cover',
+                objectPosition: 'center',
+              }}
             />
           ) : (
             <Box

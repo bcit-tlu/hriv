@@ -55,6 +55,8 @@ interface MockViewer {
   open: ReturnType<typeof vi.fn>
   removeHandler: ReturnType<typeof vi.fn>
   destroy: ReturnType<typeof vi.fn>
+  preserveOverlays: boolean
+  activeOverlays: Set<HTMLElement>
   fire: (event: string, payload?: unknown) => void
 }
 
@@ -121,6 +123,7 @@ vi.mock('openseadragon', () => {
     const handlers = new Map<string, ((event: unknown) => void)[]>()
     const onceHandlers = new Map<string, ((event: unknown) => void)[]>()
     const container = document.createElement('div')
+    const activeOverlays = new Set<HTMLElement>()
     const viewer: MockViewer = {
       element: document.createElement('div'),
       container,
@@ -148,13 +151,17 @@ vi.mock('openseadragon', () => {
         onceHandlers.set(event, [...(onceHandlers.get(event) ?? []), handler])
       }),
       addControl: vi.fn((el: HTMLElement) => container.appendChild(el)),
-      addOverlay: vi.fn(),
+      addOverlay: vi.fn((element: HTMLElement) => activeOverlays.add(element)),
       updateOverlay: vi.fn(),
-      removeOverlay: vi.fn(),
+      removeOverlay: vi.fn((element: HTMLElement) => activeOverlays.delete(element)),
       setMouseNavEnabled: vi.fn(),
-      open: vi.fn(),
+      open: vi.fn(() => {
+        if (!viewer.preserveOverlays) activeOverlays.clear()
+      }),
       removeHandler: vi.fn(),
       destroy: vi.fn(),
+      preserveOverlays: false,
+      activeOverlays,
       fire: (event: string, payload?: unknown) => {
         for (const handler of handlers.get(event) ?? []) handler(payload)
         const once = onceHandlers.get(event) ?? []
@@ -604,6 +611,45 @@ describe('ImageViewer selection rectangles', () => {
     ])
     // Selection mode auto-exits after release
     expect(viewer().setMouseNavEnabled).toHaveBeenLastCalledWith(true)
+  })
+
+  it('preserves selection rectangles across a renewed tile-source open', async () => {
+    apiMocks.fetchImage.mockResolvedValue({
+      id: 7,
+      name: 'Fresh Image',
+      thumb: '/thumb.jpg?tile_token=fresh',
+      tile_sources: '/tiles.dzi?tile_token=fresh',
+      category_id: null,
+      copyright: null,
+      note: null,
+      active: true,
+      sort_order: 0,
+      metadata_extra: null,
+      version: 2,
+      width: null,
+      height: null,
+      file_size: null,
+      created_at: '',
+      updated_at: '',
+    })
+    render(<ImageViewer tileSources="/tiles.dzi?tile_token=stale" imageId={7} />)
+    const v = viewer()
+    drawRect()
+    expect(v.activeOverlays.size).toBe(1)
+
+    act(() => {
+      v.fire('tile-load-failed', {
+        message: '[downloadTileStart] Image load aborted or errored out.',
+        tileRequest: null,
+      })
+    })
+    await waitFor(() => expect(v.open).toHaveBeenCalledWith('/tiles.dzi?tile_token=fresh'))
+    act(() => v.fire('open'))
+
+    expect(v.activeOverlays.size).toBe(1)
+    expect(v.preserveOverlays).toBe(false)
+    act(() => buttonByTooltip('Clear all selection rectangles').options.onClick())
+    expect(v.activeOverlays.size).toBe(0)
   })
 
   it('constrains the rectangle to a square while shift is held', () => {

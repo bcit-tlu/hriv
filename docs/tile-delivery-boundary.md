@@ -148,9 +148,10 @@ client ──GET /api/tiles/<id>/…?tile_token=…──▶ frontend nginx ─�
   not expose HTTP status, so their generic load failure also triggers the
   bounded renewal path. Confirmed non-auth failures do not consume renewal
   attempts. The viewer preserves zoom, pan, and rotation across the swap,
-  limits renewal to two attempts per selected image, and reports an
-  unrecoverable refresh through the existing error UI. A response that
-  completes after the selected image changes is ignored.
+  retains existing selection rectangles and measurement labels, limits renewal
+  to two attempts per selected image, and reports an unrecoverable refresh
+  through the existing error UI. A response that completes after the selected
+  image changes is ignored.
 - **Thumbnail renewal is required too, not just the viewer.** `<img>`
   consumers (browse `CategoryTile`, `ManagePage` table, search results) may
   render a `thumb` URL long after its token expired, and the browse tree's

@@ -58,6 +58,7 @@ describe('ImageTile', () => {
       const img = screen.getByAltText('Test Image')
       expect(img).toBeInTheDocument()
       expect(img).toHaveAttribute('src', '/thumbs/test.jpg')
+      expect(img).toHaveStyle({ height: '160px' })
     })
 
     it('renews an expired thumbnail URL once when the image fails to load', async () => {

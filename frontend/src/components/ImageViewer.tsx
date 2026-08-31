@@ -277,7 +277,13 @@ export default function ImageViewer({
       }
       tileSourcesRef.current = fresh.tile_sources
       viewer.addOnceHandler('open', restorePendingRenewalViewport)
-      viewer.open(fresh.tile_sources as unknown as OpenSeadragon.TileSourceSpecifier)
+      const previousPreserveOverlays = Reflect.get(viewer, 'preserveOverlays')
+      Reflect.set(viewer, 'preserveOverlays', true)
+      try {
+        viewer.open(fresh.tile_sources as unknown as OpenSeadragon.TileSourceSpecifier)
+      } finally {
+        Reflect.set(viewer, 'preserveOverlays', previousPreserveOverlays)
+      }
       renewalFailureSurfacedRef.current = false
     } catch (err) {
       if (

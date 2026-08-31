@@ -52,10 +52,16 @@ function ImageTile({
       >
         <RenewingThumbnail
           image={image}
-          height="160"
           alt={image.name}
           onImageRenewed={onImageRenewed}
-          sx={{ width: '100%', objectFit: 'cover', objectPosition: 'center' }}
+          sx={{
+            display: 'block',
+            width: '100%',
+            height: 160,
+            flexShrink: 0,
+            objectFit: 'cover',
+            objectPosition: 'center',
+          }}
         />
         <CardContent sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
           <Box
