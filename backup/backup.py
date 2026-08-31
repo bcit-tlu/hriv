@@ -147,12 +147,28 @@ def _staging_root() -> Path | None:
     return root
 
 
+def _newest_mtime(entry: Path) -> float:
+    """Return the newest mtime of *entry* or anything beneath it."""
+    newest = entry.stat().st_mtime
+    for child in entry.rglob("*"):
+        try:
+            newest = max(newest, child.stat().st_mtime)
+        except OSError:
+            continue
+    return newest
+
+
 def _sweep_stale_staging(root: Path) -> None:
-    """Remove staging directories left behind by interrupted backups."""
+    """Remove staging directories left behind by interrupted backups.
+
+    A directory is only removed when nothing inside it has been touched for
+    ``_STALE_STAGING_HOURS``, so a long-running backup still writing into its
+    workspace is never swept out from under itself.
+    """
     cutoff = time.time() - _STALE_STAGING_HOURS * 3600
     for entry in root.glob(f"{_STAGING_PREFIX}*"):
         try:
-            if entry.stat().st_mtime >= cutoff:
+            if _newest_mtime(entry) >= cutoff:
                 continue
         except OSError:
             continue

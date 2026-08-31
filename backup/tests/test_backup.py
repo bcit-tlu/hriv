@@ -892,12 +892,27 @@ class StagingTestCase(_BackupTestCase):
             directory.mkdir()
             (directory / "archive.tar.gz").write_bytes(b"partial")
         old = (datetime.now(timezone.utc) - timedelta(hours=48)).timestamp()
+        os.utime(stale / "archive.tar.gz", (old, old))
         os.utime(stale, (old, old))
 
         backup._sweep_stale_staging(root)
 
         self.assertFalse(stale.exists())
         self.assertTrue(fresh.exists())
+
+    def test_sweep_stale_staging_keeps_directory_with_recent_contents(self):
+        self._reload({})
+        root = self.local_dir / ".staging"
+        root.mkdir()
+        active = root / f"{backup._STAGING_PREFIX}active"
+        active.mkdir()
+        (active / "archive.tar.gz").write_bytes(b"still being written")
+        old = (datetime.now(timezone.utc) - timedelta(hours=48)).timestamp()
+        os.utime(active, (old, old))
+
+        backup._sweep_stale_staging(root)
+
+        self.assertTrue(active.exists())
 
 
 class NameDerivedRetentionTestCase(_BackupTestCase):
