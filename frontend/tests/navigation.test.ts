@@ -2,7 +2,16 @@ import { describe, it, expect } from 'vitest'
 import { getNavigationItems } from '../src/navigation'
 import type { NavigationItem } from '../src/navigation'
 
-const ALL_IDS = ['home', 'images', 'categories', 'programs', 'groups', 'announcement', 'people', 'admin']
+const ALL_IDS = [
+  'home',
+  'images',
+  'categories',
+  'programs',
+  'groups',
+  'announcement',
+  'people',
+  'admin',
+]
 
 describe('getNavigationItems', () => {
   it('returns all items for admin (canEditContent + canManageUsers)', () => {
