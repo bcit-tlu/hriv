@@ -35,6 +35,7 @@ from app.processing import (
     select_rebuild_targets,
     tiles_present_on_disk,
 )
+from app.models import SourceImage
 
 
 # ── ProgressTracker tests ────────────────────────────────
@@ -180,14 +181,77 @@ def test_processing_failure_message_for_pyvips_enospc() -> None:
     )
 
 
-def test_processing_failure_message_generic() -> None:
-    """Non-ENOSPC failures keep the generic operator messages."""
+def test_processing_failure_message_includes_exception_text() -> None:
+    """Non-ENOSPC failures surface the underlying error text."""
     exc = Exception("something else broke")
     assert _processing_failure_message(exc) == (
-        "Tile generation failed. Check server logs."
+        "Tile generation failed: something else broke"
     )
     assert _processing_failure_message(exc, replacement=True) == (
-        "Image replacement failed. Check server logs."
+        "Image replacement failed: something else broke"
+    )
+
+
+def test_processing_failure_message_for_unreadable_image() -> None:
+    """A corrupt/unreadable image keeps the libvips diagnosis, minus paths."""
+    exc = Exception(
+        "unable to call dzsave\n  /srv/hriv/source-images/broken.tif: "
+        "is not a known file format"
+    )
+    assert _processing_failure_message(exc) == (
+        "Tile generation failed: unable to call dzsave broken.tif: "
+        "is not a known file format"
+    )
+
+
+def test_processing_failure_message_uses_uploaded_filename() -> None:
+    """The generated storage name is swapped for the name the admin uploaded."""
+    src = SourceImage(
+        original_filename="slide-a.tif",
+        stored_path="/srv/hriv/source-images/7bdf96e6.tif",
+        status="failed",
+    )
+    exc = Exception(
+        'unable to load from file /srv/hriv/source-images/7bdf96e6.tif\n'
+        '  VipsForeignLoad: "7bdf96e6.tif" is not a known file format'
+    )
+    assert _processing_failure_message(exc, src=src) == (
+        "Tile generation failed: unable to load from file slide-a.tif "
+        'VipsForeignLoad: "slide-a.tif" is not a known file format'
+    )
+
+
+def test_processing_failure_message_redacts_paths_with_spaces() -> None:
+    """Paths containing spaces or non-ASCII segments are reduced to a basename."""
+    exc = Exception("/srv/hriv/source images/échantillon 1.tif: unsupported")
+    assert _processing_failure_message(exc) == (
+        "Tile generation failed: échantillon 1.tif: unsupported"
+    )
+
+
+def test_processing_failure_message_redacts_each_path_separately() -> None:
+    """Prose between two absolute paths survives redaction."""
+    exc = Exception(
+        "copy /srv/hriv/source images/a.tif failed reading "
+        "/var/lib/hriv/tiles/b.dzi: permission denied"
+    )
+    assert _processing_failure_message(exc) == (
+        "Tile generation failed: copy a.tif failed reading b.dzi: permission denied"
+    )
+
+
+def test_processing_failure_message_truncates_long_details() -> None:
+    """Very long error text is truncated instead of flooding the snackbar."""
+    message = _processing_failure_message(Exception("x" * 500))
+    detail = message.removeprefix("Tile generation failed: ")
+    assert len(detail) == 300
+    assert detail.endswith("…")
+
+
+def test_processing_failure_message_without_text() -> None:
+    """An exception with no message falls back to its type name."""
+    assert _processing_failure_message(RuntimeError()) == (
+        "Tile generation failed: RuntimeError"
     )
 
 

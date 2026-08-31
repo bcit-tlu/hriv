@@ -801,6 +801,40 @@ async def test_replace_image_success(
 @patch("os.path.getsize", return_value=1024)
 @patch("os.makedirs")
 @patch("builtins.open", new_callable=MagicMock)
+async def test_replace_image_normalizes_original_filename(
+    mock_open: MagicMock,
+    mock_makedirs: MagicMock,
+    mock_getsize: MagicMock,
+) -> None:
+    """The replacement path stores a normalized client-supplied filename."""
+    mock_enqueue = AsyncMock(return_value=EnqueueResult("queued", "submitted"))
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=_make_image())
+    db.add = MagicMock()
+    db.refresh = AsyncMock()
+
+    file = _make_upload_file(filename="../tmp/<img src=x>\n.jpg")
+
+    with patch.dict("sys.modules", {
+        "app.processing": MagicMock(process_replace_image=MagicMock()),
+        "app.worker": MagicMock(enqueue_replace_image=mock_enqueue),
+    }):
+        await replace_image(
+            image_id=1,
+            file=file,
+            background_tasks=MagicMock(),
+            _user=_make_user(),
+            db=db,
+        )
+
+    src = db.add.call_args.args[0]
+    assert src.original_filename == "<img src=x> .jpg"
+
+
+@patch("os.path.getsize", return_value=1024)
+@patch("os.makedirs")
+@patch("builtins.open", new_callable=MagicMock)
 async def test_replace_image_fallback_to_background_tasks(
     mock_open: MagicMock,
     mock_makedirs: MagicMock,

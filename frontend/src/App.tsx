@@ -81,6 +81,7 @@ import MoveCategoryDialog from './components/MoveCategoryDialog'
 import MoveRestrictionConfirmDialog from './components/MoveRestrictionConfirmDialog'
 import FailedUploadsDialog from './components/FailedUploadsDialog'
 import {
+  bulkImportErrorSummary,
   FAILURE_COLLAPSE_THRESHOLD,
   MAX_REHYDRATED_FAILURES,
   useProcessingJobs,
@@ -2612,7 +2613,13 @@ export default function App() {
                 <>
                   {job.kind === 'bulk-import'
                     ? `"${job.filename}" import completed${
-                        job.failedCount ? ` with ${job.failedCount} failed.` : ' successfully!'
+                        job.failedCount
+                          ? ` with ${job.failedCount} failed.${
+                              bulkImportErrorSummary(job.errors)
+                                ? ` ${bulkImportErrorSummary(job.errors)}`
+                                : ''
+                            }`
+                          : ' successfully!'
                       }`
                     : `"${job.filename}" processed successfully! `}
                   {job.imageId != null && (

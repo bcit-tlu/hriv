@@ -1,6 +1,7 @@
 """Tests for the upload router endpoints."""
 
 import errno
+import os
 import sys
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -316,3 +317,81 @@ async def test_upload_source_image_other_os_error(tmp_path) -> None:
             )
 
     assert exc.value.errno == errno.EACCES
+
+
+async def test_upload_source_image_normalizes_original_filename(tmp_path) -> None:
+    """Path components, control characters, and markup are normalized."""
+    file = AsyncMock()
+    file.filename = "../evil\ndir/<img src=x onerror=alert(1)>.png"
+    file.content_type = "image/png"
+    file.read = AsyncMock(side_effect=[b"fake-png-data", b""])
+
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    with patch("app.routers.upload.settings") as mock_settings:
+        mock_settings.source_images_dir = str(tmp_path)
+        await upload_source_image(
+            file=file,
+            background_tasks=MagicMock(),
+            _user=MagicMock(),
+            db=db,
+        )
+
+    src = db.add.call_args.args[0]
+    assert src.original_filename == "<img src=x onerror=alert(1)>.png"
+    assert src.stored_path.endswith(".png")
+
+
+async def test_upload_source_image_keeps_ordinary_filename(tmp_path) -> None:
+    file = AsyncMock()
+    file.filename = "Liver biopsy échantillon.tiff"
+    file.content_type = "image/tiff"
+    file.read = AsyncMock(side_effect=[b"fake-tiff-data", b""])
+
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    with patch("app.routers.upload.settings") as mock_settings:
+        mock_settings.source_images_dir = str(tmp_path)
+        await upload_source_image(
+            file=file,
+            background_tasks=MagicMock(),
+            _user=MagicMock(),
+            db=db,
+        )
+
+    src = db.add.call_args.args[0]
+    assert src.original_filename == "Liver biopsy échantillon.tiff"
+
+
+async def test_upload_source_image_bounds_stored_extension(tmp_path) -> None:
+    """A long client suffix must not produce an over-long on-disk name."""
+    long_suffix = "t" * 300
+    file = AsyncMock()
+    file.filename = f"slide.{long_suffix}"
+    file.content_type = "image/png"
+    file.read = AsyncMock(side_effect=[b"fake-png-data", b""])
+
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    with patch("app.routers.upload.settings") as mock_settings:
+        mock_settings.source_images_dir = str(tmp_path)
+        await upload_source_image(
+            file=file,
+            background_tasks=MagicMock(),
+            _user=MagicMock(),
+            db=db,
+        )
+
+    src = db.add.call_args.args[0]
+    assert src.original_filename == f"slide.{long_suffix}"
+    assert src.stored_path.endswith(".bin")
+    assert len(os.path.basename(src.stored_path)) <= 255

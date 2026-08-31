@@ -24,6 +24,26 @@ Serve
      Thumbnail at /api/tiles/<source_id>/thumbnail.jpeg
 ```
 
+## Filename normalization
+
+Client-supplied filenames are normalized once at ingestion by
+`sanitize_upload_filename()` (`backend/app/filenames.py`) before they are
+persisted as `SourceImage.original_filename` or `AdminTask.original_filename`.
+It applies to single uploads, image replacement, bulk-import members (including
+ZIP entries), and filesystem-import archives, so the API, logs, span
+attributes, and processing error messages all show the same value.
+
+Normalization takes the basename (dropping `/` and `\` components), removes
+control characters and newlines, collapses whitespace runs to single spaces,
+NFC-normalizes unicode, truncates to the 500-character column limit, and falls
+back to `unnamed` when nothing usable remains. Spaces and non-ASCII characters
+are preserved, and the value is stored as plain text — markup is **not**
+HTML-escaped at ingestion; renderers escape.
+
+The on-disk copy is named from a UUID plus a bounded suffix
+(`storage_extension()`); a client suffix longer than 32 bytes falls back to
+`.bin`, so an over-long display name cannot produce an invalid path component.
+
 ## Status transitions
 
 | Status       | Progress | Description                                          |
@@ -35,6 +55,18 @@ Serve
 | _(saving)_   | 90%      | Creating/updating Image record in DB                 |
 | `completed`  | 100%     | Image record created, tiles on disk                  |
 | `failed`     | —        | Error; `error_message` set on SourceImage            |
+
+### Failure messages
+
+`_processing_failure_message()` builds the persisted `error_message`. ENOSPC
+failures (including libvips write errors that carry the strerror text) become
+"Insufficient storage — the tiles volume is full"; every other failure keeps the
+underlying exception text after `Tile generation failed:` /
+`Image replacement failed:`, collapsed to one line, with absolute paths reduced
+to their basename, the generated storage name swapped for the uploaded
+filename, and the detail truncated to 300 characters. The frontend
+polls the source image and shows that message in the processing snackbar; for
+bulk imports the per-file entries of `BulkImportJob.errors` are listed instead.
 
 Progress values in the 10-78% range come from pyvips eval signal
 callbacks mapped via `ProgressTracker`. The async `_flush_progress()`
