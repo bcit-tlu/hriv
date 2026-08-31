@@ -15,13 +15,20 @@
 -- IDs 1–3 belong to other programs, the seed programs are still
 -- created with auto-assigned IDs and the name-based JOINs below
 -- can resolve them.
+--
+-- The first INSERT uses ON CONFLICT DO NOTHING without a conflict
+-- target so that BOTH id and name unique-constraint violations are
+-- tolerated (e.g. when 'Digital Design' already exists under a
+-- different ID).  The second INSERT catches the remaining case where
+-- the seed ID was occupied by another program and the seed name did
+-- not yet exist.
 
 INSERT INTO programs (id, name)
 VALUES
   (1, 'Administration'),
   (2, 'Digital Design'),
   (3, 'Photography')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 INSERT INTO programs (name)
 VALUES
