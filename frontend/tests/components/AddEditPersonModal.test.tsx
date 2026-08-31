@@ -15,6 +15,7 @@ const existingUser: ApiUser = {
   name: 'Test User',
   email: 'test@example.ca',
   role: 'student',
+  active: true,
   program_ids: [1],
   program_names: ['Medical Lab'],
   group_ids: [],
@@ -82,6 +83,7 @@ describe('AddEditPersonModal', () => {
         email: 'new@example.ca',
         password: 'secret123',
         role: 'student',
+        active: true,
       }),
     )
   })
@@ -110,6 +112,7 @@ describe('AddEditPersonModal', () => {
       expect.objectContaining({
         name: 'Updated Name',
         email: 'test@example.ca',
+        active: true,
       }),
     )
     // Password should not be in the data when left blank
@@ -216,5 +219,28 @@ describe('AddEditPersonModal', () => {
     resolveSave()
     await screen.findByRole('button', { name: 'Save' })
     expect(screen.getByRole('button', { name: 'Save' })).not.toBeDisabled()
+  })
+
+  it('can deactivate an account in edit mode', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn()
+    render(
+      <AddEditPersonModal
+        open
+        onClose={vi.fn()}
+        onSave={onSave}
+        programs={programs}
+        user={existingUser}
+      />,
+    )
+
+    await user.click(screen.getByLabelText('Account active'))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        active: false,
+      }),
+    )
   })
 })
