@@ -62,7 +62,7 @@ SELECT setval('categories_id_seq', GREATEST((SELECT MAX(id) FROM categories), 1)
 --       Gothic    -> (none — inherits via Italian -> Architecture)
 --     American    -> Digital Design               (narrows parent's set)
 --   Panoramas    -> Photography                   (independent parent)
---   Synthetic Monitoring -> Digital Design        (monitor account access)
+--   Synthetic Monitoring -> Administration        (monitor account access)
 --
 -- Clear seed-managed rows first so re-runs don't leave stale associations
 -- from previous seed versions (e.g. children that no longer have direct
@@ -77,7 +77,7 @@ WHERE category_id = (
 );
 
 INSERT INTO category_programs (category_id, program_id)
-SELECT c.id, p.id
+SELECT c.category_id, p.id
 FROM (VALUES
   (1, 'Digital Design'),   -- Architecture -> Digital Design  (parent restriction)
   (1, 'Photography'),      -- Architecture -> Photography     (parent restriction)
@@ -87,16 +87,16 @@ FROM (VALUES
 JOIN programs p ON p.name = c.program_name
 ON CONFLICT (category_id, program_id) DO NOTHING;
 
--- Synthetic Monitoring -> Digital Design (monitor account access).
+-- Synthetic Monitoring -> Administration (monitor account access).
 -- Resolved by label so the association targets the correct category and
 -- program even when seed_media.py created the category under a different
--- ID (e.g. ID 6 was taken) or Digital Design has a different program ID.
+-- ID (e.g. ID 6 was taken) or Administration has a different program ID.
 INSERT INTO category_programs (category_id, program_id)
 SELECT c.id, p.id
 FROM categories c
 CROSS JOIN programs p
 WHERE c.label = 'Synthetic Monitoring' AND c.parent_id IS NULL
-  AND p.name = 'Digital Design'
+  AND p.name = 'Administration'
 ON CONFLICT (category_id, program_id) DO NOTHING;
 
 -- ── Images ────────────────────────────────────────────────
@@ -157,7 +157,7 @@ SELECT 1, p.id FROM programs p WHERE p.name = 'Administration'
 ON CONFLICT (user_id, program_id) DO NOTHING;
 
 INSERT INTO user_programs (user_id, program_id)
-SELECT u.id, p.id
+SELECT u.user_id, p.id
 FROM (VALUES
   (2),  -- instructor
   (3),  -- student
@@ -165,4 +165,9 @@ FROM (VALUES
 ) AS u(user_id)
 CROSS JOIN programs p
 WHERE p.name = 'Digital Design'
+ON CONFLICT (user_id, program_id) DO NOTHING;
+
+-- The synthetic student must share the monitor category's program.
+INSERT INTO user_programs (user_id, program_id)
+SELECT 4, p.id FROM programs p WHERE p.name = 'Administration'
 ON CONFLICT (user_id, program_id) DO NOTHING;
