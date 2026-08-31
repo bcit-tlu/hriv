@@ -89,12 +89,16 @@ client ──GET /api/tiles/<id>/…?tile_token=…──▶ frontend nginx ─�
 ### Delivery layers
 
 1. **Kubernetes (sidecar enabled):** the tiles sidecar nginx adds
-   `auth_request /_tile_auth;` where `/_tile_auth` is an `internal` location
+   `auth_request /_tiles_auth;` where `/_tiles_auth` is an `internal` location
    proxying to the backend Service's `GET /api/tiles-auth` with
    `X-Original-URI` and the token. The validator is a constant-time HMAC
    check. An nginx `proxy_cache` on the internal auth location (key:
-   `$arg_tile_token`, TTL ≤ 60 s, cache 204 only) collapses the per-tile
-   subrequest storm to roughly one backend hit per image per minute.
+   `$tile_auth_token:$tile_image_id`, TTL ≤ 60 s, cache 204 only) collapses
+   the per-tile subrequest storm to roughly one backend hit per image per
+   minute. Token-only keying is unsafe: tokens are image-scoped, so a cached
+   204 for image A must not bypass the validator's wrong-image 403 for image
+   B; including the image id preserves that check while still sharing one
+   verdict across the image's descriptor, thumbnail, and tile hierarchy.
 2. **FastAPI fallback (dev/compose, sidecar disabled):** the unauthenticated
    `StaticFiles` mount in `main.py` is **removed**, replaced by a router route
    `GET /api/tiles/{source_image_id}/{path:path}` that validates the token and
@@ -127,9 +131,9 @@ client ──GET /api/tiles/<id>/…?tile_token=…──▶ frontend nginx ─�
   controls: separate OS/browser profiles or private-browsing sessions in
   labs. Revisit (e.g. `no-store` at the cost of re-fetch traffic) only if a
   concrete shared-workstation requirement emerges.
-- The `auth_request` subrequest cache (above) is keyed by token, never by
-  client identity, and stores only allow/deny — no image bytes are cached at
-  any shared layer.
+- The `auth_request` subrequest cache (above) is keyed by token plus
+  source-image id, never by client identity, and stores only allow/deny — no
+  image bytes are cached at any shared layer.
 
 ### Frontend
 
@@ -185,10 +189,10 @@ client ──GET /api/tiles/<id>/…?tile_token=…──▶ frontend nginx ─�
 | C3b delivery | Sidecar `auth_request` + auth cache + `private` cache-control (both proxy layers); frontend chart passthrough; helm regression checks                         | charts [#1163](https://github.com/bcit-tlu/hriv/pull/1163)   |
 | C3c frontend | 401/403 renewal path (viewer re-fetch + tile-source swap, thumbnail `onError` recovery), viewer tests                                                         | frontend [#1165](https://github.com/bcit-tlu/hriv/pull/1165) |
 
-Once the slices merge, the `/api/tiles` rows in
+With the backend validator/fallback route in C3a and sidecar enforcement in
+C3b, the `/api/tiles` rows in
 [`docs/unauthenticated-routes.md`](unauthenticated-routes.md) move from
-_mismatch_ to **app-credential** — that inventory update ships with the last
-slice to land, not separately.
+_mismatch_ to **app-credential**.
 
 Rollout: C3a ships the fallback route first (dev parity), C3b flips the
 sidecar; the chart change is gated on a backend version carrying

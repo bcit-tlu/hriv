@@ -353,7 +353,10 @@ networkPolicy:
   extraIngress: []
 
 # Nginx sidecar for serving /api/tiles directly from the PVC,
-# bypassing the Python process.  Tiles are immutable and cache-friendly.
+# bypassing the Python process.  Tiles are immutable and cache-friendly,
+# but they are authorized content: the sidecar validates an image-scoped
+# tile token on every request via nginx auth_request against the FastAPI
+# validator (GET /api/tiles-auth). See docs/tile-delivery-boundary.md.
 tiles:
   enabled: false
   nginx:
