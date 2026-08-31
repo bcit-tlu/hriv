@@ -3,13 +3,9 @@ name: Chromatic
 on:
   # Chromatic recommends push events so branch baselines are associated with
   # commits that actually exist in the repository rather than ephemeral PR
-  # merge commits.
+  # merge commits.  The pull_request event creates ephemeral merge commits
+  # that can cause incorrect baseline comparisons.
   push:
-    paths:
-      - 'frontend/**'
-  # pull_request events enable Chromatic patch builds that compare the PR
-  # branch against the base branch, powering UI Review on pull requests.
-  pull_request:
     paths:
       - 'frontend/**'
   workflow_dispatch:
@@ -24,13 +20,6 @@ jobs:
   chromatic:
     name: Run Chromatic visual tests
     runs-on: ubuntu-latest
-    # Skip for fork PRs: GitHub does not expose repository secrets to
-    # pull requests from forks, so CHROMATIC_PROJECT_TOKEN is empty.
-    # Push and workflow_dispatch events are unaffected (the fork check
-    # only evaluates true for pull_request events from external repos).
-    if: |
-      github.event_name != 'pull_request' ||
-      github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
     defaults:
       run:
         working-directory: frontend
@@ -56,3 +45,4 @@ jobs:
           projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
           workingDir: frontend
           buildScriptName: build-storybook
+          autoAcceptChanges: 'main'
