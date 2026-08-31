@@ -32,6 +32,13 @@ export interface ProcessingJob {
    * on load rather than observed live during this page session.
    */
   origin?: 'live' | 'rehydrated'
+  /**
+   * The backend reported this source image as `failed`, so the failure is
+   * persisted and will come back on the next load unless it is dismissed.
+   * Client-side failures (upload aborted, status tracking lost) are not
+   * persisted and must never suppress a later server-confirmed failure.
+   */
+  serverFailed?: boolean
   totalCount?: number
   completedCount?: number
   failedCount?: number
@@ -315,6 +322,7 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
                     status: 'failed' as const,
                     serverProgress: progress,
                     errorMessage: errorMessage || undefined,
+                    serverFailed: true,
                   }
                 : j,
             ),
@@ -669,6 +677,7 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
           status: 'failed' as const,
           kind: 'image' as const,
           origin: 'rehydrated' as const,
+          serverFailed: true,
           errorMessage: src.error_message ?? undefined,
           serverProgress: src.progress,
           fileSize: src.file_size ?? 0,
@@ -685,7 +694,7 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
   const dismissJob = useCallback((jobId: number) => {
     setProcessingJobs((prev) => {
       const job = prev.find((j) => j.id === jobId)
-      if (job && job.status === 'failed' && job.kind === 'image' && job.id > 0) {
+      if (job?.serverFailed && job.kind === 'image' && job.id > 0) {
         const dismissed = (dismissedFailuresRef.current ??= loadDismissedFailedUploads())
         dismissed.add(job.id)
         saveDismissedFailedUploads(dismissed)

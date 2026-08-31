@@ -287,6 +287,8 @@ interface ManagePageProps {
   programs: Program[]
   groups?: Group[]
   imagesVersion?: number
+  /** Drop the matching failure notification when a failed upload is dismissed. */
+  onDismissFailedUpload?: (sourceImageId: number) => void
   onViewImage?: (image: ApiImage) => void
   onNavigateCategory?: (categoryPath: Category[]) => void
   onCategoriesChanged?: () => void
@@ -330,6 +332,7 @@ export default function ManagePage({
   programs,
   groups = [],
   imagesVersion,
+  onDismissFailedUpload,
   onViewImage,
   onNavigateCategory,
   onCategoriesChanged,
@@ -2120,7 +2123,11 @@ export default function ManagePage({
         </DialogActions>
       </Dialog>
 
-      <FailedUploadsDialog open={failedUploadsOpen} onClose={() => setFailedUploadsOpen(false)} />
+      <FailedUploadsDialog
+        open={failedUploadsOpen}
+        onClose={() => setFailedUploadsOpen(false)}
+        onDismiss={onDismissFailedUpload}
+      />
 
       {/* Move image modal */}
       <MoveImageDialog

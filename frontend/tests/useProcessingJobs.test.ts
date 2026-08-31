@@ -701,6 +701,37 @@ describe('useProcessingJobs', () => {
       })
       expect(result.current.processingJobs.some((job) => job.status === 'uploading')).toBe(true)
     })
+
+    it('restores a failure whose lost status tracking was dismissed earlier', async () => {
+      const src = makeFailedSourceImage()
+      const deps = makeDeps({
+        fetchSourceImage: vi.fn().mockRejectedValue(new ApiError(401, 'Unauthorized')),
+        listFailedSourceImages: vi.fn().mockResolvedValue([src]),
+      })
+      const first = renderHook(() => useProcessingJobs(deps))
+
+      act(() => {
+        first.result.current.addProcessingJob(src.id, src.original_filename, 1234)
+      })
+      await act(async () => {
+        await flushMicrotasks()
+      })
+      expect(first.result.current.processingJobs[0]).toMatchObject({
+        status: 'failed',
+        errorMessage: expect.stringContaining('status tracking stopped'),
+      })
+
+      act(() => {
+        first.result.current.dismissJob(src.id)
+      })
+
+      // The server later confirms the failure, so it must still surface.
+      const second = renderHook(() => useProcessingJobs(deps))
+      await act(async () => {
+        await second.result.current.rehydrateFailedJobs()
+      })
+      expect(second.result.current.processingJobs).toHaveLength(1)
+    })
   })
 
   describe('getDisplayProgress', () => {

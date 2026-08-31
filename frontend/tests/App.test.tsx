@@ -210,6 +210,7 @@ function makeFailedJob(id: number): ProcessingJob {
     status: 'failed',
     kind: 'image',
     origin: 'rehydrated',
+    serverFailed: true,
     errorMessage: `Processing failed: reason ${id}`,
     serverProgress: 0,
     fileSize: 100,
@@ -989,6 +990,18 @@ describe('App failure notifications', () => {
 
     expect(screen.getByText('Processing failed: reason 1')).toBeInTheDocument()
     expect(screen.getByText('Processing failed: reason 4')).toBeInTheDocument()
+    expect(screen.queryByText(/uploads failed/)).not.toBeInTheDocument()
+  })
+
+  it('keeps client-side upload failures out of the collapsed summary', () => {
+    visibleJobsMock = [1, 2, 3, 4, 5].map((id) => ({
+      ...makeFailedJob(id),
+      origin: 'live' as const,
+      serverFailed: undefined,
+    }))
+    render(<App />)
+
+    expect(screen.getByText('Processing failed: reason 1')).toBeInTheDocument()
     expect(screen.queryByText(/uploads failed/)).not.toBeInTheDocument()
   })
 

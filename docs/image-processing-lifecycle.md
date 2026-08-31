@@ -276,6 +276,13 @@ source-image ids are persisted per user scope in `localStorage`
 dismissed failure does not return on the next reload. Five or more image
 failures collapse into a single `N uploads failed.` snackbar to avoid a pile-up.
 
+Only server-confirmed failures (`serverFailed`, set when the backend reports the
+`SourceImage` as `failed` and on rehydration) participate in dismissal
+persistence and in that collapse. Client-side failures — an aborted upload, or
+status tracking lost to an expired session while the server keeps working —
+keep their own snackbar and are never remembered, so they cannot suppress the
+genuine failure the backend may record later.
+
 Because a collapsed snackbar cannot show every filename, the **Failed uploads**
 dialog (`frontend/src/components/FailedUploadsDialog.tsx`) lists every failed
 source image with its filename, failure time, and persisted reason. It is

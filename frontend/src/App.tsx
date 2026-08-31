@@ -1005,9 +1005,14 @@ export default function App() {
   useEffect(() => {
     if (!canEditContent || !currentUser) return
     void rehydrateFailedJobs()
-  }, [canEditContent, currentUser, rehydrateFailedJobs])
+    // `page` retries the fetch on the next navigation when it failed; the hook
+    // itself is a no-op once a fetch has succeeded.
+  }, [canEditContent, currentUser, page, rehydrateFailedJobs])
 
-  const isImageFailure = (job: ProcessingJob) => job.status === 'failed' && job.kind === 'image'
+  // Only collapse failures the Failed uploads dialog can list, so a purely
+  // client-side upload failure never loses its filename and reason.
+  const isImageFailure = (job: ProcessingJob) =>
+    job.status === 'failed' && job.kind === 'image' && job.serverFailed === true
   const imageFailureJobs = visibleJobs.filter(isImageFailure)
   const collapseImageFailures = imageFailureJobs.length >= FAILURE_COLLAPSE_THRESHOLD
   const jobSnackbars = collapseImageFailures
@@ -1353,6 +1358,7 @@ export default function App() {
               programs={programs}
               groups={groups}
               imagesVersion={imagesVersion}
+              onDismissFailedUpload={dismissJob}
               onEditCategory={editCategoryInline}
               onToggleVisibility={toggleCategoryVisibility}
               onViewImage={(img) => {

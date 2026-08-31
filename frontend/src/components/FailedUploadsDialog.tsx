@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -40,16 +40,23 @@ export default function FailedUploadsDialog({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Discards responses from a superseded load (e.g. reopen while one is in flight).
+  const loadSeqRef = useRef(0)
+
   const load = useCallback(async () => {
+    const seq = ++loadSeqRef.current
     setLoading(true)
     setError(null)
     setDismissed(loadDismissedFailedUploads())
     try {
-      setFailures(await listSourceImages({ status: 'failed', limit: FAILED_UPLOADS_LIMIT }))
+      const rows = await listSourceImages({ status: 'failed', limit: FAILED_UPLOADS_LIMIT })
+      if (seq !== loadSeqRef.current) return
+      setFailures(rows)
     } catch (err) {
+      if (seq !== loadSeqRef.current) return
       setError(userMessage(err, 'Failed to load failed uploads'))
     } finally {
-      setLoading(false)
+      if (seq === loadSeqRef.current) setLoading(false)
     }
   }, [])
 
