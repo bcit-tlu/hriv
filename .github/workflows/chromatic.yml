@@ -30,7 +30,7 @@ jobs:
     # only evaluates true for pull_request events from external repos).
     if: |
       github.event_name != 'pull_request' ||
-      github.event.pull_request.head.repo.fork == false
+      github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]'
     defaults:
       run:
         working-directory: frontend
