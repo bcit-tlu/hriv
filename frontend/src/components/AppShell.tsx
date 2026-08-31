@@ -58,6 +58,7 @@ import FooterBar from './FooterBar'
 import AnnouncementBanner from './AnnouncementBanner'
 import type { Role } from '../types'
 import { useColorMode } from '../useColorMode'
+import { getNavigationItems, type NavigationIcon } from '../navigation'
 import {
   appBarAvatarSx,
   appBarClusterGap,
@@ -190,111 +191,87 @@ export default function AppShell(props: AppShellProps) {
     return 'Theme: Auto'
   }, [themePreference])
 
-  // Collapsed-nav menu, built as ordered sections. Empty sections are dropped
-  // and dividers are only inserted *between* non-empty sections, so the menu
-  // stays correct for any role combination (no leading/trailing/double
-  // dividers even if the role invariants change).
+  // The compact navigation menu consumes the shared navigation model so its
+  // labels, order, icons, and role visibility stay aligned with future
+  // navigation surfaces such as an AppBar or dedicated Drawer.
   const renderNavMenuItems = () => {
+    const iconFor = (icon: NavigationIcon): ReactNode => {
+      const icons: Record<NavigationIcon, ReactNode> = {
+        home: <HomeIcon fontSize="small" />,
+        images: <PhotoLibraryIcon fontSize="small" />,
+        categories: <FolderIcon fontSize="small" />,
+        programs: <SchoolIcon fontSize="small" />,
+        groups: <GroupsIcon fontSize="small" />,
+        announcement: <CampaignIcon fontSize="small" />,
+        people: <PeopleIcon fontSize="small" />,
+        admin: <AdminPanelSettingsIcon fontSize="small" />,
+      }
+      return icons[icon]
+    }
     const closeThen = (fn: () => void) => () => {
       setNavDrawerOpen(false)
       fn()
     }
-    // Icon + text per MUI's Menu composition (ListItemIcon + ListItemText).
-    // Icons give the tappable items a clear visual structure, so the icon-less
-    // uppercased ListSubheader unambiguously reads as a section label.
-    const makeItem = (
-      key: string,
-      label: string,
-      icon: ReactNode,
-      onClick: () => void,
-      selected = false,
-    ) => (
-      <MenuItem key={key} selected={selected} onClick={closeThen(onClick)}>
-        <ListItemIcon sx={{ minWidth: 36 }}>{icon}</ListItemIcon>
-        <ListItemText>{label}</ListItemText>
-      </MenuItem>
-    )
-    const sections: ReactNode[][] = []
+    const makeItem = (item: ReturnType<typeof getNavigationItems>[number]) => {
+      const handleClick = () => {
+        if (item.id === 'home') {
+          if (page === 'browse') {
+            onHomeClick()
+          } else {
+            onTabChange('browse')
+          }
+        } else if (item.id === 'images') {
+          onTabChange('manage')
+        } else if (item.id === 'categories') {
+          onOpenCategories()
+        } else if (item.id === 'programs') {
+          onOpenPrograms()
+        } else if (item.id === 'groups') {
+          onOpenGroups()
+        } else if (item.id === 'announcement') {
+          onOpenAnnouncement()
+        } else if (item.page) {
+          onTabChange(item.page)
+        }
+      }
 
-    const pages: ReactNode[] = [
-      makeItem(
-        'browse',
-        'Home',
-        <HomeIcon fontSize="small" />,
-        () => (page === 'browse' ? onHomeClick() : onTabChange('browse')),
-        page === 'browse',
-      ),
-    ]
-    if (canEditContent) {
-      pages.push(
-        makeItem(
-          'manage',
-          'Images',
-          <PhotoLibraryIcon fontSize="small" />,
-          () => onTabChange('manage'),
-          page === 'manage',
-        ),
+      return (
+        <MenuItem key={item.id} selected={item.page === page} onClick={closeThen(handleClick)}>
+          <ListItemIcon sx={{ minWidth: 36 }}>{iconFor(item.icon)}</ListItemIcon>
+          <ListItemText>{item.label}</ListItemText>
+        </MenuItem>
       )
     }
-    sections.push(pages)
 
-    if (canEditContent) {
-      const manage: ReactNode[] = [
-        <ListSubheader
-          key="manage-header"
-          sx={{
-            bgcolor: 'transparent',
-            lineHeight: '36px',
-            textTransform: 'uppercase',
-            letterSpacing: '0.14em',
-            fontWeight: 700,
-            fontSize: '0.875rem',
-            color: 'text.secondary',
-          }}
-        >
-          Manage
-        </ListSubheader>,
-        makeItem('categories', 'Categories', <FolderIcon fontSize="small" />, onOpenCategories),
-      ]
-      if (canManageUsers) {
-        manage.push(
-          makeItem('programs', 'Programs', <SchoolIcon fontSize="small" />, onOpenPrograms),
+    const sections = new Map<string, ReactNode[]>()
+    for (const item of getNavigationItems({ canEditContent, canManageUsers })) {
+      const section = sections.get(item.section) ?? []
+      section.push(makeItem(item))
+      sections.set(item.section, section)
+    }
+
+    return Array.from(sections.values()).flatMap((items, index) => {
+      if (index === 0) return items
+      if (sections.size > 1 && index === 1) {
+        items.unshift(
+          <ListSubheader
+            key="manage-header"
+            sx={{
+              bgcolor: 'transparent',
+              lineHeight: '36px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.14em',
+              fontWeight: 700,
+              fontSize: '0.875rem',
+              color: 'text.secondary',
+            }}
+          >
+            Manage
+          </ListSubheader>,
         )
       }
-      manage.push(
-        makeItem('groups', 'Groups', <GroupsIcon fontSize="small" />, onOpenGroups),
-        makeItem(
-          'announcement',
-          'Announcement',
-          <CampaignIcon fontSize="small" />,
-          onOpenAnnouncement,
-        ),
-      )
-      sections.push(manage)
-    }
-
-    if (canManageUsers) {
-      sections.push([
-        makeItem(
-          'people',
-          'People',
-          <PeopleIcon fontSize="small" />,
-          () => onTabChange('people'),
-          page === 'people',
-        ),
-        makeItem(
-          'admin',
-          'Admin',
-          <AdminPanelSettingsIcon fontSize="small" />,
-          () => onTabChange('admin'),
-          page === 'admin',
-        ),
-      ])
-    }
-
-    return sections.flatMap((items, i) =>
-      i === 0 ? items : [<Divider key={`nav-divider-${i}`} />, ...items],
-    )
+      return [<Divider key={`nav-divider-${index}`} />, ...items]
+    })
   }
 
   return (

@@ -185,6 +185,8 @@ The initial frontend setup now includes:
     visual regression review.
   - `@storybook/addon-a11y` provides the Accessibility panel for axe-based checks
     while browsing stories.
+  - `@storybook/addon-designs` provides a Design panel for linked Figma or web
+    references; the Drawer stories are linked to the mobile ideation design.
 - Frontend scripts: `npm run storybook`, `npm run build-storybook`,
   `npm run chromatic`, and `npm run test:storybook`.
 - GitHub Actions automation in `.github/workflows/chromatic.yml` publishes the
