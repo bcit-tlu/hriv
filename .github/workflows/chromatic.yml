@@ -7,6 +7,11 @@ on:
   push:
     paths:
       - 'frontend/**'
+  # pull_request events enable Chromatic patch builds that compare the PR
+  # branch against the base branch, powering UI Review on pull requests.
+  pull_request:
+    paths:
+      - 'frontend/**'
   workflow_dispatch:
 
 env:
