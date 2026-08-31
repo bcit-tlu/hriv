@@ -324,8 +324,9 @@ def _download_json_with_etag(
     """Return ``(document, etag, presence)`` for a JSON blob.
 
     ``presence`` is ``"missing"``, ``"exists"`` or ``"unknown"``. ``"unknown"``
-    means the blob could not be inspected, and the caller falls back to an
-    unconditional write so an observability update is never dropped entirely.
+    means the current document could not be established, so no conditional write
+    can be built from it; the caller retries rather than replacing a document it
+    was unable to merge with.
     """
     try:
         stream = container.download_blob(blob_name)
@@ -334,7 +335,7 @@ def _download_json_with_etag(
     except ResourceNotFoundError:
         return None, None, "missing"
     except Exception:
-        log.exception("Failed to read %s; writing unconditionally", blob_name)
+        log.exception("Failed to read %s", blob_name)
         return None, None, "unknown"
 
     if not isinstance(etag, str) or not etag:
@@ -363,11 +364,13 @@ def _commit_shared_json(
             container = _blob_container_client()
             for _ in range(_AZURE_CAS_ATTEMPTS):
                 existing, etag, presence = _download_json_with_etag(container, blob_name)
+                if presence == "unknown":
+                    continue
                 payload = json.dumps(merge(existing, incoming), indent=2).encode()
                 try:
                     if presence == "missing":
                         container.upload_blob(blob_name, io.BytesIO(payload), overwrite=False)
-                    elif presence == "exists":
+                    else:
                         container.upload_blob(
                             blob_name,
                             io.BytesIO(payload),
@@ -375,13 +378,11 @@ def _commit_shared_json(
                             etag=etag,
                             match_condition=MatchConditions.IfNotModified,
                         )
-                    else:
-                        container.upload_blob(blob_name, io.BytesIO(payload), overwrite=True)
                     return
                 except (ResourceExistsError, ResourceModifiedError):
                     # Another writer won the race; re-read and merge again.
                     continue
-            log.warning("Gave up updating %s after %d conflicts", label, _AZURE_CAS_ATTEMPTS)
+            log.warning("Gave up updating %s after %d attempts", label, _AZURE_CAS_ATTEMPTS)
             return
 
         with _state_lock():
@@ -423,17 +424,29 @@ def _merge_section(
     attempt_fields: tuple[str, ...],
     success_fields: tuple[str, ...],
 ) -> dict:
-    """Merge one attempt section, keeping the newest attempt and success."""
+    """Merge one attempt section, keeping the newest attempt and success.
+
+    A run may commit the same attempt more than once (the database archive key,
+    for example, is only known once the filesystem archive exists), so a write
+    from the run that already owns the record is applied even though its
+    ordering key is unchanged.
+    """
     merged = copy.deepcopy(existing)
 
-    if _attempt_sort_key(incoming) > _attempt_sort_key(existing):
+    incoming_key = _attempt_sort_key(incoming)
+    existing_key = _attempt_sort_key(existing)
+    same_attempt = incoming_key == existing_key and bool(incoming.get("run_id"))
+
+    if incoming_key > existing_key or same_attempt:
         for field in attempt_fields:
             merged[field] = incoming.get(field)
 
     incoming_success = _success_sort_key(incoming)
     existing_success = _success_sort_key(existing)
     if incoming_success is not None and (
-        existing_success is None or incoming_success > existing_success
+        existing_success is None
+        or incoming_success > existing_success
+        or (same_attempt and incoming_success == existing_success)
     ):
         for field in success_fields:
             merged[field] = incoming.get(field)

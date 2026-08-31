@@ -142,7 +142,9 @@ than a blind overwrite:
   update proceeds unlocked rather than stalling the backup.
 - Azure Blob Storage markers are updated with an ETag compare-and-set
   (`If-Not-Modified`) and re-merged on conflict, because a local lock cannot
-  coordinate writers that only share a storage account.
+  coordinate writers that only share a storage account. A marker whose current
+  contents cannot be read is retried rather than replaced, so an unreadable
+  blob costs an observability update instead of another run's result.
 
 Correctness comes from the merge rules rather than the lock:
 

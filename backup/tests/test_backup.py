@@ -332,14 +332,24 @@ class BackupRunTestCase(_BackupTestCase):
         uploaded_path = self.tmp / "uploaded.tar.gz"
         uploads: dict[str, bytes] = {}
 
-        def fake_upload_blob(blob_name, data, overwrite=True):
+        def fake_upload_blob(blob_name, data, overwrite=True, etag=None, match_condition=None):
             payload = data.read()
             uploads[blob_name] = payload
             if blob_name.endswith(".tar.gz"):
                 uploaded_path.write_bytes(payload)
 
+        def fake_download_blob(blob_name):
+            if blob_name not in uploads:
+                raise backup.ResourceNotFoundError("missing")
+            payload = uploads[blob_name]
+            return SimpleNamespace(
+                properties=SimpleNamespace(etag=f"etag-{len(payload)}"),
+                readall=lambda: payload,
+            )
+
         fake_container = MagicMock()
         fake_container.upload_blob = fake_upload_blob
+        fake_container.download_blob = fake_download_blob
         fake_container.list_blobs.return_value = []
         fake_container.delete_blob = MagicMock()
 
@@ -419,6 +429,7 @@ class BackupRunTestCase(_BackupTestCase):
         self.assertEqual(state["schema_version"], 2)
         self.assertTrue(state["filesystem"]["success"])
         self.assertEqual(state["filesystem"]["last_success_archive_key"], str(archive))
+        self.assertEqual(state["database"]["last_success_archive_key"], str(archive))
 
     def test_run_backup_marker_records_completion_and_per_type_success(self):
         self._reload(
@@ -809,6 +820,23 @@ class BackupStateMergeTestCase(unittest.TestCase):
         self.assertEqual(merged["database"]["run_id"], "newer")
         self.assertEqual(merged["database"]["last_success_archive_key"], "new-key")
         self.assertEqual(merged["snapshot_name"], "snap-newer")
+
+    def test_same_run_can_enrich_its_own_attempt_record(self):
+        # The database archive key is only known once the filesystem archive
+        # exists, so the owning run re-commits an attempt whose timestamps are
+        # already final.
+        attempt = _attempt(
+            "run-1", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True
+        )
+        stored = backup._merge_backup_state(None, _state("run-1", database=attempt))
+
+        enriched = copy.deepcopy(attempt)
+        enriched["archive_key"] = "snap.tar.gz"
+        enriched["last_success_archive_key"] = "snap.tar.gz"
+        merged = backup._merge_backup_state(stored, _state("run-1", database=enriched))
+
+        self.assertEqual(merged["database"]["archive_key"], "snap.tar.gz")
+        self.assertEqual(merged["database"]["last_success_archive_key"], "snap.tar.gz")
 
     def test_late_finishing_older_failure_cannot_regress_newer_success(self):
         newer_success = _state(
@@ -1343,7 +1371,7 @@ class AzureStateCommitTestCase(_BackupTestCase):
         self.assertTrue(any("Gave up" in message for message in logs.output))
         self.assertEqual(self._stored()["run_id"], "first")
 
-    def test_unreadable_blob_falls_back_to_unconditional_write(self):
+    def test_unparseable_blob_is_replaced_conditionally(self):
         self.store.blobs[self.blob_name] = b"{not json"
         self.store.etags[self.blob_name] = "etag-corrupt"
 
@@ -1351,6 +1379,60 @@ class AzureStateCommitTestCase(_BackupTestCase):
             self._write_state(_state("repaired"))
 
         self.assertEqual(self._stored()["run_id"], "repaired")
+        self.assertEqual(self.store.calls[-1][2], "etag-corrupt")
+
+    def test_failed_read_retries_instead_of_replacing_newer_state(self):
+        newer = _state(
+            "newer",
+            filesystem=_attempt(
+                "newer",
+                "2026-08-01T10:00:00+00:00",
+                "2026-08-01T10:05:00+00:00",
+                success=True,
+                archive_key="newer-key",
+            ),
+        )
+        self.store.seed(self.blob_name, newer)
+
+        reads = {"count": 0}
+        real_download = self.store.download_blob
+
+        def flaky_download(name):
+            reads["count"] += 1
+            if reads["count"] == 1:
+                raise RuntimeError("transient read failure")
+            return real_download(name)
+
+        with patch.object(self.store, "download_blob", side_effect=flaky_download):
+            self._write_state(
+                _state(
+                    "mine",
+                    database=_attempt(
+                        "mine",
+                        "2026-08-01T09:00:00+00:00",
+                        "2026-08-01T09:02:00+00:00",
+                        success=True,
+                        archive_key="my-key",
+                    ),
+                )
+            )
+
+        stored = self._stored()
+        self.assertEqual(stored["filesystem"]["last_success_archive_key"], "newer-key")
+        self.assertEqual(stored["database"]["last_success_archive_key"], "my-key")
+
+    def test_unreadable_blob_gives_up_without_clobbering(self):
+        self.store.seed(self.blob_name, _state("existing"))
+
+        with (
+            patch.object(self.store, "download_blob", side_effect=RuntimeError("unreadable")),
+            self.assertLogs("hriv-backup", level="WARNING") as logs,
+        ):
+            self._write_state(_state("mine"))
+
+        self.assertTrue(any("Gave up" in message for message in logs.output))
+        self.assertEqual(self.store.calls, [])
+        self.assertEqual(self._stored()["run_id"], "existing")
 
 
 if __name__ == "__main__":
