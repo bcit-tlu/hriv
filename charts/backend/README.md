@@ -127,9 +127,9 @@ parameter on every tile request:
   original URI's query string. 204 allows, 401 means missing/expired/tampered
   token, 403 means the token is bound to a different image.
 - Auth verdicts are cached in a `proxy_cache` zone (`tile_auth`, 1m keys,
-  8m max) keyed on `$arg_tile_token` — never on client identity. Valid (204)
-  verdicts are cached for 30 seconds (≤ 60s); 401/403 verdicts are not cached.
-  Requests without a token bypass the cache entirely.
+  8m max) keyed on `$arg_tile_token:$request_uri` — never on client identity.
+  Valid (204) verdicts are cached for 30 seconds (≤ 60s); 401/403 verdicts
+  are not cached. Requests without a token bypass the cache entirely.
 - Tile responses carry `Cache-Control: private, max-age=2592000` — browsers
   cache aggressively, but shared caches/CDNs must not store them.
 - `access_log off` on the tile and auth locations keeps tokens out of logs.
