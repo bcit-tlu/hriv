@@ -160,14 +160,23 @@ INSERT INTO user_programs (user_id, program_id)
 SELECT u.user_id, p.id
 FROM (VALUES
   (2),  -- instructor
-  (3),  -- student
-  (4)   -- synthetic student
+  (3)   -- student
 ) AS u(user_id)
 CROSS JOIN programs p
 WHERE p.name = 'Digital Design'
 ON CONFLICT (user_id, program_id) DO NOTHING;
 
 -- The synthetic student must share the monitor category's program.
+DELETE FROM user_programs
+WHERE user_id = (
+  SELECT id FROM users
+  WHERE email = 'synthetic.student@example.ca'
+);
+
 INSERT INTO user_programs (user_id, program_id)
-SELECT 4, p.id FROM programs p WHERE p.name = 'Administration'
+SELECT u.id, p.id
+FROM users u
+CROSS JOIN programs p
+WHERE u.email = 'synthetic.student@example.ca'
+  AND p.name = 'Administration'
 ON CONFLICT (user_id, program_id) DO NOTHING;

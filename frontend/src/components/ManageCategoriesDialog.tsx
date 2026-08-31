@@ -221,10 +221,13 @@ export default function ManageCategoriesDialog({
     () => flattenCategoryOptions(categories) as FlatOption[],
     [categories],
   )
-  const [optimisticOptions, setOptimisticOptions] = useState<{
+  type OptimisticOptions = {
+    id: number
     baseOptions: FlatOption[]
     options: FlatOption[]
-  } | null>(null)
+  }
+  const [optimisticOptions, setOptimisticOptions] = useState<OptimisticOptions | null>(null)
+  const optimisticOptionsRef = useRef<OptimisticOptions | null>(null)
   const options = useMemo(
     () =>
       optimisticOptions?.baseOptions === baseOptions
@@ -247,6 +250,7 @@ export default function ManageCategoriesDialog({
   const dragGenRef = useRef(0)
   const currentDragGenRef = useRef<number | null>(null)
   const activeDropGensRef = useRef<Set<number>>(new Set())
+  const optimisticIdRef = useRef(0)
 
   /** Set of category IDs whose ancestor is hidden (for cascading visibility). */
   const ancestorHiddenIds = useMemo(() => getAncestorHiddenIds(options), [options])
@@ -512,16 +516,32 @@ export default function ManageCategoriesDialog({
         )
 
         if (moves.length === 0 && scopes.length === 0) return
-        setOptimisticOptions({ baseOptions, options: newList })
+        const optimisticSnapshot = {
+          id: ++optimisticIdRef.current,
+          baseOptions,
+          options: newList,
+        }
+        optimisticOptionsRef.current = optimisticSnapshot
+        setOptimisticOptions(optimisticSnapshot)
         try {
           await onReorderTiles(moves, scopes)
         } catch {
           // Error/cancel is handled by the owner; revert the optimistic tree order.
-          setOptimisticOptions(null)
-          await onReorderComplete?.()
+          const ownsSnapshot = optimisticOptionsRef.current?.id === optimisticSnapshot.id
+          if (ownsSnapshot) {
+            optimisticOptionsRef.current = null
+            setOptimisticOptions(null)
+          }
+          if (ownsSnapshot || moves.length > 0) {
+            await onReorderComplete?.()
+          }
           return
         }
-        setOptimisticOptions(null)
+        const ownsSnapshot = optimisticOptionsRef.current?.id === optimisticSnapshot.id
+        if (ownsSnapshot) {
+          optimisticOptionsRef.current = null
+          setOptimisticOptions(null)
+        }
         // Success path: for pure reorders the coordinator persists
         // asynchronously and triggers the authoritative refresh itself once
         // the save commits (via its committed listener), so refreshing here
