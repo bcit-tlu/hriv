@@ -72,7 +72,7 @@ Audited at backend 0.48.0 / frontend 0.50.0 (2026-08-31).
 
 | Route | Current enforcement | Status |
 | --- | --- | --- |
-| `GET /api/metrics` | Frontend nginx returns 404 (`default.conf.template`); scraped in-cluster via ServiceMonitor against the ClusterIP Service | ⚠ **Partial.** The app itself is unauthenticated and there is no NetworkPolicy restricting the backend Service, so any in-cluster or port-forwarded client (and dev compose on `:8000`) reads queue depth, worker heartbeat age, and execution mode. Enforcement fix owned by #1079 part 2. |
+| `GET /api/metrics` | Frontend nginx returns 404 (`default.conf.template`); scraped in-cluster via ServiceMonitor against the ClusterIP Service | ⚠ **Partial.** The app itself is unauthenticated and there is no NetworkPolicy restricting the backend Service, so any in-cluster or port-forwarded client (and dev compose on `:8000`) reads queue depth, worker heartbeat age, and execution mode. Enforcement fix: opt-in backend NetworkPolicy in PR [#1160](https://github.com/bcit-tlu/hriv/pull/1160) (enable per deployment overlay). |
 
 ### FastAPI — mismatches (violate rule 3)
 
@@ -104,9 +104,10 @@ images, issues, programs, telemetry, tile-order, upload, users) are
   chart itself imposes **no** allowlist. Health/status routes are therefore
   publicly reachable through the ingress — accepted for probes per the table
   above, with the `/api/health/ready` cost caveat.
-- No NetworkPolicy restricts direct access to the backend Service (the
-  frontend chart ships one for itself only). Required for rule 4 to hold for
-  `/api/metrics`; owned by #1079 part 2.
+- `charts/backend` ships an opt-in NetworkPolicy (PR
+  [#1160](https://github.com/bcit-tlu/hriv/pull/1160)) restricting ingress to
+  the frontend proxy and the metrics-scraper namespace — required for rule 4
+  to hold for `/api/metrics`. Enable it in the deployment overlay.
 
 ### Development-only exposure (docker-compose)
 
@@ -128,10 +129,10 @@ it; hardening the default is tracked in a follow-up issue (see below).
 | Gap | Owner |
 | --- | --- |
 | Unauthenticated tile/thumbnail delivery (app mount + sidecar) | #1064, #1069 — in progress (Wave C) |
-| `/api/metrics` cluster-internal not enforced beyond frontend nginx 404 | #1079 part 2 |
-| `/api/health/ready` public DB/storage probe cost | follow-up issue |
-| Admin task-download token in query string | follow-up issue |
-| CORS wildcard + credentials default | follow-up issue |
+| `/api/metrics` cluster-internal not enforced beyond frontend nginx 404 | PR [#1160](https://github.com/bcit-tlu/hriv/pull/1160) (chart NetworkPolicy; enable in overlays) |
+| `/api/health/ready` public DB/storage probe cost | #1152 |
+| Admin task-download token in query string | #1153 |
+| CORS wildcard + credentials default | #1154 |
 
 ## Related
 
