@@ -26,6 +26,7 @@ export function useUserProfile(deps: UseUserProfileDeps) {
             name: currentUser.name,
             email: currentUser.email,
             role: currentUser.role,
+            active: currentUser.active,
             program_ids: currentUser.program_ids ?? [],
             program_names: currentUser.program_names ?? [],
             group_ids: currentUser.group_ids ?? [],

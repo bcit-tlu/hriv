@@ -400,6 +400,7 @@ export interface ApiUser {
   name: string
   email: string
   role: string
+  active: boolean
   program_ids: number[]
   program_names: string[]
   group_ids: number[]
@@ -729,6 +730,7 @@ export function createUser(body: {
   email: string
   role: string
   password: string
+  active?: boolean
   program_ids?: number[]
 }): Promise<ApiUser> {
   return request('/users/', {
@@ -743,6 +745,7 @@ export function updateUser(
     name?: string
     email?: string
     role?: string
+    active?: boolean
     password?: string
     program_ids?: number[]
   },
@@ -776,6 +779,17 @@ export function bulkUpdateUserRole(
   init?: RequestInit,
 ): Promise<ApiUser[]> {
   return request('/users/bulk/role', {
+    ...init,
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
+export function bulkUpdateUserActive(
+  body: { user_ids: number[]; active: boolean },
+  init?: RequestInit,
+): Promise<ApiUser[]> {
+  return request('/users/bulk/active', {
     ...init,
     method: 'PATCH',
     body: JSON.stringify(body),
