@@ -91,6 +91,20 @@ simultaneously (e.g. both `Current_Employee` → student and
    server or recorded in access logs. The frontend stores the token
    and cleans the URL.
 
+### Callback error codes (`#oidc_error=...`)
+
+When callback processing fails, the backend redirects to the frontend with an
+error code in the fragment. The login UI maps these codes to user-facing
+messages.
+
+- `client_misconfigured`
+- `provider_unreachable`
+- `token_exchange_failed`
+- `userinfo_failed`
+- `missing_claims`
+- `subject_mismatch`
+- `account_inactive` (the account exists but is deactivated by an admin)
+
 ---
 
 ## Database Changes

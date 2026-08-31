@@ -197,7 +197,7 @@ curl -s http://localhost:8000/api/categories/ -H "Authorization: Bearer $TOKEN"
 
 ## Test Case 7: User Management (Admin Only)
 
-**Purpose:** Verify admin can add and delete users.
+**Purpose:** Verify admin can add, deactivate/reactivate, and delete users.
 
 1. Login as `admin@example.ca` / `password` (admin).
 2. Click the People tab in the AppBar to open user management.
@@ -205,8 +205,14 @@ curl -s http://localhost:8000/api/categories/ -H "Authorization: Bearer $TOKEN"
 4. **Assert:** New user appears in the user list.
 5. Hard-refresh browser, reopen user management.
 6. **Assert:** New user persists after refresh.
-7. Delete the newly created user.
-8. **Assert:** User is removed from the list.
+7. Edit the user and set them to inactive.
+8. **Assert:** User status is shown as inactive in the People table.
+9. Attempt to log in as the inactive user.
+10. **Assert:** Login is rejected.
+11. Edit the user again and set them back to active.
+12. **Assert:** User can log in again.
+13. Delete the newly created user.
+14. **Assert:** User is removed from the list.
 
 ---
 
@@ -262,15 +268,19 @@ All endpoints except login require a valid JWT bearer token in the `Authorizatio
 | PATCH  | /api/images/{id}                                                                                          | Yes           | instructor                                                                  |
 | DELETE | /api/images/{id}                                                                                          | Yes           | instructor                                                                  |
 | DELETE | /api/images/bulk                                                                                          | Yes           | instructor                                                                  |
-| GET    | /api/tiles/{source_image_id}/{path}                                                                       | Yes           | valid tile token (image-scoped, from tokenized `tile_sources`/`thumb` URLs) |
-| GET    | /api/tiles-auth (nginx `auth_request` validator; 204/401/403)                                             | Yes           | valid tile token                                                            |
 | GET    | /api/tile-order                                                                                           | Yes           | instructor                                                                  |
 | PUT    | /api/tile-order                                                                                           | Yes           | instructor                                                                  |
+| GET    | /api/tiles/{source_image_id}/{path}                                                                       | Yes           | valid tile token (image-scoped, from tokenized `tile_sources`/`thumb` URLs) |
+| GET    | /api/tiles-auth (nginx `auth_request` validator; 204/401/403)                                             | Yes           | valid tile token                                                            |
 | GET    | /api/users/                                                                                               | Yes           | instructor                                                                  |
 | POST   | /api/users/                                                                                               | Yes           | admin                                                                       |
 | GET    | /api/users/{id}                                                                                           | Yes           | admin                                                                       |
 | PATCH  | /api/users/{id}                                                                                           | Yes           | admin                                                                       |
 | DELETE | /api/users/{id}                                                                                           | Yes           | admin                                                                       |
+| PATCH  | /api/users/bulk/program                                                                                   | Yes           | admin                                                                       |
+| PATCH  | /api/users/bulk/role                                                                                      | Yes           | admin                                                                       |
+| PATCH  | /api/users/bulk/active                                                                                    | Yes           | admin                                                                       |
+| DELETE | /api/users/bulk                                                                                           | Yes           | admin                                                                       |
 | GET    | /api/programs/                                                                                            | Yes           | student                                                                     |
 | GET    | /api/programs/{id}                                                                                        | Yes           | student                                                                     |
 | POST   | /api/programs/                                                                                            | Yes           | admin                                                                       |

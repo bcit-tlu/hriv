@@ -176,7 +176,7 @@ async def _get_user_from_token(
         raise credentials_exception
 
     user = await db.get(User, user_id)
-    if user is None:
+    if user is None or not user.active:
         raise credentials_exception
     return user
 

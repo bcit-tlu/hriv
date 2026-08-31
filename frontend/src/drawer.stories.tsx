@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
@@ -113,10 +113,20 @@ function DrawerExample(args: DrawerStoryArgs) {
 
   // Sync open state when Storybook controls change variant or initialOpen.
   // Without this, switching from closed/temporary to permanent (or toggling
-  // initialOpen) leaves the drawer in its previous state.
-  useEffect(() => {
+  // initialOpen) leaves the drawer in its previous state. Derived during
+  // render (prev-value pattern, as in AppShell) to satisfy
+  // react-hooks/set-state-in-effect.
+  const [prevControls, setPrevControls] = useState({
+    drawerVariant: args.drawerVariant,
+    initialOpen: args.initialOpen,
+  })
+  if (
+    prevControls.drawerVariant !== args.drawerVariant ||
+    prevControls.initialOpen !== args.initialOpen
+  ) {
+    setPrevControls({ drawerVariant: args.drawerVariant, initialOpen: args.initialOpen })
     setOpen(args.drawerVariant === 'permanent' || args.initialOpen)
-  }, [args.drawerVariant, args.initialOpen])
+  }
 
   const isHorizontal = args.anchor === 'top' || args.anchor === 'bottom'
   const drawerWidth = isHorizontal ? '100%' : args.width

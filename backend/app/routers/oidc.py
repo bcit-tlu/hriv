@@ -191,6 +191,7 @@ _OIDC_ERR_TOKEN_EXCHANGE_FAILED = "token_exchange_failed"
 _OIDC_ERR_USERINFO_FAILED = "userinfo_failed"
 _OIDC_ERR_MISSING_CLAIMS = "missing_claims"
 _OIDC_ERR_SUBJECT_MISMATCH = "subject_mismatch"
+_OIDC_ERR_ACCOUNT_INACTIVE = "account_inactive"
 
 
 def _oidc_callback_error(
@@ -492,6 +493,15 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
                             "existing_sub": user.oidc_subject,
                             "incoming_sub": sub,
                         },
+                        user=user,
+                    )
+                if not user.active:
+                    span.set_attribute("oidc.error_code", _OIDC_ERR_ACCOUNT_INACTIVE)
+                    span.set_status(StatusCode.ERROR, "inactive account")
+                    return _oidc_callback_error(
+                        _OIDC_ERR_ACCOUNT_INACTIVE,
+                        log_detail=f"email={email} inactive account",
+                        extra={"event": "oidc.account_inactive", "email": email},
                         user=user,
                     )
                 if not user.oidc_subject:
