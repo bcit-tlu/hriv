@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.48.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.47.0...backend-v0.48.0) (2026-08-31)
+
+
+### Features
+
+* add chromatic UI ([#1081](https://github.com/bcit-tlu/hriv/issues/1081)) ([a45ab2d](https://github.com/bcit-tlu/hriv/commit/a45ab2dcd3682fed7f7a5d685978b80cae230727))
+
 ## [0.47.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.46.0...backend-v0.47.0) (2026-08-31)
 
 
