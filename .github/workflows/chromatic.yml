@@ -5,9 +5,12 @@ on:
   # commits that actually exist in the repository rather than ephemeral PR
   # merge commits.  The pull_request event creates ephemeral merge commits
   # that can cause incorrect baseline comparisons.
+  #
+  # Do NOT add a paths filter here: Chromatic needs a build for every commit
+  # on every branch so UI Review always has a baseline on the target branch.
+  # Skipping commits via path filtering breaks the baseline chain and forces
+  # manual patch builds (see chromatic.com/docs/github-actions).
   push:
-    paths:
-      - 'frontend/**'
   workflow_dispatch:
 
 env:

@@ -34,6 +34,7 @@ import {
   deleteUser,
   bulkUpdateUserProgram,
   bulkUpdateUserRole,
+  bulkUpdateUserActive,
   bulkDeleteUsers,
   addGroupMembersBulk,
   userMessage,
@@ -91,10 +92,10 @@ function buildPeopleFilterSnapshot(
 }
 
 type SortableColumn =
-  'id' | 'name' | 'email' | 'role' | 'program' | 'group' | 'last_access' | 'created_at'
+  'id' | 'name' | 'email' | 'role' | 'active' | 'program' | 'group' | 'last_access' | 'created_at'
 type SortDirection = 'asc' | 'desc'
 type PeopleTableColumn =
-  'id' | 'name' | 'email' | 'role' | 'program' | 'group' | 'last_access' | 'created_at'
+  'id' | 'name' | 'email' | 'role' | 'active' | 'program' | 'group' | 'last_access' | 'created_at'
 
 const ROLES: Role[] = ['admin', 'instructor', 'student']
 const PEOPLE_COLUMN_OPTIONS: readonly ColumnVisibilityOption<PeopleTableColumn>[] = [
@@ -102,6 +103,7 @@ const PEOPLE_COLUMN_OPTIONS: readonly ColumnVisibilityOption<PeopleTableColumn>[
   { key: 'name', label: 'Name' },
   { key: 'email', label: 'Email' },
   { key: 'role', label: 'Role' },
+  { key: 'active', label: 'Status' },
   { key: 'program', label: 'Program' },
   { key: 'group', label: 'Groups' },
   { key: 'last_access', label: 'Last Accessed' },
@@ -112,6 +114,7 @@ const PEOPLE_DEFAULT_VISIBLE_COLUMNS: readonly PeopleTableColumn[] = [
   'name',
   'email',
   'role',
+  'active',
   'program',
   'group',
   'last_access',
@@ -194,6 +197,9 @@ export default function PeoplePage({
   const [editingUser, setEditingUser] = useState<ApiUser | null>(null)
   const [bulkEditOpen, setBulkEditOpen] = useState(false)
   const [bulkGroupOpen, setBulkGroupOpen] = useState(false)
+  const [bulkActiveOpen, setBulkActiveOpen] = useState(false)
+  const [bulkActive, setBulkActive] = useState<boolean>(true)
+  const [bulkActiveSaving, setBulkActiveSaving] = useState(false)
 
   // Bulk role dialog
   const [bulkRoleOpen, setBulkRoleOpen] = useState(false)
@@ -219,6 +225,7 @@ export default function PeoplePage({
   const bulkEditSaveTokenRef = useRef(0)
   const bulkGroupSaveTokenRef = useRef(0)
   const bulkRoleSaveTokenRef = useRef(0)
+  const bulkActiveSaveTokenRef = useRef(0)
 
   // Generation token and loading counter for loadData so an older fetch cannot
   // overwrite a newer one and loading state is correct across overlapping calls.
@@ -452,6 +459,9 @@ export default function PeoplePage({
         case 'role':
           cmp = a.role.localeCompare(b.role)
           break
+        case 'active':
+          cmp = Number(a.active) - Number(b.active)
+          break
         case 'program':
           cmp = a.program_names.join(', ').localeCompare(b.program_names.join(', '))
           break
@@ -571,6 +581,7 @@ export default function PeoplePage({
     name: string
     email: string
     role: Role
+    active: boolean
     password?: string
     program_ids?: number[]
   }) => {
@@ -582,6 +593,7 @@ export default function PeoplePage({
         name: data.name,
         email: data.email,
         role: data.role,
+        active: data.active,
         password: data.password,
         program_ids: data.program_ids,
       })
@@ -749,6 +761,38 @@ export default function PeoplePage({
     }
   }
 
+  // Bulk active update handler
+  const handleBulkActiveSave = async () => {
+    if (bulkActiveSaving) return
+    const token = ++bulkActiveSaveTokenRef.current
+    setBulkActiveSaving(true)
+    try {
+      await bulkUpdateUserActive({
+        user_ids: Array.from(selected),
+        active: bulkActive,
+      })
+      if (bulkActiveSaveTokenRef.current !== token) {
+        return
+      }
+      await loadData()
+      if (bulkActiveSaveTokenRef.current !== token) {
+        return
+      }
+      setBulkActiveOpen(false)
+      setSelected(new Set())
+      setSuccessSnack(`Users marked ${bulkActive ? 'active' : 'inactive'}.`)
+    } catch (err) {
+      console.error('Failed to bulk update active status', err)
+      if (bulkActiveSaveTokenRef.current === token) {
+        setErrorSnack(userMessage(err, 'Failed to update status. Please try again.'))
+      }
+    } finally {
+      if (bulkActiveSaveTokenRef.current === token) {
+        setBulkActiveSaving(false)
+      }
+    }
+  }
+
   // Bulk delete handler
   const handleBulkDelete = async () => {
     setBulkDeleting(true)
@@ -814,6 +858,14 @@ export default function PeoplePage({
                 onClick={() => setBulkGroupOpen(true)}
               >
                 Bulk Groups ({selected.size})
+              </Button>
+              <Button
+                variant="contained"
+                color="secondary"
+                size="small"
+                onClick={() => setBulkActiveOpen(true)}
+              >
+                Bulk Status ({selected.size})
               </Button>
               <Button
                 variant="contained"
@@ -1056,6 +1108,17 @@ export default function PeoplePage({
                     </TableSortLabel>
                   </TableCell>
                 )}
+                {isColumnVisible('active') && (
+                  <TableCell sortDirection={sortColumn === 'active' ? sortDirection : false}>
+                    <TableSortLabel
+                      active={sortColumn === 'active'}
+                      direction={sortColumn === 'active' ? sortDirection : 'asc'}
+                      onClick={() => handleSort('active')}
+                    >
+                      Status
+                    </TableSortLabel>
+                  </TableCell>
+                )}
                 {isColumnVisible('program') && (
                   <TableCell sortDirection={sortColumn === 'program' ? sortDirection : false}>
                     <TableSortLabel
@@ -1122,6 +1185,15 @@ export default function PeoplePage({
                   {isColumnVisible('name') && <TableCell>{user.name}</TableCell>}
                   {isColumnVisible('email') && <TableCell>{user.email}</TableCell>}
                   {isColumnVisible('role') && <TableCell>{user.role}</TableCell>}
+                  {isColumnVisible('active') && (
+                    <TableCell>
+                      <Chip
+                        label={user.active ? 'Active' : 'Inactive'}
+                        color={user.active ? 'success' : 'default'}
+                        size="small"
+                      />
+                    </TableCell>
+                  )}
                   {isColumnVisible('program') && (
                     <TableCell>
                       {user.program_names.length > 0 ? (
@@ -1252,6 +1324,59 @@ export default function PeoplePage({
         groups={groups}
         selectedCount={selected.size}
       />
+
+      {/* Bulk Status Update Dialog */}
+      <Dialog
+        open={bulkActiveOpen}
+        onClose={(_, reason) => {
+          if (bulkActiveSaving && (reason === 'backdropClick' || reason === 'escapeKeyDown')) {
+            return
+          }
+          if (bulkActiveSaving) {
+            return
+          }
+          bulkActiveSaveTokenRef.current++
+          setBulkActiveOpen(false)
+        }}
+        disableEscapeKeyDown={bulkActiveSaving}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Bulk Update Status</DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+          <Typography variant="body2" color="text.secondary">
+            Change account status for {selected.size} selected{' '}
+            {selected.size === 1 ? 'person' : 'people'}.
+          </Typography>
+          <FormControl fullWidth>
+            <Select
+              value={bulkActive ? 'active' : 'inactive'}
+              disabled={bulkActiveSaving}
+              onChange={(e: SelectChangeEvent) => setBulkActive(e.target.value === 'active')}
+            >
+              <MenuItem value="active">Active</MenuItem>
+              <MenuItem value="inactive">Inactive</MenuItem>
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            disabled={bulkActiveSaving}
+            onClick={() => {
+              if (bulkActiveSaving) {
+                return
+              }
+              bulkActiveSaveTokenRef.current++
+              setBulkActiveOpen(false)
+            }}
+          >
+            Cancel
+          </Button>
+          <Button onClick={handleBulkActiveSave} variant="contained" disabled={bulkActiveSaving}>
+            {bulkActiveSaving ? 'Saving...' : 'Save'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Bulk Role Update Dialog */}
       <Dialog

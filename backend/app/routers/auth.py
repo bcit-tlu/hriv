@@ -95,6 +95,25 @@ async def login(
             detail="Invalid email or password",
         )
 
+    if not user.active:
+        logger.warning(
+            "Login failed: account inactive",
+            extra={
+                "event": "auth.login_failed",
+                "user_email": body.email,
+                "user_id": user.id,
+                **auth_event_fields(
+                    method=AUTH_METHOD_LOCAL,
+                    outcome=AUTH_OUTCOME_FAILURE,
+                    user=user,
+                ),
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is inactive",
+        )
+
     user.last_access = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(user)
@@ -124,6 +143,7 @@ async def login(
         "name": user.name,
         "email": user.email,
         "role": user.role,
+        "active": user.active,
         "program_ids": [p.id for p in user.programs],
         "program_names": [p.name for p in user.programs],
         "group_ids": [g.id for g in user.groups],
@@ -156,6 +176,7 @@ async def get_me(
         name=current_user.name,
         email=current_user.email,
         role=current_user.role,
+        active=current_user.active,
         program_ids=[p.id for p in current_user.programs],
         program_names=[p.name for p in current_user.programs],
         group_ids=[g.id for g in current_user.groups],

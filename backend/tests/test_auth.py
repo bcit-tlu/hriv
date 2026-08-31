@@ -41,7 +41,7 @@ async def test_get_user_from_token_returns_user(
     monkeypatch.setattr(auth.auth_settings, "jwt_secret", "unit-test-secret")
     monkeypatch.setattr(auth.auth_settings, "jwt_algorithm", "HS256")
 
-    user = SimpleNamespace(id=42, email="person@example.com", role="student")
+    user = SimpleNamespace(id=42, email="person@example.com", role="student", active=True)
     token = auth.jwt.encode(
         {"sub": "42", "email": "person@example.com", "role": "student", "_epoch": auth.auth_settings.jwt_instance_epoch},
         "unit-test-secret",
@@ -76,7 +76,7 @@ async def test_get_user_from_token_rejects_scoped_tokens(
     )
 
     db = AsyncMock()
-    db.get.return_value = SimpleNamespace(id=7)
+    db.get.return_value = SimpleNamespace(id=7, active=True)
 
     with pytest.raises(HTTPException) as exc:
         await auth._get_user_from_token(token, db)  # type: ignore[arg-type]
@@ -119,7 +119,28 @@ async def test_get_user_from_token_rejects_stale_instance_epoch(
     )
 
     db = AsyncMock()
-    db.get.return_value = SimpleNamespace(id=1)
+    db.get.return_value = SimpleNamespace(id=1, active=True)
+
+    with pytest.raises(HTTPException) as exc:
+        await auth._get_user_from_token(token, db)  # type: ignore[arg-type]
+
+    assert exc.value.status_code == 401
+
+
+async def test_get_user_from_token_rejects_inactive_user(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(auth.auth_settings, "jwt_secret", "unit-test-secret")
+    monkeypatch.setattr(auth.auth_settings, "jwt_algorithm", "HS256")
+
+    token = auth.jwt.encode(
+        {"sub": "1", "email": "a@b.com", "role": "admin", "_epoch": auth.auth_settings.jwt_instance_epoch},
+        "unit-test-secret",
+        algorithm="HS256",
+    )
+
+    db = AsyncMock()
+    db.get.return_value = SimpleNamespace(id=1, active=False)
 
     with pytest.raises(HTTPException) as exc:
         await auth._get_user_from_token(token, db)  # type: ignore[arg-type]

@@ -12,6 +12,7 @@ vi.mock('../../src/api', async (importOriginal) => {
     deleteUser: vi.fn(),
     bulkUpdateUserProgram: vi.fn(),
     bulkUpdateUserRole: vi.fn(),
+    bulkUpdateUserActive: vi.fn(),
     bulkDeleteUsers: vi.fn(),
     addGroupMembersBulk: vi.fn(),
   }
@@ -24,6 +25,7 @@ import {
   deleteUser,
   bulkUpdateUserProgram,
   bulkUpdateUserRole,
+  bulkUpdateUserActive,
   bulkDeleteUsers,
   addGroupMembersBulk,
   ApiError,
@@ -65,6 +67,7 @@ const USERS = [
     name: 'Admin User',
     email: 'admin@example.ca',
     role: 'admin',
+    active: true,
     program_ids: [],
     program_names: [],
     group_ids: [],
@@ -79,6 +82,7 @@ const USERS = [
     name: 'Test Student',
     email: 'student@example.ca',
     role: 'student',
+    active: true,
     program_ids: [1],
     program_names: ['Medical Lab'],
     group_ids: [7],
@@ -249,6 +253,7 @@ describe('PeoplePage', () => {
     expect(screen.getByRole('columnheader', { name: 'Name' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Email' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Role' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Status' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Program' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Groups' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Last Accessed' })).toBeInTheDocument()
@@ -344,6 +349,86 @@ describe('PeoplePage', () => {
         expect.objectContaining({ signal: expect.any(AbortSignal) }),
       )
     })
+  })
+
+  it('opens bulk status dialog and calls API', async () => {
+    const user = userEvent.setup()
+    vi.mocked(bulkUpdateUserActive).mockResolvedValue(USERS)
+    render(<PeoplePage programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    const checkboxes = screen.getAllByRole('checkbox')
+    await user.click(checkboxes[1])
+
+    await user.click(screen.getByText('Bulk Status (1)'))
+    expect(screen.getByText('Bulk Update Status')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /save/i }))
+
+    await waitFor(() => {
+      expect(bulkUpdateUserActive).toHaveBeenCalledWith({
+        user_ids: [1],
+        active: true,
+      })
+    })
+  })
+
+  it('locks bulk status dialog while save is pending', async () => {
+    const user = userEvent.setup()
+    let resolveSave: ((value: typeof USERS) => void) | null = null
+    vi.mocked(bulkUpdateUserActive).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSave = resolve
+        }),
+    )
+    render(<PeoplePage programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    const checkboxes = screen.getAllByRole('checkbox')
+    await user.click(checkboxes[1])
+    await user.click(screen.getByText('Bulk Status (1)'))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(screen.getByRole('button', { name: 'Saving...' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled()
+    expect(screen.getByRole('combobox')).toHaveAttribute('aria-disabled', 'true')
+
+    await act(async () => {
+      resolveSave?.(USERS)
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByText('Bulk Update Status')).not.toBeInTheDocument()
+    })
+  })
+
+  it('re-enables bulk status dialog controls when save fails', async () => {
+    const user = userEvent.setup()
+    vi.mocked(bulkUpdateUserActive).mockRejectedValueOnce(new ApiError(500, 'boom'))
+    render(<PeoplePage programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    const checkboxes = screen.getAllByRole('checkbox')
+    await user.click(checkboxes[1])
+    await user.click(screen.getByText('Bulk Status (1)'))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Failed to update status. Please try again.')).toBeInTheDocument()
+    })
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled()
+    expect(screen.getByRole('combobox')).not.toHaveAttribute('aria-disabled', 'true')
   })
 
   it('opens bulk delete confirmation and calls API', async () => {
@@ -762,6 +847,25 @@ describe('PeoplePage', () => {
     ).toBeInTheDocument()
   })
 
+  it('renders inactive status chips', async () => {
+    vi.mocked(fetchUsers).mockResolvedValueOnce([
+      USERS[0],
+      {
+        ...USERS[1],
+        active: false,
+      },
+    ])
+    render(<PeoplePage programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Test Student')).toBeInTheDocument()
+    })
+
+    const studentRow = screen.getByText('Test Student').closest('tr')
+    expect(studentRow).not.toBeNull()
+    expect(within(studentRow as HTMLElement).getByText('Inactive')).toBeInTheDocument()
+  })
+
   it('opens bulk groups dialog and calls addGroupMembersBulk', async () => {
     const user = userEvent.setup()
     const apiGroup: ApiGroup = {
@@ -919,6 +1023,59 @@ describe('PeoplePage', () => {
     // The stale success must not surface a snackbar or reopen the dialog.
     expect(screen.queryByText('Bulk Add to Groups')).not.toBeInTheDocument()
     expect(screen.queryByText('Added to group(s).')).not.toBeInTheDocument()
+  })
+
+  it('does not close a reopened bulk group dialog or clear a new selection when a stale save settles', async () => {
+    const user = userEvent.setup()
+    const { promise, resolve } = createDeferred<ApiGroup>()
+    vi.mocked(addGroupMembersBulk).mockReturnValue(promise)
+    render(<PeoplePage programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    const checkboxes = screen.getAllByRole('checkbox')
+    await user.click(checkboxes[1])
+
+    await user.click(screen.getByText('Bulk Groups (1)'))
+    await user.click(screen.getByRole('combobox'))
+    await user.click(screen.getByRole('option', { name: 'Lab A2' }))
+    await user.keyboard('{Escape}')
+    await user.click(screen.getByRole('button', { name: 'Add to Groups' }))
+
+    // Dismiss the dialog while the request is still in flight.
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => {
+      expect(screen.queryByText('Bulk Add to Groups')).not.toBeInTheDocument()
+    })
+
+    // Make a new selection and reopen the dialog.
+    await user.click(checkboxes[2])
+    await user.click(screen.getByText('Bulk Groups (2)'))
+    expect(screen.getByText('Bulk Add to Groups')).toBeInTheDocument()
+
+    // Settle the abandoned request.
+    const apiGroup: ApiGroup = {
+      id: 7,
+      name: 'Lab A2',
+      description: null,
+      created_by_user_id: null,
+      member_ids: [1, 2],
+      instructor_ids: [],
+      created_at: '',
+      updated_at: '',
+    }
+    await act(async () => {
+      resolve(apiGroup)
+    })
+
+    // The stale save must not close the reopened dialog, clear the new
+    // selection, or surface a snackbar for the abandoned submission.
+    expect(screen.getByText('Bulk Add to Groups')).toBeInTheDocument()
+    expect(screen.queryByText('Added to group(s).')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.getByText('Bulk Groups (2)')).toBeInTheDocument()
   })
 
   it('does not overwrite newer user data when overlapping loadData fetches resolve in reverse order', async () => {
