@@ -87,6 +87,20 @@ cron loop without the two clobbering each other's temporary files. Backup and
 restore operations themselves are still not serialized; avoid running a restore
 while a backup is in flight.
 
+The state documents are also merged rather than replaced, so runs that finish out
+of order still converge on the newest result. Each update takes the latest shared
+document (an exclusive `flock` on `/backups/.hriv-backup-state.lock` for volume
+markers, an ETag compare-and-set for Azure Blob markers), applies its own
+attempt, and writes the result. Attempts are ordered by completion time, so a
+slower older run cannot overwrite a newer run's outcome and a late-finishing
+failure records the failure without erasing a newer success. A killed writer's
+lock is released by the kernel, and a lock that cannot be taken within 30 seconds
+makes the run skip the marker update instead of writing it unserialised, so state
+bookkeeping never blocks a backup and never drops another run's result. `LAST_SUCCESS.json` now
+records `completed_at` (when the snapshot became restorable) in addition to
+`created_at`, and freshness checks use it. See
+[backup/README.md](../backup/README.md) for the full merge rules.
+
 Each run also gets its own snapshot identity,
 `hriv-backup-<YYYYMMDD-HHMMSS>-<8 hex chars>`, so two backups starting in the
 same second produce distinct archives, manifest sidecars, and blob keys. The

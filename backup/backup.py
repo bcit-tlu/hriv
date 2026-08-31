@@ -16,6 +16,9 @@ Usage:
 
 from __future__ import annotations
 
+import contextlib
+import copy
+import fcntl
 import hashlib
 import io
 import json
@@ -30,12 +33,17 @@ import tarfile
 import tempfile
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
-from azure.core.exceptions import ResourceNotFoundError
+from azure.core import MatchConditions
+from azure.core.exceptions import (
+    ResourceExistsError,
+    ResourceModifiedError,
+    ResourceNotFoundError,
+)
 from azure.storage.blob import BlobServiceClient, ContainerClient
 from croniter import croniter
 
@@ -246,9 +254,468 @@ def _atomic_write_bytes(path: Path, payload: bytes) -> None:
     tmp_path.replace(path)
 
 
-def _new_backup_state(snapshot_name: str) -> dict:
+# ---------------------------------------------------------------------------
+# Shared observability state: coordination and ordering-aware merges
+#
+# Several backup or restore runs can be in flight at once (the cron loop plus
+# an on-demand ``kubectl exec`` invocation, or two containers sharing the
+# /backups volume). Every shared JSON document is therefore updated with a
+# read -> merge -> write cycle instead of a blind overwrite:
+#
+#   * local files are serialised with an advisory flock on a sidecar lock file
+#     that lives next to them on the /backups volume, so the lock is visible to
+#     every process sharing the volume and is released by the kernel when a
+#     writer is killed;
+#   * Azure blobs are updated with an ETag compare-and-set, because a local
+#     lock cannot coordinate writers that only share a storage account.
+#
+# The merge rules — not the lock — are what guarantee correctness: a slower or
+# older run can never overwrite a newer attempt record, and a failed run can
+# never erase a newer last-success record.
+# ---------------------------------------------------------------------------
+
+STATE_LOCK_FILENAME = ".hriv-backup-state.lock"
+BACKUP_STATE_SCHEMA_VERSION = 2
+RESTORE_STATE_SCHEMA_VERSION = 1
+_STATE_LOCK_TIMEOUT_SECONDS = 30.0
+_STATE_LOCK_POLL_SECONDS = 0.05
+_AZURE_CAS_ATTEMPTS = 5
+_MAX_ATTEMPT_HISTORY = 10
+_EPOCH = datetime.min.replace(tzinfo=timezone.utc)
+
+_ATTEMPT_FIELDS = (
+    "run_id",
+    "started_at",
+    "completed_at",
+    "success",
+    "duration_seconds",
+    "size_bytes",
+    "archive_key",
+)
+_LAST_SUCCESS_FIELDS = (
+    "last_success_started_at",
+    "last_success_completed_at",
+    "last_success_duration_seconds",
+    "last_success_size_bytes",
+    "last_success_archive_key",
+)
+_RESTORE_ATTEMPT_FIELDS = (
+    "run_id",
+    "started_at",
+    "completed_at",
+    "success",
+    "duration_seconds",
+    "archive_name",
+)
+_RESTORE_LAST_SUCCESS_FIELDS = (
+    "last_success_started_at",
+    "last_success_completed_at",
+    "last_success_duration_seconds",
+    "last_success_archive_name",
+)
+
+
+def _new_run_id() -> str:
+    return uuid.uuid4().hex
+
+
+def _parse_iso(value: object) -> datetime | None:
+    """Parse an ISO-8601 timestamp, assuming UTC when no offset is present."""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _state_lock_path() -> Path:
+    return _local_backup_dir() / STATE_LOCK_FILENAME
+
+
+@contextlib.contextmanager
+def _state_lock() -> Iterator[bool]:
+    """Hold an exclusive advisory lock on the shared state lock file.
+
+    Yields True when the lock was acquired. The lock is only ever held around a
+    read/merge/write of a few kilobytes, so a wait longer than
+    ``_STATE_LOCK_TIMEOUT_SECONDS`` means something is wedged; the caller then
+    abandons the update instead of racing an unserialised read/merge/write that
+    could drop another run's result.
+    """
+    path = _state_lock_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+    except OSError:
+        log.exception("Failed to open state lock %s", path)
+        yield False
+        return
+
+    try:
+        deadline = time.monotonic() + _STATE_LOCK_TIMEOUT_SECONDS
+        acquired = False
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(_STATE_LOCK_POLL_SECONDS)
+
+        if not acquired:
+            log.warning(
+                "Timed out after %.0fs waiting for %s",
+                _STATE_LOCK_TIMEOUT_SECONDS,
+                path,
+            )
+            yield False
+            return
+
+        try:
+            yield True
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
+
+def _read_json_file(path: Path) -> dict | None:
+    try:
+        if not path.exists():
+            return None
+        payload = json.loads(path.read_text())
+    except Exception:
+        log.exception("Failed to read %s", path)
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _download_json_with_etag(
+    container: ContainerClient,
+    blob_name: str,
+) -> tuple[dict | None, str | None, str]:
+    """Return ``(document, etag, presence)`` for a JSON blob.
+
+    ``presence`` is ``"missing"``, ``"exists"`` or ``"unknown"``. ``"unknown"``
+    means the current document could not be established, so no conditional write
+    can be built from it; the caller retries rather than replacing a document it
+    was unable to merge with.
+    """
+    try:
+        stream = container.download_blob(blob_name)
+        etag = getattr(getattr(stream, "properties", None), "etag", None)
+        raw = stream.readall()
+    except ResourceNotFoundError:
+        return None, None, "missing"
+    except Exception:
+        log.exception("Failed to read %s", blob_name)
+        return None, None, "unknown"
+
+    if not isinstance(etag, str) or not etag:
+        return None, None, "unknown"
+
+    try:
+        document = json.loads(raw)
+    except Exception:
+        log.warning("Ignoring unparseable %s; replacing it", blob_name)
+        return None, etag, "exists"
+
+    return (document if isinstance(document, dict) else None), etag, "exists"
+
+
+def _commit_shared_json(
+    *,
+    local_path: Path,
+    blob_name: str,
+    incoming: dict,
+    merge: Callable[[dict | None, dict], dict],
+    label: str,
+) -> None:
+    """Merge ``incoming`` into the shared document and store the result."""
+    try:
+        if _azure_configured():
+            container = _blob_container_client()
+            for _ in range(_AZURE_CAS_ATTEMPTS):
+                existing, etag, presence = _download_json_with_etag(container, blob_name)
+                if presence == "unknown":
+                    continue
+                payload = json.dumps(merge(existing, incoming), indent=2).encode()
+                try:
+                    if presence == "missing":
+                        container.upload_blob(blob_name, io.BytesIO(payload), overwrite=False)
+                    else:
+                        container.upload_blob(
+                            blob_name,
+                            io.BytesIO(payload),
+                            overwrite=True,
+                            etag=etag,
+                            match_condition=MatchConditions.IfNotModified,
+                        )
+                    return
+                except (ResourceExistsError, ResourceModifiedError):
+                    # Another writer won the race; re-read and merge again.
+                    continue
+            log.warning("Gave up updating %s after %d attempts", label, _AZURE_CAS_ATTEMPTS)
+            return
+
+        with _state_lock() as locked:
+            if not locked:
+                log.warning("Skipping %s update; state lock unavailable", label)
+                return
+            existing = _read_json_file(local_path)
+            payload = json.dumps(merge(existing, incoming), indent=2).encode()
+            _atomic_write_bytes(local_path, payload)
+    except Exception:
+        log.exception("Failed to write %s", label)
+
+
+def _attempt_sort_key(section: object) -> tuple[datetime, datetime, str]:
+    """Order attempt records by completion, then start, then run id.
+
+    A run that has finished always outranks one that merely started earlier, so
+    the record on disk describes the most recently *finished* attempt.
+    """
+    if not isinstance(section, dict):
+        return (_EPOCH, _EPOCH, "")
+    started = _parse_iso(section.get("started_at"))
+    completed = _parse_iso(section.get("completed_at"))
+    return (
+        completed or started or _EPOCH,
+        started or _EPOCH,
+        str(section.get("run_id") or ""),
+    )
+
+
+def _success_sort_key(section: object) -> datetime | None:
+    if not isinstance(section, dict):
+        return None
+    return _parse_iso(section.get("last_success_completed_at")) or _parse_iso(
+        section.get("last_success_started_at")
+    )
+
+
+def _merge_section(
+    existing: dict,
+    incoming: dict,
+    attempt_fields: tuple[str, ...],
+    success_fields: tuple[str, ...],
+) -> dict:
+    """Merge one attempt section, keeping the newest attempt and success.
+
+    A run may commit the same attempt more than once (the database archive key,
+    for example, is only known once the filesystem archive exists), so a write
+    from the run that already owns the record is applied even though its
+    ordering key is unchanged.
+    """
+    merged = copy.deepcopy(existing)
+
+    incoming_key = _attempt_sort_key(incoming)
+    existing_key = _attempt_sort_key(existing)
+    same_attempt = incoming_key == existing_key and bool(incoming.get("run_id"))
+
+    if incoming_key > existing_key or same_attempt:
+        for field in attempt_fields:
+            merged[field] = incoming.get(field)
+
+    incoming_success = _success_sort_key(incoming)
+    existing_success = _success_sort_key(existing)
+    if incoming_success is not None and (
+        existing_success is None
+        or incoming_success > existing_success
+        or (same_attempt and incoming_success == existing_success)
+    ):
+        for field in success_fields:
+            merged[field] = incoming.get(field)
+
+    return merged
+
+
+def _state_sort_key(state: object) -> tuple[datetime, datetime, str]:
+    if not isinstance(state, dict):
+        return (_EPOCH, _EPOCH, "")
+    return max(_attempt_sort_key(state.get(backup_type)) for backup_type in ("database", "filesystem"))
+
+
+def _attempt_history_entries(state: dict) -> list[dict]:
+    entries: list[dict] = []
+    for backup_type in ("database", "filesystem"):
+        section = state.get(backup_type)
+        if not isinstance(section, dict) or section.get("started_at") is None:
+            continue
+        entries.append(
+            {
+                "run_id": section.get("run_id") or state.get("run_id"),
+                "backup_type": backup_type,
+                "snapshot_name": state.get("snapshot_name"),
+                "started_at": section.get("started_at"),
+                "completed_at": section.get("completed_at"),
+                "success": section.get("success"),
+                "size_bytes": section.get("size_bytes"),
+                "archive_key": section.get("archive_key"),
+            }
+        )
+    return entries
+
+
+def _merge_attempt_history(existing: dict | None, incoming: dict) -> list[dict]:
+    """Return the newest ``_MAX_ATTEMPT_HISTORY`` attempts across both runs.
+
+    Per-run history survives concurrent writers, so a run whose attempt record
+    lost the freshness comparison is still visible for debugging. Candidates are
+    considered oldest document first, and an equal ordering key replaces the
+    entry held so far, so a run re-committing its own finished attempt (adding
+    the database ``archive_key``, say) enriches its history entry too.
+    """
+    history: dict[tuple[str, str], dict] = {}
+    candidates: list[dict] = []
+    if isinstance(existing, dict) and isinstance(existing.get("attempts"), list):
+        candidates.extend(entry for entry in existing["attempts"] if isinstance(entry, dict))
+    candidates.extend(_attempt_history_entries(incoming))
+
+    for entry in candidates:
+        key = (str(entry.get("run_id") or ""), str(entry.get("backup_type") or ""))
+        current = history.get(key)
+        if current is None or _attempt_sort_key(entry) >= _attempt_sort_key(current):
+            history[key] = entry
+
+    ordered = sorted(history.values(), key=_attempt_sort_key, reverse=True)
+    return ordered[:_MAX_ATTEMPT_HISTORY]
+
+
+def _merge_backup_state(existing: dict | None, incoming: dict) -> dict:
+    """Merge a backup observability state document.
+
+    Attempt records advance only for a strictly newer attempt, and
+    ``last_success_*`` fields advance only for a strictly newer success, so a
+    late-finishing failure cannot regress a newer success.
+    """
+    if (
+        not isinstance(existing, dict)
+        or existing.get("schema_version") != BACKUP_STATE_SCHEMA_VERSION
+    ):
+        merged = copy.deepcopy(incoming)
+        merged["attempts"] = _merge_attempt_history(None, incoming)
+        return merged
+
+    merged = copy.deepcopy(existing)
+    merged["schema_version"] = BACKUP_STATE_SCHEMA_VERSION
+
+    if _state_sort_key(incoming) >= _state_sort_key(existing):
+        for key in ("run_id", "snapshot_name", "backup_mode", "tiles_excluded", "storage_prefix"):
+            if key in incoming:
+                merged[key] = incoming[key]
+
+    for backup_type in ("database", "filesystem"):
+        incoming_section = incoming.get(backup_type)
+        if not isinstance(incoming_section, dict):
+            continue
+        existing_section = merged.get(backup_type)
+        if not isinstance(existing_section, dict):
+            merged[backup_type] = copy.deepcopy(incoming_section)
+            continue
+        merged[backup_type] = _merge_section(
+            existing_section,
+            incoming_section,
+            _ATTEMPT_FIELDS,
+            _LAST_SUCCESS_FIELDS,
+        )
+
+    merged["attempts"] = _merge_attempt_history(existing, incoming)
+    updated_candidates = [
+        value
+        for value in (
+            _parse_iso(existing.get("updated_at")),
+            _parse_iso(incoming.get("updated_at")),
+        )
+        if value is not None
+    ]
+    if updated_candidates:
+        merged["updated_at"] = max(updated_candidates).isoformat()
+    return merged
+
+
+def _merge_restore_state(existing: dict | None, incoming: dict) -> dict:
+    if (
+        not isinstance(existing, dict)
+        or existing.get("schema_version") != RESTORE_STATE_SCHEMA_VERSION
+    ):
+        return copy.deepcopy(incoming)
+
+    merged = copy.deepcopy(existing)
+    merged["schema_version"] = RESTORE_STATE_SCHEMA_VERSION
+    for purpose in ("operator", "test"):
+        incoming_purpose = incoming.get(purpose)
+        existing_purpose = merged.get(purpose)
+        if not isinstance(incoming_purpose, dict):
+            continue
+        if not isinstance(existing_purpose, dict):
+            merged[purpose] = copy.deepcopy(incoming_purpose)
+            continue
+        for restore_type in ("database", "filesystem"):
+            incoming_section = incoming_purpose.get(restore_type)
+            if not isinstance(incoming_section, dict):
+                continue
+            existing_section = existing_purpose.get(restore_type)
+            if not isinstance(existing_section, dict):
+                existing_purpose[restore_type] = copy.deepcopy(incoming_section)
+                continue
+            existing_purpose[restore_type] = _merge_section(
+                existing_section,
+                incoming_section,
+                _RESTORE_ATTEMPT_FIELDS,
+                _RESTORE_LAST_SUCCESS_FIELDS,
+            )
+    return merged
+
+
+def _marker_sort_key(marker: object) -> tuple[datetime, datetime, str]:
+    """Order last-success markers by completion time, then by snapshot time."""
+    if not isinstance(marker, dict):
+        return (_EPOCH, _EPOCH, "")
+    created = _parse_iso(marker.get("created_at"))
+    completed = _parse_iso(marker.get("completed_at"))
+    return (completed or created or _EPOCH, created or _EPOCH, str(marker.get("run_id") or ""))
+
+
+def _merge_marker_types(existing: object, incoming: object) -> dict:
+    merged: dict[str, dict] = {}
+    for source in (existing, incoming):
+        if not isinstance(source, dict):
+            continue
+        for backup_type, entry in source.items():
+            if not isinstance(entry, dict):
+                continue
+            current = merged.get(backup_type)
+            if current is None or _marker_sort_key(entry) > _marker_sort_key(current):
+                merged[backup_type] = copy.deepcopy(entry)
+    return merged
+
+
+def _merge_last_success_marker(existing: dict | None, incoming: dict) -> dict:
+    """Keep the newest overall marker plus the newest marker for each type."""
+    if not isinstance(existing, dict):
+        merged = copy.deepcopy(incoming)
+        merged["types"] = _merge_marker_types(None, incoming.get("types"))
+        return merged
+
+    if _marker_sort_key(incoming) >= _marker_sort_key(existing):
+        merged = copy.deepcopy(incoming)
+    else:
+        merged = copy.deepcopy(existing)
+    merged["types"] = _merge_marker_types(existing.get("types"), incoming.get("types"))
+    return merged
+
+
+def _new_backup_state(snapshot_name: str, run_id: str | None = None) -> dict:
     def _blank_section() -> dict[str, object]:
         return {
+            "run_id": None,
             "started_at": None,
             "completed_at": None,
             "success": None,
@@ -263,7 +730,8 @@ def _new_backup_state(snapshot_name: str) -> dict:
         }
 
     return {
-        "schema_version": 2,
+        "schema_version": BACKUP_STATE_SCHEMA_VERSION,
+        "run_id": run_id or _new_run_id(),
         "snapshot_name": snapshot_name,
         "backup_mode": BACKUP_MODE,
         "tiles_excluded": _exclude_tiles(),
@@ -280,6 +748,7 @@ def _mark_attempt_started(
     started_at: datetime,
 ) -> None:
     section = state[backup_type]
+    section["run_id"] = state.get("run_id")
     section["started_at"] = started_at.isoformat()
     section["completed_at"] = None
     section["success"] = None
@@ -300,6 +769,7 @@ def _mark_attempt_finished(
 ) -> None:
     duration_seconds = max((completed_at - started_at).total_seconds(), 0.0)
     section = state[backup_type]
+    section["run_id"] = state.get("run_id")
     section["started_at"] = started_at.isoformat()
     section["completed_at"] = completed_at.isoformat()
     section["success"] = success
@@ -315,25 +785,20 @@ def _mark_attempt_finished(
 
 
 def _write_backup_state(state: dict) -> None:
-    payload = json.dumps(state, indent=2).encode()
-
-    try:
-        if _azure_configured():
-            container = _blob_container_client()
-            container.upload_blob(
-                _backup_state_blob_name(),
-                io.BytesIO(payload),
-                overwrite=True,
-            )
-        else:
-            _atomic_write_bytes(_backup_state_path(), payload)
-    except Exception:
-        log.exception("Failed to write backup observability state")
+    state["updated_at"] = datetime.now(timezone.utc).isoformat()
+    _commit_shared_json(
+        local_path=_backup_state_path(),
+        blob_name=_backup_state_blob_name(),
+        incoming=state,
+        merge=_merge_backup_state,
+        label="backup observability state",
+    )
 
 
-def _new_restore_state() -> dict:
+def _new_restore_state(run_id: str | None = None) -> dict:
     def _blank_section() -> dict[str, object]:
         return {
+            "run_id": None,
             "started_at": None,
             "completed_at": None,
             "success": None,
@@ -346,7 +811,8 @@ def _new_restore_state() -> dict:
         }
 
     return {
-        "schema_version": 1,
+        "schema_version": RESTORE_STATE_SCHEMA_VERSION,
+        "run_id": run_id or _new_run_id(),
         "operator": {
             "database": _blank_section(),
             "filesystem": _blank_section(),
@@ -377,7 +843,10 @@ def _read_restore_state() -> dict | None:
 
 
 def _seed_restore_success_history(state: dict, previous_state: dict | None) -> None:
-    if not isinstance(previous_state, dict) or previous_state.get("schema_version") != 1:
+    if (
+        not isinstance(previous_state, dict)
+        or previous_state.get("schema_version") != RESTORE_STATE_SCHEMA_VERSION
+    ):
         return
 
     for purpose in ("operator", "test"):
@@ -394,20 +863,14 @@ def _seed_restore_success_history(state: dict, previous_state: dict | None) -> N
 
 
 def _write_restore_state(state: dict) -> None:
-    payload = json.dumps(state, indent=2).encode()
-
-    try:
-        if _azure_configured():
-            container = _blob_container_client()
-            container.upload_blob(
-                _restore_state_blob_name(),
-                io.BytesIO(payload),
-                overwrite=True,
-            )
-        else:
-            _atomic_write_bytes(_restore_state_path(), payload)
-    except Exception:
-        log.exception("Failed to write restore observability state")
+    state["updated_at"] = datetime.now(timezone.utc).isoformat()
+    _commit_shared_json(
+        local_path=_restore_state_path(),
+        blob_name=_restore_state_blob_name(),
+        incoming=state,
+        merge=_merge_restore_state,
+        label="restore observability state",
+    )
 
 
 def _restore_section(state: dict, purpose: str, restore_type: str) -> dict[str, object]:
@@ -423,6 +886,7 @@ def _mark_restore_started(
     archive_name: str,
 ) -> None:
     section = _restore_section(state, purpose, restore_type)
+    section["run_id"] = state.get("run_id")
     section["started_at"] = started_at.isoformat()
     section["completed_at"] = None
     section["success"] = None
@@ -442,6 +906,7 @@ def _mark_restore_finished(
 ) -> None:
     duration_seconds = max((completed_at - started_at).total_seconds(), 0.0)
     section = _restore_section(state, purpose, restore_type)
+    section["run_id"] = state.get("run_id")
     section["started_at"] = started_at.isoformat()
     section["completed_at"] = completed_at.isoformat()
     section["success"] = success
@@ -462,53 +927,61 @@ def _attach_archive_key_to_success(state: dict, backup_type: str, archive_key: s
     section["last_success_archive_key"] = archive_key
 
 
-def _marker_is_newer(existing: dict | None, created_at: datetime) -> bool:
-    """Return True when *existing* records a success newer than *created_at*."""
-    if not isinstance(existing, dict):
-        return False
-    try:
-        existing_created_at = datetime.fromisoformat(str(existing["created_at"]))
-    except (KeyError, TypeError, ValueError):
-        return False
-    if existing_created_at.tzinfo is None:
-        existing_created_at = existing_created_at.replace(tzinfo=timezone.utc)
-    return existing_created_at > created_at
+def _marker_types_from_state(state: dict | None, snapshot_name: str) -> dict[str, dict]:
+    """Describe this run's successful types for the marker's ``types`` block."""
+    if not isinstance(state, dict):
+        return {}
+
+    types: dict[str, dict] = {}
+    for backup_type in ("database", "filesystem"):
+        section = state.get(backup_type)
+        if not isinstance(section, dict) or section.get("success") is not True:
+            continue
+        types[backup_type] = {
+            "run_id": section.get("run_id") or state.get("run_id"),
+            "snapshot_name": snapshot_name,
+            "created_at": section.get("started_at"),
+            "completed_at": section.get("completed_at"),
+            "size_bytes": section.get("size_bytes"),
+            "archive_key": section.get("archive_key"),
+        }
+    return types
 
 
 def _write_last_success_marker(
     snapshot_name: str,
     *,
     created_at: datetime,
+    completed_at: datetime,
     archive_size: int | None,
+    run_id: str | None = None,
+    state: dict | None = None,
 ) -> None:
-    if _marker_is_newer(_read_last_success_marker(), created_at):
-        log.info(
-            "Skipping last-success marker for %s: a newer successful backup is already recorded",
-            snapshot_name,
-        )
-        return
+    """Record the newest successful snapshot.
 
+    ``created_at`` stays the snapshot's own timestamp (it names the archive);
+    ``completed_at`` is when the snapshot actually became restorable and is what
+    freshness is measured from. Ordering against a concurrent run is settled by
+    ``_merge_last_success_marker`` at commit time.
+    """
     marker = {
         "snapshot_name": snapshot_name,
         "created_at": created_at.isoformat(),
+        "completed_at": completed_at.isoformat(),
         "archive_size": archive_size,
         "backup_mode": BACKUP_MODE,
         "tiles_excluded": _exclude_tiles(),
+        "run_id": run_id,
+        "types": _marker_types_from_state(state, snapshot_name),
     }
-    payload = json.dumps(marker, indent=2).encode()
 
-    try:
-        if _azure_configured():
-            container = _blob_container_client()
-            container.upload_blob(
-                _last_success_marker_blob_name(),
-                io.BytesIO(payload),
-                overwrite=True,
-            )
-        else:
-            _atomic_write_bytes(_last_success_marker_path(), payload)
-    except Exception:
-        log.exception("Failed to write last-success marker")
+    _commit_shared_json(
+        local_path=_last_success_marker_path(),
+        blob_name=_last_success_marker_blob_name(),
+        incoming=marker,
+        merge=_merge_last_success_marker,
+        label="last-success marker",
+    )
 
 
 def _read_backup_state() -> dict | None:
@@ -530,7 +1003,10 @@ def _read_backup_state() -> dict | None:
 
 
 def _seed_last_success_history(state: dict, previous_state: dict | None) -> None:
-    if not isinstance(previous_state, dict) or previous_state.get("schema_version") != 2:
+    if (
+        not isinstance(previous_state, dict)
+        or previous_state.get("schema_version") != BACKUP_STATE_SCHEMA_VERSION
+    ):
         return
 
     for backup_type in ("database", "filesystem"):
@@ -700,8 +1176,9 @@ def run_backup() -> Path | None:
     """
     created_at = datetime.now(timezone.utc)
     snapshot_name = _new_snapshot_name(created_at)
-    log.info("Starting backup: %s", snapshot_name)
-    backup_state = _new_backup_state(snapshot_name)
+    run_id = _new_run_id()
+    log.info("Starting backup: %s (run %s)", snapshot_name, run_id)
+    backup_state = _new_backup_state(snapshot_name, run_id)
     _seed_last_success_history(backup_state, _read_backup_state())
 
     db = _parse_db_url(DATABASE_URL)
@@ -809,6 +1286,7 @@ def run_backup() -> Path | None:
         archive_name = f"{snapshot_name}.tar.gz"
         archive_path = Path(tmpdir) / archive_name
         archive_key: str
+        marker_archive_size: int | None = None
         try:
             log.info("Creating archive %s …", archive_name)
             tiles_arcname = f"{snapshot_name}/data/tiles"
@@ -844,11 +1322,7 @@ def run_backup() -> Path | None:
                 # 6. Enforce retention policy --------------------------------
                 _enforce_retention(container)
                 archive_key = blob_name
-                _write_last_success_marker(
-                    snapshot_name,
-                    created_at=created_at,
-                    archive_size=archive_size,
-                )
+                marker_archive_size = archive_size
             else:
                 log.warning(
                     "Azure Blob Storage not configured – archive saved locally at %s only. "
@@ -872,11 +1346,7 @@ def run_backup() -> Path | None:
                     log.exception("Local manifest sidecar write failed")
                 _enforce_local_retention()
                 archive_key = str(final)
-                _write_last_success_marker(
-                    snapshot_name,
-                    created_at=created_at,
-                    archive_size=final.stat().st_size,
-                )
+                marker_archive_size = final.stat().st_size
         except Exception:
             log.exception("Filesystem backup failed")
             _mark_attempt_finished(
@@ -890,17 +1360,26 @@ def run_backup() -> Path | None:
             _write_backup_state(backup_state)
             return None
 
+        filesystem_completed_at = datetime.now(timezone.utc)
         _mark_attempt_finished(
             backup_state,
             "filesystem",
             started_at=filesystem_started_at,
-            completed_at=datetime.now(timezone.utc),
+            completed_at=filesystem_completed_at,
             success=True,
             size_bytes=filesystem_size_bytes,
             archive_key=archive_key,
         )
         _attach_archive_key_to_success(backup_state, "database", archive_key)
         _write_backup_state(backup_state)
+        _write_last_success_marker(
+            snapshot_name,
+            created_at=created_at,
+            completed_at=filesystem_completed_at,
+            archive_size=marker_archive_size,
+            run_id=run_id,
+            state=backup_state,
+        )
 
         if not _azure_configured():
             return Path(archive_key)
@@ -1045,17 +1524,19 @@ def run_status() -> bool:
         return False
 
     try:
-        created_at = datetime.fromisoformat(str(marker["created_at"]))
-        if created_at.tzinfo is None:
-            created_at = created_at.replace(tzinfo=timezone.utc)
-        age = now - created_at.astimezone(timezone.utc)
+        # Age is measured from when the snapshot became restorable, falling back
+        # to the snapshot timestamp for markers written before completed_at.
+        completed_at = _parse_iso(marker.get("completed_at")) or _parse_iso(marker.get("created_at"))
+        if completed_at is None:
+            raise ValueError("marker has no usable timestamp")
+        age = now - completed_at
         stale_after = timedelta(hours=BACKUP_STALE_HOURS)
         stale = age > stale_after
         status_label = "STALE" if stale else "FRESH"
         if not stale and snapshot_count == 0:
             status_label = "NO_SNAPSHOTS"
         print(f"Status: {status_label}")
-        print(f"Last successful backup: {created_at.isoformat()}")
+        print(f"Last successful backup: {completed_at.isoformat()}")
         print(f"Age: {_format_age(age)}")
         print(f"Backup mode: {marker.get('backup_mode', '?')}")
         print(f"Tiles excluded: {marker.get('tiles_excluded', '?')}")
