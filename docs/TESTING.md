@@ -243,76 +243,76 @@ curl -s http://localhost:8000/api/categories/ -H "Authorization: Bearer $TOKEN"
 
 All endpoints except login require a valid JWT bearer token in the `Authorization` header.
 
-| Method | Endpoint                                                                                                  | Auth Required | Minimum Role |
-| ------ | --------------------------------------------------------------------------------------------------------- | ------------- | ------------ |
-| POST   | /api/auth/login                                                                                           | No            | —            |
-| GET    | /api/health                                                                                               | No            | —            |
-| GET    | /api/health/ready                                                                                         | No            | —            |
-| GET    | /api/health/storage                                                                                       | No            | —            |
-| GET    | /api/health/queue                                                                                         | No            | — ‡          |
-| GET    | /api/categories/                                                                                          | Yes           | student      |
-| POST   | /api/categories/                                                                                          | Yes           | instructor   |
-| GET    | /api/categories/tree                                                                                      | Yes           | student      |
-| GET    | /api/categories/{id}                                                                                      | Yes           | student      |
-| PATCH  | /api/categories/{id}                                                                                      | Yes           | instructor   |
-| DELETE | /api/categories/{id}                                                                                      | Yes           | instructor   |
-| GET    | /api/images/                                                                                              | Yes           | student      |
-| POST   | /api/images/                                                                                              | Yes           | instructor   |
-| GET    | /api/images/{id}                                                                                          | Yes           | student      |
-| PATCH  | /api/images/{id}                                                                                          | Yes           | instructor   |
-| DELETE | /api/images/{id}                                                                                          | Yes           | instructor   |
-| DELETE | /api/images/bulk                                                                                          | Yes           | instructor   |
+| Method | Endpoint                                                                                                  | Auth Required | Minimum Role                                                                |
+| ------ | --------------------------------------------------------------------------------------------------------- | ------------- | --------------------------------------------------------------------------- |
+| POST   | /api/auth/login                                                                                           | No            | —                                                                           |
+| GET    | /api/health                                                                                               | No            | —                                                                           |
+| GET    | /api/health/ready                                                                                         | No            | —                                                                           |
+| GET    | /api/health/storage                                                                                       | No            | —                                                                           |
+| GET    | /api/health/queue                                                                                         | No            | — ‡                                                                         |
+| GET    | /api/categories/                                                                                          | Yes           | student                                                                     |
+| POST   | /api/categories/                                                                                          | Yes           | instructor                                                                  |
+| GET    | /api/categories/tree                                                                                      | Yes           | student                                                                     |
+| GET    | /api/categories/{id}                                                                                      | Yes           | student                                                                     |
+| PATCH  | /api/categories/{id}                                                                                      | Yes           | instructor                                                                  |
+| DELETE | /api/categories/{id}                                                                                      | Yes           | instructor                                                                  |
+| GET    | /api/images/                                                                                              | Yes           | student                                                                     |
+| POST   | /api/images/                                                                                              | Yes           | instructor                                                                  |
+| GET    | /api/images/{id}                                                                                          | Yes           | student                                                                     |
+| PATCH  | /api/images/{id}                                                                                          | Yes           | instructor                                                                  |
+| DELETE | /api/images/{id}                                                                                          | Yes           | instructor                                                                  |
+| DELETE | /api/images/bulk                                                                                          | Yes           | instructor                                                                  |
 | GET    | /api/tiles/{source_image_id}/{path}                                                                       | Yes           | valid tile token (image-scoped, from tokenized `tile_sources`/`thumb` URLs) |
-| GET    | /api/tiles-auth (nginx `auth_request` validator; 204/401/403)                                             | Yes           | valid tile token |
-| GET    | /api/tile-order                                                                                           | Yes           | instructor   |
-| PUT    | /api/tile-order                                                                                           | Yes           | instructor   |
-| GET    | /api/users/                                                                                               | Yes           | instructor   |
-| POST   | /api/users/                                                                                               | Yes           | admin        |
-| GET    | /api/users/{id}                                                                                           | Yes           | admin        |
-| PATCH  | /api/users/{id}                                                                                           | Yes           | admin        |
-| DELETE | /api/users/{id}                                                                                           | Yes           | admin        |
-| GET    | /api/programs/                                                                                            | Yes           | student      |
-| GET    | /api/programs/{id}                                                                                        | Yes           | student      |
-| POST   | /api/programs/                                                                                            | Yes           | admin        |
-| PATCH  | /api/programs/{id}                                                                                        | Yes           | admin        |
-| DELETE | /api/programs/{id}                                                                                        | Yes           | admin        |
-| GET    | /api/groups/                                                                                              | Yes           | instructor   |
-| POST   | /api/groups/                                                                                              | Yes           | instructor   |
-| GET    | /api/groups/{id}                                                                                          | Yes           | instructor   |
-| PATCH  | /api/groups/{id}                                                                                          | Yes           | instructor † |
-| DELETE | /api/groups/{id}                                                                                          | Yes           | instructor † |
-| GET    | /api/groups/{id}/members                                                                                  | Yes           | instructor   |
-| POST   | /api/groups/{id}/members/bulk                                                                             | Yes           | instructor † |
-| DELETE | /api/groups/{id}/members/bulk                                                                             | Yes           | instructor † |
-| POST   | /api/groups/{id}/members/{user_id}                                                                        | Yes           | instructor † |
-| DELETE | /api/groups/{id}/members/{user_id}                                                                        | Yes           | instructor † |
-| GET    | /api/groups/{id}/instructors                                                                              | Yes           | instructor   |
-| POST   | /api/groups/{id}/instructors/bulk                                                                         | Yes           | instructor † |
-| DELETE | /api/groups/{id}/instructors/bulk                                                                         | Yes           | instructor † |
-| POST   | /api/groups/{id}/instructors/{user_id}                                                                    | Yes           | instructor † |
-| DELETE | /api/groups/{id}/instructors/{user_id}                                                                    | Yes           | instructor † |
-| GET    | /api/changelog/                                                                                           | Yes           | instructor   |
-| POST   | /api/changelog/                                                                                           | Yes           | admin        |
-| POST   | /api/changelog/mark-read                                                                                  | Yes           | instructor   |
-| PATCH  | /api/changelog/{id}                                                                                       | Yes           | admin        |
-| DELETE | /api/changelog/{id}                                                                                       | Yes           | admin        |
-| GET    | /api/admin/version                                                                                        | Yes           | instructor   |
-| GET    | /api/admin/export                                                                                         | Yes           | admin        |
-| POST   | /api/admin/import                                                                                         | Yes           | admin        |
-| POST   | /api/admin/tasks/rebuild-tiles                                                                            | Yes           | admin        |
-| GET    | /api/admin/backups/snapshots                                                                              | Yes           | admin        |
-| GET    | /api/admin/backups/snapshots/{name}/manifest                                                              | Yes           | admin        |
-| POST   | /api/admin/tasks/file-restore                                                                             | Yes           | admin        |
-| GET    | /api/admin/tasks/{task_id}/upload (status for resumable upload)                                           | Yes           | admin        |
-| PUT    | /api/admin/tasks/{task_id}/upload (raw `application/octet-stream`; multipart/form-data rejected with 415) | Yes           | admin        |
-| PATCH  | /api/admin/tasks/{task_id}/upload (raw chunk; `Upload-Offset` + `Upload-Length` headers)                  | Yes           | admin        |
-| POST   | /api/admin/tasks/{task_id}/upload/finalize (finalize chunked upload)                                      | Yes           | admin        |
-| GET    | /api/admin/tasks/files-import/archives                                                                    | Yes           | admin        |
-| GET    | /api/admin/tasks/files-import/archive-retention                                                           | Yes           | admin        |
-| POST   | /api/admin/tasks/files-import/rerun                                                                       | Yes           | admin        |
-| DELETE | /api/admin/tasks/files-import/archives/{archive_task_id}                                                  | Yes           | admin        |
-| GET    | /api/admin/tasks/backup-archives                                                                          | Yes           | admin        |
-| DELETE | /api/admin/tasks/backup-archives/{task_id}/{artifact_role}                                                | Yes           | admin        |
+| GET    | /api/tiles-auth (nginx `auth_request` validator; 204/401/403)                                             | Yes           | valid tile token                                                            |
+| GET    | /api/tile-order                                                                                           | Yes           | instructor                                                                  |
+| PUT    | /api/tile-order                                                                                           | Yes           | instructor                                                                  |
+| GET    | /api/users/                                                                                               | Yes           | instructor                                                                  |
+| POST   | /api/users/                                                                                               | Yes           | admin                                                                       |
+| GET    | /api/users/{id}                                                                                           | Yes           | admin                                                                       |
+| PATCH  | /api/users/{id}                                                                                           | Yes           | admin                                                                       |
+| DELETE | /api/users/{id}                                                                                           | Yes           | admin                                                                       |
+| GET    | /api/programs/                                                                                            | Yes           | student                                                                     |
+| GET    | /api/programs/{id}                                                                                        | Yes           | student                                                                     |
+| POST   | /api/programs/                                                                                            | Yes           | admin                                                                       |
+| PATCH  | /api/programs/{id}                                                                                        | Yes           | admin                                                                       |
+| DELETE | /api/programs/{id}                                                                                        | Yes           | admin                                                                       |
+| GET    | /api/groups/                                                                                              | Yes           | instructor                                                                  |
+| POST   | /api/groups/                                                                                              | Yes           | instructor                                                                  |
+| GET    | /api/groups/{id}                                                                                          | Yes           | instructor                                                                  |
+| PATCH  | /api/groups/{id}                                                                                          | Yes           | instructor †                                                                |
+| DELETE | /api/groups/{id}                                                                                          | Yes           | instructor †                                                                |
+| GET    | /api/groups/{id}/members                                                                                  | Yes           | instructor                                                                  |
+| POST   | /api/groups/{id}/members/bulk                                                                             | Yes           | instructor †                                                                |
+| DELETE | /api/groups/{id}/members/bulk                                                                             | Yes           | instructor †                                                                |
+| POST   | /api/groups/{id}/members/{user_id}                                                                        | Yes           | instructor †                                                                |
+| DELETE | /api/groups/{id}/members/{user_id}                                                                        | Yes           | instructor †                                                                |
+| GET    | /api/groups/{id}/instructors                                                                              | Yes           | instructor                                                                  |
+| POST   | /api/groups/{id}/instructors/bulk                                                                         | Yes           | instructor †                                                                |
+| DELETE | /api/groups/{id}/instructors/bulk                                                                         | Yes           | instructor †                                                                |
+| POST   | /api/groups/{id}/instructors/{user_id}                                                                    | Yes           | instructor †                                                                |
+| DELETE | /api/groups/{id}/instructors/{user_id}                                                                    | Yes           | instructor †                                                                |
+| GET    | /api/changelog/                                                                                           | Yes           | instructor                                                                  |
+| POST   | /api/changelog/                                                                                           | Yes           | admin                                                                       |
+| POST   | /api/changelog/mark-read                                                                                  | Yes           | instructor                                                                  |
+| PATCH  | /api/changelog/{id}                                                                                       | Yes           | admin                                                                       |
+| DELETE | /api/changelog/{id}                                                                                       | Yes           | admin                                                                       |
+| GET    | /api/admin/version                                                                                        | Yes           | instructor                                                                  |
+| GET    | /api/admin/export                                                                                         | Yes           | admin                                                                       |
+| POST   | /api/admin/import                                                                                         | Yes           | admin                                                                       |
+| POST   | /api/admin/tasks/rebuild-tiles                                                                            | Yes           | admin                                                                       |
+| GET    | /api/admin/backups/snapshots                                                                              | Yes           | admin                                                                       |
+| GET    | /api/admin/backups/snapshots/{name}/manifest                                                              | Yes           | admin                                                                       |
+| POST   | /api/admin/tasks/file-restore                                                                             | Yes           | admin                                                                       |
+| GET    | /api/admin/tasks/{task_id}/upload (status for resumable upload)                                           | Yes           | admin                                                                       |
+| PUT    | /api/admin/tasks/{task_id}/upload (raw `application/octet-stream`; multipart/form-data rejected with 415) | Yes           | admin                                                                       |
+| PATCH  | /api/admin/tasks/{task_id}/upload (raw chunk; `Upload-Offset` + `Upload-Length` headers)                  | Yes           | admin                                                                       |
+| POST   | /api/admin/tasks/{task_id}/upload/finalize (finalize chunked upload)                                      | Yes           | admin                                                                       |
+| GET    | /api/admin/tasks/files-import/archives                                                                    | Yes           | admin                                                                       |
+| GET    | /api/admin/tasks/files-import/archive-retention                                                           | Yes           | admin                                                                       |
+| POST   | /api/admin/tasks/files-import/rerun                                                                       | Yes           | admin                                                                       |
+| DELETE | /api/admin/tasks/files-import/archives/{archive_task_id}                                                  | Yes           | admin                                                                       |
+| GET    | /api/admin/tasks/backup-archives                                                                          | Yes           | admin                                                                       |
+| DELETE | /api/admin/tasks/backup-archives/{task_id}/{artifact_role}                                                | Yes           | admin                                                                       |
 
 All `/api/groups/` endpoints require the `admin` or `instructor` role (read
 endpoints are open to any instructor). Rows marked **†** are mutations that
