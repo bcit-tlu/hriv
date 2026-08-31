@@ -1481,7 +1481,7 @@ async def download_task_result(
             status_code=401, detail="Invalid or expired download token"
         )
     user = await db.get(User, int(user_id_str))
-    if user is None or user.role != "admin":
+    if user is None or user.role != "admin" or not user.active:
         raise HTTPException(status_code=403, detail="Forbidden")
 
     task = await db.get(AdminTask, task_id)

@@ -503,6 +503,7 @@ class UserBase(BaseModel):
     name: str
     email: str
     role: str = "student"
+    active: bool = True
     program_ids: list[int] = []
     metadata_extra: Annotated[dict | None, Field(validation_alias="metadata_")] = None
 
@@ -518,6 +519,7 @@ class UserUpdate(BaseModel):
     name: str | None = None
     email: str | None = None
     role: str | None = None
+    active: bool | None = None
     program_ids: list[int] | None = None
     password: str | None = None
     metadata_extra: dict | None = None
@@ -534,6 +536,11 @@ class UserBulkUpdate(BaseModel):
 class UserBulkRoleUpdate(BaseModel):
     user_ids: list[int]
     role: str
+
+
+class UserBulkActiveUpdate(BaseModel):
+    user_ids: list[int]
+    active: bool
 
 
 class UserBulkDelete(BaseModel):
