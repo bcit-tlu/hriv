@@ -364,7 +364,7 @@ describe('ImageViewer lifecycle telemetry', () => {
       updated_at: '',
     })
     const onTileSourceRenewed = vi.fn()
-    render(
+    const { rerender } = render(
       <ImageViewer
         tileSources="/tiles.dzi?tile_token=stale"
         imageId={7}
@@ -388,6 +388,15 @@ describe('ImageViewer lifecycle telemetry', () => {
       expect.objectContaining({ tile_sources: '/tiles.dzi?tile_token=fresh' }),
     )
 
+    rerender(
+      <ImageViewer
+        tileSources="/tiles.dzi?tile_token=fresh"
+        imageId={7}
+        onTileSourceRenewed={onTileSourceRenewed}
+      />,
+    )
+    expect(osdState.viewers).toHaveLength(1)
+
     act(() => v.fire('open'))
     expect(v.viewport.zoomTo).toHaveBeenLastCalledWith(5, undefined, true)
     expect(v.viewport.panTo).toHaveBeenLastCalledWith(
@@ -397,13 +406,77 @@ describe('ImageViewer lifecycle telemetry', () => {
     expect(v.viewport.setRotation).toHaveBeenLastCalledWith(15, true)
   })
 
+  it('does not renew tile sources for non-auth loading failures', async () => {
+    render(<ImageViewer tileSources="/tiles.dzi?tile_token=current" imageId={7} />)
+    const v = viewer()
+
+    act(() => {
+      v.fire('tile-load-failed', {
+        message: 'Tile not found',
+        tileRequest: { status: 404 },
+      })
+      v.fire('add-item-failed', { message: 'Malformed DZI descriptor' })
+    })
+
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 150))
+    })
+    expect(apiMocks.fetchImage).not.toHaveBeenCalled()
+  })
+
+  it('renews after an img-backed tile failure with no observable HTTP status', async () => {
+    apiMocks.fetchImage.mockResolvedValue({
+      id: 7,
+      name: 'Fresh Image',
+      thumb: '/thumb.jpg?tile_token=fresh',
+      tile_sources: '/tiles.dzi?tile_token=fresh',
+      category_id: 3,
+      copyright: null,
+      note: null,
+      active: true,
+      sort_order: 0,
+      metadata_extra: null,
+      version: 2,
+      width: null,
+      height: null,
+      file_size: null,
+      created_at: '',
+      updated_at: '',
+    })
+    render(<ImageViewer tileSources="/tiles.dzi?tile_token=stale" imageId={7} />)
+
+    act(() => {
+      viewer().fire('tile-load-failed', {
+        message: '[downloadTileStart] Image load aborted or errored out.',
+        tileRequest: null,
+      })
+    })
+
+    await waitFor(() => expect(apiMocks.fetchImage).toHaveBeenCalledWith(7))
+    expect(viewer().open).toHaveBeenCalledWith('/tiles.dzi?tile_token=fresh')
+  })
+
+  it('reports a non-auth open failure without attempting token renewal', async () => {
+    render(<ImageViewer tileSources="/tiles.dzi?tile_token=current" imageId={7} />)
+
+    act(() => viewer().fire('open-failed', { message: 'Malformed DZI descriptor' }))
+
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 150))
+    })
+    expect(apiMocks.fetchImage).not.toHaveBeenCalled()
+    expect(observabilityMocks.emitFrontendError).toHaveBeenCalledWith(
+      expect.objectContaining({ errorCode: 'image_viewer_open_failed', imageId: 7 }),
+    )
+  })
+
   it('surfaces the existing error UI when tile source renewal fails', async () => {
     apiMocks.fetchImage.mockRejectedValue(new Error('forbidden'))
     const onError = vi.fn()
     render(<ImageViewer tileSources="/tiles.dzi?tile_token=stale" imageId={7} onError={onError} />)
 
     act(() => {
-      viewer().fire('open-failed', { message: '401' })
+      viewer().fire('open-failed', { message: 'HTTP 401 attempting to load TileSource' })
     })
 
     await waitFor(() => expect(apiMocks.fetchImage).toHaveBeenCalledTimes(1))

@@ -125,10 +125,13 @@ images> / Empty` format used on category tiles.
   effective restriction sets (programs and/or groups, whichever changed) as
   named chips and explains that the category's own direct restrictions are
   preserved — only the inherited context changes. The editor may **Move Anyway**
-  to proceed or **Cancel** to abort. This confirmation applies to both the
-  `MoveCategoryDialog` flow and drag-and-drop of a category tile onto another
-  category (`handleDropCategoryOnCategory`). Drag-and-drop reordering within the
-  same parent never triggers the dialog because the ancestor path is unchanged.
+  to proceed or **Cancel** to abort. This confirmation applies to the
+  `MoveCategoryDialog` flow, drag-and-drop of a category tile onto another
+  category (`handleDropCategoryOnCategory`), and parent-changing drags in the
+  Manage Categories tree. Manage-tree drags apply the visual tree move
+  optimistically, then revert it if the editor cancels the confirmation or if
+  the deferred API save fails. Drag-and-drop reordering within the same parent
+  never triggers the dialog because the ancestor path is unchanged.
 - **Category tree surfaces:** `ManageCategoriesDialog`, `CategoryPickerSelect`,
   and flows built on the picker (including `MoveCategoryDialog`) start expanded,
   allow subtree collapse/expand, and share the same persisted collapse state for
@@ -267,6 +270,9 @@ committed on Save) in the edit modals.
 
 - The People page now exposes a persistent **Filter by** bar above the table
   instead of hiding filters behind a toggle button.
+- People rows include a **Status** column chip (`Active` / `Inactive`) and bulk
+  account-status action so admins can deactivate/reactivate selected users
+  without deleting accounts.
 - The filter bar shows only controls for currently visible filterable columns
   (for example, hiding the `Groups` column also removes the `Groups` filter
   controls). Hiding a filtered column clears that column's active filter state.

@@ -78,6 +78,7 @@ import {
   userMessage,
 } from './api'
 import type { ApiImage, ApiUser } from './api'
+import { mergeRenewedImageItemUrls } from './tileTokenRenewal'
 import MoveCategoryDialog from './components/MoveCategoryDialog'
 import MoveRestrictionConfirmDialog from './components/MoveRestrictionConfirmDialog'
 import FailedUploadsDialog from './components/FailedUploadsDialog'
@@ -1056,36 +1057,21 @@ export default function App() {
     [pushNavState],
   )
 
-  const apiImageToItem = useCallback(
-    (img: ApiImage): ImageItem => ({
-      id: img.id,
-      name: img.name,
-      thumb: img.thumb,
-      tileSources: img.tile_sources,
-      categoryId: img.category_id,
-      copyright: img.copyright,
-      note: img.note,
-      active: img.active,
-      sortOrder: img.sort_order,
-      version: img.version,
-      createdAt: img.created_at,
-      updatedAt: img.updated_at,
-      metadataExtra: img.metadata_extra,
-      width: img.width,
-      height: img.height,
-      fileSize: img.file_size,
-    }),
-    [],
-  )
-
   const handleImageRenewed = useCallback(
     (img: ApiImage) => {
-      const item = apiImageToItem(img)
-      setCategories((prev) => updateImageInTree(prev, item.id, () => item))
-      setUncategorizedImages((prev) => prev.map((image) => (image.id === item.id ? item : image)))
-      setSelectedImage((prev) => (prev?.id === item.id ? { ...prev, ...item } : prev))
+      setCategories((prev) =>
+        updateImageInTree(prev, img.id, (current) => mergeRenewedImageItemUrls(current, img)),
+      )
+      setUncategorizedImages((prev) =>
+        prev.map((current) =>
+          current.id === img.id ? mergeRenewedImageItemUrls(current, img) : current,
+        ),
+      )
+      setSelectedImage((prev) =>
+        prev?.id === img.id ? mergeRenewedImageItemUrls(prev, img) : prev,
+      )
     },
-    [apiImageToItem, setCategories, setUncategorizedImages],
+    [setCategories, setUncategorizedImages],
   )
 
   const navigateToCategory = useCallback((cat: Category) => {

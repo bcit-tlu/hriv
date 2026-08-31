@@ -111,6 +111,34 @@ runtime paths stored in the database:
 For multi-replica API or worker deployments, both PVCs must use
 `ReadWriteMany`.
 
+## Tiles sidecar and tile authorization (`tiles.*`)
+
+When `tiles.enabled=true`, an `nginx:alpine` sidecar container serves
+`/api/tiles/` directly from the tiles PVC, keeping the Python process out of
+the per-tile hot path.
+
+Tiles are authorized content (see `docs/tile-delivery-boundary.md`, issues
+#1064/#1069). The sidecar enforces an image-scoped `tile_token` query
+parameter on every tile request:
+
+- nginx `auth_request` sends a subrequest to the FastAPI app container in the
+  same pod (`127.0.0.1:8000`, `GET /api/tiles-auth`), forwarding only
+  `X-Original-URI: $request_uri`; the validator extracts the token from the
+  original URI's query string. 204 allows, 401 means missing/expired/tampered
+  token, 403 means the token is bound to a different image.
+- Auth verdicts are cached in a `proxy_cache` zone (`tile_auth`, 1m keys,
+  8m max) keyed on `$tile_auth_token:$tile_image_id` — never on client
+  identity. Valid (204) verdicts are cached for 30 seconds (≤ 60s); 401/403
+  verdicts are not cached. Requests without a token bypass the cache entirely.
+- Tile responses carry `Cache-Control: private, max-age=2592000` — browsers
+  cache aggressively, but shared caches/CDNs must not store them.
+- `access_log off` on the tile and auth locations keeps tokens out of logs.
+
+**Rollout gate:** `tiles.enabled=true` requires a backend image that serves
+`GET /api/tiles-auth` and issues tile tokens (the backend release containing
+PR #1159). Deploying the chart with the sidecar enabled against an older
+backend image makes every tile request fail authorization.
+
 ## Task execution mode (`tasks.executionMode`)
 
 `tasks.executionMode` renders `TASK_EXECUTION_MODE` on both the API and worker

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useCallback, useState } from 'react'
 import OpenSeadragon from 'openseadragon'
 import Box from '@mui/material/Box'
 import {
@@ -8,7 +8,7 @@ import {
   emitFrontendPerformance,
 } from '../observability'
 import { userMessage, type ApiImage } from '../api'
-import { renewImageRecord } from '../tileTokenRenewal'
+import { isTileTokenAuthorizationFailure, renewImageRecord } from '../tileTokenRenewal'
 import CanvasOverlay from './CanvasOverlay'
 import type { CanvasAnnotation } from './CanvasOverlay'
 import {
@@ -118,6 +118,7 @@ export default function ImageViewer({
   const pendingRenewalViewportRef = useRef<ViewportState | null>(null)
   const onTileSourceRenewedRef = useRef(onTileSourceRenewed)
   const onErrorRef = useRef(onError)
+  const getCurrentTileSources = useEffectEvent(() => tileSources)
   const resetRenewalState = useCallback(() => {
     renewalGenerationRef.current += 1
     renewalInFlightRef.current = false
@@ -138,9 +139,6 @@ export default function ImageViewer({
   useEffect(() => {
     categoryIdRef.current = categoryId
   }, [categoryId])
-  useEffect(() => {
-    tileSourcesRef.current = tileSources
-  }, [tileSources])
   useEffect(() => {
     onTileSourceRenewedRef.current = onTileSourceRenewed
   }, [onTileSourceRenewed])
@@ -357,6 +355,8 @@ export default function ImageViewer({
   useEffect(() => {
     if (!containerRef.current) return
 
+    const initialTileSources = getCurrentTileSources()
+    tileSourcesRef.current = initialTileSources
     viewStartTimeRef.current = performance.now()
     emitEvent({
       event: 'image.view.started',
@@ -368,7 +368,7 @@ export default function ImageViewer({
     try {
       viewerRef.current = OpenSeadragon({
         element: containerRef.current,
-        tileSources,
+        tileSources: initialTileSources,
         prefixUrl: '/openseadragon-svg-icons/',
         navImages: {
           zoomIn: {
@@ -877,8 +877,8 @@ export default function ImageViewer({
       updateMagnification()
     })
 
-    viewer.addHandler('open-failed', () => {
-      if (imageIdRef.current) {
+    viewer.addHandler('open-failed', (event) => {
+      if (imageIdRef.current && isTileTokenAuthorizationFailure(event)) {
         scheduleTileSourceRenewal()
         return
       }
@@ -902,8 +902,12 @@ export default function ImageViewer({
       })
     })
 
-    viewer.addHandler('tile-load-failed', scheduleTileSourceRenewal)
-    viewer.addHandler('add-item-failed', scheduleTileSourceRenewal)
+    viewer.addHandler('tile-load-failed', (event) => {
+      if (isTileTokenAuthorizationFailure(event, true)) scheduleTileSourceRenewal()
+    })
+    viewer.addHandler('add-item-failed', (event) => {
+      if (isTileTokenAuthorizationFailure(event)) scheduleTileSourceRenewal()
+    })
 
     // Reset rotation to 0 when the home button is clicked
     viewer.addHandler('home', () => {
@@ -971,7 +975,7 @@ export default function ImageViewer({
       viewerRef.current = null
     }
   }, [
-    tileSources,
+    imageId,
     initialViewport,
     initialOverlays,
     emitViewport,
@@ -979,6 +983,14 @@ export default function ImageViewer({
     emitToolbarAction,
     scheduleTileSourceRenewal,
   ])
+
+  useEffect(() => {
+    const viewer = viewerRef.current
+    if (!viewer || tileSourceKey(tileSourcesRef.current) === tileSourceKey(tileSources)) return
+
+    tileSourcesRef.current = tileSources
+    viewer.open(tileSources as unknown as OpenSeadragon.TileSourceSpecifier)
+  }, [tileSourceKey, tileSources])
 
   // Reactively update lock/clear button UI when overlaysLocked prop changes
   useEffect(() => {

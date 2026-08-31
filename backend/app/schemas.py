@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
 
 MAX_NOTE_LENGTH = 500
 
@@ -375,6 +375,20 @@ class ImageOut(ImageBase):
 
     model_config = {"from_attributes": True, "populate_by_name": True}
 
+    @field_serializer("thumb", "tile_sources")
+    def _tokenize_tile_url(self, value: str) -> str:
+        """Append an image-scoped ``tile_token`` at response time.
+
+        Issuance happens only here, at serialization — after the routers'
+        auth + student-visibility filtering — and never mutates the
+        persisted ``thumb`` / ``tile_sources`` columns. Non-tile URLs pass
+        through unchanged. See docs/tile-delivery-boundary.md.
+        """
+        # Imported lazily to keep this schemas module import-light.
+        from .tile_tokens import append_tile_token
+
+        return append_tile_token(value)
+
 
 # ── Source Image ─────────────────────────────────────────
 
@@ -503,6 +517,7 @@ class UserBase(BaseModel):
     name: str
     email: str
     role: str = "student"
+    active: bool = True
     program_ids: list[int] = []
     metadata_extra: Annotated[dict | None, Field(validation_alias="metadata_")] = None
 
@@ -518,6 +533,7 @@ class UserUpdate(BaseModel):
     name: str | None = None
     email: str | None = None
     role: str | None = None
+    active: bool | None = None
     program_ids: list[int] | None = None
     password: str | None = None
     metadata_extra: dict | None = None
@@ -534,6 +550,11 @@ class UserBulkUpdate(BaseModel):
 class UserBulkRoleUpdate(BaseModel):
     user_ids: list[int]
     role: str
+
+
+class UserBulkActiveUpdate(BaseModel):
+    user_ids: list[int]
+    active: bool
 
 
 class UserBulkDelete(BaseModel):

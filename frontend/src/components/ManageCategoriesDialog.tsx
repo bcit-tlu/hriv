@@ -221,17 +221,23 @@ export default function ManageCategoriesDialog({
     () => flattenCategoryOptions(categories) as FlatOption[],
     [categories],
   )
+  const [optimisticOptions, setOptimisticOptions] = useState<{
+    baseOptions: FlatOption[]
+    options: FlatOption[]
+  } | null>(null)
   const options = useMemo(
     () =>
-      reorderFlatOptions(
-        baseOptions,
-        (parentId) => tileOrderingCoordinator.getScope(parentId).displayOrder,
-      ),
+      optimisticOptions?.baseOptions === baseOptions
+        ? optimisticOptions.options
+        : reorderFlatOptions(
+            baseOptions,
+            (parentId) => tileOrderingCoordinator.getScope(parentId).displayOrder,
+          ),
     // coordinatorVersion invalidates the memo whenever the coordinator's
     // per-scope display orders change (the coordinator is read imperatively,
     // so the linter cannot see the dependency).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [baseOptions, coordinatorVersion],
+    [baseOptions, coordinatorVersion, optimisticOptions],
   )
   const [dragId, setDragId] = useState<number | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
@@ -506,13 +512,16 @@ export default function ManageCategoriesDialog({
         )
 
         if (moves.length === 0 && scopes.length === 0) return
+        setOptimisticOptions({ baseOptions, options: newList })
         try {
           await onReorderTiles(moves, scopes)
         } catch {
-          // Error already surfaced by the handler; refresh authoritative state.
+          // Error/cancel is handled by the owner; revert the optimistic tree order.
+          setOptimisticOptions(null)
           await onReorderComplete?.()
           return
         }
+        setOptimisticOptions(null)
         // Success path: for pure reorders the coordinator persists
         // asynchronously and triggers the authoritative refresh itself once
         // the save commits (via its committed listener), so refreshing here
@@ -534,6 +543,7 @@ export default function ManageCategoriesDialog({
       dragId,
       dropTarget,
       options,
+      baseOptions,
       categories,
       uncategorizedImages,
       onReorderTiles,

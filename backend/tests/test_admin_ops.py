@@ -990,7 +990,7 @@ async def test_run_db_export_success(tmp_path) -> None:
     images = []
     users = [SimpleNamespace(
         id=1, name="Admin", email="admin@test.com", password_hash="hash",
-        oidc_subject=None, role="admin", programs=[], last_access=None,
+        oidc_subject=None, role="admin", active=False, programs=[], last_access=None,
         metadata_={}, created_at=now, updated_at=now,
     )]
     source_images = []
@@ -1055,6 +1055,7 @@ async def test_run_db_export_success(tmp_path) -> None:
     # Ensure non-sensitive fields are still present
     assert dump["users"][0]["email"] == "admin@test.com"
     assert dump["users"][0]["role"] == "admin"
+    assert dump["users"][0]["active"] is False
     # Programs survive the export round-trip.
     by_id = {p["id"]: p for p in dump["programs"]}
     assert set(by_id) == {1, 2}
@@ -1204,6 +1205,7 @@ def _full_dump() -> dict:
                 "email": "bob@example.com",
                 "password_hash": "hashed",
                 "oidc_subject": "sub-2",
+                "active": False,
             },
         ],
         "categories": [
@@ -1274,6 +1276,11 @@ async def test_run_db_import_happy_path(tmp_path) -> None:
     assert mock_session.commit.await_count >= 2
     add_calls = [c.args[0] for c in mock_session.add.call_args_list]
     assert any(type(obj).__name__ == "ChangelogEntry" for obj in add_calls)
+    imported_users = [obj for obj in add_calls if type(obj).__name__ == "User"]
+    assert len(imported_users) == 2
+    by_email = {u.email: u for u in imported_users}
+    assert by_email["alice@example.com"].active is True
+    assert by_email["bob@example.com"].active is False
     # The importer unlinks the uploaded file on the `finally` branch.
     assert not input_file.exists()
 

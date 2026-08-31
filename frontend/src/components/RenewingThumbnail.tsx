@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ImgHTMLAttributes } from 'react'
 import Box from '@mui/material/Box'
 import type { SxProps, Theme } from '@mui/material/styles'
@@ -34,7 +34,7 @@ export default function RenewingThumbnail({
       ? renewed.thumb
       : image.thumb
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     currentKeyRef.current = currentRetryKey
   }, [currentRetryKey])
 

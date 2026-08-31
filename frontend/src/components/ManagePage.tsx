@@ -69,6 +69,7 @@ import MoveImageDialog from './MoveImageDialog'
 import NoteDisplay from './NoteDisplay'
 import RenewingThumbnail from './RenewingThumbnail'
 import UploadImageModal from './UploadImageModal'
+import { mergeRenewedApiImageUrls } from '../tileTokenRenewal'
 import {
   getFilterTerms,
   hasFilterTerms,
@@ -1009,10 +1010,18 @@ export default function ManagePage({
 
   const handleImageRenewed = useCallback(
     (fresh: ApiImage) => {
-      setImages((prev) => prev.map((img) => (img.id === fresh.id ? fresh : img)))
-      setEditingImage((prev) => (prev?.id === fresh.id ? fresh : prev))
-      setMovingImage((prev) => (prev?.id === fresh.id ? fresh : prev))
-      setMenuImage((prev) => (prev?.id === fresh.id ? fresh : prev))
+      setImages((prev) =>
+        prev.map((current) =>
+          current.id === fresh.id ? mergeRenewedApiImageUrls(current, fresh) : current,
+        ),
+      )
+      setEditingImage((prev) =>
+        prev?.id === fresh.id ? mergeRenewedApiImageUrls(prev, fresh) : prev,
+      )
+      setMovingImage((prev) =>
+        prev?.id === fresh.id ? mergeRenewedApiImageUrls(prev, fresh) : prev,
+      )
+      setMenuImage((prev) => (prev?.id === fresh.id ? mergeRenewedApiImageUrls(prev, fresh) : prev))
       onImageRenewed?.(fresh)
     },
     [onImageRenewed],
