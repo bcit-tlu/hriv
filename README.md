@@ -110,6 +110,7 @@ reconciliation model for both environments.
 | Doc                                                                                  | Covers                                                                           |
 | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
 | [docs/groups.md](docs/groups.md)                                                     | Groups model, authorization, API surface, and frontend behaviour                 |
+| [docs/user-deactivation.md](docs/user-deactivation.md)                               | Admin user deactivation flow, API, auth enforcement, and People page behavior    |
 | [docs/changelog-notifications.md](docs/changelog-notifications.md)                   | Notification bell, What's New feed, changelog CRUD, and unread-state rules       |
 | [docs/feedback-subsystem.md](docs/feedback-subsystem.md)                             | In-app feedback routing, provider contract, and environment policy               |
 | [docs/category-visibility-and-programs.md](docs/category-visibility-and-programs.md) | Dual-gate student visibility (programs AND groups), cascade rules, tree loading  |

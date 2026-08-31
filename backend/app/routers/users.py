@@ -8,7 +8,15 @@ from ..auth import require_role, hash_password
 from ..authz import ADMIN_PROGRAM_NAME
 from ..database import get_db
 from ..models import Program, User
-from ..schemas import UserCreate, UserUpdate, UserBulkUpdate, UserBulkRoleUpdate, UserBulkDelete, UserOut
+from ..schemas import (
+    UserCreate,
+    UserUpdate,
+    UserBulkUpdate,
+    UserBulkRoleUpdate,
+    UserBulkActiveUpdate,
+    UserBulkDelete,
+    UserOut,
+)
 from ..serializers import user_to_mini_out, user_to_out
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -135,6 +143,7 @@ async def create_user(
         email=body.email.lower(),
         password_hash=hash_password(body.password),
         role=body.role,
+        active=body.active,
         metadata_=body.metadata_extra or {},
     )
     db.add(user)
@@ -191,6 +200,29 @@ async def bulk_update_role(
     return [user_to_out(u) for u in users]
 
 
+@router.patch("/bulk/active", response_model=list[UserOut])
+async def bulk_update_active(
+    body: UserBulkActiveUpdate,
+    _user: Annotated[User, Depends(_admin)],
+    db: AsyncSession = Depends(get_db),
+):
+    """Bulk-update the active status for multiple users."""
+    if not body.active and _user.id in body.user_ids:
+        raise HTTPException(status_code=400, detail="Cannot deactivate your own account")
+    stmt = select(User).where(User.id.in_(body.user_ids))
+    result = await db.execute(stmt)
+    users = result.scalars().unique().all()
+    if len(users) != len(set(body.user_ids)):
+        raise HTTPException(status_code=404, detail="One or more users not found")
+    for user in users:
+        user.active = body.active
+    await db.commit()
+    stmt = select(User).where(User.id.in_(body.user_ids))
+    result = await db.execute(stmt)
+    users = result.scalars().unique().all()
+    return [user_to_out(u) for u in users]
+
+
 @router.delete("/bulk", status_code=204)
 async def bulk_delete_users(
     body: UserBulkDelete,
@@ -234,6 +266,10 @@ async def update_user(
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    if body.active is False and _user.id == user_id:
+        raise HTTPException(status_code=400, detail="Cannot deactivate your own account")
+    if "active" in body.model_fields_set and body.active is None:
+        raise HTTPException(status_code=422, detail="active must be true or false")
     update_data = body.model_dump(exclude_unset=True)
     program_ids = update_data.pop("program_ids", None)
     if "metadata_extra" in update_data:
