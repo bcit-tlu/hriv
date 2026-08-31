@@ -48,6 +48,13 @@ health check or a restore. For the deeper design and tradeoffs, see
 
    The restore command toggles maintenance mode automatically.
 
+   `<SNAPSHOT_NAME>` may be the full archive name
+   (`hriv-backup-20260101-020000-9f3c1ab2.tar.gz`), the name without the
+   `.tar.gz` suffix, or an unambiguous prefix such as the bare timestamp
+   `hriv-backup-20260101-020000`. Old timestamp-only snapshots restore
+   unchanged. If a prefix matches more than one snapshot the command fails and
+   logs the matches — rerun it with the full name.
+
 3. Rebuild tiles after the files restore:
 
    ```bash

@@ -1,16 +1,19 @@
 """Unit tests for the HRIV backup service."""
 
 import contextlib
+import copy
 import io
 import importlib
 import json
 import logging
 import os
 import shutil
+import subprocess
 import sys
 import tarfile
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
@@ -33,6 +36,7 @@ class _BackupTestCase(unittest.TestCase):
         "AZURE_STORAGE_CONTAINER",
         "AZURE_BLOB_PREFIX",
         "BACKUP_STALE_HOURS",
+        "BACKUP_STAGING_DIR",
         "DATABASE_URL",
         "DATA_DIR",
         "RESTORE_TEST_DATABASE_URL",
@@ -329,14 +333,24 @@ class BackupRunTestCase(_BackupTestCase):
         uploaded_path = self.tmp / "uploaded.tar.gz"
         uploads: dict[str, bytes] = {}
 
-        def fake_upload_blob(blob_name, data, overwrite=True):
+        def fake_upload_blob(blob_name, data, overwrite=True, etag=None, match_condition=None):
             payload = data.read()
             uploads[blob_name] = payload
             if blob_name.endswith(".tar.gz"):
                 uploaded_path.write_bytes(payload)
 
+        def fake_download_blob(blob_name):
+            if blob_name not in uploads:
+                raise backup.ResourceNotFoundError("missing")
+            payload = uploads[blob_name]
+            return SimpleNamespace(
+                properties=SimpleNamespace(etag=f"etag-{len(payload)}"),
+                readall=lambda: payload,
+            )
+
         fake_container = MagicMock()
         fake_container.upload_blob = fake_upload_blob
+        fake_container.download_blob = fake_download_blob
         fake_container.list_blobs.return_value = []
         fake_container.delete_blob = MagicMock()
 
@@ -416,6 +430,42 @@ class BackupRunTestCase(_BackupTestCase):
         self.assertEqual(state["schema_version"], 2)
         self.assertTrue(state["filesystem"]["success"])
         self.assertEqual(state["filesystem"]["last_success_archive_key"], str(archive))
+        self.assertEqual(state["database"]["last_success_archive_key"], str(archive))
+
+    def test_run_backup_marker_records_completion_and_per_type_success(self):
+        self._reload(
+            {
+                "BACKUP_MODE": "production",
+                "DATA_DIR": str(self.data_dir),
+            }
+        )
+        local_dir = self.tmp / "backups"
+        local_dir.mkdir()
+
+        def fake_subprocess_run(cmd, **_kwargs):
+            if cmd[0] == "pg_dump":
+                f_idx = cmd.index("-f")
+                Path(cmd[f_idx + 1]).write_text("dump")
+            return MagicMock(returncode=0)
+
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=local_dir),
+            patch.object(backup.subprocess, "run", side_effect=fake_subprocess_run),
+        ):
+            result = backup.run_backup()
+
+        marker = json.loads((local_dir / "LAST_SUCCESS.json").read_text())
+        state = json.loads((local_dir / "BACKUP_STATE.json").read_text())
+        self.assertEqual(marker["snapshot_name"], result.name.removesuffix(".tar.gz"))
+        self.assertGreaterEqual(marker["completed_at"], marker["created_at"])
+        self.assertEqual(marker["run_id"], state["run_id"])
+        self.assertEqual(sorted(marker["types"]), ["database", "filesystem"])
+        self.assertEqual(marker["types"]["filesystem"]["archive_key"], str(local_dir / result.name))
+        self.assertEqual(state["database"]["run_id"], state["run_id"])
+        self.assertEqual(
+            sorted(entry["backup_type"] for entry in state["attempts"]),
+            ["database", "filesystem"],
+        )
 
     def test_pg_dump_failure_updates_backup_state(self):
         self._reload(
@@ -530,7 +580,13 @@ class RetentionTestCase(_BackupTestCase):
 class StatusTestCase(_BackupTestCase):
     """Tests for the backup health/status command."""
 
-    def _reload_status(self, *, marker_created_at: datetime | None, snapshots: list | None = None):
+    def _reload_status(
+        self,
+        *,
+        marker_created_at: datetime | None,
+        snapshots: list | None = None,
+        marker_completed_at: datetime | None = None,
+    ):
         self._reload(
             {
                 "BACKUP_MODE": "production",
@@ -543,15 +599,16 @@ class StatusTestCase(_BackupTestCase):
 
         marker_payload = None
         if marker_created_at is not None:
-            marker_payload = json.dumps(
-                {
-                    "snapshot_name": "hriv-backup-20260101-020000",
-                    "created_at": marker_created_at.isoformat(),
-                    "archive_size": 1234,
-                    "backup_mode": "production",
-                    "tiles_excluded": True,
-                }
-            ).encode()
+            marker = {
+                "snapshot_name": "hriv-backup-20260101-020000",
+                "created_at": marker_created_at.isoformat(),
+                "archive_size": 1234,
+                "backup_mode": "production",
+                "tiles_excluded": True,
+            }
+            if marker_completed_at is not None:
+                marker["completed_at"] = marker_completed_at.isoformat()
+            marker_payload = json.dumps(marker).encode()
 
         class _Download:
             def __init__(self, payload: bytes):
@@ -626,6 +683,19 @@ class StatusTestCase(_BackupTestCase):
         self.assertIn("Status: NO_SNAPSHOTS", output)
         self.assertIn("Snapshot count: 0", output)
 
+    def test_status_measures_age_from_completion_time(self):
+        # A long-running backup that started 3h ago but finished 30m ago is
+        # fresh against a 2h threshold.
+        fake_container = self._reload_status(
+            marker_created_at=datetime.now(timezone.utc) - timedelta(hours=3),
+            marker_completed_at=datetime.now(timezone.utc) - timedelta(minutes=30),
+        )
+
+        with patch.object(backup, "_blob_container_client", return_value=fake_container), contextlib.redirect_stdout(io.StringIO()) as stdout:
+            self.assertTrue(backup.run_status())
+
+        self.assertIn("Status: FRESH", stdout.getvalue())
+
     def test_missing_marker_is_silent(self):
         self._reload_status(marker_created_at=datetime.now(timezone.utc))
         fake_container = MagicMock()
@@ -633,6 +703,480 @@ class StatusTestCase(_BackupTestCase):
 
         with patch.object(backup, "_blob_container_client", return_value=fake_container), self.assertNoLogs("hriv-backup", level="ERROR"):
             self.assertIsNone(backup._read_last_success_marker())
+
+
+class SnapshotIdentityTestCase(_BackupTestCase):
+    """Collision-resistant snapshot naming and ordering."""
+
+    def setUp(self):
+        super().setUp()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self.local_dir = Path(self._tmpdir.name) / "backups"
+        self.local_dir.mkdir()
+
+    def test_new_name_keeps_timestamp_prefix_and_adds_random_suffix(self):
+        self._reload({})
+        created_at = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+        with patch.object(backup, "_local_backup_dir", return_value=self.local_dir):
+            names = {backup._new_snapshot_name(created_at) for _ in range(5)}
+
+        self.assertEqual(len(names), 5)
+        for name in names:
+            self.assertRegex(name, r"^hriv-backup-20260102-030405-[0-9a-f]{8}$")
+
+    def test_new_name_rerolls_when_candidate_already_exists(self):
+        self._reload({})
+        created_at = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+        (self.local_dir / "hriv-backup-20260102-030405-aaaaaaaa.tar.gz").write_bytes(b"")
+        fakes = [
+            SimpleNamespace(hex="aaaaaaaa" + "0" * 24),
+            SimpleNamespace(hex="bbbbbbbb" + "0" * 24),
+        ]
+
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=self.local_dir),
+            patch.object(backup.uuid, "uuid4", side_effect=fakes),
+        ):
+            name = backup._new_snapshot_name(created_at)
+
+        self.assertEqual(name, "hriv-backup-20260102-030405-bbbbbbbb")
+
+    def test_sort_key_orders_legacy_and_suffixed_names_chronologically(self):
+        self._reload({})
+        names = [
+            "hriv-backup-20260102-030405-ffffffff.tar.gz",
+            "hriv-backup-20260101-000000.tar.gz",
+            "hriv-backup-20260102-030405-00000000.tar.gz",
+            "hriv-backup-20260103-000000.tar.gz",
+        ]
+        self.assertEqual(
+            sorted(names, key=backup._snapshot_sort_key),
+            [
+                "hriv-backup-20260101-000000.tar.gz",
+                "hriv-backup-20260102-030405-00000000.tar.gz",
+                "hriv-backup-20260102-030405-ffffffff.tar.gz",
+                "hriv-backup-20260103-000000.tar.gz",
+            ],
+        )
+
+    def test_resolve_snapshot_name_accepts_exact_stem_and_unique_prefix(self):
+        self._reload({})
+        available = [
+            "hriv-backup-20260101-000000.tar.gz",
+            "hriv-backup-20260102-030405-aaaaaaaa.tar.gz",
+        ]
+        self.assertEqual(
+            backup._resolve_snapshot_name("hriv-backup-20260101-000000.tar.gz", available),
+            "hriv-backup-20260101-000000.tar.gz",
+        )
+        self.assertEqual(
+            backup._resolve_snapshot_name("hriv-backup-20260101-000000", available),
+            "hriv-backup-20260101-000000.tar.gz",
+        )
+        self.assertEqual(
+            backup._resolve_snapshot_name("hriv-backup-20260102-030405", available),
+            "hriv-backup-20260102-030405-aaaaaaaa.tar.gz",
+        )
+        self.assertIsNone(backup._resolve_snapshot_name("hriv-backup-20260104-000000", available))
+
+    def test_resolve_snapshot_name_rejects_ambiguous_prefix(self):
+        self._reload({})
+        available = [
+            "hriv-backup-20260102-030405-aaaaaaaa.tar.gz",
+            "hriv-backup-20260102-030405-bbbbbbbb.tar.gz",
+        ]
+        with self.assertLogs("hriv-backup", level="ERROR"):
+            self.assertIsNone(
+                backup._resolve_snapshot_name("hriv-backup-20260102-030405", available)
+            )
+
+
+class _FrozenDatetime(datetime):
+    """datetime whose now() is pinned so backups share a single second."""
+
+    _now = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+
+    @classmethod
+    def now(cls, tz=None):
+        return cls._now
+
+
+def _fake_pg_dump_run(cmd, **_kwargs):
+    if cmd[0] == "pg_dump":
+        Path(cmd[cmd.index("-f") + 1]).write_text("dump")
+    return MagicMock(returncode=0)
+
+
+class SameSecondBackupTestCase(_BackupTestCase):
+    """Two backups started in the same second must not collide."""
+
+    def setUp(self):
+        super().setUp()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self.tmp = Path(self._tmpdir.name)
+        self.data_dir = self.tmp / "data"
+        (self.data_dir / "source_images").mkdir(parents=True)
+        (self.data_dir / "source_images" / "img.jpg").write_bytes(b"source")
+        self.local_dir = self.tmp / "backups"
+        self.local_dir.mkdir()
+
+    def test_concurrent_local_backups_produce_distinct_archives(self):
+        self._reload({"DATA_DIR": str(self.data_dir), "BACKUP_RETENTION_COUNT": "5"})
+        results: list[Path] = []
+        errors: list[Exception] = []
+        barrier = threading.Barrier(2)
+
+        def worker() -> None:
+            barrier.wait()
+            try:
+                result = backup.run_backup()
+                if result is not None:
+                    results.append(result)
+            except Exception as exc:  # pragma: no cover - failure path
+                errors.append(exc)
+
+        with (
+            patch.object(backup, "datetime", _FrozenDatetime),
+            patch.object(backup, "_local_backup_dir", return_value=self.local_dir),
+            patch.object(backup.subprocess, "run", side_effect=_fake_pg_dump_run),
+        ):
+            threads = [threading.Thread(target=worker) for _ in range(2)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+
+        self.assertEqual(errors, [])
+        self.assertEqual(len(results), 2)
+        self.assertEqual(len({p.name for p in results}), 2)
+        for archive in results:
+            self.assertTrue(archive.exists())
+            with tarfile.open(archive, "r:gz") as tar:
+                names = tar.getnames()
+            self.assertTrue(any(n.endswith("data/source_images/img.jpg") for n in names))
+            sidecar = self.local_dir / f"{archive.name.removesuffix('.tar.gz')}.manifest.json"
+            payload = json.loads(sidecar.read_text())
+            self.assertEqual(payload["snapshot_name"], archive.name.removesuffix(".tar.gz"))
+
+    def test_same_second_azure_backups_do_not_overwrite_each_other(self):
+        self._reload(
+            {
+                "DATA_DIR": str(self.data_dir),
+                "AZURE_STORAGE_CONNECTION_STRING": "fake",
+                "AZURE_STORAGE_CONTAINER": "fake",
+            }
+        )
+        uploads: dict[str, bytes] = {}
+
+        def fake_upload_blob(blob_name, data, overwrite=True):
+            if not overwrite and blob_name in uploads:
+                raise RuntimeError(f"blob already exists: {blob_name}")
+            uploads[blob_name] = data.read()
+
+        fake_container = MagicMock()
+        fake_container.upload_blob = fake_upload_blob
+        fake_container.list_blobs.return_value = []
+
+        with (
+            patch.object(backup, "datetime", _FrozenDatetime),
+            patch.object(backup, "_local_backup_dir", return_value=self.local_dir),
+            patch.object(backup, "_blob_container_client", return_value=fake_container),
+            patch.object(backup.subprocess, "run", side_effect=_fake_pg_dump_run),
+        ):
+            first = backup.run_backup()
+            second = backup.run_backup()
+
+        self.assertIsNotNone(first)
+        self.assertIsNotNone(second)
+        self.assertNotEqual(first.name, second.name)
+        for archive in (first, second):
+            stem = archive.name.removesuffix(".tar.gz")
+            self.assertIn(f"hriv-backups/{stem}.tar.gz", uploads)
+            self.assertIn(f"hriv-backups/{stem}.manifest.json", uploads)
+
+
+class StagingTestCase(_BackupTestCase):
+    """Archives are staged on the backups volume, not pod-local /tmp."""
+
+    def setUp(self):
+        super().setUp()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self.tmp = Path(self._tmpdir.name)
+        self.local_dir = self.tmp / "backups"
+        self.local_dir.mkdir()
+
+    def test_staging_root_defaults_to_backups_volume(self):
+        self._reload({})
+        with patch.object(backup, "_local_backup_dir", return_value=self.local_dir):
+            root = backup._staging_root()
+        self.assertEqual(root, self.local_dir / ".staging")
+        self.assertTrue(root.is_dir())
+        self.assertEqual(list(root.iterdir()), [])
+
+    def test_staging_root_honours_override(self):
+        override = self.tmp / "elsewhere"
+        self._reload({"BACKUP_STAGING_DIR": str(override)})
+        self.assertEqual(backup._staging_root(), override)
+
+    def test_staging_root_falls_back_when_unwritable(self):
+        self._reload({"BACKUP_STAGING_DIR": "/proc/hriv-staging"})
+        with self.assertLogs("hriv-backup", level="WARNING"):
+            self.assertIsNone(backup._staging_root())
+
+    def test_run_backup_stages_on_backups_volume(self):
+        data_dir = self.tmp / "data"
+        data_dir.mkdir()
+        self._reload({"DATA_DIR": str(data_dir)})
+        real_temporary_directory = tempfile.TemporaryDirectory
+        staging_dirs: list[str | None] = []
+
+        def recording_temporary_directory(*args, **kwargs):
+            if kwargs.get("prefix") == backup._STAGING_PREFIX:
+                staging_dirs.append(kwargs.get("dir"))
+            return real_temporary_directory(*args, **kwargs)
+
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=self.local_dir),
+            patch.object(backup.tempfile, "TemporaryDirectory", recording_temporary_directory),
+            patch.object(backup.subprocess, "run", side_effect=_fake_pg_dump_run),
+        ):
+            result = backup.run_backup()
+            snapshots = backup.list_snapshots()
+
+        self.assertIsNotNone(result)
+        self.assertEqual(staging_dirs, [str(self.local_dir / ".staging")])
+        self.assertEqual(list((self.local_dir / ".staging").iterdir()), [])
+        self.assertEqual([s["name"] for s in snapshots], [result.name])
+
+    def test_sweep_stale_staging_removes_only_old_directories(self):
+        self._reload({})
+        root = self.local_dir / ".staging"
+        root.mkdir()
+        stale = root / f"{backup._STAGING_PREFIX}stale"
+        fresh = root / f"{backup._STAGING_PREFIX}fresh"
+        for directory in (stale, fresh):
+            directory.mkdir()
+            (directory / "archive.tar.gz").write_bytes(b"partial")
+        old = (datetime.now(timezone.utc) - timedelta(hours=48)).timestamp()
+        os.utime(stale / "archive.tar.gz", (old, old))
+        os.utime(stale, (old, old))
+
+        backup._sweep_stale_staging(root)
+
+        self.assertFalse(stale.exists())
+        self.assertTrue(fresh.exists())
+
+    def test_restore_extracts_on_backups_volume(self):
+        data_dir = self.tmp / "restore-target"
+        data_dir.mkdir()
+        self._reload({"DATA_DIR": str(data_dir)})
+        archive = self.local_dir / "hriv-backup-20260101-000000.tar.gz"
+        snapshot = self.tmp / "hriv-backup-20260101-000000"
+        (snapshot / "data" / "source_images").mkdir(parents=True)
+        (snapshot / "data" / "source_images" / "img.jpg").write_bytes(b"source")
+        (snapshot / "db.sql").write_text("dump")
+        with tarfile.open(archive, "w:gz") as tar:
+            tar.add(snapshot, arcname=snapshot.name)
+        real_temporary_directory = tempfile.TemporaryDirectory
+        restore_dirs: list[str | None] = []
+
+        def recording_temporary_directory(*args, **kwargs):
+            if kwargs.get("prefix") == backup._RESTORE_PREFIX:
+                restore_dirs.append(kwargs.get("dir"))
+            return real_temporary_directory(*args, **kwargs)
+
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=self.local_dir),
+            patch.object(backup.tempfile, "TemporaryDirectory", recording_temporary_directory),
+            patch.object(backup.subprocess, "run", return_value=MagicMock(returncode=0)),
+        ):
+            ok = backup._run_restore_inner(snapshot_name=archive.name)
+
+        self.assertTrue(ok)
+        self.assertEqual(restore_dirs, [str(self.local_dir / ".staging")])
+
+    def test_sweep_stale_staging_removes_stale_restore_directories(self):
+        self._reload({})
+        root = self.local_dir / ".staging"
+        root.mkdir()
+        stale = root / f"{backup._RESTORE_PREFIX}stale"
+        stale.mkdir()
+        (stale / "archive.tar.gz").write_bytes(b"partial download")
+        old = (datetime.now(timezone.utc) - timedelta(hours=48)).timestamp()
+        os.utime(stale / "archive.tar.gz", (old, old))
+        os.utime(stale, (old, old))
+
+        backup._sweep_stale_staging(root)
+
+        self.assertFalse(stale.exists())
+
+    def test_sweep_stale_staging_keeps_directory_with_recent_contents(self):
+        self._reload({})
+        root = self.local_dir / ".staging"
+        root.mkdir()
+        active = root / f"{backup._STAGING_PREFIX}active"
+        active.mkdir()
+        (active / "archive.tar.gz").write_bytes(b"still being written")
+        old = (datetime.now(timezone.utc) - timedelta(hours=48)).timestamp()
+        os.utime(active, (old, old))
+
+        backup._sweep_stale_staging(root)
+
+        self.assertTrue(active.exists())
+
+
+class NameDerivedRetentionTestCase(_BackupTestCase):
+    """Retention orders snapshots by the timestamp in their name."""
+
+    def setUp(self):
+        super().setUp()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self.local_dir = Path(self._tmpdir.name) / "backups"
+        self.local_dir.mkdir()
+
+    def test_azure_retention_ignores_misleading_last_modified(self):
+        self._reload(
+            {
+                "AZURE_STORAGE_CONNECTION_STRING": "fake",
+                "AZURE_STORAGE_CONTAINER": "fake",
+                "BACKUP_RETENTION_COUNT": "1",
+            }
+        )
+        blobs = [
+            SimpleNamespace(
+                name="hriv-backups/hriv-backup-20260101-000000.tar.gz",
+                last_modified=datetime(2026, 3, 1, tzinfo=timezone.utc),
+            ),
+            SimpleNamespace(
+                name="hriv-backups/hriv-backup-20260202-000000-aaaaaaaa.tar.gz",
+                last_modified=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            ),
+        ]
+        fake_container = MagicMock()
+        fake_container.list_blobs.return_value = blobs
+
+        backup._enforce_retention(fake_container)
+
+        deleted = [call.args[0] for call in fake_container.delete_blob.call_args_list]
+        self.assertIn("hriv-backups/hriv-backup-20260101-000000.tar.gz", deleted)
+        self.assertNotIn("hriv-backups/hriv-backup-20260202-000000-aaaaaaaa.tar.gz", deleted)
+
+    def test_local_retention_keeps_newest_same_second_snapshots(self):
+        self._reload({"BACKUP_RETENTION_COUNT": "2"})
+        for name in (
+            "hriv-backup-20260101-000000.tar.gz",
+            "hriv-backup-20260202-030405-aaaaaaaa.tar.gz",
+            "hriv-backup-20260202-030405-bbbbbbbb.tar.gz",
+        ):
+            (self.local_dir / name).write_bytes(b"archive")
+
+        with patch.object(backup, "_local_backup_dir", return_value=self.local_dir):
+            backup._enforce_local_retention()
+
+        self.assertEqual(
+            sorted(p.name for p in self.local_dir.glob("hriv-backup-*.tar.gz")),
+            [
+                "hriv-backup-20260202-030405-aaaaaaaa.tar.gz",
+                "hriv-backup-20260202-030405-bbbbbbbb.tar.gz",
+            ],
+        )
+
+
+class LegacySnapshotRestoreTestCase(_BackupTestCase):
+    """Restore keeps working for old timestamp-only snapshot names."""
+
+    def setUp(self):
+        super().setUp()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self.local_dir = Path(self._tmpdir.name) / "backups"
+        self.local_dir.mkdir()
+        for name in (
+            "hriv-backup-20260101-000000.tar.gz",
+            "hriv-backup-20260202-030405-aaaaaaaa.tar.gz",
+        ):
+            (self.local_dir / name).write_bytes(b"archive")
+
+    def _restore(self, snapshot_name):
+        restored: list[Path] = []
+
+        def fake_restore_from_archive(archive_path, **_kwargs):
+            restored.append(archive_path)
+            return True
+
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=self.local_dir),
+            patch.object(backup, "_restore_from_archive", side_effect=fake_restore_from_archive),
+        ):
+            ok = backup._run_restore_inner(snapshot_name=snapshot_name)
+        return ok, [p.name for p in restored]
+
+    def test_restore_accepts_legacy_name(self):
+        self._reload({})
+        ok, restored = self._restore("hriv-backup-20260101-000000")
+        self.assertTrue(ok)
+        self.assertEqual(restored, ["hriv-backup-20260101-000000.tar.gz"])
+
+    def test_restore_accepts_suffixed_name_and_timestamp_prefix(self):
+        self._reload({})
+        for requested in (
+            "hriv-backup-20260202-030405-aaaaaaaa.tar.gz",
+            "hriv-backup-20260202-030405",
+        ):
+            ok, restored = self._restore(requested)
+            self.assertTrue(ok)
+            self.assertEqual(restored, ["hriv-backup-20260202-030405-aaaaaaaa.tar.gz"])
+
+    def test_restore_reports_available_snapshots_when_prefix_is_ambiguous(self):
+        self._reload({})
+        (self.local_dir / "hriv-backup-20260202-030405-bbbbbbbb.tar.gz").write_bytes(b"archive")
+        with self.assertLogs("hriv-backup", level="ERROR") as logs:
+            ok, restored = self._restore("hriv-backup-20260202-030405")
+        self.assertFalse(ok)
+        self.assertEqual(restored, [])
+        self.assertTrue(any("is ambiguous" in line for line in logs.output))
+        self.assertTrue(any("not found. Available" in line for line in logs.output))
+        self.assertFalse(any("Snapshot file not found" in line for line in logs.output))
+
+    def test_restore_uses_newest_snapshot_by_name_when_unspecified(self):
+        self._reload({})
+        ok, restored = self._restore(None)
+        self.assertTrue(ok)
+        self.assertEqual(restored, ["hriv-backup-20260202-030405-aaaaaaaa.tar.gz"])
+
+
+class LastSuccessMarkerOrderingTestCase(_BackupTestCase):
+    """A slower older backup must not regress the last-success marker."""
+
+    def setUp(self):
+        super().setUp()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self.local_dir = Path(self._tmpdir.name) / "backups"
+        self.local_dir.mkdir()
+
+    def test_older_backup_does_not_overwrite_newer_marker(self):
+        self._reload({})
+        newer = {
+            "snapshot_name": "hriv-backup-20260202-030406-bbbbbbbb",
+            "created_at": "2026-02-02T03:04:06+00:00",
+        }
+        (self.local_dir / "LAST_SUCCESS.json").write_text(json.dumps(newer))
+
+        with patch.object(backup, "_local_backup_dir", return_value=self.local_dir):
+            backup._write_last_success_marker(
+                "hriv-backup-20260202-030405-aaaaaaaa",
+                created_at=datetime(2026, 2, 2, 3, 4, 5, tzinfo=timezone.utc),
+                completed_at=datetime(2026, 2, 2, 3, 4, 5, tzinfo=timezone.utc),
+                archive_size=1,
+            )
+            marker = backup._read_last_success_marker()
+
+        self.assertEqual(marker["snapshot_name"], newer["snapshot_name"])
 
 
 class AtomicWriteTestCase(unittest.TestCase):
@@ -664,6 +1208,721 @@ class AtomicWriteTestCase(unittest.TestCase):
             self.assertEqual(errors, [])
             self.assertIn(target.read_bytes(), (b'{"writer": "a"}', b'{"writer": "b"}'))
             self.assertEqual([p.name for p in Path(tmpdir).iterdir()], [target.name])
+
+
+def _section(**overrides) -> dict:
+    section = {
+        "run_id": None,
+        "started_at": None,
+        "completed_at": None,
+        "success": None,
+        "duration_seconds": None,
+        "size_bytes": None,
+        "archive_key": None,
+        "last_success_started_at": None,
+        "last_success_completed_at": None,
+        "last_success_duration_seconds": None,
+        "last_success_size_bytes": None,
+        "last_success_archive_key": None,
+    }
+    section.update(overrides)
+    return section
+
+
+def _attempt(run_id: str, started: str, completed: str | None, *, success=None, archive_key=None) -> dict:
+    section = _section(
+        run_id=run_id,
+        started_at=started,
+        completed_at=completed,
+        success=success,
+        archive_key=archive_key,
+    )
+    if success:
+        section["last_success_started_at"] = started
+        section["last_success_completed_at"] = completed
+        section["last_success_archive_key"] = archive_key
+    return section
+
+
+def _state(run_id: str, *, database: dict | None = None, filesystem: dict | None = None, snapshot_name="snap") -> dict:
+    return {
+        "schema_version": 2,
+        "run_id": run_id,
+        "snapshot_name": snapshot_name,
+        "backup_mode": "production",
+        "tiles_excluded": True,
+        "storage_prefix": "hriv-backups",
+        "database": database or _section(),
+        "filesystem": filesystem or _section(),
+    }
+
+
+class BackupStateMergeTestCase(unittest.TestCase):
+    """Ordering rules for concurrent updates to the shared backup state."""
+
+    def test_older_completion_cannot_overwrite_newer_attempt(self):
+        newer = _state(
+            "newer",
+            snapshot_name="snap-newer",
+            database=_attempt("newer", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True, archive_key="new-key"),
+        )
+        older = _state(
+            "older",
+            snapshot_name="snap-older",
+            database=_attempt("older", "2026-08-01T09:00:00+00:00", "2026-08-01T10:03:00+00:00", success=True, archive_key="old-key"),
+        )
+
+        merged = backup._merge_backup_state(newer, older)
+
+        self.assertEqual(merged["database"]["run_id"], "newer")
+        self.assertEqual(merged["database"]["archive_key"], "new-key")
+        self.assertEqual(merged["database"]["last_success_archive_key"], "new-key")
+        self.assertEqual(merged["snapshot_name"], "snap-newer")
+
+    def test_newer_completion_advances_state(self):
+        older = _state(
+            "older",
+            database=_attempt("older", "2026-08-01T09:00:00+00:00", "2026-08-01T09:05:00+00:00", success=True, archive_key="old-key"),
+        )
+        newer = _state(
+            "newer",
+            snapshot_name="snap-newer",
+            database=_attempt("newer", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True, archive_key="new-key"),
+        )
+
+        merged = backup._merge_backup_state(older, newer)
+
+        self.assertEqual(merged["database"]["run_id"], "newer")
+        self.assertEqual(merged["database"]["last_success_archive_key"], "new-key")
+        self.assertEqual(merged["snapshot_name"], "snap-newer")
+
+    def test_same_run_can_enrich_its_own_attempt_record(self):
+        # The database archive key is only known once the filesystem archive
+        # exists, so the owning run re-commits an attempt whose timestamps are
+        # already final.
+        attempt = _attempt(
+            "run-1", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True
+        )
+        stored = backup._merge_backup_state(None, _state("run-1", database=attempt))
+
+        enriched = copy.deepcopy(attempt)
+        enriched["archive_key"] = "snap.tar.gz"
+        enriched["last_success_archive_key"] = "snap.tar.gz"
+        merged = backup._merge_backup_state(stored, _state("run-1", database=enriched))
+
+        self.assertEqual(merged["database"]["archive_key"], "snap.tar.gz")
+        self.assertEqual(merged["database"]["last_success_archive_key"], "snap.tar.gz")
+
+    def test_same_run_enrichment_also_updates_its_history_entry(self):
+        attempt = _attempt(
+            "run-1", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True
+        )
+        stored = backup._merge_backup_state(None, _state("run-1", database=attempt))
+
+        enriched = copy.deepcopy(attempt)
+        enriched["archive_key"] = "snap.tar.gz"
+        merged = backup._merge_backup_state(stored, _state("run-1", database=enriched))
+
+        entries = [entry for entry in merged["attempts"] if entry["backup_type"] == "database"]
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["archive_key"], "snap.tar.gz")
+
+    def test_late_finishing_older_failure_cannot_regress_newer_success(self):
+        newer_success = _state(
+            "newer",
+            filesystem=_attempt("newer", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True, archive_key="new-key"),
+        )
+        # An older run that started first but only failed afterwards.
+        older_failure = _state(
+            "older",
+            filesystem=_attempt("older", "2026-08-01T09:00:00+00:00", "2026-08-01T10:09:00+00:00", success=False),
+        )
+
+        merged = backup._merge_backup_state(newer_success, older_failure)
+
+        # The failure is newer, so it becomes the current attempt …
+        self.assertIs(merged["filesystem"]["success"], False)
+        self.assertEqual(merged["filesystem"]["run_id"], "older")
+        # … but the newer success history survives.
+        self.assertEqual(merged["filesystem"]["last_success_completed_at"], "2026-08-01T10:05:00+00:00")
+        self.assertEqual(merged["filesystem"]["last_success_archive_key"], "new-key")
+
+    def test_older_failure_does_not_replace_newer_attempt(self):
+        newer_success = _state(
+            "newer",
+            filesystem=_attempt("newer", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True, archive_key="new-key"),
+        )
+        older_failure = _state(
+            "older",
+            filesystem=_attempt("older", "2026-08-01T09:00:00+00:00", "2026-08-01T09:30:00+00:00", success=False),
+        )
+
+        merged = backup._merge_backup_state(newer_success, older_failure)
+
+        self.assertIs(merged["filesystem"]["success"], True)
+        self.assertEqual(merged["filesystem"]["run_id"], "newer")
+
+    def test_in_progress_attempt_does_not_displace_finished_attempt(self):
+        finished = _state(
+            "finished",
+            database=_attempt("finished", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True),
+        )
+        in_progress = _state(
+            "running",
+            database=_section(run_id="running", started_at="2026-08-01T10:02:00+00:00"),
+        )
+
+        merged = backup._merge_backup_state(finished, in_progress)
+
+        self.assertEqual(merged["database"]["run_id"], "finished")
+        self.assertIs(merged["database"]["success"], True)
+
+    def test_types_are_merged_independently(self):
+        existing = _state(
+            "a",
+            database=_attempt("a", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True, archive_key="a-key"),
+            filesystem=_attempt("a", "2026-08-01T10:05:00+00:00", "2026-08-01T10:30:00+00:00", success=False),
+        )
+        incoming = _state(
+            "b",
+            database=_attempt("b", "2026-08-01T09:00:00+00:00", "2026-08-01T09:05:00+00:00", success=True, archive_key="b-key"),
+            filesystem=_attempt("b", "2026-08-01T09:05:00+00:00", "2026-08-01T10:40:00+00:00", success=True, archive_key="b-fs"),
+        )
+
+        merged = backup._merge_backup_state(existing, incoming)
+
+        self.assertEqual(merged["database"]["last_success_archive_key"], "a-key")
+        self.assertEqual(merged["filesystem"]["last_success_archive_key"], "b-fs")
+
+    def test_missing_or_legacy_state_is_replaced(self):
+        incoming = _state("only")
+        self.assertEqual(backup._merge_backup_state(None, incoming)["run_id"], "only")
+        self.assertEqual(backup._merge_backup_state({"schema_version": 1}, incoming)["run_id"], "only")
+        self.assertEqual(backup._merge_backup_state("garbage", incoming)["run_id"], "only")
+
+    def test_attempt_history_retains_losing_run(self):
+        existing = _state(
+            "newer",
+            database=_attempt("newer", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True),
+        )
+        existing["attempts"] = backup._merge_attempt_history(None, existing)
+        older = _state(
+            "older",
+            database=_attempt("older", "2026-08-01T09:00:00+00:00", "2026-08-01T09:05:00+00:00", success=False),
+        )
+
+        merged = backup._merge_backup_state(existing, older)
+
+        run_ids = [entry["run_id"] for entry in merged["attempts"]]
+        self.assertIn("newer", run_ids)
+        self.assertIn("older", run_ids)
+        self.assertLessEqual(len(merged["attempts"]), backup._MAX_ATTEMPT_HISTORY)
+
+    def test_attempt_history_is_bounded(self):
+        state = None
+        for index in range(backup._MAX_ATTEMPT_HISTORY + 5):
+            incoming = _state(
+                f"run-{index:02d}",
+                database=_attempt(
+                    f"run-{index:02d}",
+                    f"2026-08-01T{index:02d}:00:00+00:00",
+                    f"2026-08-01T{index:02d}:05:00+00:00",
+                    success=True,
+                ),
+            )
+            state = backup._merge_backup_state(state, incoming)
+
+        self.assertEqual(len(state["attempts"]), backup._MAX_ATTEMPT_HISTORY)
+        self.assertEqual(state["attempts"][0]["run_id"], f"run-{backup._MAX_ATTEMPT_HISTORY + 4:02d}")
+
+
+class LastSuccessMarkerMergeTestCase(unittest.TestCase):
+    """Ordering rules for the LAST_SUCCESS marker."""
+
+    def _marker(self, run_id, created, completed, *, types=None):
+        return {
+            "snapshot_name": f"snap-{run_id}",
+            "created_at": created,
+            "completed_at": completed,
+            "archive_size": 10,
+            "backup_mode": "production",
+            "tiles_excluded": True,
+            "run_id": run_id,
+            "types": types or {},
+        }
+
+    def test_newest_completion_wins(self):
+        newer = self._marker("newer", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00")
+        older = self._marker("older", "2026-08-01T09:00:00+00:00", "2026-08-01T10:03:00+00:00")
+
+        self.assertEqual(backup._merge_last_success_marker(newer, older)["run_id"], "newer")
+        self.assertEqual(backup._merge_last_success_marker(older, newer)["run_id"], "newer")
+
+    def test_legacy_marker_without_completed_at_is_ordered_by_created_at(self):
+        legacy = {"snapshot_name": "snap-legacy", "created_at": "2026-08-01T08:00:00+00:00"}
+        newer = self._marker("newer", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00")
+
+        self.assertEqual(backup._merge_last_success_marker(legacy, newer)["run_id"], "newer")
+        self.assertEqual(backup._merge_last_success_marker(newer, legacy)["run_id"], "newer")
+
+    def test_per_type_entries_keep_newest_of_each_type(self):
+        existing = self._marker(
+            "a",
+            "2026-08-01T10:00:00+00:00",
+            "2026-08-01T10:05:00+00:00",
+            types={
+                "database": {"run_id": "a", "created_at": "2026-08-01T10:00:00+00:00", "completed_at": "2026-08-01T10:02:00+00:00"},
+            },
+        )
+        incoming = self._marker(
+            "b",
+            "2026-08-01T09:00:00+00:00",
+            "2026-08-01T10:03:00+00:00",
+            types={
+                "filesystem": {"run_id": "b", "created_at": "2026-08-01T09:00:00+00:00", "completed_at": "2026-08-01T10:03:00+00:00"},
+            },
+        )
+
+        merged = backup._merge_last_success_marker(existing, incoming)
+
+        self.assertEqual(merged["run_id"], "a")
+        self.assertEqual(merged["types"]["database"]["run_id"], "a")
+        self.assertEqual(merged["types"]["filesystem"]["run_id"], "b")
+
+
+class RestoreStateMergeTestCase(unittest.TestCase):
+    """Ordering rules for the shared restore state."""
+
+    def _restore_state(self, run_id, purpose, started, completed, success):
+        blank = {
+            "run_id": None,
+            "started_at": None,
+            "completed_at": None,
+            "success": None,
+            "duration_seconds": None,
+            "archive_name": None,
+            "last_success_started_at": None,
+            "last_success_completed_at": None,
+            "last_success_duration_seconds": None,
+            "last_success_archive_name": None,
+        }
+        section = dict(blank, run_id=run_id, started_at=started, completed_at=completed, success=success)
+        if success:
+            section["last_success_started_at"] = started
+            section["last_success_completed_at"] = completed
+            section["last_success_archive_name"] = f"{run_id}.tar.gz"
+        state = {
+            "schema_version": 1,
+            "run_id": run_id,
+            "operator": {"database": dict(blank), "filesystem": dict(blank)},
+            "test": {"database": dict(blank), "filesystem": dict(blank)},
+        }
+        state[purpose]["database"] = section
+        return state
+
+    def test_older_restore_failure_preserves_newer_success(self):
+        newer = self._restore_state("newer", "operator", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", True)
+        older = self._restore_state("older", "operator", "2026-08-01T09:00:00+00:00", "2026-08-01T10:09:00+00:00", False)
+
+        merged = backup._merge_restore_state(newer, older)
+
+        self.assertIs(merged["operator"]["database"]["success"], False)
+        self.assertEqual(merged["operator"]["database"]["last_success_archive_name"], "newer.tar.gz")
+
+    def test_purposes_do_not_clobber_each_other(self):
+        operator = self._restore_state("op", "operator", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", True)
+        test_run = self._restore_state("test", "test", "2026-08-01T11:00:00+00:00", "2026-08-01T11:05:00+00:00", True)
+
+        merged = backup._merge_restore_state(operator, test_run)
+
+        self.assertEqual(merged["operator"]["database"]["run_id"], "op")
+        self.assertEqual(merged["test"]["database"]["run_id"], "test")
+
+
+class LocalStateCommitTestCase(_BackupTestCase):
+    """Local (PVC) read-merge-write behaviour, including the sidecar lock."""
+
+    def setUp(self):
+        super().setUp()
+        self._reload({"BACKUP_MODE": "production"})
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self.local_dir = Path(self._tmpdir.name) / "backups"
+        self.local_dir.mkdir()
+        patcher = patch.object(backup, "_local_backup_dir", return_value=self.local_dir)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _write_state(self, state):
+        backup._commit_shared_json(
+            local_path=backup._backup_state_path(),
+            blob_name=backup._backup_state_blob_name(),
+            incoming=state,
+            merge=backup._merge_backup_state,
+            label="test state",
+        )
+
+    def _read_state(self):
+        return json.loads((self.local_dir / "BACKUP_STATE.json").read_text())
+
+    def test_out_of_order_writers_converge_on_newest_result(self):
+        newer = _state(
+            "newer",
+            database=_attempt("newer", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True, archive_key="new-key"),
+        )
+        older = _state(
+            "older",
+            database=_attempt("older", "2026-08-01T09:00:00+00:00", "2026-08-01T10:04:00+00:00", success=True, archive_key="old-key"),
+        )
+
+        self._write_state(newer)
+        self._write_state(older)
+
+        state = self._read_state()
+        self.assertEqual(state["database"]["run_id"], "newer")
+        self.assertEqual(state["database"]["last_success_archive_key"], "new-key")
+
+    def test_lock_file_is_created_on_the_backups_volume(self):
+        self._write_state(_state("only"))
+
+        lock_path = self.local_dir / backup.STATE_LOCK_FILENAME
+        self.assertTrue(lock_path.exists())
+        self.assertEqual(backup._state_lock_path(), lock_path)
+
+    def test_lock_sidecar_is_invisible_to_list_and_retention(self):
+        self._reload({"BACKUP_MODE": "production", "BACKUP_RETENTION_COUNT": "1"})
+        with patch.object(backup, "_local_backup_dir", return_value=self.local_dir):
+            self._write_state(_state("only"))
+            for name in ("hriv-backup-20260101-020000.tar.gz", "hriv-backup-20260102-020000.tar.gz"):
+                (self.local_dir / name).write_bytes(b"archive")
+
+            names = [snapshot["name"] for snapshot in backup.list_snapshots()]
+            backup._enforce_local_retention()
+
+        self.assertEqual(names, ["hriv-backup-20260102-020000.tar.gz", "hriv-backup-20260101-020000.tar.gz"])
+        self.assertTrue((self.local_dir / backup.STATE_LOCK_FILENAME).exists())
+        self.assertTrue((self.local_dir / "hriv-backup-20260102-020000.tar.gz").exists())
+        self.assertFalse((self.local_dir / "hriv-backup-20260101-020000.tar.gz").exists())
+
+    def test_corrupt_state_file_is_replaced(self):
+        (self.local_dir / "BACKUP_STATE.json").write_text("{not json")
+
+        with self.assertLogs("hriv-backup", level="ERROR"):
+            self._write_state(_state("fresh"))
+
+        self.assertEqual(self._read_state()["run_id"], "fresh")
+
+    def test_concurrent_threads_preserve_both_successes(self):
+        barrier = threading.Barrier(2)
+        errors: list[Exception] = []
+
+        def writer(run_id: str, backup_type: str, hour: int) -> None:
+            state = _state(
+                run_id,
+                **{
+                    backup_type: _attempt(
+                        run_id,
+                        f"2026-08-01T{hour:02d}:00:00+00:00",
+                        f"2026-08-01T{hour:02d}:05:00+00:00",
+                        success=True,
+                        archive_key=f"{run_id}-key",
+                    )
+                },
+            )
+            barrier.wait()
+            for _ in range(50):
+                try:
+                    self._write_state(copy.deepcopy(state))
+                except Exception as exc:  # pragma: no cover - failure path
+                    errors.append(exc)
+
+        threads = [
+            threading.Thread(target=writer, args=("db-run", "database", 10)),
+            threading.Thread(target=writer, args=("fs-run", "filesystem", 11)),
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        self.assertEqual(errors, [])
+        state = self._read_state()
+        self.assertEqual(state["database"]["last_success_archive_key"], "db-run-key")
+        self.assertEqual(state["filesystem"]["last_success_archive_key"], "fs-run-key")
+
+
+class StateLockProcessTestCase(unittest.TestCase):
+    """Cross-process and crash behaviour of the shared state lock."""
+
+    BACKUP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self.local_dir = Path(self._tmpdir.name) / "backups"
+        self.local_dir.mkdir()
+        self.flag = self.local_dir / "holding"
+
+    def _spawn_holder(self, hold_seconds: float) -> subprocess.Popen:
+        script = (
+            "import pathlib, sys, time\n"
+            f"sys.path.insert(0, {self.BACKUP_DIR!r})\n"
+            "import backup\n"
+            f"backup._local_backup_dir = lambda: pathlib.Path({str(self.local_dir)!r})\n"
+            "with backup._state_lock() as acquired:\n"
+            f"    pathlib.Path({str(self.flag)!r}).write_text('1' if acquired else '0')\n"
+            f"    time.sleep({hold_seconds})\n"
+        )
+        process = subprocess.Popen([sys.executable, "-c", script])
+        self.addCleanup(self._terminate, process)
+
+        deadline = time.monotonic() + 30
+        while not self.flag.exists():
+            if time.monotonic() > deadline:  # pragma: no cover - failure path
+                self.fail("Lock holder subprocess never acquired the lock")
+            time.sleep(0.02)
+        self.assertEqual(self.flag.read_text(), "1")
+        return process
+
+    def _terminate(self, process: subprocess.Popen) -> None:
+        if process.poll() is None:
+            process.kill()
+        process.wait(timeout=30)
+
+    def test_lock_is_exclusive_across_processes(self):
+        holder = self._spawn_holder(1.0)
+
+        with patch.object(backup, "_local_backup_dir", return_value=self.local_dir):
+            started = time.monotonic()
+            with backup._state_lock() as acquired:
+                waited = time.monotonic() - started
+                self.assertTrue(acquired)
+
+        self.assertGreaterEqual(waited, 0.5)
+        holder.wait(timeout=30)
+
+    def test_killed_writer_releases_the_lock(self):
+        holder = self._spawn_holder(120.0)
+        holder.kill()
+        holder.wait(timeout=30)
+
+        with patch.object(backup, "_local_backup_dir", return_value=self.local_dir):
+            started = time.monotonic()
+            with backup._state_lock() as acquired:
+                self.assertTrue(acquired)
+            self.assertLess(time.monotonic() - started, 5.0)
+
+    def test_wedged_lock_holder_skips_the_update_instead_of_racing(self):
+        self._spawn_holder(120.0)
+        (self.local_dir / "BACKUP_STATE.json").write_text(json.dumps(_state("earlier")))
+
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=self.local_dir),
+            patch.object(backup, "_STATE_LOCK_TIMEOUT_SECONDS", 0.2),
+            self.assertLogs("hriv-backup", level="WARNING") as logs,
+        ):
+            backup._commit_shared_json(
+                local_path=backup._backup_state_path(),
+                blob_name=backup._backup_state_blob_name(),
+                incoming=_state("blocked"),
+                merge=backup._merge_backup_state,
+                label="test state",
+            )
+
+        self.assertTrue(any("Skipping" in message for message in logs.output))
+        state = json.loads((self.local_dir / "BACKUP_STATE.json").read_text())
+        self.assertEqual(state["run_id"], "earlier")
+
+
+class _FakeBlobStore:
+    """Minimal Azure container stub with ETag semantics."""
+
+    def __init__(self):
+        self.blobs: dict[str, bytes] = {}
+        self.etags: dict[str, str] = {}
+        self.calls: list[tuple[str, bool, str | None]] = []
+        self.match_conditions: list[object] = []
+        self.before_upload = None
+
+    def _put(self, name: str, payload: bytes) -> None:
+        self.blobs[name] = payload
+        self.etags[name] = f"etag-{len(self.calls)}-{len(payload)}"
+
+    def seed(self, name: str, document: dict) -> None:
+        self._put(name, json.dumps(document).encode())
+
+    def download_blob(self, name: str):
+        if name not in self.blobs:
+            raise backup.ResourceNotFoundError("missing")
+        payload = self.blobs[name]
+        return SimpleNamespace(
+            properties=SimpleNamespace(etag=self.etags[name]),
+            readall=lambda: payload,
+        )
+
+    def upload_blob(self, name, data, overwrite=True, etag=None, match_condition=None):
+        payload = data.read()
+        self.calls.append((name, overwrite, etag))
+        if self.before_upload is not None:
+            hook, self.before_upload = self.before_upload, None
+            hook(self)
+        if not overwrite:
+            if name in self.blobs:
+                raise backup.ResourceExistsError("blob already exists")
+        elif etag is not None:
+            self.match_conditions.append(match_condition)
+            if self.etags.get(name) != etag:
+                raise backup.ResourceModifiedError("blob was modified")
+        self._put(name, payload)
+
+
+class AzureStateCommitTestCase(_BackupTestCase):
+    """Azure ETag compare-and-set behaviour for shared state blobs."""
+
+    def setUp(self):
+        super().setUp()
+        self._reload(
+            {
+                "BACKUP_MODE": "production",
+                "AZURE_STORAGE_CONNECTION_STRING": "fake",
+                "AZURE_STORAGE_CONTAINER": "fake",
+                "AZURE_BLOB_PREFIX": "hriv-backups",
+            }
+        )
+        self.store = _FakeBlobStore()
+        patcher = patch.object(backup, "_blob_container_client", return_value=self.store)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.blob_name = "hriv-backups/BACKUP_STATE.json"
+
+    def _write_state(self, state):
+        backup._commit_shared_json(
+            local_path=Path("/nonexistent/BACKUP_STATE.json"),
+            blob_name=self.blob_name,
+            incoming=state,
+            merge=backup._merge_backup_state,
+            label="test state",
+        )
+
+    def _stored(self):
+        return json.loads(self.store.blobs[self.blob_name].decode())
+
+    def test_first_write_creates_the_blob_without_an_etag(self):
+        self._write_state(_state("first"))
+
+        self.assertEqual(self.store.calls, [(self.blob_name, False, None)])
+        self.assertEqual(self._stored()["run_id"], "first")
+
+    def test_second_write_is_conditional_on_the_etag(self):
+        self._write_state(_state("first"))
+        self._write_state(_state("second"))
+
+        name, overwrite, etag = self.store.calls[-1]
+        self.assertEqual((name, overwrite), (self.blob_name, True))
+        self.assertIsNotNone(etag)
+        self.assertEqual(self.store.match_conditions, [backup.MatchConditions.IfNotModified])
+
+    def test_interleaved_writer_forces_a_re_merge(self):
+        competitor = _state(
+            "competitor",
+            filesystem=_attempt("competitor", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True, archive_key="competitor-key"),
+        )
+        self._write_state(_state("base"))
+
+        def steal(store):
+            store.seed(self.blob_name, competitor)
+
+        self.store.before_upload = steal
+        self._write_state(
+            _state(
+                "mine",
+                database=_attempt("mine", "2026-08-01T10:10:00+00:00", "2026-08-01T10:12:00+00:00", success=True, archive_key="my-key"),
+            )
+        )
+
+        stored = self._stored()
+        self.assertEqual(stored["database"]["last_success_archive_key"], "my-key")
+        self.assertEqual(stored["filesystem"]["last_success_archive_key"], "competitor-key")
+
+    def test_persistent_contention_gives_up_without_raising(self):
+        self._write_state(_state("first"))
+
+        def always_conflict(name, data, overwrite=True, etag=None, match_condition=None):
+            data.read()
+            if overwrite and etag is not None:
+                raise backup.ResourceModifiedError("blob was modified")
+            raise backup.ResourceExistsError("blob already exists")
+
+        with patch.object(self.store, "upload_blob", side_effect=always_conflict), self.assertLogs(
+            "hriv-backup", level="WARNING"
+        ) as logs:
+            self._write_state(_state("loser"))
+
+        self.assertTrue(any("Gave up" in message for message in logs.output))
+        self.assertEqual(self._stored()["run_id"], "first")
+
+    def test_unparseable_blob_is_replaced_conditionally(self):
+        self.store.blobs[self.blob_name] = b"{not json"
+        self.store.etags[self.blob_name] = "etag-corrupt"
+
+        with self.assertLogs("hriv-backup", level="WARNING"):
+            self._write_state(_state("repaired"))
+
+        self.assertEqual(self._stored()["run_id"], "repaired")
+        self.assertEqual(self.store.calls[-1][2], "etag-corrupt")
+
+    def test_failed_read_retries_instead_of_replacing_newer_state(self):
+        newer = _state(
+            "newer",
+            filesystem=_attempt(
+                "newer",
+                "2026-08-01T10:00:00+00:00",
+                "2026-08-01T10:05:00+00:00",
+                success=True,
+                archive_key="newer-key",
+            ),
+        )
+        self.store.seed(self.blob_name, newer)
+
+        reads = {"count": 0}
+        real_download = self.store.download_blob
+
+        def flaky_download(name):
+            reads["count"] += 1
+            if reads["count"] == 1:
+                raise RuntimeError("transient read failure")
+            return real_download(name)
+
+        with patch.object(self.store, "download_blob", side_effect=flaky_download):
+            self._write_state(
+                _state(
+                    "mine",
+                    database=_attempt(
+                        "mine",
+                        "2026-08-01T09:00:00+00:00",
+                        "2026-08-01T09:02:00+00:00",
+                        success=True,
+                        archive_key="my-key",
+                    ),
+                )
+            )
+
+        stored = self._stored()
+        self.assertEqual(stored["filesystem"]["last_success_archive_key"], "newer-key")
+        self.assertEqual(stored["database"]["last_success_archive_key"], "my-key")
+
+    def test_unreadable_blob_gives_up_without_clobbering(self):
+        self.store.seed(self.blob_name, _state("existing"))
+
+        with (
+            patch.object(self.store, "download_blob", side_effect=RuntimeError("unreadable")),
+            self.assertLogs("hriv-backup", level="WARNING") as logs,
+        ):
+            self._write_state(_state("mine"))
+
+        self.assertTrue(any("Gave up" in message for message in logs.output))
+        self.assertEqual(self.store.calls, [])
+        self.assertEqual(self._stored()["run_id"], "existing")
 
 
 if __name__ == "__main__":

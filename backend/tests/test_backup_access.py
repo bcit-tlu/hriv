@@ -208,6 +208,47 @@ def test_get_backup_observability_state_falls_back_to_legacy_marker() -> None:
     assert state["filesystem"]["last_success_size_bytes"] == 1234
 
 
+def test_legacy_marker_fallback_prefers_completion_time() -> None:
+    marker = {
+        "snapshot_name": "hriv-backup-20260102-020000",
+        "created_at": "2026-01-02T02:00:00+00:00",
+        "completed_at": "2026-01-02T02:25:00+00:00",
+        "archive_size": 1234,
+        "backup_mode": "production",
+        "tiles_excluded": True,
+    }
+
+    with (
+        patch.object(backup_access, "_backup_state_blob_name", return_value="BACKUP_STATE.json"),
+        patch.object(backup_access, "_download_json_blob", side_effect=ResourceNotFoundError(message="missing")),
+        patch.object(backup_access, "get_last_success_marker", return_value=marker),
+    ):
+        state = get_backup_observability_state()
+
+    for backup_type in ("database", "filesystem"):
+        section = state[backup_type]
+        assert section["started_at"] == "2026-01-02T02:00:00+00:00"
+        assert section["completed_at"] == "2026-01-02T02:25:00+00:00"
+        assert section["last_success_completed_at"] == "2026-01-02T02:25:00+00:00"
+
+
+def test_legacy_marker_fallback_without_completion_time_uses_created_at() -> None:
+    marker = {
+        "snapshot_name": "hriv-backup-20260102-020000",
+        "created_at": "2026-01-02T02:00:00+00:00",
+        "archive_size": 1234,
+    }
+
+    with (
+        patch.object(backup_access, "_backup_state_blob_name", return_value="BACKUP_STATE.json"),
+        patch.object(backup_access, "_download_json_blob", side_effect=ResourceNotFoundError(message="missing")),
+        patch.object(backup_access, "get_last_success_marker", return_value=marker),
+    ):
+        state = get_backup_observability_state()
+
+    assert state["database"]["last_success_completed_at"] == "2026-01-02T02:00:00+00:00"
+
+
 def test_list_retained_backup_archives_classifies_by_manifest(monkeypatch, tmp_path) -> None:
     blobs = [
         SimpleNamespace(
