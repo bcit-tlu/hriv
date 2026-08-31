@@ -15,6 +15,7 @@ Two routes:
 """
 
 import logging
+import os
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -112,9 +113,15 @@ async def serve_tile(
         raise HTTPException(status_code=404, detail="Tile not found")
     base = Path(settings.tiles_dir).resolve()
     image_dir = base / str(source_image_id)
-    candidate = (image_dir / path).resolve()
-    if not candidate.is_relative_to(image_dir):
+    # Canonicalize with os.path.realpath and guard containment with a
+    # startswith prefix check — the sanitizer shape CodeQL's
+    # py/path-injection query recognizes as a barrier (pathlib's
+    # is_relative_to is not, and left alerts 3049-3051 open).
+    image_dir_real = os.path.realpath(image_dir)
+    candidate_real = os.path.realpath(os.path.join(image_dir_real, path))
+    if not candidate_real.startswith(image_dir_real + os.sep):
         raise HTTPException(status_code=404, detail="Tile not found")
+    candidate = Path(candidate_real)
     if not candidate.is_file():
         raise HTTPException(status_code=404, detail="Tile not found")
 
