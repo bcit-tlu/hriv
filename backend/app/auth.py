@@ -10,6 +10,7 @@ import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
+from pydantic import Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .database import Settings, get_db
@@ -32,7 +33,9 @@ class AuthSettings(Settings):
     jwt_instance_epoch: str = ""
     # TTL for image-scoped tile tokens (docs/tile-delivery-boundary.md).
     # Signed with the same ``jwt_secret``, like the task-download token.
-    tile_token_ttl_minutes: int = 15
+    # Bounded (1 minute – 24 hours) so a configuration typo cannot mint
+    # long-lived credentials.
+    tile_token_ttl_minutes: int = Field(default=15, ge=1, le=1440)
     # When true, the application refuses to start unless ``JWT_SECRET``
     # is set explicitly.  Multi-worker (``uvicorn --workers N``) and
     # multi-replica deployments MUST enable this, otherwise each worker

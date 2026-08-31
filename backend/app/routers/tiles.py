@@ -100,10 +100,20 @@ async def serve_tile(
     except TileTokenError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail)
 
-    base_dir = (Path(settings.tiles_dir) / str(source_image_id)).resolve()
-    candidate = (base_dir / path).resolve()
-    if not candidate.is_relative_to(base_dir):
-        # Path traversal attempt — treat like any other missing file.
+    # Reject suspicious inputs up front (null bytes, backslashes, absolute
+    # paths, ``..`` segments), then canonicalize and verify containment.
+    # Always answer 404 so rejection is indistinguishable from a missing file.
+    if (
+        "\x00" in path
+        or "\\" in path
+        or path.startswith("/")
+        or ".." in path.split("/")
+    ):
+        raise HTTPException(status_code=404, detail="Tile not found")
+    base = Path(settings.tiles_dir).resolve()
+    image_dir = base / str(source_image_id)
+    candidate = (image_dir / path).resolve()
+    if not candidate.is_relative_to(image_dir):
         raise HTTPException(status_code=404, detail="Tile not found")
     if not candidate.is_file():
         raise HTTPException(status_code=404, detail="Tile not found")

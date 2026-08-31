@@ -11,7 +11,7 @@ the per-tile hot path never touches the DB.
 """
 
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from jose import JWTError, jwt
 
@@ -89,11 +89,20 @@ def append_tile_token(url: str) -> str:
     """Append a freshly issued ``tile_token`` query parameter to a tile URL.
 
     URLs that do not match ``/api/tiles/<id>/…`` are returned unchanged.
-    Must only be called on response paths that already sit behind the
-    auth + student-visibility checks (see module docstring).
+    Any pre-existing ``tile_token`` parameter is replaced (persisted URLs
+    should never carry tokens, but a stale duplicate would sort first and
+    shadow the fresh token during validation). Must only be called on
+    response paths that already sit behind the auth + student-visibility
+    checks (see module docstring).
     """
     source_image_id = source_image_id_from_tile_url(url)
     if source_image_id is None:
         return url
-    separator = "&" if "?" in url else "?"
-    return f"{url}{separator}tile_token={issue_tile_token(source_image_id)}"
+    scheme, netloc, path, query, fragment = urlsplit(url)
+    params = [
+        (key, value)
+        for key, value in parse_qsl(query, keep_blank_values=True)
+        if key != "tile_token"
+    ]
+    params.append(("tile_token", issue_tile_token(source_image_id)))
+    return urlunsplit((scheme, netloc, path, urlencode(params), fragment))

@@ -16,7 +16,6 @@ from fastapi import FastAPI, HTTPException
 from jose import jwt
 
 import app.auth as auth
-from app.auth import auth_settings
 from app.routers import images as images_router
 from app.routers import tiles as tiles_router
 from app.schemas import ImageOut
@@ -36,7 +35,9 @@ def _expired_token(source_image_id: int) -> str:
         "exp": datetime.now(timezone.utc) - timedelta(minutes=1),
     }
     return jwt.encode(
-        payload, auth_settings.jwt_secret, algorithm=auth_settings.jwt_algorithm
+        payload,
+        auth.auth_settings.jwt_secret,
+        algorithm=auth.auth_settings.jwt_algorithm,
     )
 
 
@@ -47,7 +48,9 @@ def _wrong_purpose_token(source_image_id: int) -> str:
         "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
     }
     return jwt.encode(
-        payload, auth_settings.jwt_secret, algorithm=auth_settings.jwt_algorithm
+        payload,
+        auth.auth_settings.jwt_secret,
+        algorithm=auth.auth_settings.jwt_algorithm,
     )
 
 
@@ -107,7 +110,28 @@ def test_append_tile_token_tokenizes_tile_urls() -> None:
 
 def test_append_tile_token_uses_ampersand_with_existing_query() -> None:
     url = append_tile_token("/api/tiles/42/image.dzi?v=1")
-    assert "?v=1&tile_token=" in url
+    assert url.startswith("/api/tiles/42/image.dzi?v=1&tile_token=")
+
+
+def test_append_tile_token_replaces_existing_token_param() -> None:
+    stale = append_tile_token("/api/tiles/42/image.dzi")
+    refreshed = append_tile_token(stale)
+    assert refreshed.count("tile_token=") == 1
+    token = refreshed.split("tile_token=", 1)[1]
+    validate_tile_token(token, 42)
+
+
+def test_tile_token_ttl_is_bounded() -> None:
+    from pydantic import ValidationError
+
+    assert auth.AuthSettings(tile_token_ttl_minutes=1).tile_token_ttl_minutes == 1
+    assert (
+        auth.AuthSettings(tile_token_ttl_minutes=1440).tile_token_ttl_minutes == 1440
+    )
+    with pytest.raises(ValidationError):
+        auth.AuthSettings(tile_token_ttl_minutes=0)
+    with pytest.raises(ValidationError):
+        auth.AuthSettings(tile_token_ttl_minutes=1441)
 
 
 def test_append_tile_token_leaves_non_tile_urls_unchanged() -> None:
@@ -394,6 +418,25 @@ async def test_tile_route_traversal_helper_direct() -> None:
     with pytest.raises(HTTPException) as exc:
         await tiles_router.serve_tile(
             42, "../secret.txt", tile_token=issue_tile_token(42)
+        )
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.parametrize(
+    "bad_path",
+    [
+        "/etc/passwd",
+        "..\\secret.txt",
+        "image_files\\0\\0_0.jpeg",
+        "image.dzi\x00.jpeg",
+        "nested/../../secret.txt",
+    ],
+)
+async def test_tile_route_rejects_suspicious_paths(bad_path: str) -> None:
+    """Absolute paths, backslashes, null bytes and ``..`` segments → 404."""
+    with pytest.raises(HTTPException) as exc:
+        await tiles_router.serve_tile(
+            42, bad_path, tile_token=issue_tile_token(42)
         )
     assert exc.value.status_code == 404
 
