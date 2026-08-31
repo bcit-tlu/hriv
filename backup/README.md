@@ -117,18 +117,18 @@ For Longhorn-backed Kubernetes deployments, protect each volume according to its
 
 All settings are controlled via environment variables in `docker-compose.yml` or the Helm chart:
 
-| Variable                          | Default                                                   | Description                                                                                    |
-| --------------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`                    | `postgresql://hriv:hriv@db:5432/hriv`                     | PostgreSQL connection string                                                                   |
-| `DATA_DIR`                        | `/data`                                                   | Path to the image data volume                                                                  |
-| `BACKUP_CRON_SCHEDULE`            | `0 2 * * *`                                               | Cron expression for scheduled backups                                                          |
-| `BACKUP_RETENTION_COUNT`          | `30`                                                      | Number of snapshots to keep (older ones are deleted)                                           |
-| `BACKUP_STAGING_DIR`              | `/backups/.staging`                                       | Directory archives are built in before publication; falls back to pod-local `/tmp` if unusable |
-| `BACKUP_STALE_HOURS`              | `26`                                                      | Freshness threshold for the `status` command before a backup is considered stale               |
-| `BACKUP_MODE`                     | `development` (docker-compose), `production` (Helm chart) | `development` = DB + source images + tiles; `production` = DB + source images only             |
-| `AZURE_STORAGE_CONNECTION_STRING` | _(empty)_                                                 | Azure Blob Storage connection string                                                           |
-| `AZURE_STORAGE_CONTAINER`         | _(empty)_                                                 | Azure Blob Storage container name                                                              |
-| `AZURE_BLOB_PREFIX`               | `hriv-backups`                                            | Blob name prefix (folder) inside the container                                                 |
+| Variable                          | Default                                                   | Description                                                                                                                      |
+| --------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                    | `postgresql://hriv:hriv@db:5432/hriv`                     | PostgreSQL connection string                                                                                                     |
+| `DATA_DIR`                        | `/data`                                                   | Path to the image data volume                                                                                                    |
+| `BACKUP_CRON_SCHEDULE`            | `0 2 * * *`                                               | Cron expression for scheduled backups                                                                                            |
+| `BACKUP_RETENTION_COUNT`          | `30`                                                      | Number of snapshots to keep (older ones are deleted)                                                                             |
+| `BACKUP_STAGING_DIR`              | `/backups/.staging`                                       | Directory archives are built in before publication, and restores download/extract in; falls back to pod-local `/tmp` if unusable |
+| `BACKUP_STALE_HOURS`              | `26`                                                      | Freshness threshold for the `status` command before a backup is considered stale                                                 |
+| `BACKUP_MODE`                     | `development` (docker-compose), `production` (Helm chart) | `development` = DB + source images + tiles; `production` = DB + source images only                                               |
+| `AZURE_STORAGE_CONNECTION_STRING` | _(empty)_                                                 | Azure Blob Storage connection string                                                                                             |
+| `AZURE_STORAGE_CONTAINER`         | _(empty)_                                                 | Azure Blob Storage container name                                                                                                |
+| `AZURE_BLOB_PREFIX`               | `hriv-backups`                                            | Blob name prefix (folder) inside the container                                                                                   |
 
 ## Observability markers
 

@@ -900,6 +900,50 @@ class StagingTestCase(_BackupTestCase):
         self.assertFalse(stale.exists())
         self.assertTrue(fresh.exists())
 
+    def test_restore_extracts_on_backups_volume(self):
+        data_dir = self.tmp / "restore-target"
+        data_dir.mkdir()
+        self._reload({"DATA_DIR": str(data_dir)})
+        archive = self.local_dir / "hriv-backup-20260101-000000.tar.gz"
+        snapshot = self.tmp / "hriv-backup-20260101-000000"
+        (snapshot / "data" / "source_images").mkdir(parents=True)
+        (snapshot / "data" / "source_images" / "img.jpg").write_bytes(b"source")
+        (snapshot / "db.sql").write_text("dump")
+        with tarfile.open(archive, "w:gz") as tar:
+            tar.add(snapshot, arcname=snapshot.name)
+        real_temporary_directory = tempfile.TemporaryDirectory
+        restore_dirs: list[str | None] = []
+
+        def recording_temporary_directory(*args, **kwargs):
+            if kwargs.get("prefix") == backup._RESTORE_PREFIX:
+                restore_dirs.append(kwargs.get("dir"))
+            return real_temporary_directory(*args, **kwargs)
+
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=self.local_dir),
+            patch.object(backup.tempfile, "TemporaryDirectory", recording_temporary_directory),
+            patch.object(backup.subprocess, "run", return_value=MagicMock(returncode=0)),
+        ):
+            ok = backup._run_restore_inner(snapshot_name=archive.name)
+
+        self.assertTrue(ok)
+        self.assertEqual(restore_dirs, [str(self.local_dir / ".staging")])
+
+    def test_sweep_stale_staging_removes_stale_restore_directories(self):
+        self._reload({})
+        root = self.local_dir / ".staging"
+        root.mkdir()
+        stale = root / f"{backup._RESTORE_PREFIX}stale"
+        stale.mkdir()
+        (stale / "archive.tar.gz").write_bytes(b"partial download")
+        old = (datetime.now(timezone.utc) - timedelta(hours=48)).timestamp()
+        os.utime(stale / "archive.tar.gz", (old, old))
+        os.utime(stale, (old, old))
+
+        backup._sweep_stale_staging(root)
+
+        self.assertFalse(stale.exists())
+
     def test_sweep_stale_staging_keeps_directory_with_recent_contents(self):
         self._reload({})
         root = self.local_dir / ".staging"
@@ -1017,6 +1061,17 @@ class LegacySnapshotRestoreTestCase(_BackupTestCase):
             ok, restored = self._restore(requested)
             self.assertTrue(ok)
             self.assertEqual(restored, ["hriv-backup-20260202-030405-aaaaaaaa.tar.gz"])
+
+    def test_restore_reports_available_snapshots_when_prefix_is_ambiguous(self):
+        self._reload({})
+        (self.local_dir / "hriv-backup-20260202-030405-bbbbbbbb.tar.gz").write_bytes(b"archive")
+        with self.assertLogs("hriv-backup", level="ERROR") as logs:
+            ok, restored = self._restore("hriv-backup-20260202-030405")
+        self.assertFalse(ok)
+        self.assertEqual(restored, [])
+        self.assertTrue(any("is ambiguous" in line for line in logs.output))
+        self.assertTrue(any("not found. Available" in line for line in logs.output))
+        self.assertFalse(any("Snapshot file not found" in line for line in logs.output))
 
     def test_restore_uses_newest_snapshot_by_name_when_unspecified(self):
         self._reload({})

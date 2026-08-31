@@ -123,6 +123,7 @@ def _local_backup_dir() -> Path:
 _SNAPSHOT_STAMP_RE = re.compile(r"(\d{8}-\d{6})")
 _STAGING_DIR_NAME = ".staging"
 _STAGING_PREFIX = "hriv-bak-"
+_RESTORE_PREFIX = "hriv-restore-"
 _STALE_STAGING_HOURS = 24
 
 
@@ -159,21 +160,34 @@ def _newest_mtime(entry: Path) -> float:
 
 
 def _sweep_stale_staging(root: Path) -> None:
-    """Remove staging directories left behind by interrupted backups.
+    """Remove staging directories left behind by interrupted backups or restores.
 
     A directory is only removed when nothing inside it has been touched for
     ``_STALE_STAGING_HOURS``, so a long-running backup still writing into its
     workspace is never swept out from under itself.
     """
     cutoff = time.time() - _STALE_STAGING_HOURS * 3600
-    for entry in root.glob(f"{_STAGING_PREFIX}*"):
-        try:
-            if _newest_mtime(entry) >= cutoff:
+    for prefix in (_STAGING_PREFIX, _RESTORE_PREFIX):
+        for entry in root.glob(f"{prefix}*"):
+            try:
+                if _newest_mtime(entry) >= cutoff:
+                    continue
+            except OSError:
                 continue
-        except OSError:
-            continue
-        shutil.rmtree(str(entry), ignore_errors=True)
-        log.info("Removed stale backup staging directory %s", entry)
+            shutil.rmtree(str(entry), ignore_errors=True)
+            log.info("Removed stale backup staging directory %s", entry)
+
+
+def _staging_tempdir(prefix: str) -> tempfile.TemporaryDirectory:
+    """Return a workspace on the backups volume, falling back to pod-local tmp.
+
+    Staging archives and restore extractions off pod-local storage keeps them
+    clear of the container's ephemeral-storage limit.
+    """
+    root = _staging_root()
+    if root is not None:
+        _sweep_stale_staging(root)
+    return tempfile.TemporaryDirectory(prefix=prefix, dir=str(root) if root is not None else None)
 
 
 def _snapshot_stem(snapshot_name: str) -> str:
@@ -693,14 +707,7 @@ def run_backup() -> Path | None:
     db = _parse_db_url(DATABASE_URL)
     pg = _pg_env(db)
 
-    staging_root = _staging_root()
-    if staging_root is not None:
-        _sweep_stale_staging(staging_root)
-
-    with tempfile.TemporaryDirectory(
-        prefix=_STAGING_PREFIX,
-        dir=str(staging_root) if staging_root is not None else None,
-    ) as tmpdir:
+    with _staging_tempdir(_STAGING_PREFIX) as tmpdir:
         work = Path(tmpdir) / snapshot_name
         work.mkdir()
 
@@ -1168,7 +1175,7 @@ def _run_restore_inner(
             log.info("Using latest snapshot: %s", target["name"])
 
         # Download ---------------------------------------------------------------
-        with tempfile.TemporaryDirectory(prefix="hriv-restore-") as tmpdir:
+        with _staging_tempdir(_RESTORE_PREFIX) as tmpdir:
             archive_path = Path(tmpdir) / target["name"]
             log.info("Downloading azure://%s/%s …", AZURE_STORAGE_CONTAINER, target["blob_name"])
             container = _blob_container_client()
@@ -1188,10 +1195,22 @@ def _run_restore_inner(
         if snapshot_name:
             available = [p.name for p in local_dir.glob("hriv-backup-*.tar.gz")]
             resolved = _resolve_snapshot_name(snapshot_name, available)
-            fname = resolved or (
-                snapshot_name if snapshot_name.endswith(".tar.gz") else f"{snapshot_name}.tar.gz"
-            )
-            archive_path = local_dir / fname
+            if resolved is not None:
+                archive_path = local_dir / resolved
+            else:
+                fname = (
+                    snapshot_name
+                    if snapshot_name.endswith(".tar.gz")
+                    else f"{snapshot_name}.tar.gz"
+                )
+                archive_path = local_dir / fname
+                if not archive_path.exists():
+                    log.error(
+                        "Snapshot %s not found. Available: %s",
+                        snapshot_name,
+                        sorted(available),
+                    )
+                    return False
         else:
             archives = sorted(
                 local_dir.glob("hriv-backup-*.tar.gz"),
@@ -1276,7 +1295,7 @@ def _restore_from_archive(
     target_database_url = database_url or DATABASE_URL
     target_data_dir = data_dir or DATA_DIR
 
-    with tempfile.TemporaryDirectory(prefix="hriv-restore-") as tmpdir:
+    with _staging_tempdir(_RESTORE_PREFIX) as tmpdir:
         # Extract ---------------------------------------------------------------
         log.info("Extracting archive …")
         with tarfile.open(str(archive_path), "r:gz") as tar:

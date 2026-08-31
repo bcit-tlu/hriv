@@ -104,13 +104,16 @@ timestamp; ambiguous prefixes are rejected.
 Archives are built in `BACKUP_STAGING_DIR` (default `/backups/.staging`, on the
 backups PVC) and published with a same-filesystem rename, so a backup does not
 consume pod-local ephemeral storage proportional to the archive and does not
-need a second full copy to publish locally. Size the backups PVC for
-`retention count × archive size` plus one in-flight archive. If the staging
-directory is unusable the run degrades to pod-local `/tmp` and logs a warning;
+need a second full copy to publish locally. Restores stage there too: the blob
+download and the extracted snapshot land in the same directory rather than in
+pod-local `/tmp`. Size the backups PVC for `retention count × archive size`
+plus one in-flight archive plus one extracted snapshot (uncompressed) for
+restores. If the staging directory is unusable the run degrades to pod-local
+`/tmp` and logs a warning;
 `charts/backup/values.yaml` sets explicit `ephemeral-storage` requests and
 limits so that fallback fails as a clear limit error rather than as node
-disk-pressure eviction. Staging directories left behind by an interrupted run
-are swept after 24 hours.
+disk-pressure eviction. Staging directories left behind by an interrupted
+backup or restore are swept after 24 hours.
 
 ## Restore order and decision points
 
