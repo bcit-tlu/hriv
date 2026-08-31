@@ -10,6 +10,11 @@
 -- a no-op rather than a PK-conflict failure.
 
 -- ── Programs ──────────────────────────────────────────────
+-- Insert by ID first (preserves seed IDs on fresh databases), then
+-- insert by name as a fallback so that on an existing database where
+-- IDs 1–3 belong to other programs, the seed programs are still
+-- created with auto-assigned IDs and the name-based JOINs below
+-- can resolve them.
 
 INSERT INTO programs (id, name)
 VALUES
@@ -17,6 +22,13 @@ VALUES
   (2, 'Digital Design'),
   (3, 'Photography')
 ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO programs (name)
+VALUES
+  ('Administration'),
+  ('Digital Design'),
+  ('Photography')
+ON CONFLICT (name) DO NOTHING;
 
 SELECT setval('programs_id_seq', GREATEST((SELECT MAX(id) FROM programs), 1));
 

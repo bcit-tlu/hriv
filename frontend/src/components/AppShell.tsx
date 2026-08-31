@@ -253,7 +253,8 @@ export default function AppShell(props: AppShellProps) {
     return Array.from(sections.values()).flatMap((items, index) => {
       if (index === 0) return items
       if (sections.size > 1 && index === 1) {
-        items.unshift(
+        return [
+          <Divider key={`nav-divider-${index}`} />,
           <ListSubheader
             key="manage-header"
             sx={{
@@ -268,7 +269,8 @@ export default function AppShell(props: AppShellProps) {
           >
             Manage
           </ListSubheader>,
-        )
+          ...items,
+        ]
       }
       return [<Divider key={`nav-divider-${index}`} />, ...items]
     })
