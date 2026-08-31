@@ -47,7 +47,7 @@ const navigationItems: readonly NavigationItem[] = [
   },
   {
     id: 'announcement',
-    label: 'Announcements',
+    label: 'Announcement',
     section: 'manage',
     icon: 'announcement',
     requiresEditContent: true,
