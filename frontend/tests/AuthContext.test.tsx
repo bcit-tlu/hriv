@@ -148,6 +148,7 @@ describe('AuthProvider', () => {
           name: 'Admin',
           email: 'admin@example.ca',
           role: 'admin',
+          active: false,
           program_ids: [],
           program_names: [],
           group_ids: [],
@@ -193,6 +194,7 @@ describe('AuthProvider', () => {
           name: 'Admin',
           email: 'admin@example.ca',
           role: 'admin',
+          active: false,
           program_ids: [],
           program_names: [],
           group_ids: [],
@@ -218,6 +220,7 @@ describe('AuthProvider', () => {
         changelog_last_read_at: '2026-06-17T12:00:00Z',
       })
     })
+    expect(authCtx?.currentUser?.active).toBe(false)
   })
 
   it('clears session when /auth/me returns 401', async () => {
@@ -275,6 +278,7 @@ describe('AuthProvider', () => {
         name: 'Instructor',
         email: 'instructor@example.ca',
         role: 'instructor',
+        active: false,
         program_ids: [],
         program_names: [],
         group_ids: [],
@@ -304,6 +308,7 @@ describe('AuthProvider', () => {
     expect(screen.getByTestId('user').textContent).toBe('instructor@example.ca')
     expect(screen.getByTestId('canEdit').textContent).toBe('true')
     expect(screen.getByTestId('canManage').textContent).toBe('false')
+    expect(authCtx?.currentUser?.active).toBe(false)
     expect(currentToken).toBe('new-jwt')
   })
 

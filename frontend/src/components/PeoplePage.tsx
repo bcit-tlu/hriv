@@ -199,6 +199,7 @@ export default function PeoplePage({
   const [bulkGroupOpen, setBulkGroupOpen] = useState(false)
   const [bulkActiveOpen, setBulkActiveOpen] = useState(false)
   const [bulkActive, setBulkActive] = useState<boolean>(true)
+  const [bulkActiveSaving, setBulkActiveSaving] = useState(false)
 
   // Bulk role dialog
   const [bulkRoleOpen, setBulkRoleOpen] = useState(false)
@@ -235,7 +236,6 @@ export default function PeoplePage({
   // so they cannot become the final server write.
   const bulkEditSaveAbortRef = useRef<AbortController | null>(null)
   const bulkRoleSaveAbortRef = useRef<AbortController | null>(null)
-  const bulkActiveSaveAbortRef = useRef<AbortController | null>(null)
 
   const selectedProgramOptions = useMemo(
     () => programs.filter((program) => selectedPrograms.has(program.id)),
@@ -763,17 +763,14 @@ export default function PeoplePage({
 
   // Bulk active update handler
   const handleBulkActiveSave = async () => {
+    if (bulkActiveSaving) return
     const token = ++bulkActiveSaveTokenRef.current
-    const abortController = new AbortController()
-    bulkActiveSaveAbortRef.current = abortController
+    setBulkActiveSaving(true)
     try {
-      await bulkUpdateUserActive(
-        {
-          user_ids: Array.from(selected),
-          active: bulkActive,
-        },
-        { signal: abortController.signal },
-      )
+      await bulkUpdateUserActive({
+        user_ids: Array.from(selected),
+        active: bulkActive,
+      })
       if (bulkActiveSaveTokenRef.current !== token) {
         return
       }
@@ -785,16 +782,13 @@ export default function PeoplePage({
       setSelected(new Set())
       setSuccessSnack(`Users marked ${bulkActive ? 'active' : 'inactive'}.`)
     } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        return
-      }
       console.error('Failed to bulk update active status', err)
       if (bulkActiveSaveTokenRef.current === token) {
         setErrorSnack(userMessage(err, 'Failed to update status. Please try again.'))
       }
     } finally {
-      if (bulkActiveSaveAbortRef.current === abortController) {
-        bulkActiveSaveAbortRef.current = null
+      if (bulkActiveSaveTokenRef.current === token) {
+        setBulkActiveSaving(false)
       }
     }
   }
@@ -1334,11 +1328,17 @@ export default function PeoplePage({
       {/* Bulk Status Update Dialog */}
       <Dialog
         open={bulkActiveOpen}
-        onClose={() => {
+        onClose={(_, reason) => {
+          if (bulkActiveSaving && (reason === 'backdropClick' || reason === 'escapeKeyDown')) {
+            return
+          }
+          if (bulkActiveSaving) {
+            return
+          }
           bulkActiveSaveTokenRef.current++
-          bulkActiveSaveAbortRef.current?.abort()
           setBulkActiveOpen(false)
         }}
+        disableEscapeKeyDown={bulkActiveSaving}
         maxWidth="xs"
         fullWidth
       >
@@ -1351,6 +1351,7 @@ export default function PeoplePage({
           <FormControl fullWidth>
             <Select
               value={bulkActive ? 'active' : 'inactive'}
+              disabled={bulkActiveSaving}
               onChange={(e: SelectChangeEvent) => setBulkActive(e.target.value === 'active')}
             >
               <MenuItem value="active">Active</MenuItem>
@@ -1360,16 +1361,19 @@ export default function PeoplePage({
         </DialogContent>
         <DialogActions>
           <Button
+            disabled={bulkActiveSaving}
             onClick={() => {
+              if (bulkActiveSaving) {
+                return
+              }
               bulkActiveSaveTokenRef.current++
-              bulkActiveSaveAbortRef.current?.abort()
               setBulkActiveOpen(false)
             }}
           >
             Cancel
           </Button>
-          <Button onClick={handleBulkActiveSave} variant="contained">
-            Save
+          <Button onClick={handleBulkActiveSave} variant="contained" disabled={bulkActiveSaving}>
+            {bulkActiveSaving ? 'Saving...' : 'Save'}
           </Button>
         </DialogActions>
       </Dialog>

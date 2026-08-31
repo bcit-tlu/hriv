@@ -369,14 +369,66 @@ describe('PeoplePage', () => {
     await user.click(screen.getByRole('button', { name: /save/i }))
 
     await waitFor(() => {
-      expect(bulkUpdateUserActive).toHaveBeenCalledWith(
-        {
-          user_ids: [1],
-          active: true,
-        },
-        expect.objectContaining({ signal: expect.any(AbortSignal) }),
-      )
+      expect(bulkUpdateUserActive).toHaveBeenCalledWith({
+        user_ids: [1],
+        active: true,
+      })
     })
+  })
+
+  it('locks bulk status dialog while save is pending', async () => {
+    const user = userEvent.setup()
+    let resolveSave: ((value: typeof USERS) => void) | null = null
+    vi.mocked(bulkUpdateUserActive).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSave = resolve
+        }),
+    )
+    render(<PeoplePage programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    const checkboxes = screen.getAllByRole('checkbox')
+    await user.click(checkboxes[1])
+    await user.click(screen.getByText('Bulk Status (1)'))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(screen.getByRole('button', { name: 'Saving...' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled()
+    expect(screen.getByRole('combobox')).toHaveAttribute('aria-disabled', 'true')
+
+    await act(async () => {
+      resolveSave?.(USERS)
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByText('Bulk Update Status')).not.toBeInTheDocument()
+    })
+  })
+
+  it('re-enables bulk status dialog controls when save fails', async () => {
+    const user = userEvent.setup()
+    vi.mocked(bulkUpdateUserActive).mockRejectedValueOnce(new ApiError(500, 'boom'))
+    render(<PeoplePage programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    const checkboxes = screen.getAllByRole('checkbox')
+    await user.click(checkboxes[1])
+    await user.click(screen.getByText('Bulk Status (1)'))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Failed to update status. Please try again.')).toBeInTheDocument()
+    })
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled()
+    expect(screen.getByRole('combobox')).not.toHaveAttribute('aria-disabled', 'true')
   })
 
   it('opens bulk delete confirmation and calls API', async () => {
