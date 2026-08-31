@@ -114,15 +114,27 @@ export default function ImageViewer({
   const renewedTileSourceKeysRef = useRef(new Set<string>())
   const renewalFailureSurfacedRef = useRef(false)
   const renewalAttemptsRef = useRef(0)
+  const renewalGenerationRef = useRef(0)
   const pendingRenewalViewportRef = useRef<ViewportState | null>(null)
   const onTileSourceRenewedRef = useRef(onTileSourceRenewed)
   const onErrorRef = useRef(onError)
-  useEffect(() => {
-    imageIdRef.current = imageId
+  const resetRenewalState = useCallback(() => {
+    renewalGenerationRef.current += 1
+    renewalInFlightRef.current = false
+    pendingRenewalViewportRef.current = null
     renewedTileSourceKeysRef.current.clear()
     renewalFailureSurfacedRef.current = false
     renewalAttemptsRef.current = 0
-  }, [imageId])
+    if (renewalTimerRef.current != null) {
+      window.clearTimeout(renewalTimerRef.current)
+      renewalTimerRef.current = null
+    }
+  }, [])
+  useEffect(() => {
+    imageIdRef.current = imageId
+    resetRenewalState()
+    return resetRenewalState
+  }, [imageId, resetRenewalState])
   useEffect(() => {
     categoryIdRef.current = categoryId
   }, [categoryId])
@@ -240,6 +252,7 @@ export default function ImageViewer({
     const imageIdForRenewal = imageIdRef.current
     const viewer = viewerRef.current
     if (!imageIdForRenewal || !viewer) return
+    const renewalGeneration = renewalGenerationRef.current
 
     const oldKey = tileSourceKey(tileSourcesRef.current)
     if (renewalAttemptsRef.current >= 2 || renewedTileSourceKeysRef.current.has(oldKey)) {
@@ -253,7 +266,12 @@ export default function ImageViewer({
     try {
       pendingRenewalViewportRef.current = currentViewportState()
       const fresh = await renewImageRecord(imageIdForRenewal)
-      if (imageIdRef.current !== imageIdForRenewal) return
+      if (
+        imageIdRef.current !== imageIdForRenewal ||
+        renewalGenerationRef.current !== renewalGeneration
+      ) {
+        return
+      }
       onTileSourceRenewedRef.current?.(fresh)
       if (!fresh.tile_sources) {
         surfaceRenewalFailure()
@@ -264,9 +282,19 @@ export default function ImageViewer({
       viewer.open(fresh.tile_sources as unknown as OpenSeadragon.TileSourceSpecifier)
       renewalFailureSurfacedRef.current = false
     } catch (err) {
-      surfaceRenewalFailure(err)
+      if (
+        imageIdRef.current === imageIdForRenewal &&
+        renewalGenerationRef.current === renewalGeneration
+      ) {
+        surfaceRenewalFailure(err)
+      }
     } finally {
-      renewalInFlightRef.current = false
+      if (
+        imageIdRef.current === imageIdForRenewal &&
+        renewalGenerationRef.current === renewalGeneration
+      ) {
+        renewalInFlightRef.current = false
+      }
     }
   }, [currentViewportState, restorePendingRenewalViewport, surfaceRenewalFailure, tileSourceKey])
 

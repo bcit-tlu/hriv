@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ImgHTMLAttributes } from 'react'
 import Box from '@mui/material/Box'
 import type { SxProps, Theme } from '@mui/material/styles'
@@ -26,19 +26,35 @@ export default function RenewingThumbnail({
     thumb: string
   } | null>(null)
   const retriedKeysRef = useRef(new Set<string>())
+  const mountedRef = useRef(true)
+  const currentRetryKey = `${image.id}:${image.thumb}`
+  const currentKeyRef = useRef(currentRetryKey)
   const src =
     renewed?.imageId === image.id && renewed.originalThumb === image.thumb
       ? renewed.thumb
       : image.thumb
 
+  useEffect(() => {
+    currentKeyRef.current = currentRetryKey
+  }, [currentRetryKey])
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
   const handleError = useCallback(() => {
-    const retryKey = `${image.id}:${image.thumb}`
+    const retryKey = currentRetryKey
     if (retriedKeysRef.current.has(retryKey)) return
     retriedKeysRef.current.add(retryKey)
 
     renewImageRecord(image.id)
       .then((fresh) => {
-        if (fresh.id !== image.id) return
+        if (!mountedRef.current || fresh.id !== image.id || currentKeyRef.current !== retryKey) {
+          return
+        }
         onImageRenewed?.(fresh)
         if (fresh.thumb && fresh.thumb !== src) {
           setRenewed({ imageId: image.id, originalThumb: image.thumb, thumb: fresh.thumb })
@@ -47,7 +63,7 @@ export default function RenewingThumbnail({
       .catch(() => {
         // The broken thumbnail remains visible as the browser's fallback.
       })
-  }, [image.id, image.thumb, onImageRenewed, src])
+  }, [currentRetryKey, image.id, image.thumb, onImageRenewed, src])
 
   return <Box component="img" src={src} onError={handleError} sx={sx} {...imgProps} />
 }
