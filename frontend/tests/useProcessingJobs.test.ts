@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import {
+  bulkImportErrorSummary,
+  bulkImportFailureMessage,
   useProcessingJobs,
   type UseProcessingJobsDeps,
   type ProcessingJob,
@@ -111,6 +113,29 @@ describe('useProcessingJobs', () => {
       })
 
       expect(result.current.processingJobs).toHaveLength(5)
+    })
+
+    it('surfaces the backend error message when processing fails', async () => {
+      const deps = makeDeps({
+        fetchSourceImage: vi.fn().mockResolvedValue({
+          status: 'failed',
+          progress: 40,
+          status_message: 'Failed',
+          error_message: 'Tile generation failed: broken.tif: is not a known file format',
+          image_id: null,
+        }),
+      })
+      const { result } = renderHook(() => useProcessingJobs(deps))
+
+      await act(async () => {
+        result.current.addProcessingJob(42, 'broken.tif', 5000)
+      })
+
+      expect(result.current.processingJobs[0]).toMatchObject({
+        status: 'failed',
+        serverProgress: 40,
+        errorMessage: 'Tile generation failed: broken.tif: is not a known file format',
+      })
     })
   })
 
@@ -357,6 +382,106 @@ describe('useProcessingJobs', () => {
         kind: 'bulk-import',
         status: 'importing',
         bulkImportJobId: 5,
+      })
+    })
+
+    it('surfaces the per-file errors of a failed bulk import', async () => {
+      const deps = makeDeps({
+        fetchBulkImportJob: vi.fn().mockResolvedValue({
+          id: 5,
+          status: 'failed',
+          total_count: 2,
+          completed_count: 0,
+          failed_count: 2,
+          errors: [
+            {
+              filename: 'slide-a.tif',
+              error: 'Tile generation failed: is not a known file format',
+            },
+            {
+              filename: 'slide-b.tif',
+              error: 'Tile generation failed: Premature end of JPEG file',
+            },
+          ],
+        } as ApiBulkImportJob),
+      })
+      const { result } = renderHook(() => useProcessingJobs(deps))
+
+      act(() => {
+        result.current.handleBulkImportStarted(
+          {
+            id: 5,
+            status: 'importing',
+            total_count: 2,
+            completed_count: 0,
+            failed_count: 0,
+            errors: null,
+          },
+          'archive.zip',
+          50_000,
+        )
+      })
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000)
+      })
+
+      expect(result.current.processingJobs[0]).toMatchObject({
+        kind: 'bulk-import',
+        status: 'failed',
+        errorMessage:
+          'Bulk import failed. slide-a.tif: Tile generation failed: is not a known file format; ' +
+          'slide-b.tif: Tile generation failed: Premature end of JPEG file',
+      })
+    })
+
+    it('keeps the per-file errors of a partially failed bulk import', async () => {
+      const deps = makeDeps({
+        fetchBulkImportJob: vi.fn().mockResolvedValue({
+          id: 6,
+          status: 'completed',
+          total_count: 2,
+          completed_count: 1,
+          failed_count: 1,
+          errors: [
+            {
+              filename: 'slide-b.tif',
+              error: 'Tile generation failed: Premature end of JPEG file',
+            },
+          ],
+        } as ApiBulkImportJob),
+      })
+      const { result } = renderHook(() => useProcessingJobs(deps))
+
+      act(() => {
+        result.current.handleBulkImportStarted(
+          {
+            id: 6,
+            status: 'importing',
+            total_count: 2,
+            completed_count: 0,
+            failed_count: 0,
+            errors: null,
+          },
+          'archive.zip',
+          50_000,
+        )
+      })
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000)
+      })
+
+      expect(result.current.processingJobs[0]).toMatchObject({
+        kind: 'bulk-import',
+        status: 'completed',
+        failedCount: 1,
+        errors: [
+          {
+            filename: 'slide-b.tif',
+            error: 'Tile generation failed: Premature end of JPEG file',
+          },
+        ],
       })
     })
 
@@ -882,5 +1007,43 @@ describe('useProcessingJobs', () => {
       // Should not throw on unmount
       unmount()
     })
+  })
+})
+
+describe('bulkImportErrorSummary', () => {
+  it('is empty when the server reported no errors', () => {
+    expect(bulkImportErrorSummary(null)).toBe('')
+    expect(bulkImportErrorSummary([])).toBe('')
+  })
+
+  it('lists per-file errors without a failure prefix', () => {
+    expect(
+      bulkImportErrorSummary([
+        { filename: 'b.tif', error: 'Tile generation failed: Premature end of JPEG file' },
+      ]),
+    ).toBe('b.tif: Tile generation failed: Premature end of JPEG file')
+  })
+})
+
+describe('bulkImportFailureMessage', () => {
+  it('falls back to a generic message when the server reported no errors', () => {
+    expect(bulkImportFailureMessage(null)).toBe('Bulk import failed.')
+    expect(bulkImportFailureMessage([])).toBe('Bulk import failed.')
+  })
+
+  it('lists per-file errors', () => {
+    expect(
+      bulkImportFailureMessage([{ filename: 'a.tif', error: 'is not a known file format' }]),
+    ).toBe('Bulk import failed. a.tif: is not a known file format')
+  })
+
+  it('summarises the remainder beyond the first three errors', () => {
+    const errors = ['a', 'b', 'c', 'd', 'e'].map((name) => ({
+      filename: `${name}.tif`,
+      error: 'boom',
+    }))
+    expect(bulkImportFailureMessage(errors)).toBe(
+      'Bulk import failed. a.tif: boom; b.tif: boom; c.tif: boom (and 2 more)',
+    )
   })
 })

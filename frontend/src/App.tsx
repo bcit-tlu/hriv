@@ -77,7 +77,7 @@ import {
 import type { ApiUser } from './api'
 import MoveCategoryDialog from './components/MoveCategoryDialog'
 import MoveRestrictionConfirmDialog from './components/MoveRestrictionConfirmDialog'
-import { useProcessingJobs } from './useProcessingJobs'
+import { bulkImportErrorSummary, useProcessingJobs } from './useProcessingJobs'
 import type { Category, Group, ImageItem } from './types'
 import { MAX_DEPTH } from './types'
 import AddCategoryDialog from './components/AddCategoryDialog'
@@ -2572,7 +2572,13 @@ export default function App() {
                 <>
                   {job.kind === 'bulk-import'
                     ? `"${job.filename}" import completed${
-                        job.failedCount ? ` with ${job.failedCount} failed.` : ' successfully!'
+                        job.failedCount
+                          ? ` with ${job.failedCount} failed.${
+                              bulkImportErrorSummary(job.errors)
+                                ? ` ${bulkImportErrorSummary(job.errors)}`
+                                : ''
+                            }`
+                          : ' successfully!'
                       }`
                     : `"${job.filename}" processed successfully! `}
                   {job.imageId != null && (

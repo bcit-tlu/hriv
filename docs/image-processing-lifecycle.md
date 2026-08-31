@@ -56,6 +56,18 @@ The on-disk copy is named from a UUID plus a bounded suffix
 | `completed`  | 100%     | Image record created, tiles on disk                  |
 | `failed`     | —        | Error; `error_message` set on SourceImage            |
 
+### Failure messages
+
+`_processing_failure_message()` builds the persisted `error_message`. ENOSPC
+failures (including libvips write errors that carry the strerror text) become
+"Insufficient storage — the tiles volume is full"; every other failure keeps the
+underlying exception text after `Tile generation failed:` /
+`Image replacement failed:`, collapsed to one line, with absolute paths reduced
+to their basename, the generated storage name swapped for the uploaded
+filename, and the detail truncated to 300 characters. The frontend
+polls the source image and shows that message in the processing snackbar; for
+bulk imports the per-file entries of `BulkImportJob.errors` are listed instead.
+
 Progress values in the 10-78% range come from pyvips eval signal
 callbacks mapped via `ProgressTracker`. The async `_flush_progress()`
 coroutine writes tracker state to the database every 1.5 seconds
