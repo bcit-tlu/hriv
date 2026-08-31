@@ -77,8 +77,9 @@ client ──GET /api/tiles/<id>/…?tile_token=…──▶ frontend nginx ─�
   Implementation note: injection must be **centralized in one hook on the
   image response schema** (a Pydantic `field_serializer` on `ImageOut`'s
   `thumb`/`tile_sources`) so every serialization path — automatic, explicit,
-  and nested — is covered without per-router calls; done this way in the C3a
-  PR.
+  and nested — is covered without per-router calls. Implemented (as this
+  ADR's C3a slice) in [#1159](https://github.com/bcit-tlu/hriv/pull/1159);
+  the slice table below tracks each slice's PR.
 - Validation: signature + expiry + that the token's image id matches the
   requested `/api/tiles/<id>/…` path. **No DB access** — revocation within the
   TTL window is explicitly out of scope (acceptable: visibility changes take
@@ -116,6 +117,16 @@ client ──GET /api/tiles/<id>/…?tile_token=…──▶ frontend nginx ─�
 - Browser cache keys include the query string, so a renewed token re-fetches
   tiles. This is bounded: within one viewing session the token is constant,
   and OpenSeadragon's in-memory tile cache is unaffected by renewal.
+- **Accepted residual risk — local browser cache outlives authorization.**
+  `private, max-age=2592000` lets the _user's own browser_ re-serve already
+  fetched tiles for up to 30 days without a valid token; logout or a
+  visibility change does not purge that cache. This is the same residue as
+  any previously viewed content (screenshots, memory, the pre-existing
+  public-cache behavior was strictly worse) and is bounded to tiles the user
+  was authorized to fetch at the time. On shared machines, rely on the usual
+  controls: separate OS/browser profiles or private-browsing sessions in
+  labs. Revisit (e.g. `no-store` at the cost of re-fetch traffic) only if a
+  concrete shared-workstation requirement emerges.
 - The `auth_request` subrequest cache (above) is keyed by token, never by
   client identity, and stores only allow/deny — no image bytes are cached at
   any shared layer.
@@ -168,11 +179,11 @@ client ──GET /api/tiles/<id>/…?tile_token=…──▶ frontend nginx ─�
 
 ## Implementation plan (Wave C3)
 
-| Slice        | Content                                                                                                                                                       | PR       |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| C3a backend  | Token issue/validate module, serializer wiring, remove `StaticFiles` mount, authorized FastAPI tile route, `GET /api/tiles-auth` validator, integration tests | backend  |
-| C3b delivery | Sidecar `auth_request` + auth cache + `private` cache-control (both proxy layers); frontend chart passthrough; helm regression checks                         | charts   |
-| C3c frontend | 401/403 renewal path (viewer re-fetch + tile-source swap, thumbnail `onError` recovery), viewer tests                                                         | frontend |
+| Slice        | Content                                                                                                                                                       | PR                                                           |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| C3a backend  | Token issue/validate module, serializer wiring, remove `StaticFiles` mount, authorized FastAPI tile route, `GET /api/tiles-auth` validator, integration tests | backend [#1159](https://github.com/bcit-tlu/hriv/pull/1159)  |
+| C3b delivery | Sidecar `auth_request` + auth cache + `private` cache-control (both proxy layers); frontend chart passthrough; helm regression checks                         | charts [#1163](https://github.com/bcit-tlu/hriv/pull/1163)   |
+| C3c frontend | 401/403 renewal path (viewer re-fetch + tile-source swap, thumbnail `onError` recovery), viewer tests                                                         | frontend [#1165](https://github.com/bcit-tlu/hriv/pull/1165) |
 
 Once the slices merge, the `/api/tiles` rows in
 [`docs/unauthenticated-routes.md`](unauthenticated-routes.md) move from
