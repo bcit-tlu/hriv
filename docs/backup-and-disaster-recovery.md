@@ -95,7 +95,8 @@ attempt, and writes the result. Attempts are ordered by completion time, so a
 slower older run cannot overwrite a newer run's outcome and a late-finishing
 failure records the failure without erasing a newer success. A killed writer's
 lock is released by the kernel, and a lock that cannot be taken within 30 seconds
-is bypassed, so state bookkeeping never blocks a backup. `LAST_SUCCESS.json` now
+makes the run skip the marker update instead of writing it unserialised, so state
+bookkeeping never blocks a backup and never drops another run's result. `LAST_SUCCESS.json` now
 records `completed_at` (when the snapshot became restorable) in addition to
 `created_at`, and freshness checks use it. See
 [backup/README.md](../backup/README.md) for the full merge rules.

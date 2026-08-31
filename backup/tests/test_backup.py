@@ -1223,8 +1223,9 @@ class StateLockProcessTestCase(unittest.TestCase):
                 self.assertTrue(acquired)
             self.assertLess(time.monotonic() - started, 5.0)
 
-    def test_wedged_lock_holder_does_not_block_the_state_update(self):
+    def test_wedged_lock_holder_skips_the_update_instead_of_racing(self):
         self._spawn_holder(120.0)
+        (self.local_dir / "BACKUP_STATE.json").write_text(json.dumps(_state("earlier")))
 
         with (
             patch.object(backup, "_local_backup_dir", return_value=self.local_dir),
@@ -1234,14 +1235,14 @@ class StateLockProcessTestCase(unittest.TestCase):
             backup._commit_shared_json(
                 local_path=backup._backup_state_path(),
                 blob_name=backup._backup_state_blob_name(),
-                incoming=_state("fallback"),
+                incoming=_state("blocked"),
                 merge=backup._merge_backup_state,
                 label="test state",
             )
 
-        self.assertTrue(any("unlocked" in message for message in logs.output))
+        self.assertTrue(any("Skipping" in message for message in logs.output))
         state = json.loads((self.local_dir / "BACKUP_STATE.json").read_text())
-        self.assertEqual(state["run_id"], "fallback")
+        self.assertEqual(state["run_id"], "earlier")
 
 
 class _FakeBlobStore:

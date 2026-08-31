@@ -263,16 +263,16 @@ def _state_lock() -> Iterator[bool]:
 
     Yields True when the lock was acquired. The lock is only ever held around a
     read/merge/write of a few kilobytes, so a wait longer than
-    ``_STATE_LOCK_TIMEOUT_SECONDS`` means something is wedged; in that case the
-    caller proceeds unlocked rather than stalling the backup, since the merge
-    rules remain the real safety net.
+    ``_STATE_LOCK_TIMEOUT_SECONDS`` means something is wedged; the caller then
+    abandons the update instead of racing an unserialised read/merge/write that
+    could drop another run's result.
     """
     path = _state_lock_path()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
     except OSError:
-        log.exception("Failed to open state lock %s; continuing unlocked", path)
+        log.exception("Failed to open state lock %s", path)
         yield False
         return
 
@@ -291,7 +291,7 @@ def _state_lock() -> Iterator[bool]:
 
         if not acquired:
             log.warning(
-                "Timed out after %.0fs waiting for %s; updating state unlocked",
+                "Timed out after %.0fs waiting for %s",
                 _STATE_LOCK_TIMEOUT_SECONDS,
                 path,
             )
@@ -385,7 +385,10 @@ def _commit_shared_json(
             log.warning("Gave up updating %s after %d attempts", label, _AZURE_CAS_ATTEMPTS)
             return
 
-        with _state_lock():
+        with _state_lock() as locked:
+            if not locked:
+                log.warning("Skipping %s update; state lock unavailable", label)
+                return
             existing = _read_json_file(local_path)
             payload = json.dumps(merge(existing, incoming), indent=2).encode()
             _atomic_write_bytes(local_path, payload)

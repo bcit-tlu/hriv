@@ -138,8 +138,9 @@ than a blind overwrite:
   `/backups/.hriv-backup-state.lock`, a sidecar file that lives on the same
   volume as the markers so the lock is visible to every process sharing it. The
   kernel releases the lock when a writer is killed or evicted, so a dead writer
-  cannot block later backups; if the lock is unavailable for 30 seconds the
-  update proceeds unlocked rather than stalling the backup.
+  cannot block later backups; if the lock is still unavailable after 30 seconds
+  the marker update is skipped rather than written without serialisation, so a
+  wedged holder costs an observability update and never a backup.
 - Azure Blob Storage markers are updated with an ETag compare-and-set
   (`If-Not-Modified`) and re-merged on conflict, because a local lock cannot
   coordinate writers that only share a storage account. A marker whose current
