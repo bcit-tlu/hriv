@@ -3,8 +3,8 @@
 Standing rule and route-by-route audit for every HTTP path reachable without
 authentication, resolving [#1079](https://github.com/bcit-tlu/hriv/issues/1079).
 Until this page, each unauthenticated route was decided locally in the PR that
-added it; this page is now the single answer to *"who may reach this route, and
-which layer enforces that?"*
+added it; this page is now the single answer to _"who may reach this route, and
+which layer enforces that?"_
 
 Audited at backend 0.48.0 / frontend 0.50.0 (2026-08-31).
 
@@ -26,7 +26,7 @@ Audited at backend 0.48.0 / frontend 0.50.0 (2026-08-31).
    never by obscurity of the URL. Numeric IDs in URLs are enumerable.
 4. **"Cluster-internal" must be enforced, not just documented.** A route
    intended for in-cluster consumers (metrics scrapers, probes) must be
-   blocked at the public edge (frontend nginx and/or ingress) *and* the
+   blocked at the public edge (frontend nginx and/or ingress) _and_ the
    backend Service must not be otherwise exposed. Documentation alone is not
    an enforcement layer.
 5. **Signed-credential routes** (no bearer header) are permitted when a
@@ -37,50 +37,50 @@ Audited at backend 0.48.0 / frontend 0.50.0 (2026-08-31).
 
 ### Enforcement layers
 
-| Layer | Meaning | Where it lives |
-| --- | --- | --- |
-| **app-authz** | FastAPI dependency enforces identity/role | `backend/app/auth.py`, per-endpoint |
-| **app-credential** | Application-issued signed, short-lived, resource-scoped token | issuing endpoint + validator |
-| **edge-restricted** | Blocked or filtered before reaching the app | `charts/frontend/files/default.conf.template`, ingress, NetworkPolicy |
-| **intentionally public** | Anyone may call it; response must be safe for the world | this page |
+| Layer                    | Meaning                                                       | Where it lives                                                        |
+| ------------------------ | ------------------------------------------------------------- | --------------------------------------------------------------------- |
+| **app-authz**            | FastAPI dependency enforces identity/role                     | `backend/app/auth.py`, per-endpoint                                   |
+| **app-credential**       | Application-issued signed, short-lived, resource-scoped token | issuing endpoint + validator                                          |
+| **edge-restricted**      | Blocked or filtered before reaching the app                   | `charts/frontend/files/default.conf.template`, ingress, NetworkPolicy |
+| **intentionally public** | Anyone may call it; response must be safe for the world       | this page                                                             |
 
 ## Route-by-route classification
 
 ### FastAPI — intentionally public
 
-| Route | Purpose | Notes |
-| --- | --- | --- |
-| `POST /api/auth/login` | Local login | By design (`routers/auth.py`) |
-| `GET /api/auth/oidc/enabled` | Login-screen feature probe | Boolean only (`routers/oidc.py`) |
-| `GET /api/auth/oidc/login` | OIDC redirect | By design |
-| `GET /api/auth/oidc/callback` | OIDC callback | OAuth state validated via session middleware |
-| `GET /api/status` | Maintenance-overlay polling (`MaintenanceBanner` via `fetchStatus`) and synthetic monitoring | Leaks version string; accepted |
-| `GET /api/announcement/` | Login-screen announcement banner | Public **by design** — `LoginScreen.tsx` renders it pre-auth. Write path (`PUT`) is admin/instructor. |
-| `GET /api/health` | Liveness probe | Static response |
-| `GET /api/health/queue` | Queue probe | Returns only `ok`/`degraded`; detail lives on `/api/metrics` (see #1077) |
-| `GET /api/health/ready` | Readiness probe | ⚠ Executes a DB query + storage check per call; publicly reachable through `/api/` proxy — cheap amplification. Tracked in a follow-up issue (see below). |
-| `GET /api/health/storage` | Storage probe | Same exposure consideration as above |
-| `GET /docs`, `GET /redoc`, `GET /openapi.json` | FastAPI auto-generated API docs/schema (defaults not disabled in `main.py`) | Unreachable through the frontend nginx (unprefixed paths fall into the SPA location), but exposed on any direct backend access (dev compose `:8000`, in-cluster Service). Schema reveals route surface only, no data; acceptable once the backend Service is edge/NetworkPolicy-restricted (see below). |
+| Route                                          | Purpose                                                                                      | Notes                                                                                                                                                                                                                                                                                                   |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/auth/login`                         | Local login                                                                                  | By design (`routers/auth.py`)                                                                                                                                                                                                                                                                           |
+| `GET /api/auth/oidc/enabled`                   | Login-screen feature probe                                                                   | Boolean only (`routers/oidc.py`)                                                                                                                                                                                                                                                                        |
+| `GET /api/auth/oidc/login`                     | OIDC redirect                                                                                | By design                                                                                                                                                                                                                                                                                               |
+| `GET /api/auth/oidc/callback`                  | OIDC callback                                                                                | OAuth state validated via session middleware                                                                                                                                                                                                                                                            |
+| `GET /api/status`                              | Maintenance-overlay polling (`MaintenanceBanner` via `fetchStatus`) and synthetic monitoring | Leaks version string; accepted                                                                                                                                                                                                                                                                          |
+| `GET /api/announcement/`                       | Login-screen announcement banner                                                             | Public **by design** — `LoginScreen.tsx` renders it pre-auth. Write path (`PUT`) is admin/instructor.                                                                                                                                                                                                   |
+| `GET /api/health`                              | Liveness probe                                                                               | Static response                                                                                                                                                                                                                                                                                         |
+| `GET /api/health/queue`                        | Queue probe                                                                                  | Returns only `ok`/`degraded`; detail lives on `/api/metrics` (see #1077)                                                                                                                                                                                                                                |
+| `GET /api/health/ready`                        | Readiness probe                                                                              | ⚠ Executes a DB query + storage check per call; publicly reachable through `/api/` proxy — cheap amplification. Tracked in a follow-up issue (see below).                                                                                                                                               |
+| `GET /api/health/storage`                      | Storage probe                                                                                | Same exposure consideration as above                                                                                                                                                                                                                                                                    |
+| `GET /docs`, `GET /redoc`, `GET /openapi.json` | FastAPI auto-generated API docs/schema (defaults not disabled in `main.py`)                  | Unreachable through the frontend nginx (unprefixed paths fall into the SPA location), but exposed on any direct backend access (dev compose `:8000`, in-cluster Service). Schema reveals route surface only, no data; acceptable once the backend Service is edge/NetworkPolicy-restricted (see below). |
 
 ### FastAPI — app-credential
 
-| Route | Credential | Notes |
-| --- | --- | --- |
+| Route                                     | Credential                                                                                | Notes                                                                                                |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `GET /api/admin/tasks/{task_id}/download` | Short-lived JWT in query string, `purpose=task-download`, task-bound (`routers/admin.py`) | Query-string tokens can leak via logs/referrers; hardening tracked in a follow-up issue (see below). |
-| Tile delivery (planned) | Short-lived HMAC token scoped to `source_image_id` | Design owned by #1069; enforcement by #1064. |
+| Tile delivery (planned)                   | Short-lived HMAC token scoped to `source_image_id`                                        | Design owned by #1069; enforcement by #1064.                                                         |
 
 ### FastAPI — cluster-internal (edge-restricted)
 
-| Route | Current enforcement | Status |
-| --- | --- | --- |
+| Route              | Current enforcement                                                                                                       | Status                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET /api/metrics` | Frontend nginx returns 404 (`default.conf.template`); scraped in-cluster via ServiceMonitor against the ClusterIP Service | ⚠ **Partial.** The app itself is unauthenticated and there is no NetworkPolicy restricting the backend Service, so any in-cluster or port-forwarded client (and dev compose on `:8000`) reads queue depth, worker heartbeat age, and execution mode. Enforcement fix: opt-in backend NetworkPolicy in PR [#1160](https://github.com/bcit-tlu/hriv/pull/1160) (enable per deployment overlay). |
 
 ### FastAPI — mismatches (violate rule 3)
 
-| Route | Problem | Owner |
-| --- | --- | --- |
-| `GET /api/tiles/**` (`StaticFiles` mount, `backend/app/main.py`) | DZI descriptors, thumbnails, and full-resolution tiles served with **no authorization at all**; source-image IDs are numeric and enumerable, bypassing the student visibility model (`visibility.py`) | #1064 / #1069 (Wave C) |
-| `/api/tiles/` via tiles nginx sidecar (`charts/backend/templates/configmap-nginx-tiles.yaml`) | Same content, served from the PVC with `Cache-Control: public, max-age=2592000, immutable` — world-readable **and** shared-cache-able | #1064 / #1069 (Wave C) |
+| Route                                                                                         | Problem                                                                                                                                                                                               | Owner                  |
+| --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| `GET /api/tiles/**` (`StaticFiles` mount, `backend/app/main.py`)                              | DZI descriptors, thumbnails, and full-resolution tiles served with **no authorization at all**; source-image IDs are numeric and enumerable, bypassing the student visibility model (`visibility.py`) | #1064 / #1069 (Wave C) |
+| `/api/tiles/` via tiles nginx sidecar (`charts/backend/templates/configmap-nginx-tiles.yaml`) | Same content, served from the PVC with `Cache-Control: public, max-age=2592000, immutable` — world-readable **and** shared-cache-able                                                                 | #1064 / #1069 (Wave C) |
 
 All other FastAPI routes (admin, bulk-import, categories, changelog, groups,
 images, issues, programs, telemetry, tile-order, upload, users) are
@@ -91,13 +91,13 @@ images, issues, programs, telemetry, tile-order, upload, users) are
 `charts/frontend/files/default.conf.template` (also baked into the image by
 `frontend/Dockerfile`):
 
-| Location | Behaviour | Classification |
-| --- | --- | --- |
-| `/assets/`, `/` (SPA), `= /version` | Static app shell. The SPA root also serves everything in `frontend/public/` verbatim (`THIRD-PARTY-LICENSES.txt`, logos, splash images) — treat that directory as world-readable and never place non-public files in it. | Intentionally public |
-| `/api/` | Proxy to backend | Auth enforced by the app (layer: app-authz) |
-| upload regex location | Proxy to backend with larger body cap | app-authz |
-| `/api/tiles/` | Proxy to tiles sidecar, **bypasses FastAPI**, `Cache-Control: public, immutable` | Mismatch — see #1064/#1069 |
-| `= /api/metrics` | `return 404` | Edge restriction for the cluster-internal route above |
+| Location                            | Behaviour                                                                                                                                                                                                                | Classification                                        |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------- |
+| `/assets/`, `/` (SPA), `= /version` | Static app shell. The SPA root also serves everything in `frontend/public/` verbatim (`THIRD-PARTY-LICENSES.txt`, logos, splash images) — treat that directory as world-readable and never place non-public files in it. | Intentionally public                                  |
+| `/api/`                             | Proxy to backend                                                                                                                                                                                                         | Auth enforced by the app (layer: app-authz)           |
+| upload regex location               | Proxy to backend with larger body cap                                                                                                                                                                                    | app-authz                                             |
+| `/api/tiles/`                       | Proxy to tiles sidecar, **bypasses FastAPI**, `Cache-Control: public, immutable`                                                                                                                                         | Mismatch — see #1064/#1069                            |
+| `= /api/metrics`                    | `return 404`                                                                                                                                                                                                             | Edge restriction for the cluster-internal route above |
 
 ### Kubernetes / ingress
 
@@ -129,13 +129,13 @@ it; hardening the default is tracked in a follow-up issue (see below).
 
 ## Gaps and owners
 
-| Gap | Owner |
-| --- | --- |
-| Unauthenticated tile/thumbnail delivery (app mount + sidecar) | #1064, #1069 — in progress (Wave C) |
+| Gap                                                                    | Owner                                                                                            |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Unauthenticated tile/thumbnail delivery (app mount + sidecar)          | #1064, #1069 — in progress (Wave C)                                                              |
 | `/api/metrics` cluster-internal not enforced beyond frontend nginx 404 | PR [#1160](https://github.com/bcit-tlu/hriv/pull/1160) (chart NetworkPolicy; enable in overlays) |
-| `/api/health/ready` public DB/storage probe cost | #1152 |
-| Admin task-download token in query string | #1153 |
-| CORS wildcard + credentials default | #1154 |
+| `/api/health/ready` public DB/storage probe cost                       | #1152                                                                                            |
+| Admin task-download token in query string                              | #1153                                                                                            |
+| CORS wildcard + credentials default                                    | #1154                                                                                            |
 
 ## Related
 
