@@ -92,6 +92,11 @@ assert_not_contains "$backup_no_volumes_manifest" "volumeMounts:" \
 assert_not_contains "$backup_no_volumes_manifest" "volumes:" \
   "backup deployment should omit volumes when every backup chart data volume is disabled"
 
+backup_default_manifest="$(helm template test charts/backup)"
+backup_deployment="$(extract_yaml_doc "$backup_default_manifest" "Deployment" "test-hriv-backup")"
+assert_contains "$backup_deployment" "ephemeral-storage:" \
+  "backup deployment should set explicit ephemeral-storage requests and limits so an archive staging fallback to pod-local /tmp fails as a limit error"
+
 backend_zone_aa_manifest="$(helm template test charts/backend \
   --set scheduling.zoneAntiAffinity.enabled=true \
   --set replicaCount=2 \

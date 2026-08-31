@@ -95,6 +95,10 @@ AZURE_BLOB_PREFIX: str = _env("AZURE_BLOB_PREFIX", "hriv-backups")
 BACKUP_CRON_SCHEDULE: str = _env("BACKUP_CRON_SCHEDULE", "0 2 * * *")
 BACKUP_RETENTION_COUNT: int = int(_env("BACKUP_RETENTION_COUNT", "30"))
 BACKUP_STALE_HOURS: int = int(_env("BACKUP_STALE_HOURS", "26"))
+# Directory used to stage archives while they are being built. Defaults to a
+# hidden directory on the /backups volume so the archive never occupies
+# pod-local ephemeral storage.
+BACKUP_STAGING_DIR: str = _env("BACKUP_STAGING_DIR", "")
 RESTORE_TEST_DATABASE_URL: str = _env("RESTORE_TEST_DATABASE_URL", "")
 RESTORE_TEST_DATA_DIR: str = _env("RESTORE_TEST_DATA_DIR", "")
 
@@ -116,6 +120,46 @@ def _local_backup_dir() -> Path:
     return Path("/backups")
 
 
+_SNAPSHOT_STAMP_RE = re.compile(r"(\d{8}-\d{6})")
+_STAGING_DIR_NAME = ".staging"
+_STAGING_PREFIX = "hriv-bak-"
+_STALE_STAGING_HOURS = 24
+
+
+def _staging_root() -> Path | None:
+    """Return the directory archives are staged in, or *None* for pod-local tmp."""
+    root = (
+        Path(BACKUP_STAGING_DIR)
+        if BACKUP_STAGING_DIR
+        else _local_backup_dir() / _STAGING_DIR_NAME
+    )
+    probe = root / f".probe-{uuid.uuid4().hex}"
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        probe.write_bytes(b"")
+        probe.unlink()
+    except OSError:
+        log.warning(
+            "Staging directory %s is unusable - falling back to pod-local temporary storage",
+            root,
+        )
+        return None
+    return root
+
+
+def _sweep_stale_staging(root: Path) -> None:
+    """Remove staging directories left behind by interrupted backups."""
+    cutoff = time.time() - _STALE_STAGING_HOURS * 3600
+    for entry in root.glob(f"{_STAGING_PREFIX}*"):
+        try:
+            if entry.stat().st_mtime >= cutoff:
+                continue
+        except OSError:
+            continue
+        shutil.rmtree(str(entry), ignore_errors=True)
+        log.info("Removed stale backup staging directory %s", entry)
+
+
 def _snapshot_stem(snapshot_name: str) -> str:
     return snapshot_name.removesuffix(".tar.gz")
 
@@ -131,6 +175,11 @@ def _manifest_sidecar_path(archive_path: Path) -> Path:
 def _manifest_sidecar_blob_name(snapshot_name: str) -> str:
     prefix = f"{AZURE_BLOB_PREFIX}/" if AZURE_BLOB_PREFIX else ""
     return f"{prefix}{_manifest_sidecar_name(snapshot_name)}"
+
+
+def _archive_blob_name(snapshot_name: str) -> str:
+    prefix = f"{AZURE_BLOB_PREFIX}/" if AZURE_BLOB_PREFIX else ""
+    return f"{prefix}{_snapshot_stem(snapshot_name)}.tar.gz"
 
 
 def _last_success_marker_path() -> Path:
@@ -383,12 +432,32 @@ def _attach_archive_key_to_success(state: dict, backup_type: str, archive_key: s
     section["last_success_archive_key"] = archive_key
 
 
+def _marker_is_newer(existing: dict | None, created_at: datetime) -> bool:
+    """Return True when *existing* records a success newer than *created_at*."""
+    if not isinstance(existing, dict):
+        return False
+    try:
+        existing_created_at = datetime.fromisoformat(str(existing["created_at"]))
+    except (KeyError, TypeError, ValueError):
+        return False
+    if existing_created_at.tzinfo is None:
+        existing_created_at = existing_created_at.replace(tzinfo=timezone.utc)
+    return existing_created_at > created_at
+
+
 def _write_last_success_marker(
     snapshot_name: str,
     *,
     created_at: datetime,
     archive_size: int | None,
 ) -> None:
+    if _marker_is_newer(_read_last_success_marker(), created_at):
+        log.info(
+            "Skipping last-success marker for %s: a newer successful backup is already recorded",
+            snapshot_name,
+        )
+        return
+
     marker = {
         "snapshot_name": snapshot_name,
         "created_at": created_at.isoformat(),
@@ -527,11 +596,47 @@ def _azure_configured() -> bool:
 # Backup
 # ---------------------------------------------------------------------------
 
-def _backup_sort_key(path: Path) -> str:
-    """Extract the ``YYYYMMDD-HHMMSS`` timestamp from an
-    ``hriv-backup-*.tar.gz`` filename so archives sort chronologically."""
-    m = re.search(r"(\d{8}-\d{6})", path.name)
-    return m.group(1) if m else path.name
+def _snapshot_sort_key(name: str) -> tuple[str, str]:
+    """Sort key for an ``hriv-backup-*`` archive name.
+
+    Archives sort by their ``YYYYMMDD-HHMMSS`` stamp, with the full name as a
+    deterministic tie-break between snapshots taken in the same second.
+    """
+    m = _SNAPSHOT_STAMP_RE.search(name)
+    return (m.group(1) if m else name, name)
+
+
+def _backup_sort_key(path: Path) -> tuple[str, str]:
+    return _snapshot_sort_key(path.name)
+
+
+def _snapshot_exists(snapshot_name: str) -> bool:
+    if _azure_configured():
+        try:
+            container = _blob_container_client()
+            blob_name = _archive_blob_name(snapshot_name)
+            return any(
+                blob.name == blob_name
+                for blob in container.list_blobs(name_starts_with=blob_name)
+            )
+        except Exception:
+            log.exception("Failed to check whether snapshot %s already exists", snapshot_name)
+            return False
+    return (_local_backup_dir() / f"{snapshot_name}.tar.gz").exists()
+
+
+def _new_snapshot_name(created_at: datetime) -> str:
+    """Return a collision-resistant snapshot name for *created_at*.
+
+    The ``YYYYMMDD-HHMMSS`` prefix keeps lexical ordering chronological; the
+    random suffix distinguishes invocations that start in the same second.
+    """
+    stamp = created_at.strftime("%Y%m%d-%H%M%S")
+    for _ in range(3):
+        candidate = f"hriv-backup-{stamp}-{uuid.uuid4().hex[:8]}"
+        if not _snapshot_exists(candidate):
+            return candidate
+    raise RuntimeError(f"Could not allocate a unique snapshot name for {stamp}")
 
 
 def _sha256(path: Path) -> str:
@@ -564,8 +669,7 @@ def run_backup() -> Path | None:
     Returns the local path to the archive, or *None* on failure.
     """
     created_at = datetime.now(timezone.utc)
-    timestamp = created_at.strftime("%Y%m%d-%H%M%S")
-    snapshot_name = f"hriv-backup-{timestamp}"
+    snapshot_name = _new_snapshot_name(created_at)
     log.info("Starting backup: %s", snapshot_name)
     backup_state = _new_backup_state(snapshot_name)
     _seed_last_success_history(backup_state, _read_backup_state())
@@ -573,7 +677,14 @@ def run_backup() -> Path | None:
     db = _parse_db_url(DATABASE_URL)
     pg = _pg_env(db)
 
-    with tempfile.TemporaryDirectory(prefix="hriv-bak-") as tmpdir:
+    staging_root = _staging_root()
+    if staging_root is not None:
+        _sweep_stale_staging(staging_root)
+
+    with tempfile.TemporaryDirectory(
+        prefix=_STAGING_PREFIX,
+        dir=str(staging_root) if staging_root is not None else None,
+    ) as tmpdir:
         work = Path(tmpdir) / snapshot_name
         work.mkdir()
 
@@ -691,11 +802,11 @@ def run_backup() -> Path | None:
 
             # 5. Upload to Azure Blob Storage --------------------------------
             if _azure_configured():
-                blob_name = f"{AZURE_BLOB_PREFIX}/{archive_name}" if AZURE_BLOB_PREFIX else archive_name
+                blob_name = _archive_blob_name(archive_name)
                 log.info("Uploading to azure://%s/%s …", AZURE_STORAGE_CONTAINER, blob_name)
                 container = _blob_container_client()
                 with open(archive_path, "rb") as data:
-                    container.upload_blob(blob_name, data, overwrite=True)
+                    container.upload_blob(blob_name, data, overwrite=False)
                 log.info("Upload complete")
                 try:
                     container.upload_blob(
@@ -721,11 +832,15 @@ def run_backup() -> Path | None:
                     "Set AZURE_STORAGE_CONNECTION_STRING and AZURE_STORAGE_CONTAINER to enable cloud storage.",
                     archive_path,
                 )
-                # Copy to a persistent location so it survives tmpdir cleanup
+                # Publish to a persistent location so it survives tmpdir cleanup.
+                # A same-filesystem rename avoids staging a second full copy.
                 persistent = _local_backup_dir()
                 persistent.mkdir(parents=True, exist_ok=True)
                 final = persistent / archive_name
-                shutil.copy2(str(archive_path), str(final))
+                try:
+                    os.replace(str(archive_path), str(final))
+                except OSError:
+                    shutil.move(str(archive_path), str(final))
                 log.info("Local backup saved to %s", final)
                 try:
                     _atomic_write_bytes(_manifest_sidecar_path(final), manifest_payload)
@@ -784,7 +899,10 @@ def _enforce_retention(container: ContainerClient) -> None:
             if blob.name.endswith(".tar.gz"):
                 blobs.append(blob)
 
-        blobs.sort(key=lambda b: b.last_modified, reverse=True)
+        blobs.sort(
+            key=lambda b: _snapshot_sort_key(b.name.rsplit("/", 1)[-1]),
+            reverse=True,
+        )
 
         if len(blobs) > BACKUP_RETENTION_COUNT:
             to_delete = blobs[BACKUP_RETENTION_COUNT:]
@@ -880,7 +998,7 @@ def list_snapshots() -> list[dict]:
                 "location": "azure",
             })
 
-    snapshots.sort(key=lambda s: s["name"], reverse=True)
+    snapshots.sort(key=lambda s: _snapshot_sort_key(s["name"]), reverse=True)
     return snapshots
 
 
@@ -1023,11 +1141,12 @@ def _run_restore_inner(
             return False
 
         if snapshot_name:
-            match = [s for s in snapshots if s["name"] == snapshot_name or s["name"] == f"{snapshot_name}.tar.gz"]
-            if not match:
-                log.error("Snapshot %s not found. Available: %s", snapshot_name, [s["name"] for s in snapshots])
+            available = [s["name"] for s in snapshots]
+            resolved = _resolve_snapshot_name(snapshot_name, available)
+            if resolved is None:
+                log.error("Snapshot %s not found. Available: %s", snapshot_name, available)
                 return False
-            target = match[0]
+            target = next(s for s in snapshots if s["name"] == resolved)
         else:
             target = snapshots[0]
             log.info("Using latest snapshot: %s", target["name"])
@@ -1051,7 +1170,11 @@ def _run_restore_inner(
         # Local restore
         local_dir = _local_backup_dir()
         if snapshot_name:
-            fname = snapshot_name if snapshot_name.endswith(".tar.gz") else f"{snapshot_name}.tar.gz"
+            available = [p.name for p in local_dir.glob("hriv-backup-*.tar.gz")]
+            resolved = _resolve_snapshot_name(snapshot_name, available)
+            fname = resolved or (
+                snapshot_name if snapshot_name.endswith(".tar.gz") else f"{snapshot_name}.tar.gz"
+            )
             archive_path = local_dir / fname
         else:
             archives = sorted(
@@ -1074,6 +1197,26 @@ def _run_restore_inner(
             database_url=target_database_url,
             data_dir=target_data_dir,
         )
+
+
+def _resolve_snapshot_name(requested: str, available: list[str]) -> str | None:
+    """Resolve *requested* against *available* archive names.
+
+    Accepts an exact archive name, a name without the ``.tar.gz`` suffix, or an
+    unambiguous prefix so timestamp-only names still address snapshots written
+    with a random suffix.
+    """
+    stem = _snapshot_stem(requested)
+    exact = [name for name in available if _snapshot_stem(name) == stem]
+    if exact:
+        return exact[0]
+
+    prefixed = sorted(name for name in available if _snapshot_stem(name).startswith(stem))
+    if len(prefixed) == 1:
+        return prefixed[0]
+    if len(prefixed) > 1:
+        log.error("Snapshot %s is ambiguous. Matches: %s", requested, prefixed)
+    return None
 
 
 def _restore_ignore_tiles(

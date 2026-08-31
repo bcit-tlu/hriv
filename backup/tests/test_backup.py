@@ -33,6 +33,7 @@ class _BackupTestCase(unittest.TestCase):
         "AZURE_STORAGE_CONTAINER",
         "AZURE_BLOB_PREFIX",
         "BACKUP_STALE_HOURS",
+        "BACKUP_STAGING_DIR",
         "DATABASE_URL",
         "DATA_DIR",
         "RESTORE_TEST_DATABASE_URL",
@@ -633,6 +634,409 @@ class StatusTestCase(_BackupTestCase):
 
         with patch.object(backup, "_blob_container_client", return_value=fake_container), self.assertNoLogs("hriv-backup", level="ERROR"):
             self.assertIsNone(backup._read_last_success_marker())
+
+
+class SnapshotIdentityTestCase(_BackupTestCase):
+    """Collision-resistant snapshot naming and ordering."""
+
+    def setUp(self):
+        super().setUp()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self.local_dir = Path(self._tmpdir.name) / "backups"
+        self.local_dir.mkdir()
+
+    def test_new_name_keeps_timestamp_prefix_and_adds_random_suffix(self):
+        self._reload({})
+        created_at = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+        with patch.object(backup, "_local_backup_dir", return_value=self.local_dir):
+            names = {backup._new_snapshot_name(created_at) for _ in range(5)}
+
+        self.assertEqual(len(names), 5)
+        for name in names:
+            self.assertRegex(name, r"^hriv-backup-20260102-030405-[0-9a-f]{8}$")
+
+    def test_new_name_rerolls_when_candidate_already_exists(self):
+        self._reload({})
+        created_at = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+        (self.local_dir / "hriv-backup-20260102-030405-aaaaaaaa.tar.gz").write_bytes(b"")
+        fakes = [
+            SimpleNamespace(hex="aaaaaaaa" + "0" * 24),
+            SimpleNamespace(hex="bbbbbbbb" + "0" * 24),
+        ]
+
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=self.local_dir),
+            patch.object(backup.uuid, "uuid4", side_effect=fakes),
+        ):
+            name = backup._new_snapshot_name(created_at)
+
+        self.assertEqual(name, "hriv-backup-20260102-030405-bbbbbbbb")
+
+    def test_sort_key_orders_legacy_and_suffixed_names_chronologically(self):
+        self._reload({})
+        names = [
+            "hriv-backup-20260102-030405-ffffffff.tar.gz",
+            "hriv-backup-20260101-000000.tar.gz",
+            "hriv-backup-20260102-030405-00000000.tar.gz",
+            "hriv-backup-20260103-000000.tar.gz",
+        ]
+        self.assertEqual(
+            sorted(names, key=backup._snapshot_sort_key),
+            [
+                "hriv-backup-20260101-000000.tar.gz",
+                "hriv-backup-20260102-030405-00000000.tar.gz",
+                "hriv-backup-20260102-030405-ffffffff.tar.gz",
+                "hriv-backup-20260103-000000.tar.gz",
+            ],
+        )
+
+    def test_resolve_snapshot_name_accepts_exact_stem_and_unique_prefix(self):
+        self._reload({})
+        available = [
+            "hriv-backup-20260101-000000.tar.gz",
+            "hriv-backup-20260102-030405-aaaaaaaa.tar.gz",
+        ]
+        self.assertEqual(
+            backup._resolve_snapshot_name("hriv-backup-20260101-000000.tar.gz", available),
+            "hriv-backup-20260101-000000.tar.gz",
+        )
+        self.assertEqual(
+            backup._resolve_snapshot_name("hriv-backup-20260101-000000", available),
+            "hriv-backup-20260101-000000.tar.gz",
+        )
+        self.assertEqual(
+            backup._resolve_snapshot_name("hriv-backup-20260102-030405", available),
+            "hriv-backup-20260102-030405-aaaaaaaa.tar.gz",
+        )
+        self.assertIsNone(backup._resolve_snapshot_name("hriv-backup-20260104-000000", available))
+
+    def test_resolve_snapshot_name_rejects_ambiguous_prefix(self):
+        self._reload({})
+        available = [
+            "hriv-backup-20260102-030405-aaaaaaaa.tar.gz",
+            "hriv-backup-20260102-030405-bbbbbbbb.tar.gz",
+        ]
+        with self.assertLogs("hriv-backup", level="ERROR"):
+            self.assertIsNone(
+                backup._resolve_snapshot_name("hriv-backup-20260102-030405", available)
+            )
+
+
+class _FrozenDatetime(datetime):
+    """datetime whose now() is pinned so backups share a single second."""
+
+    _now = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+
+    @classmethod
+    def now(cls, tz=None):
+        return cls._now
+
+
+def _fake_pg_dump_run(cmd, **_kwargs):
+    if cmd[0] == "pg_dump":
+        Path(cmd[cmd.index("-f") + 1]).write_text("dump")
+    return MagicMock(returncode=0)
+
+
+class SameSecondBackupTestCase(_BackupTestCase):
+    """Two backups started in the same second must not collide."""
+
+    def setUp(self):
+        super().setUp()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self.tmp = Path(self._tmpdir.name)
+        self.data_dir = self.tmp / "data"
+        (self.data_dir / "source_images").mkdir(parents=True)
+        (self.data_dir / "source_images" / "img.jpg").write_bytes(b"source")
+        self.local_dir = self.tmp / "backups"
+        self.local_dir.mkdir()
+
+    def test_concurrent_local_backups_produce_distinct_archives(self):
+        self._reload({"DATA_DIR": str(self.data_dir), "BACKUP_RETENTION_COUNT": "5"})
+        results: list[Path] = []
+        errors: list[Exception] = []
+        barrier = threading.Barrier(2)
+
+        def worker() -> None:
+            barrier.wait()
+            try:
+                result = backup.run_backup()
+                if result is not None:
+                    results.append(result)
+            except Exception as exc:  # pragma: no cover - failure path
+                errors.append(exc)
+
+        with (
+            patch.object(backup, "datetime", _FrozenDatetime),
+            patch.object(backup, "_local_backup_dir", return_value=self.local_dir),
+            patch.object(backup.subprocess, "run", side_effect=_fake_pg_dump_run),
+        ):
+            threads = [threading.Thread(target=worker) for _ in range(2)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+
+        self.assertEqual(errors, [])
+        self.assertEqual(len(results), 2)
+        self.assertEqual(len({p.name for p in results}), 2)
+        for archive in results:
+            self.assertTrue(archive.exists())
+            with tarfile.open(archive, "r:gz") as tar:
+                names = tar.getnames()
+            self.assertTrue(any(n.endswith("data/source_images/img.jpg") for n in names))
+            sidecar = self.local_dir / f"{archive.name.removesuffix('.tar.gz')}.manifest.json"
+            payload = json.loads(sidecar.read_text())
+            self.assertEqual(payload["snapshot_name"], archive.name.removesuffix(".tar.gz"))
+
+    def test_same_second_azure_backups_do_not_overwrite_each_other(self):
+        self._reload(
+            {
+                "DATA_DIR": str(self.data_dir),
+                "AZURE_STORAGE_CONNECTION_STRING": "fake",
+                "AZURE_STORAGE_CONTAINER": "fake",
+            }
+        )
+        uploads: dict[str, bytes] = {}
+
+        def fake_upload_blob(blob_name, data, overwrite=True):
+            if not overwrite and blob_name in uploads:
+                raise RuntimeError(f"blob already exists: {blob_name}")
+            uploads[blob_name] = data.read()
+
+        fake_container = MagicMock()
+        fake_container.upload_blob = fake_upload_blob
+        fake_container.list_blobs.return_value = []
+
+        with (
+            patch.object(backup, "datetime", _FrozenDatetime),
+            patch.object(backup, "_local_backup_dir", return_value=self.local_dir),
+            patch.object(backup, "_blob_container_client", return_value=fake_container),
+            patch.object(backup.subprocess, "run", side_effect=_fake_pg_dump_run),
+        ):
+            first = backup.run_backup()
+            second = backup.run_backup()
+
+        self.assertIsNotNone(first)
+        self.assertIsNotNone(second)
+        self.assertNotEqual(first.name, second.name)
+        for archive in (first, second):
+            stem = archive.name.removesuffix(".tar.gz")
+            self.assertIn(f"hriv-backups/{stem}.tar.gz", uploads)
+            self.assertIn(f"hriv-backups/{stem}.manifest.json", uploads)
+
+
+class StagingTestCase(_BackupTestCase):
+    """Archives are staged on the backups volume, not pod-local /tmp."""
+
+    def setUp(self):
+        super().setUp()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self.tmp = Path(self._tmpdir.name)
+        self.local_dir = self.tmp / "backups"
+        self.local_dir.mkdir()
+
+    def test_staging_root_defaults_to_backups_volume(self):
+        self._reload({})
+        with patch.object(backup, "_local_backup_dir", return_value=self.local_dir):
+            root = backup._staging_root()
+        self.assertEqual(root, self.local_dir / ".staging")
+        self.assertTrue(root.is_dir())
+        self.assertEqual(list(root.iterdir()), [])
+
+    def test_staging_root_honours_override(self):
+        override = self.tmp / "elsewhere"
+        self._reload({"BACKUP_STAGING_DIR": str(override)})
+        self.assertEqual(backup._staging_root(), override)
+
+    def test_staging_root_falls_back_when_unwritable(self):
+        self._reload({"BACKUP_STAGING_DIR": "/proc/hriv-staging"})
+        with self.assertLogs("hriv-backup", level="WARNING"):
+            self.assertIsNone(backup._staging_root())
+
+    def test_run_backup_stages_on_backups_volume(self):
+        data_dir = self.tmp / "data"
+        data_dir.mkdir()
+        self._reload({"DATA_DIR": str(data_dir)})
+        real_temporary_directory = tempfile.TemporaryDirectory
+        staging_dirs: list[str | None] = []
+
+        def recording_temporary_directory(*args, **kwargs):
+            if kwargs.get("prefix") == backup._STAGING_PREFIX:
+                staging_dirs.append(kwargs.get("dir"))
+            return real_temporary_directory(*args, **kwargs)
+
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=self.local_dir),
+            patch.object(backup.tempfile, "TemporaryDirectory", recording_temporary_directory),
+            patch.object(backup.subprocess, "run", side_effect=_fake_pg_dump_run),
+        ):
+            result = backup.run_backup()
+            snapshots = backup.list_snapshots()
+
+        self.assertIsNotNone(result)
+        self.assertEqual(staging_dirs, [str(self.local_dir / ".staging")])
+        self.assertEqual(list((self.local_dir / ".staging").iterdir()), [])
+        self.assertEqual([s["name"] for s in snapshots], [result.name])
+
+    def test_sweep_stale_staging_removes_only_old_directories(self):
+        self._reload({})
+        root = self.local_dir / ".staging"
+        root.mkdir()
+        stale = root / f"{backup._STAGING_PREFIX}stale"
+        fresh = root / f"{backup._STAGING_PREFIX}fresh"
+        for directory in (stale, fresh):
+            directory.mkdir()
+            (directory / "archive.tar.gz").write_bytes(b"partial")
+        old = (datetime.now(timezone.utc) - timedelta(hours=48)).timestamp()
+        os.utime(stale, (old, old))
+
+        backup._sweep_stale_staging(root)
+
+        self.assertFalse(stale.exists())
+        self.assertTrue(fresh.exists())
+
+
+class NameDerivedRetentionTestCase(_BackupTestCase):
+    """Retention orders snapshots by the timestamp in their name."""
+
+    def setUp(self):
+        super().setUp()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self.local_dir = Path(self._tmpdir.name) / "backups"
+        self.local_dir.mkdir()
+
+    def test_azure_retention_ignores_misleading_last_modified(self):
+        self._reload(
+            {
+                "AZURE_STORAGE_CONNECTION_STRING": "fake",
+                "AZURE_STORAGE_CONTAINER": "fake",
+                "BACKUP_RETENTION_COUNT": "1",
+            }
+        )
+        blobs = [
+            SimpleNamespace(
+                name="hriv-backups/hriv-backup-20260101-000000.tar.gz",
+                last_modified=datetime(2026, 3, 1, tzinfo=timezone.utc),
+            ),
+            SimpleNamespace(
+                name="hriv-backups/hriv-backup-20260202-000000-aaaaaaaa.tar.gz",
+                last_modified=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            ),
+        ]
+        fake_container = MagicMock()
+        fake_container.list_blobs.return_value = blobs
+
+        backup._enforce_retention(fake_container)
+
+        deleted = [call.args[0] for call in fake_container.delete_blob.call_args_list]
+        self.assertIn("hriv-backups/hriv-backup-20260101-000000.tar.gz", deleted)
+        self.assertNotIn("hriv-backups/hriv-backup-20260202-000000-aaaaaaaa.tar.gz", deleted)
+
+    def test_local_retention_keeps_newest_same_second_snapshots(self):
+        self._reload({"BACKUP_RETENTION_COUNT": "2"})
+        for name in (
+            "hriv-backup-20260101-000000.tar.gz",
+            "hriv-backup-20260202-030405-aaaaaaaa.tar.gz",
+            "hriv-backup-20260202-030405-bbbbbbbb.tar.gz",
+        ):
+            (self.local_dir / name).write_bytes(b"archive")
+
+        with patch.object(backup, "_local_backup_dir", return_value=self.local_dir):
+            backup._enforce_local_retention()
+
+        self.assertEqual(
+            sorted(p.name for p in self.local_dir.glob("hriv-backup-*.tar.gz")),
+            [
+                "hriv-backup-20260202-030405-aaaaaaaa.tar.gz",
+                "hriv-backup-20260202-030405-bbbbbbbb.tar.gz",
+            ],
+        )
+
+
+class LegacySnapshotRestoreTestCase(_BackupTestCase):
+    """Restore keeps working for old timestamp-only snapshot names."""
+
+    def setUp(self):
+        super().setUp()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self.local_dir = Path(self._tmpdir.name) / "backups"
+        self.local_dir.mkdir()
+        for name in (
+            "hriv-backup-20260101-000000.tar.gz",
+            "hriv-backup-20260202-030405-aaaaaaaa.tar.gz",
+        ):
+            (self.local_dir / name).write_bytes(b"archive")
+
+    def _restore(self, snapshot_name):
+        restored: list[Path] = []
+
+        def fake_restore_from_archive(archive_path, **_kwargs):
+            restored.append(archive_path)
+            return True
+
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=self.local_dir),
+            patch.object(backup, "_restore_from_archive", side_effect=fake_restore_from_archive),
+        ):
+            ok = backup._run_restore_inner(snapshot_name=snapshot_name)
+        return ok, [p.name for p in restored]
+
+    def test_restore_accepts_legacy_name(self):
+        self._reload({})
+        ok, restored = self._restore("hriv-backup-20260101-000000")
+        self.assertTrue(ok)
+        self.assertEqual(restored, ["hriv-backup-20260101-000000.tar.gz"])
+
+    def test_restore_accepts_suffixed_name_and_timestamp_prefix(self):
+        self._reload({})
+        for requested in (
+            "hriv-backup-20260202-030405-aaaaaaaa.tar.gz",
+            "hriv-backup-20260202-030405",
+        ):
+            ok, restored = self._restore(requested)
+            self.assertTrue(ok)
+            self.assertEqual(restored, ["hriv-backup-20260202-030405-aaaaaaaa.tar.gz"])
+
+    def test_restore_uses_newest_snapshot_by_name_when_unspecified(self):
+        self._reload({})
+        ok, restored = self._restore(None)
+        self.assertTrue(ok)
+        self.assertEqual(restored, ["hriv-backup-20260202-030405-aaaaaaaa.tar.gz"])
+
+
+class LastSuccessMarkerOrderingTestCase(_BackupTestCase):
+    """A slower older backup must not regress the last-success marker."""
+
+    def setUp(self):
+        super().setUp()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self.local_dir = Path(self._tmpdir.name) / "backups"
+        self.local_dir.mkdir()
+
+    def test_older_backup_does_not_overwrite_newer_marker(self):
+        self._reload({})
+        newer = {
+            "snapshot_name": "hriv-backup-20260202-030406-bbbbbbbb",
+            "created_at": "2026-02-02T03:04:06+00:00",
+        }
+        (self.local_dir / "LAST_SUCCESS.json").write_text(json.dumps(newer))
+
+        with patch.object(backup, "_local_backup_dir", return_value=self.local_dir):
+            backup._write_last_success_marker(
+                "hriv-backup-20260202-030405-aaaaaaaa",
+                created_at=datetime(2026, 2, 2, 3, 4, 5, tzinfo=timezone.utc),
+                archive_size=1,
+            )
+            marker = backup._read_last_success_marker()
+
+        self.assertEqual(marker["snapshot_name"], newer["snapshot_name"])
 
 
 class AtomicWriteTestCase(unittest.TestCase):
