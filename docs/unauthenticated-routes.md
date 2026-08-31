@@ -54,12 +54,13 @@ Audited at backend 0.48.0 / frontend 0.50.0 (2026-08-31).
 | `GET /api/auth/oidc/enabled` | Login-screen feature probe | Boolean only (`routers/oidc.py`) |
 | `GET /api/auth/oidc/login` | OIDC redirect | By design |
 | `GET /api/auth/oidc/callback` | OIDC callback | OAuth state validated via session middleware |
-| `GET /api/status` | Version/status probe for synthetic monitoring | Leaks version string; accepted |
+| `GET /api/status` | Maintenance-overlay polling (`MaintenanceBanner` via `fetchStatus`) and synthetic monitoring | Leaks version string; accepted |
 | `GET /api/announcement/` | Login-screen announcement banner | Public **by design** — `LoginScreen.tsx` renders it pre-auth. Write path (`PUT`) is admin/instructor. |
 | `GET /api/health` | Liveness probe | Static response |
 | `GET /api/health/queue` | Queue probe | Returns only `ok`/`degraded`; detail lives on `/api/metrics` (see #1077) |
 | `GET /api/health/ready` | Readiness probe | ⚠ Executes a DB query + storage check per call; publicly reachable through `/api/` proxy — cheap amplification. Tracked in a follow-up issue (see below). |
 | `GET /api/health/storage` | Storage probe | Same exposure consideration as above |
+| `GET /docs`, `GET /redoc`, `GET /openapi.json` | FastAPI auto-generated API docs/schema (defaults not disabled in `main.py`) | Unreachable through the frontend nginx (unprefixed paths fall into the SPA location), but exposed on any direct backend access (dev compose `:8000`, in-cluster Service). Schema reveals route surface only, no data; acceptable once the backend Service is edge/NetworkPolicy-restricted (see below). |
 
 ### FastAPI — app-credential
 
@@ -92,7 +93,7 @@ images, issues, programs, telemetry, tile-order, upload, users) are
 
 | Location | Behaviour | Classification |
 | --- | --- | --- |
-| `/assets/`, `/` (SPA), `= /version` | Static app shell | Intentionally public |
+| `/assets/`, `/` (SPA), `= /version` | Static app shell. The SPA root also serves everything in `frontend/public/` verbatim (`THIRD-PARTY-LICENSES.txt`, logos, splash images) — treat that directory as world-readable and never place non-public files in it. | Intentionally public |
 | `/api/` | Proxy to backend | Auth enforced by the app (layer: app-authz) |
 | upload regex location | Proxy to backend with larger body cap | app-authz |
 | `/api/tiles/` | Proxy to tiles sidecar, **bypasses FastAPI**, `Cache-Control: public, immutable` | Mismatch — see #1064/#1069 |
@@ -104,10 +105,12 @@ images, issues, programs, telemetry, tile-order, upload, users) are
   chart itself imposes **no** allowlist. Health/status routes are therefore
   publicly reachable through the ingress — accepted for probes per the table
   above, with the `/api/health/ready` cost caveat.
-- `charts/backend` ships an opt-in NetworkPolicy (PR
-  [#1160](https://github.com/bcit-tlu/hriv/pull/1160)) restricting ingress to
-  the frontend proxy and the metrics-scraper namespace — required for rule 4
-  to hold for `/api/metrics`. Enable it in the deployment overlay.
+- PR [#1160](https://github.com/bcit-tlu/hriv/pull/1160) adds an opt-in
+  NetworkPolicy to `charts/backend` restricting ingress to the frontend proxy
+  and the metrics-scraper — required for rule 4 to hold for `/api/metrics`.
+  Until that PR merges and the policy is enabled in the deployment overlay,
+  no NetworkPolicy restricts direct access to the backend Service (the
+  frontend chart ships one for itself only).
 
 ### Development-only exposure (docker-compose)
 
