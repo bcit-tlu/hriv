@@ -1451,7 +1451,7 @@ async def test_download_task_wrong_task_id() -> None:
 
 async def test_download_task_not_found() -> None:
     token = _make_download_token(task_id=999)
-    admin_user = SimpleNamespace(id=1, role="admin")
+    admin_user = SimpleNamespace(id=1, role="admin", active=True)
     db = AsyncMock()
     db.get = AsyncMock(side_effect=lambda model, id_: admin_user if model.__name__ == "User" else None)
 
@@ -1465,7 +1465,7 @@ async def test_download_task_not_found() -> None:
 
 async def test_download_task_not_completed() -> None:
     task = _make_admin_task(status="running")
-    admin_user = SimpleNamespace(id=1, role="admin")
+    admin_user = SimpleNamespace(id=1, role="admin", active=True)
     token = _make_download_token(task_id=1)
 
     db = AsyncMock()
@@ -1494,7 +1494,7 @@ async def test_download_task_result_file_missing() -> None:
         result_path="/nonexistent/file.json",
         result_filename="export.json",
     )
-    admin_user = SimpleNamespace(id=1, role="admin")
+    admin_user = SimpleNamespace(id=1, role="admin", active=True)
     token = _make_download_token(task_id=1)
 
     db = AsyncMock()
@@ -1526,7 +1526,7 @@ async def test_download_task_success(tmp_path) -> None:
         result_path=str(filepath),
         result_filename="export.json",
     )
-    admin_user = SimpleNamespace(id=1, role="admin")
+    admin_user = SimpleNamespace(id=1, role="admin", active=True)
     token = _make_download_token(task_id=1)
 
     db = AsyncMock()
@@ -1558,7 +1558,7 @@ async def test_download_task_tar_gz(tmp_path) -> None:
         result_path=str(filepath),
         result_filename="hriv-files.tar.gz",
     )
-    admin_user = SimpleNamespace(id=1, role="admin")
+    admin_user = SimpleNamespace(id=1, role="admin", active=True)
     token = _make_download_token(task_id=1)
 
     db = AsyncMock()
@@ -1578,6 +1578,38 @@ async def test_download_task_tar_gz(tmp_path) -> None:
         mock_settings.jwt_algorithm = "HS256"
         response = await download_task_result(1, token=token, db=db)
     assert response.media_type == "application/gzip"
+
+
+async def test_download_task_inactive_admin_forbidden(tmp_path) -> None:
+    filepath = tmp_path / "export.json"
+    filepath.write_text('{"test": true}')
+
+    task = _make_admin_task(
+        status="completed",
+        result_path=str(filepath),
+        result_filename="export.json",
+    )
+    admin_user = SimpleNamespace(id=1, role="admin", active=False)
+    token = _make_download_token(task_id=1)
+
+    db = AsyncMock()
+    call_count = 0
+
+    async def _get(model, id_):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return admin_user
+        return task
+
+    db.get = AsyncMock(side_effect=_get)
+
+    with patch("app.routers.admin.auth_settings") as mock_settings:
+        mock_settings.jwt_secret = "test-secret"
+        mock_settings.jwt_algorithm = "HS256"
+        with pytest.raises(HTTPException) as exc:
+            await download_task_result(1, token=token, db=db)
+    assert exc.value.status_code == 403
 
 
 # ── _safe_admin_task_file ───────────────────────────────
