@@ -12,13 +12,30 @@ import pytest
 # The helper tests mock tile generation and do not require libvips. Provide the
 # minimal annotation surface before importing the module under test so these
 # tests also run on developer machines without the native library installed.
-if "pyvips" not in sys.modules:
+# The stub is installed at module level (before the import below) and restored
+# via a session-scoped fixture so it does not leak into other test modules.
+_pyvips_was_present = "pyvips" in sys.modules
+_pyvips_original = sys.modules.get("pyvips")
+
+if not _pyvips_was_present:
     pyvips_stub = types.ModuleType("pyvips")
     pyvips_stub.Image = type("Image", (), {})
     pyvips_stub.GValue = type("GValue", (), {})
     sys.modules["pyvips"] = pyvips_stub
 
-from app import seed_media
+from app import seed_media  # noqa: E402
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _restore_pyvips():
+    """Remove the pyvips stub after the session so it cannot leak into other
+    test modules that may rely on their own mock or the real library."""
+    yield
+    if not _pyvips_was_present:
+        if _pyvips_original is not None:
+            sys.modules["pyvips"] = _pyvips_original
+        else:
+            sys.modules.pop("pyvips", None)
 
 
 def test_copy_source_asset_copies_fixture_and_reports_size(tmp_path, monkeypatch):
@@ -44,7 +61,7 @@ def test_copy_source_asset_requires_fixture(tmp_path, monkeypatch):
         seed_media._copy_source_asset()
 
 
-def test_regenerate_tiles_replaces_existing_directory_atomically(tmp_path, monkeypatch):
+def test_regenerate_tiles_replaces_existing_directory(tmp_path, monkeypatch):
     source = tmp_path / "source.jpeg"
     source.write_bytes(b"source")
     tiles_root = tmp_path / "tiles"

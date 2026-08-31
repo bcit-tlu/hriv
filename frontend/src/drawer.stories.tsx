@@ -40,7 +40,7 @@ interface DrawerStoryArgs {
   onClose: () => void
 }
 
-function DrawerContentExample({
+export function DrawerContentExample({
   content,
   onClose,
   role,

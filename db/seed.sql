@@ -47,16 +47,31 @@ SELECT setval('categories_id_seq', GREATEST((SELECT MAX(id) FROM categories), 1)
 --
 -- Clear seed-managed rows first so re-runs don't leave stale associations
 -- from previous seed versions (e.g. children that no longer have direct
--- restrictions).
-DELETE FROM category_programs WHERE category_id IN (1, 2, 3, 4, 5, 6);
+-- restrictions).  Categories 1–5 always use their seed IDs; the Synthetic
+-- Monitoring category is resolved by label so that a user-created category
+-- occupying ID 6 is never accidentally rewritten.
+DELETE FROM category_programs WHERE category_id IN (1, 2, 3, 4, 5);
+DELETE FROM category_programs
+WHERE category_id = (
+  SELECT id FROM categories
+  WHERE label = 'Synthetic Monitoring' AND parent_id IS NULL
+);
 
 INSERT INTO category_programs (category_id, program_id)
 VALUES
   (1, 2),  -- Architecture -> Digital Design  (parent restriction)
   (1, 3),  -- Architecture -> Photography     (parent restriction)
   (2, 3),  -- Panoramas    -> Photography     (independent parent)
-  (4, 2),  -- American     -> Digital Design  (narrows parent's {DD, Photo})
-  (6, 2)   -- Synthetic Monitoring -> Digital Design (monitor account access)
+  (4, 2)   -- American     -> Digital Design  (narrows parent's {DD, Photo})
+ON CONFLICT (category_id, program_id) DO NOTHING;
+
+-- Synthetic Monitoring -> Digital Design (monitor account access).
+-- Resolved by label so the association targets the correct category even
+-- when seed_media.py created it under a different ID (e.g. ID 6 was taken).
+INSERT INTO category_programs (category_id, program_id)
+SELECT c.id, 2
+FROM categories c
+WHERE c.label = 'Synthetic Monitoring' AND c.parent_id IS NULL
 ON CONFLICT (category_id, program_id) DO NOTHING;
 
 -- ── Images ────────────────────────────────────────────────
