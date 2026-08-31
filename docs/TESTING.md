@@ -262,6 +262,8 @@ All endpoints except login require a valid JWT bearer token in the `Authorizatio
 | PATCH  | /api/images/{id}                                                                                          | Yes           | instructor   |
 | DELETE | /api/images/{id}                                                                                          | Yes           | instructor   |
 | DELETE | /api/images/bulk                                                                                          | Yes           | instructor   |
+| GET    | /api/tiles/{source_image_id}/{path}                                                                       | Yes           | valid tile token (image-scoped, from tokenized `tile_sources`/`thumb` URLs) |
+| GET    | /api/tiles-auth (nginx `auth_request` validator; 204/401/403)                                             | Yes           | valid tile token |
 | GET    | /api/tile-order                                                                                           | Yes           | instructor   |
 | PUT    | /api/tile-order                                                                                           | Yes           | instructor   |
 | GET    | /api/users/                                                                                               | Yes           | instructor   |

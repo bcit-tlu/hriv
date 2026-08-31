@@ -30,6 +30,9 @@ class AuthSettings(Settings):
     # which invalidates tokens on every restart.  Set this explicitly
     # only when you need to rotate sessions independently of the secret.
     jwt_instance_epoch: str = ""
+    # TTL for image-scoped tile tokens (docs/tile-delivery-boundary.md).
+    # Signed with the same ``jwt_secret``, like the task-download token.
+    tile_token_ttl_minutes: int = 15
     # When true, the application refuses to start unless ``JWT_SECRET``
     # is set explicitly.  Multi-worker (``uvicorn --workers N``) and
     # multi-replica deployments MUST enable this, otherwise each worker

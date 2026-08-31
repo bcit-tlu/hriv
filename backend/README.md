@@ -220,6 +220,7 @@ validation on another, producing random authentication errors.
 | `JWT_SECRET`         | _empty_ | Stable secret used to sign/verify JWTs across all workers and replicas.                                                 |
 | `REQUIRE_JWT_SECRET` | `false` | When `true`, the app refuses to start unless `JWT_SECRET` is set. Enable in all multi-worker/multi-replica deployments. |
 | `JWT_INSTANCE_EPOCH` | _empty_ | Optional override for the per-instance epoch claim. Derived from `JWT_SECRET` when blank.                               |
+| `TILE_TOKEN_TTL_MINUTES` | `15` | Lifetime of image-scoped tile tokens appended to `tile_sources`/`thumb` URLs in API responses. Signed with `JWT_SECRET`. See `docs/tile-delivery-boundary.md`. |
 
 ### Local dev
 

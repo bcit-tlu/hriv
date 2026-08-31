@@ -10,7 +10,6 @@ import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, status as http_status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.sessions import SessionMiddleware
@@ -44,6 +43,7 @@ from .routers import (
     programs,
     telemetry,
     tile_order,
+    tiles,
     upload,
     users,
 )
@@ -291,12 +291,15 @@ app.include_router(issues.router, prefix="/api")
 app.include_router(programs.router, prefix="/api")
 app.include_router(telemetry.router, prefix="/api")
 app.include_router(tile_order.router, prefix="/api")
+app.include_router(tiles.router, prefix="/api")
 app.include_router(upload.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
 
-# Serve generated DZI tiles as static files
+# DZI tiles are served by the authorized tiles router (token-validated
+# FileResponse) — see docs/tile-delivery-boundary.md. The previous
+# unauthenticated StaticFiles mount of settings.tiles_dir is intentionally
+# gone; only the directory bootstrap remains.
 os.makedirs(settings.tiles_dir, exist_ok=True)
-app.mount("/api/tiles", StaticFiles(directory=settings.tiles_dir), name="tiles")
 
 
 @app.get("/api/health")

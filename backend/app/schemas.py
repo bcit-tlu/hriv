@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
 
 MAX_NOTE_LENGTH = 500
 
@@ -374,6 +374,20 @@ class ImageOut(ImageBase):
     updated_at: datetime
 
     model_config = {"from_attributes": True, "populate_by_name": True}
+
+    @field_serializer("thumb", "tile_sources")
+    def _tokenize_tile_url(self, value: str) -> str:
+        """Append an image-scoped ``tile_token`` at response time.
+
+        Issuance happens only here, at serialization — after the routers'
+        auth + student-visibility filtering — and never mutates the
+        persisted ``thumb`` / ``tile_sources`` columns. Non-tile URLs pass
+        through unchanged. See docs/tile-delivery-boundary.md.
+        """
+        # Imported lazily to keep this schemas module import-light.
+        from .tile_tokens import append_tile_token
+
+        return append_tile_token(value)
 
 
 # ── Source Image ─────────────────────────────────────────
