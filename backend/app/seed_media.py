@@ -15,8 +15,9 @@ from pathlib import Path
 
 from sqlalchemy import select
 
+from .browse_state import bump_browse_revision
 from .database import get_async_session, get_engine, settings
-from .models import Category, Image, SourceImage
+from .models import Category, Image, Program, SourceImage
 from .processing import generate_tiles
 from .tile_provenance import compute_source_checksum, current_tile_settings_hash
 
@@ -119,8 +120,23 @@ async def seed_media() -> None:
             await session.flush()
         else:
             category.status = "active"
+            category.sort_order = 100
 
         source = await _get_or_create_source(session, category.id, stored_path, file_size)
+
+        # Ensure the synthetic monitoring category is restricted to the
+        # Digital Design program, matching the seed.sql association.  This
+        # covers the case where seed_media created the category under a
+        # different ID (e.g. ID 6 was already taken by user data) and the
+        # seed.sql label-based INSERT could not find it yet.
+        dd_program = await session.execute(
+            select(Program).where(Program.name == "Digital Design")
+        )
+        dd = dd_program.scalar_one_or_none()
+        if dd is not None and dd not in category.programs:
+            category.programs = [dd]
+
+        await bump_browse_revision(session)
         await session.commit()
         source_id = source.id
         category_id = category.id
@@ -183,6 +199,8 @@ async def seed_media() -> None:
         source.tile_settings_hash = current_tile_settings_hash()
         source.tiles_generated_at = generated_at
         source.file_size = file_size
+
+        await bump_browse_revision(session)
         await session.commit()
 
     print(

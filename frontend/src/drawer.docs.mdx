@@ -1,0 +1,54 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as DrawerStories from './drawer.stories'
+
+<Meta of={DrawerStories} />
+
+<Title />
+
+<Subtitle>
+  MUI navigation drawer guidance for temporary, persistent, permanent, anchored, and swipeable
+  surfaces.
+</Subtitle>
+
+## When to use
+
+Use a drawer for navigation or supplementary actions that should enter from an edge of the viewport. HRIV's compact navigation uses the same shared role-aware item model as the Drawer reference, so labels and ordering stay consistent with future AppBar/navigation surfaces.
+
+## Interactive example
+
+`Basic` exposes the main MUI Drawer affordances as controls and includes a `play` function. The play opens the drawer, verifies its content, closes it, and verifies that the content is removed.
+
+<Primary />
+
+<Controls of={DrawerStories.Basic} />
+
+## Guidance
+
+- Use `temporary` when the drawer overlays the current page and should close from the backdrop, Escape, or an explicit action.
+- Use `persistent` when opening the drawer should leave the page content in place while the drawer remains available.
+- Use `permanent` for navigation that is always visible on larger layouts.
+- Use `anchor` to select `left`, `right`, `top`, or `bottom`; left is the MUI default.
+- Use `SwipeableDrawer` for touch-oriented temporary navigation when swipe gestures are useful.
+- Keep drawer content focused and provide an explicit close affordance for persistent/temporary examples.
+- Navigation labels and visibility come from `frontend/src/navigation.ts`; use that model when adding another navigation surface.
+- `keepMounted` is useful when preserving drawer contents in the DOM improves responsiveness; confirm the accessibility implications for the surrounding workflow.
+
+## Example
+
+The `Basic` story is the single embedded example for this page. Use its controls to explore temporary, persistent, permanent, and anchored drawers without opening multiple examples at once. Set `role` to compare the shared Home, Images, Manage/\*, People, and Admin navigation items.
+
+<Canvas of={DrawerStories.Basic} />
+
+The `Swipeable` story is available separately in the sidebar for focused touch-oriented testing. It is intentionally not embedded here so the Docs page remains easy to scan.
+
+## Stories
+
+<Stories includePrimary={false} />

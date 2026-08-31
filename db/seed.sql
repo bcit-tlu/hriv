@@ -10,13 +10,32 @@
 -- a no-op rather than a PK-conflict failure.
 
 -- ── Programs ──────────────────────────────────────────────
+-- Insert by ID first (preserves seed IDs on fresh databases), then
+-- insert by name as a fallback so that on an existing database where
+-- IDs 1–3 belong to other programs, the seed programs are still
+-- created with auto-assigned IDs and the name-based JOINs below
+-- can resolve them.
+--
+-- The first INSERT uses ON CONFLICT DO NOTHING without a conflict
+-- target so that BOTH id and name unique-constraint violations are
+-- tolerated (e.g. when 'Digital Design' already exists under a
+-- different ID).  The second INSERT catches the remaining case where
+-- the seed ID was occupied by another program and the seed name did
+-- not yet exist.
 
 INSERT INTO programs (id, name)
 VALUES
   (1, 'Administration'),
   (2, 'Digital Design'),
   (3, 'Photography')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
+
+INSERT INTO programs (name)
+VALUES
+  ('Administration'),
+  ('Digital Design'),
+  ('Photography')
+ON CONFLICT (name) DO NOTHING;
 
 SELECT setval('programs_id_seq', GREATEST((SELECT MAX(id) FROM programs), 1));
 
@@ -43,18 +62,41 @@ SELECT setval('categories_id_seq', GREATEST((SELECT MAX(id) FROM categories), 1)
 --       Gothic    -> (none — inherits via Italian -> Architecture)
 --     American    -> Digital Design               (narrows parent's set)
 --   Panoramas    -> Photography                   (independent parent)
+--   Synthetic Monitoring -> Digital Design        (monitor account access)
 --
 -- Clear seed-managed rows first so re-runs don't leave stale associations
 -- from previous seed versions (e.g. children that no longer have direct
--- restrictions).
+-- restrictions).  Categories 1–5 always use their seed IDs; the Synthetic
+-- Monitoring category is resolved by label so that a user-created category
+-- occupying ID 6 is never accidentally rewritten.
 DELETE FROM category_programs WHERE category_id IN (1, 2, 3, 4, 5);
+DELETE FROM category_programs
+WHERE category_id = (
+  SELECT id FROM categories
+  WHERE label = 'Synthetic Monitoring' AND parent_id IS NULL
+);
 
 INSERT INTO category_programs (category_id, program_id)
-VALUES
-  (1, 2),  -- Architecture -> Digital Design  (parent restriction)
-  (1, 3),  -- Architecture -> Photography     (parent restriction)
-  (2, 3),  -- Panoramas    -> Photography     (independent parent)
-  (4, 2)   -- American     -> Digital Design  (narrows parent's {DD, Photo})
+SELECT c.id, p.id
+FROM (VALUES
+  (1, 'Digital Design'),   -- Architecture -> Digital Design  (parent restriction)
+  (1, 'Photography'),      -- Architecture -> Photography     (parent restriction)
+  (2, 'Photography'),      -- Panoramas    -> Photography     (independent parent)
+  (4, 'Digital Design')    -- American     -> Digital Design  (narrows parent's {DD, Photo})
+) AS c(category_id, program_name)
+JOIN programs p ON p.name = c.program_name
+ON CONFLICT (category_id, program_id) DO NOTHING;
+
+-- Synthetic Monitoring -> Digital Design (monitor account access).
+-- Resolved by label so the association targets the correct category and
+-- program even when seed_media.py created the category under a different
+-- ID (e.g. ID 6 was taken) or Digital Design has a different program ID.
+INSERT INTO category_programs (category_id, program_id)
+SELECT c.id, p.id
+FROM categories c
+CROSS JOIN programs p
+WHERE c.label = 'Synthetic Monitoring' AND c.parent_id IS NULL
+  AND p.name = 'Digital Design'
 ON CONFLICT (category_id, program_id) DO NOTHING;
 
 -- ── Images ────────────────────────────────────────────────
@@ -106,11 +148,21 @@ ON CONFLICT (id) DO NOTHING;
 SELECT setval('users_id_seq', GREATEST((SELECT MAX(id) FROM users), 1));
 
 -- ── User–Program associations ───────────────────────────
+-- All program assignments are resolved by name so that an existing
+-- database where seed program IDs (1–3) belong to other programs does
+-- not cause users to be assigned to the wrong program.
 
 INSERT INTO user_programs (user_id, program_id)
-VALUES
-  (1, 1),  -- admin -> Administration
-  (2, 2),  -- instructor -> Digital Design
-  (3, 2),  -- student -> Digital Design
-  (4, 2)   -- synthetic student -> Digital Design
+SELECT 1, p.id FROM programs p WHERE p.name = 'Administration'
+ON CONFLICT (user_id, program_id) DO NOTHING;
+
+INSERT INTO user_programs (user_id, program_id)
+SELECT u.id, p.id
+FROM (VALUES
+  (2),  -- instructor
+  (3),  -- student
+  (4)   -- synthetic student
+) AS u(user_id)
+CROSS JOIN programs p
+WHERE p.name = 'Digital Design'
 ON CONFLICT (user_id, program_id) DO NOTHING;
