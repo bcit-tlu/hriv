@@ -320,7 +320,8 @@ vault:
 # metrics scraper can reach the backend Service. This is the enforcement
 # layer that makes the "cluster-internal" /api/metrics route real (the
 # frontend nginx already 404s it at the edge; without this policy any
-# in-cluster client can read it) — see docs/unauthenticated-routes.md.
+# in-cluster client can read it) — see docs/unauthenticated-routes.md
+# (added in PR #1151).
 # Disabled by default because the peer selectors are cluster-specific;
 # enable it in the deployment overlay. Kubelet probes are unaffected.
 networkPolicy:
@@ -336,13 +337,18 @@ networkPolicy:
     # Empty = same namespace only.
     namespaceSelector: {}
   # Prometheus scrapes /api/metrics directly from the pods (see
-  # observability.serviceMonitor). Namespace selector is required;
-  # podSelector optionally narrows it further.
+  # observability.serviceMonitor). NOTE: NetworkPolicy cannot filter by
+  # HTTP path, so any pod matched here can reach every backend endpoint —
+  # keep the selection as narrow as possible. The default matches only
+  # Prometheus pods (kube-prometheus-stack labels) in the monitoring
+  # namespace; adjust both selectors to your cluster.
   metricsScraper:
     namespaceSelector:
       matchLabels:
         kubernetes.io/metadata.name: monitoring
-    podSelector: {}
+    podSelector:
+      matchLabels:
+        app.kubernetes.io/name: prometheus
   # Additional raw NetworkPolicy ingress rules appended verbatim.
   extraIngress: []
 
