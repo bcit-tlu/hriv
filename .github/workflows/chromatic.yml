@@ -24,6 +24,13 @@ jobs:
   chromatic:
     name: Run Chromatic visual tests
     runs-on: ubuntu-latest
+    # Skip for fork PRs: GitHub does not expose repository secrets to
+    # pull requests from forks, so CHROMATIC_PROJECT_TOKEN is empty.
+    # Push and workflow_dispatch events are unaffected (the fork check
+    # only evaluates true for pull_request events from external repos).
+    if: |
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.fork == false
     defaults:
       run:
         working-directory: frontend
