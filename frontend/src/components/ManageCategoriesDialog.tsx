@@ -527,16 +527,21 @@ export default function ManageCategoriesDialog({
           await onReorderTiles(moves, scopes)
         } catch {
           // Error/cancel is handled by the owner; revert the optimistic tree order.
-          if (optimisticOptionsRef.current?.id === optimisticSnapshot.id) {
+          const ownsSnapshot = optimisticOptionsRef.current?.id === optimisticSnapshot.id
+          if (ownsSnapshot) {
             optimisticOptionsRef.current = null
             setOptimisticOptions(null)
+          }
+          if (ownsSnapshot || moves.length > 0) {
             await onReorderComplete?.()
           }
           return
         }
-        if (optimisticOptionsRef.current?.id !== optimisticSnapshot.id) return
-        optimisticOptionsRef.current = null
-        setOptimisticOptions(null)
+        const ownsSnapshot = optimisticOptionsRef.current?.id === optimisticSnapshot.id
+        if (ownsSnapshot) {
+          optimisticOptionsRef.current = null
+          setOptimisticOptions(null)
+        }
         // Success path: for pure reorders the coordinator persists
         // asynchronously and triggers the authoritative refresh itself once
         // the save commits (via its committed listener), so refreshing here

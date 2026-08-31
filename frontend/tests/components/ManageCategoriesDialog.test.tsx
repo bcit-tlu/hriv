@@ -774,6 +774,62 @@ describe('ManageCategoriesDialog — drop → onReorderTiles', () => {
       await secondPromise
     })
   })
+
+  it('refreshes after an old parent move commits without clearing a newer preview', async () => {
+    let resolveFirst: (() => void) | undefined
+    let resolveSecond: (() => void) | undefined
+    const firstPromise = new Promise<void>((resolve) => {
+      resolveFirst = resolve
+    })
+    const secondPromise = new Promise<void>((resolve) => {
+      resolveSecond = resolve
+    })
+    const onReorderTiles = vi
+      .fn()
+      .mockReturnValueOnce(firstPromise)
+      .mockReturnValueOnce(secondPromise)
+    const onReorderComplete = vi.fn().mockResolvedValue(undefined)
+    renderDialog({
+      categories: [
+        makeCategory({ id: 1, label: 'Alpha' }),
+        makeCategory({ id: 2, label: 'Beta' }),
+        makeCategory({ id: 3, label: 'Gamma' }),
+      ],
+      onReorderTiles,
+      onReorderComplete,
+    })
+
+    const item1 = document.querySelector('[data-category-id="1"]')!
+    const list = item1.closest('ul')!
+
+    // The first drop changes the category parent and remains in flight.
+    fireDrag(item1, 'dragstart', 0, 0)
+    fireDrag(list, 'dragover', 30, 100)
+    fireDrag(list, 'drop', 30, 100)
+    await waitFor(() => expect(onReorderTiles).toHaveBeenCalledTimes(1))
+    fireDrag(item1, 'dragend', 0, 0)
+
+    // Start a newer move using the first drop's optimistic tree.
+    const item2 = document.querySelector('[data-category-id="2"]')!
+    fireDrag(item2, 'dragstart', 0, 0)
+    fireDrag(list, 'dragover', 0, 100)
+    fireDrag(list, 'drop', 0, 100)
+    await waitFor(() => expect(onReorderTiles).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(renderedCategoryIds()).toEqual([3, 1, 2]))
+
+    await act(async () => {
+      resolveFirst?.()
+      await firstPromise
+    })
+
+    expect(onReorderComplete).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(renderedCategoryIds()).toEqual([3, 1, 2]))
+
+    await act(async () => {
+      resolveSecond?.()
+      await secondPromise
+    })
+  })
 })
 
 // ---------------------------------------------------------------------------
