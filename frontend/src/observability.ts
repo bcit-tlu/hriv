@@ -75,6 +75,7 @@ export type TelemetryErrorCode =
   | 'api_network_error'
   | 'image_viewer_init_failed'
   | 'image_viewer_open_failed'
+  | 'image_viewer_tile_token_renewal_failed'
   | 'react_render_error'
   | 'unhandled_promise_rejection'
   | 'window_runtime_error'

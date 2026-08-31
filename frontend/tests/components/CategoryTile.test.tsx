@@ -474,6 +474,7 @@ describe('CategoryTile', () => {
       )
       const img = screen.getByAltText('Test Category')
       expect(img).toHaveAttribute('src', '/thumbs/card.jpg')
+      expect(img).toHaveStyle({ height: '140px' })
     })
   })
 

@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, act, fireEvent } from '@testing-library/react'
+import { render, screen, act, fireEvent, waitFor } from '@testing-library/react'
 
 interface MockButton {
   options: {
@@ -52,8 +52,11 @@ interface MockViewer {
   updateOverlay: ReturnType<typeof vi.fn>
   removeOverlay: ReturnType<typeof vi.fn>
   setMouseNavEnabled: ReturnType<typeof vi.fn>
+  open: ReturnType<typeof vi.fn>
   removeHandler: ReturnType<typeof vi.fn>
   destroy: ReturnType<typeof vi.fn>
+  preserveOverlays: boolean
+  activeOverlays: Set<HTMLElement>
   fire: (event: string, payload?: unknown) => void
 }
 
@@ -71,7 +74,21 @@ const observabilityMocks = vi.hoisted(() => ({
   emitFrontendPerformance: vi.fn(),
 }))
 
+const apiMocks = vi.hoisted(() => ({
+  fetchImage: vi.fn(),
+  userMessage: vi.fn((_err: unknown, fallback: string) => fallback),
+}))
+
 vi.mock('../../src/observability', () => observabilityMocks)
+
+vi.mock('../../src/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/api')>()
+  return {
+    ...actual,
+    fetchImage: apiMocks.fetchImage,
+    userMessage: apiMocks.userMessage,
+  }
+})
 
 vi.mock('openseadragon', () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -106,6 +123,7 @@ vi.mock('openseadragon', () => {
     const handlers = new Map<string, ((event: unknown) => void)[]>()
     const onceHandlers = new Map<string, ((event: unknown) => void)[]>()
     const container = document.createElement('div')
+    const activeOverlays = new Set<HTMLElement>()
     const viewer: MockViewer = {
       element: document.createElement('div'),
       container,
@@ -133,12 +151,17 @@ vi.mock('openseadragon', () => {
         onceHandlers.set(event, [...(onceHandlers.get(event) ?? []), handler])
       }),
       addControl: vi.fn((el: HTMLElement) => container.appendChild(el)),
-      addOverlay: vi.fn(),
+      addOverlay: vi.fn((element: HTMLElement) => activeOverlays.add(element)),
       updateOverlay: vi.fn(),
-      removeOverlay: vi.fn(),
+      removeOverlay: vi.fn((element: HTMLElement) => activeOverlays.delete(element)),
       setMouseNavEnabled: vi.fn(),
+      open: vi.fn(() => {
+        if (!viewer.preserveOverlays) activeOverlays.clear()
+      }),
       removeHandler: vi.fn(),
       destroy: vi.fn(),
+      preserveOverlays: false,
+      activeOverlays,
       fire: (event: string, payload?: unknown) => {
         for (const handler of handlers.get(event) ?? []) handler(payload)
         const once = onceHandlers.get(event) ?? []
@@ -186,6 +209,8 @@ vi.mock('../../src/components/CanvasOverlay', () => ({
 }))
 
 import ImageViewer from '../../src/components/ImageViewer'
+import type { ApiImage } from '../../src/api'
+import { resetTileTokenRenewalCacheForTests } from '../../src/tileTokenRenewal'
 
 const viewer = () => osdState.viewers[osdState.viewers.length - 1]
 const buttonByTooltip = (tooltip: string) => {
@@ -194,6 +219,16 @@ const buttonByTooltip = (tooltip: string) => {
   return button
 }
 const tracker = () => osdState.trackers[osdState.trackers.length - 1]
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
 
 /** Draw a selection rectangle via the captured MouseTracker handlers. */
 function drawRect(opts: { shiftKey?: boolean; drag?: boolean } = {}) {
@@ -216,6 +251,8 @@ beforeEach(() => {
   osdState.buttons.length = 0
   osdState.trackers.length = 0
   osdState.initError = null
+  resetTileTokenRenewalCacheForTests()
+  vi.useRealTimers()
   vi.clearAllMocks()
 })
 
@@ -253,7 +290,7 @@ describe('ImageViewer lifecycle telemetry', () => {
   })
 
   it('emits failure telemetry when the image fails to open', () => {
-    render(<ImageViewer tileSources="/tiles.dzi" imageId={7} />)
+    render(<ImageViewer tileSources="/tiles.dzi" />)
 
     act(() => viewer().fire('open-failed'))
 
@@ -261,7 +298,7 @@ describe('ImageViewer lifecycle telemetry', () => {
       expect.objectContaining({ event: 'image.view.failed', outcome: 'failure' }),
     )
     expect(observabilityMocks.emitFrontendError).toHaveBeenCalledWith(
-      expect.objectContaining({ errorCode: 'image_viewer_open_failed', imageId: 7 }),
+      expect.objectContaining({ errorCode: 'image_viewer_open_failed', imageId: undefined }),
     )
   })
 
@@ -313,6 +350,238 @@ describe('ImageViewer lifecycle telemetry', () => {
 
     expect(onViewportChange).toHaveBeenCalledWith({ zoom: 2, x: 0.5, y: 0.4, rotation: 90 })
   })
+
+  it('renews tile sources once for a burst of failed tile loads and preserves the viewport', async () => {
+    apiMocks.fetchImage.mockResolvedValue({
+      id: 7,
+      name: 'Fresh Image',
+      thumb: '/thumb.jpg?tile_token=fresh',
+      tile_sources: '/tiles.dzi?tile_token=fresh',
+      category_id: 3,
+      copyright: null,
+      note: null,
+      active: true,
+      sort_order: 0,
+      metadata_extra: null,
+      version: 2,
+      width: null,
+      height: null,
+      file_size: null,
+      created_at: '',
+      updated_at: '',
+    })
+    const onTileSourceRenewed = vi.fn()
+    const { rerender } = render(
+      <ImageViewer
+        tileSources="/tiles.dzi?tile_token=stale"
+        imageId={7}
+        onTileSourceRenewed={onTileSourceRenewed}
+      />,
+    )
+    const v = viewer()
+    v.viewport.getZoom.mockReturnValue(5)
+    v.viewport.getCenter.mockReturnValue({ x: 0.2, y: 0.3 })
+    v.viewport.getRotation.mockReturnValue(15)
+
+    act(() => {
+      v.fire('tile-load-failed', { message: '401' })
+      v.fire('tile-load-failed', { message: '401' })
+    })
+
+    await waitFor(() => expect(apiMocks.fetchImage).toHaveBeenCalledTimes(1))
+    expect(apiMocks.fetchImage).toHaveBeenCalledWith(7)
+    expect(v.open).toHaveBeenCalledWith('/tiles.dzi?tile_token=fresh')
+    expect(onTileSourceRenewed).toHaveBeenCalledWith(
+      expect.objectContaining({ tile_sources: '/tiles.dzi?tile_token=fresh' }),
+    )
+
+    rerender(
+      <ImageViewer
+        tileSources="/tiles.dzi?tile_token=fresh"
+        imageId={7}
+        onTileSourceRenewed={onTileSourceRenewed}
+      />,
+    )
+    expect(osdState.viewers).toHaveLength(1)
+
+    act(() => v.fire('open'))
+    expect(v.viewport.zoomTo).toHaveBeenLastCalledWith(5, undefined, true)
+    expect(v.viewport.panTo).toHaveBeenLastCalledWith(
+      expect.objectContaining({ x: 0.2, y: 0.3 }),
+      true,
+    )
+    expect(v.viewport.setRotation).toHaveBeenLastCalledWith(15, true)
+  })
+
+  it('does not renew tile sources for non-auth loading failures', async () => {
+    render(<ImageViewer tileSources="/tiles.dzi?tile_token=current" imageId={7} />)
+    const v = viewer()
+
+    act(() => {
+      v.fire('tile-load-failed', {
+        message: 'Tile not found',
+        tileRequest: { status: 404 },
+      })
+      v.fire('add-item-failed', { message: 'Malformed DZI descriptor' })
+    })
+
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 150))
+    })
+    expect(apiMocks.fetchImage).not.toHaveBeenCalled()
+  })
+
+  it('renews after an img-backed tile failure with no observable HTTP status', async () => {
+    apiMocks.fetchImage.mockResolvedValue({
+      id: 7,
+      name: 'Fresh Image',
+      thumb: '/thumb.jpg?tile_token=fresh',
+      tile_sources: '/tiles.dzi?tile_token=fresh',
+      category_id: 3,
+      copyright: null,
+      note: null,
+      active: true,
+      sort_order: 0,
+      metadata_extra: null,
+      version: 2,
+      width: null,
+      height: null,
+      file_size: null,
+      created_at: '',
+      updated_at: '',
+    })
+    render(<ImageViewer tileSources="/tiles.dzi?tile_token=stale" imageId={7} />)
+
+    act(() => {
+      viewer().fire('tile-load-failed', {
+        message: '[downloadTileStart] Image load aborted or errored out.',
+        tileRequest: null,
+      })
+    })
+
+    await waitFor(() => expect(apiMocks.fetchImage).toHaveBeenCalledWith(7))
+    expect(viewer().open).toHaveBeenCalledWith('/tiles.dzi?tile_token=fresh')
+  })
+
+  it('reports a non-auth open failure without attempting token renewal', async () => {
+    render(<ImageViewer tileSources="/tiles.dzi?tile_token=current" imageId={7} />)
+
+    act(() => viewer().fire('open-failed', { message: 'Malformed DZI descriptor' }))
+
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 150))
+    })
+    expect(apiMocks.fetchImage).not.toHaveBeenCalled()
+    expect(observabilityMocks.emitFrontendError).toHaveBeenCalledWith(
+      expect.objectContaining({ errorCode: 'image_viewer_open_failed', imageId: 7 }),
+    )
+  })
+
+  it('surfaces the existing error UI when tile source renewal fails', async () => {
+    apiMocks.fetchImage.mockRejectedValue(new Error('forbidden'))
+    const onError = vi.fn()
+    render(<ImageViewer tileSources="/tiles.dzi?tile_token=stale" imageId={7} onError={onError} />)
+
+    act(() => {
+      viewer().fire('open-failed', { message: 'HTTP 401 attempting to load TileSource' })
+    })
+
+    await waitFor(() => expect(apiMocks.fetchImage).toHaveBeenCalledTimes(1))
+    await waitFor(() =>
+      expect(onError).toHaveBeenCalledWith(
+        'Image tiles could not be refreshed. You may no longer have access to this image.',
+      ),
+    )
+    expect(observabilityMocks.emitFrontendError).toHaveBeenCalledWith(
+      expect.objectContaining({ errorCode: 'image_viewer_tile_token_renewal_failed' }),
+    )
+  })
+
+  it('resets renewal state when switching images during a pending renewal', async () => {
+    const firstRenewal = deferred<ApiImage>()
+    const secondRenewal = deferred<ApiImage>()
+    apiMocks.fetchImage.mockImplementation((id: number) =>
+      id === 7 ? firstRenewal.promise : secondRenewal.promise,
+    )
+    const onTileSourceRenewed = vi.fn()
+    const { rerender } = render(
+      <ImageViewer
+        tileSources="/image-a.dzi?tile_token=stale"
+        imageId={7}
+        onTileSourceRenewed={onTileSourceRenewed}
+      />,
+    )
+    const viewerA = viewer()
+    viewerA.viewport.getZoom.mockReturnValue(9)
+    viewerA.viewport.getCenter.mockReturnValue({ x: 0.9, y: 0.8 })
+    viewerA.viewport.getRotation.mockReturnValue(45)
+
+    act(() => viewerA.fire('tile-load-failed', { message: '401' }))
+    await waitFor(() => expect(apiMocks.fetchImage).toHaveBeenCalledWith(7))
+
+    rerender(
+      <ImageViewer
+        tileSources="/image-b.dzi?tile_token=stale"
+        imageId={8}
+        onTileSourceRenewed={onTileSourceRenewed}
+      />,
+    )
+    const viewerB = viewer()
+    act(() => viewerB.fire('open'))
+    expect(viewerB.viewport.zoomTo).not.toHaveBeenCalled()
+
+    act(() => viewerB.fire('tile-load-failed', { message: '401' }))
+    await waitFor(() => expect(apiMocks.fetchImage).toHaveBeenCalledWith(8))
+
+    await act(async () => {
+      firstRenewal.resolve({
+        id: 7,
+        name: 'Image A',
+        thumb: '/thumb-a.jpg?tile_token=fresh',
+        tile_sources: '/image-a.dzi?tile_token=fresh',
+        category_id: null,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 0,
+        metadata_extra: null,
+        version: 2,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '',
+        updated_at: '',
+      })
+      await firstRenewal.promise
+    })
+    expect(viewerA.open).not.toHaveBeenCalled()
+    expect(onTileSourceRenewed).not.toHaveBeenCalledWith(expect.objectContaining({ id: 7 }))
+
+    await act(async () => {
+      secondRenewal.resolve({
+        id: 8,
+        name: 'Image B',
+        thumb: '/thumb-b.jpg?tile_token=fresh',
+        tile_sources: '/image-b.dzi?tile_token=fresh',
+        category_id: null,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 0,
+        metadata_extra: null,
+        version: 2,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '',
+        updated_at: '',
+      })
+      await secondRenewal.promise
+    })
+
+    expect(viewerB.open).toHaveBeenCalledWith('/image-b.dzi?tile_token=fresh')
+    expect(onTileSourceRenewed).toHaveBeenCalledWith(expect.objectContaining({ id: 8 }))
+  })
 })
 
 describe('ImageViewer selection rectangles', () => {
@@ -342,6 +611,45 @@ describe('ImageViewer selection rectangles', () => {
     ])
     // Selection mode auto-exits after release
     expect(viewer().setMouseNavEnabled).toHaveBeenLastCalledWith(true)
+  })
+
+  it('preserves selection rectangles across a renewed tile-source open', async () => {
+    apiMocks.fetchImage.mockResolvedValue({
+      id: 7,
+      name: 'Fresh Image',
+      thumb: '/thumb.jpg?tile_token=fresh',
+      tile_sources: '/tiles.dzi?tile_token=fresh',
+      category_id: null,
+      copyright: null,
+      note: null,
+      active: true,
+      sort_order: 0,
+      metadata_extra: null,
+      version: 2,
+      width: null,
+      height: null,
+      file_size: null,
+      created_at: '',
+      updated_at: '',
+    })
+    render(<ImageViewer tileSources="/tiles.dzi?tile_token=stale" imageId={7} />)
+    const v = viewer()
+    drawRect()
+    expect(v.activeOverlays.size).toBe(1)
+
+    act(() => {
+      v.fire('tile-load-failed', {
+        message: '[downloadTileStart] Image load aborted or errored out.',
+        tileRequest: null,
+      })
+    })
+    await waitFor(() => expect(v.open).toHaveBeenCalledWith('/tiles.dzi?tile_token=fresh'))
+    act(() => v.fire('open'))
+
+    expect(v.activeOverlays.size).toBe(1)
+    expect(v.preserveOverlays).toBe(false)
+    act(() => buttonByTooltip('Clear all selection rectangles').options.onClick())
+    expect(v.activeOverlays.size).toBe(0)
   })
 
   it('constrains the rectangle to a square while shift is held', () => {

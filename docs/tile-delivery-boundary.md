@@ -142,9 +142,16 @@ client ──GET /api/tiles/<id>/…?tile_token=…──▶ frontend nginx ─�
   `<img src>` unchanged.
 - **Renewal:** on a tile/thumbnail 401/403 (token expired mid-session), the
   viewer re-fetches `GET /api/images/{id}` to obtain freshly tokenized URLs
-  and swaps the OSD tile source without closing the viewer; long-lived viewers
-  may renew proactively shortly before TTL. Renewal failures surface the
-  standard session-expired path.
+  and swaps the OSD tile source without closing the viewer. OpenSeadragon
+  failure bursts are debounced into one refresh. Descriptor failures renew only
+  for explicit 401/403 responses; JPEG tile loads use `<img>` elements that do
+  not expose HTTP status, so their generic load failure also triggers the
+  bounded renewal path. Confirmed non-auth failures do not consume renewal
+  attempts. The viewer preserves zoom, pan, and rotation across the swap,
+  retains existing selection rectangles and measurement labels, limits renewal
+  to two attempts per selected image, and reports an unrecoverable refresh
+  through the existing error UI. A response that completes after the selected
+  image changes is ignored.
 - **Thumbnail renewal is required too, not just the viewer.** `<img>`
   consumers (browse `CategoryTile`, `ManagePage` table, search results) may
   render a `thumb` URL long after its token expired, and the browse tree's
@@ -152,9 +159,12 @@ client ──GET /api/tiles/<id>/…?tile_token=…──▶ frontend nginx ─�
   expiry never invalidates the cached payload — stale tokenized URLs persist
   indefinitely on an unchanged tree. C3c therefore adds a shared `onError`
   recovery for thumbnails: one re-fetch of the affected image's metadata to
-  swap in a fresh URL, single retry (no loops). The browse ETag deliberately
-  stays token-independent — recovery is per-image on failure, not a revision
-  change.
+  swap in a fresh URL, single retry per stale rendered URL (no loops), with
+  concurrent refreshes deduplicated per image. Renewal merges only `thumb` and
+  `tile_sources` into current client state so a late token refresh cannot
+  overwrite newer metadata, visibility, or version changes. The browse ETag
+  deliberately stays token-independent — recovery is per-image on failure, not
+  a revision change.
 
 ## Alternatives considered
 
