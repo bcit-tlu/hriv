@@ -58,20 +58,26 @@ WHERE category_id = (
 );
 
 INSERT INTO category_programs (category_id, program_id)
-VALUES
-  (1, 2),  -- Architecture -> Digital Design  (parent restriction)
-  (1, 3),  -- Architecture -> Photography     (parent restriction)
-  (2, 3),  -- Panoramas    -> Photography     (independent parent)
-  (4, 2)   -- American     -> Digital Design  (narrows parent's {DD, Photo})
+SELECT c.id, p.id
+FROM (VALUES
+  (1, 'Digital Design'),   -- Architecture -> Digital Design  (parent restriction)
+  (1, 'Photography'),      -- Architecture -> Photography     (parent restriction)
+  (2, 'Photography'),      -- Panoramas    -> Photography     (independent parent)
+  (4, 'Digital Design')    -- American     -> Digital Design  (narrows parent's {DD, Photo})
+) AS c(category_id, program_name)
+JOIN programs p ON p.name = c.program_name
 ON CONFLICT (category_id, program_id) DO NOTHING;
 
 -- Synthetic Monitoring -> Digital Design (monitor account access).
--- Resolved by label so the association targets the correct category even
--- when seed_media.py created it under a different ID (e.g. ID 6 was taken).
+-- Resolved by label so the association targets the correct category and
+-- program even when seed_media.py created the category under a different
+-- ID (e.g. ID 6 was taken) or Digital Design has a different program ID.
 INSERT INTO category_programs (category_id, program_id)
-SELECT c.id, 2
+SELECT c.id, p.id
 FROM categories c
+CROSS JOIN programs p
 WHERE c.label = 'Synthetic Monitoring' AND c.parent_id IS NULL
+  AND p.name = 'Digital Design'
 ON CONFLICT (category_id, program_id) DO NOTHING;
 
 -- ── Images ────────────────────────────────────────────────
@@ -123,11 +129,21 @@ ON CONFLICT (id) DO NOTHING;
 SELECT setval('users_id_seq', GREATEST((SELECT MAX(id) FROM users), 1));
 
 -- ── User–Program associations ───────────────────────────
+-- All program assignments are resolved by name so that an existing
+-- database where seed program IDs (1–3) belong to other programs does
+-- not cause users to be assigned to the wrong program.
 
 INSERT INTO user_programs (user_id, program_id)
-VALUES
-  (1, 1),  -- admin -> Administration
-  (2, 2),  -- instructor -> Digital Design
-  (3, 2),  -- student -> Digital Design
-  (4, 2)   -- synthetic student -> Digital Design
+SELECT 1, p.id FROM programs p WHERE p.name = 'Administration'
+ON CONFLICT (user_id, program_id) DO NOTHING;
+
+INSERT INTO user_programs (user_id, program_id)
+SELECT u.id, p.id
+FROM (VALUES
+  (2),  -- instructor
+  (3),  -- student
+  (4)   -- synthetic student
+) AS u(user_id)
+CROSS JOIN programs p
+WHERE p.name = 'Digital Design'
 ON CONFLICT (user_id, program_id) DO NOTHING;
