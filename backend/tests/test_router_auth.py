@@ -24,6 +24,7 @@ def _make_user(
     email: str = "test@example.com",
     password_hash: str | None = None,
     role: str = "student",
+    active: bool = True,
     programs: list | None = None,
     groups: list | None = None,
 ) -> SimpleNamespace:
@@ -34,6 +35,7 @@ def _make_user(
         email=email,
         password_hash=password_hash,
         role=role,
+        active=active,
         programs=programs or [],
         groups=groups or [],
         metadata_=None,
@@ -62,6 +64,7 @@ async def test_login_success() -> None:
 
     assert result.access_token == "jwt-token"
     assert result.user.email == "test@example.com"
+    assert result.user.active is True
 
 
 async def test_login_case_insensitive_email() -> None:
@@ -134,6 +137,24 @@ async def test_login_wrong_password() -> None:
     assert exc.value.status_code == 401
 
 
+async def test_login_inactive_user() -> None:
+    user = _make_user(password_hash="hashed", active=False)
+
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.first.return_value = user
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+
+    body = LoginRequest(email="test@example.com", password="secret")
+
+    with patch("app.routers.auth.verify_password", return_value=True):
+        with pytest.raises(HTTPException) as exc:
+            await login(body, _mock_request(), db)
+    assert exc.value.status_code == 403
+    assert exc.value.detail == "Account is inactive"
+
+
 async def test_login_with_programs() -> None:
     program = SimpleNamespace(id=1, name="Biology")
     user = _make_user(password_hash="hashed", programs=[program])
@@ -165,6 +186,7 @@ async def test_get_me_returns_current_user() -> None:
 
     result = await get_me(user, db)
     assert result.email == "test@example.com"
+    assert result.active is True
     assert result.program_names == ["Chemistry"]
     assert result.program_ids == [2]
 

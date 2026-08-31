@@ -1056,6 +1056,7 @@ async def run_db_export(task_id: int) -> None:
                         # still contain these fields are accepted on import
                         # (the import path uses .get() with a None default).
                         "role": u.role,
+                        "active": u.active,
                         "program_ids": [p.id for p in u.programs],
                         "last_access": dt(u.last_access),
                         "metadata": u.metadata_,
@@ -1290,6 +1291,7 @@ async def run_db_import(task_id: int) -> None:
                         password_hash=u.get("password_hash"),
                         oidc_subject=u.get("oidc_subject"),
                         role=u.get("role", "student"),
+                        active=u.get("active", True),
                         last_access=_parse_dt(u.get("last_access")),
                         metadata_=u.get("metadata", {}),
                         created_at=_parse_dt(u.get("created_at")),

@@ -267,6 +267,9 @@ committed on Save) in the edit modals.
 
 - The People page now exposes a persistent **Filter by** bar above the table
   instead of hiding filters behind a toggle button.
+- People rows include a **Status** column chip (`Active` / `Inactive`) and bulk
+  account-status action so admins can deactivate/reactivate selected users
+  without deleting accounts.
 - The filter bar shows only controls for currently visible filterable columns
   (for example, hiding the `Groups` column also removes the `Groups` filter
   controls). Hiding a filtered column clears that column's active filter state.

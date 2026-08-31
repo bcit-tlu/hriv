@@ -12,7 +12,8 @@ the schema** — change the model _and_ generate a migration in the same PR (see
 - **Purpose:** authenticated user with role-based access.
 - **Key fields:** `name`; `email` (unique, **case-insensitive** via
   `ix_users_email_lower`); `password_hash` (nullable — OIDC users have none);
-  `oidc_subject` (nullable, unique); `role` (default `"student"`);
+  `oidc_subject` (nullable, unique); `role` (default `"student"`); `active`
+  (default `true`, controls authentication eligibility);
   `last_access`; `metadata_` (JSONB, DB column `metadata`).
 - **Relationships:** `programs` (M2M via `user_programs`); `groups` (M2M via
   `group_members`, `viewonly` — the user's group memberships).
