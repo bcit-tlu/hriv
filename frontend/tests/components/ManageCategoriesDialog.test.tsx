@@ -674,7 +674,11 @@ describe('ManageCategoriesDialog — drop → onReorderTiles', () => {
       .mockReturnValueOnce(secondPromise)
     const onDragActiveChange = vi.fn()
     renderDialog({
-      categories: categories(),
+      categories: [
+        makeCategory({ id: 1, label: 'Alpha' }),
+        makeCategory({ id: 2, label: 'Beta' }),
+        makeCategory({ id: 3, label: 'Gamma' }),
+      ],
       onReorderTiles,
       onDragActiveChange,
     })
@@ -705,6 +709,7 @@ describe('ManageCategoriesDialog — drop → onReorderTiles', () => {
       resolveFirst?.()
     })
     expect(onDragActiveChange).not.toHaveBeenCalledWith(false)
+    await waitFor(() => expect(renderedCategoryIds()).toEqual([3, 1, 2]))
 
     fireDrag(item2, 'dragend', 0, 0)
 
@@ -714,6 +719,60 @@ describe('ManageCategoriesDialog — drop → onReorderTiles', () => {
     })
     await waitFor(() => expect(onDragActiveChange).toHaveBeenLastCalledWith(false))
     expect(onDragActiveChange.mock.calls.filter(([v]) => v === false).length).toBe(1)
+  })
+
+  it('does not roll back a newer preview when an old drop rejects', async () => {
+    let rejectFirst: ((reason?: unknown) => void) | undefined
+    let resolveSecond: (() => void) | undefined
+    const firstPromise = new Promise<void>((_, reject) => {
+      rejectFirst = reject
+    })
+    const secondPromise = new Promise<void>((resolve) => {
+      resolveSecond = resolve
+    })
+    const onReorderTiles = vi
+      .fn()
+      .mockReturnValueOnce(firstPromise)
+      .mockReturnValueOnce(secondPromise)
+    const onReorderComplete = vi.fn().mockResolvedValue(undefined)
+    renderDialog({
+      categories: [
+        makeCategory({ id: 1, label: 'Alpha' }),
+        makeCategory({ id: 2, label: 'Beta' }),
+        makeCategory({ id: 3, label: 'Gamma' }),
+      ],
+      onReorderTiles,
+      onReorderComplete,
+    })
+
+    const item1 = document.querySelector('[data-category-id="1"]')!
+    const list = item1.closest('ul')!
+
+    fireDrag(item1, 'dragstart', 0, 0)
+    fireDrag(list, 'dragover', 0, 100)
+    fireDrag(list, 'drop', 0, 100)
+    await waitFor(() => expect(onReorderTiles).toHaveBeenCalledTimes(1))
+    fireDrag(item1, 'dragend', 0, 0)
+
+    const item2 = document.querySelector('[data-category-id="2"]')!
+    fireDrag(item2, 'dragstart', 0, 0)
+    fireDrag(list, 'dragover', 0, 100)
+    fireDrag(list, 'drop', 0, 100)
+    await waitFor(() => expect(onReorderTiles).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(renderedCategoryIds()).toEqual([3, 1, 2]))
+
+    await act(async () => {
+      rejectFirst?.(new Error('first drop failed'))
+      await Promise.resolve()
+    })
+
+    await waitFor(() => expect(renderedCategoryIds()).toEqual([3, 1, 2]))
+    expect(onReorderComplete).not.toHaveBeenCalled()
+
+    await act(async () => {
+      resolveSecond?.()
+      await secondPromise
+    })
   })
 })
 
