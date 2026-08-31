@@ -71,8 +71,26 @@ async def test_list_source_images() -> None:
     db = AsyncMock()
     db.execute = AsyncMock(return_value=mock_result)
 
-    result = await list_source_images(MagicMock(), db)
+    result = await list_source_images(MagicMock(), db=db)
     assert len(result) == 2
+    stmt = str(db.execute.await_args.args[0])
+    assert "ORDER BY source_images.created_at DESC" in stmt
+    assert "WHERE" not in stmt
+    assert "LIMIT" not in stmt
+
+
+async def test_list_source_images_filters_by_status_and_limit() -> None:
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = []
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+
+    await list_source_images(MagicMock(), status="failed", limit=20, db=db)
+    stmt = db.execute.await_args.args[0]
+    assert "source_images.status = " in str(stmt)
+    assert "LIMIT" in str(stmt)
+    assert stmt.compile().params["status_1"] == "failed"
 
 
 async def test_get_source_image_found() -> None:

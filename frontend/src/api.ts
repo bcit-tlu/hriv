@@ -1079,6 +1079,17 @@ export function fetchSourceImage(id: number): Promise<ApiSourceImage> {
   return request(`/source-images/${id}`)
 }
 
+/** List source images (newest first), optionally narrowed by status. */
+export function listSourceImages(
+  opts: { status?: string; limit?: number } = {},
+): Promise<ApiSourceImage[]> {
+  const params = new URLSearchParams()
+  if (opts.status !== undefined) params.set('status', opts.status)
+  if (opts.limit !== undefined) params.set('limit', String(opts.limit))
+  const query = params.toString()
+  return request(`/source-images/${query ? `?${query}` : ''}`)
+}
+
 export async function replaceImage(
   imageId: number,
   file: File,
