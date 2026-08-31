@@ -13,17 +13,30 @@ data:
     # so http-level directives such as proxy_cache_path and map may live
     # here before the server block.
     #
-    # auth_request subrequest cache: keyed on the tile token and original
-    # URI (never on client identity) and storing only the allow/deny
-    # verdict — no tile bytes are cached. A valid token authorizes one
-    # image for its whole TTL, so caching the 204 briefly collapses
-    # OpenSeadragon's per-tile subrequest storm to ~one FastAPI hit per
-    # image per cache window.
+    # auth_request subrequest cache: keyed on the tile token and
+    # source-image id (never on client identity) and storing only the
+    # allow/deny verdict — no tile bytes are cached. A valid token
+    # authorizes one image for its whole TTL, so caching the 204 briefly
+    # collapses OpenSeadragon's per-tile subrequest storm to ~one
+    # FastAPI hit per image per cache window.
     proxy_cache_path /var/cache/nginx/tile_auth levels=1 keys_zone=tile_auth:1m max_size=8m inactive=60s use_temp_path=off;
 
     # Requests without a tile token must never hit (or populate) the auth
     # cache — an empty key would alias all tokenless requests together.
-    map $arg_tile_token $tile_auth_no_token {
+    # These maps derive the cache key from the original request URI, which
+    # remains available in the auth_request subrequest even though the
+    # subrequest itself has no query arguments.
+    map $request_uri $tile_auth_token_from_uri {
+        ~[?&]tile_token=([^&]+) $1;
+        default "";
+    }
+
+    map $request_uri $tile_image_id_from_uri {
+        ~^/api/tiles/([0-9]+)/ $1;
+        default "";
+    }
+
+    map $tile_auth_token $tile_auth_no_token {
         ""      1;
         default 0;
     }
@@ -41,6 +54,8 @@ data:
             # FastAPI validator (GET /api/tiles-auth): 204 allows, 401 is
             # returned for a missing/expired/tampered token, 403 for a
             # token bound to a different image.
+            set $tile_auth_token $tile_auth_token_from_uri;
+            set $tile_image_id $tile_image_id_from_uri;
             auth_request /_tiles_auth;
 
             alias {{ .Values.env.TILES_DIR }}/;
@@ -78,11 +93,11 @@ data:
             proxy_set_header Content-Length "";
             proxy_set_header X-Original-URI $request_uri;
 
-            # Cache the verdict per token + original URI (ADR: TTL ≤ 60s,
-            # cache 204 only). Token-only keying is unsafe because a token
-            # scoped to image A must not authorize image B from cache.
+            # Cache the verdict per token + source-image id (ADR: TTL ≤
+            # 60s, cache 204 only). Token-only keying is unsafe because a
+            # token scoped to image A must not authorize image B from cache.
             proxy_cache tile_auth;
-            proxy_cache_key "$arg_tile_token:$request_uri";
+            proxy_cache_key "$tile_auth_token:$tile_image_id";
             proxy_cache_valid 204 30s;
             proxy_cache_bypass $tile_auth_no_token;
             proxy_no_cache $tile_auth_no_token;

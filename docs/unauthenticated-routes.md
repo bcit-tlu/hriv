@@ -64,10 +64,11 @@ Audited at backend 0.48.0 / frontend 0.50.0 (2026-08-31).
 
 ### FastAPI — app-credential
 
-| Route                                     | Credential                                                                                | Notes                                                                                                |
-| ----------------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `GET /api/admin/tasks/{task_id}/download` | Short-lived JWT in query string, `purpose=task-download`, task-bound (`routers/admin.py`) | Query-string tokens can leak via logs/referrers; hardening tracked in a follow-up issue (see below). |
-| Tile delivery (planned)                   | Short-lived HMAC token scoped to `source_image_id`                                        | Design owned by #1069; enforcement by #1064.                                                         |
+| Route                                     | Credential                                                                                               | Notes                                                                                                                                                                                |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /api/admin/tasks/{task_id}/download` | Short-lived JWT in query string, `purpose=task-download`, task-bound (`routers/admin.py`)                | Query-string tokens can leak via logs/referrers; hardening tracked in a follow-up issue (see below).                                                                                 |
+| `GET /api/tiles/{source_image_id}/{path}` | Short-lived JWT in query string, `purpose=tile`, scoped to `source_image_id`                             | FastAPI fallback route added by PR [#1159](https://github.com/bcit-tlu/hriv/pull/1159); responses use `Cache-Control: private, max-age=2592000`.                                     |
+| `GET /api/tiles-auth`                     | Same tile token, supplied by query string, `X-Tile-Token`, or `X-Original-URI` from nginx `auth_request` | DB-free validator added by PR [#1159](https://github.com/bcit-tlu/hriv/pull/1159); sidecar enforcement/cache wiring added by PR [#1163](https://github.com/bcit-tlu/hriv/pull/1163). |
 
 ### FastAPI — cluster-internal (edge-restricted)
 
@@ -77,10 +78,10 @@ Audited at backend 0.48.0 / frontend 0.50.0 (2026-08-31).
 
 ### FastAPI — mismatches (violate rule 3)
 
-| Route                                                                                         | Problem                                                                                                                                                                                               | Owner                  |
-| --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| `GET /api/tiles/**` (`StaticFiles` mount, `backend/app/main.py`)                              | DZI descriptors, thumbnails, and full-resolution tiles served with **no authorization at all**; source-image IDs are numeric and enumerable, bypassing the student visibility model (`visibility.py`) | #1064 / #1069 (Wave C) |
-| `/api/tiles/` via tiles nginx sidecar (`charts/backend/templates/configmap-nginx-tiles.yaml`) | Same content, served from the PVC with `Cache-Control: public, max-age=2592000, immutable` — world-readable **and** shared-cache-able                                                                 | #1064 / #1069 (Wave C) |
+No known mismatches. Tile delivery moved to **app-credential** in PR
+[#1159](https://github.com/bcit-tlu/hriv/pull/1159) (backend fallback route and
+validator) plus PR [#1163](https://github.com/bcit-tlu/hriv/pull/1163) (nginx
+sidecar enforcement and private cache headers).
 
 All other FastAPI routes (admin, bulk-import, categories, changelog, groups,
 images, issues, programs, telemetry, tile-order, upload, users) are
@@ -96,7 +97,7 @@ images, issues, programs, telemetry, tile-order, upload, users) are
 | `/assets/`, `/` (SPA), `= /version` | Static app shell. The SPA root also serves everything in `frontend/public/` verbatim (`THIRD-PARTY-LICENSES.txt`, logos, splash images) — treat that directory as world-readable and never place non-public files in it. | Intentionally public                                  |
 | `/api/`                             | Proxy to backend                                                                                                                                                                                                         | Auth enforced by the app (layer: app-authz)           |
 | upload regex location               | Proxy to backend with larger body cap                                                                                                                                                                                    | app-authz                                             |
-| `/api/tiles/`                       | Proxy to tiles sidecar, **bypasses FastAPI**, `Cache-Control: public, immutable`                                                                                                                                         | Mismatch — see #1064/#1069                            |
+| `/api/tiles/`                       | Proxy to the tiles sidecar when enabled, otherwise backend fallback; query string is preserved so the image-scoped `tile_token` reaches the validator; upstream sends `Cache-Control: private, max-age=2592000`          | app-credential (#1159/#1163)                          |
 | `= /api/metrics`                    | `return 404`                                                                                                                                                                                                             | Edge restriction for the cluster-internal route above |
 
 ### Kubernetes / ingress
@@ -116,9 +117,9 @@ images, issues, programs, telemetry, tile-order, upload, users) are
 
 Not a production surface, listed for completeness: Postgres `:5432`, Redis
 `:6379`, and the backend `:8000` (which bypasses the frontend nginx, so
-`/api/metrics` and `/api/tiles/**` are directly reachable) are bound to the
-host in `docker-compose.yml`. The Vite dev server (`:5173`) is dev-only; the
-production image serves via nginx.
+`/api/metrics` is directly reachable and `/api/tiles/**` uses the FastAPI
+tile-token fallback route) are bound to the host in `docker-compose.yml`. The
+Vite dev server (`:5173`) is dev-only; the production image serves via nginx.
 
 ### Cross-cutting note — CORS
 
@@ -131,7 +132,6 @@ it; hardening the default is tracked in a follow-up issue (see below).
 
 | Gap                                                                    | Owner                                                                                            |
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Unauthenticated tile/thumbnail delivery (app mount + sidecar)          | #1064, #1069 — in progress (Wave C)                                                              |
 | `/api/metrics` cluster-internal not enforced beyond frontend nginx 404 | PR [#1160](https://github.com/bcit-tlu/hriv/pull/1160) (chart NetworkPolicy; enable in overlays) |
 | `/api/health/ready` public DB/storage probe cost                       | #1152                                                                                            |
 | Admin task-download token in query string                              | #1153                                                                                            |
