@@ -443,6 +443,20 @@ retained-archive classification cache was last refreshed successfully, and
 not-configured states. Archive listing failures must not be rendered as zero
 retained archives.
 
+Backup freshness is measured from the time a snapshot became restorable, not
+from the time its run started: `LAST_SUCCESS.json` carries `completed_at`
+alongside the snapshot-naming `created_at`, and `backup status` and the
+marker-derived backend fallback both prefer `completed_at`, using `created_at`
+only for markers written before that field existed. Reported age therefore drops
+by roughly one backup duration compared with earlier releases;
+`BACKUP_STALE_HOURS` is unchanged at `26`.
+
+Concurrent backup runs merge into the shared marker files rather than
+overwriting them, keyed on completion time then start time then run id, so a
+slower or older run cannot regress the published attempt state and a
+late-finishing failure cannot erase a newer success. See
+[`backup/README.md`](../backup/README.md) for the merge and locking rules.
+
 For compatibility, `hriv_backup_age_seconds` remains the worst-case age across
 the database and filesystem last-success timestamps. It is `+Inf` when backup
 access is configured but either backup type lacks a valid successful timestamp.

@@ -1,16 +1,19 @@
 """Unit tests for the HRIV backup service."""
 
 import contextlib
+import copy
 import io
 import importlib
 import json
 import logging
 import os
 import shutil
+import subprocess
 import sys
 import tarfile
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
@@ -417,6 +420,41 @@ class BackupRunTestCase(_BackupTestCase):
         self.assertTrue(state["filesystem"]["success"])
         self.assertEqual(state["filesystem"]["last_success_archive_key"], str(archive))
 
+    def test_run_backup_marker_records_completion_and_per_type_success(self):
+        self._reload(
+            {
+                "BACKUP_MODE": "production",
+                "DATA_DIR": str(self.data_dir),
+            }
+        )
+        local_dir = self.tmp / "backups"
+        local_dir.mkdir()
+
+        def fake_subprocess_run(cmd, **_kwargs):
+            if cmd[0] == "pg_dump":
+                f_idx = cmd.index("-f")
+                Path(cmd[f_idx + 1]).write_text("dump")
+            return MagicMock(returncode=0)
+
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=local_dir),
+            patch.object(backup.subprocess, "run", side_effect=fake_subprocess_run),
+        ):
+            result = backup.run_backup()
+
+        marker = json.loads((local_dir / "LAST_SUCCESS.json").read_text())
+        state = json.loads((local_dir / "BACKUP_STATE.json").read_text())
+        self.assertEqual(marker["snapshot_name"], result.name.removesuffix(".tar.gz"))
+        self.assertGreaterEqual(marker["completed_at"], marker["created_at"])
+        self.assertEqual(marker["run_id"], state["run_id"])
+        self.assertEqual(sorted(marker["types"]), ["database", "filesystem"])
+        self.assertEqual(marker["types"]["filesystem"]["archive_key"], str(local_dir / result.name))
+        self.assertEqual(state["database"]["run_id"], state["run_id"])
+        self.assertEqual(
+            sorted(entry["backup_type"] for entry in state["attempts"]),
+            ["database", "filesystem"],
+        )
+
     def test_pg_dump_failure_updates_backup_state(self):
         self._reload(
             {
@@ -530,7 +568,13 @@ class RetentionTestCase(_BackupTestCase):
 class StatusTestCase(_BackupTestCase):
     """Tests for the backup health/status command."""
 
-    def _reload_status(self, *, marker_created_at: datetime | None, snapshots: list | None = None):
+    def _reload_status(
+        self,
+        *,
+        marker_created_at: datetime | None,
+        snapshots: list | None = None,
+        marker_completed_at: datetime | None = None,
+    ):
         self._reload(
             {
                 "BACKUP_MODE": "production",
@@ -543,15 +587,16 @@ class StatusTestCase(_BackupTestCase):
 
         marker_payload = None
         if marker_created_at is not None:
-            marker_payload = json.dumps(
-                {
-                    "snapshot_name": "hriv-backup-20260101-020000",
-                    "created_at": marker_created_at.isoformat(),
-                    "archive_size": 1234,
-                    "backup_mode": "production",
-                    "tiles_excluded": True,
-                }
-            ).encode()
+            marker = {
+                "snapshot_name": "hriv-backup-20260101-020000",
+                "created_at": marker_created_at.isoformat(),
+                "archive_size": 1234,
+                "backup_mode": "production",
+                "tiles_excluded": True,
+            }
+            if marker_completed_at is not None:
+                marker["completed_at"] = marker_completed_at.isoformat()
+            marker_payload = json.dumps(marker).encode()
 
         class _Download:
             def __init__(self, payload: bytes):
@@ -626,6 +671,19 @@ class StatusTestCase(_BackupTestCase):
         self.assertIn("Status: NO_SNAPSHOTS", output)
         self.assertIn("Snapshot count: 0", output)
 
+    def test_status_measures_age_from_completion_time(self):
+        # A long-running backup that started 3h ago but finished 30m ago is
+        # fresh against a 2h threshold.
+        fake_container = self._reload_status(
+            marker_created_at=datetime.now(timezone.utc) - timedelta(hours=3),
+            marker_completed_at=datetime.now(timezone.utc) - timedelta(minutes=30),
+        )
+
+        with patch.object(backup, "_blob_container_client", return_value=fake_container), contextlib.redirect_stdout(io.StringIO()) as stdout:
+            self.assertTrue(backup.run_status())
+
+        self.assertIn("Status: FRESH", stdout.getvalue())
+
     def test_missing_marker_is_silent(self):
         self._reload_status(marker_created_at=datetime.now(timezone.utc))
         fake_container = MagicMock()
@@ -664,6 +722,635 @@ class AtomicWriteTestCase(unittest.TestCase):
             self.assertEqual(errors, [])
             self.assertIn(target.read_bytes(), (b'{"writer": "a"}', b'{"writer": "b"}'))
             self.assertEqual([p.name for p in Path(tmpdir).iterdir()], [target.name])
+
+
+def _section(**overrides) -> dict:
+    section = {
+        "run_id": None,
+        "started_at": None,
+        "completed_at": None,
+        "success": None,
+        "duration_seconds": None,
+        "size_bytes": None,
+        "archive_key": None,
+        "last_success_started_at": None,
+        "last_success_completed_at": None,
+        "last_success_duration_seconds": None,
+        "last_success_size_bytes": None,
+        "last_success_archive_key": None,
+    }
+    section.update(overrides)
+    return section
+
+
+def _attempt(run_id: str, started: str, completed: str | None, *, success=None, archive_key=None) -> dict:
+    section = _section(
+        run_id=run_id,
+        started_at=started,
+        completed_at=completed,
+        success=success,
+        archive_key=archive_key,
+    )
+    if success:
+        section["last_success_started_at"] = started
+        section["last_success_completed_at"] = completed
+        section["last_success_archive_key"] = archive_key
+    return section
+
+
+def _state(run_id: str, *, database: dict | None = None, filesystem: dict | None = None, snapshot_name="snap") -> dict:
+    return {
+        "schema_version": 2,
+        "run_id": run_id,
+        "snapshot_name": snapshot_name,
+        "backup_mode": "production",
+        "tiles_excluded": True,
+        "storage_prefix": "hriv-backups",
+        "database": database or _section(),
+        "filesystem": filesystem or _section(),
+    }
+
+
+class BackupStateMergeTestCase(unittest.TestCase):
+    """Ordering rules for concurrent updates to the shared backup state."""
+
+    def test_older_completion_cannot_overwrite_newer_attempt(self):
+        newer = _state(
+            "newer",
+            snapshot_name="snap-newer",
+            database=_attempt("newer", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True, archive_key="new-key"),
+        )
+        older = _state(
+            "older",
+            snapshot_name="snap-older",
+            database=_attempt("older", "2026-08-01T09:00:00+00:00", "2026-08-01T10:03:00+00:00", success=True, archive_key="old-key"),
+        )
+
+        merged = backup._merge_backup_state(newer, older)
+
+        self.assertEqual(merged["database"]["run_id"], "newer")
+        self.assertEqual(merged["database"]["archive_key"], "new-key")
+        self.assertEqual(merged["database"]["last_success_archive_key"], "new-key")
+        self.assertEqual(merged["snapshot_name"], "snap-newer")
+
+    def test_newer_completion_advances_state(self):
+        older = _state(
+            "older",
+            database=_attempt("older", "2026-08-01T09:00:00+00:00", "2026-08-01T09:05:00+00:00", success=True, archive_key="old-key"),
+        )
+        newer = _state(
+            "newer",
+            snapshot_name="snap-newer",
+            database=_attempt("newer", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True, archive_key="new-key"),
+        )
+
+        merged = backup._merge_backup_state(older, newer)
+
+        self.assertEqual(merged["database"]["run_id"], "newer")
+        self.assertEqual(merged["database"]["last_success_archive_key"], "new-key")
+        self.assertEqual(merged["snapshot_name"], "snap-newer")
+
+    def test_late_finishing_older_failure_cannot_regress_newer_success(self):
+        newer_success = _state(
+            "newer",
+            filesystem=_attempt("newer", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True, archive_key="new-key"),
+        )
+        # An older run that started first but only failed afterwards.
+        older_failure = _state(
+            "older",
+            filesystem=_attempt("older", "2026-08-01T09:00:00+00:00", "2026-08-01T10:09:00+00:00", success=False),
+        )
+
+        merged = backup._merge_backup_state(newer_success, older_failure)
+
+        # The failure is newer, so it becomes the current attempt …
+        self.assertIs(merged["filesystem"]["success"], False)
+        self.assertEqual(merged["filesystem"]["run_id"], "older")
+        # … but the newer success history survives.
+        self.assertEqual(merged["filesystem"]["last_success_completed_at"], "2026-08-01T10:05:00+00:00")
+        self.assertEqual(merged["filesystem"]["last_success_archive_key"], "new-key")
+
+    def test_older_failure_does_not_replace_newer_attempt(self):
+        newer_success = _state(
+            "newer",
+            filesystem=_attempt("newer", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True, archive_key="new-key"),
+        )
+        older_failure = _state(
+            "older",
+            filesystem=_attempt("older", "2026-08-01T09:00:00+00:00", "2026-08-01T09:30:00+00:00", success=False),
+        )
+
+        merged = backup._merge_backup_state(newer_success, older_failure)
+
+        self.assertIs(merged["filesystem"]["success"], True)
+        self.assertEqual(merged["filesystem"]["run_id"], "newer")
+
+    def test_in_progress_attempt_does_not_displace_finished_attempt(self):
+        finished = _state(
+            "finished",
+            database=_attempt("finished", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True),
+        )
+        in_progress = _state(
+            "running",
+            database=_section(run_id="running", started_at="2026-08-01T10:02:00+00:00"),
+        )
+
+        merged = backup._merge_backup_state(finished, in_progress)
+
+        self.assertEqual(merged["database"]["run_id"], "finished")
+        self.assertIs(merged["database"]["success"], True)
+
+    def test_types_are_merged_independently(self):
+        existing = _state(
+            "a",
+            database=_attempt("a", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True, archive_key="a-key"),
+            filesystem=_attempt("a", "2026-08-01T10:05:00+00:00", "2026-08-01T10:30:00+00:00", success=False),
+        )
+        incoming = _state(
+            "b",
+            database=_attempt("b", "2026-08-01T09:00:00+00:00", "2026-08-01T09:05:00+00:00", success=True, archive_key="b-key"),
+            filesystem=_attempt("b", "2026-08-01T09:05:00+00:00", "2026-08-01T10:40:00+00:00", success=True, archive_key="b-fs"),
+        )
+
+        merged = backup._merge_backup_state(existing, incoming)
+
+        self.assertEqual(merged["database"]["last_success_archive_key"], "a-key")
+        self.assertEqual(merged["filesystem"]["last_success_archive_key"], "b-fs")
+
+    def test_missing_or_legacy_state_is_replaced(self):
+        incoming = _state("only")
+        self.assertEqual(backup._merge_backup_state(None, incoming)["run_id"], "only")
+        self.assertEqual(backup._merge_backup_state({"schema_version": 1}, incoming)["run_id"], "only")
+        self.assertEqual(backup._merge_backup_state("garbage", incoming)["run_id"], "only")
+
+    def test_attempt_history_retains_losing_run(self):
+        existing = _state(
+            "newer",
+            database=_attempt("newer", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True),
+        )
+        existing["attempts"] = backup._merge_attempt_history(None, existing)
+        older = _state(
+            "older",
+            database=_attempt("older", "2026-08-01T09:00:00+00:00", "2026-08-01T09:05:00+00:00", success=False),
+        )
+
+        merged = backup._merge_backup_state(existing, older)
+
+        run_ids = [entry["run_id"] for entry in merged["attempts"]]
+        self.assertIn("newer", run_ids)
+        self.assertIn("older", run_ids)
+        self.assertLessEqual(len(merged["attempts"]), backup._MAX_ATTEMPT_HISTORY)
+
+    def test_attempt_history_is_bounded(self):
+        state = None
+        for index in range(backup._MAX_ATTEMPT_HISTORY + 5):
+            incoming = _state(
+                f"run-{index:02d}",
+                database=_attempt(
+                    f"run-{index:02d}",
+                    f"2026-08-01T{index:02d}:00:00+00:00",
+                    f"2026-08-01T{index:02d}:05:00+00:00",
+                    success=True,
+                ),
+            )
+            state = backup._merge_backup_state(state, incoming)
+
+        self.assertEqual(len(state["attempts"]), backup._MAX_ATTEMPT_HISTORY)
+        self.assertEqual(state["attempts"][0]["run_id"], f"run-{backup._MAX_ATTEMPT_HISTORY + 4:02d}")
+
+
+class LastSuccessMarkerMergeTestCase(unittest.TestCase):
+    """Ordering rules for the LAST_SUCCESS marker."""
+
+    def _marker(self, run_id, created, completed, *, types=None):
+        return {
+            "snapshot_name": f"snap-{run_id}",
+            "created_at": created,
+            "completed_at": completed,
+            "archive_size": 10,
+            "backup_mode": "production",
+            "tiles_excluded": True,
+            "run_id": run_id,
+            "types": types or {},
+        }
+
+    def test_newest_completion_wins(self):
+        newer = self._marker("newer", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00")
+        older = self._marker("older", "2026-08-01T09:00:00+00:00", "2026-08-01T10:03:00+00:00")
+
+        self.assertEqual(backup._merge_last_success_marker(newer, older)["run_id"], "newer")
+        self.assertEqual(backup._merge_last_success_marker(older, newer)["run_id"], "newer")
+
+    def test_legacy_marker_without_completed_at_is_ordered_by_created_at(self):
+        legacy = {"snapshot_name": "snap-legacy", "created_at": "2026-08-01T08:00:00+00:00"}
+        newer = self._marker("newer", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00")
+
+        self.assertEqual(backup._merge_last_success_marker(legacy, newer)["run_id"], "newer")
+        self.assertEqual(backup._merge_last_success_marker(newer, legacy)["run_id"], "newer")
+
+    def test_per_type_entries_keep_newest_of_each_type(self):
+        existing = self._marker(
+            "a",
+            "2026-08-01T10:00:00+00:00",
+            "2026-08-01T10:05:00+00:00",
+            types={
+                "database": {"run_id": "a", "created_at": "2026-08-01T10:00:00+00:00", "completed_at": "2026-08-01T10:02:00+00:00"},
+            },
+        )
+        incoming = self._marker(
+            "b",
+            "2026-08-01T09:00:00+00:00",
+            "2026-08-01T10:03:00+00:00",
+            types={
+                "filesystem": {"run_id": "b", "created_at": "2026-08-01T09:00:00+00:00", "completed_at": "2026-08-01T10:03:00+00:00"},
+            },
+        )
+
+        merged = backup._merge_last_success_marker(existing, incoming)
+
+        self.assertEqual(merged["run_id"], "a")
+        self.assertEqual(merged["types"]["database"]["run_id"], "a")
+        self.assertEqual(merged["types"]["filesystem"]["run_id"], "b")
+
+
+class RestoreStateMergeTestCase(unittest.TestCase):
+    """Ordering rules for the shared restore state."""
+
+    def _restore_state(self, run_id, purpose, started, completed, success):
+        blank = {
+            "run_id": None,
+            "started_at": None,
+            "completed_at": None,
+            "success": None,
+            "duration_seconds": None,
+            "archive_name": None,
+            "last_success_started_at": None,
+            "last_success_completed_at": None,
+            "last_success_duration_seconds": None,
+            "last_success_archive_name": None,
+        }
+        section = dict(blank, run_id=run_id, started_at=started, completed_at=completed, success=success)
+        if success:
+            section["last_success_started_at"] = started
+            section["last_success_completed_at"] = completed
+            section["last_success_archive_name"] = f"{run_id}.tar.gz"
+        state = {
+            "schema_version": 1,
+            "run_id": run_id,
+            "operator": {"database": dict(blank), "filesystem": dict(blank)},
+            "test": {"database": dict(blank), "filesystem": dict(blank)},
+        }
+        state[purpose]["database"] = section
+        return state
+
+    def test_older_restore_failure_preserves_newer_success(self):
+        newer = self._restore_state("newer", "operator", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", True)
+        older = self._restore_state("older", "operator", "2026-08-01T09:00:00+00:00", "2026-08-01T10:09:00+00:00", False)
+
+        merged = backup._merge_restore_state(newer, older)
+
+        self.assertIs(merged["operator"]["database"]["success"], False)
+        self.assertEqual(merged["operator"]["database"]["last_success_archive_name"], "newer.tar.gz")
+
+    def test_purposes_do_not_clobber_each_other(self):
+        operator = self._restore_state("op", "operator", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", True)
+        test_run = self._restore_state("test", "test", "2026-08-01T11:00:00+00:00", "2026-08-01T11:05:00+00:00", True)
+
+        merged = backup._merge_restore_state(operator, test_run)
+
+        self.assertEqual(merged["operator"]["database"]["run_id"], "op")
+        self.assertEqual(merged["test"]["database"]["run_id"], "test")
+
+
+class LocalStateCommitTestCase(_BackupTestCase):
+    """Local (PVC) read-merge-write behaviour, including the sidecar lock."""
+
+    def setUp(self):
+        super().setUp()
+        self._reload({"BACKUP_MODE": "production"})
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self.local_dir = Path(self._tmpdir.name) / "backups"
+        self.local_dir.mkdir()
+        patcher = patch.object(backup, "_local_backup_dir", return_value=self.local_dir)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _write_state(self, state):
+        backup._commit_shared_json(
+            local_path=backup._backup_state_path(),
+            blob_name=backup._backup_state_blob_name(),
+            incoming=state,
+            merge=backup._merge_backup_state,
+            label="test state",
+        )
+
+    def _read_state(self):
+        return json.loads((self.local_dir / "BACKUP_STATE.json").read_text())
+
+    def test_out_of_order_writers_converge_on_newest_result(self):
+        newer = _state(
+            "newer",
+            database=_attempt("newer", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True, archive_key="new-key"),
+        )
+        older = _state(
+            "older",
+            database=_attempt("older", "2026-08-01T09:00:00+00:00", "2026-08-01T10:04:00+00:00", success=True, archive_key="old-key"),
+        )
+
+        self._write_state(newer)
+        self._write_state(older)
+
+        state = self._read_state()
+        self.assertEqual(state["database"]["run_id"], "newer")
+        self.assertEqual(state["database"]["last_success_archive_key"], "new-key")
+
+    def test_lock_file_is_created_on_the_backups_volume(self):
+        self._write_state(_state("only"))
+
+        lock_path = self.local_dir / backup.STATE_LOCK_FILENAME
+        self.assertTrue(lock_path.exists())
+        self.assertEqual(backup._state_lock_path(), lock_path)
+
+    def test_lock_sidecar_is_invisible_to_list_and_retention(self):
+        self._reload({"BACKUP_MODE": "production", "BACKUP_RETENTION_COUNT": "1"})
+        with patch.object(backup, "_local_backup_dir", return_value=self.local_dir):
+            self._write_state(_state("only"))
+            for name in ("hriv-backup-20260101-020000.tar.gz", "hriv-backup-20260102-020000.tar.gz"):
+                (self.local_dir / name).write_bytes(b"archive")
+
+            names = [snapshot["name"] for snapshot in backup.list_snapshots()]
+            backup._enforce_local_retention()
+
+        self.assertEqual(names, ["hriv-backup-20260102-020000.tar.gz", "hriv-backup-20260101-020000.tar.gz"])
+        self.assertTrue((self.local_dir / backup.STATE_LOCK_FILENAME).exists())
+        self.assertTrue((self.local_dir / "hriv-backup-20260102-020000.tar.gz").exists())
+        self.assertFalse((self.local_dir / "hriv-backup-20260101-020000.tar.gz").exists())
+
+    def test_corrupt_state_file_is_replaced(self):
+        (self.local_dir / "BACKUP_STATE.json").write_text("{not json")
+
+        with self.assertLogs("hriv-backup", level="ERROR"):
+            self._write_state(_state("fresh"))
+
+        self.assertEqual(self._read_state()["run_id"], "fresh")
+
+    def test_concurrent_threads_preserve_both_successes(self):
+        barrier = threading.Barrier(2)
+        errors: list[Exception] = []
+
+        def writer(run_id: str, backup_type: str, hour: int) -> None:
+            state = _state(
+                run_id,
+                **{
+                    backup_type: _attempt(
+                        run_id,
+                        f"2026-08-01T{hour:02d}:00:00+00:00",
+                        f"2026-08-01T{hour:02d}:05:00+00:00",
+                        success=True,
+                        archive_key=f"{run_id}-key",
+                    )
+                },
+            )
+            barrier.wait()
+            for _ in range(50):
+                try:
+                    self._write_state(copy.deepcopy(state))
+                except Exception as exc:  # pragma: no cover - failure path
+                    errors.append(exc)
+
+        threads = [
+            threading.Thread(target=writer, args=("db-run", "database", 10)),
+            threading.Thread(target=writer, args=("fs-run", "filesystem", 11)),
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        self.assertEqual(errors, [])
+        state = self._read_state()
+        self.assertEqual(state["database"]["last_success_archive_key"], "db-run-key")
+        self.assertEqual(state["filesystem"]["last_success_archive_key"], "fs-run-key")
+
+
+class StateLockProcessTestCase(unittest.TestCase):
+    """Cross-process and crash behaviour of the shared state lock."""
+
+    BACKUP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self.local_dir = Path(self._tmpdir.name) / "backups"
+        self.local_dir.mkdir()
+        self.flag = self.local_dir / "holding"
+
+    def _spawn_holder(self, hold_seconds: float) -> subprocess.Popen:
+        script = (
+            "import pathlib, sys, time\n"
+            f"sys.path.insert(0, {self.BACKUP_DIR!r})\n"
+            "import backup\n"
+            f"backup._local_backup_dir = lambda: pathlib.Path({str(self.local_dir)!r})\n"
+            "with backup._state_lock() as acquired:\n"
+            f"    pathlib.Path({str(self.flag)!r}).write_text('1' if acquired else '0')\n"
+            f"    time.sleep({hold_seconds})\n"
+        )
+        process = subprocess.Popen([sys.executable, "-c", script])
+        self.addCleanup(self._terminate, process)
+
+        deadline = time.monotonic() + 30
+        while not self.flag.exists():
+            if time.monotonic() > deadline:  # pragma: no cover - failure path
+                self.fail("Lock holder subprocess never acquired the lock")
+            time.sleep(0.02)
+        self.assertEqual(self.flag.read_text(), "1")
+        return process
+
+    def _terminate(self, process: subprocess.Popen) -> None:
+        if process.poll() is None:
+            process.kill()
+        process.wait(timeout=30)
+
+    def test_lock_is_exclusive_across_processes(self):
+        holder = self._spawn_holder(1.0)
+
+        with patch.object(backup, "_local_backup_dir", return_value=self.local_dir):
+            started = time.monotonic()
+            with backup._state_lock() as acquired:
+                waited = time.monotonic() - started
+                self.assertTrue(acquired)
+
+        self.assertGreaterEqual(waited, 0.5)
+        holder.wait(timeout=30)
+
+    def test_killed_writer_releases_the_lock(self):
+        holder = self._spawn_holder(120.0)
+        holder.kill()
+        holder.wait(timeout=30)
+
+        with patch.object(backup, "_local_backup_dir", return_value=self.local_dir):
+            started = time.monotonic()
+            with backup._state_lock() as acquired:
+                self.assertTrue(acquired)
+            self.assertLess(time.monotonic() - started, 5.0)
+
+    def test_wedged_lock_holder_does_not_block_the_state_update(self):
+        self._spawn_holder(120.0)
+
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=self.local_dir),
+            patch.object(backup, "_STATE_LOCK_TIMEOUT_SECONDS", 0.2),
+            self.assertLogs("hriv-backup", level="WARNING") as logs,
+        ):
+            backup._commit_shared_json(
+                local_path=backup._backup_state_path(),
+                blob_name=backup._backup_state_blob_name(),
+                incoming=_state("fallback"),
+                merge=backup._merge_backup_state,
+                label="test state",
+            )
+
+        self.assertTrue(any("unlocked" in message for message in logs.output))
+        state = json.loads((self.local_dir / "BACKUP_STATE.json").read_text())
+        self.assertEqual(state["run_id"], "fallback")
+
+
+class _FakeBlobStore:
+    """Minimal Azure container stub with ETag semantics."""
+
+    def __init__(self):
+        self.blobs: dict[str, bytes] = {}
+        self.etags: dict[str, str] = {}
+        self.calls: list[tuple[str, bool, str | None]] = []
+        self.match_conditions: list[object] = []
+        self.before_upload = None
+
+    def _put(self, name: str, payload: bytes) -> None:
+        self.blobs[name] = payload
+        self.etags[name] = f"etag-{len(self.calls)}-{len(payload)}"
+
+    def seed(self, name: str, document: dict) -> None:
+        self._put(name, json.dumps(document).encode())
+
+    def download_blob(self, name: str):
+        if name not in self.blobs:
+            raise backup.ResourceNotFoundError("missing")
+        payload = self.blobs[name]
+        return SimpleNamespace(
+            properties=SimpleNamespace(etag=self.etags[name]),
+            readall=lambda: payload,
+        )
+
+    def upload_blob(self, name, data, overwrite=True, etag=None, match_condition=None):
+        payload = data.read()
+        self.calls.append((name, overwrite, etag))
+        if self.before_upload is not None:
+            hook, self.before_upload = self.before_upload, None
+            hook(self)
+        if not overwrite:
+            if name in self.blobs:
+                raise backup.ResourceExistsError("blob already exists")
+        elif etag is not None:
+            self.match_conditions.append(match_condition)
+            if self.etags.get(name) != etag:
+                raise backup.ResourceModifiedError("blob was modified")
+        self._put(name, payload)
+
+
+class AzureStateCommitTestCase(_BackupTestCase):
+    """Azure ETag compare-and-set behaviour for shared state blobs."""
+
+    def setUp(self):
+        super().setUp()
+        self._reload(
+            {
+                "BACKUP_MODE": "production",
+                "AZURE_STORAGE_CONNECTION_STRING": "fake",
+                "AZURE_STORAGE_CONTAINER": "fake",
+                "AZURE_BLOB_PREFIX": "hriv-backups",
+            }
+        )
+        self.store = _FakeBlobStore()
+        patcher = patch.object(backup, "_blob_container_client", return_value=self.store)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.blob_name = "hriv-backups/BACKUP_STATE.json"
+
+    def _write_state(self, state):
+        backup._commit_shared_json(
+            local_path=Path("/nonexistent/BACKUP_STATE.json"),
+            blob_name=self.blob_name,
+            incoming=state,
+            merge=backup._merge_backup_state,
+            label="test state",
+        )
+
+    def _stored(self):
+        return json.loads(self.store.blobs[self.blob_name].decode())
+
+    def test_first_write_creates_the_blob_without_an_etag(self):
+        self._write_state(_state("first"))
+
+        self.assertEqual(self.store.calls, [(self.blob_name, False, None)])
+        self.assertEqual(self._stored()["run_id"], "first")
+
+    def test_second_write_is_conditional_on_the_etag(self):
+        self._write_state(_state("first"))
+        self._write_state(_state("second"))
+
+        name, overwrite, etag = self.store.calls[-1]
+        self.assertEqual((name, overwrite), (self.blob_name, True))
+        self.assertIsNotNone(etag)
+        self.assertEqual(self.store.match_conditions, [backup.MatchConditions.IfNotModified])
+
+    def test_interleaved_writer_forces_a_re_merge(self):
+        competitor = _state(
+            "competitor",
+            filesystem=_attempt("competitor", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True, archive_key="competitor-key"),
+        )
+        self._write_state(_state("base"))
+
+        def steal(store):
+            store.seed(self.blob_name, competitor)
+
+        self.store.before_upload = steal
+        self._write_state(
+            _state(
+                "mine",
+                database=_attempt("mine", "2026-08-01T10:10:00+00:00", "2026-08-01T10:12:00+00:00", success=True, archive_key="my-key"),
+            )
+        )
+
+        stored = self._stored()
+        self.assertEqual(stored["database"]["last_success_archive_key"], "my-key")
+        self.assertEqual(stored["filesystem"]["last_success_archive_key"], "competitor-key")
+
+    def test_persistent_contention_gives_up_without_raising(self):
+        self._write_state(_state("first"))
+
+        def always_conflict(name, data, overwrite=True, etag=None, match_condition=None):
+            data.read()
+            if overwrite and etag is not None:
+                raise backup.ResourceModifiedError("blob was modified")
+            raise backup.ResourceExistsError("blob already exists")
+
+        with patch.object(self.store, "upload_blob", side_effect=always_conflict), self.assertLogs(
+            "hriv-backup", level="WARNING"
+        ) as logs:
+            self._write_state(_state("loser"))
+
+        self.assertTrue(any("Gave up" in message for message in logs.output))
+        self.assertEqual(self._stored()["run_id"], "first")
+
+    def test_unreadable_blob_falls_back_to_unconditional_write(self):
+        self.store.blobs[self.blob_name] = b"{not json"
+        self.store.etags[self.blob_name] = "etag-corrupt"
+
+        with self.assertLogs("hriv-backup", level="WARNING"):
+            self._write_state(_state("repaired"))
+
+        self.assertEqual(self._stored()["run_id"], "repaired")
 
 
 if __name__ == "__main__":

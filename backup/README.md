@@ -127,6 +127,44 @@ archives:
 `BACKUP_STATE.json` is updated at attempt start and completion so a failed
 current backup remains visible even when an older success exists.
 
+### Concurrent runs
+
+More than one run can be in flight at a time — the cron loop plus an on-demand
+`kubectl exec … backup` invocation, or two containers sharing the `/backups`
+volume. Every marker update is therefore a read → merge → write cycle rather
+than a blind overwrite:
+
+- Local markers are serialised with an advisory `flock` on
+  `/backups/.hriv-backup-state.lock`, a sidecar file that lives on the same
+  volume as the markers so the lock is visible to every process sharing it. The
+  kernel releases the lock when a writer is killed or evicted, so a dead writer
+  cannot block later backups; if the lock is unavailable for 30 seconds the
+  update proceeds unlocked rather than stalling the backup.
+- Azure Blob Storage markers are updated with an ETag compare-and-set
+  (`If-Not-Modified`) and re-merged on conflict, because a local lock cannot
+  coordinate writers that only share a storage account.
+
+Correctness comes from the merge rules rather than the lock:
+
+- an attempt record is only replaced by a *more recently finished* attempt
+  (ordered by `completed_at`, then `started_at`, then run id), so a slower or
+  older run cannot overwrite a newer result;
+- `last_success_*` fields only advance to a newer success, so a late-finishing
+  failure records the failed attempt without erasing a newer success;
+- database and filesystem are merged independently, and each document carries
+  the `run_id` that produced it plus a bounded `attempts` history (10 entries)
+  so a run whose record lost the comparison is still visible for debugging.
+
+### Timestamps
+
+`created_at` is the snapshot's own timestamp — it names the archive — while
+`completed_at` (added to `LAST_SUCCESS.json` alongside `run_id` and a per-type
+`types` block) is when the snapshot actually became restorable. Freshness in
+`backup status` and in the backend health signal is measured from
+`completed_at`, falling back to `created_at` for markers written before this
+field existed. Reported age is therefore lower than before by roughly the
+duration of a backup; `BACKUP_STALE_HOURS` is unchanged.
+
 ## Kubernetes Volume Layout
 
 For production-style Helm deployments, the backup chart keeps the existing
@@ -155,6 +193,18 @@ If you are upgrading from the older single-data-PVC layout, update any values
 that still use `persistence.data.*` to the new `persistence.sourceImages.*`
 and `persistence.tiles.*` keys. The old backend chart PVC named
 `{fullname}-data` is not migrated or deleted automatically.
+
+### Pod Resources
+
+The chart sets explicit `resources` for the backup pod. Snapshots are staged on
+the pod filesystem before upload, so `ephemeral-storage` is requested rather
+than borrowed from the node: the request reserves scheduling headroom and the
+limit (8Gi by default) caps a runaway archive instead of letting it push the
+node into disk pressure. Raise both for a large source-image set or for
+`BACKUP_MODE=development`, which keeps generated tiles in the archive. Marker
+state and the lock sidecar live on the `/backups` PVC, so they do not consume
+ephemeral storage. There is no CPU limit — throttling a run mid-archive only
+makes it longer.
 
 ### Local-Only Mode
 

@@ -99,7 +99,20 @@ persistence:
     accessModes:
       - ReadWriteOnce
 
-resources: {}
+# A snapshot is staged on the pod filesystem (database dump plus the compressed
+# archive) before it is uploaded, so ephemeral-storage must be requested rather
+# than borrowed from the node. The limit has to exceed roughly twice the
+# compressed snapshot size; raise it for a large source-image set or for
+# BACKUP_MODE=development, which keeps generated tiles in the archive.
+# No CPU limit: throttling a backup mid-archive only makes the run longer.
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+    ephemeral-storage: 1Gi
+  limits:
+    memory: 512Mi
+    ephemeral-storage: 8Gi
 
 nodeSelector: {}
 tolerations: []
