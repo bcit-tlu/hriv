@@ -517,6 +517,12 @@ describe('ManageCategoriesDialog — drop → onReorderTiles', () => {
     fireDrag(list, 'drop', clientX, 100)
   }
 
+  function renderedCategoryIds() {
+    return Array.from(document.querySelectorAll<HTMLElement>('[data-category-id]')).map((el) =>
+      Number(el.dataset.categoryId),
+    )
+  }
+
   const categories = () => [
     makeCategory({ id: 1, label: 'Alpha' }),
     makeCategory({ id: 2, label: 'Beta' }),
@@ -570,6 +576,59 @@ describe('ManageCategoriesDialog — drop → onReorderTiles', () => {
     dragToEnd(1, 0)
 
     await waitFor(() => expect(onReorderComplete).toHaveBeenCalledTimes(1))
+  })
+
+  it('shows the dropped tree order optimistically while confirmation is pending', async () => {
+    let resolveReorder: (() => void) | undefined
+    const reorderPromise = new Promise<void>((resolve) => {
+      resolveReorder = resolve
+    })
+    const onReorderTiles = vi.fn().mockReturnValue(reorderPromise)
+    renderDialog({ categories: categories(), onReorderTiles })
+
+    expect(renderedCategoryIds()).toEqual([1, 2])
+    dragToEnd(1, 30)
+
+    await waitFor(() => expect(onReorderTiles).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(renderedCategoryIds()).toEqual([2, 1]))
+
+    await act(async () => {
+      resolveReorder?.()
+      await reorderPromise
+    })
+  })
+
+  it('reverts the optimistic tree order when confirmation is cancelled', async () => {
+    let rejectReorder: ((reason?: unknown) => void) | undefined
+    const reorderPromise = new Promise<void>((_, reject) => {
+      rejectReorder = reject
+    })
+    const onReorderTiles = vi.fn().mockReturnValue(reorderPromise)
+    const onReorderComplete = vi.fn().mockResolvedValue(undefined)
+    renderDialog({ categories: categories(), onReorderTiles, onReorderComplete })
+
+    dragToEnd(1, 30)
+    await waitFor(() => expect(renderedCategoryIds()).toEqual([2, 1]))
+
+    await act(async () => {
+      rejectReorder?.(new Error('cancelled'))
+      await Promise.resolve()
+    })
+
+    await waitFor(() => expect(renderedCategoryIds()).toEqual([1, 2]))
+    expect(onReorderComplete).toHaveBeenCalledTimes(1)
+  })
+
+  it('reverts the optimistic tree order when the persistence API fails', async () => {
+    const onReorderTiles = vi.fn().mockRejectedValue(new Error('patch failed'))
+    const onReorderComplete = vi.fn().mockResolvedValue(undefined)
+    renderDialog({ categories: categories(), onReorderTiles, onReorderComplete })
+
+    dragToEnd(1, 30)
+
+    await waitFor(() => expect(onReorderTiles).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(renderedCategoryIds()).toEqual([1, 2]))
+    expect(onReorderComplete).toHaveBeenCalledTimes(1)
   })
 
   it('reports drag-active through the drop lifecycle and signals false after onReorderTiles completes', async () => {
@@ -632,12 +691,13 @@ describe('ManageCategoriesDialog — drop → onReorderTiles', () => {
     fireDrag(item1, 'dragend', 0, 0)
     expect(onDragActiveChange).toHaveBeenCalledTimes(1)
 
-    // Second drag starts before the first drop resolves. Drop item 2 before
-    // item 1 (negative clientY) so the move is a real reorder, not a no-op.
+    // Second drag starts before the first drop resolves. The first unresolved
+    // drop is drawn optimistically, so drop item 2 after item 1 to make the
+    // second move a real reorder rather than a no-op against that preview.
     const item2 = document.querySelector('[data-category-id="2"]')!
     fireDrag(item2, 'dragstart', 0, 0)
-    fireDrag(list, 'dragover', 0, -10)
-    fireDrag(list, 'drop', 0, -10)
+    fireDrag(list, 'dragover', 0, 100)
+    fireDrag(list, 'drop', 0, 100)
     await waitFor(() => expect(onDragActiveChange).toHaveBeenCalledTimes(2))
 
     // Resolve the first (now stale) drop: it must not emit false.

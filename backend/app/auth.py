@@ -10,6 +10,7 @@ import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
+from pydantic import Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .database import Settings, get_db
@@ -30,6 +31,11 @@ class AuthSettings(Settings):
     # which invalidates tokens on every restart.  Set this explicitly
     # only when you need to rotate sessions independently of the secret.
     jwt_instance_epoch: str = ""
+    # TTL for image-scoped tile tokens (docs/tile-delivery-boundary.md).
+    # Signed with the same ``jwt_secret``, like the task-download token.
+    # Bounded (1 minute – 24 hours) so a configuration typo cannot mint
+    # long-lived credentials.
+    tile_token_ttl_minutes: int = Field(default=15, ge=1, le=1440)
     # When true, the application refuses to start unless ``JWT_SECRET``
     # is set explicitly.  Multi-worker (``uvicorn --workers N``) and
     # multi-replica deployments MUST enable this, otherwise each worker
@@ -170,7 +176,7 @@ async def _get_user_from_token(
         raise credentials_exception
 
     user = await db.get(User, user_id)
-    if user is None:
+    if user is None or not user.active:
         raise credentials_exception
     return user
 

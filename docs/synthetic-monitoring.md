@@ -210,13 +210,13 @@ into the pg-core primary pod.
            '<bcrypt-hash>', 'student', '{"synthetic": true}'::jsonb);
    ```
 
-3. Assign it to the dedicated program:
+3. Assign it to the `Administration` program:
 
    ```sql
    INSERT INTO user_programs (user_id, program_id)
    SELECT u.id, p.id FROM users u, programs p
    WHERE u.email = 'synthetic.student@example.ca'
-     AND p.name = 'Synthetic Monitoring';
+     AND p.name = 'Administration';
    ```
 
 If the account already exists and only the flag is missing:
@@ -234,14 +234,14 @@ so the CronJob secret (see `bcit-tlu/flux-fleet`) picks them up.
 
 For each environment:
 
-1. Create a dedicated program such as `Synthetic Monitoring`.
+1. Use the `Administration` program for the synthetic monitor.
 2. Create a stable root category such as `Synthetic Monitoring`, restrict it
-   to that program, and keep it active.
+   to the `Administration` program, and keep it active.
 3. Upload a small supported source image into that category with a unique,
    stable name such as `Synthetic Monitoring Image`.
 4. Wait for processing to complete and verify the image's `tile_sources` uses
    `/api/tiles/`; an external DZI URL does not exercise HRIV's tile pipeline.
-5. Assign the synthetic student to the dedicated program and retain
+5. Assign the synthetic student to the `Administration` program and retain
    `metadata_.synthetic = true`.
 6. Set `SYNTHETIC_CATEGORY_PATH` to the exact slash-separated category labels
    and `SYNTHETIC_IMAGE_NAME` to the exact image name.

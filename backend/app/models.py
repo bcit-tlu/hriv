@@ -391,6 +391,7 @@ class User(Base):
         default="student",
         server_default=text("'student'"),
     )
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     last_access: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

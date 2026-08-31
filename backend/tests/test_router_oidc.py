@@ -325,7 +325,7 @@ async def test_oidc_callback_new_user_created() -> None:
     new_user = SimpleNamespace(
         id=1, name="New User", email="new@example.ca",
         oidc_subject="oidc-sub-123", role="student",
-        programs=[], metadata_=None,
+        active=True, programs=[], metadata_=None,
     )
 
     db = AsyncMock()
@@ -364,7 +364,7 @@ async def test_oidc_callback_existing_user_login() -> None:
     existing_user = SimpleNamespace(
         id=2, name="Existing User", email="existing@example.ca",
         oidc_subject="oidc-sub-456", role="admin",
-        programs=[], last_access=None, metadata_=None,
+        active=True, programs=[], last_access=None, metadata_=None,
     )
 
     mock_result = MagicMock()
@@ -388,6 +388,42 @@ async def test_oidc_callback_existing_user_login() -> None:
     assert result.status_code == 200
 
 
+async def test_oidc_callback_existing_user_inactive_redirects() -> None:
+    request = MagicMock()
+    mock_client = AsyncMock()
+    mock_client.authorize_access_token = AsyncMock(return_value={
+        "userinfo": {
+            "sub": "oidc-sub-456",
+            "email": "existing@example.ca",
+            "name": "Existing User",
+            "groups": [],
+        },
+    })
+
+    existing_user = SimpleNamespace(
+        id=2, name="Existing User", email="existing@example.ca",
+        oidc_subject="oidc-sub-456", role="admin",
+        active=False, programs=[], last_access=None, metadata_=None,
+    )
+
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.first.return_value = existing_user
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+
+    with patch("app.routers.oidc._settings") as mock_settings:
+        mock_settings.oidc_enabled = True
+        mock_settings.oidc_trust_email = False
+        mock_settings.oidc_post_login_redirect = "http://localhost:3000"
+        mock_settings.cors_origins = "*"
+        with patch("app.routers.oidc.oauth") as mock_oauth:
+            mock_oauth.create_client.return_value = mock_client
+            resp = await oidc_callback(request, db)
+
+    _assert_oidc_error_redirect(resp, "account_inactive", "http://localhost:3000")
+
+
 async def test_oidc_callback_subject_mismatch() -> None:
     request = MagicMock()
     mock_client = AsyncMock()
@@ -409,7 +445,7 @@ async def test_oidc_callback_subject_mismatch() -> None:
     existing_user = SimpleNamespace(
         id=2, name="User", email="user@example.ca",
         oidc_subject="different-sub", role="student",
-        programs=[], metadata_=None,
+        active=True, programs=[], metadata_=None,
     )
     mock_result_found = MagicMock()
     mock_result_found.scalars.return_value.first.return_value = existing_user
@@ -449,7 +485,7 @@ async def test_oidc_callback_subject_mismatch_logs_canonical_auth_fields(
     existing_user = SimpleNamespace(
         id=2, name="User", email="user@example.ca",
         oidc_subject="different-sub", role="instructor",
-        programs=[], metadata_={"synthetic": True},
+        active=True, programs=[], metadata_={"synthetic": True},
     )
     mock_result_found = MagicMock()
     mock_result_found.scalars.return_value.first.return_value = existing_user
@@ -539,7 +575,7 @@ async def test_oidc_callback_no_redirect_configured() -> None:
     existing_user = SimpleNamespace(
         id=1, name="User", email="user@example.ca",
         oidc_subject="oidc-sub-789", role="student",
-        programs=[], last_access=None, metadata_=None,
+        active=True, programs=[], last_access=None, metadata_=None,
     )
 
     mock_result = MagicMock()
@@ -644,7 +680,7 @@ async def test_oidc_callback_email_linking_with_trusted_email() -> None:
     existing_user = SimpleNamespace(
         id=2, name="User", email="user@example.ca",
         oidc_subject=None, role="student",
-        programs=[], last_access=None, metadata_=None,
+        active=True, programs=[], last_access=None, metadata_=None,
     )
     mock_result_found = MagicMock()
     mock_result_found.scalars.return_value.first.return_value = existing_user
@@ -689,7 +725,7 @@ async def test_oidc_callback_email_linking_case_insensitive() -> None:
     existing_user = SimpleNamespace(
         id=2, name="Kyle Hunter", email="Kyle_Hunter@bcit.ca",
         oidc_subject=None, role="admin",
-        programs=[], last_access=None, metadata_=None,
+        active=True, programs=[], last_access=None, metadata_=None,
     )
     mock_result_found = MagicMock()
     mock_result_found.scalars.return_value.first.return_value = existing_user
@@ -732,7 +768,7 @@ async def test_oidc_callback_role_resolved_from_groups() -> None:
     existing_user = SimpleNamespace(
         id=1, name="Admin", email="admin@example.ca",
         oidc_subject="oidc-sub-admin", role="student",
-        programs=[], last_access=None, metadata_=None,
+        active=True, programs=[], last_access=None, metadata_=None,
     )
 
     mock_result = MagicMock()
@@ -773,7 +809,7 @@ async def test_oidc_callback_cors_origin_fallback() -> None:
     existing_user = SimpleNamespace(
         id=1, name="User", email="cors@example.ca",
         oidc_subject="oidc-sub-cors", role="student",
-        programs=[], last_access=None, metadata_=None,
+        active=True, programs=[], last_access=None, metadata_=None,
     )
 
     mock_result = MagicMock()
@@ -936,7 +972,7 @@ async def test_oidc_callback_existing_user_program_sync() -> None:
     existing_user = SimpleNamespace(
         id=5, name="Sync User", email="sync@example.ca",
         oidc_subject="oidc-sub-sync", role="student",
-        programs=[manual_prog, old_oidc_prog], last_access=None, metadata_=None,
+        active=True, programs=[manual_prog, old_oidc_prog], last_access=None, metadata_=None,
     )
 
     # First execute: user lookup → existing_user
@@ -987,7 +1023,7 @@ async def test_oidc_callback_role_and_program_sync() -> None:
     existing_user = SimpleNamespace(
         id=7, name="Both User", email="both@example.ca",
         oidc_subject="oidc-sub-both", role="student",
-        programs=[], last_access=None, metadata_=None,
+        active=True, programs=[], last_access=None, metadata_=None,
     )
 
     mock_user_result = MagicMock()

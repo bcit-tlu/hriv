@@ -194,8 +194,12 @@ for the full metadata preservation/clearing rules.
 | `SOURCE_IMAGES_DIR` | `/data/source_images` | Uploaded raw images          |
 | `TILES_DIR`         | `/data/tiles`         | Generated DZI tiles + thumbs |
 
-Tiles are served via FastAPI `StaticFiles` mount at `/api/tiles`. In
-production, nginx or a CDN should serve these directly from the PVC.
+Tiles are served by the authorized FastAPI route
+`GET /api/tiles/{source_image_id}/{path}`, which validates an image-scoped
+`tile_token` query parameter (issued on `tile_sources`/`thumb` URLs in API
+responses — see [tile-delivery-boundary.md](tile-delivery-boundary.md)). In
+Kubernetes the nginx tiles sidecar serves the PVC directly and authorizes
+requests via `auth_request` against `GET /api/tiles-auth`.
 
 ## Tile-cache provenance
 

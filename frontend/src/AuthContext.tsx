@@ -44,6 +44,7 @@ function toUser(u: ApiUser): User {
     name: u.name,
     email: u.email,
     role: u.role as Role,
+    active: u.active,
     program_ids: u.program_ids ?? [],
     program_names: u.program_names ?? [],
     group_ids: u.group_ids ?? [],

@@ -452,6 +452,136 @@ describe('useCategoryActions', () => {
       expect(deps.setErrorSnack).toHaveBeenCalled()
       expect(reportOrder).not.toHaveBeenCalled()
     })
+
+    it('defers a Manage parent move behind confirmation when effective restrictions change', async () => {
+      const parent = makeCategory({ id: 5, label: 'Restricted parent', programIds: [42] })
+      const cat = makeCategory({ id: 2, label: 'Cat', programIds: [] })
+      const deps = makeDeps({ categories: [parent, cat] })
+      const reportOrder = vi
+        .spyOn(tileOrderingCoordinator, 'reportOrder')
+        .mockImplementation(() => {})
+      const { result } = renderHook(() => useCategoryActions(deps))
+
+      let pending!: Promise<void>
+      await act(async () => {
+        pending = result.current.reorderTilesFromManage(
+          [{ categoryId: 2, newParentId: 5 }],
+          [{ scope: 5, order: [{ type: 'category', id: 2 }] }],
+        )
+        await Promise.resolve()
+      })
+
+      expect(mockUpdateCategory).not.toHaveBeenCalled()
+      expect(reportOrder).not.toHaveBeenCalled()
+      expect(result.current.pendingMoveConfirm?.source).toBe('manage')
+      expect(result.current.pendingMoveConfirm?.change.hasChange).toBe(true)
+      void pending.catch(() => {})
+    })
+
+    it('persists a deferred Manage parent move after confirmation', async () => {
+      const parent = makeCategory({ id: 5, label: 'Restricted parent', groupIds: [9] })
+      const cat = makeCategory({ id: 2, label: 'Cat', groupIds: [] })
+      const deps = makeDeps({ categories: [parent, cat] })
+      mockUpdateCategory.mockResolvedValue({
+        id: 2,
+        label: 'Cat',
+        parent_id: 5,
+        program_ids: [],
+        group_ids: [],
+        status: null,
+        sort_order: 0,
+        version: 2,
+        metadata_extra: null,
+        created_at: '',
+        updated_at: '',
+      })
+      const reportOrder = vi
+        .spyOn(tileOrderingCoordinator, 'reportOrder')
+        .mockImplementation(() => {})
+      const { result } = renderHook(() => useCategoryActions(deps))
+
+      let pending!: Promise<void>
+      await act(async () => {
+        pending = result.current.reorderTilesFromManage(
+          [{ categoryId: 2, newParentId: 5 }],
+          [{ scope: 5, order: [{ type: 'category', id: 2 }] }],
+        )
+        await Promise.resolve()
+      })
+
+      await act(async () => {
+        await result.current.confirmPendingMove()
+        await pending
+      })
+
+      expect(mockUpdateCategory).toHaveBeenCalledWith(2, { parent_id: 5 }, 1)
+      expect(reportOrder).toHaveBeenCalledWith(
+        5,
+        [{ type: 'category', id: 2 }],
+        undefined,
+        undefined,
+      )
+      expect(result.current.pendingMoveConfirm).toBeNull()
+    })
+
+    it('rejects a deferred Manage parent move on cancellation without persisting', async () => {
+      const parent = makeCategory({ id: 5, label: 'Restricted parent', programIds: [42] })
+      const cat = makeCategory({ id: 2, label: 'Cat', programIds: [] })
+      const deps = makeDeps({ categories: [parent, cat] })
+      const reportOrder = vi
+        .spyOn(tileOrderingCoordinator, 'reportOrder')
+        .mockImplementation(() => {})
+      const { result } = renderHook(() => useCategoryActions(deps))
+
+      let pending!: Promise<void>
+      await act(async () => {
+        pending = result.current.reorderTilesFromManage(
+          [{ categoryId: 2, newParentId: 5 }],
+          [{ scope: 5, order: [{ type: 'category', id: 2 }] }],
+        )
+        await Promise.resolve()
+      })
+      const rejected = pending.catch((err) => err)
+
+      act(() => {
+        result.current.cancelPendingMove()
+      })
+
+      await expect(rejected).resolves.toBeInstanceOf(Error)
+      expect(mockUpdateCategory).not.toHaveBeenCalled()
+      expect(reportOrder).not.toHaveBeenCalled()
+      expect(result.current.pendingMoveConfirm).toBeNull()
+    })
+
+    it('rejects a deferred Manage parent move when confirmation persistence fails', async () => {
+      const parent = makeCategory({ id: 5, label: 'Restricted parent', programIds: [42] })
+      const cat = makeCategory({ id: 2, label: 'Cat', programIds: [] })
+      const deps = makeDeps({ categories: [parent, cat] })
+      mockUpdateCategory.mockRejectedValue(new Error('move failed'))
+      const reportOrder = vi
+        .spyOn(tileOrderingCoordinator, 'reportOrder')
+        .mockImplementation(() => {})
+      const { result } = renderHook(() => useCategoryActions(deps))
+
+      let pending!: Promise<void>
+      await act(async () => {
+        pending = result.current.reorderTilesFromManage(
+          [{ categoryId: 2, newParentId: 5 }],
+          [{ scope: 5, order: [{ type: 'category', id: 2 }] }],
+        )
+        await Promise.resolve()
+      })
+      const rejected = pending.catch((err) => err)
+
+      await act(async () => {
+        await result.current.confirmPendingMove()
+      })
+
+      await expect(rejected).resolves.toBeInstanceOf(Error)
+      expect(deps.setErrorSnack).toHaveBeenCalled()
+      expect(reportOrder).not.toHaveBeenCalled()
+      expect(result.current.pendingMoveConfirm).toBeNull()
+    })
   })
 
   describe('handleMoveCategory', () => {

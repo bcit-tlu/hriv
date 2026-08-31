@@ -20,8 +20,14 @@ export interface PendingMoveConfirm {
   newParentId: number | null
   destinationLabel: string
   change: MoveRestrictionChange
-  /** Whether the move was initiated from the MoveCategoryDialog or via drag-and-drop. */
-  source: 'dialog' | 'dnd'
+  /** Whether the move was initiated from the MoveCategoryDialog, Browse DnD, or Manage DnD. */
+  source: 'dialog' | 'dnd' | 'manage'
+  manageReorder?: {
+    moves: ParentMove[]
+    scopes: ScopeOrder[]
+    resolve: () => void
+    reject: (reason?: unknown) => void
+  }
 }
 
 function moveDestinationLabel(parentId: number | null, ancestorPath: Category[]): string {
@@ -250,7 +256,7 @@ export function useCategoryActions({
    * which persists it atomically via PUT /api/tile-order with CAS revisions
    * and explicit conflict handling.
    */
-  const reorderTilesFromManage = useCallback(
+  const persistManageReorder = useCallback(
     async (moves: ParentMove[], scopes: ScopeOrder[]) => {
       for (const move of moves) {
         const catPath = findCategoryPath(categories, move.categoryId)
@@ -304,6 +310,47 @@ export function useCategoryActions({
       }
     },
     [categories, setErrorSnack],
+  )
+
+  const reorderTilesFromManage = useCallback(
+    async (moves: ParentMove[], scopes: ScopeOrder[]) => {
+      const restrictionChangingMove = moves.find((move) => {
+        const catPath = findCategoryPath(categories, move.categoryId)
+        const category = catPath?.at(-1)
+        if (!catPath || !category) return false
+        const currentAncestors = catPath.slice(0, -1)
+        const newAncestors = getAncestorPathForParent(move.newParentId)
+        return computeMoveRestrictionChange(category, currentAncestors, newAncestors).hasChange
+      })
+
+      if (restrictionChangingMove) {
+        const catPath = findCategoryPath(categories, restrictionChangingMove.categoryId)
+        const category = catPath?.at(-1)
+        if (catPath && category) {
+          const currentAncestors = catPath.slice(0, -1)
+          const newAncestors = getAncestorPathForParent(restrictionChangingMove.newParentId)
+          const change = computeMoveRestrictionChange(category, currentAncestors, newAncestors)
+
+          return new Promise<void>((resolve, reject) => {
+            setPendingMoveConfirm({
+              categoryId: restrictionChangingMove.categoryId,
+              categoryLabel: category.label,
+              newParentId: restrictionChangingMove.newParentId,
+              destinationLabel: moveDestinationLabel(
+                restrictionChangingMove.newParentId,
+                newAncestors,
+              ),
+              change,
+              source: 'manage',
+              manageReorder: { moves, scopes, resolve, reject },
+            })
+          })
+        }
+      }
+
+      await persistManageReorder(moves, scopes)
+    },
+    [categories, getAncestorPathForParent, persistManageReorder],
   )
 
   const doMoveCategory = useCallback(
@@ -520,18 +567,26 @@ export function useCategoryActions({
 
   const confirmPendingMove = useCallback(async () => {
     if (!pendingMoveConfirm) return
-    const { categoryId, newParentId, source } = pendingMoveConfirm
+    const { categoryId, newParentId, source, manageReorder } = pendingMoveConfirm
     setPendingMoveConfirm(null)
-    if (source === 'dnd' && newParentId !== null) {
+    if (source === 'manage' && manageReorder) {
+      try {
+        await persistManageReorder(manageReorder.moves, manageReorder.scopes)
+        manageReorder.resolve()
+      } catch (err) {
+        manageReorder.reject(err)
+      }
+    } else if (source === 'dnd' && newParentId !== null) {
       await doDropCategoryOnCategory(categoryId, newParentId)
     } else {
       await doMoveCategory(categoryId, newParentId)
     }
-  }, [pendingMoveConfirm, doDropCategoryOnCategory, doMoveCategory])
+  }, [pendingMoveConfirm, persistManageReorder, doDropCategoryOnCategory, doMoveCategory])
 
   const cancelPendingMove = useCallback(() => {
+    pendingMoveConfirm?.manageReorder?.reject(new Error('move confirmation cancelled'))
     setPendingMoveConfirm(null)
-  }, [])
+  }, [pendingMoveConfirm])
 
   const currentPendingMoveConfirm = useMemo(() => {
     if (!pendingMoveConfirm) return null

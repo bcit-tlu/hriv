@@ -41,6 +41,7 @@ export interface User {
   name: string
   email: string
   role: Role
+  active: boolean
   program_ids: number[]
   program_names: string[]
   group_ids: number[]

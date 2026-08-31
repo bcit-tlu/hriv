@@ -113,7 +113,7 @@ All use password: `password`
 | 2   | Duomo di Milano (Gothic Detail) | Gothic               | Digital Design | OpenSeadragon examples |
 | 3   | Highsmith Panorama              | American             | Photography    | Library of Congress    |
 | 4   | Library of Congress             | Panoramas            | Photography    | Library of Congress    |
-| 5   | Synthetic Monitoring Image      | Synthetic Monitoring | unrestricted   | local seed asset       |
+| 5   | Synthetic Monitoring Image      | Synthetic Monitoring | Administration | local seed asset       |
 
 ### Direct Image Counts per Category
 

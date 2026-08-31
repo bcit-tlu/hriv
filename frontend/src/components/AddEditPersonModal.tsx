@@ -9,10 +9,12 @@ import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import FormControl from '@mui/material/FormControl'
+import FormControlLabel from '@mui/material/FormControlLabel'
 import FormHelperText from '@mui/material/FormHelperText'
 import InputLabel from '@mui/material/InputLabel'
 import MenuItem from '@mui/material/MenuItem'
 import Select from '@mui/material/Select'
+import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import type { SelectChangeEvent } from '@mui/material/Select'
@@ -24,6 +26,7 @@ interface PersonFormData {
   name: string
   email: string
   role: Role
+  active: boolean
   password?: string
   program_ids?: number[]
 }
@@ -49,6 +52,7 @@ function AddEditPersonForm({
   const [email, setEmail] = useState(user?.email ?? '')
   const [password, setPassword] = useState('')
   const [role, setRole] = useState<Role>((user?.role as Role) ?? 'student')
+  const [active, setActive] = useState(user?.active ?? true)
   const [programIds, setProgramIds] = useState<number[]>(user?.program_ids ?? [])
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -64,6 +68,7 @@ function AddEditPersonForm({
       name: trimmedName,
       email: trimmedEmail,
       role,
+      active,
       program_ids: programIds,
     }
     if (trimmedPassword) {
@@ -195,6 +200,10 @@ function AddEditPersonForm({
               : 'Instructors and admins can see all content regardless of program assignment'}
           </FormHelperText>
         </FormControl>
+        <FormControlLabel
+          control={<Switch checked={active} onChange={(e) => setActive(e.target.checked)} />}
+          label={active ? 'Account active' : 'Account inactive'}
+        />
       </DialogContent>
       <DialogActions>
         <Button onClick={handleClose} disabled={saving}>
