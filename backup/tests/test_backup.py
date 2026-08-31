@@ -838,6 +838,20 @@ class BackupStateMergeTestCase(unittest.TestCase):
         self.assertEqual(merged["database"]["archive_key"], "snap.tar.gz")
         self.assertEqual(merged["database"]["last_success_archive_key"], "snap.tar.gz")
 
+    def test_same_run_enrichment_also_updates_its_history_entry(self):
+        attempt = _attempt(
+            "run-1", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True
+        )
+        stored = backup._merge_backup_state(None, _state("run-1", database=attempt))
+
+        enriched = copy.deepcopy(attempt)
+        enriched["archive_key"] = "snap.tar.gz"
+        merged = backup._merge_backup_state(stored, _state("run-1", database=enriched))
+
+        entries = [entry for entry in merged["attempts"] if entry["backup_type"] == "database"]
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["archive_key"], "snap.tar.gz")
+
     def test_late_finishing_older_failure_cannot_regress_newer_success(self):
         newer_success = _state(
             "newer",

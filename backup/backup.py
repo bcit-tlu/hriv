@@ -488,7 +488,10 @@ def _merge_attempt_history(existing: dict | None, incoming: dict) -> list[dict]:
     """Return the newest ``_MAX_ATTEMPT_HISTORY`` attempts across both runs.
 
     Per-run history survives concurrent writers, so a run whose attempt record
-    lost the freshness comparison is still visible for debugging.
+    lost the freshness comparison is still visible for debugging. Candidates are
+    considered oldest document first, and an equal ordering key replaces the
+    entry held so far, so a run re-committing its own finished attempt (adding
+    the database ``archive_key``, say) enriches its history entry too.
     """
     history: dict[tuple[str, str], dict] = {}
     candidates: list[dict] = []
@@ -499,7 +502,7 @@ def _merge_attempt_history(existing: dict | None, incoming: dict) -> list[dict]:
     for entry in candidates:
         key = (str(entry.get("run_id") or ""), str(entry.get("backup_type") or ""))
         current = history.get(key)
-        if current is None or _attempt_sort_key(entry) > _attempt_sort_key(current):
+        if current is None or _attempt_sort_key(entry) >= _attempt_sort_key(current):
             history[key] = entry
 
     ordered = sorted(history.values(), key=_attempt_sort_key, reverse=True)
