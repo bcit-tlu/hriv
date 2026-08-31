@@ -7,7 +7,16 @@ import os
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+)
 from opentelemetry import trace
 from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -196,10 +205,21 @@ async def upload_source_image(
 @router.get("/", response_model=list[SourceImageOut])
 async def list_source_images(
     _user: Annotated[User, Depends(require_role("admin", "instructor"))],
+    status: Annotated[str | None, Query(max_length=50)] = None,
+    limit: Annotated[int | None, Query(ge=1, le=500)] = None,
     db: AsyncSession = Depends(get_db),
 ) -> list[SourceImage]:
-    """List all source images with their processing status."""
+    """List source images with their processing status, newest first.
+
+    ``status`` narrows the result to a single processing state and ``limit``
+    caps the number of rows returned, so callers that only care about recent
+    failures do not have to download the whole table.
+    """
     stmt = select(SourceImage).order_by(SourceImage.created_at.desc())
+    if status is not None:
+        stmt = stmt.where(SourceImage.status == status)
+    if limit is not None:
+        stmt = stmt.limit(limit)
     result = await db.execute(stmt)
     return list(result.scalars().all())
 

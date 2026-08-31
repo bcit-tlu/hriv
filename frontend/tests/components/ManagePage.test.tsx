@@ -12,10 +12,11 @@ vi.mock('../../src/api', async (importOriginal) => {
     replaceImage: vi.fn(),
     bulkUpdateImages: vi.fn(),
     bulkDeleteImages: vi.fn(),
+    listSourceImages: vi.fn(),
   }
 })
 
-import { fetchImages, updateImage } from '../../src/api'
+import { fetchImages, listSourceImages, updateImage } from '../../src/api'
 import type { ApiImage } from '../../src/api'
 import type { Group, Program } from '../../src/types'
 import { makeCategory } from '../helpers/fixtures'
@@ -82,6 +83,58 @@ describe('ManagePage', () => {
         updated_at: '2026-01-02T00:00:00Z',
       },
     ])
+  })
+
+  it('opens the failed uploads list from the manage header', async () => {
+    vi.mocked(listSourceImages).mockResolvedValue([])
+    render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+    await screen.findByText('Blood Smear')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Failed uploads' }))
+
+    expect(await screen.findByText('No failed uploads.')).toBeInTheDocument()
+    expect(listSourceImages).toHaveBeenCalledWith({ status: 'failed', limit: 200 })
+  })
+
+  it('reports failed-upload dismissals from the manage dialog to the parent', async () => {
+    vi.mocked(listSourceImages).mockResolvedValue([
+      {
+        id: 77,
+        original_filename: 'broken.tiff',
+        status: 'failed',
+        progress: 20,
+        error_message: 'Processing failed: unsupported format',
+        status_message: null,
+        name: null,
+        category_id: null,
+        copyright: null,
+        note: null,
+        active: true,
+        image_id: null,
+        file_size: 10,
+        source_checksum: null,
+        tile_settings_hash: null,
+        tiles_generated_at: null,
+        tile_cache_status: 'missing',
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ])
+    const onDismissFailedUpload = vi.fn()
+    render(
+      <ManagePage
+        categories={categories}
+        programs={programs}
+        groups={groups}
+        onDismissFailedUpload={onDismissFailedUpload}
+      />,
+    )
+    await screen.findByText('Blood Smear')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Failed uploads' }))
+    await userEvent.click((await screen.findAllByRole('button', { name: 'Dismiss' }))[0])
+
+    expect(onDismissFailedUpload).toHaveBeenCalledWith(77)
   })
 
   it('renders a Groups column with group chips for image category restrictions', async () => {
