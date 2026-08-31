@@ -74,6 +74,11 @@ client ──GET /api/tiles/<id>/…?tile_token=…──▶ frontend nginx ─�
   `tile_token` query parameter. Issuance happens only *after* the existing
   auth + student-visibility filtering, so authorization stays exactly where it
   is today; HMAC signing is microseconds per image and needs no extra DB work.
+  Implementation note: injection must be **centralized in one hook on the
+  image response schema** (a Pydantic `field_serializer` on `ImageOut`'s
+  `thumb`/`tile_sources`) so every serialization path — automatic, explicit,
+  and nested — is covered without per-router calls; done this way in the C3a
+  PR.
 - Validation: signature + expiry + that the token's image id matches the
   requested `/api/tiles/<id>/…` path. **No DB access** — revocation within the
   TTL window is explicitly out of scope (acceptable: visibility changes take
@@ -102,7 +107,12 @@ client ──GET /api/tiles/<id>/…?tile_token=…──▶ frontend nginx ─�
   **`Cache-Control: private, max-age=2592000`** — browser caching stays fully
   effective (the tile bytes are immutable; see
   [`docs/tile-cache-provenance.md`](tile-cache-provenance.md)), but shared
-  caches/CDNs must not store them, satisfying #1064.
+  caches/CDNs must not store them, satisfying #1064. Both proxy layers
+  currently set the `public` header and both must change in C3b: the tiles
+  sidecar (`charts/backend/templates/configmap-nginx-tiles.yaml`) and the
+  frontend nginx `/api/tiles/` location
+  (`charts/frontend/files/default.conf.template`), which adds its own
+  `Cache-Control … always` that would otherwise override the sidecar's.
 - Browser cache keys include the query string, so a renewed token re-fetches
   tiles. This is bounded: within one viewing session the token is constant,
   and OpenSeadragon's in-memory tile cache is unaffected by renewal.
@@ -120,6 +130,16 @@ client ──GET /api/tiles/<id>/…?tile_token=…──▶ frontend nginx ─�
   and swaps the OSD tile source without closing the viewer; long-lived viewers
   may renew proactively shortly before TTL. Renewal failures surface the
   standard session-expired path.
+- **Thumbnail renewal is required too, not just the viewer.** `<img>`
+  consumers (browse `CategoryTile`, `ManagePage` table, search results) may
+  render a `thumb` URL long after its token expired, and the browse tree's
+  `304` short-circuit ([`docs/browse-state.md`](browse-state.md)) means token
+  expiry never invalidates the cached payload — stale tokenized URLs persist
+  indefinitely on an unchanged tree. C3c therefore adds a shared `onError`
+  recovery for thumbnails: one re-fetch of the affected image's metadata to
+  swap in a fresh URL, single retry (no loops). The browse ETag deliberately
+  stays token-independent — recovery is per-image on failure, not a revision
+  change.
 
 ## Alternatives considered
 
@@ -151,8 +171,13 @@ client ──GET /api/tiles/<id>/…?tile_token=…──▶ frontend nginx ─�
 | Slice | Content | PR |
 | --- | --- | --- |
 | C3a backend | Token issue/validate module, serializer wiring, remove `StaticFiles` mount, authorized FastAPI tile route, `GET /api/tiles-auth` validator, integration tests | backend |
-| C3b delivery | Sidecar `auth_request` + auth cache + `private` cache-control; frontend chart passthrough; helm regression checks | charts |
-| C3c frontend | 401/403 renewal path (re-fetch image, swap tile source), viewer tests | frontend |
+| C3b delivery | Sidecar `auth_request` + auth cache + `private` cache-control (both proxy layers); frontend chart passthrough; helm regression checks | charts |
+| C3c frontend | 401/403 renewal path (viewer re-fetch + tile-source swap, thumbnail `onError` recovery), viewer tests | frontend |
+
+Once the slices merge, the `/api/tiles` rows in
+[`docs/unauthenticated-routes.md`](unauthenticated-routes.md) move from
+*mismatch* to **app-credential** — that inventory update ships with the last
+slice to land, not separately.
 
 Rollout: C3a ships the fallback route first (dev parity), C3b flips the
 sidecar; the chart change is gated on a backend version carrying
