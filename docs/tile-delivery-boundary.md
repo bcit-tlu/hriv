@@ -39,7 +39,7 @@ Constraints:
   and independently scalable.
 - `tile_sources` and `thumb` are persisted columns on `images`
   (`models.py`), returned by the image API and consumed verbatim by the
-  frontend — a natural interception point that already sits *behind* the
+  frontend — a natural interception point that already sits _behind_ the
   visibility check.
 
 ## Decision
@@ -71,7 +71,7 @@ client ──GET /api/tiles/<id>/…?tile_token=…──▶ frontend nginx ─�
 - TTL: configurable, default ~15 minutes.
 - Issuance: whenever an image row is serialized into an API response (list,
   detail, browse tree), the stored `tile_sources` / `thumb` paths gain a
-  `tile_token` query parameter. Issuance happens only *after* the existing
+  `tile_token` query parameter. Issuance happens only _after_ the existing
   auth + student-visibility filtering, so authorization stays exactly where it
   is today; HMAC signing is microseconds per image and needs no extra DB work.
   Implementation note: injection must be **centralized in one hook on the
@@ -143,13 +143,13 @@ client ──GET /api/tiles/<id>/…?tile_token=…──▶ frontend nginx ─�
 
 ## Alternatives considered
 
-| Alternative | Why rejected |
-| --- | --- |
-| **Per-tile signed URLs** (sign every `<level>/<col>_<row>.jpeg` URL) | The `.dzi` descriptor drives OSD's tile URL construction, so per-tile signing requires a custom OSD tile source and re-signing on every pan/zoom; enormous URL churn defeats browser caching. Image-scoped tokens give the same boundary at a fraction of the complexity. |
-| **FastAPI + `X-Accel-Redirect`** | Puts FastAPI back into the per-tile hot path (one app request per tile even though nginx serves the bytes), and couples the sidecar's lifecycle to API pod internals. Chosen design touches FastAPI ~once per image per auth-cache window. |
+| Alternative                                                            | Why rejected                                                                                                                                                                                                                                                                            |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Per-tile signed URLs** (sign every `<level>/<col>_<row>.jpeg` URL)   | The `.dzi` descriptor drives OSD's tile URL construction, so per-tile signing requires a custom OSD tile source and re-signing on every pan/zoom; enormous URL churn defeats browser caching. Image-scoped tokens give the same boundary at a fraction of the complexity.               |
+| **FastAPI + `X-Accel-Redirect`**                                       | Puts FastAPI back into the per-tile hot path (one app request per tile even though nginx serves the bytes), and couples the sidecar's lifecycle to API pod internals. Chosen design touches FastAPI ~once per image per auth-cache window.                                              |
 | **nginx `secure_link`** (validate HMAC in nginx itself, no subrequest) | The stock `secure_link` module is MD5-based with awkward expiry encoding; an HMAC variant needs OpenResty/njs, breaking the vanilla-nginx constraint. `auth_request` + cache achieves near-identical per-tile cost with the validation logic kept in one place (Python, unit-testable). |
-| **Session cookie scoped to `/api/tiles`** | Works transparently for `<img>`, but is per-user rather than per-image (violates least privilege), complicates dev (cross-origin Vite:5173 → backend:8000 cookies), and CSRF-adjacent review burden. Query-param tokens follow the existing task-download precedent. |
-| **Optional-auth on the static mount** | Forbidden by the standing rule in [`docs/unauthenticated-routes.md`](unauthenticated-routes.md) (no optional-auth pattern), and `StaticFiles` cannot express per-image authorization anyway. |
+| **Session cookie scoped to `/api/tiles`**                              | Works transparently for `<img>`, but is per-user rather than per-image (violates least privilege), complicates dev (cross-origin Vite:5173 → backend:8000 cookies), and CSRF-adjacent review burden. Query-param tokens follow the existing task-download precedent.                    |
+| **Optional-auth on the static mount**                                  | Forbidden by the standing rule in [`docs/unauthenticated-routes.md`](unauthenticated-routes.md) (no optional-auth pattern), and `StaticFiles` cannot express per-image authorization anyway.                                                                                            |
 
 ## Consequences
 
@@ -168,15 +168,15 @@ client ──GET /api/tiles/<id>/…?tile_token=…──▶ frontend nginx ─�
 
 ## Implementation plan (Wave C3)
 
-| Slice | Content | PR |
-| --- | --- | --- |
-| C3a backend | Token issue/validate module, serializer wiring, remove `StaticFiles` mount, authorized FastAPI tile route, `GET /api/tiles-auth` validator, integration tests | backend |
-| C3b delivery | Sidecar `auth_request` + auth cache + `private` cache-control (both proxy layers); frontend chart passthrough; helm regression checks | charts |
-| C3c frontend | 401/403 renewal path (viewer re-fetch + tile-source swap, thumbnail `onError` recovery), viewer tests | frontend |
+| Slice        | Content                                                                                                                                                       | PR       |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| C3a backend  | Token issue/validate module, serializer wiring, remove `StaticFiles` mount, authorized FastAPI tile route, `GET /api/tiles-auth` validator, integration tests | backend  |
+| C3b delivery | Sidecar `auth_request` + auth cache + `private` cache-control (both proxy layers); frontend chart passthrough; helm regression checks                         | charts   |
+| C3c frontend | 401/403 renewal path (viewer re-fetch + tile-source swap, thumbnail `onError` recovery), viewer tests                                                         | frontend |
 
 Once the slices merge, the `/api/tiles` rows in
 [`docs/unauthenticated-routes.md`](unauthenticated-routes.md) move from
-*mismatch* to **app-credential** — that inventory update ships with the last
+_mismatch_ to **app-credential** — that inventory update ships with the last
 slice to land, not separately.
 
 Rollout: C3a ships the fallback route first (dev parity), C3b flips the
