@@ -125,16 +125,16 @@ async def seed_media() -> None:
         source = await _get_or_create_source(session, category.id, stored_path, file_size)
 
         # Ensure the synthetic monitoring category is restricted to the
-        # Digital Design program, matching the seed.sql association.  This
+        # Administration program, matching the seed.sql association.  This
         # covers the case where seed_media created the category under a
         # different ID (e.g. ID 6 was already taken by user data) and the
         # seed.sql label-based INSERT could not find it yet.
-        dd_program = await session.execute(
-            select(Program).where(Program.name == "Digital Design")
+        administration_program = await session.execute(
+            select(Program).where(Program.name == "Administration")
         )
-        dd = dd_program.scalar_one_or_none()
-        if dd is not None and dd not in category.programs:
-            category.programs = [dd]
+        administration = administration_program.scalar_one_or_none()
+        if administration is not None:
+            category.programs = [administration]
 
         await bump_browse_revision(session)
         await session.commit()
