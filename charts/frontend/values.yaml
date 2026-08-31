@@ -26,9 +26,11 @@ backend:
 # Tile server for DZI deep-zoom tiles. When the backend chart's
 # `tiles.enabled` option is enabled, set tileServer.port to the
 # sidecar port (default 8001) so frontend nginx proxies /api/tiles/
-# directly to the sidecar — bypassing the Python process. When
-# backend tiles sidecar is disabled, leave tileServer.enabled=false
-# and tile requests fall through to the backend as before.
+# directly to the sidecar — bypassing the Python process. The sidecar
+# authorizes every tile request via an image-scoped tile_token query
+# parameter (see docs/tile-delivery-boundary.md). When the backend
+# tiles sidecar is disabled, leave tileServer.enabled=false and tile
+# requests fall through to the backend's authorized tile route.
 tileServer:
   enabled: false
   port: 8001

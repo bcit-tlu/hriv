@@ -7,20 +7,51 @@ metadata:
     {{- include "hriv-backend.labels" . | nindent 4 }}
 data:
   default.conf: |
+    # ── Tile authorization (docs/tile-delivery-boundary.md, #1064/#1069) ──
+    #
+    # This file is included from /etc/nginx/conf.d/ (http-level context),
+    # so http-level directives such as proxy_cache_path and map may live
+    # here before the server block.
+    #
+    # auth_request subrequest cache: keyed on the tile token only (never
+    # on client identity) and storing only the allow/deny verdict — no
+    # tile bytes are cached. A valid token authorizes one image for its
+    # whole TTL, so caching the 204 briefly collapses OpenSeadragon's
+    # per-tile subrequest storm to ~one FastAPI hit per image per
+    # cache window.
+    proxy_cache_path /var/cache/nginx/tile_auth levels=1 keys_zone=tile_auth:1m max_size=8m inactive=60s use_temp_path=off;
+
+    # Requests without a tile token must never hit (or populate) the auth
+    # cache — an empty key would alias all tokenless requests together.
+    map $arg_tile_token $tile_auth_no_token {
+        ""      1;
+        default 0;
+    }
+
     server {
         listen {{ .Values.tiles.nginx.port }};
         server_name _;
 
         # Serve DZI tiles directly from the PVC.
-        # Tiles are immutable once written, so aggressive caching is safe.
+        # Tiles are immutable once written, so aggressive browser caching
+        # is safe — but tiles are authorized content, so shared caches and
+        # CDNs must not store them (Cache-Control: private, #1064).
         location /api/tiles/ {
+            # Every tile request is authorized via a subrequest to the
+            # FastAPI validator (GET /api/tiles-auth): 204 allows, 401 is
+            # returned for a missing/expired/tampered token, 403 for a
+            # token bound to a different image.
+            auth_request /_tiles_auth?tile_token=$arg_tile_token;
+
             alias {{ .Values.env.TILES_DIR }}/;
             autoindex off;
 
-            # Immutable tiles — cache for 30 days, allow CDN / proxy caching.
-            add_header Cache-Control "public, max-age=2592000, immutable";
+            # Immutable tiles — browsers may cache for 30 days, but
+            # ``private`` forbids shared caches/CDNs from storing them.
+            add_header Cache-Control "private, max-age=2592000";
 
-            # Disable access log for tile requests to reduce I/O.
+            # Disable access log for tile requests to reduce I/O and keep
+            # tile tokens (query strings) out of the logs.
             access_log off;
 
             # Support range requests for large DZI files.
@@ -31,6 +62,32 @@ data:
             # image formats (JPEG / PNG).
             gzip on;
             gzip_types application/xml text/xml;
+        }
+
+        # Internal auth_request target. The tiles nginx runs as a sidecar
+        # in the same pod as the FastAPI app container (containerPort
+        # 8000), so the validator is reached over localhost. The original
+        # URI is forwarded so the validator can verify the requested
+        # source-image id and fall back to the token in that URI's query
+        # string if needed.
+        location = /_tiles_auth {
+            internal;
+
+            proxy_pass http://127.0.0.1:8000/api/tiles-auth;
+            proxy_pass_request_body off;
+            proxy_set_header Content-Length "";
+            proxy_set_header X-Original-URI $request_uri;
+
+            # Cache the verdict per token (ADR: key $arg_tile_token,
+            # TTL ≤ 60s, cache 204 only).
+            proxy_cache tile_auth;
+            proxy_cache_key "$arg_tile_token";
+            proxy_cache_valid 204 30s;
+            proxy_cache_bypass $tile_auth_no_token;
+            proxy_no_cache $tile_auth_no_token;
+
+            # Keep tokens out of the logs here too.
+            access_log off;
         }
 
         # Health endpoint for the sidecar's own readiness check.
