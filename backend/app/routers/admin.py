@@ -59,6 +59,7 @@ from ..component_versions import (
     get_worker_version,
 )
 from ..database import async_session, get_db
+from ..filenames import sanitize_upload_filename
 from ..maintenance import disable_maintenance_mode, enable_maintenance_mode, is_maintenance_mode
 from ..models import ACTIVE_TASK_STATUSES, AdminTask, User
 from ..schemas import (
@@ -376,8 +377,9 @@ async def start_files_import(
     task record exists before the long upload begins, so timeouts or errors are
     visible in task history rather than vanishing silently.
     """
+    original_filename = sanitize_upload_filename(filename)
     if not (
-        filename.endswith(".tar.gz") or filename.endswith(".tgz")
+        original_filename.endswith(".tar.gz") or original_filename.endswith(".tgz")
     ):
         raise HTTPException(status_code=400, detail="Only .tar.gz / .tgz files are accepted")
 
@@ -387,8 +389,8 @@ async def start_files_import(
     task = await _create_task(
         db, "files_import", user, input_path=input_path, status="uploading",
     )
-    task.original_filename = filename
-    task.log = f"Awaiting file upload: {filename}\n"
+    task.original_filename = original_filename
+    task.log = f"Awaiting file upload: {original_filename}\n"
     await db.commit()
     await db.refresh(task)
     return _task_to_dict(task)
