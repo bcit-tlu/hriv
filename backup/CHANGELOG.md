@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.12.3](https://github.com/bcit-tlu/hriv/compare/backup-v0.12.2...backup-v0.12.3) (2026-08-31)
+
+
+### Bug Fixes
+
+* **backup:** give each backup run a collision-resistant snapshot identity ([#1144](https://github.com/bcit-tlu/hriv/issues/1144)) ([b31578f](https://github.com/bcit-tlu/hriv/commit/b31578f7ba50e085d7c692a5e6ecf67421ae9136))
+* **backup:** merge shared backup state so concurrent runs cannot clobber it ([#1143](https://github.com/bcit-tlu/hriv/issues/1143)) ([06c121e](https://github.com/bcit-tlu/hriv/commit/06c121edb6962688454ba9f60d0528077f5ae9c1))
+* **backup:** use unique temp files for backup state writes and fix chart/CI gaps ([#1132](https://github.com/bcit-tlu/hriv/issues/1132)) ([eec7548](https://github.com/bcit-tlu/hriv/commit/eec75487dacfca42075c6a149b4e5a9f0aec2a2b))
+
 ## [0.12.2](https://github.com/bcit-tlu/hriv/compare/backup-v0.12.1...backup-v0.12.2) (2026-07-20)
 
 
