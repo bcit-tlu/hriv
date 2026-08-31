@@ -55,6 +55,7 @@ import {
   getCategoryHiddenStateInTree,
   isCategoryHiddenInTree,
   resolveCategoryPath,
+  updateImageInTree,
 } from './treeUtils'
 import UploadImageModal from './components/UploadImageModal'
 import { isAcceptedFile } from './fileUtils'
@@ -76,7 +77,7 @@ import {
   deleteGroup,
   userMessage,
 } from './api'
-import type { ApiUser } from './api'
+import type { ApiImage, ApiUser } from './api'
 import MoveCategoryDialog from './components/MoveCategoryDialog'
 import MoveRestrictionConfirmDialog from './components/MoveRestrictionConfirmDialog'
 import FailedUploadsDialog from './components/FailedUploadsDialog'
@@ -1055,6 +1056,38 @@ export default function App() {
     [pushNavState],
   )
 
+  const apiImageToItem = useCallback(
+    (img: ApiImage): ImageItem => ({
+      id: img.id,
+      name: img.name,
+      thumb: img.thumb,
+      tileSources: img.tile_sources,
+      categoryId: img.category_id,
+      copyright: img.copyright,
+      note: img.note,
+      active: img.active,
+      sortOrder: img.sort_order,
+      version: img.version,
+      createdAt: img.created_at,
+      updatedAt: img.updated_at,
+      metadataExtra: img.metadata_extra,
+      width: img.width,
+      height: img.height,
+      fileSize: img.file_size,
+    }),
+    [],
+  )
+
+  const handleImageRenewed = useCallback(
+    (img: ApiImage) => {
+      const item = apiImageToItem(img)
+      setCategories((prev) => updateImageInTree(prev, item.id, () => item))
+      setUncategorizedImages((prev) => prev.map((image) => (image.id === item.id ? item : image)))
+      setSelectedImage((prev) => (prev?.id === item.id ? { ...prev, ...item } : prev))
+    },
+    [apiImageToItem, setCategories, setUncategorizedImages],
+  )
+
   const navigateToCategory = useCallback((cat: Category) => {
     setPath((prev) => [...prev, cat])
   }, [])
@@ -1407,6 +1440,7 @@ export default function App() {
               onBulkImportStarted={handleBulkImportStarted}
               onUploadFailed={handleUploadFailed}
               onUploadOpenChange={setManageUploadOpen}
+              onImageRenewed={handleImageRenewed}
               onSearchProgram={(programName) => {
                 setSearchInitialQuery(programName)
                 setSearchInitialTypeFilter('program')
@@ -1622,6 +1656,8 @@ export default function App() {
                   tileSources={selectedImage.tileSources}
                   imageId={selectedImage.id}
                   categoryId={selectedImage.categoryId ?? undefined}
+                  onTileSourceRenewed={handleImageRenewed}
+                  onError={(message) => setErrorSnack(message)}
                   initialViewport={initialViewport}
                   onViewportChange={handleViewportChange}
                   measurement={selectedImageMeasurement}
@@ -1995,6 +2031,7 @@ export default function App() {
                 onDropFilesOnCategory={handleFilesDropOnCategory}
                 onImageClick={handleImageClick}
                 onEditImageDetails={setBrowseEditImage}
+                onImageRenewed={handleImageRenewed}
                 onFilesDrop={handleFilesDropOnGrid}
                 onGridDragOver={
                   canEditContent
@@ -2359,6 +2396,7 @@ export default function App() {
             image.id,
           )
         }}
+        onImageRenewed={handleImageRenewed}
         onSelectProgram={(programName) => {
           if (canEditContent) {
             setManageProgramFilter(programName)

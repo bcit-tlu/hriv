@@ -21,7 +21,8 @@ import SchoolIcon from '@mui/icons-material/School'
 import SearchIcon from '@mui/icons-material/Search'
 import TextFieldsIcon from '@mui/icons-material/TextFields'
 import type { Category, ImageItem, Program } from '../types'
-import type { ApiUser } from '../api'
+import type { ApiImage, ApiUser } from '../api'
+import RenewingThumbnail from './RenewingThumbnail'
 
 // ── Result types ───────────────────────────────────────
 
@@ -379,6 +380,7 @@ interface SearchModalProps {
   isStudent: boolean
   onSelectCategory: (path: Category[]) => void
   onSelectImage: (image: ImageItem, path: Category[]) => void
+  onImageRenewed?: (image: ApiImage) => void
   onSelectProgram: (programName: string) => void
   onSelectUser: (userId: number) => void
   /** Pre-fill the search query when the modal opens. */
@@ -397,6 +399,7 @@ export default function SearchModal({
   isStudent,
   onSelectCategory,
   onSelectImage,
+  onImageRenewed,
   onSelectProgram,
   onSelectUser,
   initialQuery,
@@ -722,7 +725,7 @@ export default function SearchModal({
               {displayResults.map((result) => {
                 const chipNames = getResultProgramNames(result, programMap)
                 const catPath = result.payload.kind === 'image' ? result.payload.categoryPath : null
-                const thumb = result.payload.kind === 'image' ? result.payload.image.thumb : null
+                const image = result.payload.kind === 'image' ? result.payload.image : null
                 return (
                   <Card key={`${result.kind}-${result.entityId}`} variant="outlined">
                     <CardActionArea
@@ -730,11 +733,11 @@ export default function SearchModal({
                       onClick={() => handleSelect(result)}
                       sx={{ p: 2, display: 'flex', alignItems: 'flex-start', gap: 2 }}
                     >
-                      {thumb ? (
-                        <Box
-                          component="img"
-                          src={thumb}
+                      {image?.thumb ? (
+                        <RenewingThumbnail
+                          image={image}
                           alt={result.label}
+                          onImageRenewed={onImageRenewed}
                           sx={{
                             width: 40,
                             height: 40,

@@ -67,6 +67,7 @@ import FilterPopoverButton, { filterSurfaceBg } from './FilterPopoverButton'
 import FilterTextPanel from './FilterTextPanel'
 import MoveImageDialog from './MoveImageDialog'
 import NoteDisplay from './NoteDisplay'
+import RenewingThumbnail from './RenewingThumbnail'
 import UploadImageModal from './UploadImageModal'
 import {
   getFilterTerms,
@@ -290,6 +291,7 @@ interface ManagePageProps {
   /** Drop the matching failure notification when a failed upload is dismissed. */
   onDismissFailedUpload?: (sourceImageId: number) => void
   onViewImage?: (image: ApiImage) => void
+  onImageRenewed?: (image: ApiImage) => void
   onNavigateCategory?: (categoryPath: Category[]) => void
   onCategoriesChanged?: () => void
   onAddCategory?: (
@@ -334,6 +336,7 @@ export default function ManagePage({
   imagesVersion,
   onDismissFailedUpload,
   onViewImage,
+  onImageRenewed,
   onNavigateCategory,
   onCategoriesChanged,
   onAddCategory,
@@ -1004,6 +1007,17 @@ export default function ManagePage({
     setMenuImage(null)
   }
 
+  const handleImageRenewed = useCallback(
+    (fresh: ApiImage) => {
+      setImages((prev) => prev.map((img) => (img.id === fresh.id ? fresh : img)))
+      setEditingImage((prev) => (prev?.id === fresh.id ? fresh : prev))
+      setMovingImage((prev) => (prev?.id === fresh.id ? fresh : prev))
+      setMenuImage((prev) => (prev?.id === fresh.id ? fresh : prev))
+      onImageRenewed?.(fresh)
+    },
+    [onImageRenewed],
+  )
+
   const handleMenuView = () => {
     if (menuImage && onViewImage) {
       onViewImage(menuImage)
@@ -1653,10 +1667,10 @@ export default function ManagePage({
                           }
                         }}
                       >
-                        <Box
-                          component="img"
-                          src={img.thumb}
+                        <RenewingThumbnail
+                          image={img}
                           alt={img.name}
+                          onImageRenewed={handleImageRenewed}
                           sx={{
                             width: 40,
                             height: 40,

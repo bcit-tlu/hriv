@@ -3,26 +3,34 @@ import { memo } from 'react'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
-import CardMedia from '@mui/material/CardMedia'
 import CardContent from '@mui/material/CardContent'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import EditIcon from '@mui/icons-material/Edit'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
+import type { ApiImage } from '../api'
 import type { ImageItem } from '../types'
 import { useColorMode } from '../useColorMode'
 import { getVisibilityColors } from '../theme'
+import RenewingThumbnail from './RenewingThumbnail'
 
 interface ImageTileProps {
   image: ImageItem
   onClick: (image: ImageItem) => void
   onEditDetails?: (image: ImageItem) => void
+  onImageRenewed?: (image: ApiImage) => void
   /** When true the parent category is hidden, so this tile is desaturated. */
   categoryHidden?: boolean
 }
 
-function ImageTile({ image, onClick, onEditDetails, categoryHidden = false }: ImageTileProps) {
+function ImageTile({
+  image,
+  onClick,
+  onEditDetails,
+  onImageRenewed,
+  categoryHidden = false,
+}: ImageTileProps) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
   return (
@@ -42,12 +50,12 @@ function ImageTile({ image, onClick, onEditDetails, categoryHidden = false }: Im
           filter: categoryHidden || !image.active ? 'grayscale(100%)' : 'none',
         }}
       >
-        <CardMedia
-          component="img"
+        <RenewingThumbnail
+          image={image}
           height="160"
-          image={image.thumb}
           alt={image.name}
-          sx={{ objectFit: 'cover', objectPosition: 'center' }}
+          onImageRenewed={onImageRenewed}
+          sx={{ width: '100%', objectFit: 'cover', objectPosition: 'center' }}
         />
         <CardContent sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
           <Box

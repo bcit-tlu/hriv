@@ -4,7 +4,6 @@ import { alpha } from '@mui/material/styles'
 import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
 import CardContent from '@mui/material/CardContent'
-import CardMedia from '@mui/material/CardMedia'
 import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
@@ -16,11 +15,13 @@ import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import ImageIcon from '@mui/icons-material/Image'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 
+import type { ApiImage } from '../api'
 import type { Category, Group, ImageItem, Program } from '../types'
 import { useColorMode } from '../useColorMode'
 import { getVisibilityColors } from '../theme'
 import { getInheritedRestrictionSx } from '../restrictionStyles'
 import CardImagePickerModal from './CardImagePickerModal'
+import RenewingThumbnail from './RenewingThumbnail'
 
 function findImageInCategory(cat: Category, imageId: number): ImageItem | null {
   for (const img of cat.images) {
@@ -57,6 +58,7 @@ interface CategoryTileProps {
   onMove?: (category: Category) => void
   onSetCardImage?: (categoryId: number, imageId: number | null) => void
   onEditName?: (category: Category) => void
+  onImageRenewed?: (image: ApiImage) => void
   programs: Program[]
   /** Effective program restriction inherited from ancestor categories. */
   inheritedProgramIds?: number[]
@@ -75,6 +77,7 @@ function CategoryTile({
   onMove,
   onSetCardImage,
   onEditName,
+  onImageRenewed,
   programs,
   inheritedProgramIds = [],
   groups = [],
@@ -241,11 +244,11 @@ function CategoryTile({
           }}
         >
           {cardImage ? (
-            <CardMedia
-              component="img"
+            <RenewingThumbnail
+              image={cardImage}
               height="140"
-              image={cardImage.thumb}
               alt={category.label}
+              onImageRenewed={onImageRenewed}
               sx={{ objectFit: 'cover', objectPosition: 'center' }}
             />
           ) : (
