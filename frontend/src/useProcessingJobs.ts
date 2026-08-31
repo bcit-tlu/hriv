@@ -1,10 +1,23 @@
 import { useState, useCallback, useEffect, useEffectEvent, useRef } from 'react'
-import { isAuthFailure, type ApiBulkImportJob } from './api'
+import { isAuthFailure, type ApiBulkImportJob, type ApiSourceImage } from './api'
+import { loadDismissedFailedUploads, saveDismissedFailedUploads } from './dismissedFailedUploads'
 import { pollProcessingJob, type PollHandle } from './pollProcessingJob'
 import type { ImageItem } from './types'
 
 /** Maximum number of concurrent upload/processing/import jobs. */
 export const MAX_PROCESSING_JOBS = 5
+
+/** Most failed source images rehydrated into notifications after a reload. */
+export const MAX_REHYDRATED_FAILURES = 20
+
+/** Failures older than this are not rehydrated as notifications. */
+export const REHYDRATED_FAILURE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
+
+/**
+ * Number of simultaneous failure notifications at which the UI collapses them
+ * into a single summary instead of one snackbar per failure.
+ */
+export const FAILURE_COLLAPSE_THRESHOLD = 5
 
 export interface ProcessingJob {
   id: number
@@ -14,6 +27,18 @@ export interface ProcessingJob {
   errorMessage?: string
   imageId?: number
   bulkImportJobId?: number
+  /**
+   * `rehydrated` marks a failure restored from a persisted `SourceImage` row
+   * on load rather than observed live during this page session.
+   */
+  origin?: 'live' | 'rehydrated'
+  /**
+   * The backend reported this source image as `failed`, so the failure is
+   * persisted and will come back on the next load unless it is dismissed.
+   * Client-side failures (upload aborted, status tracking lost) are not
+   * persisted and must never suppress a later server-confirmed failure.
+   */
+  serverFailed?: boolean
   totalCount?: number
   completedCount?: number
   failedCount?: number
@@ -41,6 +66,7 @@ export interface UseProcessingJobsDeps {
     image_id?: number | null
   }>
   fetchBulkImportJob: (jobId: number) => Promise<ApiBulkImportJob>
+  listFailedSourceImages: () => Promise<ApiSourceImage[]>
   fetchImage: (imageId: number) => Promise<{
     id: number
     name: string
@@ -79,10 +105,35 @@ const IMAGE_POLL_AUTH_FAILURE_MESSAGE =
 const BULK_IMPORT_AUTH_FAILURE_MESSAGE =
   'Bulk import status tracking stopped because your session ended or became invalid. The import may still complete on the server. Log back in and refresh to confirm.'
 
+/** Number of per-file errors listed before the rest are summarised as a count. */
+const BULK_IMPORT_ERRORS_SHOWN = 3
+
+/** List the per-file errors reported by the server, or '' when there are none. */
+export function bulkImportErrorSummary(
+  errors: Array<{ filename: string; error: string }> | null | undefined,
+): string {
+  if (!errors || errors.length === 0) return ''
+  const shown = errors
+    .slice(0, BULK_IMPORT_ERRORS_SHOWN)
+    .map((e) => `${e.filename}: ${e.error}`)
+    .join('; ')
+  const remaining = errors.length - BULK_IMPORT_ERRORS_SHOWN
+  return remaining > 0 ? `${shown} (and ${remaining} more)` : shown
+}
+
+/** Build a failure message listing the per-file errors reported by the server. */
+export function bulkImportFailureMessage(
+  errors: Array<{ filename: string; error: string }> | null | undefined,
+): string {
+  const summary = bulkImportErrorSummary(errors)
+  return summary ? `Bulk import failed. ${summary}` : 'Bulk import failed.'
+}
+
 export function useProcessingJobs(deps: UseProcessingJobsDeps) {
   const {
     fetchSourceImage,
     fetchBulkImportJob,
+    listFailedSourceImages,
     fetchImage,
     loadCategories,
     loadUncategorizedImages,
@@ -116,6 +167,11 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
   } | null>(null)
   // AbortController for the active replace-image upload
   const replaceAbortRef = useRef<AbortController | null>(null)
+
+  // Source-image ids whose failure notification the user already dismissed,
+  // and a guard so rehydration only runs once per session.
+  const dismissedFailuresRef = useRef<Set<number> | null>(null)
+  const rehydratedRef = useRef(false)
 
   const refreshImageListsAfterCompletion = useEffectEvent(
     async ({ swallowNonAuth = false }: { swallowNonAuth?: boolean } = {}) => {
@@ -290,6 +346,7 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
                     status: 'failed' as const,
                     serverProgress: progress,
                     errorMessage: errorMessage || undefined,
+                    serverFailed: true,
                   }
                 : j,
             ),
@@ -359,7 +416,8 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
                   completedCount: bulkJob.completed_count,
                   failedCount: bulkJob.failed_count,
                   errors: bulkJob.errors,
-                  errorMessage: status === 'failed' ? 'Bulk import failed.' : undefined,
+                  errorMessage:
+                    status === 'failed' ? bulkImportFailureMessage(bulkJob.errors) : undefined,
                 }
               : j,
           )
@@ -386,7 +444,8 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
             completedCount: bulkJob.completed_count,
             failedCount: bulkJob.failed_count,
             errors: bulkJob.errors,
-            errorMessage: status === 'failed' ? 'Bulk import failed.' : undefined,
+            errorMessage:
+              status === 'failed' ? bulkImportFailureMessage(bulkJob.errors) : undefined,
           },
         ]
       })
@@ -610,9 +669,64 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
     [updateBulkImportJob],
   )
 
-  /** Dismiss a job from the processing list. */
+  /**
+   * Restore failures persisted on `SourceImage` rows so they stay visible
+   * after a reload. Runs once per session; recent failures only, and never
+   * ones the user has already dismissed.
+   */
+  const rehydrateFailedJobs = useCallback(async () => {
+    if (rehydratedRef.current) return
+    rehydratedRef.current = true
+    let failed: ApiSourceImage[]
+    try {
+      failed = await listFailedSourceImages()
+    } catch {
+      rehydratedRef.current = false
+      return
+    }
+    const dismissed = (dismissedFailuresRef.current ??= loadDismissedFailedUploads())
+    const cutoff = Date.now() - REHYDRATED_FAILURE_MAX_AGE_MS
+    setProcessingJobs((prev) => {
+      const known = new Set(prev.map((j) => j.id))
+      const restored = failed
+        .filter(
+          (src) =>
+            src.status === 'failed' &&
+            !known.has(src.id) &&
+            !dismissed.has(src.id) &&
+            Date.parse(src.created_at) >= cutoff,
+        )
+        .slice(0, MAX_REHYDRATED_FAILURES)
+        .map<ProcessingJob>((src) => ({
+          id: src.id,
+          filename: src.original_filename,
+          status: 'failed' as const,
+          kind: 'image' as const,
+          origin: 'rehydrated' as const,
+          serverFailed: true,
+          errorMessage: src.error_message ?? undefined,
+          serverProgress: src.progress,
+          fileSize: src.file_size ?? 0,
+          startedAt: Date.parse(src.created_at),
+        }))
+      return restored.length > 0 ? [...prev, ...restored] : prev
+    })
+  }, [listFailedSourceImages])
+
+  /**
+   * Dismiss a job from the processing list. Dismissing a persisted source-image
+   * failure is remembered so it is not restored on the next load.
+   */
   const dismissJob = useCallback((jobId: number) => {
-    setProcessingJobs((prev) => prev.filter((j) => j.id !== jobId))
+    setProcessingJobs((prev) => {
+      const job = prev.find((j) => j.id === jobId)
+      if (job?.serverFailed && job.kind === 'image' && job.id > 0) {
+        const dismissed = (dismissedFailuresRef.current ??= loadDismissedFailedUploads())
+        dismissed.add(job.id)
+        saveDismissedFailedUploads(dismissed)
+      }
+      return prev.filter((j) => j.id !== jobId)
+    })
   }, [])
 
   /**
@@ -725,6 +839,8 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
     replaceAbortRef.current?.abort()
     replaceAbortRef.current = null
     activeReplaceUploadIdRef.current = null
+    dismissedFailuresRef.current = null
+    rehydratedRef.current = false
     setProcessingJobs([])
   }, [])
 
@@ -742,6 +858,7 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
     handleUploadFailed,
     handleProcessingStarted,
     handleBulkImportStarted,
+    rehydrateFailedJobs,
     dismissJob,
     startReplaceUpload,
     trackReplaceProgress,

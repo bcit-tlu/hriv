@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import require_role
 from ..database import async_session, get_db, settings
+from ..filenames import sanitize_upload_filename
 from ..image_validation import IMAGE_EXTENSIONS, UPLOAD_CHUNK_SIZE
 from ..models import BulkImportJob, Category, SourceImage, User
 from ..processing import process_source_image
@@ -1533,7 +1534,12 @@ async def bulk_import_images(
                                             os.unlink(stored_path)
                                         raise
 
-                                    file_entries.append((basename, stored_path))
+                                    file_entries.append(
+                                        (
+                                            sanitize_upload_filename(basename),
+                                            stored_path,
+                                        )
+                                    )
                         except zipfile.BadZipFile:
                             raise HTTPException(
                                 status_code=400,
@@ -1565,7 +1571,9 @@ async def bulk_import_images(
                                 os.unlink(stored_path)
                             raise
 
-                        file_entries.append((upload.filename, stored_path))
+                        file_entries.append(
+                            (sanitize_upload_filename(upload.filename), stored_path)
+                        )
             except OSError as exc:
                 for _, stored_path in file_entries:
                     with contextlib.suppress(OSError):

@@ -22,6 +22,7 @@ import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
+import CloseIcon from '@mui/icons-material/Close'
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import Visibility from '@mui/icons-material/Visibility'
@@ -63,6 +64,7 @@ import {
   fetchImage as apiFetchImage,
   fetchSourceImage,
   fetchBulkImportJob,
+  listSourceImages,
   fetchVersions,
   fetchFrontendVersion,
   fetchUsers,
@@ -77,7 +79,14 @@ import {
 import type { ApiUser } from './api'
 import MoveCategoryDialog from './components/MoveCategoryDialog'
 import MoveRestrictionConfirmDialog from './components/MoveRestrictionConfirmDialog'
-import { useProcessingJobs } from './useProcessingJobs'
+import FailedUploadsDialog from './components/FailedUploadsDialog'
+import {
+  bulkImportErrorSummary,
+  FAILURE_COLLAPSE_THRESHOLD,
+  MAX_REHYDRATED_FAILURES,
+  useProcessingJobs,
+} from './useProcessingJobs'
+import type { ProcessingJob } from './useProcessingJobs'
 import type { Category, Group, ImageItem } from './types'
 import { MAX_DEPTH } from './types'
 import AddCategoryDialog from './components/AddCategoryDialog'
@@ -103,6 +112,10 @@ import { tileOrderingCoordinator } from './tileOrdering'
 import { logDrag } from './dndInstrumentation'
 
 const COLLAPSED_BREADCRUMB_CATEGORY_DEPTH = 2
+
+function listFailedSourceImages() {
+  return listSourceImages({ status: 'failed', limit: MAX_REHYDRATED_FAILURES })
+}
 
 function getCollapsedCategoryBreadcrumb(
   path: Category[],
@@ -432,6 +445,7 @@ export default function App() {
   const processingJobsHook = useProcessingJobs({
     fetchSourceImage,
     fetchBulkImportJob,
+    listFailedSourceImages,
     fetchImage: apiFetchImage,
     loadCategories,
     loadUncategorizedImages,
@@ -451,6 +465,7 @@ export default function App() {
     handleUploadFailed,
     handleProcessingStarted,
     handleBulkImportStarted,
+    rehydrateFailedJobs,
     dismissJob,
     startReplaceUpload,
     trackReplaceProgress,
@@ -985,6 +1000,30 @@ export default function App() {
     imageEditOpen,
     browseEditImage,
   })
+
+  // Restore failures persisted on source-image rows so they survive a reload.
+  const [failedUploadsOpen, setFailedUploadsOpen] = useState(false)
+  useEffect(() => {
+    if (!canEditContent || !currentUser) return
+    void rehydrateFailedJobs()
+    // `page` retries the fetch on the next navigation when it failed; the hook
+    // itself is a no-op once a fetch has succeeded.
+  }, [canEditContent, currentUser, page, rehydrateFailedJobs])
+
+  // Only collapse failures the Failed uploads dialog can list, so a purely
+  // client-side upload failure never loses its filename and reason.
+  const isImageFailure = (job: ProcessingJob) =>
+    job.status === 'failed' && job.kind === 'image' && job.serverFailed === true
+  const imageFailureJobs = visibleJobs.filter(isImageFailure)
+  const collapseImageFailures = imageFailureJobs.length >= FAILURE_COLLAPSE_THRESHOLD
+  const jobSnackbars = collapseImageFailures
+    ? visibleJobs.filter((job) => !isImageFailure(job))
+    : visibleJobs
+  const dismissImageFailures = useCallback(
+    (jobs: ProcessingJob[]) => jobs.forEach((job) => dismissJob(job.id)),
+    [dismissJob],
+  )
+
   const imageBreadcrumb = useMemo(() => getCollapsedCategoryBreadcrumb(path, 1), [path])
   const categoryBreadcrumb = useMemo(() => getCollapsedCategoryBreadcrumb(path, 2), [path])
   const imageSkippedCategoryLabels = imageBreadcrumb.hiddenCategories
@@ -1320,6 +1359,7 @@ export default function App() {
               programs={programs}
               groups={groups}
               imagesVersion={imagesVersion}
+              onDismissFailedUpload={dismissJob}
               onEditCategory={editCategoryInline}
               onToggleVisibility={toggleCategoryVisibility}
               onViewImage={(img) => {
@@ -2435,7 +2475,7 @@ export default function App() {
       </Snackbar>
 
       {/* Image upload + processing snackbars (one per job, stacked) */}
-      {visibleJobs.map((job, index) => {
+      {jobSnackbars.map((job, index) => {
         const uploadFraction =
           job.status === 'uploading' && job.uploadId != null
             ? getUploadProgress(job.uploadId) || (job.uploadProgress ?? 0)
@@ -2449,7 +2489,8 @@ export default function App() {
             autoHideDuration={
               job.status === 'processing' ||
               job.status === 'uploading' ||
-              job.status === 'importing'
+              job.status === 'importing' ||
+              job.status === 'failed'
                 ? null
                 : 6000
             }
@@ -2572,7 +2613,13 @@ export default function App() {
                 <>
                   {job.kind === 'bulk-import'
                     ? `"${job.filename}" import completed${
-                        job.failedCount ? ` with ${job.failedCount} failed.` : ' successfully!'
+                        job.failedCount
+                          ? ` with ${job.failedCount} failed.${
+                              bulkImportErrorSummary(job.errors)
+                                ? ` ${bulkImportErrorSummary(job.errors)}`
+                                : ''
+                            }`
+                          : ' successfully!'
                       }`
                     : `"${job.filename}" processed successfully! `}
                   {job.imageId != null && (
@@ -2645,6 +2692,52 @@ export default function App() {
           </Snackbar>
         )
       })}
+
+      {/* Many simultaneous failures collapse into one summary. */}
+      {collapseImageFailures && (
+        <Snackbar
+          open
+          autoHideDuration={null}
+          onClose={(_event, reason) => {
+            if (reason === 'clickaway') return
+            dismissImageFailures(imageFailureJobs)
+          }}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+          sx={{
+            zIndex: 1500,
+            bottom: { xs: `${24 + jobSnackbars.length * 88}px !important` },
+          }}
+        >
+          <Alert
+            severity="error"
+            variant="filled"
+            sx={{ width: '100%', display: 'flex', alignItems: 'center' }}
+            action={
+              <>
+                <Button size="small" color="inherit" onClick={() => setFailedUploadsOpen(true)}>
+                  Details
+                </Button>
+                <IconButton
+                  size="small"
+                  color="inherit"
+                  aria-label="Dismiss failed uploads"
+                  onClick={() => dismissImageFailures(imageFailureJobs)}
+                >
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+              </>
+            }
+          >
+            {`${imageFailureJobs.length} uploads failed.`}
+          </Alert>
+        </Snackbar>
+      )}
+
+      <FailedUploadsDialog
+        open={failedUploadsOpen}
+        onClose={() => setFailedUploadsOpen(false)}
+        onDismiss={dismissJob}
+      />
 
       {canEditContent && (
         <ReorderSnackbar
