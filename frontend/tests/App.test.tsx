@@ -2,6 +2,7 @@ import { createRef, useEffect, type ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import App from '../src/App'
+import type { ProcessingJob } from '../src/useProcessingJobs'
 import {
   createGroup,
   createProgram,
@@ -172,6 +173,8 @@ function resetFixtures() {
     canEditContent: true,
   }
   mockInitialPath = []
+  visibleJobsMock = []
+  processingJobsMock.rehydrateFailedJobs.mockResolvedValue(undefined)
   mockCategories.splice(0, mockCategories.length, {
     id: 1,
     label: 'Slides',
@@ -198,11 +201,28 @@ const browseDataFns = {
   refreshUncategorizedImages: vi.fn(),
 }
 
+let visibleJobsMock: ProcessingJob[] = []
+
+function makeFailedJob(id: number): ProcessingJob {
+  return {
+    id,
+    filename: `broken-${id}.tiff`,
+    status: 'failed',
+    kind: 'image',
+    origin: 'rehydrated',
+    errorMessage: `Processing failed: reason ${id}`,
+    serverProgress: 0,
+    fileSize: 100,
+    startedAt: Date.now(),
+  }
+}
+
 const processingJobsMock = {
   getDisplayProgress: vi.fn(),
   getStatusMessage: vi.fn(),
   getUploadProgress: vi.fn(),
-  getVisibleJobs: () => [],
+  getVisibleJobs: () => visibleJobsMock,
+  rehydrateFailedJobs: vi.fn().mockResolvedValue(undefined),
   getReplaceUploadProgress: () => undefined,
   addProcessingJob: vi.fn(),
   handleUploadStarted: vi.fn(),
@@ -586,6 +606,8 @@ vi.mock('../src/useNavigationHistory', () => ({
 
 vi.mock('../src/useProcessingJobs', () => ({
   useProcessingJobs: () => processingJobsMock,
+  MAX_REHYDRATED_FAILURES: 20,
+  FAILURE_COLLAPSE_THRESHOLD: 5,
 }))
 
 vi.mock('../src/useShareableImageState', () => ({
@@ -944,6 +966,49 @@ describe('App breadcrumbs', () => {
 
     expect(vi.mocked(fetchVersions)).not.toHaveBeenCalled()
     expect(vi.mocked(fetchFrontendVersion)).not.toHaveBeenCalled()
+  })
+})
+
+describe('App failure notifications', () => {
+  beforeEach(resetFixtures)
+
+  it('rehydrates persisted failures for users who can edit content', async () => {
+    render(<App />)
+    await waitFor(() => expect(processingJobsMock.rehydrateFailedJobs).toHaveBeenCalled())
+  })
+
+  it('does not rehydrate failures for users without edit rights', () => {
+    authState = { ...authState, canEditContent: false }
+    render(<App />)
+    expect(processingJobsMock.rehydrateFailedJobs).not.toHaveBeenCalled()
+  })
+
+  it('shows one snackbar per failure below the collapse threshold', () => {
+    visibleJobsMock = [makeFailedJob(1), makeFailedJob(2), makeFailedJob(3), makeFailedJob(4)]
+    render(<App />)
+
+    expect(screen.getByText('Processing failed: reason 1')).toBeInTheDocument()
+    expect(screen.getByText('Processing failed: reason 4')).toBeInTheDocument()
+    expect(screen.queryByText(/uploads failed/)).not.toBeInTheDocument()
+  })
+
+  it('collapses five or more failures into one summary that opens the failed uploads list', async () => {
+    visibleJobsMock = [1, 2, 3, 4, 5].map(makeFailedJob)
+    render(<App />)
+
+    expect(screen.getByText('5 uploads failed.')).toBeInTheDocument()
+    expect(screen.queryByText('Processing failed: reason 1')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Details' }))
+    expect(await screen.findByRole('dialog', { name: 'Failed uploads' })).toBeInTheDocument()
+  })
+
+  it('dismisses every collapsed failure at once', () => {
+    visibleJobsMock = [1, 2, 3, 4, 5].map(makeFailedJob)
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss failed uploads' }))
+    expect(processingJobsMock.dismissJob.mock.calls.map(([id]) => id)).toEqual([1, 2, 3, 4, 5])
   })
 })
 

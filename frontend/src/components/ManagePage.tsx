@@ -57,6 +57,7 @@ import { useTableColumnPreferences } from '../useTableColumnPreferences'
 import { useColorMode } from '../useColorMode'
 import BulkEditImagesModal from './BulkEditImagesModal'
 import ColumnVisibilityDialog, { type ColumnVisibilityOption } from './ColumnVisibilityDialog'
+import FailedUploadsDialog from './FailedUploadsDialog'
 import EditImageModal from './EditImageModal'
 import type { ImageFormData, ReplaceImageData } from './EditImageModal'
 import FilterBar from './FilterBar'
@@ -411,6 +412,7 @@ export default function ManagePage({
   const [movingImage, setMovingImage] = useState<ApiImage | null>(null)
 
   const [columnDialogOpen, setColumnDialogOpen] = useState(false)
+  const [failedUploadsOpen, setFailedUploadsOpen] = useState(false)
   const { visibleColumns, isColumnVisible, setColumnVisible } =
     useTableColumnPreferences<ManageTableColumn>({
       tableKey: 'manage-images',
@@ -1091,6 +1093,9 @@ export default function ManagePage({
               Bulk Edit ({selected.size} selected)
             </Button>
           )}
+          <Button size="small" color="secondary" onClick={() => setFailedUploadsOpen(true)}>
+            Failed uploads
+          </Button>
           <Button
             variant="contained"
             startIcon={<AddPhotoAlternateIcon />}
@@ -2114,6 +2119,8 @@ export default function ManagePage({
           </Button>
         </DialogActions>
       </Dialog>
+
+      <FailedUploadsDialog open={failedUploadsOpen} onClose={() => setFailedUploadsOpen(false)} />
 
       {/* Move image modal */}
       <MoveImageDialog

@@ -255,6 +255,34 @@ behind by a cancelled or killed arq job; the coordinator uses
 `max_tries=1` because retrying its non-idempotent batch would duplicate
 `SourceImage` rows.
 
+## Surfacing failures after a reload
+
+`SourceImage.error_message` is persisted, so failures survive a reload — but the
+frontend's `useProcessingJobs` state only holds jobs created during the current
+page session. `rehydrateFailedJobs()` closes that gap: on the first
+admin/instructor entry it calls
+`GET /api/source-images/?status=failed&limit=20` (`status` and `limit` are
+optional query params on the existing admin/instructor-only list endpoint, both
+applied in SQL) and restores each row as a terminal `failed` job carrying the
+persisted sanitized message. Restored jobs never start a poller and never count
+against `MAX_PROCESSING_JOBS`; rows older than
+`REHYDRATED_FAILURE_MAX_AGE_MS` (7 days, measured from `created_at`) are
+ignored, and a failed fetch clears the once-per-session guard so the next entry
+retries.
+
+Failure snackbars no longer auto-hide — an operator must dismiss them. Dismissed
+source-image ids are persisted per user scope in `localStorage`
+(`hrivpref:dismissed-failed-uploads:user:<scope>`, capped at 200 ids) so a
+dismissed failure does not return on the next reload. Five or more image
+failures collapse into a single `N uploads failed.` snackbar to avoid a pile-up.
+
+Because a collapsed snackbar cannot show every filename, the **Failed uploads**
+dialog (`frontend/src/components/FailedUploadsDialog.tsx`) lists every failed
+source image with its filename, failure time, and persisted reason. It is
+reachable from the collapsed snackbar's _Details_ action and from the Manage
+page header, so it remains available after every snackbar has been dismissed;
+rows can be dismissed individually or all at once.
+
 ## Related code
 
 - Upload router: `backend/app/routers/upload.py`

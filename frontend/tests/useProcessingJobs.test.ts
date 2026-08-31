@@ -1,11 +1,38 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import {
+  MAX_REHYDRATED_FAILURES,
   useProcessingJobs,
   type UseProcessingJobsDeps,
   type ProcessingJob,
 } from '../src/useProcessingJobs'
-import { ApiError, type ApiBulkImportJob } from '../src/api'
+import { ApiError, type ApiBulkImportJob, type ApiSourceImage } from '../src/api'
+
+function makeFailedSourceImage(overrides: Partial<ApiSourceImage> = {}): ApiSourceImage {
+  const now = new Date().toISOString()
+  return {
+    id: 7,
+    original_filename: 'broken.tiff',
+    status: 'failed',
+    progress: 40,
+    error_message: 'Processing failed: unsupported format',
+    status_message: null,
+    name: null,
+    category_id: null,
+    copyright: null,
+    note: null,
+    active: true,
+    image_id: null,
+    file_size: 1234,
+    source_checksum: null,
+    tile_settings_hash: null,
+    tiles_generated_at: null,
+    tile_cache_status: 'missing',
+    created_at: now,
+    updated_at: now,
+    ...overrides,
+  }
+}
 
 async function flushMicrotasks() {
   await Promise.resolve()
@@ -48,6 +75,7 @@ function makeDeps(overrides: Partial<UseProcessingJobsDeps> = {}): UseProcessing
       height: 1000,
       file_size: 5000,
     }),
+    listFailedSourceImages: vi.fn().mockResolvedValue([]),
     loadCategories: vi.fn().mockResolvedValue(undefined),
     loadUncategorizedImages: vi.fn().mockResolvedValue(undefined),
     selectedImageRef: { current: null },
@@ -523,6 +551,155 @@ describe('useProcessingJobs', () => {
         result.current.dismissJob(42)
       })
       expect(result.current.processingJobs).toHaveLength(0)
+    })
+  })
+
+  describe('rehydrateFailedJobs', () => {
+    beforeEach(() => {
+      localStorage.clear()
+    })
+
+    it('restores persisted failures as terminal failed jobs without polling', async () => {
+      const src = makeFailedSourceImage()
+      const deps = makeDeps({ listFailedSourceImages: vi.fn().mockResolvedValue([src]) })
+      const { result } = renderHook(() => useProcessingJobs(deps))
+
+      await act(async () => {
+        await result.current.rehydrateFailedJobs()
+      })
+
+      expect(result.current.processingJobs).toEqual([
+        expect.objectContaining({
+          id: src.id,
+          filename: src.original_filename,
+          status: 'failed',
+          kind: 'image',
+          origin: 'rehydrated',
+          errorMessage: src.error_message,
+        }),
+      ])
+      // Terminal failures must not start a processing poller.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000)
+      })
+      expect(deps.fetchSourceImage).not.toHaveBeenCalled()
+    })
+
+    it('runs only once per session but retries after a failed fetch', async () => {
+      const listFailedSourceImages = vi
+        .fn()
+        .mockRejectedValueOnce(new Error('offline'))
+        .mockResolvedValue([makeFailedSourceImage()])
+      const deps = makeDeps({ listFailedSourceImages })
+      const { result } = renderHook(() => useProcessingJobs(deps))
+
+      await act(async () => {
+        await result.current.rehydrateFailedJobs()
+      })
+      expect(result.current.processingJobs).toHaveLength(0)
+
+      await act(async () => {
+        await result.current.rehydrateFailedJobs()
+      })
+      await act(async () => {
+        await result.current.rehydrateFailedJobs()
+      })
+      expect(listFailedSourceImages).toHaveBeenCalledTimes(2)
+      expect(result.current.processingJobs).toHaveLength(1)
+    })
+
+    it('ignores failures older than the recency cutoff', async () => {
+      const stale = makeFailedSourceImage({
+        created_at: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      const deps = makeDeps({ listFailedSourceImages: vi.fn().mockResolvedValue([stale]) })
+      const { result } = renderHook(() => useProcessingJobs(deps))
+
+      await act(async () => {
+        await result.current.rehydrateFailedJobs()
+      })
+      expect(result.current.processingJobs).toHaveLength(0)
+    })
+
+    it('does not duplicate a failure already tracked live', async () => {
+      const src = makeFailedSourceImage({ id: 42 })
+      const deps = makeDeps({ listFailedSourceImages: vi.fn().mockResolvedValue([src]) })
+      const { result } = renderHook(() => useProcessingJobs(deps))
+
+      act(() => {
+        result.current.addProcessingJob(42, 'test.tiff', 5000)
+      })
+      await act(async () => {
+        await result.current.rehydrateFailedJobs()
+      })
+      expect(result.current.processingJobs).toHaveLength(1)
+    })
+
+    it('caps the number of restored failures', async () => {
+      const many = Array.from({ length: MAX_REHYDRATED_FAILURES + 5 }, (_, i) =>
+        makeFailedSourceImage({ id: i + 1 }),
+      )
+      const deps = makeDeps({ listFailedSourceImages: vi.fn().mockResolvedValue(many) })
+      const { result } = renderHook(() => useProcessingJobs(deps))
+
+      await act(async () => {
+        await result.current.rehydrateFailedJobs()
+      })
+      expect(result.current.processingJobs).toHaveLength(MAX_REHYDRATED_FAILURES)
+    })
+
+    it('does not restore failures the user dismissed, across reloads', async () => {
+      const src = makeFailedSourceImage()
+      const deps = makeDeps({ listFailedSourceImages: vi.fn().mockResolvedValue([src]) })
+      const first = renderHook(() => useProcessingJobs(deps))
+
+      await act(async () => {
+        await first.result.current.rehydrateFailedJobs()
+      })
+      act(() => {
+        first.result.current.dismissJob(src.id)
+      })
+      expect(first.result.current.processingJobs).toHaveLength(0)
+
+      // A fresh hook instance stands in for a page reload.
+      const second = renderHook(() => useProcessingJobs(deps))
+      await act(async () => {
+        await second.result.current.rehydrateFailedJobs()
+      })
+      expect(second.result.current.processingJobs).toHaveLength(0)
+    })
+
+    it('rehydrates again after resetAll so a new user gets their own failures', async () => {
+      const listFailedSourceImages = vi.fn().mockResolvedValue([makeFailedSourceImage()])
+      const deps = makeDeps({ listFailedSourceImages })
+      const { result } = renderHook(() => useProcessingJobs(deps))
+
+      await act(async () => {
+        await result.current.rehydrateFailedJobs()
+      })
+      act(() => {
+        result.current.resetAll()
+      })
+      await act(async () => {
+        await result.current.rehydrateFailedJobs()
+      })
+      expect(listFailedSourceImages).toHaveBeenCalledTimes(2)
+      expect(result.current.processingJobs).toHaveLength(1)
+    })
+
+    it('leaves restored failures out of the active job cap', async () => {
+      const many = Array.from({ length: 6 }, (_, i) => makeFailedSourceImage({ id: i + 1 }))
+      const deps = makeDeps({ listFailedSourceImages: vi.fn().mockResolvedValue(many) })
+      const { result } = renderHook(() => useProcessingJobs(deps))
+
+      await act(async () => {
+        await result.current.rehydrateFailedJobs()
+      })
+      act(() => {
+        result.current.handleUploadStarted(101, 'new.tiff', 100)
+      })
+      expect(result.current.processingJobs.some((job) => job.status === 'uploading')).toBe(true)
     })
   })
 

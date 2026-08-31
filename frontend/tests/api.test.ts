@@ -104,6 +104,7 @@ import {
   deleteChangelogEntry,
   markChangelogRead,
   fetchSourceImage,
+  listSourceImages,
   fetchBulkImportJob,
   reportIssue,
   fetchVersions,
@@ -1253,6 +1254,18 @@ describe('Source Image API', () => {
     const result = await fetchSourceImage(1)
     expect(mockFetch.mock.calls[0][0]).toBe('/api/source-images/1')
     expect(result).toEqual(fixture)
+  })
+
+  it('listSourceImages sends GET without a query when unfiltered', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse([]))
+    await listSourceImages()
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/source-images/')
+  })
+
+  it('listSourceImages serializes status and limit', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse([]))
+    await listSourceImages({ status: 'failed', limit: 20 })
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/source-images/?status=failed&limit=20')
   })
 })
 

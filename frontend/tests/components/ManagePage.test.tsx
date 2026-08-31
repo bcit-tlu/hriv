@@ -12,10 +12,11 @@ vi.mock('../../src/api', async (importOriginal) => {
     replaceImage: vi.fn(),
     bulkUpdateImages: vi.fn(),
     bulkDeleteImages: vi.fn(),
+    listSourceImages: vi.fn(),
   }
 })
 
-import { fetchImages, updateImage } from '../../src/api'
+import { fetchImages, listSourceImages, updateImage } from '../../src/api'
 import type { ApiImage } from '../../src/api'
 import type { Group, Program } from '../../src/types'
 import { makeCategory } from '../helpers/fixtures'
@@ -82,6 +83,17 @@ describe('ManagePage', () => {
         updated_at: '2026-01-02T00:00:00Z',
       },
     ])
+  })
+
+  it('opens the failed uploads list from the manage header', async () => {
+    vi.mocked(listSourceImages).mockResolvedValue([])
+    render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+    await screen.findByText('Blood Smear')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Failed uploads' }))
+
+    expect(await screen.findByText('No failed uploads.')).toBeInTheDocument()
+    expect(listSourceImages).toHaveBeenCalledWith({ status: 'failed', limit: 200 })
   })
 
   it('renders a Groups column with group chips for image category restrictions', async () => {
