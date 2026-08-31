@@ -146,7 +146,7 @@ than a blind overwrite:
 
 Correctness comes from the merge rules rather than the lock:
 
-- an attempt record is only replaced by a *more recently finished* attempt
+- an attempt record is only replaced by a _more recently finished_ attempt
   (ordered by `completed_at`, then `started_at`, then run id), so a slower or
   older run cannot overwrite a newer result;
 - `last_success_*` fields only advance to a newer success, so a late-finishing
