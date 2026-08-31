@@ -268,6 +268,8 @@ async def update_user(
         raise HTTPException(status_code=404, detail="User not found")
     if body.active is False and _user.id == user_id:
         raise HTTPException(status_code=400, detail="Cannot deactivate your own account")
+    if "active" in body.model_fields_set and body.active is None:
+        raise HTTPException(status_code=422, detail="active must be true or false")
     update_data = body.model_dump(exclude_unset=True)
     program_ids = update_data.pop("program_ids", None)
     if "metadata_extra" in update_data:

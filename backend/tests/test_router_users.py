@@ -158,6 +158,7 @@ def test_user_to_mini_out_includes_programs() -> None:
     prog = _make_program(2, "Digital Design")
     user = _make_user(id=3, name="Mira Patel", programs=[prog])
     data = user_to_mini_out(user)
+    assert data["active"] is True
     assert data["program_ids"] == [2]
     assert data["program_names"] == ["Digital Design"]
     assert data["metadata_extra"] is None
@@ -365,6 +366,17 @@ async def test_update_user_self_deactivate_rejected() -> None:
         await update_user(7, UserUpdate(active=False), admin, db)
     assert exc.value.status_code == 400
     assert "own account" in exc.value.detail
+
+
+async def test_update_user_active_null_rejected() -> None:
+    admin = _make_user(id=7, role="admin", active=True)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=_make_user(id=8, role="student", active=True))
+
+    with pytest.raises(HTTPException) as exc:
+        await update_user(8, UserUpdate(active=None), admin, db)
+    assert exc.value.status_code == 422
+    assert "active must be true or false" in exc.value.detail
 
 
 async def test_update_user_with_password() -> None:
