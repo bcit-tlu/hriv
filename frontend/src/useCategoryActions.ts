@@ -317,7 +317,7 @@ export function useCategoryActions({
       const restrictionChangingMove = moves.find((move) => {
         const catPath = findCategoryPath(categories, move.categoryId)
         const category = catPath?.at(-1)
-        if (!category) return false
+        if (!catPath || !category) return false
         const currentAncestors = catPath.slice(0, -1)
         const newAncestors = getAncestorPathForParent(move.newParentId)
         return computeMoveRestrictionChange(category, currentAncestors, newAncestors).hasChange
@@ -326,7 +326,7 @@ export function useCategoryActions({
       if (restrictionChangingMove) {
         const catPath = findCategoryPath(categories, restrictionChangingMove.categoryId)
         const category = catPath?.at(-1)
-        if (category) {
+        if (catPath && category) {
           const currentAncestors = catPath.slice(0, -1)
           const newAncestors = getAncestorPathForParent(restrictionChangingMove.newParentId)
           const change = computeMoveRestrictionChange(category, currentAncestors, newAncestors)
