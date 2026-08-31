@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.47.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.46.0...backend-v0.47.0) (2026-08-31)
+
+
+### Features
+
+* **feedback:** switch "Report Issue" to "Send Feedback" with email delivery ([#1126](https://github.com/bcit-tlu/hriv/issues/1126)) ([6b97615](https://github.com/bcit-tlu/hriv/commit/6b97615b6169dfc4ec113624eba03d751755f50f))
+
+
+### Bug Fixes
+
+* **backend/frontend:** surface source-image and bulk-import processing errors ([#1134](https://github.com/bcit-tlu/hriv/issues/1134)) ([79011d2](https://github.com/bcit-tlu/hriv/commit/79011d22e44576356f17b83de0eb457742e55eae))
+* **backend:** normalize client-supplied filenames at ingestion ([#1140](https://github.com/bcit-tlu/hriv/issues/1140)) ([5f46055](https://github.com/bcit-tlu/hriv/commit/5f460554cd533080a8fa3899b833d5ad5218e059))
+* **backup:** merge shared backup state so concurrent runs cannot clobber it ([#1143](https://github.com/bcit-tlu/hriv/issues/1143)) ([06c121e](https://github.com/bcit-tlu/hriv/commit/06c121edb6962688454ba9f60d0528077f5ae9c1))
+* **frontend:** surface failed image processing after reload ([#1142](https://github.com/bcit-tlu/hriv/issues/1142)) ([650687d](https://github.com/bcit-tlu/hriv/commit/650687d3db82483ccd5b349f3745f2ac8ae2d3d6))
+
 ## [0.46.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.45.0...backend-v0.46.0) (2026-08-24)
 
 
