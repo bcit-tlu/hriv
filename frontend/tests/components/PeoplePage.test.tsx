@@ -921,6 +921,59 @@ describe('PeoplePage', () => {
     expect(screen.queryByText('Added to group(s).')).not.toBeInTheDocument()
   })
 
+  it('does not close a reopened bulk group dialog or clear a new selection when a stale save settles', async () => {
+    const user = userEvent.setup()
+    const { promise, resolve } = createDeferred<ApiGroup>()
+    vi.mocked(addGroupMembersBulk).mockReturnValue(promise)
+    render(<PeoplePage programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    const checkboxes = screen.getAllByRole('checkbox')
+    await user.click(checkboxes[1])
+
+    await user.click(screen.getByText('Bulk Groups (1)'))
+    await user.click(screen.getByRole('combobox'))
+    await user.click(screen.getByRole('option', { name: 'Lab A2' }))
+    await user.keyboard('{Escape}')
+    await user.click(screen.getByRole('button', { name: 'Add to Groups' }))
+
+    // Dismiss the dialog while the request is still in flight.
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => {
+      expect(screen.queryByText('Bulk Add to Groups')).not.toBeInTheDocument()
+    })
+
+    // Make a new selection and reopen the dialog.
+    await user.click(checkboxes[2])
+    await user.click(screen.getByText('Bulk Groups (2)'))
+    expect(screen.getByText('Bulk Add to Groups')).toBeInTheDocument()
+
+    // Settle the abandoned request.
+    const apiGroup: ApiGroup = {
+      id: 7,
+      name: 'Lab A2',
+      description: null,
+      created_by_user_id: null,
+      member_ids: [1, 2],
+      instructor_ids: [],
+      created_at: '',
+      updated_at: '',
+    }
+    await act(async () => {
+      resolve(apiGroup)
+    })
+
+    // The stale save must not close the reopened dialog, clear the new
+    // selection, or surface a snackbar for the abandoned submission.
+    expect(screen.getByText('Bulk Add to Groups')).toBeInTheDocument()
+    expect(screen.queryByText('Added to group(s).')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.getByText('Bulk Groups (2)')).toBeInTheDocument()
+  })
+
   it('does not overwrite newer user data when overlapping loadData fetches resolve in reverse order', async () => {
     const user = userEvent.setup()
     const { promise: p1, resolve: resolveP1 } = createDeferred<ApiUser[]>()
