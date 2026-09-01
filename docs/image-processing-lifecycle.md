@@ -232,6 +232,14 @@ Staleness alone never blocks a new import, and an unreadable Redis liveness
 check fails open. A pending row blocks only while its coordinator has a live
 registration; if the coordinator is lost, the missing registration lets a later
 request proceed.
+The Redis/staleness pre-check above is a check-then-act race under concurrent
+requests: two requests can both pass it before either commits its new
+`BulkImportJob` row. A partial unique index on `bulk_import_jobs`
+(`idx_bulk_import_jobs_single_active`, added in migration
+`0024_bulk_import_single_job`) makes "at most one pending/processing row"
+an actual database guarantee; `bulk_import_images` catches the resulting
+`IntegrityError` on insert, removes the files it had already staged to disk,
+and returns the same 409 the pre-check produces.
 When a queued child observes an absent worker heartbeat for the configured
 wall-clock window, it writes arq's abort latch before marking the `SourceImage`
 failed. The latch narrows the race window; the processor's terminal-row guard

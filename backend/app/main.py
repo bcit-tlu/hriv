@@ -39,6 +39,7 @@ from .routers import (
     groups,
     images,
     issues,
+    jobs,
     oidc,
     programs,
     telemetry,
@@ -288,6 +289,7 @@ app.include_router(categories.router, prefix="/api")
 app.include_router(groups.router, prefix="/api")
 app.include_router(images.router, prefix="/api")
 app.include_router(issues.router, prefix="/api")
+app.include_router(jobs.router, prefix="/api")
 app.include_router(programs.router, prefix="/api")
 app.include_router(telemetry.router, prefix="/api")
 app.include_router(tile_order.router, prefix="/api")

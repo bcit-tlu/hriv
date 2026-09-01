@@ -22,6 +22,7 @@ import pytest
 from arq.constants import abort_jobs_ss
 from arq.jobs import JobStatus
 from fastapi import HTTPException
+from sqlalchemy.exc import IntegrityError
 
 # Ensure pyvips can be imported even when libvips is not installed (CI)
 if "pyvips" not in sys.modules:
@@ -809,6 +810,37 @@ async def test_bulk_import_conflict_rejected_before_staging() -> None:
     assert exc_info.value.status_code == 409
     assert exc_info.value.detail == "A bulk import is already in progress"
     db.add.assert_not_called()
+
+
+async def test_bulk_import_race_loser_gets_409_from_db_constraint(tmp_path) -> None:
+    """A concurrent request that slips past the pre-check is rejected by the
+    partial unique index on ``bulk_import_jobs``; the router translates the
+    resulting IntegrityError into the same 409 the pre-check produces, and
+    removes the file it had already staged to disk."""
+    db = AsyncMock()
+    db.execute.return_value = MagicMock(
+        scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[])
+    )
+    db.add = MagicMock()
+    db.commit = AsyncMock(side_effect=IntegrityError("INSERT", {}, Exception("dup")))
+    db.rollback = AsyncMock()
+
+    with patch("app.routers.bulk_import.settings") as mock_settings:
+        mock_settings.source_images_dir = str(tmp_path)
+        with pytest.raises(HTTPException) as exc_info:
+            await bulk_import_images(
+                files=[_make_upload("race.png", [b"image-data", b""])],
+                category_id=None,
+                background_tasks=MagicMock(),
+                _user=MagicMock(),
+                db=db,
+            )
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == "A bulk import is already in progress"
+    db.rollback.assert_awaited_once()
+    # The staged file was cleaned up rather than left orphaned on disk.
+    assert list(tmp_path.iterdir()) == []
 
 
 async def test_bulk_import_conflict_guard_handles_naive_updated_at() -> None:

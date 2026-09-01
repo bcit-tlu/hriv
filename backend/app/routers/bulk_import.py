@@ -28,6 +28,7 @@ from opentelemetry import trace
 from opentelemetry.trace import StatusCode
 from sqlalchemy import case, cast, select, update
 from sqlalchemy.dialects.postgresql import JSONB as JSONB_type
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.sql import func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1527,7 +1528,24 @@ async def bulk_import_images(
                 file_manifest=[list(entry) for entry in file_entries],
             )
             db.add(job)
-            await db.commit()
+            try:
+                await db.commit()
+            except IntegrityError:
+                # The pre-check above (SELECT for active jobs) is a
+                # check-then-act race: another request can create its job
+                # row between our check and this insert. The partial unique
+                # index on bulk_import_jobs is the actual guarantee here;
+                # translate the resulting constraint violation into the same
+                # 409 the pre-check produces, and clean up the files we
+                # already staged to disk.
+                await db.rollback()
+                for _, stored_path in file_entries:
+                    with contextlib.suppress(OSError):
+                        os.unlink(stored_path)
+                raise HTTPException(
+                    status_code=409,
+                    detail="A bulk import is already in progress",
+                )
             await db.refresh(job)
 
             span.set_attribute("bulk_import.job_id", job.id)

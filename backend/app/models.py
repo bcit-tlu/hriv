@@ -302,6 +302,18 @@ class BulkImportJob(Base):
         # ``alembic revision --autogenerate`` does not propose dropping
         # and recreating this index under a different name.
         Index("idx_bulk_import_jobs_status", "status"),
+        # Enforces "at most one bulk import job is pending/processing at a
+        # time" at the database level. The router's pre-check (SELECT for
+        # active jobs, then INSERT) is a check-then-act race under
+        # concurrent requests; this partial unique index is the actual
+        # guarantee, and the router converts the resulting IntegrityError
+        # into the same 409 response the pre-check produces.
+        Index(
+            "idx_bulk_import_jobs_single_active",
+            text("(true)"),
+            unique=True,
+            postgresql_where=text("status IN ('pending', 'processing')"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

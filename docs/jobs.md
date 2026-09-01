@@ -68,6 +68,20 @@ The schema includes `metadata` JSONB columns on both `jobs` and `job_items` for
 small structured workflow details. Do not store unbounded logs there; detailed
 execution logs belong in the logging/observability stack.
 
+## API
+
+Phase 1 exposes read-only visibility over these tables (`routers/jobs.py`),
+admin-only for now since there are no producers yet and this is purely
+operational visibility:
+
+- `GET /api/jobs/` — list recent jobs, newest first (limit 50), same shape as
+  the existing `AdminTask` listing.
+- `GET /api/jobs/{job_id}` — a single job including its child `JobItem` rows,
+  404 if not found.
+
+No endpoint creates, updates, or cancels jobs yet — that lands with the first
+workflow migrated onto this model (see phase 2 discussion below).
+
 ## Import/export boundary
 
 Generic job records are operational history, not restored application content.

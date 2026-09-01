@@ -277,6 +277,10 @@ class JobOut(BaseModel):
     model_config = {"from_attributes": True, "populate_by_name": True}
 
 
+class JobDetailOut(JobOut):
+    items: list[JobItemOut] = []
+
+
 # ── Category ──────────────────────────────────────────────
 
 class CategoryWarning(BaseModel):
