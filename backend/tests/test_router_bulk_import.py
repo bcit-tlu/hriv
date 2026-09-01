@@ -30,7 +30,6 @@ if "pyvips" not in sys.modules:
 
 from app.routers.bulk_import import (
     _BulkImportProgress,
-    _bulk_import_has_capacity_starvation,
     _bulk_import_coordinator_liveness_loop,
     _is_image_filename,
     _process_bulk_import,
@@ -42,17 +41,16 @@ from app.routers.bulk_import import (
     list_bulk_import_jobs,
     reconcile_stale_bulk_import_jobs,
 )
-from app.worker import EnqueueResult, TaskQueueUnavailableError, WorkerSettings
+from app.worker import EnqueueResult, WorkerSettings
 
 
-# ── Global fixture: default enqueue_bulk_import to False (no Redis) ───────
-# The endpoint now prefers arq; patch it to return a fallback result by default so
-# the BackgroundTasks fallback path (tested by existing tests) is exercised.
+# ── Global fixture: default child-image enqueue to fallback (no Redis) ─────
+# Bulk-import coordinators are API-hosted; child image work still prefers arq and
+# falls back to direct processing when Redis is unavailable.
 
 @pytest.fixture(autouse=True)
-def _patch_enqueue_bulk_import():
+def _patch_child_image_enqueue():
     with (
-        patch("app.routers.bulk_import.enqueue_bulk_import", new_callable=AsyncMock, return_value=EnqueueResult("fallback", "queue_unavailable")),
         patch("app.routers.bulk_import.enqueue_process_source_image", new_callable=AsyncMock, return_value=EnqueueResult("fallback", "queue_unavailable")),
         patch("app.routers.bulk_import._SOURCE_IMAGE_QUEUE_STATE_SAMPLE_POLLS", 1),
         patch(
@@ -1592,57 +1590,6 @@ async def test_wait_for_source_image_batch_progress_resets_deadlock_window() -> 
     assert progress.last_child_advanced_at == 200.0
 
 
-async def test_capacity_starvation_detector_is_a_compatibility_noop() -> None:
-    """Legacy worker-slot starvation checks are intentionally disabled."""
-    progress = _BulkImportProgress(time.monotonic())
-    progress.capacity_starvation_detected = True
-    pool = MagicMock()
-    pool.zcount = AsyncMock(return_value=4)
-
-    assert not await _bulk_import_has_capacity_starvation(
-        batch_progress=progress,
-        stale_after_seconds=900,
-        last_queue_confirmed_at=time.monotonic(),
-        last_queue_worker_up=True,
-        job_status=JobStatus.queued,
-        coordinator_pool=pool,
-    )
-
-
-async def test_capacity_starvation_detector_remains_false_after_coordinator_recovery() -> None:
-    """A previous capacity verdict cannot persist after slots free because no slots exist."""
-    progress = _BulkImportProgress(time.monotonic())
-    progress.capacity_starvation_detected = True
-    pool = MagicMock()
-    pool.zcount = AsyncMock(return_value=3)
-
-    assert not await _bulk_import_has_capacity_starvation(
-        batch_progress=progress,
-        stale_after_seconds=900,
-        last_queue_confirmed_at=time.monotonic(),
-        last_queue_worker_up=True,
-        job_status=JobStatus.queued,
-        coordinator_pool=pool,
-    )
-
-
-async def test_capacity_starvation_detector_ignores_api_hosted_coordinator() -> None:
-    """API-hosted local fallback coordinators do not participate in slot accounting."""
-    progress = _BulkImportProgress(time.monotonic() - 901)
-    coordinator_pool = AsyncMock()
-    coordinator_pool.zcount.return_value = 0
-
-    assert not await _bulk_import_has_capacity_starvation(
-        batch_progress=progress,
-        stale_after_seconds=900,
-        last_queue_confirmed_at=time.monotonic(),
-        last_queue_worker_up=True,
-        job_status=JobStatus.queued,
-        coordinator_pool=coordinator_pool,
-    )
-    coordinator_pool.zcount.assert_not_awaited()
-
-
 async def test_wait_for_source_image_refreshes_queue_evidence_for_in_progress_job() -> None:
     """An executing arq child is positive evidence that the queue is healthy."""
     job = MagicMock()
@@ -2863,11 +2810,11 @@ async def test_bulk_import_images_strips_directory_prefix_from_zip(tmp_path) -> 
     )
 
 
-# ── arq routing tests ─────────────────────────────────────────────────────
+# ── coordinator routing tests ─────────────────────────────────────────────
 
 
-async def test_bulk_import_uses_arq_when_redis_available(tmp_path) -> None:
-    """When enqueue_bulk_import returns True, BackgroundTasks is NOT used."""
+async def test_bulk_import_uses_api_hosted_coordinator(tmp_path) -> None:
+    """Bulk import coordinators do not occupy arq worker slots."""
     category = SimpleNamespace(id=1)
     db = AsyncMock()
     db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
@@ -2881,26 +2828,26 @@ async def test_bulk_import_uses_arq_when_redis_available(tmp_path) -> None:
     db.refresh = AsyncMock(side_effect=_refresh)
     bg = MagicMock()
 
-    mock_enqueue = AsyncMock(return_value=EnqueueResult("queued", "submitted"))
-    with patch("app.routers.bulk_import.enqueue_bulk_import", mock_enqueue):
-        with patch("app.routers.bulk_import.settings") as mock_settings:
-            mock_settings.source_images_dir = str(tmp_path)
-            result = await bulk_import_images(
-                files=[_make_upload("a.png", [b"png-bytes", b""])],
-                category_id=1,
-                background_tasks=bg,
-                _user=MagicMock(),
-                db=db,
-            )
+    with patch("app.routers.bulk_import.settings") as mock_settings:
+        mock_settings.source_images_dir = str(tmp_path)
+        result = await bulk_import_images(
+            files=[_make_upload("a.png", [b"png-bytes", b""])],
+            category_id=1,
+            background_tasks=bg,
+            _user=MagicMock(),
+            db=db,
+        )
 
     assert result.id == 99
-    mock_enqueue.assert_awaited_once()
-    # BackgroundTasks should NOT have been called (arq handled it)
-    bg.add_task.assert_not_called()
+    bg.add_task.assert_called_once()
+    _, args, kwargs = bg.add_task.mock_calls[0]
+    assert args[0] is _process_bulk_import
+    assert args[1] == 99
+    assert kwargs["active"] is True
 
 
-async def test_bulk_import_falls_back_to_background_tasks(tmp_path) -> None:
-    """When enqueue_bulk_import returns False, BackgroundTasks IS used."""
+async def test_bulk_import_required_mode_still_schedules_api_coordinator(tmp_path) -> None:
+    """Required mode applies to child worker jobs, not coordinator scheduling."""
     category = SimpleNamespace(id=1)
     db = AsyncMock()
     db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
@@ -2914,70 +2861,19 @@ async def test_bulk_import_falls_back_to_background_tasks(tmp_path) -> None:
     db.refresh = AsyncMock(side_effect=_refresh)
     bg = MagicMock()
 
-    mock_enqueue = AsyncMock(return_value=EnqueueResult("fallback", "queue_unavailable"))
-    with patch("app.routers.bulk_import.enqueue_bulk_import", mock_enqueue):
-        with patch("app.routers.bulk_import.settings") as mock_settings:
-            mock_settings.source_images_dir = str(tmp_path)
-            result = await bulk_import_images(
-                files=[_make_upload("b.tiff", [b"tiff-data", b""])],
-                category_id=1,
-                background_tasks=bg,
-                _user=MagicMock(),
-                db=db,
-            )
+    with patch("app.routers.bulk_import.settings") as mock_settings:
+        mock_settings.source_images_dir = str(tmp_path)
+        mock_settings.task_execution_mode = "required"
+        result = await bulk_import_images(
+            files=[_make_upload("b.tiff", [b"tiff-data", b""])],
+            category_id=1,
+            background_tasks=bg,
+            _user=MagicMock(),
+            db=db,
+        )
 
     assert result.id == 77
-    mock_enqueue.assert_awaited_once()
-    # BackgroundTasks should have been called as fallback
-    assert bg.add_task.call_count == 1
-
-
-@pytest.mark.parametrize("bookkeeping_succeeds", [True, False])
-async def test_bulk_import_rejection_unlinks_only_after_bookkeeping(
-    tmp_path,
-    bookkeeping_succeeds: bool,
-) -> None:
-    """Queue rejection retains staged files when terminal bookkeeping fails."""
-    category = SimpleNamespace(id=1)
-    db = AsyncMock()
-    db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
-    db.get = AsyncMock(return_value=category)
-    db.add = MagicMock()
-    db.refresh = AsyncMock(side_effect=lambda obj: setattr(obj, "id", 88))
-    db.commit = AsyncMock(
-        side_effect=(
-            [None, None]
-            if bookkeeping_succeeds
-            else [None, RuntimeError("connection lost")]
-        ),
-    )
-    bg = MagicMock()
-    unlink = MagicMock()
-
-    with (
-        patch("app.routers.bulk_import.settings") as mock_settings,
-        patch(
-            "app.routers.bulk_import.enqueue_bulk_import",
-            new=AsyncMock(
-                side_effect=TaskQueueUnavailableError("queue_unavailable"),
-            ),
-        ),
-        patch("app.routers.bulk_import.os.unlink", new=unlink),
-    ):
-        mock_settings.source_images_dir = str(tmp_path)
-        with pytest.raises(TaskQueueUnavailableError):
-            await bulk_import_images(
-                files=[_make_upload("rejected.tiff", [b"tiff-data", b""])],
-                category_id=1,
-                background_tasks=bg,
-                _user=MagicMock(),
-                db=db,
-            )
-
-    if bookkeeping_succeeds:
-        unlink.assert_called_once()
-    else:
-        unlink.assert_not_called()
+    bg.add_task.assert_called_once()
 
 
 # ── ENOSPC handling ──────────────────────────────────────────────────────

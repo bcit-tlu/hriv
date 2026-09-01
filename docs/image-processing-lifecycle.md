@@ -75,17 +75,17 @@ without blocking tile generation.
 
 ## Worker configuration
 
-| Setting              | Value            | Rationale                                                                                                                                                          |
-| -------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `WORKER_MAX_JOBS`    | 4 (configurable) | Concurrent processing slots per worker pod; also bounds in-process bulk-import concurrency in local mode                                                           |
-| `WORKER_TOTAL_SLOTS` | 4 (configurable) | Cluster-wide worker-slot capacity used by starvation detection; defaults to the single-replica `WORKER_MAX_JOBS` value and can later be set to replicas × max jobs |
-| `job_timeout`        | 7200s            | 2 hours — large filesystem archives need headroom                                                                                                                  |
+| Setting           | Value            | Rationale                                                                                                |
+| ----------------- | ---------------- | -------------------------------------------------------------------------------------------------------- |
+| `WORKER_MAX_JOBS` | 4 (configurable) | Concurrent processing slots per worker pod; also bounds in-process bulk-import concurrency in local mode |
+| `job_timeout`     | 7200s            | 2 hours — large filesystem archives need headroom                                                        |
 
 Task types registered on the worker:
 
 - `process_source_image_task` — new upload
 - `replace_image_task` — image replacement
-- `bulk_import_task` — multi-file / ZIP ingestion
+- `bulk_import_task` — legacy compatibility wrapper for already-queued
+  bulk-import coordinators; new bulk imports use API-hosted coordination
 
 ### Task execution modes and Redis fallback
 
@@ -219,25 +219,19 @@ settings hash. See [tile-cache-provenance.md](tile-cache-provenance.md) for the
 staleness rules and API surface.
 
 Bulk-import coordinators distinguish a lost child job from a stopped worker.
-The coordinator itself is registered with arq using `max_tries=1`: arq does not
-retry a timed-out coordinator because rerunning the non-idempotent coordinator
-would create duplicate `SourceImage` rows for the same files.
-All coordinators register liveness in Redis, including API-hosted local
-fallbacks, while a separate registration tracks only worker-hosted arq slot
-occupancy. Capacity starvation counts only the latter. The bulk-import endpoint
-returns HTTP 409 (`A bulk import is already in progress`) while another
-pending or processing import has a live coordinator registration, or while a
-pending or processing row is still within the short coordinator-registration
-window (covering coordinators that are queued or starting and have not
-registered yet).
+New bulk-import requests run their lightweight coordinator via the API
+`BackgroundTasks` path so the coordinator never occupies an arq worker slot
+while it waits for child image jobs. Child image processing still prefers the
+arq worker queue, and `TASK_EXECUTION_MODE=required` still rejects child queue
+submission failures rather than processing images in the API process.
+Coordinators register liveness in Redis. The bulk-import endpoint returns HTTP
+409 (`A bulk import is already in progress`) while another pending or
+processing import has a live coordinator registration, or while a pending or
+processing row is still within the short coordinator-registration window.
 Staleness alone never blocks a new import, and an unreadable Redis liveness
-check fails open. This prevents coordinators from consuming every worker slot
-without making imports permanently un-startable. The serialization is
-intentionally temporary until issue
-[#1078](https://github.com/bcit-tlu/hriv/issues/1078) provides a safe
-concurrent-coordinator model. A pending row blocks only while its coordinator
-has a live registration; if the enqueue or coordinator is lost, the missing
-registration lets a later request proceed.
+check fails open. A pending row blocks only while its coordinator has a live
+registration; if the coordinator is lost, the missing registration lets a later
+request proceed.
 When a queued child observes an absent worker heartbeat for the configured
 wall-clock window, it writes arq's abort latch before marking the `SourceImage`
 failed. The latch narrows the race window; the processor's terminal-row guard
@@ -249,8 +243,8 @@ child whose status has remained unknown without failing healthy queued work.
 The processing backstop is above the child's `job_timeout` because its clock
 starts when processing is first observed. Worker-hosted coordinators normally
 rely on the 900-second no-progress stale check because arq's coordinator
-timeout is reached first; the processing backstop is retained for API-hosted
-coordination. Both paths use the latch before failing the row. This guarantee
+timeout is reached first; new API-hosted coordination retains the processing
+backstop. Both paths use the latch before failing the row. This guarantee
 relies on the pinned arq version's past-dated abort-marker behavior and is
 covered by
 `test_abort_latch_survives_pruning_and_is_consumed_before_job_start` in

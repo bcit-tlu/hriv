@@ -24,7 +24,6 @@ def test_required_mode_call_site_matrix_has_terminal_rejection_guards() -> None:
     call_sites = (
         (upload.upload_source_image, "TaskQueueUnavailableError"),
         (images.replace_image, "TaskQueueUnavailableError"),
-        (bulk_import.bulk_import_images, "TaskQueueUnavailableError"),
         (bulk_import._process_bulk_import_impl, "TaskQueueUnavailableError"),
         (admin._kick_off, "TaskQueueUnavailableError"),
     )
@@ -125,40 +124,6 @@ async def test_required_mode_call_site_matrix_rejects_without_runners(tmp_path) 
     replace_src = replace_db.add.call_args.args[0]
     assert replace_src.status == "failed"
     replace_bg.add_task.assert_not_called()
-
-    bulk_db = MagicMock()
-    bulk_result = MagicMock()
-    bulk_result.scalar_one.return_value = 0
-    bulk_result.all.return_value = []
-    bulk_db.execute = AsyncMock(return_value=bulk_result)
-    bulk_db.commit = AsyncMock()
-    bulk_db.refresh = AsyncMock(side_effect=lambda obj: setattr(obj, "id", 3))
-    bulk_bg = MagicMock()
-    with (
-        patch.object(settings, "task_execution_mode", "required"),
-        patch.object(settings, "source_images_dir", str(tmp_path)),
-        patch(
-            "app.routers.bulk_import.enqueue_bulk_import",
-            new_callable=AsyncMock,
-            side_effect=queue_error,
-        ),
-    ):
-        try:
-            await bulk_import.bulk_import_images(
-                [bulk_import_upload("bulk.jpg")],
-                bulk_bg,
-                MagicMock(),
-                db=bulk_db,
-            )
-        except TaskQueueUnavailableError:
-            pass
-        else:
-            raise AssertionError("bulk endpoint accepted a rejected submission")
-    bulk_job = bulk_db.add.call_args.args[0]
-    assert bulk_job.status == "failed"
-    assert bulk_job.failed_count == bulk_job.total_count
-    assert bulk_job.errors[-1]["filename"] is None
-    bulk_bg.add_task.assert_not_called()
 
     job = SimpleNamespace(
         id=4,

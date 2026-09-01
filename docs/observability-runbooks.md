@@ -800,8 +800,11 @@ Distinguish the four failure classes in structured logs:
 
 For required-mode enqueue failures, verify the API returned HTTP 503 with
 `Retry-After: 30`, then confirm the corresponding `SourceImage` or
-`AdminTask` is terminal rather than pending. Bulk imports record the rejection
-in the job's `errors` list and mark the job failed.
+`AdminTask` is terminal rather than pending. Bulk-import coordinators are
+API-hosted orchestration tasks, so a bulk-import request can still create the
+coordinator job successfully; any child image whose required worker-queue
+submission fails is recorded as a per-file failure in the `BulkImportJob`
+errors list.
 
 When a bulk-import worker recovers after the no-worker detector writes an abort
 latch, look for `bulk_import.source_job_worker_recovered`. The latch-write,
@@ -811,9 +814,6 @@ symptom is a child that fails with a generic processing error during a worker
 flap, without an abort-specific message. Retry the bulk import; do not treat
 that narrow race as evidence of a bad source image.
 
-If `bulk_import.source_job_capacity_starvation` appears, the event records
-that the child remained queued while the queue and worker were healthy and all
-configured worker-hosted coordinator slots were occupied. The coordinator
-liveness check excludes stale abandoned import rows and API-hosted local
-coordinators, so this is distinct from a child waiting behind unrelated work.
-Retry the import after capacity is available.
+Bulk-import coordinator slot-starvation events are obsolete. New coordinators
+do not run in arq worker slots, so queued children cannot be blocked behind
+their own waiting coordinator.

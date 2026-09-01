@@ -48,7 +48,6 @@ from ..worker import (
     EnqueueResult,
     TaskQueueUnavailableError,
     WorkerSettings,
-    enqueue_bulk_import,
     enqueue_process_source_image,
     get_pool,
 )
@@ -120,7 +119,6 @@ class _BulkImportProgress:
 
     last_child_advanced_at: float
     observed_statuses: dict[int, str] = field(default_factory=dict)
-    capacity_starvation_detected: bool = False
 
     def observe(self, source_image_id: int, status: str) -> None:
         previous_status = self.observed_statuses.get(source_image_id)
@@ -266,25 +264,6 @@ async def _reread_source_image_after_abort_latch(
         job_id,
     )
     return latest_src, latch_removed
-
-
-async def _bulk_import_has_capacity_starvation(
-    *,
-    batch_progress: _BulkImportProgress | None,
-    stale_after_seconds: int,
-    last_queue_confirmed_at: float | None,
-    last_queue_worker_up: bool | None,
-    job_status: JobStatus | None,
-    coordinator_pool: ArqRedis | None,
-) -> bool:
-    """Compatibility no-op for the legacy slot-starvation detector.
-
-    Bulk-import coordinators no longer reserve worker slots for the duration of
-    a batch, so no child should be failed on the basis of *coordinator capacity*.
-    Stale-progress / lost-job checks remain in place, but they are no longer
-    coupled to the total-worker-slots setting.
-    """
-    return False
 
 
 async def _register_bulk_import_coordinator(
@@ -1505,53 +1484,20 @@ async def bulk_import_images(
                 },
             )
 
-            # Prefer the arq task queue for resource isolation and job
-            # persistence; fall back to in-process BackgroundTasks when Redis
-            # is unavailable (e.g. local development without Redis).
+            # Run the coordinator in the API process so it does not occupy an
+            # arq worker slot while waiting for child image jobs. The coordinator
+            # itself is lightweight orchestration; child image processing still
+            # goes through the worker queue when available/required.
             bulk_job_id = job.id
-            try:
-                enqueue_result = await enqueue_bulk_import(
-                    bulk_job_id,
-                    file_entries,
-                    copyright=copyright,
-                    note=note,
-                    active=active,
-                )
-            except TaskQueueUnavailableError:
-                bookkeeping_committed = False
-                error_entry = [{
-                    "filename": None,
-                    "error": "Task queue unavailable; bulk import was not started.",
-                }]
-                try:
-                    job.status = "failed"
-                    job.failed_count = job.total_count
-                    job.errors = list(job.errors or []) + error_entry
-                    await db.commit()
-                    bookkeeping_committed = True
-                except Exception:
-                    logger.exception(
-                        "Failed to mark bulk import after queue rejection",
-                        extra={
-                            "event": "bulk_import.queue_rejection_bookkeeping_failed",
-                            "job_id": bulk_job_id,
-                        },
-                    )
-                if bookkeeping_committed:
-                    for _, stored_path in file_entries:
-                        with contextlib.suppress(OSError):
-                            os.unlink(stored_path)
-                raise
-            span.set_attribute("bulk_import.enqueued", enqueue_result.queued)
-            if not enqueue_result.queued:
-                background_tasks.add_task(
-                    _process_bulk_import,
-                    bulk_job_id,
-                    file_entries,
-                    copyright=copyright,
-                    note=note,
-                    active=active,
-                )
+            span.set_attribute("bulk_import.coordinator_hosted", "api")
+            background_tasks.add_task(
+                _process_bulk_import,
+                bulk_job_id,
+                file_entries,
+                copyright=copyright,
+                note=note,
+                active=active,
+            )
 
             return job
         except Exception as exc:

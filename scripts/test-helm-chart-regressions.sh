@@ -241,8 +241,8 @@ backend_required_manifest="$(helm template test charts/backend \
 backend_required_api="$(extract_yaml_doc "$backend_required_manifest" "Deployment" "test-hriv-backend")"
 assert_contains "$backend_required_api" 'value: "required"' \
   "backend deployment should render TASK_EXECUTION_MODE=required"
-assert_contains "$backend_required_api" 'name: WORKER_TOTAL_SLOTS' \
-  "backend deployment should render WORKER_TOTAL_SLOTS when redis.worker.totalSlots is set"
+assert_not_contains "$backend_required_api" 'name: WORKER_TOTAL_SLOTS' \
+  "backend deployment should not render deprecated WORKER_TOTAL_SLOTS"
 
 backend_required_worker="$(extract_yaml_doc "$backend_required_manifest" "Deployment" "test-hriv-backend-worker")"
 assert_contains "$backend_required_worker" 'name: TASK_EXECUTION_MODE' \
@@ -251,8 +251,8 @@ assert_contains "$backend_required_worker" 'value: "required"' \
   "worker deployment should render TASK_EXECUTION_MODE=required"
 assert_contains "$backend_required_worker" 'name: WORKER_MAX_JOBS' \
   "worker deployment should render WORKER_MAX_JOBS"
-assert_contains "$backend_required_worker" 'value: "8"' \
-  "worker deployment should render the configured WORKER_TOTAL_SLOTS value"
+assert_not_contains "$backend_required_worker" 'name: WORKER_TOTAL_SLOTS' \
+  "worker deployment should not render deprecated WORKER_TOTAL_SLOTS"
 assert_contains "$backend_required_worker" 'name: DB_POOL_SIZE' \
   "worker deployment should render the worker-specific DB_POOL_SIZE"
 assert_contains "$backend_required_worker" 'name: DB_MAX_OVERFLOW' \

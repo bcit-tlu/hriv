@@ -274,7 +274,12 @@ async def enqueue_bulk_import(
     note: str | None = None,
     active: bool = True,
 ) -> EnqueueResult:
-    """Enqueue a bulk-import processing job via the shared queue boundary."""
+    """Legacy bulk-import coordinator enqueue helper.
+
+    New bulk-import requests run the lightweight coordinator from the API
+    BackgroundTasks path so arq worker slots remain available for child image
+    processing. Keep this helper while older queued jobs may still exist.
+    """
     return await _enqueue(
         "bulk_import_task", job_id, file_entries, copyright, note, active,
         job_type="bulk_import",
@@ -370,7 +375,11 @@ async def bulk_import_task(
     active: bool,
     trace_headers: dict[str, str] | None = None,
 ) -> None:
-    """arq task wrapper for bulk import processing."""
+    """Legacy arq wrapper for bulk import processing.
+
+    New bulk-import requests no longer enqueue this task because a coordinator
+    that waits on child image jobs must not consume an arq worker slot.
+    """
     from .routers.bulk_import import _process_bulk_import
 
     parent_ctx = extract(trace_headers) if trace_headers else None

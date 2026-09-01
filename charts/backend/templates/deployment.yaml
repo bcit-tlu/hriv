@@ -242,15 +242,9 @@ spec:
             - name: TASK_EXECUTION_MODE
               value: {{ .Values.tasks.executionMode | quote }}
             # WORKER_MAX_JOBS also bounds the in-process fallback
-            # concurrency used by local-mode bulk imports, and
-            # WORKER_TOTAL_SLOTS feeds bulk-import starvation detection
-            # on the API side, so both render on the API pod too.
+            # concurrency used by local-mode bulk imports.
             - name: WORKER_MAX_JOBS
               value: {{ .Values.redis.worker.maxJobs | quote }}
-            {{- if .Values.redis.worker.totalSlots }}
-            - name: WORKER_TOTAL_SLOTS
-              value: {{ .Values.redis.worker.totalSlots | quote }}
-            {{- end }}
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
