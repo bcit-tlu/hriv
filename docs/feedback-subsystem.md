@@ -117,6 +117,44 @@ feedback:
 The referenced secret must expose key `url`, which becomes
 `FEEDBACK_TEAMS_WEBHOOK_URL` in the backend pod.
 
+## Troubleshooting
+
+A `503` from `POST /api/issues/report` means the backend did not attempt an
+external delivery because the provider is disabled, unsupported, or missing a
+required non-empty setting. A `502` means a configured provider was selected,
+but SMTP or Teams delivery failed.
+
+Inspect the rendered backend Deployment without printing secret values:
+
+```bash
+kubectl -n <namespace> get deploy <backend-deployment> \
+  -o jsonpath='{range .spec.template.spec.containers[?(@.name=="backend")].env[*]}{.name}{"\t"}{.value}{"\t"}{.valueFrom.secretKeyRef.name}{"/"}{.valueFrom.secretKeyRef.key}{"\n"}{end}' \
+  | grep '^FEEDBACK_'
+```
+
+Check which feedback variables are set and non-empty inside the running pod.
+This prints only state, never values:
+
+```bash
+kubectl -n <namespace> exec deploy/<backend-deployment> -c backend -- python -c \
+  'import os; names=sorted(n for n in os.environ if n.startswith("FEEDBACK_")); print("\n".join(n+"=<"+("set" if os.environ[n] else "empty")+">" for n in names) or "no FEEDBACK_* variables")'
+```
+
+For email delivery, confirm the referenced Secret contains the required keys
+without decoding their values:
+
+```bash
+kubectl -n <namespace> get secret <feedback-secret> \
+  -o go-template='{{range $key, $_ := .data}}{{$key}}{{"\n"}}{{end}}'
+```
+
+Required email keys are `smtp_server`, `smtp_port`, `username`, and `password`.
+After correcting Helm values or the Secret, restart the backend Deployment and
+retry the submission. Backend logs emit `feedback.delivery_not_configured` with
+the safe configuration reason for a `503`, or `feedback.delivery_failed` with
+the provider error for a `502`; correlate either event with the request id from
+the `POST /api/issues/report` audit log.
+
 ## Submission Outcome UX
 
 The modal title is "Send Feedback". Successful submissions display a success

@@ -1,5 +1,6 @@
 """Router for submitting in-app feedback."""
 
+import logging
 import re
 import time
 import unicodedata
@@ -21,6 +22,8 @@ from ..feedback import (
     get_feedback_submission_timestamp,
 )
 from ..models import User
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["issues"])
 
@@ -190,6 +193,16 @@ async def report_issue(
     try:
         delivery = get_feedback_delivery()
     except FeedbackNotConfiguredError as exc:
+        logger.warning(
+            "Feedback submission rejected because delivery is not configured",
+            extra={
+                "event": "feedback.delivery_not_configured",
+                "feedback.outcome": "failure",
+                "feedback.reason": str(exc),
+                "user_id": current_user.id,
+                "user_role": current_user.role,
+            },
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
@@ -208,6 +221,16 @@ async def report_issue(
     try:
         result = await delivery.submit(submission)
     except FeedbackDeliveryError as exc:
+        logger.error(
+            "Feedback delivery failed",
+            extra={
+                "event": "feedback.delivery_failed",
+                "feedback.outcome": "failure",
+                "feedback.reason": str(exc),
+                "user_id": current_user.id,
+                "user_role": current_user.role,
+            },
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
