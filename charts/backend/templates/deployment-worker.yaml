@@ -8,7 +8,7 @@
 {{- fail "redis.worker.enabled requires redis.enabled — the worker needs a Redis connection" }}
 {{- end }}
 {{- if lt (.Values.redis.worker.maxJobs | int) 2 }}
-{{- fail "redis.worker.maxJobs must be at least 2 — a bulk-import coordinator occupies one arq slot for its whole batch, so a single slot deadlocks imports" }}
+{{- fail "redis.worker.maxJobs must be at least 2 so the worker has enough capacity for image-processing jobs" }}
 {{- end }}
 {{- if and .Values.redis.enabled .Values.redis.worker.enabled .Values.persistence.enabled (not (has "ReadWriteMany" $sourceImagesAccessModes)) }}
 {{- fail "redis.worker.enabled with persistence requires a ReadWriteMany source-images PVC — the worker and API pods both mount /data" }}
@@ -75,10 +75,6 @@ spec:
               value: {{ .Values.tasks.executionMode | quote }}
             - name: WORKER_MAX_JOBS
               value: {{ .Values.redis.worker.maxJobs | quote }}
-            {{- if .Values.redis.worker.totalSlots }}
-            - name: WORKER_TOTAL_SLOTS
-              value: {{ .Values.redis.worker.totalSlots | quote }}
-            {{- end }}
             - name: DB_POOL_SIZE
               value: {{ .Values.redis.worker.db.poolSize | quote }}
             - name: DB_MAX_OVERFLOW

@@ -163,15 +163,12 @@ overlays should set `required`; leave `local` everywhere else.
 Beyond resources, the worker Deployment exposes:
 
 - `redis.worker.maxJobs` (default `4`, minimum 2) — rendered as
-  `WORKER_MAX_JOBS`, the max concurrent arq jobs per worker pod. A bulk-import
-  coordinator holds one slot for its whole batch, so keep this above the number
-  of concurrent bulk imports. Also rendered on the API pod, where it bounds the
-  in-process fallback concurrency in local mode.
-- `redis.worker.totalSlots` (default empty) — rendered as `WORKER_TOTAL_SLOTS`
-  on both pods when set. Bulk-import starvation detection compares live
-  coordinators against cluster-wide slot capacity; the runtime default
-  (`maxJobs`) is only correct for a single worker replica, so set this to
-  `replicas × maxJobs` when running or autoscaling multiple worker replicas.
+  `WORKER_MAX_JOBS`, the max concurrent arq jobs per worker pod. Also rendered
+  on the API pod, where it bounds the API-hosted bulk-import coordinator's
+  child scheduling concurrency and in-process local-mode fallback concurrency.
+- `redis.worker.totalSlots` (default empty) — deprecated compatibility value.
+  It is no longer rendered as `WORKER_TOTAL_SLOTS` because bulk-import
+  coordinator slot-starvation detection has been removed.
 - `redis.worker.db.poolSize` / `redis.worker.db.maxOverflow` (defaults `5`/`5`)
   — rendered as `DB_POOL_SIZE` / `DB_MAX_OVERFLOW`. The backend defaults
   (10/20) are sized for the API; a worker running at most `maxJobs` jobs needs

@@ -329,6 +329,18 @@ class BulkImportJob(Base):
         default=list,
         server_default=text("'[]'::jsonb"),
     )
+    # Staged [original_filename, stored_path] pairs for this job, persisted at
+    # creation time (before the coordinator starts). If the API process is
+    # restarted mid-import, startup reconciliation uses this to tell which
+    # staged files were never picked up for processing and removes them
+    # instead of leaking them on disk indefinitely. See
+    # reconcile_stale_bulk_import_jobs.
+    file_manifest: Mapped[list | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
