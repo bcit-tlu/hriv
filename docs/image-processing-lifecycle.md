@@ -285,6 +285,19 @@ behind by a cancelled or killed arq job; the coordinator uses
 `max_tries=1` because retrying its non-idempotent batch would duplicate
 `SourceImage` rows.
 
+Because the coordinator now lives entirely in the API process
+(`BackgroundTasks`, not arq), its in-memory `file_entries` manifest does not
+survive an API restart — an interrupted import is not resumed, only
+finalized to a terminal state as described above. To avoid leaking staged
+files, `bulk_import_images` persists the same manifest as
+`BulkImportJob.file_manifest` before scheduling the coordinator. When
+`reconcile_stale_bulk_import_jobs()` finalizes a stale job, it also removes
+any manifest-listed staged file that never became a `SourceImage` row (via
+`_cleanup_orphaned_bulk_import_files`), so an interrupted import doesn't hold
+disk space indefinitely. This does not resume in-flight processing; that
+would require the durable job/queue model tracked for a future iteration
+(see the `Job`/`JobItem` foundation work).
+
 ## Surfacing failures after a reload
 
 `SourceImage.error_message` is persisted, so failures survive a reload — but the

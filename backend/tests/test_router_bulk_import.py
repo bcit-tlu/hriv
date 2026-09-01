@@ -31,6 +31,7 @@ if "pyvips" not in sys.modules:
 from app.routers.bulk_import import (
     _BulkImportProgress,
     _bulk_import_coordinator_liveness_loop,
+    _cleanup_orphaned_bulk_import_files,
     _is_image_filename,
     _process_bulk_import,
     _process_bulk_import_impl,
@@ -92,8 +93,10 @@ async def test_reconcile_stale_bulk_import_jobs_marks_expired_processing_stale()
     row.__getitem__ = lambda self, index: 27
     result = MagicMock()
     result.all.return_value = [row]
+    manifest_result = MagicMock()
+    manifest_result.all.return_value = []
     session = AsyncMock()
-    session.execute = AsyncMock(return_value=result)
+    session.execute = AsyncMock(side_effect=[result, manifest_result])
     pool = MagicMock()
     pool.zrange = AsyncMock(return_value=[])
 
@@ -109,7 +112,7 @@ async def test_reconcile_stale_bulk_import_jobs_marks_expired_processing_stale()
 
     assert count == 1
     session.commit.assert_awaited_once()
-    stmt = session.execute.await_args.args[0]
+    stmt = session.execute.await_args_list[0].args[0]
     assert stmt.compile().params["status_1"] == ["pending", "processing"]
     sql = str(stmt.compile())
     assert "CASE" in sql
@@ -121,6 +124,9 @@ async def test_reconcile_stale_bulk_import_jobs_marks_expired_processing_stale()
     assert "errors" in sql
     assert "failed_count" in sql
     pool.zrange.assert_awaited_once()
+    # The manifest lookup for orphaned-file cleanup runs after finalization.
+    manifest_stmt = session.execute.await_args_list[1].args[0]
+    assert "file_manifest" in str(manifest_stmt.compile())
 
 
 async def test_reconcile_stale_bulk_import_jobs_keeps_live_coordinator() -> None:
@@ -151,7 +157,9 @@ async def test_reconcile_stale_bulk_import_jobs_uses_conservative_cutoff_without
     session = AsyncMock()
     result = MagicMock()
     result.all.return_value = [(27,)]
-    session.execute = AsyncMock(return_value=result)
+    manifest_result = MagicMock()
+    manifest_result.all.return_value = []
+    session.execute = AsyncMock(side_effect=[result, manifest_result])
 
     with patch(
         "app.routers.bulk_import.get_pool",
@@ -164,8 +172,49 @@ async def test_reconcile_stale_bulk_import_jobs_uses_conservative_cutoff_without
         )
 
     assert count == 1
-    session.execute.assert_awaited_once()
+    # One execute for the finalizing UPDATE, one for the orphaned-file manifest lookup.
+    assert session.execute.await_count == 2
     session.commit.assert_awaited_once()
+
+
+async def test_cleanup_orphaned_bulk_import_files_removes_only_unprocessed_entries(
+    tmp_path,
+) -> None:
+    """Staged files without a matching SourceImage row are deleted; others are kept."""
+    processed_path = str(tmp_path / "processed.png")
+    orphaned_path = str(tmp_path / "orphaned.png")
+    missing_path = str(tmp_path / "already-gone.png")
+    for path in (processed_path, orphaned_path, missing_path):
+        with open(path, "wb") as f:
+            f.write(b"fake-image-bytes")
+    os.unlink(missing_path)  # simulate a file that vanished before cleanup ran
+
+    manifest_result = MagicMock()
+    manifest_result.all.return_value = [
+        (
+            [
+                ["processed.png", processed_path],
+                ["orphaned.png", orphaned_path],
+                ["already-gone.png", missing_path],
+            ],
+        )
+    ]
+    known_result = MagicMock()
+    known_result.all.return_value = [(processed_path,)]
+    session = AsyncMock()
+    session.execute = AsyncMock(side_effect=[manifest_result, known_result])
+
+    await _cleanup_orphaned_bulk_import_files(session, [42])
+
+    assert os.path.exists(processed_path)
+    assert not os.path.exists(orphaned_path)
+    assert session.execute.await_count == 2
+
+
+async def test_cleanup_orphaned_bulk_import_files_skips_when_no_ids() -> None:
+    session = AsyncMock()
+    await _cleanup_orphaned_bulk_import_files(session, [])
+    session.execute.assert_not_awaited()
 
 
 async def test_bulk_import_coordinator_liveness_refreshes_independent_of_children() -> None:
@@ -695,8 +744,8 @@ async def test_process_bulk_import_completes_successful_job(tmp_path) -> None:
     assert job.status == "completed"
 
 
-async def test_worker_hosted_bulk_import_registers_and_cleans_up_liveness() -> None:
-    """Worker-hosted coordinators keep Redis liveness without reserving slots."""
+async def test_bulk_import_coordinator_registers_and_cleans_up_liveness() -> None:
+    """Coordinators publish Redis liveness heartbeats without reserving slots."""
     pool = MagicMock()
     pool.zadd = AsyncMock()
     pool.zrem = AsyncMock()
@@ -712,7 +761,6 @@ async def test_worker_hosted_bulk_import_registers_and_cleans_up_liveness() -> N
         await _process_bulk_import(
             job_id=77,
             file_entries=[],
-            worker_hosted=True,
         )
 
     process_impl.assert_awaited_once()
@@ -723,30 +771,6 @@ async def test_worker_hosted_bulk_import_registers_and_cleans_up_liveness() -> N
         "hriv:bulk_import:coordinators"
     )
     assert pool.zremrangebyscore.await_args.args[1] == "-inf"
-
-
-async def test_api_hosted_bulk_import_registers_liveness_without_slot() -> None:
-    """Local coordinators publish liveness but do not occupy arq slots."""
-    pool = MagicMock()
-    pool.zadd = AsyncMock()
-    pool.zrem = AsyncMock()
-    pool.zremrangebyscore = AsyncMock()
-
-    with (
-        patch("app.routers.bulk_import.get_pool", new_callable=AsyncMock, return_value=pool),
-        patch(
-            "app.routers.bulk_import._process_bulk_import_impl",
-            new_callable=AsyncMock,
-        ),
-    ):
-        await _process_bulk_import(
-            job_id=78,
-            file_entries=[],
-            worker_hosted=False,
-        )
-
-    assert pool.zadd.await_count == 1
-    assert pool.zrem.await_count == 1
     assert pool.zadd.await_args.args[0] == "hriv:bulk_import:coordinators"
     assert pool.zrem.await_args.args[0] == "hriv:bulk_import:coordinators"
 
@@ -1467,7 +1491,6 @@ async def test_wait_for_source_image_ignores_legacy_coordinator_capacity_detecto
             stale_after_seconds=900,
             pending_wait_safety_cap_seconds=7200,
             batch_progress=progress,
-            coordinator_pool=pool,
             bulk_import_job_id=900,
         )
 
@@ -1574,7 +1597,6 @@ async def test_capacity_starvation_ignores_stale_abandoned_coordinators() -> Non
             stale_after_seconds=900,
             pending_wait_safety_cap_seconds=0,
             batch_progress=progress,
-            coordinator_pool=pool,
         )
 
     assert result.status == "completed"
@@ -2844,6 +2866,10 @@ async def test_bulk_import_uses_api_hosted_coordinator(tmp_path) -> None:
     assert args[0] is _process_bulk_import
     assert args[1] == 99
     assert kwargs["active"] is True
+    # The manifest is persisted before scheduling so startup reconciliation
+    # can clean up staged files if the coordinator never finishes.
+    added_job = db.add.call_args.args[0]
+    assert added_job.file_manifest == [list(entry) for entry in args[2]]
 
 
 async def test_bulk_import_required_mode_still_schedules_api_coordinator(tmp_path) -> None:

@@ -404,7 +404,6 @@ async def bulk_import_task(
                     copyright=copyright,
                     note=note,
                     active=active,
-                    worker_hosted=True,
                 )
             except Exception as exc:
                 span.set_status(Status(StatusCode.ERROR, str(exc)))

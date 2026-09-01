@@ -268,7 +268,6 @@ async def _reread_source_image_after_abort_latch(
 
 async def _register_bulk_import_coordinator(
     bulk_import_job_id: int,
-    worker_hosted: bool = False,
 ) -> ArqRedis | None:
     """Register the coordinator's heartbeat in Redis.
 
@@ -304,7 +303,6 @@ async def _register_bulk_import_coordinator(
 async def _refresh_bulk_import_coordinator(
     pool: ArqRedis,
     bulk_import_job_id: int,
-    worker_hosted: bool = False,
 ) -> None:
     """Refresh a coordinator heartbeat without tracking worker slots."""
     try:
@@ -326,7 +324,6 @@ async def _bulk_import_coordinator_liveness_loop(
     pool_ref: list[ArqRedis | None],
     bulk_import_job_id: int,
     stop_event: asyncio.Event,
-    worker_hosted: bool = False,
 ) -> None:
     """Refresh coordinator liveness independently of child-image status."""
     registration_retry_seconds = _BULK_IMPORT_COORDINATOR_LIVENESS_REFRESH_SECONDS
@@ -342,7 +339,6 @@ async def _bulk_import_coordinator_liveness_loop(
             if pool is None:
                 pool = await _register_bulk_import_coordinator(
                     bulk_import_job_id,
-                    worker_hosted=worker_hosted,
                 )
                 if pool is not None:
                     pool_ref[0] = pool
@@ -358,14 +354,12 @@ async def _bulk_import_coordinator_liveness_loop(
                 await _refresh_bulk_import_coordinator(
                     pool,
                     bulk_import_job_id,
-                    worker_hosted=worker_hosted,
                 )
 
 
 async def _unregister_bulk_import_coordinator(
     pool: ArqRedis,
     bulk_import_job_id: int,
-    worker_hosted: bool = False,
 ) -> None:
     """Remove a coordinator heartbeat from Redis."""
     try:
@@ -398,7 +392,6 @@ async def _wait_for_source_image_terminal_state(
         _SOURCE_IMAGE_PROCESSING_WAIT_SAFETY_CAP_SECONDS
     ),
     batch_progress: _BulkImportProgress | None = None,
-    coordinator_pool: ArqRedis | None = None,
     bulk_import_job_id: int | None = None,
 ) -> _SourceImageTerminalState:
     """Wait for queued processing to reach a terminal source-image state."""
@@ -815,13 +808,11 @@ async def _process_bulk_import(
     copyright: str | None = None,
     note: str | None = None,
     active: bool = True,
-    worker_hosted: bool = False,
 ) -> None:
     """Process a bulk import while publishing coordinator liveness."""
     coordinator_pool_ref = [
         await _register_bulk_import_coordinator(
             job_id,
-            worker_hosted=worker_hosted,
         )
     ]
     try:
@@ -833,22 +824,86 @@ async def _process_bulk_import(
             active=active,
             coordinator_pool=coordinator_pool_ref[0],
             coordinator_pool_ref=coordinator_pool_ref,
-            worker_hosted=worker_hosted,
         )
     finally:
         if coordinator_pool_ref[0] is not None:
             await _unregister_bulk_import_coordinator(
                 coordinator_pool_ref[0],
                 job_id,
-                worker_hosted=worker_hosted,
             )
+
+
+async def _cleanup_orphaned_bulk_import_files(
+    session: AsyncSession,
+    job_ids: list[int],
+) -> None:
+    """Delete staged files for abandoned jobs that were never processed.
+
+    A bulk-import coordinator now runs as an API ``BackgroundTasks`` job with
+    no durable restart path (see the coordinator-hosting change in
+    ``bulk_import_images``), so an API restart mid-import can strand staged
+    files on disk that will never become a ``SourceImage``. This uses the
+    persisted ``file_manifest`` to find those orphans and remove them; files
+    that already made it into ``source_images`` are left alone regardless of
+    the image's own processing outcome.
+    """
+    if not job_ids:
+        return
+    manifest_stmt = select(BulkImportJob.file_manifest).where(
+        BulkImportJob.id.in_(job_ids)
+    )
+    manifest_result = await session.execute(manifest_stmt)
+    stored_paths: set[str] = set()
+    for (manifest,) in manifest_result.all():
+        for entry in manifest or []:
+            if len(entry) == 2:
+                stored_paths.add(entry[1])
+    if not stored_paths:
+        return
+    known_stmt = select(SourceImage.stored_path).where(
+        SourceImage.stored_path.in_(stored_paths)
+    )
+    known_result = await session.execute(known_stmt)
+    known_paths = {row[0] for row in known_result.all()}
+    orphaned_paths = stored_paths - known_paths
+    removed = 0
+    for stored_path in orphaned_paths:
+        try:
+            os.unlink(stored_path)
+            removed += 1
+        except FileNotFoundError:
+            continue
+        except OSError:
+            logger.warning(
+                "Failed to remove orphaned bulk-import staged file",
+                extra={
+                    "event": "bulk_import.orphaned_file_cleanup_failed",
+                    "stored_path": stored_path,
+                },
+                exc_info=True,
+            )
+    if removed:
+        logger.warning(
+            "Removed %d orphaned bulk-import staged file(s) on startup",
+            removed,
+            extra={
+                "event": "bulk_import.orphaned_files_removed",
+                "bulk_import_job_ids": job_ids,
+                "removed_count": removed,
+            },
+        )
 
 
 async def reconcile_stale_bulk_import_jobs(
     session: AsyncSession,
     stale_after_seconds: int = _STALE_BULK_IMPORT_SECONDS,
 ) -> int:
-    """Mark abandoned bulk-import coordinators as failed on startup."""
+    """Mark abandoned bulk-import coordinators as failed on startup.
+
+    Also cleans up any staged files that were never picked up for processing
+    (per the persisted ``file_manifest``) so an interrupted import doesn't
+    leak files on disk indefinitely. See ``_cleanup_orphaned_bulk_import_files``.
+    """
     pool = await get_pool()
     live_ids: set[int] | None = None
     try:
@@ -934,6 +989,7 @@ async def reconcile_stale_bulk_import_jobs(
                 ),
             },
         )
+        await _cleanup_orphaned_bulk_import_files(session, ids)
     return len(ids)
 
 
@@ -945,7 +1001,6 @@ async def _process_bulk_import_impl(
     active: bool = True,
     coordinator_pool: ArqRedis | None = None,
     coordinator_pool_ref: list[ArqRedis | None] | None = None,
-    worker_hosted: bool = False,
 ) -> None:
     """Background task: process all images for a bulk import job.
 
@@ -997,7 +1052,6 @@ async def _process_bulk_import_impl(
                                     original_filename,
                                     enqueue_result=enqueue_result,
                                     batch_progress=batch_progress,
-                                    coordinator_pool=coordinator_pool_ref[0],
                                     bulk_import_job_id=job_id,
                                 )
                             )
@@ -1189,7 +1243,6 @@ async def _process_bulk_import_impl(
             coordinator_pool_ref,
             job_id,
             coordinator_stop_event,
-            worker_hosted,
         )
     )
     tasks = [
@@ -1467,6 +1520,11 @@ async def bulk_import_images(
                 completed_count=0,
                 failed_count=0,
                 errors=[],
+                # Persisted before the coordinator starts so that if the API
+                # process is restarted mid-import, startup reconciliation can
+                # identify and remove staged files that were never picked up
+                # for processing (see reconcile_stale_bulk_import_jobs).
+                file_manifest=[list(entry) for entry in file_entries],
             )
             db.add(job)
             await db.commit()
