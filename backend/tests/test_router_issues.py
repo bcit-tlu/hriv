@@ -69,9 +69,20 @@ async def test_report_issue_not_configured() -> None:
         "app.routers.issues.get_feedback_delivery",
         side_effect=FeedbackNotConfiguredError("Feedback delivery is not configured"),
     ):
-        with pytest.raises(HTTPException) as exc:
-            await report_issue(body, user)
+        with patch("app.routers.issues.logger") as mock_logger:
+            with pytest.raises(HTTPException) as exc:
+                await report_issue(body, user)
         assert exc.value.status_code == 503
+        mock_logger.warning.assert_called_once_with(
+            "Feedback submission rejected because delivery is not configured",
+            extra={
+                "event": "feedback.delivery_not_configured",
+                "feedback.outcome": "failure",
+                "feedback.reason": "Feedback delivery is not configured",
+                "user_id": 1,
+                "user_role": "student",
+            },
+        )
 
 
 async def test_report_issue_success() -> None:
@@ -173,10 +184,21 @@ async def test_report_issue_delivery_error() -> None:
                 "app.routers.issues.get_feedback_submission_timestamp",
                 return_value="2026-07-03T00:00:00Z",
             ),
+            patch("app.routers.issues.logger") as mock_logger,
         ):
             with pytest.raises(HTTPException) as exc:
                 await report_issue(body, user)
             assert exc.value.status_code == 502
+            mock_logger.error.assert_called_once_with(
+                "Feedback delivery failed",
+                extra={
+                    "event": "feedback.delivery_failed",
+                    "feedback.outcome": "failure",
+                    "feedback.reason": "SMTP server unavailable",
+                    "user_id": user_id,
+                    "user_role": "admin",
+                },
+            )
     _user_timestamps.pop(user_id, None)
 
 
