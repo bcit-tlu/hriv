@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.49.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.49.0...backend-v0.49.1) (2026-09-01)
+
+
+### Bug Fixes
+
+* **backend:** log delivery failures ([#1169](https://github.com/bcit-tlu/hriv/issues/1169)) ([4808257](https://github.com/bcit-tlu/hriv/commit/4808257d734d0905c6853f2730b5c5f39fc47f49))
+
 ## [0.49.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.48.0...backend-v0.49.0) (2026-08-31)
 
 
