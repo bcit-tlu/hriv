@@ -417,6 +417,131 @@ class User(Base):
     )
 
 
+# Canonical set of ``Job.status`` values that mean the job is still in-flight
+# (not yet in a terminal ``cancelled``/``completed``/``completed_with_errors``/
+# ``failed`` state).
+ACTIVE_JOB_STATUSES: tuple[str, ...] = (
+    "queued",
+    "running",
+    "cancelling",
+)
+
+
+class Job(Base):
+    """Durable supervisor record for long-running multi-resource operations."""
+
+    __tablename__ = "jobs"
+    __table_args__ = (
+        Index("idx_jobs_status", "status"),
+        Index("idx_jobs_job_type", "job_type"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    job_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="queued",
+        server_default=text("'queued'"),
+    )
+    progress: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0",
+    )
+    total_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0",
+    )
+    completed_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0",
+    )
+    failed_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0",
+    )
+    cancelled_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0",
+    )
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_: Mapped[dict | None] = mapped_column(
+        "metadata",
+        JSONB,
+        nullable=True,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+    )
+    requested_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True,
+    )
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    requester: Mapped["User | None"] = relationship("User")
+    items: Mapped[list["JobItem"]] = relationship(
+        "JobItem",
+        back_populates="job",
+        cascade="all, delete-orphan",
+    )
+
+
+class JobItem(Base):
+    """Durable child-item state for a supervisor :class:`Job`."""
+
+    __tablename__ = "job_items"
+    __table_args__ = (
+        Index("idx_job_items_job_status", "job_id", "status"),
+        Index("idx_job_items_resource", "resource_type", "resource_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    job_id: Mapped[int] = mapped_column(
+        ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False
+    )
+    resource_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    resource_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="queued",
+        server_default=text("'queued'"),
+    )
+    attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0",
+    )
+    progress: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0",
+    )
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_: Mapped[dict | None] = mapped_column(
+        "metadata",
+        JSONB,
+        nullable=True,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+    )
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    job: Mapped["Job"] = relationship("Job", back_populates="items")
+
+
 # Canonical set of ``AdminTask.status`` values that mean the task is still
 # in-flight (not yet in a terminal ``cancelled``/``completed``/``failed`` state).
 # Shared so routers and background workers agree on what "active" means.
