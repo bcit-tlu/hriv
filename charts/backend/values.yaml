@@ -199,15 +199,12 @@ redis:
     enabled: false
     replicaCount: 1
     # Maximum concurrent arq jobs per worker pod (WORKER_MAX_JOBS,
-    # minimum 2). A bulk-import coordinator occupies one slot for the
-    # whole batch while it waits on its child jobs, so keep this above
-    # the number of concurrent bulk imports you expect.
+    # minimum 2). Bulk-import coordinators are API-hosted orchestration
+    # tasks, so worker slots remain available for child image jobs.
     maxJobs: 4
-    # Cluster-wide worker-slot capacity (WORKER_TOTAL_SLOTS), used by
-    # bulk-import starvation detection. Leave empty to default to
-    # maxJobs at runtime — correct for a single worker replica. Set it
-    # explicitly to replicas × maxJobs when running (or autoscaling to)
-    # multiple worker replicas.
+    # Deprecated compatibility value. WORKER_TOTAL_SLOTS is no longer
+    # rendered because bulk-import coordinator slot-starvation detection
+    # was removed.
     totalSlots: ''
     # SQLAlchemy pool sizing for the worker process (DB_POOL_SIZE /
     # DB_MAX_OVERFLOW). The backend defaults (10/20) are sized for the
@@ -249,8 +246,7 @@ redis:
     # Scales worker replicas based on CPU/memory utilisation so that
     # concurrent image-processing jobs are distributed across pods.
     # Each worker handles maxJobs (default 4) tasks, so 3 replicas =
-    # 12 parallel processing slots. Remember to set totalSlots when
-    # autoscaling above one replica.
+    # 12 parallel processing slots.
     #
     # Prerequisites:
     #   - Kubernetes Metrics Server must be running
