@@ -218,6 +218,65 @@ class ChangelogMarkReadResponse(BaseModel):
     changelog_last_read_at: str
 
 
+# ── Long-running Job ─────────────────────────────────────
+
+JobStatus = Literal[
+    "queued",
+    "running",
+    "completed",
+    "completed_with_errors",
+    "failed",
+    "cancelling",
+    "cancelled",
+]
+
+JobItemStatus = Literal[
+    "queued",
+    "running",
+    "completed",
+    "failed",
+    "cancelled",
+]
+
+
+class JobItemOut(BaseModel):
+    id: int
+    job_id: int
+    resource_type: str
+    resource_id: str | None = None
+    status: JobItemStatus
+    attempts: int
+    progress: int
+    error_message: str | None = None
+    metadata_extra: Annotated[dict | None, Field(validation_alias="metadata_")] = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True, "populate_by_name": True}
+
+
+class JobOut(BaseModel):
+    id: int
+    job_type: str
+    status: JobStatus
+    progress: int
+    total_count: int
+    completed_count: int
+    failed_count: int
+    cancelled_count: int
+    error_message: str | None = None
+    metadata_extra: Annotated[dict | None, Field(validation_alias="metadata_")] = None
+    requested_by: int | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True, "populate_by_name": True}
+
+
 # ── Category ──────────────────────────────────────────────
 
 class CategoryWarning(BaseModel):

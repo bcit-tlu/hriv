@@ -95,6 +95,34 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   `failed_count`; `errors` (JSONB array).
 - **Relationships:** `category`.
 
+### Job _(added in `0022_add_jobs`)_
+
+- **Purpose:** durable supervisor record for long-running multi-resource
+  operations. PostgreSQL is authoritative for business state; Redis/arq is only
+  an execution scheduler.
+- **Key fields:** `job_type`; `status` (`queued` / `running` / `completed` /
+  `completed_with_errors` / `failed` / `cancelling` / `cancelled`); `progress`;
+  `total_count`; `completed_count`; `failed_count`; `cancelled_count`;
+  `error_message`; `metadata_` (JSONB, DB column `metadata`); `requested_by`
+  (FK to User, `SET NULL`); `started_at`; `completed_at`.
+- **Relationships:** `requester`; `items` (one-to-many `JobItem`, cascade
+  delete).
+- **Import/export:** operational history, not application content; not included
+  in database export/import payloads unless a future workflow explicitly changes
+  that boundary.
+- See [Durable jobs](jobs.md) for state semantics and the supervisor/child
+  pattern.
+
+### JobItem _(added in `0022_add_jobs`)_
+
+- **Purpose:** durable child-item state for one independently processable unit
+  inside a supervisor `Job`.
+- **Key fields:** `job_id` (FK to Job, `CASCADE`); `resource_type`;
+  `resource_id`; `status` (`queued` / `running` / `completed` / `failed` /
+  `cancelled`); `attempts`; `progress`; `error_message`; `metadata_` (JSONB, DB
+  column `metadata`); `started_at`; `completed_at`.
+- **Relationships:** `job`.
+
 ### Announcement
 
 - **Purpose:** system-wide banner message.
