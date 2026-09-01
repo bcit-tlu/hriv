@@ -812,6 +812,23 @@ async def test_bulk_import_conflict_rejected_before_staging() -> None:
     db.add.assert_not_called()
 
 
+def _make_asyncpg_style_integrity_error(constraint_name: str) -> IntegrityError:
+    """Build an ``IntegrityError`` shaped like the real SQLAlchemy+asyncpg
+    wrapper: ``exc.orig`` is the DBAPI-level translated error (no
+    ``constraint_name`` of its own), and the native asyncpg exception --
+    which does carry ``constraint_name`` -- is only reachable via
+    ``exc.orig.__cause__``, per ``AsyncAdapt_asyncpg_connection._handle_exception``
+    (``raise translated_error from native_error``). A bare mock with
+    ``constraint_name`` set directly on ``exc.orig`` does not exercise this
+    real structure.
+    """
+    native = Exception("duplicate key value violates unique constraint")
+    native.constraint_name = constraint_name
+    orig = Exception("<class 'asyncpg.exceptions.UniqueViolationError'>: ...")
+    orig.__cause__ = native
+    return IntegrityError("INSERT", {}, orig)
+
+
 async def test_bulk_import_race_loser_gets_409_from_db_constraint(tmp_path) -> None:
     """A concurrent request that slips past the pre-check is rejected by the
     partial unique index on ``bulk_import_jobs``; the router translates the
@@ -822,9 +839,11 @@ async def test_bulk_import_race_loser_gets_409_from_db_constraint(tmp_path) -> N
         scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[])
     )
     db.add = MagicMock()
-    orig = Exception("duplicate key value violates unique constraint")
-    orig.constraint_name = "idx_bulk_import_jobs_single_active"
-    db.commit = AsyncMock(side_effect=IntegrityError("INSERT", {}, orig))
+    db.commit = AsyncMock(
+        side_effect=_make_asyncpg_style_integrity_error(
+            "idx_bulk_import_jobs_single_active"
+        )
+    )
     db.rollback = AsyncMock()
 
     with patch("app.routers.bulk_import.settings") as mock_settings:
@@ -856,9 +875,11 @@ async def test_bulk_import_unrelated_integrity_error_is_not_masked_as_409(
         scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[])
     )
     db.add = MagicMock()
-    orig = Exception("insert or update on table violates foreign key constraint")
-    orig.constraint_name = "bulk_import_jobs_category_id_fkey"
-    db.commit = AsyncMock(side_effect=IntegrityError("INSERT", {}, orig))
+    db.commit = AsyncMock(
+        side_effect=_make_asyncpg_style_integrity_error(
+            "bulk_import_jobs_category_id_fkey"
+        )
+    )
     db.rollback = AsyncMock()
 
     with patch("app.routers.bulk_import.settings") as mock_settings:
@@ -873,9 +894,10 @@ async def test_bulk_import_unrelated_integrity_error_is_not_masked_as_409(
             )
 
     db.rollback.assert_awaited_once()
-    # The staged file is left in place: this isn't the "already in progress"
-    # cleanup path, and the unrelated failure propagates for normal error
-    # handling upstream.
+    # This isn't the "already in progress" conflict, but the job still never
+    # made it into the database, so the staged file must not be left behind
+    # to leak on disk indefinitely.
+    assert list(tmp_path.iterdir()) == []
 
 
 async def test_bulk_import_conflict_guard_handles_naive_updated_at() -> None:
@@ -915,9 +937,17 @@ async def test_bulk_import_conflict_allows_abandoned_recent_processing_row(
     pending_result.all.return_value = []
     finalize_result = MagicMock()
     finalize_result.all.return_value = [(27,)]
+    cleanup_manifest_result = MagicMock()
+    cleanup_manifest_result.all.return_value = []
     db = AsyncMock()
     db.execute = AsyncMock(
-        side_effect=[processing_result, recent_result, pending_result, finalize_result]
+        side_effect=[
+            processing_result,
+            recent_result,
+            pending_result,
+            finalize_result,
+            cleanup_manifest_result,
+        ]
     )
     db.get = AsyncMock(return_value=SimpleNamespace(id=1))
     db.add = MagicMock()
@@ -945,10 +975,15 @@ async def test_bulk_import_conflict_allows_abandoned_recent_processing_row(
         )
 
     # The abandoned row's finalizing UPDATE ran (4th execute call, after the
-    # three pre-check SELECTs) before the new job was committed.
-    assert db.execute.await_count == 4
+    # three pre-check SELECTs) before the new job was committed. After the
+    # commit succeeds, a 5th call looks up that row's file_manifest so any
+    # staged files it left behind get cleaned up rather than leaking (see
+    # ``_cleanup_orphaned_bulk_import_files``).
+    assert db.execute.await_count == 5
     finalize_stmt = db.execute.await_args_list[3].args[0]
     assert "bulk_import_jobs" in str(finalize_stmt.compile())
+    cleanup_stmt = db.execute.await_args_list[4].args[0]
+    assert "file_manifest" in str(cleanup_stmt.compile())
 
     assert result.id == 77
     bg.add_task.assert_called_once()
@@ -991,9 +1026,17 @@ async def test_bulk_import_finalizes_stale_row_when_redis_unavailable(
     pending_result.all.return_value = [(27,)]
     finalize_result = MagicMock()
     finalize_result.all.return_value = [(27,)]
+    cleanup_manifest_result = MagicMock()
+    cleanup_manifest_result.all.return_value = []
     db = AsyncMock()
     db.execute = AsyncMock(
-        side_effect=[processing_result, recent_result, pending_result, finalize_result]
+        side_effect=[
+            processing_result,
+            recent_result,
+            pending_result,
+            finalize_result,
+            cleanup_manifest_result,
+        ]
     )
     db.get = AsyncMock(return_value=SimpleNamespace(id=1))
     db.add = MagicMock()
@@ -1018,7 +1061,10 @@ async def test_bulk_import_finalizes_stale_row_when_redis_unavailable(
             db=db,
         )
 
-    assert db.execute.await_count == 4
+    # A 5th execute call cleans up the finalized abandoned row's staged
+    # files (per ``_cleanup_orphaned_bulk_import_files``) once the new job
+    # has committed.
+    assert db.execute.await_count == 5
     assert result.id == 78
     bg.add_task.assert_called_once()
 

@@ -895,6 +895,27 @@ async def _cleanup_orphaned_bulk_import_files(
         )
 
 
+def _is_single_active_job_violation(exc: IntegrityError) -> bool:
+    """Check whether ``exc`` is the ``idx_bulk_import_jobs_single_active``
+    partial unique index violation, as opposed to some unrelated integrity
+    failure (e.g. a foreign-key violation) surfacing at the same commit.
+
+    ``exc.orig`` is the DBAPI-level exception. With the asyncpg driver,
+    SQLAlchemy's dialect re-raises a translated DBAPI error via
+    ``raise translated_error from native_error`` (see
+    ``sqlalchemy.dialects.postgresql.asyncpg.AsyncAdapt_asyncpg_connection.
+    _handle_exception``), so the native ``asyncpg`` exception -- the one
+    that actually carries ``constraint_name`` -- is only reachable via
+    ``exc.orig.__cause__``, not on ``exc.orig`` itself. Other DBAPI drivers
+    (e.g. tests using a plain mock, or psycopg) may attach ``constraint_name``
+    directly to ``exc.orig``, so both locations are checked.
+    """
+    for candidate in (getattr(exc, "orig", None), getattr(getattr(exc, "orig", None), "__cause__", None)):
+        if getattr(candidate, "constraint_name", None) == "idx_bulk_import_jobs_single_active":
+            return True
+    return False
+
+
 async def _finalize_abandoned_bulk_import_jobs(
     session: AsyncSession,
     job_ids: set[int] | list[int],
@@ -1449,7 +1470,7 @@ async def bulk_import_images(
         # job just because an abandoned row is still "pending"/"processing".
         # Without this, an abandoned coordinator would block every new
         # import until reconcile_stale_bulk_import_jobs runs at startup.
-        await _finalize_abandoned_bulk_import_jobs(
+        finalized_abandoned_ids = await _finalize_abandoned_bulk_import_jobs(
             db,
             coordinator_ids,
             abandonment_note=(
@@ -1457,6 +1478,8 @@ async def bulk_import_images(
                 "found to be inactive."
             ),
         )
+    else:
+        finalized_abandoned_ids = []
 
     with tracer.start_as_current_span("bulk_import.enqueue") as span:
         try:
@@ -1615,19 +1638,28 @@ async def bulk_import_images(
                 # the category_id foreign key) must not masquerade as an
                 # active-import conflict.
                 await db.rollback()
-                constraint_name = getattr(
-                    getattr(exc, "orig", None), "constraint_name", None
-                )
-                if constraint_name != "idx_bulk_import_jobs_single_active":
-                    raise
+                # Either way this job never made it into the database, so
+                # its staged files would otherwise leak on disk forever.
                 for _, stored_path in file_entries:
                     with contextlib.suppress(OSError):
                         os.unlink(stored_path)
+                if not _is_single_active_job_violation(exc):
+                    raise
                 raise HTTPException(
                     status_code=409,
                     detail="A bulk import is already in progress",
                 )
             await db.refresh(job)
+
+            # Only remove abandoned coordinators' staged files once the new
+            # job row (finalized in the same transaction) has actually
+            # committed -- if the commit above had failed instead, those
+            # rows would still need their manifests for a later reconcile
+            # pass, and deleting the files first would orphan that pass.
+            if finalized_abandoned_ids:
+                await _cleanup_orphaned_bulk_import_files(
+                    db, finalized_abandoned_ids
+                )
 
             span.set_attribute("bulk_import.job_id", job.id)
 
