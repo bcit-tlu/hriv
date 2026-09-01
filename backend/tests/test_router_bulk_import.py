@@ -822,7 +822,9 @@ async def test_bulk_import_race_loser_gets_409_from_db_constraint(tmp_path) -> N
         scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[])
     )
     db.add = MagicMock()
-    db.commit = AsyncMock(side_effect=IntegrityError("INSERT", {}, Exception("dup")))
+    orig = Exception("duplicate key value violates unique constraint")
+    orig.constraint_name = "idx_bulk_import_jobs_single_active"
+    db.commit = AsyncMock(side_effect=IntegrityError("INSERT", {}, orig))
     db.rollback = AsyncMock()
 
     with patch("app.routers.bulk_import.settings") as mock_settings:
@@ -841,6 +843,39 @@ async def test_bulk_import_race_loser_gets_409_from_db_constraint(tmp_path) -> N
     db.rollback.assert_awaited_once()
     # The staged file was cleaned up rather than left orphaned on disk.
     assert list(tmp_path.iterdir()) == []
+
+
+async def test_bulk_import_unrelated_integrity_error_is_not_masked_as_409(
+    tmp_path,
+) -> None:
+    """An IntegrityError on an unrelated constraint (e.g. a category deleted
+    concurrently, tripping the category_id foreign key) must propagate as-is
+    rather than being reported as an active-import conflict."""
+    db = AsyncMock()
+    db.execute.return_value = MagicMock(
+        scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[])
+    )
+    db.add = MagicMock()
+    orig = Exception("insert or update on table violates foreign key constraint")
+    orig.constraint_name = "bulk_import_jobs_category_id_fkey"
+    db.commit = AsyncMock(side_effect=IntegrityError("INSERT", {}, orig))
+    db.rollback = AsyncMock()
+
+    with patch("app.routers.bulk_import.settings") as mock_settings:
+        mock_settings.source_images_dir = str(tmp_path)
+        with pytest.raises(IntegrityError):
+            await bulk_import_images(
+                files=[_make_upload("race.png", [b"image-data", b""])],
+                category_id=1,
+                background_tasks=MagicMock(),
+                _user=MagicMock(),
+                db=db,
+            )
+
+    db.rollback.assert_awaited_once()
+    # The staged file is left in place: this isn't the "already in progress"
+    # cleanup path, and the unrelated failure propagates for normal error
+    # handling upstream.
 
 
 async def test_bulk_import_conflict_guard_handles_naive_updated_at() -> None:
@@ -867,7 +902,9 @@ async def test_bulk_import_conflict_guard_handles_naive_updated_at() -> None:
 async def test_bulk_import_conflict_allows_abandoned_recent_processing_row(
     tmp_path,
 ) -> None:
-    """A stale coordinator without liveness must not lock out new imports."""
+    """A stale coordinator without liveness must not lock out new imports;
+    its abandoned row is finalized atomically alongside the new job so the
+    partial unique index on bulk_import_jobs doesn't reject the insert."""
     processing_result = MagicMock()
     processing_result.all.return_value = [
         (27, datetime.now(timezone.utc) - timedelta(seconds=91))
@@ -876,9 +913,11 @@ async def test_bulk_import_conflict_allows_abandoned_recent_processing_row(
     recent_result.scalar_one.return_value = 0
     pending_result = MagicMock()
     pending_result.all.return_value = []
+    finalize_result = MagicMock()
+    finalize_result.all.return_value = [(27,)]
     db = AsyncMock()
     db.execute = AsyncMock(
-        side_effect=[processing_result, recent_result, pending_result]
+        side_effect=[processing_result, recent_result, pending_result, finalize_result]
     )
     db.get = AsyncMock(return_value=SimpleNamespace(id=1))
     db.add = MagicMock()
@@ -905,6 +944,12 @@ async def test_bulk_import_conflict_allows_abandoned_recent_processing_row(
             db=db,
         )
 
+    # The abandoned row's finalizing UPDATE ran (4th execute call, after the
+    # three pre-check SELECTs) before the new job was committed.
+    assert db.execute.await_count == 4
+    finalize_stmt = db.execute.await_args_list[3].args[0]
+    assert "bulk_import_jobs" in str(finalize_stmt.compile())
+
     assert result.id == 77
     bg.add_task.assert_called_once()
 
@@ -929,6 +974,53 @@ async def test_bulk_import_conflict_rejects_recent_pending_coordinator() -> None
 
     assert exc_info.value.status_code == 409
     db.add.assert_not_called()
+
+
+async def test_bulk_import_finalizes_stale_row_when_redis_unavailable(
+    tmp_path,
+) -> None:
+    """When Redis is unreachable, the pre-check fails open (per existing
+    documented behavior), and any old pending/processing row it admitted
+    through must still be finalized so the unique index doesn't reject the
+    new job."""
+    processing_result = MagicMock()
+    processing_result.all.return_value = []
+    recent_result = MagicMock()
+    recent_result.scalar_one.return_value = 0
+    pending_result = MagicMock()
+    pending_result.all.return_value = [(27,)]
+    finalize_result = MagicMock()
+    finalize_result.all.return_value = [(27,)]
+    db = AsyncMock()
+    db.execute = AsyncMock(
+        side_effect=[processing_result, recent_result, pending_result, finalize_result]
+    )
+    db.get = AsyncMock(return_value=SimpleNamespace(id=1))
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock(side_effect=lambda obj: setattr(obj, "id", 78))
+    bg = MagicMock()
+
+    with (
+        patch("app.routers.bulk_import.settings") as mock_settings,
+        patch(
+            "app.routers.bulk_import.get_pool",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        result = await bulk_import_images(
+            files=[_make_upload("recovered.png", [b"image-data", b""])],
+            category_id=1,
+            background_tasks=bg,
+            _user=MagicMock(),
+            db=db,
+        )
+
+    assert db.execute.await_count == 4
+    assert result.id == 78
+    bg.add_task.assert_called_once()
 
 
 async def test_process_bulk_import_normalizes_empty_note(tmp_path) -> None:

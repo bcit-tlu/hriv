@@ -237,9 +237,18 @@ requests: two requests can both pass it before either commits its new
 `BulkImportJob` row. A partial unique index on `bulk_import_jobs`
 (`idx_bulk_import_jobs_single_active`, added in migration
 `0024_bulk_import_single_job`) makes "at most one pending/processing row"
-an actual database guarantee; `bulk_import_images` catches the resulting
-`IntegrityError` on insert, removes the files it had already staged to disk,
-and returns the same 409 the pre-check produces.
+an actual database guarantee. Because the pre-check's own stale-coordinator
+recovery path intentionally admits an old pending/processing row once its
+coordinator is judged dead (or its liveness is unreadable and the guard fails
+open), `bulk_import_images` finalizes that abandoned row to a terminal state
+in the same transaction as the new job it is about to insert — otherwise the
+new unique index would keep rejecting every replacement until the next
+`reconcile_stale_bulk_import_jobs` startup pass. On the insert itself,
+`bulk_import_images` catches `IntegrityError`, checks that it is specifically
+`idx_bulk_import_jobs_single_active` (an unrelated integrity failure, such as
+the target category being deleted concurrently, propagates unchanged rather
+than masquerading as a conflict), removes the files it had already staged to
+disk, and returns the same 409 the pre-check produces.
 When a queued child observes an absent worker heartbeat for the configured
 wall-clock window, it writes arq's abort latch before marking the `SourceImage`
 failed. The latch narrows the race window; the processor's terminal-row guard

@@ -895,6 +895,62 @@ async def _cleanup_orphaned_bulk_import_files(
         )
 
 
+async def _finalize_abandoned_bulk_import_jobs(
+    session: AsyncSession,
+    job_ids: set[int] | list[int],
+    *,
+    abandonment_note: str,
+) -> list[int]:
+    """Atomically finalize the given ``bulk_import_jobs`` rows to a terminal
+    state, restricted to rows still in ``pending``/``processing``.
+
+    This does not commit; the caller controls the transaction boundary so the
+    finalization can be bundled atomically with other work (e.g. inserting a
+    replacement job). A concurrent finalizer racing for the same rows simply
+    affects fewer rows here, since the ``WHERE`` clause is re-evaluated after
+    the row lock is acquired — no error, no double-finalization.
+    """
+    if not job_ids:
+        return []
+    stmt = (
+        update(BulkImportJob)
+        .where(
+            BulkImportJob.id.in_(job_ids),
+            BulkImportJob.status.in_(("pending", "processing")),
+        )
+        .values(
+            # Match the coordinator finalizer: any completed image counts as
+            # partial success, so "failed" means nothing was imported.
+            status=case(
+                (BulkImportJob.completed_count > 0, "completed"),
+                else_="failed",
+            ),
+            failed_count=BulkImportJob.total_count - BulkImportJob.completed_count,
+            # Only note the abandonment when children are actually
+            # unaccounted for; a coordinator killed after every child reached
+            # a terminal state already has coherent per-file error entries.
+            errors=case(
+                (
+                    BulkImportJob.failed_count
+                    == BulkImportJob.total_count - BulkImportJob.completed_count,
+                    BulkImportJob.errors,
+                ),
+                else_=(
+                    func.coalesce(
+                        BulkImportJob.errors,
+                        cast([], JSONB_type),
+                    )
+                    + cast([{"error": abandonment_note}], JSONB_type)
+                )
+            ),
+            updated_at=func.now(),
+        )
+        .returning(BulkImportJob.id)
+    )
+    result = await session.execute(stmt)
+    return [row[0] for row in result.all()]
+
+
 async def reconcile_stale_bulk_import_jobs(
     session: AsyncSession,
     stale_after_seconds: int = _STALE_BULK_IMPORT_SECONDS,
@@ -1384,6 +1440,24 @@ async def bulk_import_images(
                         detail="A bulk import is already in progress",
                     )
 
+    if coordinator_ids:
+        # We reach here only when every id in coordinator_ids was judged
+        # non-blocking above (confirmed dead via Redis, or liveness was
+        # unreadable/disabled and the guard fails open). Finalize them now,
+        # atomically with the job row we're about to insert below, so the
+        # partial unique index on bulk_import_jobs doesn't reject the new
+        # job just because an abandoned row is still "pending"/"processing".
+        # Without this, an abandoned coordinator would block every new
+        # import until reconcile_stale_bulk_import_jobs runs at startup.
+        await _finalize_abandoned_bulk_import_jobs(
+            db,
+            coordinator_ids,
+            abandonment_note=(
+                "Superseded by a new bulk import after its coordinator was "
+                "found to be inactive."
+            ),
+        )
+
     with tracer.start_as_current_span("bulk_import.enqueue") as span:
         try:
             span.set_attribute("bulk_import.category_id", category_id if category_id is not None else "none")
@@ -1530,15 +1604,22 @@ async def bulk_import_images(
             db.add(job)
             try:
                 await db.commit()
-            except IntegrityError:
+            except IntegrityError as exc:
                 # The pre-check above (SELECT for active jobs) is a
                 # check-then-act race: another request can create its job
                 # row between our check and this insert. The partial unique
-                # index on bulk_import_jobs is the actual guarantee here;
-                # translate the resulting constraint violation into the same
-                # 409 the pre-check produces, and clean up the files we
-                # already staged to disk.
+                # index on bulk_import_jobs is the actual guarantee here.
+                # Only translate *that specific* constraint violation into
+                # the pre-check's 409 — an unrelated integrity failure (e.g.
+                # the target category being deleted concurrently, tripping
+                # the category_id foreign key) must not masquerade as an
+                # active-import conflict.
                 await db.rollback()
+                constraint_name = getattr(
+                    getattr(exc, "orig", None), "constraint_name", None
+                )
+                if constraint_name != "idx_bulk_import_jobs_single_active":
+                    raise
                 for _, stored_path in file_entries:
                     with contextlib.suppress(OSError):
                         os.unlink(stored_path)

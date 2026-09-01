@@ -22,21 +22,29 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Defensively finalize any but the most-recently-updated active job
-    # before adding the constraint, so this migration can never fail on
-    # data that shouldn't exist given the existing app-level 409 guard.
+    # This migration cannot know which (if any) of several already-active
+    # rows still has a live coordinator — that's a runtime Redis-liveness
+    # question, not something a SQL migration can answer. Picking an
+    # arbitrary "survivor" (e.g. most-recently-updated) risks keeping an
+    # abandoned row alive while failing a genuinely in-flight import, or vice
+    # versa. So when more than one pending/processing row exists (which
+    # should never happen given the existing app-level guard — this is
+    # purely a defensive backstop for a database that already has stale
+    # duplicates), finalize *all* of them uniformly rather than guessing. A
+    # single active row, the overwhelmingly common case at deploy time, is
+    # left untouched. Any import finalized here can simply be re-run.
     op.execute(
         sa.text(
             """
+            WITH active_count AS (
+                SELECT count(*) AS n
+                FROM bulk_import_jobs
+                WHERE status IN ('pending', 'processing')
+            )
             UPDATE bulk_import_jobs
             SET status = 'failed', updated_at = now()
             WHERE status IN ('pending', 'processing')
-              AND id NOT IN (
-                  SELECT id FROM bulk_import_jobs
-                  WHERE status IN ('pending', 'processing')
-                  ORDER BY updated_at DESC
-                  LIMIT 1
-              )
+              AND (SELECT n FROM active_count) > 1
             """
         )
     )
