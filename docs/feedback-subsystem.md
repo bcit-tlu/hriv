@@ -128,7 +128,7 @@ Inspect the rendered backend Deployment without printing secret values:
 
 ```bash
 kubectl -n <namespace> get deploy <backend-deployment> \
-  -o jsonpath='{range .spec.template.spec.containers[?(@.name=="backend")].env[*]}{.name}{"\t"}{.value}{"\t"}{.valueFrom.secretKeyRef.name}{"/"}{.valueFrom.secretKeyRef.key}{"\n"}{end}' \
+  -o jsonpath='{range .spec.template.spec.containers[?(@.name=="backend")].env[*]}{.name}{"\t"}{.valueFrom.secretKeyRef.name}{"/"}{.valueFrom.secretKeyRef.key}{"\n"}{end}' \
   | grep '^FEEDBACK_'
 ```
 
