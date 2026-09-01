@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from arq.constants import abort_jobs_ss
 from arq.jobs import JobStatus
+from asyncpg.exceptions import UniqueViolationError
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
@@ -814,15 +815,17 @@ async def test_bulk_import_conflict_rejected_before_staging() -> None:
 
 def _make_asyncpg_style_integrity_error(constraint_name: str) -> IntegrityError:
     """Build an ``IntegrityError`` shaped like the real SQLAlchemy+asyncpg
-    wrapper: ``exc.orig`` is the DBAPI-level translated error (no
-    ``constraint_name`` of its own), and the native asyncpg exception --
-    which does carry ``constraint_name`` -- is only reachable via
+    wrapper: ``exc.orig`` is a DBAPI-level translated error (no
+    ``constraint_name`` of its own), and the native
+    ``asyncpg.exceptions.UniqueViolationError`` -- which does carry
+    ``constraint_name`` as a real attribute -- is only reachable via
     ``exc.orig.__cause__``, per ``AsyncAdapt_asyncpg_connection._handle_exception``
     (``raise translated_error from native_error``). A bare mock with
     ``constraint_name`` set directly on ``exc.orig`` does not exercise this
-    real structure.
+    real structure, and ``_is_single_active_job_violation`` only recognizes
+    genuine ``asyncpg.exceptions.PostgresError`` instances.
     """
-    native = Exception("duplicate key value violates unique constraint")
+    native = UniqueViolationError("duplicate key value violates unique constraint")
     native.constraint_name = constraint_name
     orig = Exception("<class 'asyncpg.exceptions.UniqueViolationError'>: ...")
     orig.__cause__ = native
@@ -989,6 +992,63 @@ async def test_bulk_import_conflict_allows_abandoned_recent_processing_row(
     bg.add_task.assert_called_once()
 
 
+async def test_bulk_import_schedules_job_even_when_abandoned_cleanup_fails(
+    tmp_path,
+) -> None:
+    """Orphan-file cleanup for a finalized abandoned row is best-effort: a
+    failure there (e.g. a transient DB error reading the old manifest) must
+    not prevent the already-committed new job from being scheduled."""
+    processing_result = MagicMock()
+    processing_result.all.return_value = [
+        (27, datetime.now(timezone.utc) - timedelta(seconds=91))
+    ]
+    recent_result = MagicMock()
+    recent_result.scalar_one.return_value = 0
+    pending_result = MagicMock()
+    pending_result.all.return_value = []
+    finalize_result = MagicMock()
+    finalize_result.all.return_value = [(27,)]
+    db = AsyncMock()
+    db.execute = AsyncMock(
+        side_effect=[
+            processing_result,
+            recent_result,
+            pending_result,
+            finalize_result,
+            RuntimeError("transient database error"),
+        ]
+    )
+    db.get = AsyncMock(return_value=SimpleNamespace(id=1))
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock(side_effect=lambda obj: setattr(obj, "id", 79))
+    bg = MagicMock()
+    pool = MagicMock()
+    pool.zrangebyscore = AsyncMock(return_value=[])
+
+    with (
+        patch("app.routers.bulk_import.settings") as mock_settings,
+        patch(
+            "app.routers.bulk_import.get_pool",
+            new_callable=AsyncMock,
+            return_value=pool,
+        ),
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        result = await bulk_import_images(
+            files=[_make_upload("recovered.png", [b"image-data", b""])],
+            category_id=1,
+            background_tasks=bg,
+            _user=MagicMock(),
+            db=db,
+        )
+
+    # The cleanup lookup raised, but the job was already committed and is
+    # still scheduled for processing.
+    assert result.id == 79
+    bg.add_task.assert_called_once()
+
+
 async def test_bulk_import_conflict_rejects_recent_pending_coordinator() -> None:
     """A queued coordinator that has not registered yet still blocks imports."""
     processing_result = MagicMock()
@@ -1017,7 +1077,11 @@ async def test_bulk_import_finalizes_stale_row_when_redis_unavailable(
     """When Redis is unreachable, the pre-check fails open (per existing
     documented behavior), and any old pending/processing row it admitted
     through must still be finalized so the unique index doesn't reject the
-    new job."""
+    new job. Because Redis was unreachable, liveness was never positively
+    confirmed, so the finalized row's staged files must NOT be cleaned up --
+    the coordinator could still be alive and using them (see
+    ``_is_single_active_job_violation``'s sibling ``liveness_confirmed_dead``
+    guard in ``bulk_import_images``)."""
     processing_result = MagicMock()
     processing_result.all.return_value = []
     recent_result = MagicMock()
@@ -1026,8 +1090,6 @@ async def test_bulk_import_finalizes_stale_row_when_redis_unavailable(
     pending_result.all.return_value = [(27,)]
     finalize_result = MagicMock()
     finalize_result.all.return_value = [(27,)]
-    cleanup_manifest_result = MagicMock()
-    cleanup_manifest_result.all.return_value = []
     db = AsyncMock()
     db.execute = AsyncMock(
         side_effect=[
@@ -1035,7 +1097,6 @@ async def test_bulk_import_finalizes_stale_row_when_redis_unavailable(
             recent_result,
             pending_result,
             finalize_result,
-            cleanup_manifest_result,
         ]
     )
     db.get = AsyncMock(return_value=SimpleNamespace(id=1))
@@ -1061,10 +1122,10 @@ async def test_bulk_import_finalizes_stale_row_when_redis_unavailable(
             db=db,
         )
 
-    # A 5th execute call cleans up the finalized abandoned row's staged
-    # files (per ``_cleanup_orphaned_bulk_import_files``) once the new job
-    # has committed.
-    assert db.execute.await_count == 5
+    # No 5th execute call: liveness was never positively confirmed (Redis was
+    # unreachable), so the finalized row's manifest is left untouched rather
+    # than risking deletion of files a still-running coordinator might need.
+    assert db.execute.await_count == 4
     assert result.id == 78
     bg.add_task.assert_called_once()
 

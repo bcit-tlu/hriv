@@ -23,6 +23,7 @@ from arq.connections import ArqRedis
 from arq.constants import abort_jobs_ss
 from arq.jobs import JobStatus
 from arq.utils import timestamp_ms
+from asyncpg.exceptions import PostgresError as AsyncpgPostgresError
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
@@ -900,18 +901,27 @@ def _is_single_active_job_violation(exc: IntegrityError) -> bool:
     partial unique index violation, as opposed to some unrelated integrity
     failure (e.g. a foreign-key violation) surfacing at the same commit.
 
-    ``exc.orig`` is the DBAPI-level exception. With the asyncpg driver,
-    SQLAlchemy's dialect re-raises a translated DBAPI error via
-    ``raise translated_error from native_error`` (see
-    ``sqlalchemy.dialects.postgresql.asyncpg.AsyncAdapt_asyncpg_connection.
-    _handle_exception``), so the native ``asyncpg`` exception -- the one
-    that actually carries ``constraint_name`` -- is only reachable via
-    ``exc.orig.__cause__``, not on ``exc.orig`` itself. Other DBAPI drivers
-    (e.g. tests using a plain mock, or psycopg) may attach ``constraint_name``
-    directly to ``exc.orig``, so both locations are checked.
+    ``exc.orig`` is the DBAPI-level exception, an
+    ``AsyncAdapt_asyncpg_dbapi.Error`` instance that does not itself carry
+    ``constraint_name``. With the asyncpg driver, SQLAlchemy's dialect
+    re-raises that translated wrapper via ``raise translated_error from
+    native_error`` (see ``sqlalchemy.dialects.postgresql.asyncpg.
+    AsyncAdapt_asyncpg_connection._handle_exception``), so the native
+    ``asyncpg.exceptions.PostgresError`` -- a real, statically-declared
+    ``constraint_name`` attribute -- is reachable only via
+    ``exc.orig.__cause__``. Both ``exc.orig`` and its ``__cause__`` are
+    checked by explicit ``isinstance`` narrowing against the known asyncpg
+    exception type, since ``BaseException.__cause__`` is a normal attribute
+    on every exception (defaulting to ``None``) rather than a driver-specific
+    dynamic one.
     """
-    for candidate in (getattr(exc, "orig", None), getattr(getattr(exc, "orig", None), "__cause__", None)):
-        if getattr(candidate, "constraint_name", None) == "idx_bulk_import_jobs_single_active":
+    orig = exc.orig
+    if isinstance(orig, AsyncpgPostgresError):
+        if orig.constraint_name == "idx_bulk_import_jobs_single_active":
+            return True
+    cause = orig.__cause__ if orig is not None else None
+    if isinstance(cause, AsyncpgPostgresError):
+        if cause.constraint_name == "idx_bulk_import_jobs_single_active":
             return True
     return False
 
@@ -1433,6 +1443,15 @@ async def bulk_import_images(
     )
     pending_ids = {row[0] for row in pending_result.all()}
     coordinator_ids = processing_ids | pending_ids
+    # True only when Redis was reachable and positively reported that none of
+    # coordinator_ids are alive. False when liveness is unreadable or disabled
+    # and the guard falls open on trust alone -- that case still finalizes the
+    # row's status below (existing behavior, so a crashed coordinator doesn't
+    # block imports forever), but it is NOT proof the coordinator has actually
+    # stopped, so its staged files must not be deleted: a coordinator that is
+    # still running could still be about to turn one of those manifest
+    # entries into a SourceImage.
+    liveness_confirmed_dead = False
     if coordinator_ids:
         pool = await get_pool()
         if pool is not None:
@@ -1460,6 +1479,7 @@ async def bulk_import_images(
                         status_code=409,
                         detail="A bulk import is already in progress",
                     )
+                liveness_confirmed_dead = True
 
     if coordinator_ids:
         # We reach here only when every id in coordinator_ids was judged
@@ -1656,10 +1676,30 @@ async def bulk_import_images(
             # committed -- if the commit above had failed instead, those
             # rows would still need their manifests for a later reconcile
             # pass, and deleting the files first would orphan that pass.
-            if finalized_abandoned_ids:
-                await _cleanup_orphaned_bulk_import_files(
-                    db, finalized_abandoned_ids
-                )
+            # Only do this when Redis positively confirmed the old
+            # coordinator(s) are dead: if the liveness check instead fell
+            # open (Redis disabled/unreachable), we have no proof the old
+            # coordinator has stopped, and it could still be about to turn
+            # one of those manifest entries into a SourceImage -- deleting
+            # its files out from under it would corrupt a running import.
+            # This is best-effort tidiness, not correctness-critical, so a
+            # failure here must not prevent the newly committed job from
+            # being scheduled below.
+            if finalized_abandoned_ids and liveness_confirmed_dead:
+                try:
+                    await _cleanup_orphaned_bulk_import_files(
+                        db, finalized_abandoned_ids
+                    )
+                except Exception:
+                    logger.warning(
+                        "Failed to clean up orphaned files for finalized "
+                        "abandoned bulk-import job(s)",
+                        extra={
+                            "event": "bulk_import.abandoned_cleanup_failed",
+                            "bulk_import_job_ids": finalized_abandoned_ids,
+                        },
+                        exc_info=True,
+                    )
 
             span.set_attribute("bulk_import.job_id", job.id)
 
