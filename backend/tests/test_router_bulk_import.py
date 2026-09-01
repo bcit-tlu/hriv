@@ -697,8 +697,8 @@ async def test_process_bulk_import_completes_successful_job(tmp_path) -> None:
     assert job.status == "completed"
 
 
-async def test_worker_hosted_bulk_import_registers_and_cleans_up_slot() -> None:
-    """Worker-hosted coordinators register liveness and slot occupancy."""
+async def test_worker_hosted_bulk_import_registers_and_cleans_up_liveness() -> None:
+    """Worker-hosted coordinators keep Redis liveness without reserving slots."""
     pool = MagicMock()
     pool.zadd = AsyncMock()
     pool.zrem = AsyncMock()
@@ -718,9 +718,9 @@ async def test_worker_hosted_bulk_import_registers_and_cleans_up_slot() -> None:
         )
 
     process_impl.assert_awaited_once()
-    assert pool.zadd.await_count == 2
-    assert pool.zrem.await_count == 2
-    assert pool.zremrangebyscore.await_count == 2
+    assert pool.zadd.await_count == 1
+    assert pool.zrem.await_count == 1
+    assert pool.zremrangebyscore.await_count == 1
     assert pool.zremrangebyscore.await_args_list[0].args[0] == (
         "hriv:bulk_import:coordinators"
     )
@@ -1421,8 +1421,8 @@ async def test_wait_for_source_image_unknown_status_hits_pending_backstop() -> N
     db.commit.assert_awaited_once()
 
 
-async def test_wait_for_source_image_detects_coordinator_capacity_starvation() -> None:
-    """Coordinator saturation fails a child only with positive deadlock evidence."""
+async def test_wait_for_source_image_ignores_legacy_coordinator_capacity_detector() -> None:
+    """No-slot coordinator design does not fail queued children on capacity evidence."""
     job = MagicMock()
     job.status = AsyncMock(return_value=JobStatus.queued)
     job.job_id = "job-capacity"
@@ -1433,8 +1433,15 @@ async def test_wait_for_source_image_detects_coordinator_capacity_starvation() -
         error_message=None,
         status_message="Queued",
     )
+    completed = SimpleNamespace(
+        id=40,
+        status="completed",
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        status_message=None,
+    )
     db = AsyncMock()
-    db.get = AsyncMock(return_value=src)
+    db.get = AsyncMock(side_effect=[src, completed])
     db.commit = AsyncMock()
     db.__aenter__ = AsyncMock(return_value=db)
     db.__aexit__ = AsyncMock(return_value=False)
@@ -1447,6 +1454,7 @@ async def test_wait_for_source_image_detects_coordinator_capacity_starvation() -
     with (
         patch("app.routers.bulk_import.async_session", return_value=db),
         patch("app.routers.bulk_import.get_pool", new_callable=AsyncMock, return_value=pool),
+        patch("app.routers.bulk_import.asyncio.sleep", new_callable=AsyncMock),
         patch(
             "app.routers.bulk_import.collect_queue_state",
             new_callable=AsyncMock,
@@ -1465,13 +1473,9 @@ async def test_wait_for_source_image_detects_coordinator_capacity_starvation() -
             bulk_import_job_id=900,
         )
 
-    assert result.status == "failed"
-    assert "all configured worker-hosted coordinator slots were occupied" in (
-        result.error_message
-    )
-    assert pool.zadd.await_count == 1
-    pool.zrem.assert_awaited_once_with(abort_jobs_ss, "job-capacity")
-    assert db.commit.await_count == 1
+    assert result.status == "completed"
+    db.commit.assert_not_awaited()
+    pool.zrem.assert_not_called()
 
 
 async def test_wait_for_source_image_does_not_fail_queued_child_behind_unrelated_jobs() -> None:
@@ -1588,14 +1592,14 @@ async def test_wait_for_source_image_batch_progress_resets_deadlock_window() -> 
     assert progress.last_child_advanced_at == 200.0
 
 
-async def test_capacity_starvation_latch_fails_remaining_pending_children() -> None:
-    """Once established, capacity starvation remains active for the batch."""
+async def test_capacity_starvation_detector_is_a_compatibility_noop() -> None:
+    """Legacy worker-slot starvation checks are intentionally disabled."""
     progress = _BulkImportProgress(time.monotonic())
     progress.capacity_starvation_detected = True
     pool = MagicMock()
     pool.zcount = AsyncMock(return_value=4)
 
-    assert await _bulk_import_has_capacity_starvation(
+    assert not await _bulk_import_has_capacity_starvation(
         batch_progress=progress,
         stale_after_seconds=900,
         last_queue_confirmed_at=time.monotonic(),
@@ -1605,8 +1609,8 @@ async def test_capacity_starvation_latch_fails_remaining_pending_children() -> N
     )
 
 
-async def test_capacity_starvation_latch_rechecks_current_coordinator_capacity() -> None:
-    """A prior starvation verdict cannot survive after coordinator slots free."""
+async def test_capacity_starvation_detector_remains_false_after_coordinator_recovery() -> None:
+    """A previous capacity verdict cannot persist after slots free because no slots exist."""
     progress = _BulkImportProgress(time.monotonic())
     progress.capacity_starvation_detected = True
     pool = MagicMock()
@@ -1622,8 +1626,8 @@ async def test_capacity_starvation_latch_rechecks_current_coordinator_capacity()
     )
 
 
-async def test_capacity_starvation_ignores_api_hosted_coordinator() -> None:
-    """API-hosted local fallback coordinators do not occupy arq slots."""
+async def test_capacity_starvation_detector_ignores_api_hosted_coordinator() -> None:
+    """API-hosted local fallback coordinators do not participate in slot accounting."""
     progress = _BulkImportProgress(time.monotonic() - 901)
     coordinator_pool = AsyncMock()
     coordinator_pool.zcount.return_value = 0
@@ -1636,7 +1640,7 @@ async def test_capacity_starvation_ignores_api_hosted_coordinator() -> None:
         job_status=JobStatus.queued,
         coordinator_pool=coordinator_pool,
     )
-    coordinator_pool.zcount.assert_awaited_once()
+    coordinator_pool.zcount.assert_not_awaited()
 
 
 async def test_wait_for_source_image_refreshes_queue_evidence_for_in_progress_job() -> None:
