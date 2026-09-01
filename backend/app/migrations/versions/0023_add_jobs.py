@@ -1,7 +1,7 @@
 """Add durable long-running jobs.
 
-Revision ID: 0022_add_jobs
-Revises: 0021_add_user_active
+Revision ID: 0023_add_jobs
+Revises: 0022_bulk_import_file_manifest
 Create Date: 2026-09-01
 """
 
@@ -9,8 +9,8 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-revision = "0022_add_jobs"
-down_revision = "0021_add_user_active"
+revision = "0023_add_jobs"
+down_revision = "0022_bulk_import_file_manifest"
 branch_labels = None
 depends_on = None
 
