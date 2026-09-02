@@ -19,6 +19,7 @@ const mockUpdateImage = vi.mocked(api.updateImage)
 function makeDeps(overrides: Partial<UseCanvasAnnotationsDeps> = {}): UseCanvasAnnotationsDeps {
   return {
     selectedImage: null,
+    fetchImage: vi.fn().mockResolvedValue({ version: 1, metadata_extra: null }),
     loadCategories: vi.fn().mockResolvedValue(undefined),
     loadUncategorizedImages: vi.fn(),
     setErrorSnack: vi.fn(),
@@ -775,6 +776,59 @@ describe('useCanvasAnnotations', () => {
       })
 
       expect(cancelled).toBe(true)
+      expect(mockUpdateImage).toHaveBeenCalledTimes(2)
+      expect(mockUpdateImage).toHaveBeenLastCalledWith(
+        1,
+        { metadata_extra_merge: { canvas_annotations: original } },
+        2,
+      )
+    })
+
+    it('reconciles a rejected save before a second cancellation attempt', async () => {
+      const original = [makeAnnotation({ id: 'original' })]
+      const edited = [makeAnnotation({ id: 'edited' })]
+      const image = makeImage({ id: 1, metadataExtra: { canvas_annotations: original } })
+      let rejectFirst!: (reason?: unknown) => void
+      const firstSave = new Promise<ImageItem>((_, reject) => {
+        rejectFirst = reject
+      })
+      mockUpdateImage.mockReturnValueOnce(firstSave as never).mockResolvedValueOnce({
+        ...image,
+        version: 3,
+        metadata_extra: { canvas_annotations: original },
+      })
+      const fetchImage = vi.fn().mockResolvedValue({
+        version: 2,
+        metadata_extra: { canvas_annotations: edited },
+      })
+      const deps = makeDeps({ selectedImage: image, fetchImage })
+      const { result } = renderHook(() => useCanvasAnnotations(deps))
+
+      act(() => {
+        result.current.handleCanvasAnnotationsChange(edited)
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(600)
+      })
+
+      const firstCancellation = result.current.cancelCanvasAnnotations(original)
+      rejectFirst(new Error('Response lost after commit'))
+      let firstCancelled!: boolean
+      await act(async () => {
+        firstCancelled = await firstCancellation
+      })
+
+      expect(firstCancelled).toBe(false)
+      expect(fetchImage).not.toHaveBeenCalled()
+
+      let secondCancelled!: boolean
+      await act(async () => {
+        secondCancelled = await result.current.cancelCanvasAnnotations(original)
+      })
+
+      expect(secondCancelled).toBe(true)
+      expect(fetchImage).toHaveBeenCalledOnce()
+      expect(fetchImage).toHaveBeenCalledWith(1)
       expect(mockUpdateImage).toHaveBeenCalledTimes(2)
       expect(mockUpdateImage).toHaveBeenLastCalledWith(
         1,

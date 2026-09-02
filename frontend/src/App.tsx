@@ -899,6 +899,7 @@ export default function App() {
     latestMetadataRef,
   } = useCanvasAnnotations({
     selectedImage,
+    fetchImage: apiFetchImage,
     loadCategories,
     loadUncategorizedImages,
     setErrorSnack,

@@ -13,6 +13,10 @@ interface CanvasSaveResult {
 /** Dependencies injected by the host component. */
 export interface UseCanvasAnnotationsDeps {
   selectedImage: ImageItem | null
+  fetchImage: (imageId: number) => Promise<{
+    version: number
+    metadata_extra: Record<string, unknown> | null
+  }>
   loadCategories: () => Promise<unknown>
   loadUncategorizedImages: (opts?: { signal?: AbortSignal }) => void
   setErrorSnack: React.Dispatch<React.SetStateAction<string | null>>
@@ -26,7 +30,7 @@ export interface UseCanvasAnnotationsDeps {
  * and update the authoritative version without triggering a viewer remount.
  */
 export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
-  const { selectedImage, loadCategories, loadUncategorizedImages, setErrorSnack } = deps
+  const { selectedImage, fetchImage, loadCategories, loadUncategorizedImages, setErrorSnack } = deps
 
   // --- Refs ---
 
@@ -61,6 +65,9 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
   // Keep the in-flight target available to cancellation even after an image
   // change clears saveTargetImageIdRef to prevent stale queue flushes.
   const canvasSaveInFlightImageIdRef = useRef<number | null>(null)
+  // A rejected updateImage request has an indeterminate server outcome: the
+  // PATCH may have committed even though its response did not reach the client.
+  const uncertainCanvasSaveImageIdRef = useRef<number | null>(null)
   // Stable ref for the save function so the callback can flush queued saves
   // without a self-reference (which the React Compiler cannot memoize).
   const saveCanvasAnnotationsRef = useRef<
@@ -199,6 +206,7 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
         return { success: true, persisted: true, updated }
       } catch (err) {
         console.error('Failed to save canvas annotations', err)
+        if (!persisted) uncertainCanvasSaveImageIdRef.current = targetImageId
         setErrorSnack(userMessage(err, 'Failed to save annotations.'))
         return { success: false, persisted, updated }
       } finally {
@@ -339,6 +347,34 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
           return rollback.success
         }
 
+        if (uncertainCanvasSaveImageIdRef.current === targetImage.id) {
+          // A rejected PATCH may have committed server-side. Re-read the image
+          // before trusting lastSavedCanvasAnnotationsRef or claiming success.
+          let authoritativeImage
+          try {
+            authoritativeImage = await fetchImage(targetImage.id)
+          } catch (err) {
+            console.error('Failed to reconcile canvas annotations', err)
+            setErrorSnack(userMessage(err, 'Failed to verify annotation cancellation.'))
+            return false
+          }
+          const authoritativeAnnotations = Array.isArray(
+            authoritativeImage.metadata_extra?.canvas_annotations,
+          )
+            ? (authoritativeImage.metadata_extra.canvas_annotations as CanvasAnnotation[])
+            : []
+          if (JSON.stringify(authoritativeAnnotations) !== JSON.stringify(snapshot)) {
+            const rollback = await saveCanvasAnnotations(
+              snapshot,
+              targetImage,
+              authoritativeImage.version,
+            )
+            if (!rollback.success) return false
+          }
+          uncertainCanvasSaveImageIdRef.current = null
+          return true
+        }
+
         if (
           JSON.stringify(lastSavedCanvasAnnotationsRef.current ?? []) === JSON.stringify(snapshot)
         ) {
@@ -351,7 +387,7 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
         canvasCancellationInProgressRef.current = false
       }
     },
-    [saveCanvasAnnotations, selectedImage, startCanvasSave],
+    [fetchImage, saveCanvasAnnotations, selectedImage, setErrorSnack, startCanvasSave],
   )
 
   return {
