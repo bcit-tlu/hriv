@@ -1418,6 +1418,7 @@ export default function App() {
                 loadCategories()
                 loadUncategorizedImages()
               }}
+              onError={(message) => setErrorSnack(message)}
               onAddCategory={addCategoryInline}
               onReplaceImage={addProcessingJob}
               onProcessingStarted={handleProcessingStarted}
