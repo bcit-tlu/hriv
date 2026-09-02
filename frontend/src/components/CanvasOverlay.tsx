@@ -786,6 +786,32 @@ export default function CanvasOverlay({
     onAnnotationsChange(annotations)
   }, [absoluteObjectTransform, fabricToAnnotation, onAnnotationsChange])
 
+  // Replace the editable objects from authoritative server data without
+  // emitting onAnnotationsChange. This is used only when a 409 conflict is
+  // resolved while the current edit session remains open.
+  const resetFabricAnnotations = useCallback(
+    (fc: fabric.Canvas, nextAnnotations: CanvasAnnotation[]) => {
+      const active = fc.getActiveObject()
+      if (active && active instanceof fabric.IText && active.isEditing) {
+        active.exitEditing()
+      }
+      fc.discardActiveObject()
+      for (const obj of [...fc.getObjects()]) {
+        fc.remove(obj)
+      }
+      for (const annotation of nextAnnotations) {
+        const obj = annotationToFabric(annotation)
+        if (obj) fc.add(obj)
+      }
+      isDrawingRef.current = false
+      drawStartRef.current = null
+      drawObjRef.current = null
+      annotationsRef.current = nextAnnotations
+      fc.renderAll()
+    },
+    [annotationToFabric],
+  )
+
   // Initialize / teardown fabric canvas when entering/exiting edit mode
   useEffect(() => {
     if (!editMode) {
@@ -814,11 +840,7 @@ export default function CanvasOverlay({
     })
     fabricCanvasRef.current = fc
 
-    for (const ann of annotationsRef.current) {
-      const obj = annotationToFabric(ann)
-      if (obj) fc.add(obj)
-    }
-    fc.renderAll()
+    resetFabricAnnotations(fc, annotationsRef.current)
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -938,7 +960,18 @@ export default function CanvasOverlay({
     fabricToAnnotation,
     emitAnnotations,
     absoluteObjectTransform,
+    resetFabricAnnotations,
   ])
+
+  // Keep the live Fabric objects in sync with the authoritative conflict
+  // baseline. Ordinary annotations prop updates deliberately do not rebuild
+  // the edit canvas, so in-progress edits retain their expected behavior.
+  useEffect(() => {
+    if (!editMode || cancellationBaseline === undefined) return
+    const fc = fabricCanvasRef.current
+    if (!fc) return
+    resetFabricAnnotations(fc, cancellationBaseline)
+  }, [cancellationBaseline, editMode, resetFabricAnnotations])
 
   // Drawing handlers for edit mode
 

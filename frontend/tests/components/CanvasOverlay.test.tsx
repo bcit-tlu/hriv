@@ -906,6 +906,62 @@ describe('CanvasOverlay', () => {
       expect(onCancelAnnotations).toHaveBeenCalledWith(authoritative)
     })
 
+    it('rebuilds live Fabric objects from a conflict-resolving baseline', async () => {
+      const entry = [makeAnnotation({ id: 'entry' })]
+      const rejectedDraft = new fabric.Rect({ left: 200, top: 100, width: 20, height: 10 })
+      const rejectedObject = rejectedDraft as fabric.FabricObject & {
+        _annotationId?: string
+        _annotationType?: string
+      }
+      rejectedObject._annotationId = 'rejected'
+      rejectedObject._annotationType = 'rect'
+      const authoritative = [makeAnnotation({ id: 'authoritative' })]
+      const onAnnotationsChange = vi.fn()
+      const onEditModeChange = vi.fn()
+      const { rerender } = render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={entry}
+          onAnnotationsChange={onAnnotationsChange}
+          canEdit
+          editMode
+          onEditModeChange={onEditModeChange}
+        />,
+      )
+      const fc = fabricTestState.canvases.at(-1) as {
+        add: (obj: fabric.FabricObject) => void
+        getObjects: () => fabric.FabricObject[]
+      }
+      fc.add(rejectedDraft)
+      onAnnotationsChange.mockClear()
+
+      rerender(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={authoritative}
+          onAnnotationsChange={onAnnotationsChange}
+          canEdit
+          editMode
+          onEditModeChange={onEditModeChange}
+          cancellationBaseline={authoritative}
+        />,
+      )
+
+      expect(onAnnotationsChange).not.toHaveBeenCalled()
+      expect(
+        fc
+          .getObjects()
+          .map((obj) => (obj as fabric.FabricObject & { _annotationId?: string })._annotationId),
+      ).toEqual(['authoritative'])
+
+      await act(async () => {
+        screen.getByLabelText('Save & Exit Edit Mode').click()
+      })
+
+      const saved = onAnnotationsChange.mock.calls.at(-1)?.[0] as CanvasAnnotation[]
+      expect(saved.map((annotation) => annotation.id)).toEqual(['authoritative'])
+    })
+
     it('keeps edit mode open when cancellation rollback fails', async () => {
       const original = [makeAnnotation({ id: 'orig-1' })]
       const onCancelAnnotations = vi.fn(async () => false)
