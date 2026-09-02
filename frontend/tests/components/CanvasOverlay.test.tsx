@@ -859,6 +859,53 @@ describe('CanvasOverlay', () => {
       expect(onEditModeChange).toHaveBeenCalledWith(false)
     })
 
+    it('replaces the cancellation snapshot after a conflict-resolving refresh', async () => {
+      const entrySnapshot = [makeAnnotation({ id: 'entry' })]
+      const authoritative = [makeAnnotation({ id: 'authoritative' })]
+      const onCancelAnnotations = vi.fn(async () => true)
+      const onEditModeChange = vi.fn()
+      const { rerender } = render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={entrySnapshot}
+          onAnnotationsChange={vi.fn()}
+          canEdit={true}
+          editMode={false}
+          onEditModeChange={onEditModeChange}
+          onCancelAnnotations={onCancelAnnotations}
+        />,
+      )
+      rerender(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={entrySnapshot}
+          onAnnotationsChange={vi.fn()}
+          canEdit={true}
+          editMode
+          onEditModeChange={onEditModeChange}
+          onCancelAnnotations={onCancelAnnotations}
+        />,
+      )
+      rerender(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={authoritative}
+          onAnnotationsChange={vi.fn()}
+          canEdit={true}
+          editMode
+          onEditModeChange={onEditModeChange}
+          onCancelAnnotations={onCancelAnnotations}
+          cancellationBaseline={authoritative}
+        />,
+      )
+
+      await act(async () => {
+        screen.getByLabelText('Cancel — discard changes').click()
+      })
+
+      expect(onCancelAnnotations).toHaveBeenCalledWith(authoritative)
+    })
+
     it('keeps edit mode open when cancellation rollback fails', async () => {
       const original = [makeAnnotation({ id: 'orig-1' })]
       const onCancelAnnotations = vi.fn(async () => false)

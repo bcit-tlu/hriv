@@ -17,6 +17,7 @@ interface CanvasSaveState {
   reconciliationPromise: Promise<void> | null
   pending: CanvasAnnotation[] | null
   lastSavedAnnotations: CanvasAnnotation[]
+  cancellationBaseline: CanvasAnnotation[] | null
   version: number
   metadata: Record<string, unknown> | null | undefined
 }
@@ -106,6 +107,7 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
       reconciliationPromise: null,
       pending: null,
       lastSavedAnnotations: annotationsFromMetadata(image.metadataExtra),
+      cancellationBaseline: null,
       version: image.version,
       metadata: undefined,
     }
@@ -120,6 +122,12 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
   const [localCanvasAnnotations, setLocalCanvasAnnotations] = useState<CanvasAnnotation[] | null>(
     null,
   )
+  // Published only when a conflict-resolving refresh changes the active
+  // CanvasOverlay edit-session cancellation baseline.
+  const [canvasCancellationBaseline, setCanvasCancellationBaseline] = useState<{
+    imageId: number
+    annotations: CanvasAnnotation[]
+  } | null>(null)
 
   // Track selection synchronously so late saves can update only their own
   // state record and never the version/metadata exposed for another image.
@@ -146,6 +154,7 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
     state.version = image.version
     state.metadata = image.metadataExtra ?? {}
     state.lastSavedAnnotations = annotationsFromMetadata(image.metadataExtra)
+    if (conflictResolved) state.cancellationBaseline = state.lastSavedAnnotations
     return { conflictResolved }
   }, [])
 
@@ -163,7 +172,10 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
       if (timer) clearTimeout(timer)
       canvasSaveTimersRef.current.delete(previousImageId)
       const previousState = canvasSaveStatesRef.current.get(previousImageId)
-      if (previousState) previousState.pending = null
+      if (previousState) {
+        previousState.pending = null
+        previousState.cancellationBaseline = null
+      }
     }
     lastCleanedSelectionIdRef.current = currentImageId
   }, [currentImageId])
@@ -179,8 +191,14 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
     }
     const state = getCanvasSaveState(selectedImage)
     const refresh = refreshCanvasSaveState(selectedImage, state)
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- newer authoritative data invalidates the conflicting local draft
-    if (refresh?.conflictResolved) setLocalCanvasAnnotations(null)
+    if (refresh?.conflictResolved) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- newer authoritative data invalidates the conflicting local draft
+      setLocalCanvasAnnotations(null)
+      setCanvasCancellationBaseline({
+        imageId: selectedImage.id,
+        annotations: state.cancellationBaseline ?? [],
+      })
+    }
     syncCurrentImageRefs(selectedImage.id, state)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- a new image ID starts a save session; same-image refreshes are handled below
   }, [getCanvasSaveState, refreshCanvasSaveState, selectedImage?.id, syncCurrentImageRefs])
@@ -196,8 +214,14 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
     const state = getCanvasSaveState(selectedImage)
     const refresh = refreshCanvasSaveState(selectedImage, state)
     if (!refresh) return
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- newer authoritative data invalidates the conflicting local draft
-    if (refresh.conflictResolved) setLocalCanvasAnnotations(null)
+    if (refresh.conflictResolved) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- newer authoritative data invalidates the conflicting local draft
+      setLocalCanvasAnnotations(null)
+      setCanvasCancellationBaseline({
+        imageId: selectedImage.id,
+        annotations: state.cancellationBaseline ?? [],
+      })
+    }
     syncCurrentImageRefs(currentImageId, state)
   }, [
     currentImageId,
@@ -498,12 +522,13 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
       canvasCancellationImageIdsRef.current.add(targetImage.id)
       try {
         const targetState = getCanvasSaveState(targetImage)
+        const cancellationSnapshot = targetState.cancellationBaseline ?? snapshot
         const inFlightPromise = targetState.inFlightPromise
         const reconciliationPromise = targetState.reconciliationPromise
         clearCanvasSaveTimer(targetImage.id)
         targetState.pending = null
         latestCanvasAnnotationsRef.current = null
-        setLocalCanvasAnnotations(snapshot)
+        setLocalCanvasAnnotations(cancellationSnapshot)
 
         if (inFlightPromise) {
           // The in-flight request cannot be aborted. Await it, then use its
@@ -513,7 +538,7 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
           const result = await inFlightPromise
           if (!result.persisted) return false
           const rollback = await startCanvasSave(
-            snapshot,
+            cancellationSnapshot,
             targetImage,
             result.updated?.version ?? targetImage.version,
           )
@@ -554,9 +579,9 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
           // The authoritative read removes the ambiguity even if a rollback
           // is still needed, so the rollback itself can use its known version.
           uncertainCanvasSaveImageIdsRef.current.delete(targetImage.id)
-          if (JSON.stringify(authoritativeAnnotations) !== JSON.stringify(snapshot)) {
+          if (JSON.stringify(authoritativeAnnotations) !== JSON.stringify(cancellationSnapshot)) {
             const rollback = await startCanvasSave(
-              snapshot,
+              cancellationSnapshot,
               targetImage,
               authoritativeImage.version,
             )
@@ -565,11 +590,13 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
           return true
         }
 
-        if (JSON.stringify(targetState.lastSavedAnnotations) === JSON.stringify(snapshot)) {
+        if (
+          JSON.stringify(targetState.lastSavedAnnotations) === JSON.stringify(cancellationSnapshot)
+        ) {
           return true
         }
 
-        const rollback = await startCanvasSave(snapshot, targetImage)
+        const rollback = await startCanvasSave(cancellationSnapshot, targetImage)
         return rollback.success
       } finally {
         canvasCancellationImageIdsRef.current.delete(targetImage.id)
@@ -586,6 +613,14 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
     ],
   )
 
+  const resetCanvasCancellationBaseline = useCallback(() => {
+    if (!selectedImage) return
+    getCanvasSaveState(selectedImage).cancellationBaseline = null
+    setCanvasCancellationBaseline((current) =>
+      current?.imageId === selectedImage.id ? null : current,
+    )
+  }, [getCanvasSaveState, selectedImage])
+
   return {
     /** Local annotations (reflects edits immediately). Falls back to server data when null. */
     localCanvasAnnotations,
@@ -597,6 +632,10 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
     flushCanvasAnnotations,
     /** Discard canvas edits, rolling back only edits already autosaved. */
     cancelCanvasAnnotations,
+    /** Conflict-resolving baseline for the active CanvasOverlay edit session. */
+    canvasCancellationBaseline,
+    /** Clear the edit-session baseline after the canvas exits edit mode. */
+    resetCanvasCancellationBaseline,
     /** Latest known image version (survives across metadata operations without viewer remount). */
     latestVersionRef,
     /** Latest known metadata (survives across metadata operations without viewer remount). */

@@ -109,6 +109,8 @@ interface CanvasOverlayProps {
   onFlushAnnotations?: () => Promise<void>
   /** Discard the edit session and restore its entry snapshot. */
   onCancelAnnotations?: (annotations: CanvasAnnotation[]) => Promise<boolean>
+  /** Replacement snapshot after a conflict-resolving authoritative refresh. */
+  cancellationBaseline?: CanvasAnnotation[]
   /** Notify the parent after canvas annotations have been cancelled. */
   onAnnotationsCancelled?: () => void
   /** Lets the parent trigger the same discard-changes flow as the Cancel button */
@@ -261,6 +263,7 @@ export default function CanvasOverlay({
   editMode,
   onFlushAnnotations,
   onCancelAnnotations,
+  cancellationBaseline,
   onAnnotationsCancelled,
   onEditModeChange,
   registerCancelHandler,
@@ -304,6 +307,15 @@ export default function CanvasOverlay({
     }
     prevEditModeRef.current = editMode
   }, [editMode, annotations])
+
+  // A newer authoritative refresh can resolve a 409 while edit mode is open.
+  // Only this explicit baseline signal replaces the cancellation snapshot;
+  // ordinary same-image annotation/version updates leave it unchanged.
+  useEffect(() => {
+    if (editMode && cancellationBaseline !== undefined) {
+      snapshotRef.current = cancellationBaseline
+    }
+  }, [cancellationBaseline, editMode])
 
   // View mode: render annotations on a plain canvas
   const redrawViewCanvas = useCallback(() => {

@@ -56,6 +56,8 @@ interface ImageViewerProps {
   onCancelCanvasAnnotations?: (annotations: CanvasAnnotation[]) => Promise<boolean>
   /** Notified after canvas annotations are cancelled. */
   onCanvasAnnotationsCancelled?: () => void
+  /** Updated only when a conflict-resolving refresh resets the edit baseline. */
+  canvasCancellationBaseline?: CanvasAnnotation[]
   /** Notified when canvas edit mode changes (so parent can disable conflicting UI) */
   onCanvasEditModeChange?: (active: boolean) => void
   /** Notified when the viewer re-fetches an image record with fresh tile URLs. */
@@ -91,6 +93,7 @@ export default function ImageViewer({
   onFlushCanvasAnnotations,
   onCancelCanvasAnnotations,
   onCanvasAnnotationsCancelled,
+  canvasCancellationBaseline,
   onCanvasEditModeChange,
   onTileSourceRenewed,
   onError,
@@ -1050,6 +1053,7 @@ export default function ImageViewer({
           onFlushAnnotations={onFlushCanvasAnnotations}
           onCancelAnnotations={onCancelCanvasAnnotations}
           onAnnotationsCancelled={onCanvasAnnotationsCancelled}
+          cancellationBaseline={canvasCancellationBaseline}
           registerCancelHandler={registerCanvasCancel}
         />
       )}

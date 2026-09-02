@@ -515,6 +515,47 @@ describe('useCanvasAnnotations', () => {
       )
     })
 
+    it('uses the refreshed baseline when cancelling after a resolved conflict', async () => {
+      const image = makeImage({ id: 1, version: 1 })
+      const entrySnapshot = [makeAnnotation({ id: 'entry' })]
+      const conflictedEdit = [makeAnnotation({ id: 'conflicted' })]
+      const authoritative = [makeAnnotation({ id: 'authoritative' })]
+      mockUpdateImage.mockRejectedValueOnce(
+        new api.ApiError(409, 'This item was modified by another user.'),
+      )
+      const { result, rerender } = renderHook(
+        (deps: UseCanvasAnnotationsDeps) => useCanvasAnnotations(deps),
+        { initialProps: makeDeps({ selectedImage: image }) },
+      )
+
+      act(() => {
+        result.current.handleCanvasAnnotationsChange(conflictedEdit)
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(600)
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+      rerender(
+        makeDeps({
+          selectedImage: makeImage({
+            id: 1,
+            version: 2,
+            metadataExtra: { canvas_annotations: authoritative },
+          }),
+        }),
+      )
+
+      let cancelled!: boolean
+      await act(async () => {
+        cancelled = await result.current.cancelCanvasAnnotations(entrySnapshot)
+      })
+
+      expect(cancelled).toBe(true)
+      expect(result.current.canvasCancellationBaseline?.annotations).toEqual(authoritative)
+      expect(mockUpdateImage).toHaveBeenCalledOnce()
+    })
+
     it('resumes saving after navigating back to newer authoritative image data', async () => {
       const image = makeImage({ id: 1, version: 1 })
       const otherImage = makeImage({ id: 2, version: 1 })
