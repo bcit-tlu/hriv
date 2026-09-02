@@ -1,7 +1,7 @@
 """Tests for task queue health and durable metrics."""
 
 import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import ANY, AsyncMock, patch
 
 from redis.exceptions import ConnectionError
 
@@ -37,7 +37,9 @@ async def test_collect_queue_state_excludes_own_job_id_from_depth() -> None:
     can discount its own in-flight queue entry so it can still observe an
     otherwise-idle queue (depth 0) while it is executing."""
     pool = AsyncMock()
-    pool.zrange.return_value = [(b"reconciliation_sweep_task:123", 1_000.0)]
+    # {reconciliation_sweep_task:123: 1000.0} is the only queue member and it
+    # is excluded, so the script reports depth 0 and no oldest entry.
+    pool.eval.return_value = (0, None)
     pool.ttl.return_value = 25
     with patch("app.worker.get_pool", new_callable=AsyncMock, return_value=pool):
         state = await collect_queue_state(
@@ -46,15 +48,20 @@ async def test_collect_queue_state_excludes_own_job_id_from_depth() -> None:
 
     assert state["depth"] == 0
     assert state["oldest_pending_age_seconds"] is None
-    pool.zrange.assert_awaited_once_with(ARQ_QUEUE_NAME, 0, -1, withscores=True)
+    pool.eval.assert_awaited_once_with(
+        ANY, 1, ARQ_QUEUE_NAME, "reconciliation_sweep_task:123"
+    )
     pool.zcard.assert_not_awaited()
+    pool.zrange.assert_not_awaited()
 
 
 async def test_collect_queue_state_ignores_excluded_job_id_not_in_queue() -> None:
     """If the excluded job ID isn't present (e.g. it already finished),
     depth is reported unmodified rather than going negative."""
     pool = AsyncMock()
-    pool.zrange.return_value = [(b"job", 1_000.0)]
+    # The excluded ID isn't in the queue, so the script's ZSCORE check for it
+    # finds nothing and the one real job is still counted.
+    pool.eval.return_value = (1, "1000.0")
     pool.ttl.return_value = 25
     with patch("app.worker.get_pool", new_callable=AsyncMock, return_value=pool):
         state = await collect_queue_state(exclude_job_ids={"some-other-job"})
@@ -63,31 +70,31 @@ async def test_collect_queue_state_ignores_excluded_job_id_not_in_queue() -> Non
     assert state["oldest_pending_age_seconds"] is not None
 
 
-async def test_collect_queue_state_exclusion_snapshot_is_race_free() -> None:
-    """A job enqueued "between" the depth read and the exclusion check must
-    not be silently dropped, and the oldest-age figure must be derived from
-    the same (exclusion-applied) snapshot as depth — both are read via a
-    single ZRANGE call so there is no window for a concurrent enqueue to
-    desync the two figures the way separate ZCARD/ZRANK/ZRANGE calls could.
+async def test_collect_queue_state_exclusion_is_atomic_and_bounded() -> None:
+    """The exclusion path must not transfer the whole queue to Python (cost
+    must stay bounded by the exclusion set size, not queue depth) and must
+    compute depth/oldest-age from a single atomic Redis-side operation so a
+    concurrent enqueue can't desync the two figures the way separate
+    ZCARD/ZRANK/ZRANGE calls could.
     """
     pool = AsyncMock()
-    # Own in-flight job (excluded) plus one real pending job that arrived
-    # after the sweep's own job was enqueued — both present in one snapshot.
-    pool.zrange.return_value = [
-        (b"reconciliation_sweep_task:123", 1_000.0),
-        (b"new-pending-job", 2_000.0),
-    ]
+    # One real pending job (not excluded) alongside the sweep's own in-flight
+    # entry — the script reports depth 1 and the real job's age.
+    pool.eval.return_value = (1, "2000.0")
     pool.ttl.return_value = 25
     with patch("app.worker.get_pool", new_callable=AsyncMock, return_value=pool):
         state = await collect_queue_state(
             exclude_job_ids={"reconciliation_sweep_task:123"}
         )
 
-    # The real pending job must still be counted, and the oldest-age figure
-    # must reflect that job (not the excluded one).
     assert state["depth"] == 1
     assert state["oldest_pending_age_seconds"] is not None
+    # A single EVAL call replaces what would otherwise be a ZCARD + ZRANGE
+    # (or worse, a full ZRANGE(0, -1) transfer) — confirms the bounded,
+    # atomic implementation rather than a Python-side full-queue scan.
+    pool.eval.assert_awaited_once()
     pool.zcard.assert_not_awaited()
+    pool.zrange.assert_not_awaited()
     pool.zrank.assert_not_awaited()
 
 

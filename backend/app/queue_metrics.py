@@ -76,9 +76,44 @@ def record_enqueue(job_type: str, outcome: str, reason: str) -> None:
     )
 
 
-def _decode_member(member: bytes | str) -> str:
-    """Normalise a raw ZRANGE member to ``str`` for exclusion-set lookups."""
-    return member.decode() if isinstance(member, bytes) else member
+# Computes a coherent (depth, oldest-non-excluded-score) pair in one atomic
+# round trip, without ever transferring the full queue to Python. Redis
+# executes the whole script as a single operation, so there is no window for
+# a concurrent enqueue to desync the two figures the way separate
+# ZCARD/ZRANK/ZRANGE calls could (see ``collect_queue_state``). Cost is
+# bounded by the (small, fixed) number of excluded IDs rather than queue
+# depth: ZCARD is O(1), one ZSCORE per excluded ID is O(log N), and the
+# oldest-non-excluded lookup only ever inspects a prefix of
+# ``#excluded + 1`` members (a sorted set can't have more than
+# ``#excluded`` distinct excluded members ahead of the first kept one).
+_QUEUE_DEPTH_EXCLUDING_SCRIPT = """
+local queue_key = KEYS[1]
+local total = redis.call('ZCARD', queue_key)
+local excluded_present = 0
+for i = 1, #ARGV do
+    if redis.call('ZSCORE', queue_key, ARGV[i]) then
+        excluded_present = excluded_present + 1
+    end
+end
+local depth = total - excluded_present
+local prefix = redis.call('ZRANGE', queue_key, 0, #ARGV, 'WITHSCORES')
+local oldest_score = false
+for i = 1, #prefix, 2 do
+    local member = prefix[i]
+    local is_excluded = false
+    for j = 1, #ARGV do
+        if member == ARGV[j] then
+            is_excluded = true
+            break
+        end
+    end
+    if not is_excluded then
+        oldest_score = prefix[i + 1]
+        break
+    end
+end
+return {depth, oldest_score}
+"""
 
 
 async def collect_queue_state(*, exclude_job_ids: set[str] | None = None) -> dict[str, Any]:
@@ -90,11 +125,13 @@ async def collect_queue_state(*, exclude_job_ids: set[str] | None = None) -> dic
     currently-executing job IDs in the queue sorted set until the job
     finishes, so without this a periodic cron job would always observe
     ``depth >= 1`` (itself) and never treat the queue as idle. When set,
-    ``depth`` and ``oldest_pending_age_seconds`` are both derived from a
-    single ``ZRANGE`` snapshot (rather than separate ``ZCARD``/``ZRANK``
-    calls) so a job enqueued between reads can't be double-counted or
-    dropped, and so the reported oldest-entry age can never describe an
-    entry that ``depth`` has excluded.
+    ``depth`` and ``oldest_pending_age_seconds`` are both computed by a
+    single atomic Lua script (``_QUEUE_DEPTH_EXCLUDING_SCRIPT``) rather than
+    separate ZCARD/ZRANK/ZRANGE round trips: this avoids the race where a
+    job enqueued between separate reads could be dropped from ``depth`` (or
+    make ``oldest_pending_age_seconds`` describe an entry ``depth`` has
+    excluded), and — unlike transferring the whole queue to Python — stays
+    bounded even when the queue holds a large backlog.
     """
     from .worker import WorkerSettings, get_pool
 
@@ -113,21 +150,14 @@ async def collect_queue_state(*, exclude_job_ids: set[str] | None = None) -> dic
         now_ms = time.time() * 1000
         health_check_interval = WorkerSettings.health_check_interval
         if exclude_job_ids:
-            # Read depth, exclusions, and the oldest-entry age from a single
-            # ZRANGE snapshot rather than separate ZCARD/ZRANK/ZRANGE calls:
-            # a job enqueued between separate reads could otherwise leave
-            # depth understating real queue contents (or the oldest-age
-            # figure describing an entry that depth has excluded).
-            members = await pool.zrange(ARQ_QUEUE_NAME, 0, -1, withscores=True)
-            kept = [
-                (member, score)
-                for member, score in members
-                if _decode_member(member) not in exclude_job_ids
-            ]
-            depth = len(kept)
+            depth, oldest_score = await pool.eval(
+                _QUEUE_DEPTH_EXCLUDING_SCRIPT,
+                1,
+                ARQ_QUEUE_NAME,
+                *exclude_job_ids,
+            )
             oldest_age = None
-            if kept:
-                oldest_score = min(score for _member, score in kept)
+            if oldest_score is not None:
                 oldest_age = max(0.0, (now_ms - float(oldest_score)) / 1000)
         else:
             depth = await pool.zcard(ARQ_QUEUE_NAME)
