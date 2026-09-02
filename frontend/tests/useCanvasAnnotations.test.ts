@@ -127,4 +127,46 @@ describe('useCanvasAnnotations', () => {
     expect(result.current.localCanvasAnnotations).toEqual(original)
     expect(mockUpdateImage).not.toHaveBeenCalled()
   })
+
+  it('retains a dirty draft through a same-image metadata refresh', () => {
+    const image = makeImage({ id: 1, version: 1 })
+    const { result, rerender } = renderHook(
+      (selectedImage) => useCanvasAnnotations(makeDeps({ selectedImage })),
+      { initialProps: image },
+    )
+    const draft = [{ ...annotation, text: 'Unsaved edit' }]
+
+    act(() => result.current.handleCanvasAnnotationsChange(draft))
+    rerender(
+      makeImage({
+        id: 1,
+        version: 2,
+        metadataExtra: { canvas_annotations: [{ ...annotation, text: 'Server change' }] },
+      }),
+    )
+
+    expect(result.current.localCanvasAnnotations).toEqual(draft)
+    expect(result.current.canvasDraftDirty).toBe(true)
+  })
+
+  it('does not apply a completed save to a newly selected image', async () => {
+    mockUpdateImage.mockResolvedValue(updatedImage(2, { canvas_annotations: [annotation] }))
+    const image = makeImage({ id: 1 })
+    const { result, rerender } = renderHook(
+      (selectedImage) => useCanvasAnnotations(makeDeps({ selectedImage })),
+      { initialProps: image },
+    )
+
+    act(() => result.current.handleCanvasAnnotationsChange([annotation]))
+    const saveForOriginalImage = result.current.saveCanvasAnnotations
+    rerender(makeImage({ id: 2, version: 7 }))
+
+    await act(async () => {
+      await saveForOriginalImage([annotation])
+    })
+
+    expect(result.current.latestVersionRef.current).toBe(7)
+    expect(result.current.localCanvasAnnotations).toBeNull()
+    expect(result.current.canvasDraftDirty).toBe(false)
+  })
 })

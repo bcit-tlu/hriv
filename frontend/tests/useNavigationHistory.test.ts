@@ -110,6 +110,45 @@ describe('useNavigationHistory', () => {
   })
 
   describe('popstate handling', () => {
+    it('restores the displayed entry when a guarded Back traversal is rejected', () => {
+      window.history.replaceState(buildNavHistoryState('browse', [], null, 3), '', '/')
+      const goSpy = vi.spyOn(window.history, 'go').mockImplementation(() => {})
+      const onPopState = vi.fn(() => false)
+      renderHook(() => useNavigationHistory(onPopState))
+      const previous = buildNavHistoryState('browse', [], null, 3)
+      const target = buildNavHistoryState('browse', [1], null, 2)
+
+      act(() => window.dispatchEvent(new PopStateEvent('popstate', { state: target })))
+
+      expect(onPopState).toHaveBeenCalledWith('browse', [1], null, {
+        fromIndex: 3,
+        toIndex: 2,
+      })
+      expect(goSpy).toHaveBeenCalledWith(1)
+
+      act(() => window.dispatchEvent(new PopStateEvent('popstate', { state: previous })))
+      expect(onPopState).toHaveBeenCalledOnce()
+      goSpy.mockRestore()
+    })
+
+    it('replays an accepted guarded traversal after a discard confirmation', () => {
+      window.history.replaceState(buildNavHistoryState('browse', [], null, 3), '', '/')
+      const goSpy = vi.spyOn(window.history, 'go').mockImplementation(() => {})
+      const onPopState = vi.fn(() => false)
+      const { result } = renderHook(() => useNavigationHistory(onPopState))
+      const target = buildNavHistoryState('manage', [], null, 4)
+
+      act(() => result.current.replayPopState(4))
+      act(() => window.dispatchEvent(new PopStateEvent('popstate', { state: target })))
+
+      expect(goSpy).toHaveBeenCalledWith(1)
+      expect(onPopState).toHaveBeenCalledWith('manage', [], null, {
+        fromIndex: 3,
+        toIndex: 4,
+      })
+      goSpy.mockRestore()
+    })
+
     it('calls onPopState with decoded state on popstate event', () => {
       const onPopState = vi.fn()
       renderHook(() => useNavigationHistory(onPopState))

@@ -307,7 +307,9 @@ const canvasAnnotationsMock = {
   localCanvasAnnotations: null,
   canvasAnnotations: [],
   handleCanvasAnnotationsChange: vi.fn(),
-  flushCanvasAnnotations: vi.fn(),
+  saveCanvasAnnotations: vi.fn(),
+  discardCanvasAnnotations: vi.fn(),
+  canvasDraftDirty: false,
   latestVersionRef: { current: null },
   latestMetadataRef: { current: null },
 }
@@ -357,6 +359,7 @@ vi.mock('../src/components/AppShell', () => ({
     onSearchOpen,
     onOpenPrograms,
     onOpenGroups,
+    logout,
     frontendVersion,
     backendVersion,
   }: {
@@ -366,6 +369,7 @@ vi.mock('../src/components/AppShell', () => ({
     onSearchOpen: () => void
     onOpenPrograms: () => void
     onOpenGroups: () => void
+    logout: () => void
     frontendVersion: string | null
     backendVersion: string | null
   }) => (
@@ -390,6 +394,9 @@ vi.mock('../src/components/AppShell', () => ({
       </button>
       <button type="button" onClick={onOpenGroups}>
         Shell groups
+      </button>
+      <button type="button" onClick={logout}>
+        Shell logout
       </button>
       {children}
     </div>
@@ -647,7 +654,28 @@ vi.mock('../src/useCategoryActions', () => ({
 }))
 
 describe('App breadcrumbs', () => {
-  beforeEach(resetFixtures)
+  beforeEach(() => {
+    resetFixtures()
+    canvasAnnotationsMock.canvasDraftDirty = false
+    canvasAnnotationsMock.discardCanvasAnnotations.mockReset()
+  })
+
+  it('confirms before logging out with a dirty canvas draft', () => {
+    canvasAnnotationsMock.canvasDraftDirty = true
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shell logout', hidden: true }))
+    expect(screen.getByText('Discard annotation changes?')).toBeInTheDocument()
+    expect(authState.logout).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Keep Editing' }))
+    expect(authState.logout).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shell logout', hidden: true }))
+    fireEvent.click(screen.getByRole('button', { name: 'Discard Changes' }))
+    expect(canvasAnnotationsMock.discardCanvasAnnotations).toHaveBeenCalledOnce()
+    expect(authState.logout).toHaveBeenCalledOnce()
+  })
 
   it('renders program and group chips in both browse and image breadcrumb rows', () => {
     render(<App />)

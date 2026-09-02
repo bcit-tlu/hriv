@@ -787,6 +787,7 @@ describe('ImageViewer canvas edit mode', () => {
     act(() => button.options.onClick())
     expect(screen.getByText('canvas edit: true')).toBeInTheDocument()
     expect(viewer().setMouseNavEnabled).toHaveBeenCalledWith(false)
+    expect(onCanvasEditModeChange).toHaveBeenLastCalledWith(true)
 
     // Toolbar exit routes through the overlay's registered cancel handler
     act(() => button.options.onClick())

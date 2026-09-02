@@ -6,6 +6,14 @@ export interface NavHistoryState {
   page: string
   catIds: number[]
   imageId: number | null
+  /** Position assigned to app-owned history entries for guarded traversal. */
+  historyIndex?: number
+}
+
+function historyIndexOf(state: unknown): number | undefined {
+  if (state == null || typeof state !== 'object') return undefined
+  const value = (state as Record<string, unknown>).historyIndex
+  return typeof value === 'number' ? value : undefined
 }
 
 function isNavState(s: unknown): s is NavHistoryState {
@@ -24,8 +32,14 @@ export function buildNavHistoryState(
   page: string,
   catIds: number[],
   imageId: number | null,
+  historyIndex = historyIndexOf(window.history.state) ?? 0,
 ): NavHistoryState {
-  return { _hriv: true, page, catIds, imageId }
+  return { _hriv: true, page, catIds, imageId, historyIndex }
+}
+
+export interface NavigationTraversal {
+  fromIndex: number
+  toIndex: number
 }
 
 /**
@@ -33,20 +47,55 @@ export function buildNavHistoryState(
  * pushing new history entries on user-initiated navigation.
  */
 export function useNavigationHistory(
-  onPopState: (page: string, catIds: number[], imageId: number | null) => void,
+  onPopState: (
+    page: string,
+    catIds: number[],
+    imageId: number | null,
+    traversal?: NavigationTraversal,
+  ) => boolean | void,
 ) {
   const callbackRef = useRef(onPopState)
+  const currentIndexRef = useRef(historyIndexOf(window.history.state) ?? 0)
+  const restoringIndexRef = useRef<number | null>(null)
+  const replayingIndexRef = useRef<number | null>(null)
   useEffect(() => {
     callbackRef.current = onPopState
   })
 
   useEffect(() => {
     const handler = (event: PopStateEvent) => {
-      if (isNavState(event.state)) {
-        callbackRef.current(event.state.page, event.state.catIds, event.state.imageId)
-      } else {
-        callbackRef.current('browse', [], null)
+      const state = isNavState(event.state) ? event.state : null
+      const targetIndex = state?.historyIndex
+
+      if (targetIndex === restoringIndexRef.current) {
+        currentIndexRef.current = targetIndex
+        restoringIndexRef.current = null
+        return
       }
+
+      const page = state?.page ?? 'browse'
+      const catIds = state?.catIds ?? []
+      const imageId = state?.imageId ?? null
+      const fromIndex = currentIndexRef.current
+      const traversal = targetIndex === undefined ? undefined : { fromIndex, toIndex: targetIndex }
+
+      if (targetIndex === replayingIndexRef.current) {
+        currentIndexRef.current = targetIndex
+        replayingIndexRef.current = null
+        callbackRef.current(page, catIds, imageId, traversal)
+        return
+      }
+
+      const accepted = traversal
+        ? callbackRef.current(page, catIds, imageId, traversal)
+        : callbackRef.current(page, catIds, imageId)
+      if (accepted === false && targetIndex !== undefined && targetIndex !== fromIndex) {
+        restoringIndexRef.current = fromIndex
+        window.history.go(fromIndex - targetIndex)
+        return
+      }
+
+      if (targetIndex !== undefined) currentIndexRef.current = targetIndex
     }
     window.addEventListener('popstate', handler)
     return () => window.removeEventListener('popstate', handler)
@@ -59,7 +108,8 @@ export function useNavigationHistory(
    */
   const pushNavState = useCallback(
     (page: string, catIds: number[] = [], imageId: number | null = null) => {
-      const state = buildNavHistoryState(page, catIds, imageId)
+      const historyIndex = currentIndexRef.current + 1
+      const state = buildNavHistoryState(page, catIds, imageId, historyIndex)
       const params = new URLSearchParams()
       if (page !== 'browse') {
         params.set('page', page)
@@ -70,9 +120,17 @@ export function useNavigationHistory(
       const qs = params.toString()
       const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname
       window.history.pushState(state, '', url)
+      currentIndexRef.current = historyIndex
     },
     [],
   )
 
-  return { pushNavState }
+  const replayPopState = useCallback((historyIndex: number) => {
+    const fromIndex = currentIndexRef.current
+    if (historyIndex === fromIndex) return
+    replayingIndexRef.current = historyIndex
+    window.history.go(historyIndex - fromIndex)
+  }, [])
+
+  return { pushNavState, replayPopState }
 }

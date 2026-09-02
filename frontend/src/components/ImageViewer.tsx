@@ -121,6 +121,7 @@ export default function ImageViewer({
   const pendingRenewalViewportRef = useRef<ViewportState | null>(null)
   const onTileSourceRenewedRef = useRef(onTileSourceRenewed)
   const onErrorRef = useRef(onError)
+  const onCanvasEditModeChangeRef = useRef(onCanvasEditModeChange)
   const getCurrentTileSources = useEffectEvent(() => tileSources)
   const resetRenewalState = useCallback(() => {
     renewalGenerationRef.current += 1
@@ -148,6 +149,9 @@ export default function ImageViewer({
   useEffect(() => {
     onErrorRef.current = onError
   }, [onError])
+  useEffect(() => {
+    onCanvasEditModeChangeRef.current = onCanvasEditModeChange
+  }, [onCanvasEditModeChange])
   const emitToolbarAction = useCallback((action: string) => {
     emitEvent({
       event: 'ui.toolbar_action',
@@ -767,6 +771,7 @@ export default function ImageViewer({
           canvasEditModeRef.current = entering
           setCanvasEditMode(entering)
           viewer.setMouseNavEnabled(!entering)
+          onCanvasEditModeChangeRef.current?.(entering)
           canvasEditButton.element.style.outline = entering ? '2px solid #2196F3' : 'none'
           canvasEditButton.element.style.outlineOffset = entering ? '-2px' : ''
         },
@@ -1007,16 +1012,13 @@ export default function ImageViewer({
   }, [overlaysLocked])
 
   // Handle canvas edit mode toggle from the CanvasOverlay (e.g. "Done" button)
-  const handleCanvasEditModeChange = useCallback(
-    (mode: boolean) => {
-      canvasEditModeRef.current = mode
-      setCanvasEditMode(mode)
-      viewerRef.current?.setMouseNavEnabled(!mode)
-      updateCanvasEditUiRef.current?.(mode)
-      onCanvasEditModeChange?.(mode)
-    },
-    [onCanvasEditModeChange],
-  )
+  const handleCanvasEditModeChange = useCallback((mode: boolean) => {
+    canvasEditModeRef.current = mode
+    setCanvasEditMode(mode)
+    viewerRef.current?.setMouseNavEnabled(!mode)
+    updateCanvasEditUiRef.current?.(mode)
+    onCanvasEditModeChangeRef.current?.(mode)
+  }, [])
 
   return (
     <Box

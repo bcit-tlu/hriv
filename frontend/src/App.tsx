@@ -530,9 +530,13 @@ export default function App() {
   // Canvas edit mode — tracked here so we can disable conflicting UI (e.g. Edit Details)
   const [canvasEditActive, setCanvasEditActive] = useState(false)
   const canvasDraftDirtyRef = useRef(false)
-  const pendingPopStateRef = useRef<[string, number[], number | null] | null>(null)
+  const pendingPopStateRef = useRef<{
+    page: string
+    catIds: number[]
+    imageId: number | null
+    historyIndex: number
+  } | null>(null)
   const pendingNavigationRef = useRef<(() => void) | null>(null)
-  const allowPopStateRef = useRef(false)
   const [discardNavigationOpen, setDiscardNavigationOpen] = useState(false)
   const [imagesVersion, setImagesVersion] = useState(0)
   useEffect(() => {
@@ -551,13 +555,22 @@ export default function App() {
 
   // Browser history integration for back/forward navigation
   const handlePopState = useCallback(
-    (popPage: string, catIds: number[], imageId: number | null) => {
-      if (!allowPopStateRef.current && canvasDraftDirtyRef.current) {
-        pendingPopStateRef.current = [popPage, catIds, imageId]
+    (
+      popPage: string,
+      catIds: number[],
+      imageId: number | null,
+      traversal?: { historyIndex: number },
+    ) => {
+      if (canvasDraftDirtyRef.current && traversal) {
+        pendingPopStateRef.current = {
+          page: popPage,
+          catIds,
+          imageId,
+          historyIndex: traversal.historyIndex,
+        }
         setDiscardNavigationOpen(true)
-        return
+        return false
       }
-      allowPopStateRef.current = false
       const validPage = (
         ['browse', 'manage', 'people', 'admin'].includes(popPage) ? popPage : 'browse'
       ) as Page
@@ -568,7 +581,7 @@ export default function App() {
         setSelectedImage(null)
         setViewportState(undefined)
         setOverlays([])
-        return
+        return true
       }
 
       // Force-bypass the browser HTTP cache so sort_order changes
@@ -594,11 +607,20 @@ export default function App() {
       }
       setViewportState(undefined)
       setOverlays([])
+      return true
     },
     [setViewportState, setOverlays, refreshCategories],
   )
 
-  const { pushNavState } = useNavigationHistory(handlePopState)
+  const { pushNavState, replayPopState } = useNavigationHistory(
+    (page, catIds, imageId, traversal) =>
+      handlePopState(
+        page,
+        catIds,
+        imageId,
+        traversal ? { historyIndex: traversal.toIndex } : undefined,
+      ),
+  )
 
   // Announcement modal state (load, draft, save) — extracted to useAnnouncementModal hook
   const {
@@ -941,6 +963,7 @@ export default function App() {
 
   const confirmCanvasNavigationDiscard = useCallback(() => {
     discardCanvasAnnotations()
+    canvasDraftDirtyRef.current = false
     setCanvasEditActive(false)
     setDiscardNavigationOpen(false)
     const action = pendingNavigationRef.current
@@ -950,11 +973,14 @@ export default function App() {
       const popState = pendingPopStateRef.current
       pendingPopStateRef.current = null
       if (popState) {
-        allowPopStateRef.current = true
-        handlePopState(...popState)
+        replayPopState(popState.historyIndex)
       }
     }
-  }, [discardCanvasAnnotations, handlePopState])
+  }, [discardCanvasAnnotations, replayPopState])
+
+  const handleLogout = useCallback(() => {
+    runCanvasNavigation(logout)
+  }, [logout, runCanvasNavigation])
 
   // Build measurement config from the selected image's metadata
   // Overlay persistence (extracted to useOverlayPersistence hook)
@@ -1379,7 +1405,7 @@ export default function App() {
       setProfileOpen={setProfileOpen}
       avatarRef={avatarRef}
       openEditProfile={openEditProfile}
-      logout={logout}
+      logout={handleLogout}
       onOpenCategories={() => setDialogOpen(true)}
       onOpenPrograms={() => setProgramModalOpen(true)}
       onOpenGroups={() => setGroupModalOpen(true)}

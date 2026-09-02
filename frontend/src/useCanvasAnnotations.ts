@@ -96,14 +96,16 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
     async (annotations: CanvasAnnotation[]): Promise<boolean> => {
       if (!selectedImage || savingRef.current) return false
 
+      const targetImageId = selectedImage.id
       savingRef.current = true
       setCanvasSaving(true)
       try {
-        const updated = await updateImage(selectedImage.id, {
+        const updated = await updateImage(targetImageId, {
           metadata_extra_merge: {
             canvas_annotations: annotations.length > 0 ? annotations : null,
           },
         })
+        if (selectedImageIdRef.current !== targetImageId) return true
         latestVersionRef.current = updated.version
         selectedImageVersionRef.current = updated.version
         latestMetadataRef.current = updated.metadata_extra ?? {}
