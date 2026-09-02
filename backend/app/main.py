@@ -14,21 +14,16 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.sessions import SessionMiddleware
 
-from .admin_ops import (
-    _ensure_tasks_dir,
-    enforce_files_import_archive_retention,
-    reconcile_stale_tasks,
-)
+from .admin_ops import _ensure_tasks_dir
 from .auth import auth_settings
-from .database import get_async_session, get_db, settings
+from .database import get_db, settings
 from .logging_config import setup_logging
 from .metrics import render_metrics
 from .queue_metrics import queue_health
+from .reconciliation import run_reconciliation_sweep
 from .worker import TaskQueueUnavailableError, get_pool
 from .maintenance import is_maintenance_mode
 from .middleware import AuditMiddleware, MaintenanceMiddleware
-from .processing import reconcile_stale_source_images
-from .routers.bulk_import import reconcile_stale_bulk_import_jobs
 from .routers import (
     admin,
     announcement,
@@ -179,60 +174,13 @@ async def lifespan(app: FastAPI):
                 extra={"event": "worker.queue_unavailable"},
             )
 
-    # Reconcile admin tasks orphaned by a previous pod crash/rollout so
-    # their concurrency guard doesn't permanently block new imports or
-    # exports.  Stale-timestamp protection keeps multi-replica deployments
-    # safe (sibling pods still writing progress will not be clobbered).
-    try:
-        async with get_async_session()() as session:
-            await reconcile_stale_tasks(session)
-    except Exception as exc:  # pragma: no cover - best effort on startup
-        logger.warning(
-            "Stale admin task reconciliation failed: %s",
-            exc,
-            extra={"event": "admin_task.reconcile_failed", "error": str(exc)},
-        )
-
-    # Apply the retained files-import archive retention policy so age-based
-    # limits take effect even when no new import runs (no-op unless the
-    # FILES_IMPORT_ARCHIVE_RETENTION_* settings opt in).
-    try:
-        async with get_async_session()() as session:
-            await enforce_files_import_archive_retention(session)
-    except Exception as exc:  # pragma: no cover - best effort on startup
-        logger.warning(
-            "Files-import archive retention enforcement failed: %s",
-            exc,
-            extra={
-                "event": "admin_task.archive_retention_failed",
-                "error": str(exc),
-            },
-        )
-
-    # Reconcile SourceImages orphaned by a previous pod crash/rollout
-    # so they don't appear stuck in "processing" in the UI forever.
-    try:
-        async with get_async_session()() as session:
-            await reconcile_stale_source_images(session)
-    except Exception as exc:  # pragma: no cover - best effort on startup
-        logger.warning(
-            "Stale source image reconciliation failed: %s",
-            exc,
-            extra={"event": "processing.reconcile_failed", "error": str(exc)},
-        )
-
-    try:
-        async with get_async_session()() as session:
-            await reconcile_stale_bulk_import_jobs(session)
-    except Exception as exc:  # pragma: no cover - best effort on startup
-        logger.warning(
-            "Stale bulk-import reconciliation failed: %s",
-            exc,
-            extra={
-                "event": "bulk_import.reconcile_failed",
-                "error": str(exc),
-            },
-        )
+    # In "required" mode a dedicated arq worker pod is guaranteed, so the
+    # reconciliation sweep runs there instead (see
+    # ``worker.WorkerSettings.cron_jobs``) — periodically, not just once at
+    # boot. In "local" mode (dev/compose, no separate worker pod) the API
+    # process is the only one running, so it must self-heal at startup.
+    if settings.task_execution_mode == "local":
+        await run_reconciliation_sweep()
 
     yield
     logger.info("Application shutting down", extra={"event": "app.shutdown"})

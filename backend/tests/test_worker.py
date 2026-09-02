@@ -26,6 +26,7 @@ from app.worker import (
     _parse_redis_settings,
     on_startup,
     process_source_image_task,
+    reconciliation_sweep_task,
     replace_image_task,
 )
 
@@ -217,6 +218,15 @@ async def test_on_startup_calls_setup_logging() -> None:
     mock_setup.assert_called_once()
 
 
+async def test_reconciliation_sweep_task_delegates_to_shared_sweep() -> None:
+    """The cron job is a thin wrapper delegating to the shared sweep so
+    ``local``- and ``required``-mode reconciliation stay in sync."""
+    with patch("app.reconciliation.run_reconciliation_sweep", new_callable=AsyncMock) as sweep:
+        await reconciliation_sweep_task({})
+
+    sweep.assert_awaited_once()
+
+
 async def test_on_startup_logs_worker_identity() -> None:
     """Startup log should include the resolved worker service identity."""
     with (
@@ -244,7 +254,10 @@ def test_worker_settings_only_extend_timeout_for_admin_tasks() -> None:
     assert WorkerSettings.allow_abort_jobs is True
     assert WorkerSettings.health_check_interval == 30
     assert WorkerSettings.health_check_key == "arq:queue:health-check"
-    assert not hasattr(WorkerSettings, "cron_jobs")
+    assert len(WorkerSettings.cron_jobs) == 1
+    reconciliation_job = WorkerSettings.cron_jobs[0]
+    assert reconciliation_job.coroutine == reconciliation_sweep_task
+    assert reconciliation_job.run_at_startup is True
     assert WorkerSettings.functions[:2] == [
         process_source_image_task,
         replace_image_task,

@@ -75,6 +75,8 @@ spec:
               value: {{ .Values.tasks.executionMode | quote }}
             - name: WORKER_MAX_JOBS
               value: {{ .Values.redis.worker.maxJobs | quote }}
+            - name: VIPS_CONCURRENCY
+              value: {{ .Values.redis.worker.vipsConcurrency | quote }}
             - name: DB_POOL_SIZE
               value: {{ .Values.redis.worker.db.poolSize | quote }}
             - name: DB_MAX_OVERFLOW

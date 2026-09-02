@@ -111,6 +111,16 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
   import spans, `tests/test_router_images.py` for image spans).
 - See [observability-conventions.md](observability-conventions.md).
 
+### Changed startup reconciliation / worker cron jobs
+
+- backend: `poetry run pytest tests/test_main.py tests/test_worker.py tests/test_reconciliation.py`
+- note: the shared sweep (`app/reconciliation.py`) is invoked once at API
+  startup in `TASK_EXECUTION_MODE=local`, or periodically via arq
+  `WorkerSettings.cron_jobs` in `required` mode — verify both paths when
+  touching either.
+- See [image-processing-lifecycle.md](image-processing-lifecycle.md) (Stale
+  SourceImage reconciliation).
+
 ### Changed Helm charts
 
 - lint: `for chart in charts/*/; do helm lint "$chart"; done`
