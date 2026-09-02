@@ -82,6 +82,12 @@ images> / Empty` format used on category tiles.
 
 - Students view locked overlays and annotations read-only; edit mode and
   measurement tools are gated by `canEditContent`.
+- Canvas annotation editing snapshots the annotations on entry. **Cancel**
+  (the red X toolbar button or the canvas pencil toggle) restores that
+  snapshot and shows a `Canvas annotations cancelled.` confirmation without
+  saving a debounced edit; annotations already autosaved during the session
+  are rolled back to the snapshot. **Save & Exit Edit Mode** remains the
+  explicit flush-and-save action.
 - Touch pinch gestures use a per-gesture zoom-vs-rotate mode lock. The
   `ImageViewer` intercepts `canvas-pinch` and compares initial finger-line
   rotation against finger-separation change. The dominant motion wins:
