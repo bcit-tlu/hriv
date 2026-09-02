@@ -172,4 +172,3 @@ def test_get_job_endpoint_404_for_admin_when_missing() -> None:
     with _jobs_test_client("admin", db) as client:
         response = client.get("/api/jobs/999")
     assert response.status_code == 404
-

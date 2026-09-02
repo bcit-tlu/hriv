@@ -137,17 +137,14 @@ def _source_image_terminal_state(src: SourceImage) -> _SourceImageTerminalState:
     )
 
 
-def _coerce_utc_aware(dt: datetime, *, source_image_id: int) -> datetime:
+def _coerce_utc_aware(dt: datetime, *, event: str, **log_fields: object) -> datetime:
     """Return a timezone-aware UTC datetime, tolerating naive DB values."""
     if dt.tzinfo is not None:
         return dt
 
     logger.warning(
-        "Bulk import source image has naive updated_at; coercing to UTC",
-        extra={
-            "event": "bulk_import.naive_updated_at",
-            "source_image_id": source_image_id,
-        },
+        "Bulk import naive datetime coerced to UTC",
+        extra={"event": event, **log_fields},
     )
     return dt.replace(tzinfo=timezone.utc)
 
@@ -428,7 +425,11 @@ async def _wait_for_source_image_terminal_state(
                 processing_started_at = None
 
             cutoff = datetime.now(timezone.utc) - timedelta(seconds=stale_after_seconds)
-            updated_at = _coerce_utc_aware(src.updated_at, source_image_id=source_image_id)
+            updated_at = _coerce_utc_aware(
+                src.updated_at,
+                event="bulk_import.naive_updated_at",
+                source_image_id=source_image_id,
+            )
             job_status: JobStatus | None = None
             if src.status == "processing" and updated_at < cutoff:
                 latch_written = False
@@ -1414,9 +1415,11 @@ async def bulk_import_images(
     # waits on child work. The liveness set still guards against stale or lost
     # coordinators without reintroducing the deadlock-prone slot accounting.
     processing_result = await db.execute(
-        select(BulkImportJob.id).where(BulkImportJob.status == "processing")
+        select(BulkImportJob.id, BulkImportJob.updated_at).where(
+            BulkImportJob.status == "processing"
+        )
     )
-    processing_ids = {row[0] for row in processing_result.all()}
+    processing_rows = {row[0]: row[1] for row in processing_result.all()}
     registration_cutoff = datetime.now(timezone.utc) - timedelta(
         seconds=_BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS
     )
@@ -1439,10 +1442,13 @@ async def bulk_import_images(
             detail="A bulk import is already in progress",
         )
     pending_result = await db.execute(
-        select(BulkImportJob.id).where(BulkImportJob.status == "pending")
+        select(BulkImportJob.id, BulkImportJob.updated_at).where(
+            BulkImportJob.status == "pending"
+        )
     )
-    pending_ids = {row[0] for row in pending_result.all()}
-    coordinator_ids = processing_ids | pending_ids
+    pending_rows = {row[0]: row[1] for row in pending_result.all()}
+    coordinator_rows = {**processing_rows, **pending_rows}
+    coordinator_ids = set(coordinator_rows)
     # True only when Redis was reachable and positively reported that none of
     # coordinator_ids are alive. False when liveness is unreadable or disabled
     # and the guard falls open on trust alone -- that case still finalizes the
@@ -1454,6 +1460,7 @@ async def bulk_import_images(
     liveness_confirmed_dead = False
     if coordinator_ids:
         pool = await get_pool()
+        redis_liveness_available = False
         if pool is not None:
             live_since = timestamp_ms() - (
                 _BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS * 1000
@@ -1473,6 +1480,7 @@ async def bulk_import_images(
                     exc_info=True,
                 )
             else:
+                redis_liveness_available = True
                 live_ids = {int(member) for member in live_members}
                 if coordinator_ids.intersection(live_ids):
                     raise HTTPException(
@@ -1481,12 +1489,45 @@ async def bulk_import_images(
                     )
                 liveness_confirmed_dead = True
 
+        if not redis_liveness_available:
+            # Redis is disabled, unreachable, or errored: we have no
+            # positive signal either way. The 90-second registration window
+            # above only proves a coordinator *hasn't written to its row*
+            # recently -- it does NOT prove the coordinator has stopped, since
+            # a legitimately running coordinator can go well past 90 seconds
+            # between per-child bookkeeping updates (e.g. one slow image, or
+            # a worker backlog). Rather than guess, fall back to the same
+            # conservative, Redis-independent staleness threshold that
+            # reconcile_stale_bulk_import_jobs already uses to declare a row
+            # abandoned on its own: anything still within that window is
+            # treated as blocking (fail closed) instead of being finalized
+            # out from under a coordinator that may still be alive.
+            stale_cutoff = datetime.now(timezone.utc) - timedelta(
+                seconds=_STALE_BULK_IMPORT_SECONDS
+            )
+            not_confirmed_stale = {
+                job_id
+                for job_id, updated in coordinator_rows.items()
+                if _coerce_utc_aware(
+                    updated,
+                    event="bulk_import.naive_job_updated_at",
+                    bulk_import_job_id=job_id,
+                )
+                >= stale_cutoff
+            }
+            if not_confirmed_stale:
+                raise HTTPException(
+                    status_code=409,
+                    detail="A bulk import is already in progress",
+                )
+
     if coordinator_ids:
         # We reach here only when every id in coordinator_ids was judged
         # non-blocking above (confirmed dead via Redis, or liveness was
-        # unreadable/disabled and the guard fails open). Finalize them now,
-        # atomically with the job row we're about to insert below, so the
-        # partial unique index on bulk_import_jobs doesn't reject the new
+        # unreadable/disabled and every remaining row cleared the
+        # conservative Redis-independent staleness threshold). Finalize them
+        # now, atomically with the job row we're about to insert below, so
+        # the partial unique index on bulk_import_jobs doesn't reject the new
         # job just because an abandoned row is still "pending"/"processing".
         # Without this, an abandoned coordinator would block every new
         # import until reconcile_stale_bulk_import_jobs runs at startup.

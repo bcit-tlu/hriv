@@ -228,10 +228,16 @@ Coordinators register liveness in Redis. The bulk-import endpoint returns HTTP
 409 (`A bulk import is already in progress`) while another pending or
 processing import has a live coordinator registration, or while a pending or
 processing row is still within the short coordinator-registration window.
-Staleness alone never blocks a new import, and an unreadable Redis liveness
-check fails open. A pending row blocks only while its coordinator has a live
-registration; if the coordinator is lost, the missing registration lets a later
-request proceed.
+When Redis positively confirms no coordinator registration is live, an older
+row is treated as abandoned regardless of how stale it is. When Redis is
+unreadable (disabled, unreachable, or erroring), the guard no longer fails
+open on recency alone: the short coordinator-registration window only proves a
+coordinator _hasn't written to its row_ recently, not that it has stopped, so
+an unreadable check instead falls back to the same conservative,
+Redis-independent staleness threshold `reconcile_stale_bulk_import_jobs`
+already uses at startup (`BULK_IMPORT_STALE_SECONDS`, defaulting to the worker
+job timeout) before treating the row as abandoned; anything still within that
+window blocks the new import with 409 instead.
 The Redis/staleness pre-check above is a check-then-act race under concurrent
 requests: two requests can both pass it before either commits its new
 `BulkImportJob` row. A partial unique index on `bulk_import_jobs`
@@ -239,8 +245,9 @@ requests: two requests can both pass it before either commits its new
 `0024_bulk_import_single_job`) makes "at most one pending/processing row"
 an actual database guarantee. Because the pre-check's own stale-coordinator
 recovery path intentionally admits an old pending/processing row once its
-coordinator is judged dead (or its liveness is unreadable and the guard fails
-open), `bulk_import_images` finalizes that abandoned row to a terminal state
+coordinator is judged dead (whether confirmed dead via Redis, or judged
+abandoned via the staleness threshold above when Redis is unreadable),
+`bulk_import_images` finalizes that abandoned row to a terminal state
 in the same transaction as the new job it is about to insert — otherwise the
 new unique index would keep rejecting every replacement until the next
 `reconcile_stale_bulk_import_jobs` startup pass. On the insert itself,
@@ -248,7 +255,15 @@ new unique index would keep rejecting every replacement until the next
 `idx_bulk_import_jobs_single_active` (an unrelated integrity failure, such as
 the target category being deleted concurrently, propagates unchanged rather
 than masquerading as a conflict), removes the files it had already staged to
-disk, and returns the same 409 the pre-check produces.
+disk, and returns the same 409 the pre-check produces. Once the new job's
+insert has committed, `bulk_import_images` also runs the same orphaned-file
+cleanup `reconcile_stale_bulk_import_jobs` performs on startup, but only for
+finalized rows whose coordinator was positively confirmed dead via Redis — a
+row admitted through the staleness-threshold fallback above is finalized but
+its files are left alone, since an unreadable liveness check is not proof the
+coordinator has actually stopped. This cleanup is best-effort: a failure there
+is logged and swallowed rather than blocking the already-committed job from
+being scheduled.
 When a queued child observes an absent worker heartbeat for the configured
 wall-clock window, it writes arq's abort latch before marking the `SourceImage`
 failed. The latch narrows the race window; the processor's terminal-row guard

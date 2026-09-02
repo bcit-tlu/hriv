@@ -37,6 +37,7 @@ from app.routers.bulk_import import (
     _is_image_filename,
     _process_bulk_import,
     _process_bulk_import_impl,
+    _STALE_BULK_IMPORT_SECONDS,
     _write_source_image_abort_latch,
     _wait_for_source_image_terminal_state,
     bulk_import_images,
@@ -1074,20 +1075,21 @@ async def test_bulk_import_conflict_rejects_recent_pending_coordinator() -> None
 async def test_bulk_import_finalizes_stale_row_when_redis_unavailable(
     tmp_path,
 ) -> None:
-    """When Redis is unreachable, the pre-check fails open (per existing
-    documented behavior), and any old pending/processing row it admitted
-    through must still be finalized so the unique index doesn't reject the
-    new job. Because Redis was unreachable, liveness was never positively
-    confirmed, so the finalized row's staged files must NOT be cleaned up --
-    the coordinator could still be alive and using them (see
-    ``_is_single_active_job_violation``'s sibling ``liveness_confirmed_dead``
-    guard in ``bulk_import_images``)."""
+    """When Redis is unreachable, a row that is definitively stale by the
+    same conservative, Redis-independent threshold ``reconcile_stale_bulk_import_jobs``
+    already trusts (``_STALE_BULK_IMPORT_SECONDS``) is still finalized so the
+    unique index doesn't reject the new job. Because Redis was unreachable,
+    liveness was never positively confirmed, so the finalized row's staged
+    files must NOT be cleaned up -- the coordinator could still be alive and
+    using them (see ``liveness_confirmed_dead`` in ``bulk_import_images``)."""
     processing_result = MagicMock()
     processing_result.all.return_value = []
     recent_result = MagicMock()
     recent_result.scalar_one.return_value = 0
     pending_result = MagicMock()
-    pending_result.all.return_value = [(27,)]
+    pending_result.all.return_value = [
+        (27, datetime.now(timezone.utc) - timedelta(seconds=_STALE_BULK_IMPORT_SECONDS + 1))
+    ]
     finalize_result = MagicMock()
     finalize_result.all.return_value = [(27,)]
     db = AsyncMock()
@@ -1128,6 +1130,49 @@ async def test_bulk_import_finalizes_stale_row_when_redis_unavailable(
     assert db.execute.await_count == 4
     assert result.id == 78
     bg.add_task.assert_called_once()
+
+
+async def test_bulk_import_blocks_recent_row_when_redis_unavailable(
+    tmp_path,
+) -> None:
+    """When Redis is unreachable, a pending/processing row that is past the
+    90-second registration window but NOT yet past the conservative
+    Redis-independent staleness threshold must block the new import (409)
+    rather than being finalized -- a legitimately running coordinator can go
+    well past 90 seconds between per-child bookkeeping updates (e.g. one
+    slow image, or a worker backlog), so recency alone is not proof the
+    coordinator has stopped."""
+    processing_result = MagicMock()
+    processing_result.all.return_value = []
+    recent_result = MagicMock()
+    recent_result.scalar_one.return_value = 0
+    pending_result = MagicMock()
+    pending_result.all.return_value = [
+        (27, datetime.now(timezone.utc) - timedelta(seconds=91))
+    ]
+    db = AsyncMock()
+    db.execute = AsyncMock(
+        side_effect=[processing_result, recent_result, pending_result]
+    )
+    db.add = MagicMock()
+
+    with patch(
+        "app.routers.bulk_import.get_pool",
+        new_callable=AsyncMock,
+        return_value=None,
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            await bulk_import_images(
+                files=[_make_upload("blocked.png", [b"image-data", b""])],
+                category_id=None,
+                background_tasks=MagicMock(),
+                _user=MagicMock(),
+                db=db,
+            )
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == "A bulk import is already in progress"
+    db.add.assert_not_called()
 
 
 async def test_process_bulk_import_normalizes_empty_note(tmp_path) -> None:
