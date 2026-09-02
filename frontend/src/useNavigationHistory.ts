@@ -12,7 +12,9 @@ export interface NavHistoryState {
   historyKey?: string
 }
 
-const historySessionId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+const historySessionId = `${Date.now().toString(36)}-${window.crypto
+  .getRandomValues(new Uint32Array(1))[0]
+  .toString(36)}`
 let historyGeneration = 0
 
 function currentHistoryKey(): string {
