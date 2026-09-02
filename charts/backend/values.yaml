@@ -202,6 +202,17 @@ redis:
     # minimum 2). Bulk-import coordinators are API-hosted orchestration
     # tasks, so worker slots remain available for child image jobs.
     maxJobs: 4
+    # libvips thread-pool size per operation (VIPS_CONCURRENCY). libvips
+    # defaults to the host's detected CPU count, which ignores the
+    # worker pod's cgroup CPU limit (resources.limits.cpu below) and can
+    # oversubscribe the pod: with maxJobs concurrent image-processing
+    # jobs each spawning a multi-threaded libvips operation, CPU
+    # contention throttles every job rather than bounding parallelism
+    # predictably. Pin it low (1) since job-level concurrency already
+    # parallelises across images; increase only if profiling shows
+    # single-image processing latency is the bottleneck and CPU limits
+    # have headroom.
+    vipsConcurrency: 1
     # Deprecated compatibility value. WORKER_TOTAL_SLOTS is no longer
     # rendered because bulk-import coordinator slot-starvation detection
     # was removed.

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.50.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.50.0...backend-v0.50.1) (2026-09-02)
+
+
+### Bug Fixes
+
+* **backend:** move reconciliation to worker cron; tune worker resource profile ([#1181](https://github.com/bcit-tlu/hriv/issues/1181)) ([5106fa5](https://github.com/bcit-tlu/hriv/commit/5106fa50ee528a36e2b7f5acc6267e77a3219b50))
+
 ## [0.50.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.49.1...backend-v0.50.0) (2026-09-02)
 
 

@@ -29,6 +29,7 @@ from urllib.parse import urlparse
 
 from arq import create_pool
 from arq.connections import ArqRedis, RedisSettings
+from arq.cron import cron
 from arq.jobs import Job
 from arq.worker import func
 from opentelemetry import trace
@@ -502,6 +503,23 @@ async def on_startup(ctx: dict[str, Any]) -> None:
     )
 
 
+async def reconciliation_sweep_task(ctx: dict[str, Any]) -> None:
+    """Periodic arq cron job: run the shared reconciliation sweep.
+
+    This is the ``required``-mode (dedicated worker pod) counterpart to the
+    startup-time sweep that ``main.py`` runs directly in ``local`` mode (see
+    ``reconciliation.py`` for why the split exists and why the reconcile
+    functions are imported lazily rather than at module load time). Passes
+    this job's own arq ``job_id`` through so the stale-source-image check
+    can exclude the sweep's own in-flight queue entry from its
+    queue-idleness test (arq keeps a job's ID in the queue sorted set for
+    its entire execution).
+    """
+    from .reconciliation import run_reconciliation_sweep
+
+    await run_reconciliation_sweep(current_job_id=ctx.get("job_id"))
+
+
 # ── arq WorkerSettings ───────────────────────────────────
 class WorkerSettings:
     """Configuration class consumed by ``arq worker``."""
@@ -511,6 +529,22 @@ class WorkerSettings:
         replace_image_task,
         func(bulk_import_task, max_tries=1),
         func(admin_task_runner, timeout=86400),
+    ]
+    # Runs the reconciliation sweep (stale admin tasks, archive retention,
+    # stale source images, stale bulk-import jobs) every 15 minutes, plus
+    # once immediately at worker boot so a restart self-heals without
+    # waiting for the next tick. This is the "required"-mode (dedicated
+    # worker pod) counterpart to the "local"-mode sweep that main.py runs
+    # directly at API startup — see reconciliation.py.
+    cron_jobs = [
+        cron(
+            reconciliation_sweep_task,
+            minute={0, 15, 30, 45},
+            run_at_startup=True,
+            unique=True,
+            timeout=WORKER_JOB_TIMEOUT_SECONDS,
+            max_tries=1,
+        ),
     ]
     redis_settings = _parse_redis_settings()
     queue_name = ARQ_QUEUE_NAME

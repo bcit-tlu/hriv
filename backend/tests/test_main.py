@@ -41,36 +41,43 @@ async def test_health_endpoint() -> None:
     assert result == {"status": "ok", "version": app.version}
 
 
-async def test_lifespan_continues_when_bulk_import_reconciliation_fails(
-    caplog,
-    monkeypatch,
-) -> None:
+async def test_lifespan_runs_reconciliation_sweep_in_local_mode(monkeypatch) -> None:
+    """In ``local`` mode (no dedicated worker pod) the API process is the
+    only one running, so it must self-heal by running the reconciliation
+    sweep directly at startup."""
     from app import main
     from app.database import settings
-
-    session = AsyncMock()
-    context = MagicMock()
-    context.__aenter__ = AsyncMock(return_value=session)
-    context.__aexit__ = AsyncMock(return_value=False)
-    session_factory = MagicMock(return_value=context)
 
     monkeypatch.setattr(settings, "task_execution_mode", "local")
     monkeypatch.setattr(main, "setup_logging", MagicMock())
     monkeypatch.setattr(main, "_check_oidc_connectivity", AsyncMock())
-    monkeypatch.setattr(main, "get_async_session", MagicMock(return_value=session_factory))
-    monkeypatch.setattr(main, "reconcile_stale_tasks", AsyncMock())
-    monkeypatch.setattr(main, "enforce_files_import_archive_retention", AsyncMock())
-    monkeypatch.setattr(main, "reconcile_stale_source_images", AsyncMock())
-    monkeypatch.setattr(
-        main,
-        "reconcile_stale_bulk_import_jobs",
-        AsyncMock(side_effect=RuntimeError("database unavailable")),
-    )
+    sweep = AsyncMock()
+    monkeypatch.setattr(main, "run_reconciliation_sweep", sweep)
 
     async with main.lifespan(main.app):
         pass
 
-    assert "Stale bulk-import reconciliation failed" in caplog.text
+    sweep.assert_awaited_once()
+
+
+async def test_lifespan_skips_reconciliation_sweep_in_required_mode(monkeypatch) -> None:
+    """In ``required`` mode a dedicated arq worker pod runs the sweep
+    periodically via a cron job instead (see ``worker.WorkerSettings``), so
+    the API process must not also run it at startup."""
+    from app import main
+    from app.database import settings
+
+    monkeypatch.setattr(settings, "task_execution_mode", "required")
+    monkeypatch.setattr(main, "setup_logging", MagicMock())
+    monkeypatch.setattr(main, "_check_oidc_connectivity", AsyncMock())
+    monkeypatch.setattr(main, "get_pool", AsyncMock(return_value=MagicMock()))
+    sweep = AsyncMock()
+    monkeypatch.setattr(main, "run_reconciliation_sweep", sweep)
+
+    async with main.lifespan(main.app):
+        pass
+
+    sweep.assert_not_awaited()
 
 
 async def test_queue_health_returns_minimal_status(monkeypatch) -> None:

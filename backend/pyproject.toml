@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "hriv-backend"
-version = "0.50.0"
+version = "0.50.1"
 description = "HRIV Image Library API"
 authors = ["Devin AI"]
 license = "MPL-2.0"
@@ -38,6 +38,7 @@ pytest = "^8.3.3"
 pytest-asyncio = "^0.24.0"
 pytest-cov = "^5.0.0"
 fakeredis = "2.37.0"
+lupa = "^2.8"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
