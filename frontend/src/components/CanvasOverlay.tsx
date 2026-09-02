@@ -304,6 +304,7 @@ export default function CanvasOverlay({
   useEffect(() => {
     if (editMode && !prevEditModeRef.current) {
       snapshotRef.current = annotations.map((annotation) => ({ ...annotation }))
+      dirtyRef.current = false
     }
     prevEditModeRef.current = editMode
   }, [editMode, annotations])
@@ -775,36 +776,43 @@ export default function CanvasOverlay({
   )
 
   /** Collect all fabric objects without changing persistence state. */
-  const collectAnnotations = useCallback((): CanvasAnnotation[] => {
-    const fc = fabricCanvasRef.current
-    if (!fc) return []
-    // Exit any active IText editing before collecting, so text content is committed
-    const active = fc.getActiveObject()
-    if (active && active instanceof fabric.IText && active.isEditing) {
-      active.exitEditing()
-    }
-    const activeSelection = fc.getActiveObject()
-    const selectedObjects =
-      activeSelection instanceof fabric.ActiveSelection
-        ? new Set(activeSelection.getObjects())
-        : null
-    const annotations: CanvasAnnotation[] = []
-    for (const obj of fc.getObjects()) {
-      const transform =
-        activeSelection instanceof fabric.ActiveSelection && selectedObjects?.has(obj)
-          ? absoluteObjectTransform(obj, activeSelection)
-          : undefined
-      const ann = fabricToAnnotation(obj, transform)
-      if (ann) annotations.push(ann)
-    }
-    return annotations
-  }, [absoluteObjectTransform, fabricToAnnotation])
+  const collectAnnotations = useCallback(
+    (commitTextEditing = true): CanvasAnnotation[] => {
+      const fc = fabricCanvasRef.current
+      if (!fc) return []
+      // Exit any active IText editing before collecting, so text content is committed
+      const active = fc.getActiveObject()
+      if (commitTextEditing && active && active instanceof fabric.IText && active.isEditing) {
+        active.exitEditing()
+      }
+      const activeSelection = fc.getActiveObject()
+      const selectedObjects =
+        activeSelection instanceof fabric.ActiveSelection
+          ? new Set(activeSelection.getObjects())
+          : null
+      const annotations: CanvasAnnotation[] = []
+      for (const obj of fc.getObjects()) {
+        const transform =
+          activeSelection instanceof fabric.ActiveSelection && selectedObjects?.has(obj)
+            ? absoluteObjectTransform(obj, activeSelection)
+            : undefined
+        const ann = fabricToAnnotation(obj, transform)
+        if (ann) annotations.push(ann)
+      }
+      return annotations
+    },
+    [absoluteObjectTransform, fabricToAnnotation],
+  )
 
-  const emitAnnotations = useCallback(() => {
-    const annotations = collectAnnotations()
-    console.debug(LOG_PREFIX, 'emitAnnotations:', annotations.length, 'objects')
-    onAnnotationsChange(annotations)
-  }, [collectAnnotations, onAnnotationsChange])
+  const emitAnnotations = useCallback(
+    (commitTextEditing = true) => {
+      const annotations = collectAnnotations(commitTextEditing)
+      dirtyRef.current = JSON.stringify(annotations) !== JSON.stringify(snapshotRef.current)
+      console.debug(LOG_PREFIX, 'emitAnnotations:', annotations.length, 'objects')
+      onAnnotationsChange(annotations)
+    },
+    [collectAnnotations, onAnnotationsChange],
+  )
 
   // Initialize / teardown fabric canvas when entering/exiting edit mode
   useEffect(() => {
@@ -948,16 +956,21 @@ export default function CanvasOverlay({
     }
     document.addEventListener('keydown', handleKeyDown)
 
-    // Emit after IText editing exits so text content is saved
+    const handleTextChanged = () => {
+      console.debug(LOG_PREFIX, 'text:changed — emitting live annotations')
+      emitAnnotations(false)
+    }
     const handleTextEditingExited = () => {
       console.debug(LOG_PREFIX, 'text:editing:exited — emitting annotations')
       emitAnnotations()
     }
+    fc.on('text:changed', handleTextChanged)
     fc.on('text:editing:exited', handleTextEditingExited)
 
     return () => {
       document.removeEventListener('keydown', handleKeyDown)
       if (fabricCanvasRef.current) {
+        fabricCanvasRef.current.off('text:changed', handleTextChanged)
         fabricCanvasRef.current.off('text:editing:exited', handleTextEditingExited)
         fabricCanvasRef.current.dispose()
         fabricCanvasRef.current = null
@@ -1263,7 +1276,8 @@ export default function CanvasOverlay({
   }, [onAnnotationsChange, onDiscardAnnotations, onEditModeChange])
 
   const handleCancel = useCallback(() => {
-    if (isDirty ?? dirtyRef.current) {
+    if (savingRef.current) return
+    if (dirtyRef.current || isDirty) {
       setDiscardDialogOpen(true)
       return
     }

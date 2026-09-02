@@ -91,7 +91,9 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
     draftRevisionRef.current += 1
     draftAnnotationsRef.current = annotations
     setLocalCanvasAnnotations(annotations)
-    setCanvasDraftDirty(!annotationsEqual(annotations, entrySnapshotRef.current))
+    const dirty = !annotationsEqual(annotations, entrySnapshotRef.current)
+    setCanvasDraftDirty(dirty)
+    return dirty
   }, [])
 
   const saveCanvasAnnotations = useCallback(

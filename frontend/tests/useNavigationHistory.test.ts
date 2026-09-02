@@ -51,6 +51,31 @@ describe('useNavigationHistory', () => {
     expect(removeEventSpy).toHaveBeenCalledWith('popstate', expect.any(Function))
   })
 
+  it('does not register listeners or mutate history when synchronization is disabled', () => {
+    const onPopState = vi.fn()
+    const goSpy = vi.spyOn(window.history, 'go').mockImplementation(() => {})
+    const backSpy = vi.spyOn(window.history, 'back').mockImplementation(() => {})
+    const { result } = renderHook(() => useNavigationHistory(onPopState, false))
+
+    expect(addEventSpy).not.toHaveBeenCalledWith('popstate', expect.any(Function))
+    act(() => {
+      result.current.pushNavState('manage')
+      result.current.replayPopState(2)
+      window.dispatchEvent(
+        new PopStateEvent('popstate', {
+          state: buildNavHistoryState('manage', [], null, 2),
+        }),
+      )
+    })
+
+    expect(pushStateSpy).not.toHaveBeenCalled()
+    expect(goSpy).not.toHaveBeenCalled()
+    expect(backSpy).not.toHaveBeenCalled()
+    expect(onPopState).not.toHaveBeenCalled()
+    goSpy.mockRestore()
+    backSpy.mockRestore()
+  })
+
   describe('pushNavState', () => {
     it('calls history.pushState with a NavHistoryState object', () => {
       const onPopState = vi.fn()

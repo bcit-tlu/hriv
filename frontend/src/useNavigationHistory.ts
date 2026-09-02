@@ -87,6 +87,7 @@ export function useNavigationHistory(
     imageId: number | null,
     traversal?: NavigationTraversal,
   ) => boolean | void,
+  enableHistorySync = true,
 ) {
   const callbackRef = useRef(onPopState)
   const currentIndexRef = useRef(historyIndexOf(window.history.state) ?? 0)
@@ -107,6 +108,7 @@ export function useNavigationHistory(
   })
 
   useEffect(() => {
+    if (!enableHistorySync) return
     const handler = (event: PopStateEvent) => {
       const state = isNavState(event.state) ? event.state : null
       const targetIndex = historyIndexOf(state)
@@ -223,7 +225,7 @@ export function useNavigationHistory(
     }
     window.addEventListener('popstate', handler)
     return () => window.removeEventListener('popstate', handler)
-  }, [])
+  }, [enableHistorySync])
 
   /**
    * Push a history entry. `catIds` and `imageId` are only meaningful
@@ -232,6 +234,7 @@ export function useNavigationHistory(
    */
   const pushNavState = useCallback(
     (page: string, catIds: number[] = [], imageId: number | null = null) => {
+      if (!enableHistorySync) return
       const historyIndex = currentIndexRef.current + 1
       const state = buildNavHistoryState(page, catIds, imageId, historyIndex)
       const params = new URLSearchParams()
@@ -248,23 +251,27 @@ export function useNavigationHistory(
       currentEntryRef.current = { state, url }
       pendingLegacyEntryRef.current = false
     },
-    [],
+    [enableHistorySync],
   )
 
-  const replayPopState = useCallback((historyIndex?: number) => {
-    const fromIndex = currentIndexRef.current
-    if (historyIndex === undefined) {
-      if (!pendingLegacyEntryRef.current) return
-      pendingLegacyEntryRef.current = false
-      replayingLegacyEntryRef.current = true
-      // The guarded legacy destination is now known to be exactly one entry back.
-      window.history.back()
-      return
-    }
-    if (historyIndex === fromIndex) return
-    replayingIndexRef.current = historyIndex
-    window.history.go(historyIndex - fromIndex)
-  }, [])
+  const replayPopState = useCallback(
+    (historyIndex?: number) => {
+      if (!enableHistorySync) return
+      const fromIndex = currentIndexRef.current
+      if (historyIndex === undefined) {
+        if (!pendingLegacyEntryRef.current) return
+        pendingLegacyEntryRef.current = false
+        replayingLegacyEntryRef.current = true
+        // The guarded legacy destination is now known to be exactly one entry back.
+        window.history.back()
+        return
+      }
+      if (historyIndex === fromIndex) return
+      replayingIndexRef.current = historyIndex
+      window.history.go(historyIndex - fromIndex)
+    },
+    [enableHistorySync],
+  )
 
   return { pushNavState, replayPopState }
 }

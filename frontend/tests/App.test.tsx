@@ -1,6 +1,6 @@
 import { createRef, useEffect, type ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import App from '../src/App'
 import type { ProcessingJob } from '../src/useProcessingJobs'
 import {
@@ -310,6 +310,7 @@ const canvasAnnotationsMock = {
   saveCanvasAnnotations: vi.fn(),
   discardCanvasAnnotations: vi.fn(),
   canvasDraftDirty: false,
+  canvasSaving: false,
   latestVersionRef: { current: null },
   latestMetadataRef: { current: null },
 }
@@ -379,6 +380,9 @@ vi.mock('../src/components/AppShell', () => ({
       </div>
       <button type="button" onClick={() => onTabChange('admin')}>
         Shell tab admin
+      </button>
+      <button type="button" onClick={() => onTabChange('manage')}>
+        Shell tab manage
       </button>
       <button type="button" onClick={() => onTabChange('browse')}>
         Shell tab browse
@@ -460,7 +464,23 @@ vi.mock('../src/components/SortableTileGrid', () => ({
 }))
 
 vi.mock('../src/components/ImageViewer', () => ({
-  default: () => <div>Image Viewer</div>,
+  default: ({
+    onCanvasEditModeChange,
+    onSaveCanvasAnnotations,
+  }: {
+    onCanvasEditModeChange?: (active: boolean) => void
+    onSaveCanvasAnnotations?: (annotations: unknown[]) => Promise<boolean>
+  }) => (
+    <div>
+      Image Viewer
+      <button type="button" onClick={() => onCanvasEditModeChange?.(true)}>
+        Enter canvas edit
+      </button>
+      <button type="button" onClick={() => void onSaveCanvasAnnotations?.([])}>
+        Start canvas save
+      </button>
+    </div>
+  ),
 }))
 
 vi.mock('../src/components/ManageCategoriesDialog', () => ({
@@ -657,6 +677,11 @@ describe('App breadcrumbs', () => {
   beforeEach(() => {
     resetFixtures()
     canvasAnnotationsMock.canvasDraftDirty = false
+    canvasAnnotationsMock.canvasSaving = false
+    canvasAnnotationsMock.handleCanvasAnnotationsChange.mockReset()
+    canvasAnnotationsMock.handleCanvasAnnotationsChange.mockReturnValue(false)
+    canvasAnnotationsMock.saveCanvasAnnotations.mockReset()
+    canvasAnnotationsMock.saveCanvasAnnotations.mockResolvedValue(true)
     canvasAnnotationsMock.discardCanvasAnnotations.mockReset()
   })
 
@@ -675,6 +700,46 @@ describe('App breadcrumbs', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Discard Changes' }))
     expect(canvasAnnotationsMock.discardCanvasAnnotations).toHaveBeenCalledOnce()
     expect(authState.logout).toHaveBeenCalledOnce()
+  })
+
+  it('blocks navigation while an explicit canvas save is pending', async () => {
+    let finishSave: ((saved: boolean) => void) | undefined
+    canvasAnnotationsMock.saveCanvasAnnotations.mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        finishSave = resolve
+      }),
+    )
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start canvas save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Shell logout', hidden: true }))
+
+    expect(authState.logout).not.toHaveBeenCalled()
+    expect(screen.queryByText('Discard annotation changes?')).not.toBeInTheDocument()
+    expect(screen.getByText('Please wait for the annotation save to finish.')).toBeInTheDocument()
+
+    const beforeUnload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(beforeUnload)
+    expect(beforeUnload.defaultPrevented).toBe(true)
+
+    await act(async () => finishSave?.(true))
+
+    const settledBeforeUnload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(settledBeforeUnload)
+    expect(settledBeforeUnload.defaultPrevented).toBe(false)
+  })
+
+  it('clears the canvas editing lock when clean navigation leaves the viewer', () => {
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Enter canvas edit' }))
+    expect(screen.getByRole('button', { name: 'Edit Details' })).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab manage' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab browse' }))
+
+    expect(screen.getByRole('button', { name: 'Edit Details' })).toBeEnabled()
   })
 
   it('renders program and group chips in both browse and image breadcrumb rows', () => {

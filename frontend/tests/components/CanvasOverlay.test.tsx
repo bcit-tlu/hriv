@@ -163,6 +163,9 @@ vi.mock('fabric', () => {
     Object.assign(this, options)
     this.text = text
     this.set = vi.fn((values: Record<string, unknown>) => Object.assign(this, values))
+    this.exitEditing = vi.fn(() => {
+      this.isEditing = false
+    })
     this.controls = createObjectDefaultControls()
     installObjectGeometry(this)
   }
@@ -882,6 +885,55 @@ describe('CanvasOverlay', () => {
       })
       expect(onDiscardAnnotations).toHaveBeenCalledOnce()
       expect(onEditModeChange).toHaveBeenCalledWith(false)
+    })
+
+    it('tracks live text edits without ending editing and confirms toolbar cancellation', async () => {
+      const onAnnotationsChange = vi.fn()
+      const onEditModeChange = vi.fn()
+      const registerCancelHandler = vi.fn()
+      render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[
+            makeAnnotation({
+              type: 'text',
+              text: 'Original',
+              vpWidth: 0.2,
+              vpHeight: 0.05,
+              vpFontSize: 0.02,
+            }),
+          ]}
+          onAnnotationsChange={onAnnotationsChange}
+          canEdit
+          editMode
+          onEditModeChange={onEditModeChange}
+          registerCancelHandler={registerCancelHandler}
+        />,
+      )
+
+      const canvas = fabricTestState.canvases.at(-1) as {
+        objects: Array<{ text: string; isEditing: boolean; exitEditing: Mock }>
+        activeObject?: unknown
+        fire: Mock
+      }
+      const text = canvas.objects[0]
+      text.isEditing = true
+      text.text = 'Updated while editing'
+      canvas.activeObject = text
+
+      act(() => canvas.fire('text:changed'))
+
+      expect(text.exitEditing).not.toHaveBeenCalled()
+      expect(onAnnotationsChange).toHaveBeenLastCalledWith([
+        expect.objectContaining({ type: 'text', text: 'Updated while editing' }),
+      ])
+
+      const cancelHandler = registerCancelHandler.mock.calls.at(-1)?.[0]
+      await act(async () => {
+        await cancelHandler()
+      })
+      expect(screen.getByText('Discard annotation changes?')).toBeInTheDocument()
+      expect(onEditModeChange).not.toHaveBeenCalled()
     })
 
     it('stays in edit mode when the explicit save fails', async () => {

@@ -530,6 +530,7 @@ export default function App() {
   // Canvas edit mode — tracked here so we can disable conflicting UI (e.g. Edit Details)
   const [canvasEditActive, setCanvasEditActive] = useState(false)
   const canvasDraftDirtyRef = useRef(false)
+  const canvasSavingRef = useRef(false)
   const pendingPopStateRef = useRef<{
     page: string
     catIds: number[]
@@ -561,6 +562,10 @@ export default function App() {
       imageId: number | null,
       traversal?: { historyIndex?: number },
     ) => {
+      if (canvasSavingRef.current && traversal) {
+        setErrorSnack('Please wait for the annotation save to finish.')
+        return false
+      }
       if (canvasDraftDirtyRef.current && traversal) {
         pendingPopStateRef.current = {
           page: popPage,
@@ -571,6 +576,7 @@ export default function App() {
         setDiscardNavigationOpen(true)
         return false
       }
+      setCanvasEditActive(false)
       const validPage = (
         ['browse', 'manage', 'people', 'admin'].includes(popPage) ? popPage : 'browse'
       ) as Page
@@ -929,6 +935,7 @@ export default function App() {
     saveCanvasAnnotations,
     discardCanvasAnnotations,
     canvasDraftDirty,
+    canvasSaving,
     latestVersionRef,
     latestMetadataRef,
   } = useCanvasAnnotations({
@@ -943,17 +950,22 @@ export default function App() {
   }, [canvasDraftDirty])
 
   useEffect(() => {
-    if (!canvasDraftDirty) return
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!canvasDraftDirtyRef.current && !canvasSavingRef.current) return
       event.preventDefault()
       event.returnValue = ''
     }
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
-  }, [canvasDraftDirty])
+  }, [])
 
   const runCanvasNavigation = useCallback((action: () => void) => {
+    if (canvasSavingRef.current) {
+      setErrorSnack('Please wait for the annotation save to finish.')
+      return
+    }
     if (!canvasDraftDirtyRef.current) {
+      setCanvasEditActive(false)
       action()
       return
     }
@@ -962,6 +974,10 @@ export default function App() {
   }, [])
 
   const confirmCanvasNavigationDiscard = useCallback(() => {
+    if (canvasSavingRef.current) {
+      setErrorSnack('Please wait for the annotation save to finish.')
+      return
+    }
     discardCanvasAnnotations()
     canvasDraftDirtyRef.current = false
     setCanvasEditActive(false)
@@ -977,6 +993,25 @@ export default function App() {
       }
     }
   }, [discardCanvasAnnotations, replayPopState])
+
+  const handleSaveCanvasAnnotations = useCallback(
+    async (annotations: Parameters<typeof saveCanvasAnnotations>[0]) => {
+      canvasSavingRef.current = true
+      try {
+        return await saveCanvasAnnotations(annotations)
+      } finally {
+        canvasSavingRef.current = false
+      }
+    },
+    [saveCanvasAnnotations],
+  )
+
+  const handleCanvasAnnotationsChangeForViewer = useCallback(
+    (annotations: Parameters<typeof handleCanvasAnnotationsChange>[0]) => {
+      canvasDraftDirtyRef.current = handleCanvasAnnotationsChange(annotations)
+    },
+    [handleCanvasAnnotationsChange],
+  )
 
   const handleLogout = useCallback(() => {
     runCanvasNavigation(logout)
@@ -1744,8 +1779,8 @@ export default function App() {
                   onUnlockOverlays={handleUnlockOverlays}
                   onClearOverlays={canEditContent ? handleClearOverlays : undefined}
                   canvasAnnotations={localCanvasAnnotations ?? canvasAnnotations}
-                  onCanvasAnnotationsChange={handleCanvasAnnotationsChange}
-                  onSaveCanvasAnnotations={saveCanvasAnnotations}
+                  onCanvasAnnotationsChange={handleCanvasAnnotationsChangeForViewer}
+                  onSaveCanvasAnnotations={handleSaveCanvasAnnotations}
                   canvasDraftDirty={canvasDraftDirty}
                   onCanvasEditModeChange={setCanvasEditActive}
                 />
@@ -2239,7 +2274,7 @@ export default function App() {
           >
             Keep Editing
           </Button>
-          <Button color="error" onClick={confirmCanvasNavigationDiscard}>
+          <Button color="error" onClick={confirmCanvasNavigationDiscard} disabled={canvasSaving}>
             Discard Changes
           </Button>
         </DialogActions>
