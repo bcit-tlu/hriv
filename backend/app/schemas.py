@@ -234,6 +234,7 @@ JobItemStatus = Literal[
     "queued",
     "running",
     "completed",
+    "skipped",
     "failed",
     "cancelled",
 ]
@@ -248,6 +249,9 @@ class JobItemOut(BaseModel):
     attempts: int
     progress: int
     error_message: str | None = None
+    heartbeat_at: datetime | None = None
+    lease_expires_at: datetime | None = None
+    arq_job_id: str | None = None
     metadata_extra: Annotated[dict | None, Field(validation_alias="metadata_")] = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
@@ -265,6 +269,7 @@ class JobOut(BaseModel):
     total_count: int
     completed_count: int
     failed_count: int
+    skipped_count: int = 0
     cancelled_count: int
     error_message: str | None = None
     metadata_extra: Annotated[dict | None, Field(validation_alias="metadata_")] = None

@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import BigInteger, Boolean, Column, Float, Index, Integer, String, Text, ForeignKey, DateTime, Table, func, text
+from sqlalchemy import BigInteger, Boolean, Column, Float, Index, Integer, String, Text, ForeignKey, DateTime, Table, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base
@@ -480,6 +480,9 @@ class Job(Base):
     failed_count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0",
     )
+    skipped_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0",
+    )
     cancelled_count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0",
     )
@@ -521,7 +524,15 @@ class JobItem(Base):
     __tablename__ = "job_items"
     __table_args__ = (
         Index("idx_job_items_job_status", "job_id", "status"),
+        Index("idx_job_items_lease", "status", "lease_expires_at"),
         Index("idx_job_items_resource", "resource_type", "resource_id"),
+        UniqueConstraint(
+            "job_id",
+            "resource_type",
+            "resource_id",
+            name="uq_job_items_job_resource",
+            postgresql_nulls_not_distinct=True,
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -543,6 +554,18 @@ class JobItem(Base):
         Integer, nullable=False, default=0, server_default="0",
     )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    claim_token: Mapped[str | None] = mapped_column(
+        String(64), nullable=True,
+    )
+    heartbeat_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    arq_job_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True,
+    )
     metadata_: Mapped[dict | None] = mapped_column(
         "metadata",
         JSONB,
