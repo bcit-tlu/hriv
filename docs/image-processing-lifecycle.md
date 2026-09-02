@@ -235,7 +235,7 @@ open on recency alone: the short coordinator-registration window only proves a
 coordinator _hasn't written to its row_ recently, not that it has stopped, so
 an unreadable check instead falls back to the same conservative,
 Redis-independent staleness threshold `reconcile_stale_bulk_import_jobs`
-already uses at startup (`BULK_IMPORT_STALE_SECONDS`, defaulting to the worker
+already uses in the reconciliation sweep (`BULK_IMPORT_STALE_SECONDS`, defaulting to the worker
 job timeout) before treating the row as abandoned; anything still within that
 window blocks the new import with 409 instead.
 The Redis/staleness pre-check above is a check-then-act race under concurrent
@@ -250,14 +250,14 @@ abandoned via the staleness threshold above when Redis is unreadable),
 `bulk_import_images` finalizes that abandoned row to a terminal state
 in the same transaction as the new job it is about to insert — otherwise the
 new unique index would keep rejecting every replacement until the next
-`reconcile_stale_bulk_import_jobs` startup pass. On the insert itself,
+`reconcile_stale_bulk_import_jobs` sweep. On the insert itself,
 `bulk_import_images` catches `IntegrityError`, checks that it is specifically
 `idx_bulk_import_jobs_single_active` (an unrelated integrity failure, such as
 the target category being deleted concurrently, propagates unchanged rather
 than masquerading as a conflict), removes the files it had already staged to
 disk, and returns the same 409 the pre-check produces. Once the new job's
 insert has committed, `bulk_import_images` also runs the same orphaned-file
-cleanup `reconcile_stale_bulk_import_jobs` performs on startup, but only for
+cleanup `reconcile_stale_bulk_import_jobs` performs during its sweep, but only for
 finalized rows whose coordinator was positively confirmed dead via Redis — a
 row admitted through the staleness-threshold fallback above is finalized but
 its files are left alone, since an unreadable liveness check is not proof the
@@ -283,7 +283,7 @@ covered by
 `backend/tests/test_worker.py`.
 
 Every source-image processor also refuses to start when its row is already
-terminal, regardless of whether startup reconciliation, a bulk-import
+terminal, regardless of whether reconciliation, a bulk-import
 detector, or another failure path recorded that terminal state. This prevents
 late queued jobs from overwriting a recorded failure; arq retries remain
 valid because retryable rows stay in `processing` rather than becoming
@@ -291,7 +291,17 @@ terminal.
 
 ## Stale SourceImage reconciliation
 
-`reconcile_stale_source_images()` runs on **backend (API pod) startup** and marks
+`reconcile_stale_source_images()`, along with the other reconciliation
+steps described below, runs from a shared sweep
+(`run_reconciliation_sweep()` in `app/reconciliation.py`). In
+`TASK_EXECUTION_MODE=local` (no dedicated worker pod) the sweep runs once on
+**backend (API pod) startup**, since the API process is the only one running
+and must self-heal on boot. In `TASK_EXECUTION_MODE=required` a dedicated arq
+worker pod is guaranteed, so the sweep instead runs as a periodic arq `cron`
+job (`WorkerSettings.cron_jobs`, every 15 minutes, plus once at worker boot)
+— this catches staleness accumulated between deployments/restarts, not just
+at boot, and keeps the reconciliation work off the API pod's startup
+critical section. `reconcile_stale_source_images()` marks
 SourceImages as `failed` when they exceed status-specific cutoffs. `processing`
 rows use the 900-second no-progress cutoff because they have started work.
 `pending` rows are never failed by elapsed time alone. Once they exceed the
@@ -301,17 +311,17 @@ empty. A non-empty or unhealthy queue leaves pending rows untouched so a valid
 queued job can still self-heal. This handles genuinely lost jobs without
 failing healthy queued work.
 
-`reconcile_stale_bulk_import_jobs()` also runs at startup. It marks a
+`reconcile_stale_bulk_import_jobs()` also runs as part of that same sweep. It marks a
 `pending` or `processing` bulk-import row as terminal only when its
 `updated_at` is older than the configured stale threshold and it has no live
 coordinator registration: incomplete rows become `failed`, while rows whose
 completed count equals their total become `completed`. A live registration
 keeps a long-running import untouched.
-When Redis is unavailable, startup uses the conservative stale timestamp
+When Redis is unavailable, the sweep uses the conservative stale timestamp
 bound alone rather than leaving abandoned rows permanently in `processing`;
 the default bound is the coordinator job timeout. API-hosted local fallbacks
 register in the general coordinator liveness set and therefore use the same
-conservative abandoned-row path on startup. Existing per-file `errors` and
+conservative abandoned-row path. Existing per-file `errors` and
 `failed_count` accounting is preserved. This finalises coordinator rows left
 behind by a cancelled or killed arq job; the coordinator uses
 `max_tries=1` because retrying its non-idempotent batch would duplicate

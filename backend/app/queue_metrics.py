@@ -76,8 +76,63 @@ def record_enqueue(job_type: str, outcome: str, reason: str) -> None:
     )
 
 
-async def collect_queue_state() -> dict[str, Any]:
-    """Read queue depth and worker heartbeat without breaking a scrape."""
+# Computes a coherent (depth, oldest-non-excluded-score) pair in one atomic
+# round trip, without ever transferring the full queue to Python. Redis
+# executes the whole script as a single operation, so there is no window for
+# a concurrent enqueue to desync the two figures the way separate
+# ZCARD/ZRANK/ZRANGE calls could (see ``collect_queue_state``). Cost is
+# bounded by the (small, fixed) number of excluded IDs rather than queue
+# depth: ZCARD is O(1), one ZSCORE per excluded ID is O(log N), and the
+# oldest-non-excluded lookup only ever inspects a prefix of
+# ``#excluded + 1`` members (a sorted set can't have more than
+# ``#excluded`` distinct excluded members ahead of the first kept one).
+_QUEUE_DEPTH_EXCLUDING_SCRIPT = """
+local queue_key = KEYS[1]
+local total = redis.call('ZCARD', queue_key)
+local excluded_present = 0
+for i = 1, #ARGV do
+    if redis.call('ZSCORE', queue_key, ARGV[i]) then
+        excluded_present = excluded_present + 1
+    end
+end
+local depth = total - excluded_present
+local prefix = redis.call('ZRANGE', queue_key, 0, #ARGV, 'WITHSCORES')
+local oldest_score = false
+for i = 1, #prefix, 2 do
+    local member = prefix[i]
+    local is_excluded = false
+    for j = 1, #ARGV do
+        if member == ARGV[j] then
+            is_excluded = true
+            break
+        end
+    end
+    if not is_excluded then
+        oldest_score = prefix[i + 1]
+        break
+    end
+end
+return {depth, oldest_score}
+"""
+
+
+async def collect_queue_state(*, exclude_job_ids: set[str] | None = None) -> dict[str, Any]:
+    """Read queue depth and worker heartbeat without breaking a scrape.
+
+    *exclude_job_ids* lets a caller running as an arq job itself (e.g. the
+    reconciliation sweep's own cron job — see ``reconciliation.py``) discount
+    its own in-flight entry from ``depth``. arq keeps queued *and*
+    currently-executing job IDs in the queue sorted set until the job
+    finishes, so without this a periodic cron job would always observe
+    ``depth >= 1`` (itself) and never treat the queue as idle. When set,
+    ``depth`` and ``oldest_pending_age_seconds`` are both computed by a
+    single atomic Lua script (``_QUEUE_DEPTH_EXCLUDING_SCRIPT``) rather than
+    separate ZCARD/ZRANK/ZRANGE round trips: this avoids the race where a
+    job enqueued between separate reads could be dropped from ``depth`` (or
+    make ``oldest_pending_age_seconds`` describe an entry ``depth`` has
+    excluded), and — unlike transferring the whole queue to Python — stays
+    bounded even when the queue holds a large backlog.
+    """
     from .worker import WorkerSettings, get_pool
 
     pool = await get_pool()
@@ -94,12 +149,23 @@ async def collect_queue_state() -> dict[str, Any]:
     async def read_state() -> tuple[int, float | None, float | None, bool | None]:
         now_ms = time.time() * 1000
         health_check_interval = WorkerSettings.health_check_interval
-        depth = await pool.zcard(ARQ_QUEUE_NAME)
-        oldest = await pool.zrange(ARQ_QUEUE_NAME, 0, 0, withscores=True)
-        oldest_age = None
-        if oldest:
-            score = oldest[0][1]
-            oldest_age = max(0.0, (now_ms - float(score)) / 1000)
+        if exclude_job_ids:
+            depth, oldest_score = await pool.eval(
+                _QUEUE_DEPTH_EXCLUDING_SCRIPT,
+                1,
+                ARQ_QUEUE_NAME,
+                *exclude_job_ids,
+            )
+            oldest_age = None
+            if oldest_score is not None:
+                oldest_age = max(0.0, (now_ms - float(oldest_score)) / 1000)
+        else:
+            depth = await pool.zcard(ARQ_QUEUE_NAME)
+            oldest = await pool.zrange(ARQ_QUEUE_NAME, 0, 0, withscores=True)
+            oldest_age = None
+            if oldest:
+                score = oldest[0][1]
+                oldest_age = max(0.0, (now_ms - float(score)) / 1000)
         remaining_ttl = await pool.ttl(HEALTH_CHECK_KEY)
         worker_up = remaining_ttl != -2
         heartbeat_age = None

@@ -1110,14 +1110,23 @@ async def reconcile_stale_source_images(
     session: AsyncSession,
     stale_after_seconds: int = _STALE_SOURCE_IMAGE_SECONDS,
     pending_stale_after_seconds: int = _STALE_PENDING_SOURCE_IMAGE_SECONDS,
+    current_job_id: str | None = None,
 ) -> int:
     """Mark orphaned in-flight SourceImages as ``failed``.
 
     Processing rows use *stale_after_seconds* as their no-progress cutoff.
     Pending rows use the longer coordinator pending-wait bound so queue wait
-    is not mistaken for a crashed task. This runs on backend startup so
-    genuinely orphaned images are cleaned up rather than appearing stuck in
-    the UI forever.
+    is not mistaken for a crashed task. This runs as part of the
+    reconciliation sweep (see ``reconciliation.py``) so genuinely orphaned
+    images are cleaned up rather than appearing stuck in the UI forever.
+
+    *current_job_id* should be set to the caller's own arq job ID when this
+    runs from within an arq job itself (the reconciliation cron job in
+    ``TASK_EXECUTION_MODE=required`` — see ``worker.reconciliation_sweep_task``).
+    Without it, the pending-row idleness check below would never see
+    ``depth == 0``: arq keeps a job's own ID in the queue sorted set for its
+    entire execution, so the sweep's own cron job would permanently look
+    like in-flight queue work and pending rows would never be reconciled.
 
     Returns the number of rows updated.
     """
@@ -1133,7 +1142,7 @@ async def reconcile_stale_source_images(
         .values(
             status="failed",
             error_message=(
-                "Marked as failed on backend startup — no progress "
+                "Marked as failed by reconciliation — no progress "
                 f"update for more than {stale_after_seconds}s; the "
                 "processing task likely crashed before completion."
             ),
@@ -1143,7 +1152,8 @@ async def reconcile_stale_source_images(
         .returning(SourceImage.id)
     )
     pending_stmt = None
-    queue_state = await collect_queue_state()
+    exclude_job_ids = {current_job_id} if current_job_id else None
+    queue_state = await collect_queue_state(exclude_job_ids=exclude_job_ids)
     if (
         queue_state["queue_up"] is True
         and queue_state["worker_up"] is True
@@ -1163,7 +1173,7 @@ async def reconcile_stale_source_images(
             .values(
                 status="failed",
                 error_message=(
-                    "Marked as failed on backend startup — processing never "
+                    "Marked as failed by reconciliation — processing never "
                     f"started within {pending_stale_after_seconds}s and the "
                     "healthy task queue is empty."
                 ),
@@ -1182,7 +1192,7 @@ async def reconcile_stale_source_images(
     await session.commit()
     if ids:
         logger.warning(
-            "Reconciled %d stale source image(s) to 'failed' on startup",
+            "Reconciled %d stale source image(s) to 'failed' via reconciliation sweep",
             len(ids),
             extra={
                 "event": "processing.reconciled_stale",
