@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.51.2](https://github.com/bcit-tlu/hriv/compare/frontend-v0.51.1...frontend-v0.51.2) (2026-09-02)
+
+
+### Bug Fixes
+
+* **frontend:** handle canvas annotation cancellation ([#1192](https://github.com/bcit-tlu/hriv/issues/1192)) ([b399829](https://github.com/bcit-tlu/hriv/commit/b39982961aeb184f0940fd0e11d6d9a84091160c))
+
 ## [0.51.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.51.0...frontend-v0.51.1) (2026-09-02)
 
 
