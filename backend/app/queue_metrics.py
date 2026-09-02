@@ -76,6 +76,11 @@ def record_enqueue(job_type: str, outcome: str, reason: str) -> None:
     )
 
 
+def _decode_member(member: bytes | str) -> str:
+    """Normalise a raw ZRANGE member to ``str`` for exclusion-set lookups."""
+    return member.decode() if isinstance(member, bytes) else member
+
+
 async def collect_queue_state(*, exclude_job_ids: set[str] | None = None) -> dict[str, Any]:
     """Read queue depth and worker heartbeat without breaking a scrape.
 
@@ -84,7 +89,12 @@ async def collect_queue_state(*, exclude_job_ids: set[str] | None = None) -> dic
     its own in-flight entry from ``depth``. arq keeps queued *and*
     currently-executing job IDs in the queue sorted set until the job
     finishes, so without this a periodic cron job would always observe
-    ``depth >= 1`` (itself) and never treat the queue as idle.
+    ``depth >= 1`` (itself) and never treat the queue as idle. When set,
+    ``depth`` and ``oldest_pending_age_seconds`` are both derived from a
+    single ``ZRANGE`` snapshot (rather than separate ``ZCARD``/``ZRANK``
+    calls) so a job enqueued between reads can't be double-counted or
+    dropped, and so the reported oldest-entry age can never describe an
+    entry that ``depth`` has excluded.
     """
     from .worker import WorkerSettings, get_pool
 
@@ -102,18 +112,30 @@ async def collect_queue_state(*, exclude_job_ids: set[str] | None = None) -> dic
     async def read_state() -> tuple[int, float | None, float | None, bool | None]:
         now_ms = time.time() * 1000
         health_check_interval = WorkerSettings.health_check_interval
-        depth = await pool.zcard(ARQ_QUEUE_NAME)
         if exclude_job_ids:
-            ranks = await asyncio.gather(
-                *(pool.zrank(ARQ_QUEUE_NAME, job_id) for job_id in exclude_job_ids)
-            )
-            depth -= sum(1 for rank in ranks if rank is not None)
-            depth = max(depth, 0)
-        oldest = await pool.zrange(ARQ_QUEUE_NAME, 0, 0, withscores=True)
-        oldest_age = None
-        if oldest:
-            score = oldest[0][1]
-            oldest_age = max(0.0, (now_ms - float(score)) / 1000)
+            # Read depth, exclusions, and the oldest-entry age from a single
+            # ZRANGE snapshot rather than separate ZCARD/ZRANK/ZRANGE calls:
+            # a job enqueued between separate reads could otherwise leave
+            # depth understating real queue contents (or the oldest-age
+            # figure describing an entry that depth has excluded).
+            members = await pool.zrange(ARQ_QUEUE_NAME, 0, -1, withscores=True)
+            kept = [
+                (member, score)
+                for member, score in members
+                if _decode_member(member) not in exclude_job_ids
+            ]
+            depth = len(kept)
+            oldest_age = None
+            if kept:
+                oldest_score = min(score for _member, score in kept)
+                oldest_age = max(0.0, (now_ms - float(oldest_score)) / 1000)
+        else:
+            depth = await pool.zcard(ARQ_QUEUE_NAME)
+            oldest = await pool.zrange(ARQ_QUEUE_NAME, 0, 0, withscores=True)
+            oldest_age = None
+            if oldest:
+                score = oldest[0][1]
+                oldest_age = max(0.0, (now_ms - float(score)) / 1000)
         remaining_ttl = await pool.ttl(HEALTH_CHECK_KEY)
         worker_up = remaining_ttl != -2
         heartbeat_age = None

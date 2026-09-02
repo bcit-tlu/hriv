@@ -569,10 +569,12 @@ async def reconcile_stale_tasks(
 
     A task is considered stale when its status is still ``pending``,
     ``running`` or ``cancelling`` but its ``updated_at`` timestamp is
-    older than *stale_after_seconds*.  This runs on backend startup so
-    tasks whose runner process died (pod crash, OOM kill, rollout) are
-    cleared up instead of blocking the ``_create_task`` concurrency
-    guard indefinitely.
+    older than *stale_after_seconds*.  This runs as part of the
+    reconciliation sweep (see ``reconciliation.py``) — at backend startup
+    in ``local`` mode, and periodically via worker cron in ``required``
+    mode — so tasks whose runner process died (pod crash, OOM kill,
+    rollout) are cleared up instead of blocking the ``_create_task``
+    concurrency guard indefinitely.
 
     The threshold guards against multi-replica deployments: a freshly
     starting pod will not clobber a task actively running on a sibling
@@ -590,7 +592,7 @@ async def reconcile_stale_tasks(
         .values(
             status="failed",
             error_message=(
-                "Task marked as failed on backend startup — no progress "
+                "Task marked as failed by reconciliation — no progress "
                 f"update for more than {stale_after_seconds}s; the runner "
                 "likely crashed before it could finalise the task."
             ),
@@ -607,7 +609,7 @@ async def reconcile_stale_tasks(
     await session.commit()
     if ids:
         logger.warning(
-            "Reconciled %d stale admin task(s) to 'failed' on startup",
+            "Reconciled %d stale admin task(s) to 'failed' via reconciliation sweep",
             len(ids),
             extra={
                 "event": "admin_task.reconciled_stale",

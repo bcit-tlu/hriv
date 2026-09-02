@@ -1142,7 +1142,7 @@ async def reconcile_stale_source_images(
         .values(
             status="failed",
             error_message=(
-                "Marked as failed on backend startup — no progress "
+                "Marked as failed by reconciliation — no progress "
                 f"update for more than {stale_after_seconds}s; the "
                 "processing task likely crashed before completion."
             ),
@@ -1173,7 +1173,7 @@ async def reconcile_stale_source_images(
             .values(
                 status="failed",
                 error_message=(
-                    "Marked as failed on backend startup — processing never "
+                    "Marked as failed by reconciliation — processing never "
                     f"started within {pending_stale_after_seconds}s and the "
                     "healthy task queue is empty."
                 ),
@@ -1192,7 +1192,7 @@ async def reconcile_stale_source_images(
     await session.commit()
     if ids:
         logger.warning(
-            "Reconciled %d stale source image(s) to 'failed' on startup",
+            "Reconciled %d stale source image(s) to 'failed' via reconciliation sweep",
             len(ids),
             extra={
                 "event": "processing.reconciled_stale",
