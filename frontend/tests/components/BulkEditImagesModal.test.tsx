@@ -55,6 +55,18 @@ describe('BulkEditImagesModal – delete error toast', () => {
     })
   })
 
+  it('omits a blank note so bulk edits preserve existing notes', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    renderModal({ onSave })
+
+    await user.click(screen.getByRole('button', { name: /save changes/i }))
+
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledWith({})
+    })
+  })
+
   it('does not show an error toast when bulk delete succeeds', async () => {
     const user = userEvent.setup()
     const onDelete = vi.fn().mockResolvedValue(undefined)

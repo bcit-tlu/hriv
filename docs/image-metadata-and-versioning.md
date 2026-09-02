@@ -66,6 +66,11 @@ Use `metadata_extra_merge` when updating a single metadata field (e.g.
 `canvas_annotations`) to avoid overwriting unrelated fields (e.g.
 `measurement_scale`).
 
+The single-image edit form sends an explicit empty `note` when the user clears
+that field, allowing the stored note to be removed. Bulk edit treats a blank
+note as “no change” and omits it from the request, preserving existing notes on
+the selected images.
+
 ### Known metadata keys
 
 | Key                   | Type            | Source                      | Description                             |

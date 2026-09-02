@@ -43,6 +43,7 @@ import {
   replaceImage,
   bulkUpdateImages,
   bulkDeleteImages,
+  userMessage,
 } from '../api'
 import type { ApiBulkImportJob, ApiImage } from '../api'
 import { invalidateMovedImageScopes, tileOrderingCoordinator } from '../tileOrdering'
@@ -295,6 +296,7 @@ interface ManagePageProps {
   onImageRenewed?: (image: ApiImage) => void
   onNavigateCategory?: (categoryPath: Category[]) => void
   onCategoriesChanged?: () => void
+  onError?: (message: string) => void
   onAddCategory?: (
     label: string,
     parentId: number | null,
@@ -340,6 +342,7 @@ export default function ManagePage({
   onImageRenewed,
   onNavigateCategory,
   onCategoriesChanged,
+  onError,
   onAddCategory,
   onEditCategory,
   onToggleVisibility,
@@ -930,16 +933,19 @@ export default function ManagePage({
   }
 
   // Save edited image metadata
-  const handleSaveImage = async (data: ImageFormData) => {
-    if (!editingImage) return
+  const handleSaveImage = async (data: ImageFormData): Promise<boolean> => {
+    if (!editingImage) return false
     try {
       await updateImage(editingImage.id, data)
       invalidateMovedImageScopes(editingImage.category_id ?? null, data.category_id)
       setEditOpen(false)
       setEditingImage(null)
       await loadImages()
+      return true
     } catch (err) {
       console.error('Failed to update image', err)
+      onError?.(userMessage(err, 'Failed to update image.'))
+      return false
     }
   }
 
@@ -1982,8 +1988,9 @@ export default function ManagePage({
           setEditingImage(null)
         }}
         onSave={async (data) => {
-          await handleSaveImage(data)
-          onCategoriesChanged?.()
+          if (await handleSaveImage(data)) {
+            onCategoriesChanged?.()
+          }
         }}
         onDelete={
           editingImage

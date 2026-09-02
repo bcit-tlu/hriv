@@ -1185,6 +1185,51 @@ describe('ManagePage', () => {
     expect(fetchImages).toHaveBeenCalledTimes(1)
   })
 
+  it('surfaces image edit failures without reporting a category change', async () => {
+    const user = userEvent.setup()
+    const onError = vi.fn()
+    const onCategoriesChanged = vi.fn()
+    vi.mocked(fetchImages).mockResolvedValue([
+      {
+        id: 101,
+        name: 'Blood Smear',
+        thumb: '/thumb.jpg',
+        tile_sources: '/tile.dzi',
+        category_id: 10,
+        copyright: null,
+        note: 'Existing note',
+        active: true,
+        sort_order: 0,
+        metadata_extra: null,
+        version: 1,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+    ])
+    vi.mocked(updateImage).mockRejectedValue(new Error('Server error'))
+
+    render(
+      <ManagePage
+        categories={categories}
+        programs={programs}
+        groups={groups}
+        onError={onError}
+        onCategoriesChanged={onCategoriesChanged}
+      />,
+    )
+
+    await user.click(await screen.findByText('Blood Smear'))
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+
+    await waitFor(() => {
+      expect(onError).toHaveBeenCalledWith('Failed to update image.')
+    })
+    expect(onCategoriesChanged).not.toHaveBeenCalled()
+  })
+
   it('keeps the image table mounted during a background refresh after initial load', async () => {
     const firstFetch = createDeferred<ApiImage[]>()
     const secondFetch = createDeferred<ApiImage[]>()
