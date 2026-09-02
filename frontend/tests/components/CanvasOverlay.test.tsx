@@ -962,6 +962,98 @@ describe('CanvasOverlay', () => {
       expect(saved.map((annotation) => annotation.id)).toEqual(['authoritative'])
     })
 
+    it('suppresses text-edit emission while rebuilding from a conflict baseline', () => {
+      const entry = [makeAnnotation({ id: 'entry' })]
+      const authoritative = [makeAnnotation({ id: 'authoritative' })]
+      const onAnnotationsChange = vi.fn()
+      const { rerender } = render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={entry}
+          onAnnotationsChange={onAnnotationsChange}
+          canEdit
+          editMode
+          onEditModeChange={vi.fn()}
+        />,
+      )
+      const fc = fabricTestState.canvases.at(-1) as {
+        add: (obj: fabric.FabricObject) => void
+        fire: (event: string) => void
+        setActiveObject: (obj: fabric.FabricObject) => void
+      }
+      const rejectedText = new fabric.IText('Rejected draft') as fabric.IText & {
+        isEditing: boolean
+        exitEditing: Mock
+      }
+      rejectedText._annotationId = 'rejected'
+      rejectedText._annotationType = 'text'
+      rejectedText.isEditing = true
+      rejectedText.exitEditing = vi.fn(() => fc.fire('text:editing:exited'))
+      fc.add(rejectedText)
+      fc.setActiveObject(rejectedText)
+      onAnnotationsChange.mockClear()
+
+      rerender(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={authoritative}
+          onAnnotationsChange={onAnnotationsChange}
+          canEdit
+          editMode
+          onEditModeChange={vi.fn()}
+          cancellationBaseline={authoritative}
+        />,
+      )
+
+      expect(rejectedText.exitEditing).toHaveBeenCalledOnce()
+      expect(onAnnotationsChange).not.toHaveBeenCalled()
+    })
+
+    it('keeps refreshed objects non-interactive while a drawing tool is active', async () => {
+      const entry = [makeAnnotation({ id: 'entry' })]
+      const authoritative = [makeAnnotation({ id: 'authoritative' })]
+      const onAnnotationsChange = vi.fn()
+      const onEditModeChange = vi.fn()
+      const { rerender } = render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={entry}
+          onAnnotationsChange={onAnnotationsChange}
+          canEdit
+          editMode
+          onEditModeChange={onEditModeChange}
+        />,
+      )
+      const fc = fabricTestState.canvases.at(-1) as {
+        getObjects: () => fabric.FabricObject[]
+        selection: boolean
+      }
+
+      await act(async () => {
+        screen.getByLabelText('Rectangle').click()
+      })
+      await act(async () => {
+        screen.getByLabelText('Outlined Rectangle').click()
+      })
+      rerender(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={authoritative}
+          onAnnotationsChange={onAnnotationsChange}
+          canEdit
+          editMode
+          onEditModeChange={onEditModeChange}
+          cancellationBaseline={authoritative}
+        />,
+      )
+
+      expect(fc.selection).toBe(false)
+      expect(fc.getObjects()[0].set as Mock).toHaveBeenCalledWith({
+        selectable: false,
+        evented: false,
+      })
+    })
+
     it('keeps edit mode open when cancellation rollback fails', async () => {
       const original = [makeAnnotation({ id: 'orig-1' })]
       const onCancelAnnotations = vi.fn(async () => false)

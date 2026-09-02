@@ -294,6 +294,7 @@ export default function CanvasOverlay({
   const drawObjRef = useRef<fabric.FabricObject | null>(null)
   const clipboardRef = useRef<CanvasAnnotation[]>([])
   const snapshotRef = useRef<CanvasAnnotation[]>([])
+  const resettingFabricAnnotationsRef = useRef(false)
 
   useEffect(() => {
     annotationsRef.current = annotations
@@ -761,6 +762,7 @@ export default function CanvasOverlay({
 
   /** Collect all fabric objects and emit change */
   const emitAnnotations = useCallback(() => {
+    if (resettingFabricAnnotationsRef.current) return
     const fc = fabricCanvasRef.current
     if (!fc) return
     // Exit any active IText editing before collecting, so text content is committed
@@ -791,23 +793,31 @@ export default function CanvasOverlay({
   // resolved while the current edit session remains open.
   const resetFabricAnnotations = useCallback(
     (fc: fabric.Canvas, nextAnnotations: CanvasAnnotation[]) => {
-      const active = fc.getActiveObject()
-      if (active && active instanceof fabric.IText && active.isEditing) {
-        active.exitEditing()
+      resettingFabricAnnotationsRef.current = true
+      try {
+        const active = fc.getActiveObject()
+        if (active && active instanceof fabric.IText && active.isEditing) {
+          active.exitEditing()
+        }
+        fc.discardActiveObject()
+        for (const obj of [...fc.getObjects()]) {
+          fc.remove(obj)
+        }
+        for (const annotation of nextAnnotations) {
+          const obj = annotationToFabric(annotation)
+          if (obj) {
+            obj.set({ selectable: fc.selection, evented: fc.selection })
+            fc.add(obj)
+          }
+        }
+        isDrawingRef.current = false
+        drawStartRef.current = null
+        drawObjRef.current = null
+        annotationsRef.current = nextAnnotations
+        fc.renderAll()
+      } finally {
+        resettingFabricAnnotationsRef.current = false
       }
-      fc.discardActiveObject()
-      for (const obj of [...fc.getObjects()]) {
-        fc.remove(obj)
-      }
-      for (const annotation of nextAnnotations) {
-        const obj = annotationToFabric(annotation)
-        if (obj) fc.add(obj)
-      }
-      isDrawingRef.current = false
-      drawStartRef.current = null
-      drawObjRef.current = null
-      annotationsRef.current = nextAnnotations
-      fc.renderAll()
     },
     [annotationToFabric],
   )
