@@ -46,6 +46,9 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
   const [localCanvasAnnotations, setLocalCanvasAnnotations] = useState<CanvasAnnotation[] | null>(
     null,
   )
+  const [localCanvasImageId, setLocalCanvasImageId] = useState<number | null>(
+    selectedImage?.id ?? null,
+  )
   const [canvasDraftDirty, setCanvasDraftDirty] = useState(false)
   const [canvasSaving, setCanvasSaving] = useState(false)
 
@@ -66,6 +69,7 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
       const annotations = annotationsFromMetadata(selectedImage?.metadataExtra)
       entrySnapshotRef.current = annotations
       draftAnnotationsRef.current = annotations
+      setLocalCanvasImageId(imageId)
       setLocalCanvasAnnotations(null)
       setCanvasDraftDirty(false)
     } else if (
@@ -90,6 +94,7 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
   const handleCanvasAnnotationsChange = useCallback((annotations: CanvasAnnotation[]) => {
     draftRevisionRef.current += 1
     draftAnnotationsRef.current = annotations
+    setLocalCanvasImageId(selectedImageIdRef.current)
     setLocalCanvasAnnotations(annotations)
     const dirty = !annotationsEqual(annotations, entrySnapshotRef.current)
     setCanvasDraftDirty(dirty)
@@ -117,6 +122,7 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
         entrySnapshotRef.current = annotations
         if (draftRevisionRef.current === savedRevision) {
           draftAnnotationsRef.current = annotations
+          setLocalCanvasImageId(targetImageId)
           setLocalCanvasAnnotations(annotations)
           setCanvasDraftDirty(false)
         } else {
@@ -140,13 +146,15 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
   const discardCanvasAnnotations = useCallback(() => {
     const snapshot = entrySnapshotRef.current
     draftAnnotationsRef.current = snapshot
+    setLocalCanvasImageId(selectedImageIdRef.current)
     setLocalCanvasAnnotations(snapshot)
     setCanvasDraftDirty(false)
   }, [])
 
   return {
     /** Local annotations, including the active unsaved draft. */
-    localCanvasAnnotations,
+    localCanvasAnnotations:
+      selectedImage?.id === localCanvasImageId ? localCanvasAnnotations : null,
     /** Authoritative annotations from selected image metadata. */
     canvasAnnotations: serverCanvasAnnotations,
     /** Updates the local draft; never performs network I/O. */

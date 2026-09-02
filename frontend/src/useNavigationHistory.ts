@@ -128,19 +128,17 @@ export function useNavigationHistory(
       const imageId = state?.imageId ?? null
       const fromIndex = currentIndexRef.current
       const traversal =
-        targetIndex === undefined
-          ? state
-            ? { fromIndex }
-            : undefined
-          : { fromIndex, toIndex: targetIndex }
+        targetIndex === undefined ? { fromIndex } : { fromIndex, toIndex: targetIndex }
 
-      if (replayingLegacyEntryRef.current && state) {
+      if (replayingLegacyEntryRef.current) {
         const migratedIndex = fromIndex - 1
-        const migratedState: NavHistoryState = {
-          ...state,
-          historyIndex: migratedIndex,
-          historyKey: currentHistoryKey(),
-        }
+        const migratedState: NavHistoryState = state
+          ? {
+              ...state,
+              historyIndex: migratedIndex,
+              historyKey: currentHistoryKey(),
+            }
+          : buildNavHistoryState(page, catIds, imageId, migratedIndex)
         window.history.replaceState(migratedState, '', currentUrl())
         currentIndexRef.current = migratedIndex
         currentEntryRef.current = {
@@ -166,15 +164,13 @@ export function useNavigationHistory(
         return
       }
 
-      const accepted = traversal
-        ? callbackRef.current(page, catIds, imageId, traversal)
-        : callbackRef.current(page, catIds, imageId)
+      const accepted = callbackRef.current(page, catIds, imageId, traversal)
       if (accepted === false && targetIndex !== undefined && targetIndex !== fromIndex) {
         restoringIndexRef.current = fromIndex
         window.history.go(fromIndex - targetIndex)
         return
       }
-      if (accepted === false && traversal && targetIndex === undefined) {
+      if (accepted === false && targetIndex === undefined) {
         // A legacy entry has no trustworthy offset. Preserve it at the current
         // cursor and push the displayed editor immediately after it, avoiding
         // any direction probe that could cross into another document.
@@ -217,10 +213,16 @@ export function useNavigationHistory(
           url: currentUrl(),
         }
         return
-      }
-      currentEntryRef.current = {
-        state: event.state,
-        url: currentUrl(),
+      } else {
+        startHistoryGeneration()
+        const migratedState = buildNavHistoryState(page, catIds, imageId, 0)
+        window.history.replaceState(migratedState, '', currentUrl())
+        currentIndexRef.current = 0
+        currentEntryRef.current = {
+          state: migratedState,
+          url: currentUrl(),
+        }
+        return
       }
     }
     window.addEventListener('popstate', handler)

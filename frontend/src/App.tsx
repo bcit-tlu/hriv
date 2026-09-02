@@ -1763,6 +1763,7 @@ export default function App() {
 
               <Paper elevation={3} sx={{ borderRadius: 2, overflow: 'hidden' }}>
                 <ImageViewer
+                  key={selectedImage.id}
                   tileSources={selectedImage.tileSources}
                   imageId={selectedImage.id}
                   categoryId={selectedImage.categoryId ?? undefined}
@@ -2254,6 +2255,8 @@ export default function App() {
 
       <Dialog
         open={discardNavigationOpen}
+        aria-labelledby="discard-annotation-navigation-title"
+        aria-describedby="discard-annotation-navigation-description"
         onClose={() => {
           setDiscardNavigationOpen(false)
           pendingNavigationRef.current = null
@@ -2262,8 +2265,12 @@ export default function App() {
         maxWidth="xs"
         fullWidth
       >
-        <DialogTitle>Discard annotation changes?</DialogTitle>
-        <DialogContent>Your unsaved annotation changes will be lost.</DialogContent>
+        <DialogTitle id="discard-annotation-navigation-title">
+          Discard annotation changes?
+        </DialogTitle>
+        <DialogContent id="discard-annotation-navigation-description">
+          Your unsaved annotation changes will be lost.
+        </DialogContent>
         <DialogActions>
           <Button
             onClick={() => {
@@ -2826,51 +2833,53 @@ export default function App() {
                         pl: '10px',
                       }}
                       onClick={() => {
-                        runCanvasNavigation(() => {
-                          void (async () => {
-                            // Categories may not have refreshed yet; reload and search fresh data
-                            let found = false
+                        void (async () => {
+                          // Categories may not have refreshed yet; reload and search fresh data
+                          let destination:
+                            { image: ImageItem; categoryPath: Category[] } | undefined
+                          try {
+                            const freshTree = await refreshCategories()
+                            const result = findImageInTree(freshTree, job.imageId!)
+                            if (result) {
+                              destination = {
+                                image: result.image,
+                                categoryPath: result.path,
+                              }
+                            }
+                          } catch {
+                            // Fall through to uncategorized check
+                          }
+                          if (!destination) {
                             try {
-                              const freshTree = await refreshCategories()
-                              const result = findImageInTree(freshTree, job.imageId!)
-                              if (result) {
-                                setPage('browse')
-                                setPath(result.path)
-                                setSelectedImage(result.image)
-                                setViewportState(undefined)
-                                setOverlays([])
-                                pushNavState(
-                                  'browse',
-                                  result.path.map((c) => c.id),
-                                  result.image.id,
-                                )
-                                found = true
+                              const freshUncat = await refreshUncategorizedImages()
+                              const uncatImg = freshUncat.find((img) => img.id === job.imageId)
+                              if (uncatImg) {
+                                destination = {
+                                  image: uncatImg,
+                                  categoryPath: [],
+                                }
                               }
                             } catch {
-                              // Fall through to uncategorized check
+                              // Image not found
                             }
-                            if (!found) {
-                              try {
-                                const freshUncat = await refreshUncategorizedImages()
-                                const uncatImg = freshUncat.find((img) => img.id === job.imageId)
-                                if (uncatImg) {
-                                  setPage('browse')
-                                  setPath([])
-                                  setSelectedImage(uncatImg)
-                                  setViewportState(undefined)
-                                  setOverlays([])
-                                  pushNavState('browse', [], uncatImg.id)
-                                  found = true
-                                }
-                              } catch {
-                                // Image not found
-                              }
-                            }
-                            if (found) {
+                          }
+                          if (destination) {
+                            const { image, categoryPath } = destination
+                            runCanvasNavigation(() => {
+                              setPage('browse')
+                              setPath(categoryPath)
+                              setSelectedImage(image)
+                              setViewportState(undefined)
+                              setOverlays([])
+                              pushNavState(
+                                'browse',
+                                categoryPath.map((c) => c.id),
+                                image.id,
+                              )
                               dismissJob(job.id)
-                            }
-                          })()
-                        })
+                            })
+                          }
+                        })()
                       }}
                     >
                       View image

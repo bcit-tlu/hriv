@@ -149,6 +149,32 @@ describe('useCanvasAnnotations', () => {
     expect(result.current.canvasDraftDirty).toBe(true)
   })
 
+  it('does not expose the previous image draft during an image-switch render', () => {
+    const renderedLocalAnnotations: Array<CanvasAnnotation[] | null> = []
+    const firstImage = makeImage({ id: 1 })
+    const { result, rerender } = renderHook(
+      (selectedImage) => {
+        const value = useCanvasAnnotations(makeDeps({ selectedImage }))
+        renderedLocalAnnotations.push(value.localCanvasAnnotations)
+        return value
+      },
+      { initialProps: firstImage },
+    )
+
+    act(() => result.current.handleCanvasAnnotationsChange([annotation]))
+    renderedLocalAnnotations.length = 0
+    rerender(
+      makeImage({
+        id: 2,
+        metadataExtra: {
+          canvas_annotations: [{ ...annotation, id: 'image-2-annotation' }],
+        },
+      }),
+    )
+
+    expect(renderedLocalAnnotations[0]).toBeNull()
+  })
+
   it('does not apply a completed save to a newly selected image', async () => {
     mockUpdateImage.mockResolvedValue(updatedImage(2, { canvas_annotations: [annotation] }))
     const image = makeImage({ id: 1 })

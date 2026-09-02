@@ -327,7 +327,9 @@ describe('useNavigationHistory', () => {
       const event = new PopStateEvent('popstate', { state: null })
       window.dispatchEvent(event)
 
-      expect(onPopState).toHaveBeenCalledWith('browse', [], null)
+      expect(onPopState).toHaveBeenCalledWith('browse', [], null, {
+        fromIndex: expect.any(Number),
+      })
     })
 
     it('defaults to browse root for foreign state objects', () => {
@@ -339,7 +341,46 @@ describe('useNavigationHistory', () => {
       })
       window.dispatchEvent(event)
 
-      expect(onPopState).toHaveBeenCalledWith('browse', [], null)
+      expect(onPopState).toHaveBeenCalledWith('browse', [], null, {
+        fromIndex: expect.any(Number),
+      })
+    })
+
+    it('guards and replays an unrecognized same-document entry', () => {
+      const current = buildNavHistoryState('browse', [], 7, 3)
+      window.history.replaceState(current, '', '/?image=7')
+      const backSpy = vi.spyOn(window.history, 'back').mockImplementation(() => {})
+      const onPopState = vi.fn(() => false)
+      const { result } = renderHook(() => useNavigationHistory(onPopState))
+
+      window.history.replaceState({}, '', '/')
+      act(() => window.dispatchEvent(new PopStateEvent('popstate', { state: {} })))
+
+      expect(onPopState).toHaveBeenCalledWith('browse', [], null, { fromIndex: 3 })
+      expect(pushStateSpy).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          ...current,
+          historyIndex: 1,
+          historyKey: expect.any(String),
+        }),
+        '',
+        '/?image=7',
+      )
+
+      act(() => result.current.replayPopState())
+      expect(backSpy).toHaveBeenCalledOnce()
+      window.history.replaceState({}, '', '/')
+      act(() => window.dispatchEvent(new PopStateEvent('popstate', { state: {} })))
+      expect(onPopState).toHaveBeenCalledTimes(2)
+      expect(window.history.state).toEqual(
+        expect.objectContaining({
+          _hriv: true,
+          page: 'browse',
+          historyIndex: 0,
+          historyKey: expect.any(String),
+        }),
+      )
+      backSpy.mockRestore()
     })
 
     it('defaults to browse root when state has _hriv but missing page', () => {
@@ -351,7 +392,9 @@ describe('useNavigationHistory', () => {
       })
       window.dispatchEvent(event)
 
-      expect(onPopState).toHaveBeenCalledWith('browse', [], null)
+      expect(onPopState).toHaveBeenCalledWith('browse', [], null, {
+        fromIndex: expect.any(Number),
+      })
     })
 
     it('defaults to browse root when catIds is not an array', () => {
@@ -363,7 +406,9 @@ describe('useNavigationHistory', () => {
       })
       window.dispatchEvent(event)
 
-      expect(onPopState).toHaveBeenCalledWith('browse', [], null)
+      expect(onPopState).toHaveBeenCalledWith('browse', [], null, {
+        fromIndex: expect.any(Number),
+      })
     })
 
     it('defaults to browse root when imageId is a string', () => {
@@ -375,7 +420,9 @@ describe('useNavigationHistory', () => {
       })
       window.dispatchEvent(event)
 
-      expect(onPopState).toHaveBeenCalledWith('browse', [], null)
+      expect(onPopState).toHaveBeenCalledWith('browse', [], null, {
+        fromIndex: expect.any(Number),
+      })
     })
 
     it('uses the latest callback reference', () => {
