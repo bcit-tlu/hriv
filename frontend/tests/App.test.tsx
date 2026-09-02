@@ -1,6 +1,6 @@
-import { createRef, useEffect, type ReactNode } from 'react'
+import { createRef, useEffect, useState, type ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import App from '../src/App'
 import type { ProcessingJob } from '../src/useProcessingJobs'
 import {
@@ -307,7 +307,10 @@ const canvasAnnotationsMock = {
   localCanvasAnnotations: null,
   canvasAnnotations: [],
   handleCanvasAnnotationsChange: vi.fn(),
-  flushCanvasAnnotations: vi.fn(),
+  saveCanvasAnnotations: vi.fn(),
+  discardCanvasAnnotations: vi.fn(),
+  canvasDraftDirty: false,
+  canvasSaving: false,
   latestVersionRef: { current: null },
   latestMetadataRef: { current: null },
 }
@@ -357,6 +360,7 @@ vi.mock('../src/components/AppShell', () => ({
     onSearchOpen,
     onOpenPrograms,
     onOpenGroups,
+    logout,
     frontendVersion,
     backendVersion,
   }: {
@@ -366,6 +370,7 @@ vi.mock('../src/components/AppShell', () => ({
     onSearchOpen: () => void
     onOpenPrograms: () => void
     onOpenGroups: () => void
+    logout: () => void
     frontendVersion: string | null
     backendVersion: string | null
   }) => (
@@ -375,6 +380,9 @@ vi.mock('../src/components/AppShell', () => ({
       </div>
       <button type="button" onClick={() => onTabChange('admin')}>
         Shell tab admin
+      </button>
+      <button type="button" onClick={() => onTabChange('manage')}>
+        Shell tab manage
       </button>
       <button type="button" onClick={() => onTabChange('browse')}>
         Shell tab browse
@@ -390,6 +398,9 @@ vi.mock('../src/components/AppShell', () => ({
       </button>
       <button type="button" onClick={onOpenGroups}>
         Shell groups
+      </button>
+      <button type="button" onClick={logout}>
+        Shell logout
       </button>
       {children}
     </div>
@@ -453,7 +464,39 @@ vi.mock('../src/components/SortableTileGrid', () => ({
 }))
 
 vi.mock('../src/components/ImageViewer', () => ({
-  default: () => <div>Image Viewer</div>,
+  default: function MockImageViewer({
+    imageId,
+    onCanvasEditModeChange,
+    onCanvasAnnotationsChange,
+    onSaveCanvasAnnotations,
+  }: {
+    imageId?: number
+    onCanvasEditModeChange?: (active: boolean) => void
+    onCanvasAnnotationsChange?: (annotations: unknown[]) => void
+    onSaveCanvasAnnotations?: (annotations: unknown[]) => Promise<boolean>
+  }) {
+    const [internalEditMode, setInternalEditMode] = useState(false)
+    return (
+      <div>
+        Image Viewer {String(imageId)} / internal edit: {String(internalEditMode)}
+        <button
+          type="button"
+          onClick={() => {
+            setInternalEditMode(true)
+            onCanvasEditModeChange?.(true)
+          }}
+        >
+          Enter canvas edit
+        </button>
+        <button type="button" onClick={() => onCanvasAnnotationsChange?.([])}>
+          Change canvas annotations
+        </button>
+        <button type="button" onClick={() => void onSaveCanvasAnnotations?.([])}>
+          Start canvas save
+        </button>
+      </div>
+    )
+  },
 }))
 
 vi.mock('../src/components/ManageCategoriesDialog', () => ({
@@ -647,7 +690,128 @@ vi.mock('../src/useCategoryActions', () => ({
 }))
 
 describe('App breadcrumbs', () => {
-  beforeEach(resetFixtures)
+  beforeEach(() => {
+    resetFixtures()
+    canvasAnnotationsMock.canvasDraftDirty = false
+    canvasAnnotationsMock.canvasSaving = false
+    canvasAnnotationsMock.handleCanvasAnnotationsChange.mockReset()
+    canvasAnnotationsMock.handleCanvasAnnotationsChange.mockReturnValue(false)
+    canvasAnnotationsMock.saveCanvasAnnotations.mockReset()
+    canvasAnnotationsMock.saveCanvasAnnotations.mockResolvedValue(true)
+    canvasAnnotationsMock.discardCanvasAnnotations.mockReset()
+  })
+
+  it('confirms before logging out with a dirty canvas draft', () => {
+    canvasAnnotationsMock.canvasDraftDirty = true
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shell logout', hidden: true }))
+    const dialog = screen.getByRole('dialog', { name: 'Discard annotation changes?' })
+    expect(dialog).toHaveAccessibleDescription('Your unsaved annotation changes will be lost.')
+    expect(authState.logout).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Keep Editing' }))
+    expect(authState.logout).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shell logout', hidden: true }))
+    fireEvent.click(screen.getByRole('button', { name: 'Discard Changes' }))
+    expect(canvasAnnotationsMock.discardCanvasAnnotations).toHaveBeenCalledOnce()
+    expect(authState.logout).toHaveBeenCalledOnce()
+  })
+
+  it('blocks navigation while an explicit canvas save is pending', async () => {
+    let finishSave: ((saved: boolean) => void) | undefined
+    canvasAnnotationsMock.saveCanvasAnnotations.mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        finishSave = resolve
+      }),
+    )
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start canvas save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Shell logout', hidden: true }))
+
+    expect(authState.logout).not.toHaveBeenCalled()
+    expect(screen.queryByText('Discard annotation changes?')).not.toBeInTheDocument()
+    expect(screen.getByText('Please wait for the annotation save to finish.')).toBeInTheDocument()
+
+    const beforeUnload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(beforeUnload)
+    expect(beforeUnload.defaultPrevented).toBe(true)
+
+    await act(async () => finishSave?.(true))
+
+    const settledBeforeUnload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(settledBeforeUnload)
+    expect(settledBeforeUnload.defaultPrevented).toBe(false)
+  })
+
+  it('clears the canvas editing lock when clean navigation leaves the viewer', () => {
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Enter canvas edit' }))
+    expect(screen.getByRole('button', { name: 'Edit Details' })).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab manage' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab browse' }))
+
+    expect(screen.getByRole('button', { name: 'Edit Details' })).toBeEnabled()
+  })
+
+  it('remounts the canvas editor when navigation selects another image', () => {
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Enter canvas edit' }))
+    expect(screen.getByText(/Image Viewer 101 \/ internal edit: true/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select second image from search' }))
+
+    expect(screen.getByText(/Image Viewer 102 \/ internal edit: false/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit Details' })).toBeEnabled()
+  })
+
+  it('rechecks the draft guard when a delayed completed-job lookup finishes', async () => {
+    let finishLookup: ((categories: typeof mockCategories) => void) | undefined
+    browseDataFns.refreshCategories.mockReturnValue(
+      new Promise<typeof mockCategories>((resolve) => {
+        finishLookup = resolve
+      }),
+    )
+    visibleJobsMock = [
+      {
+        id: 99,
+        filename: 'completed.tiff',
+        status: 'completed',
+        kind: 'image',
+        origin: 'live',
+        imageId: mockSecondImage.id,
+        serverProgress: 100,
+        fileSize: 100,
+        startedAt: Date.now(),
+      },
+    ]
+    canvasAnnotationsMock.handleCanvasAnnotationsChange.mockReturnValue(true)
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'View image' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Enter canvas edit' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Change canvas annotations' }))
+
+    await act(async () => {
+      finishLookup?.([
+        {
+          ...mockCategories[0],
+          images: [mockSecondImage],
+        },
+      ])
+    })
+
+    expect(screen.getByRole('dialog', { name: 'Discard annotation changes?' })).toBeInTheDocument()
+    expect(screen.getByText(/Image Viewer 101/)).toBeInTheDocument()
+    expect(processingJobsMock.dismissJob).not.toHaveBeenCalledWith(99)
+  })
 
   it('renders program and group chips in both browse and image breadcrumb rows', () => {
     render(<App />)

@@ -51,6 +51,31 @@ describe('useNavigationHistory', () => {
     expect(removeEventSpy).toHaveBeenCalledWith('popstate', expect.any(Function))
   })
 
+  it('does not register listeners or mutate history when synchronization is disabled', () => {
+    const onPopState = vi.fn()
+    const goSpy = vi.spyOn(window.history, 'go').mockImplementation(() => {})
+    const backSpy = vi.spyOn(window.history, 'back').mockImplementation(() => {})
+    const { result } = renderHook(() => useNavigationHistory(onPopState, false))
+
+    expect(addEventSpy).not.toHaveBeenCalledWith('popstate', expect.any(Function))
+    act(() => {
+      result.current.pushNavState('manage')
+      result.current.replayPopState(2)
+      window.dispatchEvent(
+        new PopStateEvent('popstate', {
+          state: buildNavHistoryState('manage', [], null, 2),
+        }),
+      )
+    })
+
+    expect(pushStateSpy).not.toHaveBeenCalled()
+    expect(goSpy).not.toHaveBeenCalled()
+    expect(backSpy).not.toHaveBeenCalled()
+    expect(onPopState).not.toHaveBeenCalled()
+    goSpy.mockRestore()
+    backSpy.mockRestore()
+  })
+
   describe('pushNavState', () => {
     it('calls history.pushState with a NavHistoryState object', () => {
       const onPopState = vi.fn()
@@ -110,21 +135,189 @@ describe('useNavigationHistory', () => {
   })
 
   describe('popstate handling', () => {
+    it('restores the displayed entry when a guarded Back traversal is rejected', () => {
+      window.history.replaceState(buildNavHistoryState('browse', [], null, 3), '', '/')
+      const goSpy = vi.spyOn(window.history, 'go').mockImplementation(() => {})
+      const onPopState = vi.fn(() => false)
+      renderHook(() => useNavigationHistory(onPopState))
+      const previous = buildNavHistoryState('browse', [], null, 3)
+      const target = buildNavHistoryState('browse', [1], null, 2)
+
+      act(() => window.dispatchEvent(new PopStateEvent('popstate', { state: target })))
+
+      expect(onPopState).toHaveBeenCalledWith('browse', [1], null, {
+        fromIndex: 3,
+        toIndex: 2,
+      })
+      expect(goSpy).toHaveBeenCalledWith(1)
+
+      act(() => window.dispatchEvent(new PopStateEvent('popstate', { state: previous })))
+      expect(onPopState).toHaveBeenCalledOnce()
+      goSpy.mockRestore()
+    })
+
+    it('replays an accepted guarded traversal after a discard confirmation', () => {
+      window.history.replaceState(buildNavHistoryState('browse', [], null, 3), '', '/')
+      const goSpy = vi.spyOn(window.history, 'go').mockImplementation(() => {})
+      const onPopState = vi.fn(() => false)
+      const { result } = renderHook(() => useNavigationHistory(onPopState))
+      const target = buildNavHistoryState('manage', [], null, 4)
+
+      act(() => result.current.replayPopState(4))
+      act(() => window.dispatchEvent(new PopStateEvent('popstate', { state: target })))
+
+      expect(goSpy).toHaveBeenCalledWith(1)
+      expect(onPopState).toHaveBeenCalledWith('manage', [], null, {
+        fromIndex: 3,
+        toIndex: 4,
+      })
+      goSpy.mockRestore()
+    })
+
+    it.each(['Back', 'Forward'])(
+      'guards and replays a legacy app-owned %s entry without probing direction',
+      () => {
+        const current = buildNavHistoryState('browse', [], 7, 3)
+        window.history.replaceState(current, '', '/?image=7')
+        const replaceStateSpy = vi.spyOn(window.history, 'replaceState')
+        const goSpy = vi.spyOn(window.history, 'go').mockImplementation(() => {})
+        const backSpy = vi.spyOn(window.history, 'back').mockImplementation(() => {})
+        const onPopState = vi.fn(() => false)
+        const { result } = renderHook(() => useNavigationHistory(onPopState))
+        const legacy = { _hriv: true, page: 'browse', catIds: [1], imageId: null }
+        window.history.replaceState(legacy, '', '/?cat=1')
+
+        act(() => window.dispatchEvent(new PopStateEvent('popstate', { state: legacy })))
+        expect(onPopState).toHaveBeenCalledWith('browse', [1], null, { fromIndex: 3 })
+        expect(goSpy).not.toHaveBeenCalled()
+        expect(pushStateSpy).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            ...current,
+            historyIndex: 1,
+            historyKey: expect.any(String),
+          }),
+          '',
+          '/?image=7',
+        )
+
+        act(() => result.current.replayPopState())
+        expect(goSpy).not.toHaveBeenCalled()
+        expect(backSpy).toHaveBeenCalledOnce()
+        window.history.replaceState(legacy, '', '/?cat=1')
+        act(() => window.dispatchEvent(new PopStateEvent('popstate', { state: legacy })))
+        expect(replaceStateSpy).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            ...legacy,
+            historyIndex: 0,
+            historyKey: expect.any(String),
+          }),
+          '',
+          '/?cat=1',
+        )
+        expect(onPopState).toHaveBeenCalledTimes(2)
+
+        const migratedState = replaceStateSpy.mock.lastCall?.[0] as NavHistoryState
+        window.history.replaceState(migratedState, '', '/?cat=1')
+        expect(buildNavHistoryState('browse', [1], null)).toEqual({
+          ...migratedState,
+          page: 'browse',
+          catIds: [1],
+          imageId: null,
+        })
+
+        act(() => result.current.pushNavState('browse', [2], null))
+        expect(pushStateSpy).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            historyIndex: 1,
+            historyKey: migratedState.historyKey,
+          }),
+          '',
+          '/?cat=2',
+        )
+
+        replaceStateSpy.mockRestore()
+        goSpy.mockRestore()
+        backSpy.mockRestore()
+      },
+    )
+
+    it('keeps the legacy destination available after Keep Editing and another traversal', () => {
+      const current = buildNavHistoryState('browse', [], 7, 3)
+      window.history.replaceState(current, '', '/?image=7')
+      const goSpy = vi.spyOn(window.history, 'go').mockImplementation(() => {})
+      const backSpy = vi.spyOn(window.history, 'back').mockImplementation(() => {})
+      const onPopState = vi.fn(() => false)
+      renderHook(() => useNavigationHistory(onPopState))
+      const legacy = { _hriv: true, page: 'manage', catIds: [], imageId: null }
+
+      window.history.replaceState(legacy, '', '/?page=manage')
+      act(() => window.dispatchEvent(new PopStateEvent('popstate', { state: legacy })))
+      const firstRestoredState = pushStateSpy.mock.lastCall?.[0] as NavHistoryState
+
+      window.history.replaceState(legacy, '', '/?page=manage')
+      act(() => window.dispatchEvent(new PopStateEvent('popstate', { state: legacy })))
+      const secondRestoredState = pushStateSpy.mock.lastCall?.[0] as NavHistoryState
+
+      expect(onPopState).toHaveBeenCalledTimes(2)
+      expect(goSpy).not.toHaveBeenCalled()
+      expect(backSpy).not.toHaveBeenCalled()
+      expect(secondRestoredState).toEqual(
+        expect.objectContaining({
+          page: current.page,
+          imageId: current.imageId,
+          historyIndex: 1,
+        }),
+      )
+      expect(secondRestoredState.historyKey).not.toBe(firstRestoredState.historyKey)
+      goSpy.mockRestore()
+      backSpy.mockRestore()
+    })
+
+    it('does not traverse beyond a rejected legacy entry toward a cross-document successor', () => {
+      const current = buildNavHistoryState('browse', [], 7, 3)
+      window.history.replaceState(current, '', '/?image=7')
+      const replaceStateSpy = vi.spyOn(window.history, 'replaceState')
+      const goSpy = vi.spyOn(window.history, 'go').mockImplementation(() => {})
+      const backSpy = vi.spyOn(window.history, 'back').mockImplementation(() => {})
+      const onPopState = vi.fn(() => false)
+      const legacy = { _hriv: true, page: 'manage', catIds: [], imageId: null }
+      renderHook(() => useNavigationHistory(onPopState))
+      window.history.replaceState(legacy, '', '/?page=manage')
+
+      act(() => window.dispatchEvent(new PopStateEvent('popstate', { state: legacy })))
+
+      expect(goSpy).not.toHaveBeenCalled()
+      expect(backSpy).not.toHaveBeenCalled()
+      expect(pushStateSpy).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          ...current,
+          historyIndex: 1,
+          historyKey: expect.any(String),
+        }),
+        '',
+        '/?image=7',
+      )
+      replaceStateSpy.mockRestore()
+      goSpy.mockRestore()
+      backSpy.mockRestore()
+    })
+
     it('calls onPopState with decoded state on popstate event', () => {
+      window.history.replaceState(buildNavHistoryState('browse', [], null, 3), '', '/')
       const onPopState = vi.fn()
       renderHook(() => useNavigationHistory(onPopState))
 
       // Simulate a popstate event with our state
-      const navState: NavHistoryState = {
-        _hriv: true,
-        page: 'manage',
-        catIds: [1, 2],
-        imageId: 99,
-      }
-      const event = new PopStateEvent('popstate', { state: navState })
+      const navState = buildNavHistoryState('manage', [1, 2], 99, 4)
+      const event = new PopStateEvent('popstate', {
+        state: navState,
+      })
       window.dispatchEvent(event)
 
-      expect(onPopState).toHaveBeenCalledWith('manage', [1, 2], 99)
+      expect(onPopState).toHaveBeenCalledWith('manage', [1, 2], 99, {
+        fromIndex: 3,
+        toIndex: 4,
+      })
     })
 
     it('defaults to browse root when popstate has no recognized state', () => {
@@ -134,7 +327,9 @@ describe('useNavigationHistory', () => {
       const event = new PopStateEvent('popstate', { state: null })
       window.dispatchEvent(event)
 
-      expect(onPopState).toHaveBeenCalledWith('browse', [], null)
+      expect(onPopState).toHaveBeenCalledWith('browse', [], null, {
+        fromIndex: expect.any(Number),
+      })
     })
 
     it('defaults to browse root for foreign state objects', () => {
@@ -146,7 +341,46 @@ describe('useNavigationHistory', () => {
       })
       window.dispatchEvent(event)
 
-      expect(onPopState).toHaveBeenCalledWith('browse', [], null)
+      expect(onPopState).toHaveBeenCalledWith('browse', [], null, {
+        fromIndex: expect.any(Number),
+      })
+    })
+
+    it('guards and replays an unrecognized same-document entry', () => {
+      const current = buildNavHistoryState('browse', [], 7, 3)
+      window.history.replaceState(current, '', '/?image=7')
+      const backSpy = vi.spyOn(window.history, 'back').mockImplementation(() => {})
+      const onPopState = vi.fn(() => false)
+      const { result } = renderHook(() => useNavigationHistory(onPopState))
+
+      window.history.replaceState({}, '', '/')
+      act(() => window.dispatchEvent(new PopStateEvent('popstate', { state: {} })))
+
+      expect(onPopState).toHaveBeenCalledWith('browse', [], null, { fromIndex: 3 })
+      expect(pushStateSpy).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          ...current,
+          historyIndex: 1,
+          historyKey: expect.any(String),
+        }),
+        '',
+        '/?image=7',
+      )
+
+      act(() => result.current.replayPopState())
+      expect(backSpy).toHaveBeenCalledOnce()
+      window.history.replaceState({}, '', '/')
+      act(() => window.dispatchEvent(new PopStateEvent('popstate', { state: {} })))
+      expect(onPopState).toHaveBeenCalledTimes(2)
+      expect(window.history.state).toEqual(
+        expect.objectContaining({
+          _hriv: true,
+          page: 'browse',
+          historyIndex: 0,
+          historyKey: expect.any(String),
+        }),
+      )
+      backSpy.mockRestore()
     })
 
     it('defaults to browse root when state has _hriv but missing page', () => {
@@ -158,7 +392,9 @@ describe('useNavigationHistory', () => {
       })
       window.dispatchEvent(event)
 
-      expect(onPopState).toHaveBeenCalledWith('browse', [], null)
+      expect(onPopState).toHaveBeenCalledWith('browse', [], null, {
+        fromIndex: expect.any(Number),
+      })
     })
 
     it('defaults to browse root when catIds is not an array', () => {
@@ -170,7 +406,9 @@ describe('useNavigationHistory', () => {
       })
       window.dispatchEvent(event)
 
-      expect(onPopState).toHaveBeenCalledWith('browse', [], null)
+      expect(onPopState).toHaveBeenCalledWith('browse', [], null, {
+        fromIndex: expect.any(Number),
+      })
     })
 
     it('defaults to browse root when imageId is a string', () => {
@@ -182,10 +420,13 @@ describe('useNavigationHistory', () => {
       })
       window.dispatchEvent(event)
 
-      expect(onPopState).toHaveBeenCalledWith('browse', [], null)
+      expect(onPopState).toHaveBeenCalledWith('browse', [], null, {
+        fromIndex: expect.any(Number),
+      })
     })
 
     it('uses the latest callback reference', () => {
+      window.history.replaceState(buildNavHistoryState('browse', [], null, 3), '', '/')
       const first = vi.fn()
       const second = vi.fn()
       const { rerender } = renderHook(({ cb }) => useNavigationHistory(cb), {
@@ -195,12 +436,15 @@ describe('useNavigationHistory', () => {
       rerender({ cb: second })
 
       const event = new PopStateEvent('popstate', {
-        state: { _hriv: true, page: 'admin', catIds: [], imageId: null },
+        state: buildNavHistoryState('admin', [], null, 4),
       })
       window.dispatchEvent(event)
 
       expect(first).not.toHaveBeenCalled()
-      expect(second).toHaveBeenCalledWith('admin', [], null)
+      expect(second).toHaveBeenCalledWith('admin', [], null, {
+        fromIndex: 3,
+        toIndex: 4,
+      })
     })
   })
 })

@@ -163,6 +163,9 @@ vi.mock('fabric', () => {
     Object.assign(this, options)
     this.text = text
     this.set = vi.fn((values: Record<string, unknown>) => Object.assign(this, values))
+    this.exitEditing = vi.fn(() => {
+      this.isEditing = false
+    })
     this.controls = createObjectDefaultControls()
     installObjectGeometry(this)
   }
@@ -650,7 +653,6 @@ describe('CanvasOverlay', () => {
       )
       const onAnnotationsChange = vi.fn()
       const onEditModeChange = vi.fn()
-      const onFlushAnnotations = vi.fn(async () => {})
       const { rerender } = render(
         <CanvasOverlay
           viewer={viewer}
@@ -659,7 +661,6 @@ describe('CanvasOverlay', () => {
           canEdit={true}
           editMode={true}
           onEditModeChange={onEditModeChange}
-          onFlushAnnotations={onFlushAnnotations}
         />,
       )
 
@@ -689,7 +690,6 @@ describe('CanvasOverlay', () => {
         onAnnotationsChange.mock.calls[0][0].map((annotation: CanvasAnnotation) => annotation.vpX),
       ).toEqual([1, 2])
       expect(fc.getActiveObject()).toBeInstanceOf(fabric.ActiveSelection)
-      expect(onFlushAnnotations).toHaveBeenCalledTimes(1)
       expect(onEditModeChange).toHaveBeenCalledWith(false)
 
       rerender(
@@ -700,7 +700,6 @@ describe('CanvasOverlay', () => {
           canEdit={true}
           editMode={false}
           onEditModeChange={onEditModeChange}
-          onFlushAnnotations={onFlushAnnotations}
         />,
       )
       expect(fc.dispose).toHaveBeenCalled()
@@ -814,285 +813,6 @@ describe('CanvasOverlay', () => {
       expect(onEditModeChange).toHaveBeenCalledWith(false)
     })
 
-    it('cancels through the non-persisting callback without flushing', async () => {
-      const original = [makeAnnotation({ id: 'orig-1' })]
-      const onAnnotationsChange = vi.fn()
-      const onCancelAnnotations = vi.fn(async () => true)
-      const onAnnotationsCancelled = vi.fn()
-      const onFlushAnnotations = vi.fn(async () => {})
-      const onEditModeChange = vi.fn()
-      const { rerender } = render(
-        <CanvasOverlay
-          viewer={viewer}
-          annotations={original}
-          onAnnotationsChange={onAnnotationsChange}
-          canEdit={true}
-          editMode={false}
-          onEditModeChange={onEditModeChange}
-          onFlushAnnotations={onFlushAnnotations}
-          onCancelAnnotations={onCancelAnnotations}
-          onAnnotationsCancelled={onAnnotationsCancelled}
-        />,
-      )
-      rerender(
-        <CanvasOverlay
-          viewer={viewer}
-          annotations={original}
-          onAnnotationsChange={onAnnotationsChange}
-          canEdit={true}
-          editMode={true}
-          onEditModeChange={onEditModeChange}
-          onFlushAnnotations={onFlushAnnotations}
-          onCancelAnnotations={onCancelAnnotations}
-          onAnnotationsCancelled={onAnnotationsCancelled}
-        />,
-      )
-
-      await act(async () => {
-        screen.getByLabelText('Cancel — discard changes').click()
-      })
-
-      expect(onCancelAnnotations).toHaveBeenCalledWith(original)
-      expect(onAnnotationsChange).not.toHaveBeenCalled()
-      expect(onFlushAnnotations).not.toHaveBeenCalled()
-      expect(onAnnotationsCancelled).toHaveBeenCalledOnce()
-      expect(onEditModeChange).toHaveBeenCalledWith(false)
-    })
-
-    it('replaces the cancellation snapshot after a conflict-resolving refresh', async () => {
-      const entrySnapshot = [makeAnnotation({ id: 'entry' })]
-      const authoritative = [makeAnnotation({ id: 'authoritative' })]
-      const onCancelAnnotations = vi.fn(async () => true)
-      const onEditModeChange = vi.fn()
-      const { rerender } = render(
-        <CanvasOverlay
-          viewer={viewer}
-          annotations={entrySnapshot}
-          onAnnotationsChange={vi.fn()}
-          canEdit={true}
-          editMode={false}
-          onEditModeChange={onEditModeChange}
-          onCancelAnnotations={onCancelAnnotations}
-        />,
-      )
-      rerender(
-        <CanvasOverlay
-          viewer={viewer}
-          annotations={entrySnapshot}
-          onAnnotationsChange={vi.fn()}
-          canEdit={true}
-          editMode
-          onEditModeChange={onEditModeChange}
-          onCancelAnnotations={onCancelAnnotations}
-        />,
-      )
-      rerender(
-        <CanvasOverlay
-          viewer={viewer}
-          annotations={authoritative}
-          onAnnotationsChange={vi.fn()}
-          canEdit={true}
-          editMode
-          onEditModeChange={onEditModeChange}
-          onCancelAnnotations={onCancelAnnotations}
-          cancellationBaseline={authoritative}
-        />,
-      )
-
-      await act(async () => {
-        screen.getByLabelText('Cancel — discard changes').click()
-      })
-
-      expect(onCancelAnnotations).toHaveBeenCalledWith(authoritative)
-    })
-
-    it('rebuilds live Fabric objects from a conflict-resolving baseline', async () => {
-      const entry = [makeAnnotation({ id: 'entry' })]
-      const rejectedDraft = new fabric.Rect({ left: 200, top: 100, width: 20, height: 10 })
-      const rejectedObject = rejectedDraft as fabric.FabricObject & {
-        _annotationId?: string
-        _annotationType?: string
-      }
-      rejectedObject._annotationId = 'rejected'
-      rejectedObject._annotationType = 'rect'
-      const authoritative = [makeAnnotation({ id: 'authoritative' })]
-      const onAnnotationsChange = vi.fn()
-      const onEditModeChange = vi.fn()
-      const { rerender } = render(
-        <CanvasOverlay
-          viewer={viewer}
-          annotations={entry}
-          onAnnotationsChange={onAnnotationsChange}
-          canEdit
-          editMode
-          onEditModeChange={onEditModeChange}
-        />,
-      )
-      const fc = fabricTestState.canvases.at(-1) as {
-        add: (obj: fabric.FabricObject) => void
-        getObjects: () => fabric.FabricObject[]
-      }
-      fc.add(rejectedDraft)
-      onAnnotationsChange.mockClear()
-
-      rerender(
-        <CanvasOverlay
-          viewer={viewer}
-          annotations={authoritative}
-          onAnnotationsChange={onAnnotationsChange}
-          canEdit
-          editMode
-          onEditModeChange={onEditModeChange}
-          cancellationBaseline={authoritative}
-        />,
-      )
-
-      expect(onAnnotationsChange).not.toHaveBeenCalled()
-      expect(
-        fc
-          .getObjects()
-          .map((obj) => (obj as fabric.FabricObject & { _annotationId?: string })._annotationId),
-      ).toEqual(['authoritative'])
-
-      await act(async () => {
-        screen.getByLabelText('Save & Exit Edit Mode').click()
-      })
-
-      const saved = onAnnotationsChange.mock.calls.at(-1)?.[0] as CanvasAnnotation[]
-      expect(saved.map((annotation) => annotation.id)).toEqual(['authoritative'])
-    })
-
-    it('suppresses text-edit emission while rebuilding from a conflict baseline', () => {
-      const entry = [makeAnnotation({ id: 'entry' })]
-      const authoritative = [makeAnnotation({ id: 'authoritative' })]
-      const onAnnotationsChange = vi.fn()
-      const { rerender } = render(
-        <CanvasOverlay
-          viewer={viewer}
-          annotations={entry}
-          onAnnotationsChange={onAnnotationsChange}
-          canEdit
-          editMode
-          onEditModeChange={vi.fn()}
-        />,
-      )
-      const fc = fabricTestState.canvases.at(-1) as {
-        add: (obj: fabric.FabricObject) => void
-        fire: (event: string) => void
-        setActiveObject: (obj: fabric.FabricObject) => void
-      }
-      const rejectedText = new fabric.IText('Rejected draft') as fabric.IText & {
-        isEditing: boolean
-        exitEditing: Mock
-      }
-      rejectedText._annotationId = 'rejected'
-      rejectedText._annotationType = 'text'
-      rejectedText.isEditing = true
-      rejectedText.exitEditing = vi.fn(() => fc.fire('text:editing:exited'))
-      fc.add(rejectedText)
-      fc.setActiveObject(rejectedText)
-      onAnnotationsChange.mockClear()
-
-      rerender(
-        <CanvasOverlay
-          viewer={viewer}
-          annotations={authoritative}
-          onAnnotationsChange={onAnnotationsChange}
-          canEdit
-          editMode
-          onEditModeChange={vi.fn()}
-          cancellationBaseline={authoritative}
-        />,
-      )
-
-      expect(rejectedText.exitEditing).toHaveBeenCalledOnce()
-      expect(onAnnotationsChange).not.toHaveBeenCalled()
-    })
-
-    it('keeps refreshed objects non-interactive while a drawing tool is active', async () => {
-      const entry = [makeAnnotation({ id: 'entry' })]
-      const authoritative = [makeAnnotation({ id: 'authoritative' })]
-      const onAnnotationsChange = vi.fn()
-      const onEditModeChange = vi.fn()
-      const { rerender } = render(
-        <CanvasOverlay
-          viewer={viewer}
-          annotations={entry}
-          onAnnotationsChange={onAnnotationsChange}
-          canEdit
-          editMode
-          onEditModeChange={onEditModeChange}
-        />,
-      )
-      const fc = fabricTestState.canvases.at(-1) as {
-        getObjects: () => fabric.FabricObject[]
-        selection: boolean
-      }
-
-      await act(async () => {
-        screen.getByLabelText('Rectangle').click()
-      })
-      await act(async () => {
-        screen.getByLabelText('Outlined Rectangle').click()
-      })
-      rerender(
-        <CanvasOverlay
-          viewer={viewer}
-          annotations={authoritative}
-          onAnnotationsChange={onAnnotationsChange}
-          canEdit
-          editMode
-          onEditModeChange={onEditModeChange}
-          cancellationBaseline={authoritative}
-        />,
-      )
-
-      expect(fc.selection).toBe(false)
-      expect(fc.getObjects()[0].set as Mock).toHaveBeenCalledWith({
-        selectable: false,
-        evented: false,
-      })
-    })
-
-    it('keeps edit mode open when cancellation rollback fails', async () => {
-      const original = [makeAnnotation({ id: 'orig-1' })]
-      const onCancelAnnotations = vi.fn(async () => false)
-      const onAnnotationsCancelled = vi.fn()
-      const onEditModeChange = vi.fn()
-      const { rerender } = render(
-        <CanvasOverlay
-          viewer={viewer}
-          annotations={original}
-          onAnnotationsChange={vi.fn()}
-          canEdit={true}
-          editMode={false}
-          onEditModeChange={onEditModeChange}
-          onCancelAnnotations={onCancelAnnotations}
-          onAnnotationsCancelled={onAnnotationsCancelled}
-        />,
-      )
-      rerender(
-        <CanvasOverlay
-          viewer={viewer}
-          annotations={original}
-          onAnnotationsChange={vi.fn()}
-          canEdit={true}
-          editMode={true}
-          onEditModeChange={onEditModeChange}
-          onCancelAnnotations={onCancelAnnotations}
-          onAnnotationsCancelled={onAnnotationsCancelled}
-        />,
-      )
-
-      await act(async () => {
-        screen.getByLabelText('Cancel — discard changes').click()
-      })
-
-      expect(onCancelAnnotations).toHaveBeenCalledWith(original)
-      expect(onAnnotationsCancelled).not.toHaveBeenCalled()
-      expect(onEditModeChange).not.toHaveBeenCalledWith(false)
-    })
-
     it('registers a cancel handler that mirrors the Cancel button behavior', async () => {
       const original = [makeAnnotation({ id: 'orig-1' })]
       const onAnnotationsChange = vi.fn()
@@ -1129,6 +849,115 @@ describe('CanvasOverlay', () => {
       expect(onEditModeChange).toHaveBeenCalledWith(false)
       unmount()
       expect(registerCancelHandler).toHaveBeenLastCalledWith(null)
+    })
+
+    it('confirms before discarding a dirty draft', async () => {
+      const onAnnotationsChange = vi.fn()
+      const onEditModeChange = vi.fn()
+      const onDiscardAnnotations = vi.fn()
+      render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[]}
+          onAnnotationsChange={onAnnotationsChange}
+          onDiscardAnnotations={onDiscardAnnotations}
+          isDirty
+          canEdit
+          editMode
+          onEditModeChange={onEditModeChange}
+        />,
+      )
+
+      await act(async () => {
+        screen.getByLabelText('Cancel — discard changes').click()
+      })
+      expect(screen.getByText('Discard annotation changes?')).toBeInTheDocument()
+      expect(onEditModeChange).not.toHaveBeenCalled()
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Keep Editing' }).click()
+      })
+      expect(onEditModeChange).not.toHaveBeenCalled()
+
+      await act(async () => {
+        screen.getByLabelText('Cancel — discard changes').click()
+        screen.getByRole('button', { name: 'Discard Changes' }).click()
+      })
+      expect(onDiscardAnnotations).toHaveBeenCalledOnce()
+      expect(onEditModeChange).toHaveBeenCalledWith(false)
+    })
+
+    it('tracks live text edits without ending editing and confirms toolbar cancellation', async () => {
+      const onAnnotationsChange = vi.fn()
+      const onEditModeChange = vi.fn()
+      const registerCancelHandler = vi.fn()
+      render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[
+            makeAnnotation({
+              type: 'text',
+              text: 'Original',
+              vpWidth: 0.2,
+              vpHeight: 0.05,
+              vpFontSize: 0.02,
+            }),
+          ]}
+          onAnnotationsChange={onAnnotationsChange}
+          canEdit
+          editMode
+          onEditModeChange={onEditModeChange}
+          registerCancelHandler={registerCancelHandler}
+        />,
+      )
+
+      const canvas = fabricTestState.canvases.at(-1) as {
+        objects: Array<{ text: string; isEditing: boolean; exitEditing: Mock }>
+        activeObject?: unknown
+        fire: Mock
+      }
+      const text = canvas.objects[0]
+      text.isEditing = true
+      text.text = 'Updated while editing'
+      canvas.activeObject = text
+
+      act(() => canvas.fire('text:changed'))
+
+      expect(text.exitEditing).not.toHaveBeenCalled()
+      expect(onAnnotationsChange).toHaveBeenLastCalledWith([
+        expect.objectContaining({ type: 'text', text: 'Updated while editing' }),
+      ])
+
+      const cancelHandler = registerCancelHandler.mock.calls.at(-1)?.[0]
+      await act(async () => {
+        await cancelHandler()
+      })
+      expect(screen.getByText('Discard annotation changes?')).toBeInTheDocument()
+      expect(onEditModeChange).not.toHaveBeenCalled()
+    })
+
+    it('stays in edit mode when the explicit save fails', async () => {
+      const onEditModeChange = vi.fn()
+      const onSaveAnnotations = vi.fn().mockResolvedValue(false)
+      render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[]}
+          onAnnotationsChange={vi.fn()}
+          onSaveAnnotations={onSaveAnnotations}
+          isDirty
+          canEdit
+          editMode
+          onEditModeChange={onEditModeChange}
+        />,
+      )
+
+      await act(async () => {
+        screen.getByLabelText('Save & Exit Edit Mode').click()
+      })
+
+      expect(onSaveAnnotations).toHaveBeenCalledOnce()
+      expect(onEditModeChange).not.toHaveBeenCalled()
     })
   })
 
@@ -1486,7 +1315,7 @@ describe('CanvasOverlay', () => {
       const saveIdx = calls.findIndex((c) => c.method === 'save')
       const translateIdx = calls.findIndex((c) => c.method === 'translate')
       const rotateIdx = calls.findIndex((c) => c.method === 'rotate')
-      const restoreIdx = calls.findIndex((c) => c.method === 'restore')
+      const restoreIdx = calls.findLastIndex((c) => c.method === 'restore')
 
       expect(saveIdx).toBeGreaterThanOrEqual(0)
       expect(translateIdx).toBeGreaterThan(saveIdx)
@@ -1525,7 +1354,7 @@ describe('CanvasOverlay', () => {
       const translateIdx = calls.findIndex((c) => c.method === 'translate')
       const rotateIdx = calls.findIndex((c) => c.method === 'rotate')
       const ellipseIdx = calls.findIndex((c) => c.method === 'ellipse')
-      const restoreIdx = calls.findIndex((c) => c.method === 'restore')
+      const restoreIdx = calls.findLastIndex((c) => c.method === 'restore')
 
       expect(saveIdx).toBeGreaterThanOrEqual(0)
       expect(translateIdx).toBeGreaterThan(saveIdx)
@@ -1577,7 +1406,7 @@ describe('CanvasOverlay', () => {
       const translateIdx = calls.findIndex((c) => c.method === 'translate')
       const rotateIdx = calls.findIndex((c) => c.method === 'rotate')
       const fillTextIdx = calls.findIndex((c) => c.method === 'fillText')
-      const restoreIdx = calls.findIndex((c) => c.method === 'restore')
+      const restoreIdx = calls.findLastIndex((c) => c.method === 'restore')
 
       expect(saveIdx).toBeGreaterThanOrEqual(0)
       expect(translateIdx).toBeGreaterThan(saveIdx)

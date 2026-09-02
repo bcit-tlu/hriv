@@ -529,6 +529,16 @@ export default function App() {
 
   // Canvas edit mode — tracked here so we can disable conflicting UI (e.g. Edit Details)
   const [canvasEditActive, setCanvasEditActive] = useState(false)
+  const canvasDraftDirtyRef = useRef(false)
+  const canvasSavingRef = useRef(false)
+  const pendingPopStateRef = useRef<{
+    page: string
+    catIds: number[]
+    imageId: number | null
+    historyIndex?: number
+  } | null>(null)
+  const pendingNavigationRef = useRef<(() => void) | null>(null)
+  const [discardNavigationOpen, setDiscardNavigationOpen] = useState(false)
   const [imagesVersion, setImagesVersion] = useState(0)
   useEffect(() => {
     setImagesVersionRef.current = setImagesVersion
@@ -546,7 +556,27 @@ export default function App() {
 
   // Browser history integration for back/forward navigation
   const handlePopState = useCallback(
-    (popPage: string, catIds: number[], imageId: number | null) => {
+    (
+      popPage: string,
+      catIds: number[],
+      imageId: number | null,
+      traversal?: { historyIndex?: number },
+    ) => {
+      if (canvasSavingRef.current && traversal) {
+        setErrorSnack('Please wait for the annotation save to finish.')
+        return false
+      }
+      if (canvasDraftDirtyRef.current && traversal) {
+        pendingPopStateRef.current = {
+          page: popPage,
+          catIds,
+          imageId,
+          historyIndex: traversal.historyIndex,
+        }
+        setDiscardNavigationOpen(true)
+        return false
+      }
+      setCanvasEditActive(false)
       const validPage = (
         ['browse', 'manage', 'people', 'admin'].includes(popPage) ? popPage : 'browse'
       ) as Page
@@ -557,7 +587,7 @@ export default function App() {
         setSelectedImage(null)
         setViewportState(undefined)
         setOverlays([])
-        return
+        return true
       }
 
       // Force-bypass the browser HTTP cache so sort_order changes
@@ -583,11 +613,20 @@ export default function App() {
       }
       setViewportState(undefined)
       setOverlays([])
+      return true
     },
     [setViewportState, setOverlays, refreshCategories],
   )
 
-  const { pushNavState } = useNavigationHistory(handlePopState)
+  const { pushNavState, replayPopState } = useNavigationHistory(
+    (page, catIds, imageId, traversal) =>
+      handlePopState(
+        page,
+        catIds,
+        imageId,
+        traversal ? { historyIndex: traversal.toIndex } : undefined,
+      ),
+  )
 
   // Announcement modal state (load, draft, save) — extracted to useAnnouncementModal hook
   const {
@@ -893,31 +932,90 @@ export default function App() {
     localCanvasAnnotations,
     canvasAnnotations,
     handleCanvasAnnotationsChange,
-    flushCanvasAnnotations,
-    cancelCanvasAnnotations,
-    canvasCancellationBaseline,
-    resetCanvasCancellationBaseline,
+    saveCanvasAnnotations,
+    discardCanvasAnnotations,
+    canvasDraftDirty,
+    canvasSaving,
     latestVersionRef,
     latestMetadataRef,
   } = useCanvasAnnotations({
     selectedImage,
-    fetchImage: apiFetchImage,
     loadCategories,
     loadUncategorizedImages,
     setErrorSnack,
   })
 
-  const handleCanvasAnnotationsCancelled = useCallback(() => {
-    setSuccessSnack({ message: 'Canvas annotations cancelled.' })
+  useEffect(() => {
+    canvasDraftDirtyRef.current = canvasDraftDirty
+  }, [canvasDraftDirty])
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!canvasDraftDirtyRef.current && !canvasSavingRef.current) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [])
 
-  const handleCanvasEditModeChange = useCallback(
-    (active: boolean) => {
-      setCanvasEditActive(active)
-      if (!active) resetCanvasCancellationBaseline()
+  const runCanvasNavigation = useCallback((action: () => void) => {
+    if (canvasSavingRef.current) {
+      setErrorSnack('Please wait for the annotation save to finish.')
+      return
+    }
+    if (!canvasDraftDirtyRef.current) {
+      setCanvasEditActive(false)
+      action()
+      return
+    }
+    pendingNavigationRef.current = action
+    setDiscardNavigationOpen(true)
+  }, [])
+
+  const confirmCanvasNavigationDiscard = useCallback(() => {
+    if (canvasSavingRef.current) {
+      setErrorSnack('Please wait for the annotation save to finish.')
+      return
+    }
+    discardCanvasAnnotations()
+    canvasDraftDirtyRef.current = false
+    setCanvasEditActive(false)
+    setDiscardNavigationOpen(false)
+    const action = pendingNavigationRef.current
+    pendingNavigationRef.current = null
+    if (action) action()
+    else {
+      const popState = pendingPopStateRef.current
+      pendingPopStateRef.current = null
+      if (popState) {
+        replayPopState(popState.historyIndex)
+      }
+    }
+  }, [discardCanvasAnnotations, replayPopState])
+
+  const handleSaveCanvasAnnotations = useCallback(
+    async (annotations: Parameters<typeof saveCanvasAnnotations>[0]) => {
+      canvasSavingRef.current = true
+      try {
+        return await saveCanvasAnnotations(annotations)
+      } finally {
+        canvasSavingRef.current = false
+      }
     },
-    [resetCanvasCancellationBaseline],
+    [saveCanvasAnnotations],
   )
+
+  const handleCanvasAnnotationsChangeForViewer = useCallback(
+    (annotations: Parameters<typeof handleCanvasAnnotationsChange>[0]) => {
+      canvasDraftDirtyRef.current = handleCanvasAnnotationsChange(annotations)
+    },
+    [handleCanvasAnnotationsChange],
+  )
+
+  const handleLogout = useCallback(() => {
+    runCanvasNavigation(logout)
+  }, [logout, runCanvasNavigation])
 
   // Build measurement config from the selected image's metadata
   // Overlay persistence (extracted to useOverlayPersistence hook)
@@ -928,7 +1026,6 @@ export default function App() {
     handleClearOverlays,
   } = useOverlayPersistence({
     selectedImage,
-    flushCanvasAnnotations,
     latestVersionRef,
     latestMetadataRef,
     loadCategories,
@@ -1063,14 +1160,16 @@ export default function App() {
 
   const handleImageClick = useCallback(
     (img: ImageItem) => {
-      setSelectedImage(img)
-      pushNavState(
-        'browse',
-        pathRef.current.map((c) => c.id),
-        img.id,
-      )
+      runCanvasNavigation(() => {
+        setSelectedImage(img)
+        pushNavState(
+          'browse',
+          pathRef.current.map((c) => c.id),
+          img.id,
+        )
+      })
     },
-    [pushNavState],
+    [pushNavState, runCanvasNavigation],
   )
 
   const handleImageRenewed = useCallback(
@@ -1090,16 +1189,14 @@ export default function App() {
     [setCategories, setUncategorizedImages],
   )
 
-  const navigateToCategory = useCallback((cat: Category) => {
-    setPath((prev) => [...prev, cat])
-  }, [])
-
   const handleCategoryTileClick = useCallback(
     (cat: Category) => {
-      navigateToCategory(cat)
-      pushNavState('browse', [...path.map((c) => c.id), cat.id])
+      runCanvasNavigation(() => {
+        setPath((prev) => [...prev, cat])
+        pushNavState('browse', [...path.map((c) => c.id), cat.id])
+      })
     },
-    [navigateToCategory, path, pushNavState],
+    [path, pushNavState, runCanvasNavigation],
   )
 
   const handleManageCategoryNavigate = useCallback(
@@ -1107,16 +1204,18 @@ export default function App() {
       const nextPath = findCategoryPath(categories, categoryId)
       if (!nextPath) return
 
-      setDialogOpen(false)
-      setPage('browse')
-      clearImage()
-      setPath(nextPath)
-      pushNavState(
-        'browse',
-        nextPath.map((category) => category.id),
-      )
+      runCanvasNavigation(() => {
+        setDialogOpen(false)
+        setPage('browse')
+        clearImage()
+        setPath(nextPath)
+        pushNavState(
+          'browse',
+          nextPath.map((category) => category.id),
+        )
+      })
     },
-    [categories, clearImage, pushNavState],
+    [categories, clearImage, pushNavState, runCanvasNavigation],
   )
 
   const handleFilesDropOnGrid = useCallback((files: File[]) => {
@@ -1237,10 +1336,6 @@ export default function App() {
     void handleReorderComplete()
   }, [activeReorderScope, handleReorderComplete])
 
-  const navigateToDepth = (depth: number) => {
-    setPath((prev) => prev.slice(0, depth))
-  }
-
   // Track when native files are being dragged over the page so we can
   // show the prominent FileDropZone at the end of the card grid.
   useEffect(() => {
@@ -1279,27 +1374,31 @@ export default function App() {
 
   const handleTabChange = useCallback(
     (v: Page) => {
-      setPage(v)
-      clearImage()
-      setPath([])
-      pushNavState(v)
-      if (v === 'browse') {
-        loadCategories()
-        loadUncategorizedImages()
-      }
+      runCanvasNavigation(() => {
+        setPage(v)
+        clearImage()
+        setPath([])
+        pushNavState(v)
+        if (v === 'browse') {
+          loadCategories()
+          loadUncategorizedImages()
+        }
+      })
     },
-    [clearImage, pushNavState, loadCategories, loadUncategorizedImages],
+    [clearImage, pushNavState, loadCategories, loadUncategorizedImages, runCanvasNavigation],
   )
 
   // Called only when already on browse (AppShell gates the click);
   // reloads data and resets to root.
   const handleHomeClick = useCallback(() => {
-    loadCategories()
-    loadUncategorizedImages()
-    clearImage()
-    setPath([])
-    pushNavState('browse')
-  }, [clearImage, pushNavState, loadCategories, loadUncategorizedImages])
+    runCanvasNavigation(() => {
+      loadCategories()
+      loadUncategorizedImages()
+      clearImage()
+      setPath([])
+      pushNavState('browse')
+    })
+  }, [clearImage, pushNavState, loadCategories, loadUncategorizedImages, runCanvasNavigation])
 
   // Show loading spinner while users are loading
   if (usersLoading) {
@@ -1341,7 +1440,7 @@ export default function App() {
       setProfileOpen={setProfileOpen}
       avatarRef={avatarRef}
       openEditProfile={openEditProfile}
-      logout={logout}
+      logout={handleLogout}
       onOpenCategories={() => setDialogOpen(true)}
       onOpenPrograms={() => setProgramModalOpen(true)}
       onOpenGroups={() => setGroupModalOpen(true)}
@@ -1398,37 +1497,41 @@ export default function App() {
               onEditCategory={editCategoryInline}
               onToggleVisibility={toggleCategoryVisibility}
               onViewImage={(img) => {
-                setSelectedImage({
-                  id: img.id,
-                  name: img.name,
-                  thumb: img.thumb,
-                  tileSources: img.tile_sources,
-                  categoryId: img.category_id,
-                  copyright: img.copyright,
-                  note: img.note,
-                  active: img.active,
-                  sortOrder: img.sort_order,
-                  version: img.version,
-                  createdAt: img.created_at,
-                  updatedAt: img.updated_at,
-                  metadataExtra: img.metadata_extra,
-                  width: img.width,
-                  height: img.height,
-                  fileSize: img.file_size,
+                runCanvasNavigation(() => {
+                  setSelectedImage({
+                    id: img.id,
+                    name: img.name,
+                    thumb: img.thumb,
+                    tileSources: img.tile_sources,
+                    categoryId: img.category_id,
+                    copyright: img.copyright,
+                    note: img.note,
+                    active: img.active,
+                    sortOrder: img.sort_order,
+                    version: img.version,
+                    createdAt: img.created_at,
+                    updatedAt: img.updated_at,
+                    metadataExtra: img.metadata_extra,
+                    width: img.width,
+                    height: img.height,
+                    fileSize: img.file_size,
+                  })
+                  const catPath =
+                    img.category_id != null ? findCategoryPath(categories, img.category_id) : null
+                  setPath(catPath ?? [])
+                  setPage('browse')
+                  pushNavState('browse', catPath?.map((c) => c.id) ?? [], img.id)
                 })
-                const catPath =
-                  img.category_id != null ? findCategoryPath(categories, img.category_id) : null
-                setPath(catPath ?? [])
-                setPage('browse')
-                pushNavState('browse', catPath?.map((c) => c.id) ?? [], img.id)
               }}
               onNavigateCategory={(categoryPath) => {
-                setPath(categoryPath)
-                setPage('browse')
-                pushNavState(
-                  'browse',
-                  categoryPath.map((c) => c.id),
-                )
+                runCanvasNavigation(() => {
+                  setPath(categoryPath)
+                  setPage('browse')
+                  pushNavState(
+                    'browse',
+                    categoryPath.map((c) => c.id),
+                  )
+                })
               }}
               onCategoriesChanged={() => {
                 loadCategories()
@@ -1502,9 +1605,11 @@ export default function App() {
                       underline="hover"
                       color="inherit"
                       onClick={() => {
-                        clearImage()
-                        navigateToDepth(0)
-                        pushNavState('browse')
+                        runCanvasNavigation(() => {
+                          clearImage()
+                          setPath([])
+                          pushNavState('browse')
+                        })
                       }}
                       sx={{
                         display: 'flex',
@@ -1542,12 +1647,14 @@ export default function App() {
                           underline="hover"
                           color="inherit"
                           onClick={() => {
-                            clearImage()
-                            navigateToDepth(pathIndex + 1)
-                            pushNavState(
-                              'browse',
-                              path.slice(0, pathIndex + 1).map((c) => c.id),
-                            )
+                            runCanvasNavigation(() => {
+                              clearImage()
+                              setPath((prev) => prev.slice(0, pathIndex + 1))
+                              pushNavState(
+                                'browse',
+                                path.slice(0, pathIndex + 1).map((c) => c.id),
+                              )
+                            })
                           }}
                           sx={{ cursor: 'pointer', ...breadcrumbItemTextSx }}
                         >
@@ -1656,6 +1763,7 @@ export default function App() {
 
               <Paper elevation={3} sx={{ borderRadius: 2, overflow: 'hidden' }}>
                 <ImageViewer
+                  key={selectedImage.id}
                   tileSources={selectedImage.tileSources}
                   imageId={selectedImage.id}
                   categoryId={selectedImage.categoryId ?? undefined}
@@ -1672,16 +1780,10 @@ export default function App() {
                   onUnlockOverlays={handleUnlockOverlays}
                   onClearOverlays={canEditContent ? handleClearOverlays : undefined}
                   canvasAnnotations={localCanvasAnnotations ?? canvasAnnotations}
-                  onCanvasAnnotationsChange={handleCanvasAnnotationsChange}
-                  onFlushCanvasAnnotations={flushCanvasAnnotations}
-                  onCancelCanvasAnnotations={cancelCanvasAnnotations}
-                  onCanvasAnnotationsCancelled={handleCanvasAnnotationsCancelled}
-                  canvasCancellationBaseline={
-                    canvasCancellationBaseline?.imageId === selectedImage.id
-                      ? canvasCancellationBaseline.annotations
-                      : undefined
-                  }
-                  onCanvasEditModeChange={handleCanvasEditModeChange}
+                  onCanvasAnnotationsChange={handleCanvasAnnotationsChangeForViewer}
+                  onSaveCanvasAnnotations={handleSaveCanvasAnnotations}
+                  canvasDraftDirty={canvasDraftDirty}
+                  onCanvasEditModeChange={setCanvasEditActive}
                 />
               </Paper>
 
@@ -1836,8 +1938,10 @@ export default function App() {
                       underline="hover"
                       color={path.length === 0 ? 'text.primary' : 'inherit'}
                       onClick={() => {
-                        navigateToDepth(0)
-                        pushNavState('browse')
+                        runCanvasNavigation(() => {
+                          setPath([])
+                          pushNavState('browse')
+                        })
                       }}
                       sx={{
                         display: 'flex',
@@ -1903,11 +2007,13 @@ export default function App() {
                               underline="hover"
                               color="inherit"
                               onClick={() => {
-                                navigateToDepth(pathIndex + 1)
-                                pushNavState(
-                                  'browse',
-                                  path.slice(0, pathIndex + 1).map((c) => c.id),
-                                )
+                                runCanvasNavigation(() => {
+                                  setPath((prev) => prev.slice(0, pathIndex + 1))
+                                  pushNavState(
+                                    'browse',
+                                    path.slice(0, pathIndex + 1).map((c) => c.id),
+                                  )
+                                })
                               }}
                               sx={{ cursor: 'pointer', ...breadcrumbItemTextSx }}
                             >
@@ -2147,6 +2253,40 @@ export default function App() {
         />
       )}
 
+      <Dialog
+        open={discardNavigationOpen}
+        aria-labelledby="discard-annotation-navigation-title"
+        aria-describedby="discard-annotation-navigation-description"
+        onClose={() => {
+          setDiscardNavigationOpen(false)
+          pendingNavigationRef.current = null
+          pendingPopStateRef.current = null
+        }}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle id="discard-annotation-navigation-title">
+          Discard annotation changes?
+        </DialogTitle>
+        <DialogContent id="discard-annotation-navigation-description">
+          Your unsaved annotation changes will be lost.
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => {
+              setDiscardNavigationOpen(false)
+              pendingNavigationRef.current = null
+              pendingPopStateRef.current = null
+            }}
+          >
+            Keep Editing
+          </Button>
+          <Button color="error" onClick={confirmCanvasNavigationDiscard} disabled={canvasSaving}>
+            Discard Changes
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Image edit modal (viewer page) — no View Image button since we're already viewing */}
       <EditImageModal
         open={imageEditOpen}
@@ -2184,14 +2324,16 @@ export default function App() {
         onViewImage={
           browseEditImage
             ? () => {
-                setSelectedImage(browseEditImage)
-                setBrowseEditImage(null)
-                const catPath =
-                  browseEditImage.categoryId != null
-                    ? findCategoryPath(categories, browseEditImage.categoryId)
-                    : null
-                setPath(catPath ?? [])
-                pushNavState('browse', catPath?.map((c) => c.id) ?? [], browseEditImage.id)
+                runCanvasNavigation(() => {
+                  setSelectedImage(browseEditImage)
+                  setBrowseEditImage(null)
+                  const catPath =
+                    browseEditImage.categoryId != null
+                      ? findCategoryPath(categories, browseEditImage.categoryId)
+                      : null
+                  setPath(catPath ?? [])
+                  pushNavState('browse', catPath?.map((c) => c.id) ?? [], browseEditImage.id)
+                })
               }
             : undefined
         }
@@ -2386,39 +2528,47 @@ export default function App() {
         users={searchUsers}
         isStudent={isStudent}
         onSelectCategory={(catPath) => {
-          setPage('browse')
-          setPath(catPath)
-          clearImage()
-          pushNavState(
-            'browse',
-            catPath.map((c) => c.id),
-          )
+          runCanvasNavigation(() => {
+            setPage('browse')
+            setPath(catPath)
+            clearImage()
+            pushNavState(
+              'browse',
+              catPath.map((c) => c.id),
+            )
+          })
         }}
         onSelectImage={(image, catPath) => {
-          setPage('browse')
-          setPath(catPath)
-          setSelectedImage(image)
-          setViewportState(undefined)
-          setOverlays([])
-          pushNavState(
-            'browse',
-            catPath.map((c) => c.id),
-            image.id,
-          )
+          runCanvasNavigation(() => {
+            setPage('browse')
+            setPath(catPath)
+            setSelectedImage(image)
+            setViewportState(undefined)
+            setOverlays([])
+            pushNavState(
+              'browse',
+              catPath.map((c) => c.id),
+              image.id,
+            )
+          })
         }}
         onImageRenewed={handleImageRenewed}
         onSelectProgram={(programName) => {
           if (canEditContent) {
-            setManageProgramFilter(programName)
-            setPage('manage')
-            pushNavState('manage')
+            runCanvasNavigation(() => {
+              setManageProgramFilter(programName)
+              setPage('manage')
+              pushNavState('manage')
+            })
           }
         }}
         onSelectUser={(userId) => {
           if (canManageUsers) {
-            setEditUserId(userId)
-            setPage('people')
-            pushNavState('people')
+            runCanvasNavigation(() => {
+              setEditUserId(userId)
+              setPage('people')
+              pushNavState('people')
+            })
           }
         }}
       />
@@ -2682,48 +2832,54 @@ export default function App() {
                         color: '#42a5f5',
                         pl: '10px',
                       }}
-                      onClick={async () => {
-                        // Categories may not have refreshed yet; reload and search fresh data
-                        let found = false
-                        try {
-                          const freshTree = await refreshCategories()
-                          const result = findImageInTree(freshTree, job.imageId!)
-                          if (result) {
-                            setPage('browse')
-                            setPath(result.path)
-                            setSelectedImage(result.image)
-                            setViewportState(undefined)
-                            setOverlays([])
-                            pushNavState(
-                              'browse',
-                              result.path.map((c) => c.id),
-                              result.image.id,
-                            )
-                            found = true
-                          }
-                        } catch {
-                          // Fall through to uncategorized check
-                        }
-                        if (!found) {
+                      onClick={() => {
+                        void (async () => {
+                          // Categories may not have refreshed yet; reload and search fresh data
+                          let destination:
+                            { image: ImageItem; categoryPath: Category[] } | undefined
                           try {
-                            const freshUncat = await refreshUncategorizedImages()
-                            const uncatImg = freshUncat.find((img) => img.id === job.imageId)
-                            if (uncatImg) {
-                              setPage('browse')
-                              setPath([])
-                              setSelectedImage(uncatImg)
-                              setViewportState(undefined)
-                              setOverlays([])
-                              pushNavState('browse', [], uncatImg.id)
-                              found = true
+                            const freshTree = await refreshCategories()
+                            const result = findImageInTree(freshTree, job.imageId!)
+                            if (result) {
+                              destination = {
+                                image: result.image,
+                                categoryPath: result.path,
+                              }
                             }
                           } catch {
-                            // Image not found
+                            // Fall through to uncategorized check
                           }
-                        }
-                        if (found) {
-                          dismissJob(job.id)
-                        }
+                          if (!destination) {
+                            try {
+                              const freshUncat = await refreshUncategorizedImages()
+                              const uncatImg = freshUncat.find((img) => img.id === job.imageId)
+                              if (uncatImg) {
+                                destination = {
+                                  image: uncatImg,
+                                  categoryPath: [],
+                                }
+                              }
+                            } catch {
+                              // Image not found
+                            }
+                          }
+                          if (destination) {
+                            const { image, categoryPath } = destination
+                            runCanvasNavigation(() => {
+                              setPage('browse')
+                              setPath(categoryPath)
+                              setSelectedImage(image)
+                              setViewportState(undefined)
+                              setOverlays([])
+                              pushNavState(
+                                'browse',
+                                categoryPath.map((c) => c.id),
+                                image.id,
+                              )
+                              dismissJob(job.id)
+                            })
+                          }
+                        })()
                       }}
                     >
                       View image

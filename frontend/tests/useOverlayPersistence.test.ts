@@ -19,7 +19,6 @@ const mockUpdateImage = vi.mocked(api.updateImage)
 function makeDeps(overrides: Partial<UseOverlayPersistenceDeps> = {}): UseOverlayPersistenceDeps {
   return {
     selectedImage: null,
-    flushCanvasAnnotations: vi.fn().mockResolvedValue(undefined),
     latestVersionRef: { current: 0 },
     latestMetadataRef: { current: undefined },
     loadCategories: vi.fn().mockResolvedValue(undefined),
@@ -98,9 +97,8 @@ describe('useOverlayPersistence', () => {
   })
 
   describe('handleLockOverlays', () => {
-    it('flushes canvas annotations before persisting', async () => {
+    it('persists overlays without persisting canvas drafts', async () => {
       const image = makeImage({ id: 1, version: 3 })
-      const flushCanvasAnnotations = vi.fn().mockResolvedValue(undefined)
       mockUpdateImage.mockResolvedValue({
         id: 1,
         name: 'img-1',
@@ -125,7 +123,6 @@ describe('useOverlayPersistence', () => {
       }
       const deps = makeDeps({
         selectedImage: image,
-        flushCanvasAnnotations,
         latestVersionRef,
         latestMetadataRef,
       })
@@ -135,11 +132,7 @@ describe('useOverlayPersistence', () => {
         await result.current.handleLockOverlays([makeRect()])
       })
 
-      expect(flushCanvasAnnotations).toHaveBeenCalledOnce()
       expect(mockUpdateImage).toHaveBeenCalledOnce()
-      expect(flushCanvasAnnotations.mock.invocationCallOrder[0]).toBeLessThan(
-        mockUpdateImage.mock.invocationCallOrder[0],
-      )
     })
 
     it('persists overlays and engages lock', async () => {
@@ -238,9 +231,8 @@ describe('useOverlayPersistence', () => {
   })
 
   describe('handleClearOverlays', () => {
-    it('flushes canvas annotations and clears overlays from metadata', async () => {
+    it('clears overlays from metadata without persisting canvas drafts', async () => {
       const image = makeImage({ id: 1, version: 7 })
-      const flushCanvasAnnotations = vi.fn().mockResolvedValue(undefined)
       const latestVersionRef = { current: 7 }
       const latestMetadataRef: { current: Record<string, unknown> | null | undefined } = {
         current: undefined,
@@ -267,7 +259,6 @@ describe('useOverlayPersistence', () => {
       })
       const deps = makeDeps({
         selectedImage: image,
-        flushCanvasAnnotations,
         latestVersionRef,
         latestMetadataRef,
         loadCategories,
@@ -279,7 +270,6 @@ describe('useOverlayPersistence', () => {
         await result.current.handleClearOverlays()
       })
 
-      expect(flushCanvasAnnotations).toHaveBeenCalledOnce()
       expect(mockUpdateImage).toHaveBeenCalledWith(
         1,
         { metadata_extra_merge: { locked_overlays: null } },

@@ -82,12 +82,19 @@ images> / Empty` format used on category tiles.
 
 - Students view locked overlays and annotations read-only; edit mode and
   measurement tools are gated by `canEditContent`.
-- Canvas annotation editing snapshots the annotations on entry. **Cancel**
-  (the red X toolbar button or the canvas pencil toggle) restores that
-  snapshot and shows a `Canvas annotations cancelled.` confirmation without
-  saving a debounced edit; annotations already autosaved during the session
-  are rolled back to the snapshot. **Save & Exit Edit Mode** remains the
-  explicit flush-and-save action.
+- Canvas annotation editing is draft-only until the user clicks **Save & Exit**.
+  Fabric changes update the local draft but never autosave. Save collects one
+  exact snapshot, persists only `metadata_extra_merge.canvas_annotations`, and
+  exits edit mode only after the request succeeds; a failed save keeps the
+  draft editable for retry.
+- **Cancel**, the canvas pencil toggle, and navigation away from a dirty draft
+  discard locally after confirmation. The confirmation offers **Keep Editing**
+  and **Discard Changes**. Browser unloads also receive the native unsaved
+  changes warning while a draft is dirty. Overlay lock/clear actions do not
+  implicitly save a canvas draft.
+- Every annotation has a subtle presentation-only bounding outline. Selected
+  Fabric objects use a darker, thicker outline with visible handles so the
+  selected object is distinct from other annotations and image content.
 - Touch pinch gestures use a per-gesture zoom-vs-rotate mode lock. The
   `ImageViewer` intercepts `canvas-pinch` and compares initial finger-line
   rotation against finger-separation change. The dominant motion wins:

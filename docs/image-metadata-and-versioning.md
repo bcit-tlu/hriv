@@ -46,9 +46,13 @@ export function updateImage(id, body, version?) {
 ```
 
 Overlay and annotation hooks (`useCanvasAnnotations.ts`,
-`useOverlayPersistence`) track the latest version separately to avoid
-stale 409s after background metadata refreshes. Do **not** remount the
-viewer just to refresh metadata — use the version returned in the ETag.
+`useOverlayPersistence`) track the latest version separately to avoid stale
+409s after metadata operations. Canvas annotations use an explicit-save
+transaction: draft changes are local only, Save & Exit sends one
+`metadata_extra_merge.canvas_annotations` update without an autosave queue, and
+failed saves leave the draft available for retry. Overlay lock/clear operations
+never flush or persist a canvas draft. Do **not** remount the viewer just to
+refresh metadata — use the version returned in the ETag.
 
 ## Metadata Fields
 
