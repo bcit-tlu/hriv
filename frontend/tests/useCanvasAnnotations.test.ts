@@ -982,6 +982,139 @@ describe('useCanvasAnnotations', () => {
       )
     })
 
+    it('awaits the matching in-flight save when saves overlap across images', async () => {
+      const original1 = [makeAnnotation({ id: 'original-1' })]
+      const edited1 = [makeAnnotation({ id: 'edited-1' })]
+      const edited2 = [makeAnnotation({ id: 'edited-2' })]
+      const image1 = makeImage({ id: 1, metadataExtra: { canvas_annotations: original1 } })
+      const image2 = makeImage({ id: 2 })
+      let resolveImage1!: (value: ImageItem) => void
+      let resolveImage2!: (value: ImageItem) => void
+      const image1Save = new Promise<ImageItem>((resolve) => {
+        resolveImage1 = resolve
+      })
+      const image2Save = new Promise<ImageItem>((resolve) => {
+        resolveImage2 = resolve
+      })
+      mockUpdateImage
+        .mockReturnValueOnce(image1Save as never)
+        .mockReturnValueOnce(image2Save as never)
+        .mockResolvedValueOnce({
+          ...image1,
+          version: 3,
+          metadata_extra: { canvas_annotations: original1 },
+        })
+      const deps = makeDeps({ selectedImage: image1 })
+      const { result, rerender } = renderHook(
+        (props: UseCanvasAnnotationsDeps) => useCanvasAnnotations(props),
+        { initialProps: deps },
+      )
+
+      act(() => {
+        result.current.handleCanvasAnnotationsChange(edited1)
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(600)
+      })
+      rerender({ ...deps, selectedImage: image2 })
+      act(() => {
+        result.current.handleCanvasAnnotationsChange(edited2)
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(600)
+      })
+      rerender({ ...deps, selectedImage: image1 })
+
+      const cancellation = result.current.cancelCanvasAnnotations(original1)
+      resolveImage1({
+        ...image1,
+        version: 2,
+        metadata_extra: { canvas_annotations: edited1 },
+      })
+      await act(async () => {
+        await Promise.resolve()
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      expect(mockUpdateImage).toHaveBeenCalledTimes(3)
+      expect(mockUpdateImage).toHaveBeenLastCalledWith(
+        1,
+        { metadata_extra_merge: { canvas_annotations: original1 } },
+        2,
+      )
+
+      resolveImage2({
+        ...image2,
+        version: 2,
+        metadata_extra: { canvas_annotations: edited2 },
+      })
+      await act(async () => {
+        await cancellation
+      })
+    })
+
+    it('allows a new image to save while an old image cancellation is pending', async () => {
+      const original1 = [makeAnnotation({ id: 'original-1' })]
+      const edited1 = [makeAnnotation({ id: 'edited-1' })]
+      const edited2 = [makeAnnotation({ id: 'edited-2' })]
+      const image1 = makeImage({ id: 1, metadataExtra: { canvas_annotations: original1 } })
+      const image2 = makeImage({ id: 2 })
+      let resolveRollback!: (value: ImageItem) => void
+      const rollback = new Promise<ImageItem>((resolve) => {
+        resolveRollback = resolve
+      })
+      mockUpdateImage
+        .mockResolvedValueOnce({
+          ...image1,
+          version: 2,
+          metadata_extra: { canvas_annotations: edited1 },
+        })
+        .mockReturnValueOnce(rollback as never)
+        .mockResolvedValueOnce({
+          ...image2,
+          version: 2,
+          metadata_extra: { canvas_annotations: edited2 },
+        })
+      const deps = makeDeps({ selectedImage: image1 })
+      const { result, rerender } = renderHook(
+        (props: UseCanvasAnnotationsDeps) => useCanvasAnnotations(props),
+        { initialProps: deps },
+      )
+
+      act(() => {
+        result.current.handleCanvasAnnotationsChange(edited1)
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(600)
+      })
+
+      const cancellation = result.current.cancelCanvasAnnotations(original1)
+      expect(mockUpdateImage).toHaveBeenCalledTimes(2)
+      rerender({ ...deps, selectedImage: image2 })
+      act(() => {
+        result.current.handleCanvasAnnotationsChange(edited2)
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(600)
+      })
+
+      expect(mockUpdateImage).toHaveBeenLastCalledWith(
+        2,
+        { metadata_extra_merge: { canvas_annotations: edited2 } },
+        1,
+      )
+
+      resolveRollback({
+        ...image1,
+        version: 3,
+        metadata_extra: { canvas_annotations: original1 },
+      })
+      await act(async () => {
+        await cancellation
+      })
+    })
+
     it('returns failure when an autosaved edit cannot be rolled back', async () => {
       const original = [makeAnnotation({ id: 'original' })]
       const edited = [makeAnnotation({ id: 'edited' })]
