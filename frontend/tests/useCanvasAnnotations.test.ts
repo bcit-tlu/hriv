@@ -330,6 +330,182 @@ describe('useCanvasAnnotations', () => {
       // Queued save should fire
       expect(mockUpdateImage).toHaveBeenCalledTimes(2)
     })
+
+    it('preserves the in-flight save when the same image is refreshed', async () => {
+      const image = makeImage({ id: 1, version: 1 })
+      let resolveFirst!: (value: unknown) => void
+      const firstPromise = new Promise((resolve) => {
+        resolveFirst = resolve
+      })
+      const firstUpdate = {
+        id: 1,
+        name: 'img-1',
+        thumb: '/t',
+        tile_sources: '/s',
+        category_id: null,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 0,
+        version: 2,
+        metadata_extra: null,
+        created_at: '2024-01-01',
+        updated_at: '2024-01-01',
+        width: null,
+        height: null,
+        file_size: null,
+      }
+      mockUpdateImage.mockReturnValueOnce(firstPromise as never).mockResolvedValueOnce({
+        ...firstUpdate,
+        version: 3,
+      })
+
+      const { result, rerender } = renderHook(
+        (deps: UseCanvasAnnotationsDeps) => useCanvasAnnotations(deps),
+        { initialProps: makeDeps({ selectedImage: image }) },
+      )
+      const first = [makeAnnotation({ vpX: 0.1 })]
+      const second = [makeAnnotation({ vpX: 0.2 })]
+
+      act(() => {
+        result.current.handleCanvasAnnotationsChange(first)
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(600)
+      })
+      expect(mockUpdateImage).toHaveBeenCalledOnce()
+
+      // Tile-token renewal replaces the selected image object without changing
+      // the image ID. It must not discard the annotation save's CAS state.
+      rerender(
+        makeDeps({
+          selectedImage: makeImage({ id: 1, version: 1, tileSources: '/renewed-s' }),
+        }),
+      )
+      act(() => {
+        result.current.handleCanvasAnnotationsChange(second)
+      })
+
+      resolveFirst(firstUpdate)
+      await act(async () => {
+        await Promise.resolve()
+      })
+
+      expect(mockUpdateImage).toHaveBeenCalledTimes(2)
+      expect(mockUpdateImage).toHaveBeenLastCalledWith(
+        1,
+        { metadata_extra_merge: { canvas_annotations: second } },
+        2,
+      )
+    })
+
+    it('uses a newer same-image version without clearing the pending save', async () => {
+      const image = makeImage({ id: 1, version: 1 })
+      mockUpdateImage.mockResolvedValue({
+        id: 1,
+        name: 'img-1',
+        thumb: '/t',
+        tile_sources: '/s',
+        category_id: null,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 0,
+        version: 3,
+        metadata_extra: { source: 'newer-image-update' },
+        created_at: '2024-01-01',
+        updated_at: '2024-01-01',
+        width: null,
+        height: null,
+        file_size: null,
+      })
+
+      const { result, rerender } = renderHook(
+        (deps: UseCanvasAnnotationsDeps) => useCanvasAnnotations(deps),
+        { initialProps: makeDeps({ selectedImage: image }) },
+      )
+      const annotations = [makeAnnotation()]
+
+      act(() => {
+        result.current.handleCanvasAnnotationsChange(annotations)
+      })
+      rerender(
+        makeDeps({
+          selectedImage: makeImage({
+            id: 1,
+            version: 3,
+            metadataExtra: { source: 'newer-image-update' },
+          }),
+        }),
+      )
+
+      expect(result.current.latestVersionRef.current).toBe(3)
+      expect(result.current.latestMetadataRef.current).toEqual({ source: 'newer-image-update' })
+
+      await act(async () => {
+        vi.advanceTimersByTime(600)
+      })
+
+      expect(mockUpdateImage).toHaveBeenCalledWith(
+        1,
+        { metadata_extra_merge: { canvas_annotations: annotations } },
+        3,
+      )
+    })
+
+    it('does not let an older save response replace newer image metadata', async () => {
+      const image = makeImage({ id: 1, version: 1 })
+      let resolveSave!: (value: unknown) => void
+      const savePromise = new Promise((resolve) => {
+        resolveSave = resolve
+      })
+      mockUpdateImage.mockReturnValue(savePromise as never)
+
+      const { result, rerender } = renderHook(
+        (deps: UseCanvasAnnotationsDeps) => useCanvasAnnotations(deps),
+        { initialProps: makeDeps({ selectedImage: image }) },
+      )
+      act(() => {
+        result.current.handleCanvasAnnotationsChange([makeAnnotation()])
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(600)
+      })
+
+      rerender(
+        makeDeps({
+          selectedImage: makeImage({
+            id: 1,
+            version: 3,
+            metadataExtra: { source: 'newer-image-update' },
+          }),
+        }),
+      )
+      resolveSave({
+        id: 1,
+        name: 'img-1',
+        thumb: '/t',
+        tile_sources: '/s',
+        category_id: null,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 0,
+        version: 2,
+        metadata_extra: { source: 'older-annotation-response' },
+        created_at: '2024-01-01',
+        updated_at: '2024-01-01',
+        width: null,
+        height: null,
+        file_size: null,
+      })
+      await act(async () => {
+        await Promise.resolve()
+      })
+
+      expect(result.current.latestVersionRef.current).toBe(3)
+      expect(result.current.latestMetadataRef.current).toEqual({ source: 'newer-image-update' })
+    })
   })
 
   describe('flushCanvasAnnotations', () => {

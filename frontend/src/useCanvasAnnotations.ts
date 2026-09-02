@@ -66,6 +66,8 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
   // eliminates that window.
   const prevSelectedImageIdRef = useRef<number | null>(null)
   const currentImageId = selectedImage?.id ?? null
+  const currentImageVersion = selectedImage?.version ?? 0
+  const currentImageMetadata = selectedImage?.metadataExtra
   if (currentImageId !== prevSelectedImageIdRef.current) {
     prevSelectedImageIdRef.current = currentImageId
     // eslint-disable-next-line react-hooks/refs -- synchronous clearing required to prevent race; see comment above
@@ -79,7 +81,11 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
 
   // --- Effects ---
 
-  // Reset version ref when the selected image changes
+  // Reset version and pending-save refs only when the selected image changes.
+  // The selected image object can be refreshed in place (for example, when a
+  // tile token is renewed) without changing its ID. Resetting on object
+  // identity would abandon an in-flight CAS save and make the next edit reuse
+  // the stale version, resulting in a 409 even though the first save worked.
   useEffect(() => {
     latestVersionRef.current = selectedImage?.version ?? 0
     latestMetadataRef.current = undefined // reset to 'uninitialised' so first read falls back to selectedImage
@@ -92,7 +98,20 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
     latestCanvasAnnotationsRef.current = null
     canvasSaveInFlightRef.current = false
     saveTargetImageIdRef.current = null
-  }, [selectedImage])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- selectedImage identity may change during a same-image refresh; only its ID starts a new save session
+  }, [selectedImage?.id])
+
+  // Same-image updates can carry a newer server version (for example, after
+  // editing image details or completing image processing). Keep the CAS token
+  // and authoritative metadata in sync without resetting the annotation save
+  // session that may already be debouncing or in flight. The version guard
+  // prevents a stale same-image refresh from replacing metadata returned by a
+  // newer annotation save.
+  useEffect(() => {
+    if (currentImageId === null || currentImageVersion <= latestVersionRef.current) return
+    latestVersionRef.current = currentImageVersion
+    latestMetadataRef.current = currentImageMetadata ?? {}
+  }, [currentImageId, currentImageVersion, currentImageMetadata])
 
   // --- Memos ---
 
@@ -127,7 +146,10 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
           currentVersion,
         )
         // Only update shared refs if the image hasn't changed while we were saving
-        if (saveTargetImageIdRef.current === targetImageId) {
+        if (
+          saveTargetImageIdRef.current === targetImageId &&
+          updated.version >= latestVersionRef.current
+        ) {
           latestVersionRef.current = updated.version
           latestMetadataRef.current = updated.metadata_extra ?? {}
         }
