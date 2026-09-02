@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.51.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.51.0...frontend-v0.51.1) (2026-09-02)
+
+
+### Bug Fixes
+
+* **frontend:** allow clearing image notes ([#1183](https://github.com/bcit-tlu/hriv/issues/1183)) ([fdcd78d](https://github.com/bcit-tlu/hriv/commit/fdcd78d6fd258e67c17bfb92bf59f570b395e306))
+* **frontend:** preserve annotation saves across image refreshes ([#1179](https://github.com/bcit-tlu/hriv/issues/1179)) ([18cc023](https://github.com/bcit-tlu/hriv/commit/18cc023462d765f3e1241fdf077c541e77060d51))
+
 ## [0.51.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.50.0...frontend-v0.51.0) (2026-08-31)
 
 
