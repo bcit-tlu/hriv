@@ -23,11 +23,13 @@ from arq.connections import ArqRedis
 from arq.constants import abort_jobs_ss
 from arq.jobs import JobStatus
 from arq.utils import timestamp_ms
+from asyncpg.exceptions import PostgresError as AsyncpgPostgresError
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
 from sqlalchemy import case, cast, select, update
 from sqlalchemy.dialects.postgresql import JSONB as JSONB_type
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.sql import func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -135,17 +137,14 @@ def _source_image_terminal_state(src: SourceImage) -> _SourceImageTerminalState:
     )
 
 
-def _coerce_utc_aware(dt: datetime, *, source_image_id: int) -> datetime:
+def _coerce_utc_aware(dt: datetime, *, event: str, **log_fields: object) -> datetime:
     """Return a timezone-aware UTC datetime, tolerating naive DB values."""
     if dt.tzinfo is not None:
         return dt
 
     logger.warning(
-        "Bulk import source image has naive updated_at; coercing to UTC",
-        extra={
-            "event": "bulk_import.naive_updated_at",
-            "source_image_id": source_image_id,
-        },
+        "Bulk import naive datetime coerced to UTC",
+        extra={"event": event, **log_fields},
     )
     return dt.replace(tzinfo=timezone.utc)
 
@@ -426,7 +425,11 @@ async def _wait_for_source_image_terminal_state(
                 processing_started_at = None
 
             cutoff = datetime.now(timezone.utc) - timedelta(seconds=stale_after_seconds)
-            updated_at = _coerce_utc_aware(src.updated_at, source_image_id=source_image_id)
+            updated_at = _coerce_utc_aware(
+                src.updated_at,
+                event="bulk_import.naive_updated_at",
+                source_image_id=source_image_id,
+            )
             job_status: JobStatus | None = None
             if src.status == "processing" and updated_at < cutoff:
                 latch_written = False
@@ -894,6 +897,92 @@ async def _cleanup_orphaned_bulk_import_files(
         )
 
 
+def _is_single_active_job_violation(exc: IntegrityError) -> bool:
+    """Check whether ``exc`` is the ``idx_bulk_import_jobs_single_active``
+    partial unique index violation, as opposed to some unrelated integrity
+    failure (e.g. a foreign-key violation) surfacing at the same commit.
+
+    ``exc.orig`` is the DBAPI-level exception, an
+    ``AsyncAdapt_asyncpg_dbapi.Error`` instance that does not itself carry
+    ``constraint_name``. With the asyncpg driver, SQLAlchemy's dialect
+    re-raises that translated wrapper via ``raise translated_error from
+    native_error`` (see ``sqlalchemy.dialects.postgresql.asyncpg.
+    AsyncAdapt_asyncpg_connection._handle_exception``), so the native
+    ``asyncpg.exceptions.PostgresError`` -- a real, statically-declared
+    ``constraint_name`` attribute -- is reachable only via
+    ``exc.orig.__cause__``. Both ``exc.orig`` and its ``__cause__`` are
+    checked by explicit ``isinstance`` narrowing against the known asyncpg
+    exception type, since ``BaseException.__cause__`` is a normal attribute
+    on every exception (defaulting to ``None``) rather than a driver-specific
+    dynamic one.
+    """
+    orig = exc.orig
+    if isinstance(orig, AsyncpgPostgresError):
+        if orig.constraint_name == "idx_bulk_import_jobs_single_active":
+            return True
+    cause = orig.__cause__ if orig is not None else None
+    if isinstance(cause, AsyncpgPostgresError):
+        if cause.constraint_name == "idx_bulk_import_jobs_single_active":
+            return True
+    return False
+
+
+async def _finalize_abandoned_bulk_import_jobs(
+    session: AsyncSession,
+    job_ids: set[int] | list[int],
+    *,
+    abandonment_note: str,
+) -> list[int]:
+    """Atomically finalize the given ``bulk_import_jobs`` rows to a terminal
+    state, restricted to rows still in ``pending``/``processing``.
+
+    This does not commit; the caller controls the transaction boundary so the
+    finalization can be bundled atomically with other work (e.g. inserting a
+    replacement job). A concurrent finalizer racing for the same rows simply
+    affects fewer rows here, since the ``WHERE`` clause is re-evaluated after
+    the row lock is acquired — no error, no double-finalization.
+    """
+    if not job_ids:
+        return []
+    stmt = (
+        update(BulkImportJob)
+        .where(
+            BulkImportJob.id.in_(job_ids),
+            BulkImportJob.status.in_(("pending", "processing")),
+        )
+        .values(
+            # Match the coordinator finalizer: any completed image counts as
+            # partial success, so "failed" means nothing was imported.
+            status=case(
+                (BulkImportJob.completed_count > 0, "completed"),
+                else_="failed",
+            ),
+            failed_count=BulkImportJob.total_count - BulkImportJob.completed_count,
+            # Only note the abandonment when children are actually
+            # unaccounted for; a coordinator killed after every child reached
+            # a terminal state already has coherent per-file error entries.
+            errors=case(
+                (
+                    BulkImportJob.failed_count
+                    == BulkImportJob.total_count - BulkImportJob.completed_count,
+                    BulkImportJob.errors,
+                ),
+                else_=(
+                    func.coalesce(
+                        BulkImportJob.errors,
+                        cast([], JSONB_type),
+                    )
+                    + cast([{"error": abandonment_note}], JSONB_type)
+                )
+            ),
+            updated_at=func.now(),
+        )
+        .returning(BulkImportJob.id)
+    )
+    result = await session.execute(stmt)
+    return [row[0] for row in result.all()]
+
+
 async def reconcile_stale_bulk_import_jobs(
     session: AsyncSession,
     stale_after_seconds: int = _STALE_BULK_IMPORT_SECONDS,
@@ -1326,37 +1415,64 @@ async def bulk_import_images(
     # waits on child work. The liveness set still guards against stale or lost
     # coordinators without reintroducing the deadlock-prone slot accounting.
     processing_result = await db.execute(
-        select(BulkImportJob.id).where(BulkImportJob.status == "processing")
+        select(BulkImportJob.id, BulkImportJob.updated_at).where(
+            BulkImportJob.status == "processing"
+        )
     )
-    processing_ids = {row[0] for row in processing_result.all()}
-    registration_cutoff = datetime.now(timezone.utc) - timedelta(
-        seconds=_BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS
+    processing_rows = {row[0]: row[1] for row in processing_result.all()}
+    pending_result = await db.execute(
+        select(BulkImportJob.id, BulkImportJob.updated_at).where(
+            BulkImportJob.status == "pending"
+        )
     )
+    pending_rows = {row[0]: row[1] for row in pending_result.all()}
+    coordinator_rows = {**processing_rows, **pending_rows}
+    coordinator_ids = set(coordinator_rows)
     # A row younger than the liveness window may belong to a coordinator that
     # has not registered yet (queued behind other work, or still starting), so
     # recency stands in for liveness only for that window. Anything older falls
     # through to the registration check below and is admitted when no
     # coordinator is alive, so a crash can never block imports for long.
-    recent_coordinator_result = await db.execute(
-        select(func.count())
-        .select_from(BulkImportJob)
-        .where(
-            BulkImportJob.status.in_(("pending", "processing")),
-            BulkImportJob.updated_at >= registration_cutoff,
-        )
+    #
+    # This check is derived from coordinator_rows -- the rows just fetched
+    # above -- rather than a separate, earlier COUNT query. A separate,
+    # earlier read would leave a window between it and the pending_rows read
+    # where a concurrent request's job could commit: that fresh row would
+    # sail past an already-completed recency COUNT, land in coordinator_rows
+    # here, and (with Redis liveness not yet registered for a job that young)
+    # get discarded as "abandoned" by the finalizer below -- discarding the
+    # concurrent winner's own in-flight import. Gating on the same rows we
+    # already fetched for coordinator_rows closes that window: any row fresh
+    # enough to matter is necessarily visible to this check.
+    registration_cutoff = datetime.now(timezone.utc) - timedelta(
+        seconds=_BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS
     )
-    if recent_coordinator_result.scalar_one() > 0:
+    has_recent_coordinator = any(
+        _coerce_utc_aware(
+            updated,
+            event="bulk_import.naive_job_updated_at",
+            bulk_import_job_id=job_id,
+        )
+        >= registration_cutoff
+        for job_id, updated in coordinator_rows.items()
+    )
+    if has_recent_coordinator:
         raise HTTPException(
             status_code=409,
             detail="A bulk import is already in progress",
         )
-    pending_result = await db.execute(
-        select(BulkImportJob.id).where(BulkImportJob.status == "pending")
-    )
-    pending_ids = {row[0] for row in pending_result.all()}
-    coordinator_ids = processing_ids | pending_ids
+    # True only when Redis was reachable and positively reported that none of
+    # coordinator_ids are alive. False when liveness is unreadable or disabled
+    # and the guard falls open on trust alone -- that case still finalizes the
+    # row's status below (existing behavior, so a crashed coordinator doesn't
+    # block imports forever), but it is NOT proof the coordinator has actually
+    # stopped, so its staged files must not be deleted: a coordinator that is
+    # still running could still be about to turn one of those manifest
+    # entries into a SourceImage.
+    liveness_confirmed_dead = False
     if coordinator_ids:
         pool = await get_pool()
+        redis_liveness_available = False
         if pool is not None:
             live_since = timestamp_ms() - (
                 _BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS * 1000
@@ -1376,12 +1492,67 @@ async def bulk_import_images(
                     exc_info=True,
                 )
             else:
+                redis_liveness_available = True
                 live_ids = {int(member) for member in live_members}
                 if coordinator_ids.intersection(live_ids):
                     raise HTTPException(
                         status_code=409,
                         detail="A bulk import is already in progress",
                     )
+                liveness_confirmed_dead = True
+
+        if not redis_liveness_available:
+            # Redis is disabled, unreachable, or errored: we have no
+            # positive signal either way. The 90-second registration window
+            # above only proves a coordinator *hasn't written to its row*
+            # recently -- it does NOT prove the coordinator has stopped, since
+            # a legitimately running coordinator can go well past 90 seconds
+            # between per-child bookkeeping updates (e.g. one slow image, or
+            # a worker backlog). Rather than guess, fall back to the same
+            # conservative, Redis-independent staleness threshold that
+            # reconcile_stale_bulk_import_jobs already uses to declare a row
+            # abandoned on its own: anything still within that window is
+            # treated as blocking (fail closed) instead of being finalized
+            # out from under a coordinator that may still be alive.
+            stale_cutoff = datetime.now(timezone.utc) - timedelta(
+                seconds=_STALE_BULK_IMPORT_SECONDS
+            )
+            not_confirmed_stale = {
+                job_id
+                for job_id, updated in coordinator_rows.items()
+                if _coerce_utc_aware(
+                    updated,
+                    event="bulk_import.naive_job_updated_at",
+                    bulk_import_job_id=job_id,
+                )
+                >= stale_cutoff
+            }
+            if not_confirmed_stale:
+                raise HTTPException(
+                    status_code=409,
+                    detail="A bulk import is already in progress",
+                )
+
+    if coordinator_ids:
+        # We reach here only when every id in coordinator_ids was judged
+        # non-blocking above (confirmed dead via Redis, or liveness was
+        # unreadable/disabled and every remaining row cleared the
+        # conservative Redis-independent staleness threshold). Finalize them
+        # now, atomically with the job row we're about to insert below, so
+        # the partial unique index on bulk_import_jobs doesn't reject the new
+        # job just because an abandoned row is still "pending"/"processing".
+        # Without this, an abandoned coordinator would block every new
+        # import until reconcile_stale_bulk_import_jobs runs at startup.
+        finalized_abandoned_ids = await _finalize_abandoned_bulk_import_jobs(
+            db,
+            coordinator_ids,
+            abandonment_note=(
+                "Superseded by a new bulk import after its coordinator was "
+                "found to be inactive."
+            ),
+        )
+    else:
+        finalized_abandoned_ids = []
 
     with tracer.start_as_current_span("bulk_import.enqueue") as span:
         try:
@@ -1527,8 +1698,61 @@ async def bulk_import_images(
                 file_manifest=[list(entry) for entry in file_entries],
             )
             db.add(job)
-            await db.commit()
+            try:
+                await db.commit()
+            except IntegrityError as exc:
+                # The pre-check above (SELECT for active jobs) is a
+                # check-then-act race: another request can create its job
+                # row between our check and this insert. The partial unique
+                # index on bulk_import_jobs is the actual guarantee here.
+                # Only translate *that specific* constraint violation into
+                # the pre-check's 409 — an unrelated integrity failure (e.g.
+                # the target category being deleted concurrently, tripping
+                # the category_id foreign key) must not masquerade as an
+                # active-import conflict.
+                await db.rollback()
+                # Either way this job never made it into the database, so
+                # its staged files would otherwise leak on disk forever.
+                for _, stored_path in file_entries:
+                    with contextlib.suppress(OSError):
+                        os.unlink(stored_path)
+                if not _is_single_active_job_violation(exc):
+                    raise
+                raise HTTPException(
+                    status_code=409,
+                    detail="A bulk import is already in progress",
+                )
             await db.refresh(job)
+
+            # Only remove abandoned coordinators' staged files once the new
+            # job row (finalized in the same transaction) has actually
+            # committed -- if the commit above had failed instead, those
+            # rows would still need their manifests for a later reconcile
+            # pass, and deleting the files first would orphan that pass.
+            # Only do this when Redis positively confirmed the old
+            # coordinator(s) are dead: if the liveness check instead fell
+            # open (Redis disabled/unreachable), we have no proof the old
+            # coordinator has stopped, and it could still be about to turn
+            # one of those manifest entries into a SourceImage -- deleting
+            # its files out from under it would corrupt a running import.
+            # This is best-effort tidiness, not correctness-critical, so a
+            # failure here must not prevent the newly committed job from
+            # being scheduled below.
+            if finalized_abandoned_ids and liveness_confirmed_dead:
+                try:
+                    await _cleanup_orphaned_bulk_import_files(
+                        db, finalized_abandoned_ids
+                    )
+                except Exception:
+                    logger.warning(
+                        "Failed to clean up orphaned files for finalized "
+                        "abandoned bulk-import job(s)",
+                        extra={
+                            "event": "bulk_import.abandoned_cleanup_failed",
+                            "bulk_import_job_ids": finalized_abandoned_ids,
+                        },
+                        exc_info=True,
+                    )
 
             span.set_attribute("bulk_import.job_id", job.id)
 
