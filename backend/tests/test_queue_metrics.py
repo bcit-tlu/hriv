@@ -126,6 +126,48 @@ async def test_collect_queue_state_exclusion_is_bounded_not_full_scan() -> None:
     assert state["oldest_pending_age_seconds"] is not None
 
 
+async def test_collect_queue_state_exclusion_never_reads_full_zrange() -> None:
+    """Directly guards against a regression to a full ``ZRANGE(0, -1)``
+    scan: unlike the correctness-only test above (whose output would be
+    identical either way, just slower), this spies on the actual
+    ``redis.call(...)`` invocations the Lua script makes and asserts the
+    ``ZRANGE`` call it issues only ever requests a prefix bounded by the
+    exclusion set size — never the whole (500-entry) queue.
+    """
+    from fakeredis.commands_mixins.scripting_mixin import ScriptingCommandsMixin
+
+    entries = {f"backlog-job-{i}": float(1_000 + i) for i in range(500)}
+    entries["reconciliation_sweep_task:123"] = 999.0  # oldest, but excluded
+    pool = await _fake_pool_with_queue(entries)
+
+    calls: list[tuple[bytes, tuple]] = []
+    original_call = ScriptingCommandsMixin._lua_redis_call
+
+    def spy(self, lua_runtime, expected_globals, op, *args):
+        calls.append((op, args))
+        return original_call(self, lua_runtime, expected_globals, op, *args)
+
+    try:
+        with (
+            patch("app.worker.get_pool", new_callable=AsyncMock, return_value=pool),
+            patch.object(ScriptingCommandsMixin, "_lua_redis_call", spy),
+        ):
+            state = await collect_queue_state(
+                exclude_job_ids={"reconciliation_sweep_task:123"}
+            )
+    finally:
+        await pool.aclose()
+
+    assert state["depth"] == 500
+    zrange_calls = [args for op, args in calls if op == b"ZRANGE"]
+    assert len(zrange_calls) == 1
+    # args are (queue_key, start, stop, "WITHSCORES"); stop must stay bounded
+    # by the exclusion set size (1 excluded id -> stop index 1), never the
+    # full queue's last index (499).
+    _queue_key, _start, stop, *_rest = zrange_calls[0]
+    assert int(stop) == 1
+
+
 async def test_queue_metrics_render_contains_execution_mode() -> None:
     with (
         patch("app.queue_metrics.collect_queue_state", new_callable=AsyncMock, return_value={
