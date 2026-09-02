@@ -190,21 +190,13 @@ vi.mock('../../src/components/CanvasOverlay', () => ({
   default: ({
     editMode,
     onEditModeChange,
-    onCancelAnnotations,
-    onAnnotationsCancelled,
     registerCancelHandler,
   }: {
     editMode: boolean
     onEditModeChange: (mode: boolean) => void
-    onCancelAnnotations?: (annotations: never[]) => Promise<boolean>
-    onAnnotationsCancelled?: () => void
     registerCancelHandler: (handler: (() => Promise<void>) | null) => void
   }) => {
-    registerCancelHandler(async () => {
-      await onCancelAnnotations?.([])
-      onAnnotationsCancelled?.()
-      onEditModeChange(false)
-    })
+    registerCancelHandler(async () => onEditModeChange(false))
     return (
       <div>
         <div>canvas edit: {String(editMode)}</div>
@@ -779,38 +771,28 @@ describe('ImageViewer overlay locking', () => {
 })
 
 describe('ImageViewer canvas edit mode', () => {
-  it('enters canvas edit mode from the toolbar and exits via the overlay cancel flow', async () => {
+  it('enters canvas edit mode from the toolbar and exits via the overlay cancel flow', () => {
     const onCanvasEditModeChange = vi.fn()
-    const onCancelCanvasAnnotations = vi.fn(async () => true)
-    const onCanvasAnnotationsCancelled = vi.fn()
     render(
       <ImageViewer
         tileSources="/tiles.dzi"
         canEditContent
         onCanvasEditModeChange={onCanvasEditModeChange}
-        onCancelCanvasAnnotations={onCancelCanvasAnnotations}
-        onCanvasAnnotationsCancelled={onCanvasAnnotationsCancelled}
       />,
     )
     const button = buttonByTooltip('Canvas annotations (add shapes, text, links)')
 
     expect(screen.getByText('canvas edit: false')).toBeInTheDocument()
 
-    await act(async () => {
-      button.options.onClick()
-    })
+    act(() => button.options.onClick())
     expect(screen.getByText('canvas edit: true')).toBeInTheDocument()
     expect(viewer().setMouseNavEnabled).toHaveBeenCalledWith(false)
 
     // Toolbar exit routes through the overlay's registered cancel handler
-    await act(async () => {
-      button.options.onClick()
-    })
+    act(() => button.options.onClick())
     expect(screen.getByText('canvas edit: false')).toBeInTheDocument()
     expect(onCanvasEditModeChange).toHaveBeenLastCalledWith(false)
     expect(viewer().setMouseNavEnabled).toHaveBeenLastCalledWith(true)
-    expect(onCancelCanvasAnnotations).toHaveBeenCalledOnce()
-    expect(onCanvasAnnotationsCancelled).toHaveBeenCalledOnce()
   })
 
   it('exits canvas edit mode when the overlay signals completion', () => {

@@ -6,7 +6,6 @@ import type { ImageItem } from './types'
 /** Dependencies injected by the host component. */
 export interface UseOverlayPersistenceDeps {
   selectedImage: ImageItem | null
-  flushCanvasAnnotations: () => Promise<void>
   latestVersionRef: React.MutableRefObject<number>
   latestMetadataRef: React.MutableRefObject<Record<string, unknown> | null | undefined>
   loadCategories: () => Promise<unknown>
@@ -25,7 +24,6 @@ export interface UseOverlayPersistenceDeps {
 export function useOverlayPersistence(deps: UseOverlayPersistenceDeps) {
   const {
     selectedImage,
-    flushCanvasAnnotations,
     latestVersionRef,
     latestMetadataRef,
     loadCategories,
@@ -46,7 +44,6 @@ export function useOverlayPersistence(deps: UseOverlayPersistenceDeps) {
   const handleLockOverlays = useCallback(
     async (rects: OverlayRect[]) => {
       if (!selectedImage) return
-      await flushCanvasAnnotations()
       try {
         const currentVersion = latestVersionRef.current || selectedImage.version
         const updated = await updateImage(
@@ -66,7 +63,6 @@ export function useOverlayPersistence(deps: UseOverlayPersistenceDeps) {
     },
     [
       selectedImage,
-      flushCanvasAnnotations,
       latestVersionRef,
       latestMetadataRef,
       loadCategories,
@@ -82,7 +78,6 @@ export function useOverlayPersistence(deps: UseOverlayPersistenceDeps) {
 
   const handleClearOverlays = useCallback(async () => {
     if (!selectedImage) return
-    await flushCanvasAnnotations()
     try {
       const currentVersion = latestVersionRef.current || selectedImage.version
       const updated = await updateImage(
@@ -100,7 +95,6 @@ export function useOverlayPersistence(deps: UseOverlayPersistenceDeps) {
     }
   }, [
     selectedImage,
-    flushCanvasAnnotations,
     latestVersionRef,
     latestMetadataRef,
     loadCategories,

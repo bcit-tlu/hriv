@@ -105,14 +105,12 @@ interface CanvasOverlayProps {
   canEdit: boolean
   editMode: boolean
   onEditModeChange: (mode: boolean) => void
-  /** Flush any pending annotation save immediately (bypass debounce) */
-  onFlushAnnotations?: () => Promise<void>
-  /** Discard the edit session and restore its entry snapshot. */
-  onCancelAnnotations?: (annotations: CanvasAnnotation[]) => Promise<boolean>
-  /** Replacement snapshot after a conflict-resolving authoritative refresh. */
-  cancellationBaseline?: CanvasAnnotation[]
-  /** Notify the parent after canvas annotations have been cancelled. */
-  onAnnotationsCancelled?: () => void
+  /** Persist the exact snapshot collected from Fabric, then allow exit. */
+  onSaveAnnotations?: (annotations: CanvasAnnotation[]) => Promise<boolean>
+  /** Restore the edit-session entry snapshot without network I/O. */
+  onDiscardAnnotations?: () => void
+  /** Whether the current draft differs from the edit-session entry snapshot. */
+  isDirty?: boolean
   /** Lets the parent trigger the same discard-changes flow as the Cancel button */
   registerCancelHandler?: (handler: (() => Promise<void>) | null) => void
 }
@@ -261,10 +259,9 @@ export default function CanvasOverlay({
   onAnnotationsChange,
   canEdit: _canEdit,
   editMode,
-  onFlushAnnotations,
-  onCancelAnnotations,
-  cancellationBaseline,
-  onAnnotationsCancelled,
+  onSaveAnnotations,
+  onDiscardAnnotations,
+  isDirty,
   onEditModeChange,
   registerCancelHandler,
 }: CanvasOverlayProps) {
@@ -288,13 +285,14 @@ export default function CanvasOverlay({
   const [linkText, setLinkText] = useState('')
   const [linkUrl, setLinkUrl] = useState('')
   const [flushing, setFlushing] = useState(false)
+  const [discardDialogOpen, setDiscardDialogOpen] = useState(false)
   const annotationsRef = useRef(annotations)
   const isDrawingRef = useRef(false)
   const drawStartRef = useRef<{ x: number; y: number } | null>(null)
   const drawObjRef = useRef<fabric.FabricObject | null>(null)
   const clipboardRef = useRef<CanvasAnnotation[]>([])
   const snapshotRef = useRef<CanvasAnnotation[]>([])
-  const resettingFabricAnnotationsRef = useRef(false)
+  const dirtyRef = useRef(false)
 
   useEffect(() => {
     annotationsRef.current = annotations
@@ -304,19 +302,14 @@ export default function CanvasOverlay({
   const prevEditModeRef = useRef(false)
   useEffect(() => {
     if (editMode && !prevEditModeRef.current) {
-      snapshotRef.current = annotations
+      snapshotRef.current = annotations.map((annotation) => ({ ...annotation }))
     }
     prevEditModeRef.current = editMode
   }, [editMode, annotations])
 
-  // A newer authoritative refresh can resolve a 409 while edit mode is open.
-  // Only this explicit baseline signal replaces the cancellation snapshot;
-  // ordinary same-image annotation/version updates leave it unchanged.
   useEffect(() => {
-    if (editMode && cancellationBaseline !== undefined) {
-      snapshotRef.current = cancellationBaseline
-    }
-  }, [cancellationBaseline, editMode])
+    dirtyRef.current = isDirty ?? false
+  }, [annotations, isDirty])
 
   // View mode: render annotations on a plain canvas
   const redrawViewCanvas = useCallback(() => {
@@ -342,6 +335,16 @@ export default function CanvasOverlay({
         const endPt = viewer.viewport.pixelFromPoint(
           new OpenSeadragon.Point(ann.vpX2 ?? ann.vpX, ann.vpY2 ?? ann.vpY),
         )
+        ctx.setLineDash([5, 3])
+        ctx.strokeStyle = '#455a64'
+        ctx.lineWidth = 1.5
+        ctx.strokeRect(
+          Math.min(topLeft.x, endPt.x) - 3,
+          Math.min(topLeft.y, endPt.y) - 3,
+          Math.abs(endPt.x - topLeft.x) + 6,
+          Math.abs(endPt.y - topLeft.y) + 6,
+        )
+        ctx.setLineDash([])
         ctx.beginPath()
         ctx.moveTo(topLeft.x, topLeft.y)
         ctx.lineTo(endPt.x, endPt.y)
@@ -372,6 +375,17 @@ export default function CanvasOverlay({
       )
       const pw = bottomRight.x - topLeft.x
       const ph = bottomRight.y - topLeft.y
+
+      ctx.setLineDash([5, 3])
+      ctx.strokeStyle = '#455a64'
+      ctx.lineWidth = 1.5
+      ctx.strokeRect(
+        Math.min(topLeft.x, bottomRight.x) - 3,
+        Math.min(topLeft.y, bottomRight.y) - 3,
+        Math.abs(pw) + 6,
+        Math.abs(ph) + 6,
+      )
+      ctx.setLineDash([])
 
       if (ann.type === 'rect') {
         const sw = (ann.strokeWidth ?? 2) * viewer.viewport.getZoom()
@@ -760,11 +774,10 @@ export default function CanvasOverlay({
     [],
   )
 
-  /** Collect all fabric objects and emit change */
-  const emitAnnotations = useCallback(() => {
-    if (resettingFabricAnnotationsRef.current) return
+  /** Collect all fabric objects without changing persistence state. */
+  const collectAnnotations = useCallback((): CanvasAnnotation[] => {
     const fc = fabricCanvasRef.current
-    if (!fc) return
+    if (!fc) return []
     // Exit any active IText editing before collecting, so text content is committed
     const active = fc.getActiveObject()
     if (active && active instanceof fabric.IText && active.isEditing) {
@@ -784,43 +797,14 @@ export default function CanvasOverlay({
       const ann = fabricToAnnotation(obj, transform)
       if (ann) annotations.push(ann)
     }
+    return annotations
+  }, [absoluteObjectTransform, fabricToAnnotation])
+
+  const emitAnnotations = useCallback(() => {
+    const annotations = collectAnnotations()
     console.debug(LOG_PREFIX, 'emitAnnotations:', annotations.length, 'objects')
     onAnnotationsChange(annotations)
-  }, [absoluteObjectTransform, fabricToAnnotation, onAnnotationsChange])
-
-  // Replace the editable objects from authoritative server data without
-  // emitting onAnnotationsChange. This is used only when a 409 conflict is
-  // resolved while the current edit session remains open.
-  const resetFabricAnnotations = useCallback(
-    (fc: fabric.Canvas, nextAnnotations: CanvasAnnotation[]) => {
-      resettingFabricAnnotationsRef.current = true
-      try {
-        const active = fc.getActiveObject()
-        if (active && active instanceof fabric.IText && active.isEditing) {
-          active.exitEditing()
-        }
-        fc.discardActiveObject()
-        for (const obj of [...fc.getObjects()]) {
-          fc.remove(obj)
-        }
-        for (const annotation of nextAnnotations) {
-          const obj = annotationToFabric(annotation)
-          if (obj) {
-            obj.set({ selectable: fc.selection, evented: fc.selection })
-            fc.add(obj)
-          }
-        }
-        isDrawingRef.current = false
-        drawStartRef.current = null
-        drawObjRef.current = null
-        annotationsRef.current = nextAnnotations
-        fc.renderAll()
-      } finally {
-        resettingFabricAnnotationsRef.current = false
-      }
-    },
-    [annotationToFabric],
-  )
+  }, [collectAnnotations, onAnnotationsChange])
 
   // Initialize / teardown fabric canvas when entering/exiting edit mode
   useEffect(() => {
@@ -848,9 +832,24 @@ export default function CanvasOverlay({
       height: h,
       selection: true,
     })
+    fc.selectionBorderColor = '#263238'
+    fc.selectionLineWidth = 2
     fabricCanvasRef.current = fc
 
-    resetFabricAnnotations(fc, annotationsRef.current)
+    for (const ann of annotationsRef.current) {
+      const obj = annotationToFabric(ann)
+      if (obj) {
+        obj.set({
+          borderColor: '#263238',
+          cornerColor: '#263238',
+          cornerStrokeColor: '#ffffff',
+          cornerSize: 10,
+          transparentCorners: false,
+        })
+        fc.add(obj)
+      }
+    }
+    fc.renderAll()
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -970,18 +969,7 @@ export default function CanvasOverlay({
     fabricToAnnotation,
     emitAnnotations,
     absoluteObjectTransform,
-    resetFabricAnnotations,
   ])
-
-  // Keep the live Fabric objects in sync with the authoritative conflict
-  // baseline. Ordinary annotations prop updates deliberately do not rebuild
-  // the edit canvas, so in-progress edits retain their expected behavior.
-  useEffect(() => {
-    if (!editMode || cancellationBaseline === undefined) return
-    const fc = fabricCanvasRef.current
-    if (!fc) return
-    resetFabricAnnotations(fc, cancellationBaseline)
-  }, [cancellationBaseline, editMode, resetFabricAnnotations])
 
   // Drawing handlers for edit mode
 
@@ -1244,53 +1232,45 @@ export default function CanvasOverlay({
     }
     fc.clear()
     fc.renderAll()
-    onAnnotationsChange([])
-  }, [onAnnotationsChange])
+    emitAnnotations()
+  }, [emitAnnotations])
 
   const handleDone = useCallback(async () => {
-    console.debug(LOG_PREFIX, 'handleDone — emitting and flushing before exiting edit mode')
-    try {
-      emitAnnotations()
-    } catch (error) {
-      console.error(LOG_PREFIX, 'failed to emit annotations before exiting edit mode', error)
-    }
-    // Flush immediately (bypass debounce) so data is persisted before exit.
-    // Await the flush so the PATCH completes before edit mode state changes.
-    if (onFlushAnnotations) {
+    const collected = collectAnnotations()
+    console.debug(LOG_PREFIX, 'handleDone — saving', collected.length, 'annotations')
+    if (onSaveAnnotations) {
       setFlushing(true)
       try {
-        await onFlushAnnotations()
-        console.debug(LOG_PREFIX, 'flush complete, exiting edit mode')
-      } finally {
-        setFlushing(false)
-      }
-    }
-    onEditModeChange(false)
-  }, [emitAnnotations, onEditModeChange, onFlushAnnotations])
-
-  const handleCancel = useCallback(async () => {
-    let cancelled = true
-    if (onCancelAnnotations) {
-      setFlushing(true)
-      try {
-        cancelled = await onCancelAnnotations(snapshotRef.current)
+        const saved = await onSaveAnnotations(collected)
+        if (!saved) return
       } finally {
         setFlushing(false)
       }
     } else {
-      // Keep the overlay usable in isolation. The application supplies
-      // onCancelAnnotations so restoring the snapshot does not become a save.
-      onAnnotationsChange(snapshotRef.current)
+      onAnnotationsChange(collected)
     }
-    if (!cancelled) return
-    onAnnotationsCancelled?.()
     onEditModeChange(false)
-  }, [onAnnotationsChange, onAnnotationsCancelled, onCancelAnnotations, onEditModeChange])
+  }, [collectAnnotations, onAnnotationsChange, onEditModeChange, onSaveAnnotations])
+
+  const performCancel = useCallback(() => {
+    onDiscardAnnotations?.()
+    if (!onDiscardAnnotations) onAnnotationsChange(snapshotRef.current)
+    setDiscardDialogOpen(false)
+    onEditModeChange(false)
+  }, [onAnnotationsChange, onDiscardAnnotations, onEditModeChange])
+
+  const handleCancel = useCallback(() => {
+    if (isDirty ?? dirtyRef.current) {
+      setDiscardDialogOpen(true)
+      return
+    }
+    performCancel()
+  }, [isDirty, performCancel])
 
   // Expose the cancel flow so the parent's toolbar toggle can discard changes
   useEffect(() => {
     if (!registerCancelHandler) return
-    registerCancelHandler(handleCancel)
+    registerCancelHandler(async () => handleCancel())
     return () => registerCancelHandler(null)
   }, [registerCancelHandler, handleCancel])
 
@@ -1877,6 +1857,22 @@ export default function CanvasOverlay({
           <Button onClick={() => setLinkDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={handleLinkConfirm} disabled={!linkUrl}>
             Add Link
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={discardDialogOpen}
+        onClose={() => setDiscardDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Discard annotation changes?</DialogTitle>
+        <DialogContent>Your unsaved annotation changes will be lost.</DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDiscardDialogOpen(false)}>Keep Editing</Button>
+          <Button color="error" onClick={performCancel}>
+            Discard Changes
           </Button>
         </DialogActions>
       </Dialog>
