@@ -262,6 +262,21 @@ describe('EditImageModal – form fields and save', () => {
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ note: 'A sample note' }))
   })
 
+  it('sends an empty note when an existing note is cleared', async () => {
+    const user = userEvent.setup()
+    const { onSave } = renderModal({
+      image: {
+        ...baseImage,
+        note: 'Existing note',
+      },
+    })
+
+    await user.clear(screen.getByLabelText('Note'))
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ note: '' }))
+  })
+
   it('includes measurement_scale and measurement_unit in metadata_extra', async () => {
     const user = userEvent.setup()
     const { onSave } = renderModal()

@@ -188,7 +188,9 @@ function EditImageForm({
       name: trimmedName,
       category_id: categoryId,
       copyright: copyright.trim() || undefined,
-      note: note.trim() || undefined,
+      // Keep an explicit empty string so the API can clear an existing note.
+      // Omitting the field would preserve the stored value on PATCH.
+      note: note.trim(),
       active,
     }
 
