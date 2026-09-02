@@ -29,6 +29,7 @@ Child `JobItem.status` values:
 queued
 running
 completed
+skipped
 failed
 cancelled
 ```
@@ -44,9 +45,9 @@ multi-resource maintenance task. A `JobItem` represents one independently
 processable unit inside that operation.
 
 Each supervisor stores aggregate counts (`total_count`, `completed_count`,
-`failed_count`, `cancelled_count`) plus a coarse `progress` percentage. Each
-item stores its own `attempts`, `progress`, timestamps, optional `resource_type`
-/ `resource_id`, and summarized error details.
+`skipped_count`, `failed_count`, `cancelled_count`) plus a coarse `progress`
+percentage. Each item stores its own `attempts`, `progress`, timestamps,
+optional `resource_type` / `resource_id`, and summarized error details.
 
 Workers should update persisted state as execution proceeds:
 
@@ -56,6 +57,12 @@ Workers should update persisted state as execution proceeds:
 4. update item status and aggregate counts;
 5. stop scheduling when cancellation is requested;
 6. finish as `completed`, `completed_with_errors`, `failed`, or `cancelled`.
+
+For child execution, a `running` item has a per-attempt claim token, heartbeat,
+lease expiry, and optional arq job ID. Only the current claim token may extend
+the lease or finalize the item. An expired lease may be returned to `queued` by
+reconciliation. The arq ID is diagnostic metadata only; it is never the
+authoritative completion record.
 
 ## Execution boundary
 

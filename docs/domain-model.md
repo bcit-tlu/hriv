@@ -102,7 +102,8 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   an execution scheduler.
 - **Key fields:** `job_type`; `status` (`queued` / `running` / `completed` /
   `completed_with_errors` / `failed` / `cancelling` / `cancelled`); `progress`;
-  `total_count`; `completed_count`; `failed_count`; `cancelled_count`;
+  `total_count`; `completed_count`; `skipped_count`; `failed_count`;
+  `cancelled_count`;
   `error_message`; `metadata_` (JSONB, DB column `metadata`); `requested_by`
   (FK to User, `SET NULL`); `started_at`; `completed_at`.
 - **Relationships:** `requester`; `items` (one-to-many `JobItem`, cascade
@@ -118,9 +119,10 @@ the schema** — change the model _and_ generate a migration in the same PR (see
 - **Purpose:** durable child-item state for one independently processable unit
   inside a supervisor `Job`.
 - **Key fields:** `job_id` (FK to Job, `CASCADE`); `resource_type`;
-  `resource_id`; `status` (`queued` / `running` / `completed` / `failed` /
-  `cancelled`); `attempts`; `progress`; `error_message`; `metadata_` (JSONB, DB
-  column `metadata`); `started_at`; `completed_at`.
+  `resource_id`; `status` (`queued` / `running` / `completed` / `skipped` /
+  `failed` / `cancelled`); `attempts`; `progress`; `error_message`;
+  `claim_token`; `heartbeat_at`; `lease_expires_at`; optional `arq_job_id`;
+  `metadata_` (JSONB, DB column `metadata`); `started_at`; `completed_at`.
 - **Relationships:** `job`.
 
 ### Announcement
