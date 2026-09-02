@@ -534,7 +534,7 @@ export default function App() {
     page: string
     catIds: number[]
     imageId: number | null
-    historyIndex: number
+    historyIndex?: number
   } | null>(null)
   const pendingNavigationRef = useRef<(() => void) | null>(null)
   const [discardNavigationOpen, setDiscardNavigationOpen] = useState(false)
@@ -559,7 +559,7 @@ export default function App() {
       popPage: string,
       catIds: number[],
       imageId: number | null,
-      traversal?: { historyIndex: number },
+      traversal?: { historyIndex?: number },
     ) => {
       if (canvasDraftDirtyRef.current && traversal) {
         pendingPopStateRef.current = {

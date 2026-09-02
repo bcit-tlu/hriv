@@ -1263,7 +1263,7 @@ describe('CanvasOverlay', () => {
       const saveIdx = calls.findIndex((c) => c.method === 'save')
       const translateIdx = calls.findIndex((c) => c.method === 'translate')
       const rotateIdx = calls.findIndex((c) => c.method === 'rotate')
-      const restoreIdx = calls.findIndex((c) => c.method === 'restore')
+      const restoreIdx = calls.findLastIndex((c) => c.method === 'restore')
 
       expect(saveIdx).toBeGreaterThanOrEqual(0)
       expect(translateIdx).toBeGreaterThan(saveIdx)
@@ -1302,7 +1302,7 @@ describe('CanvasOverlay', () => {
       const translateIdx = calls.findIndex((c) => c.method === 'translate')
       const rotateIdx = calls.findIndex((c) => c.method === 'rotate')
       const ellipseIdx = calls.findIndex((c) => c.method === 'ellipse')
-      const restoreIdx = calls.findIndex((c) => c.method === 'restore')
+      const restoreIdx = calls.findLastIndex((c) => c.method === 'restore')
 
       expect(saveIdx).toBeGreaterThanOrEqual(0)
       expect(translateIdx).toBeGreaterThan(saveIdx)
@@ -1354,7 +1354,7 @@ describe('CanvasOverlay', () => {
       const translateIdx = calls.findIndex((c) => c.method === 'translate')
       const rotateIdx = calls.findIndex((c) => c.method === 'rotate')
       const fillTextIdx = calls.findIndex((c) => c.method === 'fillText')
-      const restoreIdx = calls.findIndex((c) => c.method === 'restore')
+      const restoreIdx = calls.findLastIndex((c) => c.method === 'restore')
 
       expect(saveIdx).toBeGreaterThanOrEqual(0)
       expect(translateIdx).toBeGreaterThan(saveIdx)

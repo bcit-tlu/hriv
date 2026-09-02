@@ -6,8 +6,8 @@ import type { ImageItem } from './types'
 /** Dependencies injected by the host component. */
 export interface UseCanvasAnnotationsDeps {
   selectedImage: ImageItem | null
-  loadCategories: () => Promise<unknown>
-  loadUncategorizedImages: (opts?: { signal?: AbortSignal }) => void
+  loadCategories: () => Promise<boolean>
+  loadUncategorizedImages: (opts?: { signal?: AbortSignal }) => Promise<boolean>
   setErrorSnack: React.Dispatch<React.SetStateAction<string | null>>
 }
 
@@ -40,6 +40,7 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
   const draftAnnotationsRef = useRef<CanvasAnnotation[]>(initialAnnotations)
   const selectedImageIdRef = useRef<number | null>(selectedImage?.id ?? null)
   const selectedImageVersionRef = useRef<number | null>(selectedImage?.version ?? null)
+  const draftRevisionRef = useRef(0)
   const savingRef = useRef(false)
 
   const [localCanvasAnnotations, setLocalCanvasAnnotations] = useState<CanvasAnnotation[] | null>(
@@ -87,6 +88,7 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
   }, [canvasDraftDirty, selectedImage])
 
   const handleCanvasAnnotationsChange = useCallback((annotations: CanvasAnnotation[]) => {
+    draftRevisionRef.current += 1
     draftAnnotationsRef.current = annotations
     setLocalCanvasAnnotations(annotations)
     setCanvasDraftDirty(!annotationsEqual(annotations, entrySnapshotRef.current))
@@ -97,6 +99,7 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
       if (!selectedImage || savingRef.current) return false
 
       const targetImageId = selectedImage.id
+      const savedRevision = draftRevisionRef.current
       savingRef.current = true
       setCanvasSaving(true)
       try {
@@ -110,11 +113,15 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
         selectedImageVersionRef.current = updated.version
         latestMetadataRef.current = updated.metadata_extra ?? {}
         entrySnapshotRef.current = annotations
-        draftAnnotationsRef.current = annotations
-        setLocalCanvasAnnotations(annotations)
-        setCanvasDraftDirty(false)
-        await loadCategories()
-        loadUncategorizedImages()
+        if (draftRevisionRef.current === savedRevision) {
+          draftAnnotationsRef.current = annotations
+          setLocalCanvasAnnotations(annotations)
+          setCanvasDraftDirty(false)
+        } else {
+          setCanvasDraftDirty(!annotationsEqual(draftAnnotationsRef.current, annotations))
+        }
+        void loadCategories()
+        void loadUncategorizedImages()
         return true
       } catch (err) {
         console.error('Failed to save canvas annotations', err)

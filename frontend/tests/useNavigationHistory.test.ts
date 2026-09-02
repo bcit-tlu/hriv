@@ -149,6 +149,28 @@ describe('useNavigationHistory', () => {
       goSpy.mockRestore()
     })
 
+    it('guards and replays a legacy app-owned Back entry without historyIndex', () => {
+      window.history.replaceState(buildNavHistoryState('browse', [], null, 3), '', '/')
+      const goSpy = vi.spyOn(window.history, 'go').mockImplementation(() => {})
+      const onPopState = vi.fn(() => false)
+      const { result } = renderHook(() => useNavigationHistory(onPopState))
+      const current = buildNavHistoryState('browse', [], null, 3)
+      const legacy = { _hriv: true, page: 'browse', catIds: [1], imageId: null }
+
+      act(() => window.dispatchEvent(new PopStateEvent('popstate', { state: legacy })))
+      expect(onPopState).toHaveBeenCalledWith('browse', [1], null, { fromIndex: 3 })
+      expect(goSpy).toHaveBeenCalledWith(1)
+
+      act(() => window.dispatchEvent(new PopStateEvent('popstate', { state: current })))
+      expect(onPopState).toHaveBeenCalledOnce()
+
+      act(() => result.current.replayPopState())
+      expect(goSpy).toHaveBeenLastCalledWith(-1)
+      act(() => window.dispatchEvent(new PopStateEvent('popstate', { state: legacy })))
+      expect(onPopState).toHaveBeenCalledTimes(2)
+      goSpy.mockRestore()
+    })
+
     it('calls onPopState with decoded state on popstate event', () => {
       const onPopState = vi.fn()
       renderHook(() => useNavigationHistory(onPopState))
@@ -160,10 +182,15 @@ describe('useNavigationHistory', () => {
         catIds: [1, 2],
         imageId: 99,
       }
-      const event = new PopStateEvent('popstate', { state: navState })
+      const event = new PopStateEvent('popstate', {
+        state: { ...navState, historyIndex: 4 },
+      })
       window.dispatchEvent(event)
 
-      expect(onPopState).toHaveBeenCalledWith('manage', [1, 2], 99)
+      expect(onPopState).toHaveBeenCalledWith('manage', [1, 2], 99, {
+        fromIndex: 3,
+        toIndex: 4,
+      })
     })
 
     it('defaults to browse root when popstate has no recognized state', () => {
@@ -234,12 +261,15 @@ describe('useNavigationHistory', () => {
       rerender({ cb: second })
 
       const event = new PopStateEvent('popstate', {
-        state: { _hriv: true, page: 'admin', catIds: [], imageId: null },
+        state: { _hriv: true, page: 'admin', catIds: [], imageId: null, historyIndex: 4 },
       })
       window.dispatchEvent(event)
 
       expect(first).not.toHaveBeenCalled()
-      expect(second).toHaveBeenCalledWith('admin', [], null)
+      expect(second).toHaveBeenCalledWith('admin', [], null, {
+        fromIndex: 3,
+        toIndex: 4,
+      })
     })
   })
 })

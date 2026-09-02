@@ -39,7 +39,7 @@ export function buildNavHistoryState(
 
 export interface NavigationTraversal {
   fromIndex: number
-  toIndex: number
+  toIndex?: number
 }
 
 /**
@@ -58,6 +58,7 @@ export function useNavigationHistory(
   const currentIndexRef = useRef(historyIndexOf(window.history.state) ?? 0)
   const restoringIndexRef = useRef<number | null>(null)
   const replayingIndexRef = useRef<number | null>(null)
+  const replayingLegacyRef = useRef(false)
   useEffect(() => {
     callbackRef.current = onPopState
   })
@@ -77,12 +78,21 @@ export function useNavigationHistory(
       const catIds = state?.catIds ?? []
       const imageId = state?.imageId ?? null
       const fromIndex = currentIndexRef.current
-      const traversal = targetIndex === undefined ? undefined : { fromIndex, toIndex: targetIndex }
+      const traversal =
+        targetIndex === undefined
+          ? state
+            ? { fromIndex }
+            : undefined
+          : { fromIndex, toIndex: targetIndex }
 
-      if (targetIndex === replayingIndexRef.current) {
-        currentIndexRef.current = targetIndex
+      if (
+        targetIndex === replayingIndexRef.current ||
+        (targetIndex === undefined && replayingLegacyRef.current)
+      ) {
+        if (targetIndex !== undefined) currentIndexRef.current = targetIndex
         replayingIndexRef.current = null
-        callbackRef.current(page, catIds, imageId, traversal)
+        replayingLegacyRef.current = false
+        callbackRef.current(page, catIds, imageId, traversal!)
         return
       }
 
@@ -92,6 +102,11 @@ export function useNavigationHistory(
       if (accepted === false && targetIndex !== undefined && targetIndex !== fromIndex) {
         restoringIndexRef.current = fromIndex
         window.history.go(fromIndex - targetIndex)
+        return
+      }
+      if (accepted === false && traversal && targetIndex === undefined) {
+        restoringIndexRef.current = fromIndex
+        window.history.go(1)
         return
       }
 
@@ -125,8 +140,13 @@ export function useNavigationHistory(
     [],
   )
 
-  const replayPopState = useCallback((historyIndex: number) => {
+  const replayPopState = useCallback((historyIndex?: number) => {
     const fromIndex = currentIndexRef.current
+    if (historyIndex === undefined) {
+      replayingLegacyRef.current = true
+      window.history.go(-1)
+      return
+    }
     if (historyIndex === fromIndex) return
     replayingIndexRef.current = historyIndex
     window.history.go(historyIndex - fromIndex)

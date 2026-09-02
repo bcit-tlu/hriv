@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { renderHook, act } from '@testing-library/react'
+import { renderHook, act, waitFor } from '@testing-library/react'
 import { useCanvasAnnotations } from '../src/useCanvasAnnotations'
 import type { UseCanvasAnnotationsDeps } from '../src/useCanvasAnnotations'
 import type { CanvasAnnotation } from '../src/components/CanvasOverlay'
@@ -16,8 +16,8 @@ const mockUpdateImage = vi.mocked(api.updateImage)
 function makeDeps(overrides: Partial<UseCanvasAnnotationsDeps> = {}): UseCanvasAnnotationsDeps {
   return {
     selectedImage: makeImage({ id: 1 }),
-    loadCategories: vi.fn().mockResolvedValue(undefined),
-    loadUncategorizedImages: vi.fn(),
+    loadCategories: vi.fn().mockResolvedValue(true),
+    loadUncategorizedImages: vi.fn().mockResolvedValue(true),
     setErrorSnack: vi.fn(),
     ...overrides,
   }
@@ -168,5 +168,28 @@ describe('useCanvasAnnotations', () => {
     expect(result.current.latestVersionRef.current).toBe(7)
     expect(result.current.localCanvasAnnotations).toBeNull()
     expect(result.current.canvasDraftDirty).toBe(false)
+  })
+
+  it('preserves edits made after the saved snapshot was collected', async () => {
+    mockUpdateImage.mockResolvedValue(updatedImage(2, { canvas_annotations: [annotation] }))
+    const { result } = renderHook(() => useCanvasAnnotations(makeDeps()))
+    const saved = [annotation]
+    const newer = [{ ...annotation, text: 'Edited while saving' }]
+
+    act(() => result.current.handleCanvasAnnotationsChange(saved))
+    let savePromise: Promise<boolean>
+    act(() => {
+      savePromise = result.current.saveCanvasAnnotations(saved)
+    })
+    expect(mockUpdateImage).toHaveBeenCalledOnce()
+    act(() => result.current.handleCanvasAnnotationsChange(newer))
+
+    await act(async () => {
+      await savePromise!
+    })
+    await waitFor(() => {
+      expect(result.current.localCanvasAnnotations).toEqual(newer)
+      expect(result.current.canvasDraftDirty).toBe(true)
+    })
   })
 })

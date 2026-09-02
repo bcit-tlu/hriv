@@ -285,6 +285,7 @@ export default function CanvasOverlay({
   const [linkText, setLinkText] = useState('')
   const [linkUrl, setLinkUrl] = useState('')
   const [flushing, setFlushing] = useState(false)
+  const savingRef = useRef(false)
   const [discardDialogOpen, setDiscardDialogOpen] = useState(false)
   const annotationsRef = useRef(annotations)
   const isDrawingRef = useRef(false)
@@ -376,16 +377,15 @@ export default function CanvasOverlay({
       const pw = bottomRight.x - topLeft.x
       const ph = bottomRight.y - topLeft.y
 
+      ctx.save()
+      ctx.translate(topLeft.x, topLeft.y)
+      if (ann.rotation) ctx.rotate((ann.rotation * Math.PI) / 180)
       ctx.setLineDash([5, 3])
       ctx.strokeStyle = '#455a64'
       ctx.lineWidth = 1.5
-      ctx.strokeRect(
-        Math.min(topLeft.x, bottomRight.x) - 3,
-        Math.min(topLeft.y, bottomRight.y) - 3,
-        Math.abs(pw) + 6,
-        Math.abs(ph) + 6,
-      )
+      ctx.strokeRect(-3, -3, Math.abs(pw) + 6, Math.abs(ph) + 6)
       ctx.setLineDash([])
+      ctx.restore()
 
       if (ann.type === 'rect') {
         const sw = (ann.strokeWidth ?? 2) * viewer.viewport.getZoom()
@@ -852,6 +852,7 @@ export default function CanvasOverlay({
     fc.renderAll()
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (savingRef.current) return
       if (e.key === 'Escape') {
         console.debug(LOG_PREFIX, 'Escape pressed')
         if (isDrawingRef.current && drawObjRef.current) {
@@ -1239,11 +1240,13 @@ export default function CanvasOverlay({
     const collected = collectAnnotations()
     console.debug(LOG_PREFIX, 'handleDone — saving', collected.length, 'annotations')
     if (onSaveAnnotations) {
+      savingRef.current = true
       setFlushing(true)
       try {
         const saved = await onSaveAnnotations(collected)
         if (!saved) return
       } finally {
+        savingRef.current = false
         setFlushing(false)
       }
     } else {
@@ -1386,6 +1389,7 @@ export default function CanvasOverlay({
             width: '100%',
             height: '100%',
             zIndex: 15,
+            pointerEvents: flushing ? 'none' : 'auto',
           }}
         >
           <canvas ref={fabricElRef} style={{ display: 'block' }} />
@@ -1408,6 +1412,7 @@ export default function CanvasOverlay({
             borderRadius: 1,
             px: 1,
             py: 0.5,
+            pointerEvents: flushing ? 'none' : 'auto',
           }}
         >
           {/* Rectangle with fill-mode submenu */}
