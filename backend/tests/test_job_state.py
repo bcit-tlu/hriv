@@ -167,6 +167,7 @@ async def test_finalize_clears_lease_and_marks_skipped() -> None:
     assert values["claim_token"] is None
     assert values["heartbeat_at"] is None
     assert values["lease_expires_at"] is None
+    assert "arq_job_id" not in values
 
 
 async def test_finalize_returns_false_for_stale_claim() -> None:

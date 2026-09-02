@@ -173,7 +173,6 @@ async def finalize_job_item(
         "claim_token": None,
         "heartbeat_at": None,
         "lease_expires_at": None,
-        "arq_job_id": None,
         "error_message": error_message,
     }
     if status in {"completed", "skipped"}:
