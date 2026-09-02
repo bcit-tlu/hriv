@@ -14,6 +14,7 @@ Create Date: 2026-09-08
 
 from alembic import op
 import sqlalchemy as sa
+import os
 
 revision = "0024_bulk_import_single_job"
 down_revision = "0023_add_jobs"
@@ -24,9 +25,21 @@ depends_on = None
 # app/task_constants.py and app/routers/bulk_import.py: the same
 # conservative, liveness-independent threshold reconcile_stale_bulk_import_jobs
 # already trusts at every app startup to declare a row abandoned on its own.
-# Migrations intentionally don't import app modules, so the value is
-# duplicated here; keep it in sync if that constant ever changes.
-_STALE_BULK_IMPORT_SECONDS = 7200
+# Migrations intentionally don't import app modules, so the *default* value
+# is duplicated here (keep it in sync if that constant ever changes), but an
+# operator-configured BULK_IMPORT_STALE_SECONDS override -- the same
+# environment variable the router reads -- takes precedence, so a shorter
+# deployed policy doesn't leave the migration cleaning up on a longer,
+# stale default while CREATE UNIQUE INDEX aborts on rows the app itself
+# would already consider abandoned.
+_STALE_BULK_IMPORT_SECONDS = int(
+    os.environ.get("BULK_IMPORT_STALE_SECONDS", "7200")
+)
+
+_ABANDONMENT_NOTE = (
+    "Superseded by a new bulk import after its coordinator was found to be "
+    "inactive."
+)
 
 
 def upgrade() -> None:
@@ -55,6 +68,14 @@ def upgrade() -> None:
     # aborting the migration rather than silently discarding a live import.
     # That failure is the correct, safe outcome: it surfaces the anomaly for
     # an operator to resolve instead of guessing.
+    #
+    # The finalization values mirror ``_finalize_abandoned_bulk_import_jobs``
+    # in app/routers/bulk_import.py exactly: a row with any completed images
+    # is "completed" (partial success) rather than "failed", failed_count is
+    # reconciled to account for every remaining item, and the abandonment
+    # note is only appended to errors when per-file accounting doesn't
+    # already cover every uncompleted item (avoiding a redundant/misleading
+    # note on a coordinator that had already recorded its own failures).
     op.execute(
         sa.text(
             """
@@ -64,12 +85,30 @@ def upgrade() -> None:
                 WHERE status IN ('pending', 'processing')
             )
             UPDATE bulk_import_jobs
-            SET status = 'failed', updated_at = now()
+            SET
+                status = CASE
+                    WHEN completed_count > 0 THEN 'completed'
+                    ELSE 'failed'
+                END,
+                failed_count = total_count - completed_count,
+                errors = CASE
+                    WHEN failed_count = total_count - completed_count
+                        THEN errors
+                    ELSE
+                        COALESCE(errors, '[]'::jsonb)
+                        || jsonb_build_array(
+                            jsonb_build_object('error', :abandonment_note)
+                        )
+                END,
+                updated_at = now()
             WHERE status IN ('pending', 'processing')
               AND (SELECT n FROM active_count) > 1
               AND updated_at < now() - make_interval(secs => :stale_seconds)
             """
-        ).bindparams(stale_seconds=_STALE_BULK_IMPORT_SECONDS)
+        ).bindparams(
+            stale_seconds=_STALE_BULK_IMPORT_SECONDS,
+            abandonment_note=_ABANDONMENT_NOTE,
+        )
     )
     op.create_index(
         "idx_bulk_import_jobs_single_active",
