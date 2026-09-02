@@ -340,6 +340,16 @@ assert_contains "$frontend_default_manifest" "location = /api/metrics {" \
   "frontend nginx should intercept the backend-only Prometheus metrics endpoint"
 assert_contains "$frontend_default_manifest" "return 404;" \
   "frontend nginx should not expose Prometheus metrics through the public ingress"
+assert_contains "$frontend_default_manifest" "location = /api/health/ready {" \
+  "frontend nginx should intercept the backend readiness probe endpoint"
+frontend_health_ready_location="$(grep -F -A2 "location = /api/health/ready {" <<<"$frontend_default_manifest")"
+assert_contains "$frontend_health_ready_location" "return 404;" \
+  "frontend nginx should block the backend readiness probe endpoint"
+assert_contains "$frontend_default_manifest" "location = /api/health/storage {" \
+  "frontend nginx should intercept the backend storage probe endpoint"
+frontend_health_storage_location="$(grep -F -A2 "location = /api/health/storage {" <<<"$frontend_default_manifest")"
+assert_contains "$frontend_health_storage_location" "return 404;" \
+  "frontend nginx should block the backend storage probe endpoint"
 
 frontend_override_manifest="$(helm template test charts/frontend \
   --set scheduling.zoneAntiAffinity.enabled=true \

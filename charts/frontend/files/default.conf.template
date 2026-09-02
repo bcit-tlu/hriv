@@ -133,6 +133,17 @@ server {
         return 404;
     }
 
+    # Kubernetes probes call these backend paths directly from the pod.
+    # Do not expose their DB and storage checks through the public frontend
+    # ingress, where an unauthenticated client could amplify probe work.
+    location = /api/health/ready {
+        return 404;
+    }
+
+    location = /api/health/storage {
+        return 404;
+    }
+
     # Default API proxy — sane body-size cap for JSON/metadata routes.
     location /api/ {
         # Re-resolve the backend hostname on every request so that nginx

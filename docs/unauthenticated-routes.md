@@ -58,8 +58,6 @@ Audited at backend 0.48.0 / frontend 0.50.0 (2026-08-31).
 | `GET /api/announcement/`                       | Login-screen announcement banner                                                             | Public **by design** — `LoginScreen.tsx` renders it pre-auth. Write path (`PUT`) is admin/instructor.                                                                                                                                                                                                   |
 | `GET /api/health`                              | Liveness probe                                                                               | Static response                                                                                                                                                                                                                                                                                         |
 | `GET /api/health/queue`                        | Queue probe                                                                                  | Returns only `ok`/`degraded`; detail lives on `/api/metrics` (see #1077)                                                                                                                                                                                                                                |
-| `GET /api/health/ready`                        | Readiness probe                                                                              | ⚠ Executes a DB query + storage check per call; publicly reachable through `/api/` proxy — cheap amplification. Tracked in a follow-up issue (see below).                                                                                                                                               |
-| `GET /api/health/storage`                      | Storage probe                                                                                | Same exposure consideration as above                                                                                                                                                                                                                                                                    |
 | `GET /docs`, `GET /redoc`, `GET /openapi.json` | FastAPI auto-generated API docs/schema (defaults not disabled in `main.py`)                  | Unreachable through the frontend nginx (unprefixed paths fall into the SPA location), but exposed on any direct backend access (dev compose `:8000`, in-cluster Service). Schema reveals route surface only, no data; acceptable once the backend Service is edge/NetworkPolicy-restricted (see below). |
 
 ### FastAPI — app-credential
@@ -72,9 +70,11 @@ Audited at backend 0.48.0 / frontend 0.50.0 (2026-08-31).
 
 ### FastAPI — cluster-internal (edge-restricted)
 
-| Route              | Current enforcement                                                                                                       | Status                                                                                                                                                                                                                                                                                                                                                                                        |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/metrics` | Frontend nginx returns 404 (`default.conf.template`); scraped in-cluster via ServiceMonitor against the ClusterIP Service | ⚠ **Partial.** The app itself is unauthenticated and there is no NetworkPolicy restricting the backend Service, so any in-cluster or port-forwarded client (and dev compose on `:8000`) reads queue depth, worker heartbeat age, and execution mode. Enforcement fix: opt-in backend NetworkPolicy in PR [#1160](https://github.com/bcit-tlu/hriv/pull/1160) (enable per deployment overlay). |
+| Route                     | Current enforcement                                                                                                       | Status                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/metrics`        | Frontend nginx returns 404 (`default.conf.template`); scraped in-cluster via ServiceMonitor against the ClusterIP Service | ⚠ **Partial.** The app itself is unauthenticated and there is no NetworkPolicy restricting the backend Service, so any in-cluster or port-forwarded client (and dev compose on `:8000`) reads queue depth, worker heartbeat age, and execution mode. Enforcement fix: opt-in backend NetworkPolicy in PR [#1160](https://github.com/bcit-tlu/hriv/pull/1160) (enable per deployment overlay). |
+| `GET /api/health/ready`   | Frontend nginx returns 404 (`default.conf.template`); kubelet probes the backend pod directly                             | The readiness handler remains unauthenticated for kubelet access, but public frontend-ingress requests are blocked before they reach the DB and storage checks.                                                                                                                                                                                                                               |
+| `GET /api/health/storage` | Frontend nginx returns 404 (`default.conf.template`); kubelet probes the backend pod directly                             | The storage liveness handler remains unauthenticated for kubelet access, but public frontend-ingress requests are blocked before they reach the storage check.                                                                                                                                                                                                                                |
 
 ### FastAPI — mismatches (violate rule 3)
 
@@ -92,26 +92,29 @@ images, issues, programs, telemetry, tile-order, upload, users) are
 `charts/frontend/files/default.conf.template` (also baked into the image by
 `frontend/Dockerfile`):
 
-| Location                            | Behaviour                                                                                                                                                                                                                | Classification                                        |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------- |
-| `/assets/`, `/` (SPA), `= /version` | Static app shell. The SPA root also serves everything in `frontend/public/` verbatim (`THIRD-PARTY-LICENSES.txt`, logos, splash images) — treat that directory as world-readable and never place non-public files in it. | Intentionally public                                  |
-| `/api/`                             | Proxy to backend                                                                                                                                                                                                         | Auth enforced by the app (layer: app-authz)           |
-| upload regex location               | Proxy to backend with larger body cap                                                                                                                                                                                    | app-authz                                             |
-| `/api/tiles/`                       | Proxy to the tiles sidecar when enabled, otherwise backend fallback; query string is preserved so the image-scoped `tile_token` reaches the validator; upstream sends `Cache-Control: private, max-age=2592000`          | app-credential (#1159/#1163)                          |
-| `= /api/metrics`                    | `return 404`                                                                                                                                                                                                             | Edge restriction for the cluster-internal route above |
+| Location                            | Behaviour                                                                                                                                                                                                                | Classification                                            |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------- |
+| `/assets/`, `/` (SPA), `= /version` | Static app shell. The SPA root also serves everything in `frontend/public/` verbatim (`THIRD-PARTY-LICENSES.txt`, logos, splash images) — treat that directory as world-readable and never place non-public files in it. | Intentionally public                                      |
+| `/api/`                             | Proxy to backend                                                                                                                                                                                                         | Auth enforced by the app (layer: app-authz)               |
+| upload regex location               | Proxy to backend with larger body cap                                                                                                                                                                                    | app-authz                                                 |
+| `/api/tiles/`                       | Proxy to the tiles sidecar when enabled, otherwise backend fallback; query string is preserved so the image-scoped `tile_token` reaches the validator; upstream sends `Cache-Control: private, max-age=2592000`          | app-credential (#1159/#1163)                              |
+| `= /api/metrics`                    | `return 404`                                                                                                                                                                                                             | Edge restriction for the cluster-internal route above     |
+| `= /api/health/ready`               | `return 404`                                                                                                                                                                                                             | Edge restriction; kubelet probes the backend pod directly |
+| `= /api/health/storage`             | `return 404`                                                                                                                                                                                                             | Edge restriction; kubelet probes the backend pod directly |
 
 ### Kubernetes / ingress
 
 - `charts/frontend/templates/ingress.yaml` annotations are values-driven; the
-  chart itself imposes **no** allowlist. Health/status routes are therefore
-  publicly reachable through the ingress — accepted for probes per the table
-  above, with the `/api/health/ready` cost caveat.
+  chart itself imposes no path allowlist. The frontend nginx configuration
+  explicitly blocks `/api/health/ready` and `/api/health/storage` before the
+  generic API proxy. Kubelet probes continue to call those paths directly on
+  the backend pod.
 - PR [#1160](https://github.com/bcit-tlu/hriv/pull/1160) adds an opt-in
   NetworkPolicy to `charts/backend` restricting ingress to the frontend proxy
   and the metrics-scraper — required for rule 4 to hold for `/api/metrics`.
-  Until that PR merges and the policy is enabled in the deployment overlay,
-  no NetworkPolicy restricts direct access to the backend Service (the
-  frontend chart ships one for itself only).
+  The policy is disabled by default and must be enabled in the deployment
+  overlay; when disabled, no NetworkPolicy restricts direct access to the
+  backend Service (the frontend chart ships one for itself only).
 
 ### Development-only exposure (docker-compose)
 
@@ -133,7 +136,6 @@ it; hardening the default is tracked in a follow-up issue (see below).
 | Gap                                                                    | Owner                                                                                            |
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | `/api/metrics` cluster-internal not enforced beyond frontend nginx 404 | PR [#1160](https://github.com/bcit-tlu/hriv/pull/1160) (chart NetworkPolicy; enable in overlays) |
-| `/api/health/ready` public DB/storage probe cost                       | #1152                                                                                            |
 | Admin task-download token in query string                              | #1153                                                                                            |
 | CORS wildcard + credentials default                                    | #1154                                                                                            |
 
