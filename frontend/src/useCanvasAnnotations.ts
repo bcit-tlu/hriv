@@ -67,7 +67,7 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
   const canvasSaveInFlightImageIdRef = useRef<number | null>(null)
   // A rejected updateImage request has an indeterminate server outcome: the
   // PATCH may have committed even though its response did not reach the client.
-  const uncertainCanvasSaveImageIdRef = useRef<number | null>(null)
+  const uncertainCanvasSaveImageIdsRef = useRef(new Set<number>())
   // Stable ref for the save function so the callback can flush queued saves
   // without a self-reference (which the React Compiler cannot memoize).
   const saveCanvasAnnotationsRef = useRef<
@@ -206,7 +206,7 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
         return { success: true, persisted: true, updated }
       } catch (err) {
         console.error('Failed to save canvas annotations', err)
-        if (!persisted) uncertainCanvasSaveImageIdRef.current = targetImageId
+        if (!persisted) uncertainCanvasSaveImageIdsRef.current.add(targetImageId)
         setErrorSnack(userMessage(err, 'Failed to save annotations.'))
         return { success: false, persisted, updated }
       } finally {
@@ -347,7 +347,7 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
           return rollback.success
         }
 
-        if (uncertainCanvasSaveImageIdRef.current === targetImage.id) {
+        if (uncertainCanvasSaveImageIdsRef.current.has(targetImage.id)) {
           // A rejected PATCH may have committed server-side. Re-read the image
           // before trusting lastSavedCanvasAnnotationsRef or claiming success.
           let authoritativeImage
@@ -363,6 +363,17 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
           )
             ? (authoritativeImage.metadata_extra.canvas_annotations as CanvasAnnotation[])
             : []
+          // Synchronize only while this image is still selected. The fetch can
+          // finish after navigation, and its older image data must not replace
+          // the version or metadata currently tracked for another image.
+          if (
+            prevSelectedImageIdRef.current === targetImage.id &&
+            authoritativeImage.version >= latestVersionRef.current
+          ) {
+            latestVersionRef.current = authoritativeImage.version
+            latestMetadataRef.current = authoritativeImage.metadata_extra ?? {}
+            lastSavedCanvasAnnotationsRef.current = authoritativeAnnotations
+          }
           if (JSON.stringify(authoritativeAnnotations) !== JSON.stringify(snapshot)) {
             const rollback = await saveCanvasAnnotations(
               snapshot,
@@ -371,7 +382,7 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
             )
             if (!rollback.success) return false
           }
-          uncertainCanvasSaveImageIdRef.current = null
+          uncertainCanvasSaveImageIdsRef.current.delete(targetImage.id)
           return true
         }
 
