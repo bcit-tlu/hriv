@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import type { CanvasAnnotation } from './components/CanvasOverlay'
-import { updateImage, userMessage } from './api'
+import { ApiTransportError, updateImage, userMessage } from './api'
 import type { ImageItem } from './types'
 
 interface CanvasSaveResult {
@@ -75,6 +75,10 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
   // A rejected updateImage request has an indeterminate server outcome: the
   // PATCH may have committed even though its response did not reach the client.
   const uncertainCanvasSaveImageIdsRef = useRef(new Set<number>())
+  // HTTP responses, including 409 conflicts, definitively reject the PATCH.
+  // Keep those edits blocked until the user refreshes and resolves the
+  // conflict, rather than treating their server state as safe to overwrite.
+  const conflictedCanvasSaveImageIdsRef = useRef(new Set<number>())
   // Stable ref for the save function so the callback can flush queued saves
   // without a self-reference (which the React Compiler cannot memoize).
   const saveCanvasAnnotationsRef = useRef<
@@ -303,10 +307,17 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
         }
         await loadCategories()
         loadUncategorizedImages()
+        conflictedCanvasSaveImageIdsRef.current.delete(targetImageId)
         return { success: true, persisted: true, updated }
       } catch (err) {
         console.error('Failed to save canvas annotations', err)
-        if (!persisted) uncertainCanvasSaveImageIdsRef.current.add(targetImageId)
+        if (!persisted) {
+          if (err instanceof ApiTransportError) {
+            uncertainCanvasSaveImageIdsRef.current.add(targetImageId)
+          } else {
+            conflictedCanvasSaveImageIdsRef.current.add(targetImageId)
+          }
+        }
         setErrorSnack(userMessage(err, 'Failed to save annotations.'))
         return { success: false, persisted, updated }
       } finally {
@@ -320,8 +331,13 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
             const queued = targetState.pending
             targetState.pending = null
             void startCanvasSaveRef.current(queued, targetImage)
-          } else {
+          } else if (uncertainCanvasSaveImageIdsRef.current.has(targetImageId)) {
             void reconcileCanvasSave(targetImage)
+          } else {
+            // A definitive HTTP response proves this PATCH did not commit.
+            // Discard trailing autosave work instead of retrying it against a
+            // fetched version, which could overwrite the remote annotations.
+            targetState.pending = null
           }
         } else if (targetState.pending !== null) {
           targetState.pending = null
@@ -349,6 +365,9 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
     ) => {
       if (!targetImage) return saveCanvasAnnotationsRef.current(annotations)
       const targetState = getCanvasSaveState(targetImage)
+      if (conflictedCanvasSaveImageIdsRef.current.has(targetImage.id)) {
+        return Promise.resolve({ success: false, persisted: false })
+      }
       if (uncertainCanvasSaveImageIdsRef.current.has(targetImage.id)) {
         // Preserve the newest local annotations while the authoritative read
         // resolves. This applies to every later save path, including a flush
@@ -491,6 +510,10 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
         }
 
         if (reconciliationPromise) await reconciliationPromise
+
+        if (conflictedCanvasSaveImageIdsRef.current.has(targetImage.id)) {
+          return false
+        }
 
         if (uncertainCanvasSaveImageIdsRef.current.has(targetImage.id)) {
           // A rejected PATCH may have committed server-side. Re-read the image

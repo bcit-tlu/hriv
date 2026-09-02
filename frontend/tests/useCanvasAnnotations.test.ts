@@ -42,6 +42,10 @@ function makeAnnotation(overrides: Partial<CanvasAnnotation> = {}): CanvasAnnota
   }
 }
 
+function responseLostError(): api.ApiTransportError {
+  return new api.ApiTransportError('Network error', { method: 'PATCH', path: '/images/1' })
+}
+
 describe('useCanvasAnnotations', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -363,7 +367,7 @@ describe('useCanvasAnnotations', () => {
         result.current.handleCanvasAnnotationsChange(second)
       })
 
-      rejectFirst(new Error('Response lost after commit'))
+      rejectFirst(responseLostError())
       await act(async () => {
         await Promise.resolve()
         await Promise.resolve()
@@ -406,7 +410,7 @@ describe('useCanvasAnnotations', () => {
       await act(async () => {
         vi.advanceTimersByTime(600)
       })
-      rejectFirst(new Error('Response lost after commit'))
+      rejectFirst(responseLostError())
       await act(async () => {
         await Promise.resolve()
         await Promise.resolve()
@@ -427,6 +431,39 @@ describe('useCanvasAnnotations', () => {
         { metadata_extra_merge: { canvas_annotations: later } },
         2,
       )
+    })
+
+    it('does not retry queued edits after a definitive conflict', async () => {
+      const image = makeImage({ id: 1, version: 1 })
+      const first = [makeAnnotation({ id: 'first' })]
+      const second = [makeAnnotation({ id: 'second' })]
+      let rejectFirst!: (reason?: unknown) => void
+      const firstSave = new Promise<ImageItem>((_, reject) => {
+        rejectFirst = reject
+      })
+      mockUpdateImage.mockReturnValueOnce(firstSave as never)
+      const fetchImage = vi.fn()
+      const { result } = renderHook(() =>
+        useCanvasAnnotations(makeDeps({ selectedImage: image, fetchImage })),
+      )
+
+      act(() => {
+        result.current.handleCanvasAnnotationsChange(first)
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(600)
+      })
+      act(() => {
+        result.current.handleCanvasAnnotationsChange(second)
+      })
+      rejectFirst(new api.ApiError(409, 'This item was modified by another user.'))
+      await act(async () => {
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      expect(fetchImage).not.toHaveBeenCalled()
+      expect(mockUpdateImage).toHaveBeenCalledOnce()
     })
 
     it('discards a debounced edit when navigating to another image', async () => {
@@ -772,7 +809,7 @@ describe('useCanvasAnnotations', () => {
       await act(async () => {
         vi.advanceTimersByTime(600)
       })
-      rejectFirst(new Error('Response lost after commit'))
+      rejectFirst(responseLostError())
       await act(async () => {
         await Promise.resolve()
         await Promise.resolve()
@@ -1010,6 +1047,37 @@ describe('useCanvasAnnotations', () => {
       )
     })
 
+    it('does not overwrite authoritative annotations when cancellation follows a conflict', async () => {
+      const original = [makeAnnotation({ id: 'original' })]
+      const edited = [makeAnnotation({ id: 'edited' })]
+      const image = makeImage({ id: 1, metadataExtra: { canvas_annotations: original } })
+      mockUpdateImage.mockRejectedValueOnce(
+        new api.ApiError(409, 'This item was modified by another user.'),
+      )
+      const fetchImage = vi.fn()
+      const { result } = renderHook(() =>
+        useCanvasAnnotations(makeDeps({ selectedImage: image, fetchImage })),
+      )
+
+      act(() => {
+        result.current.handleCanvasAnnotationsChange(edited)
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(600)
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      let cancelled!: boolean
+      await act(async () => {
+        cancelled = await result.current.cancelCanvasAnnotations(original)
+      })
+
+      expect(cancelled).toBe(false)
+      expect(fetchImage).not.toHaveBeenCalled()
+      expect(mockUpdateImage).toHaveBeenCalledOnce()
+    })
+
     it('reconciles a rejected save before a second cancellation attempt', async () => {
       const original = [makeAnnotation({ id: 'original' })]
       const edited = [makeAnnotation({ id: 'edited' })]
@@ -1038,7 +1106,7 @@ describe('useCanvasAnnotations', () => {
       })
 
       const firstCancellation = result.current.cancelCanvasAnnotations(original)
-      rejectFirst(new Error('Response lost after commit'))
+      rejectFirst(responseLostError())
       let firstCancelled!: boolean
       await act(async () => {
         firstCancelled = await firstCancellation
@@ -1092,7 +1160,7 @@ describe('useCanvasAnnotations', () => {
         vi.advanceTimersByTime(600)
       })
       const firstCancellation = result.current.cancelCanvasAnnotations(original)
-      rejectFirst(new Error('Response lost'))
+      rejectFirst(responseLostError())
       await act(async () => {
         await firstCancellation
       })
@@ -1176,8 +1244,8 @@ describe('useCanvasAnnotations', () => {
         vi.advanceTimersByTime(600)
       })
 
-      rejectImage1(new Error('Response lost for image 1'))
-      rejectImage2(new Error('Response lost for image 2'))
+      rejectImage1(responseLostError())
+      rejectImage2(responseLostError())
       await act(async () => {
         await Promise.resolve()
         await Promise.resolve()
