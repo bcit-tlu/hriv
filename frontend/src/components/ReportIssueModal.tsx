@@ -19,6 +19,7 @@ interface ReportIssueModalProps {
   open: boolean
   onClose: () => void
   page: FrontendPage
+  frontendVersion?: string | null
   onSuccess?: (message: string, trackingUrl?: string | null) => void
   onError?: (message: string) => void
 }
@@ -39,6 +40,7 @@ export default function ReportIssueModal({
   open,
   onClose,
   page,
+  frontendVersion,
   onSuccess,
   onError,
 }: ReportIssueModalProps) {
@@ -105,6 +107,7 @@ export default function ReportIssueModal({
         description: trimmed,
         page_url: window.location.href,
         feedback_type: feedbackType,
+        ...(frontendVersion ? { frontend_version: frontendVersion } : {}),
       })
       emitEvent({
         event: 'feedback.report_issue_submitted',

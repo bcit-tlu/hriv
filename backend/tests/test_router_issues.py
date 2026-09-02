@@ -93,6 +93,7 @@ async def test_report_issue_success() -> None:
         description="Found a bug",
         page_url="http://localhost/page",
         feedback_type="problem_or_issue",
+        frontend_version="0.51.2",
     )
 
     delivery = AsyncMock()
@@ -104,7 +105,8 @@ async def test_report_issue_success() -> None:
 
     with patch("app.routers.issues.get_feedback_delivery", return_value=delivery):
         with (
-            patch("app.routers.issues.get_feedback_app_version", return_value="0.27.1"),
+            patch("app.routers.issues.get_backend_version", return_value="0.27.1"),
+            patch("app.routers.issues.get_backup_version", return_value="0.12.3"),
             patch(
                 "app.routers.issues.get_feedback_submission_timestamp",
                 return_value="2026-07-03T00:00:00Z",
@@ -121,11 +123,81 @@ async def test_report_issue_success() -> None:
     assert submission.page_url == "http://localhost/page"
     assert submission.user_role == "student"
     assert submission.user_id == 8888
-    assert submission.app_version == "0.27.1"
+    assert submission.frontend_version == "0.51.2"
+    assert submission.backend_version == "0.27.1"
+    assert submission.backup_version == "0.12.3"
     assert submission.submitted_at == "2026-07-03T00:00:00Z"
     assert submission.feedback_type == "problem_or_issue"
 
     _user_timestamps.pop(user_id, None)
+
+
+async def test_report_issue_falls_back_to_backend_frontend_version_when_omitted() -> None:
+    user_id = 8885
+    _user_timestamps.pop(user_id, None)
+    user = SimpleNamespace(id=user_id, name="Test User", email="t@example.com", role="student")
+    body = ReportIssueRequest(
+        description="Found a bug",
+        page_url="http://localhost/page",
+        feedback_type="problem_or_issue",
+    )
+
+    delivery = AsyncMock()
+    delivery.submit.return_value = FeedbackDeliveryResult(
+        destination="email",
+        tracking_url=None,
+        external_id=None,
+    )
+
+    with patch("app.routers.issues.get_feedback_delivery", return_value=delivery):
+        with (
+            patch("app.routers.issues.get_frontend_version", return_value="0.51.0"),
+            patch("app.routers.issues.get_backend_version", return_value="0.27.1"),
+            patch("app.routers.issues.get_backup_version", return_value="0.12.3"),
+            patch(
+                "app.routers.issues.get_feedback_submission_timestamp",
+                return_value="2026-07-03T00:00:00Z",
+            ),
+        ):
+            await report_issue(body, user)
+
+    submission = delivery.submit.await_args.args[0]
+    assert submission.frontend_version == "0.51.0"
+    _user_timestamps.pop(user_id, None)
+
+
+def test_report_issue_request_rejects_overlong_frontend_version() -> None:
+    with pytest.raises(Exception):
+        ReportIssueRequest(
+            description="Bug",
+            page_url="http://localhost/page",
+            feedback_type="problem_or_issue",
+            frontend_version="a" * 101,
+        )
+
+
+def test_report_issue_request_rejects_whitespace_frontend_version() -> None:
+    with pytest.raises(Exception):
+        ReportIssueRequest(
+            description="Bug",
+            page_url="http://localhost/page",
+            feedback_type="problem_or_issue",
+            frontend_version="0.51.2\n",
+        )
+
+
+@pytest.mark.parametrize(
+    "version",
+    ["0.51.2", "1.0.0-rc.1", "sha-abc1234", "dev", "unknown", "1.0.0+build.5"],
+)
+def test_report_issue_request_accepts_valid_version_tokens(version: str) -> None:
+    body = ReportIssueRequest(
+        description="Bug",
+        page_url="http://localhost/page",
+        feedback_type="problem_or_issue",
+        frontend_version=version,
+    )
+    assert body.frontend_version == version
 
 
 async def test_report_issue_returns_generic_result() -> None:
@@ -147,7 +219,8 @@ async def test_report_issue_returns_generic_result() -> None:
 
     with patch("app.routers.issues.get_feedback_delivery", return_value=delivery):
         with (
-            patch("app.routers.issues.get_feedback_app_version", return_value="0.27.1"),
+            patch("app.routers.issues.get_backend_version", return_value="0.27.1"),
+            patch("app.routers.issues.get_backup_version", return_value="0.12.3"),
             patch(
                 "app.routers.issues.get_feedback_submission_timestamp",
                 return_value="2026-07-03T00:00:00Z",
@@ -179,7 +252,8 @@ async def test_report_issue_delivery_error() -> None:
 
     with patch("app.routers.issues.get_feedback_delivery", return_value=delivery):
         with (
-            patch("app.routers.issues.get_feedback_app_version", return_value="0.27.1"),
+            patch("app.routers.issues.get_backend_version", return_value="0.27.1"),
+            patch("app.routers.issues.get_backup_version", return_value="0.12.3"),
             patch(
                 "app.routers.issues.get_feedback_submission_timestamp",
                 return_value="2026-07-03T00:00:00Z",

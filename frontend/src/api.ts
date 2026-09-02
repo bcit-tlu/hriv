@@ -1298,6 +1298,7 @@ export interface ReportIssueBody {
   description: string
   page_url: string
   feedback_type: 'problem_or_issue' | 'comment_or_suggestion'
+  frontend_version?: string
 }
 
 export function reportIssue(body: ReportIssueBody): Promise<ReportIssueResponse> {
