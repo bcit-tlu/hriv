@@ -1420,27 +1420,6 @@ async def bulk_import_images(
         )
     )
     processing_rows = {row[0]: row[1] for row in processing_result.all()}
-    registration_cutoff = datetime.now(timezone.utc) - timedelta(
-        seconds=_BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS
-    )
-    # A row younger than the liveness window may belong to a coordinator that
-    # has not registered yet (queued behind other work, or still starting), so
-    # recency stands in for liveness only for that window. Anything older falls
-    # through to the registration check below and is admitted when no
-    # coordinator is alive, so a crash can never block imports for long.
-    recent_coordinator_result = await db.execute(
-        select(func.count())
-        .select_from(BulkImportJob)
-        .where(
-            BulkImportJob.status.in_(("pending", "processing")),
-            BulkImportJob.updated_at >= registration_cutoff,
-        )
-    )
-    if recent_coordinator_result.scalar_one() > 0:
-        raise HTTPException(
-            status_code=409,
-            detail="A bulk import is already in progress",
-        )
     pending_result = await db.execute(
         select(BulkImportJob.id, BulkImportJob.updated_at).where(
             BulkImportJob.status == "pending"
@@ -1449,6 +1428,39 @@ async def bulk_import_images(
     pending_rows = {row[0]: row[1] for row in pending_result.all()}
     coordinator_rows = {**processing_rows, **pending_rows}
     coordinator_ids = set(coordinator_rows)
+    # A row younger than the liveness window may belong to a coordinator that
+    # has not registered yet (queued behind other work, or still starting), so
+    # recency stands in for liveness only for that window. Anything older falls
+    # through to the registration check below and is admitted when no
+    # coordinator is alive, so a crash can never block imports for long.
+    #
+    # This check is derived from coordinator_rows -- the rows just fetched
+    # above -- rather than a separate, earlier COUNT query. A separate,
+    # earlier read would leave a window between it and the pending_rows read
+    # where a concurrent request's job could commit: that fresh row would
+    # sail past an already-completed recency COUNT, land in coordinator_rows
+    # here, and (with Redis liveness not yet registered for a job that young)
+    # get discarded as "abandoned" by the finalizer below -- discarding the
+    # concurrent winner's own in-flight import. Gating on the same rows we
+    # already fetched for coordinator_rows closes that window: any row fresh
+    # enough to matter is necessarily visible to this check.
+    registration_cutoff = datetime.now(timezone.utc) - timedelta(
+        seconds=_BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS
+    )
+    has_recent_coordinator = any(
+        _coerce_utc_aware(
+            updated,
+            event="bulk_import.naive_job_updated_at",
+            bulk_import_job_id=job_id,
+        )
+        >= registration_cutoff
+        for job_id, updated in coordinator_rows.items()
+    )
+    if has_recent_coordinator:
+        raise HTTPException(
+            status_code=409,
+            detail="A bulk import is already in progress",
+        )
     # True only when Redis was reachable and positively reported that none of
     # coordinator_ids are alive. False when liveness is unreadable or disabled
     # and the guard falls open on trust alone -- that case still finalizes the
