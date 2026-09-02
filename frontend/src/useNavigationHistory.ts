@@ -59,6 +59,10 @@ export function useNavigationHistory(
   const restoringIndexRef = useRef<number | null>(null)
   const replayingIndexRef = useRef<number | null>(null)
   const replayingLegacyRef = useRef(false)
+  const legacyRecoveryRef = useRef<'probing' | 'returning' | null>(null)
+  const legacyReplayDeltaRef = useRef(-1)
+  const replayAfterLegacyRecoveryRef = useRef(false)
+  const legacyRecoveryTimerRef = useRef<number | null>(null)
   useEffect(() => {
     callbackRef.current = onPopState
   })
@@ -67,6 +71,36 @@ export function useNavigationHistory(
     const handler = (event: PopStateEvent) => {
       const state = isNavState(event.state) ? event.state : null
       const targetIndex = state?.historyIndex
+
+      const completeLegacyRecovery = () => {
+        if (legacyRecoveryTimerRef.current !== null) {
+          window.clearTimeout(legacyRecoveryTimerRef.current)
+          legacyRecoveryTimerRef.current = null
+        }
+        legacyRecoveryRef.current = null
+        if (replayAfterLegacyRecoveryRef.current) {
+          replayAfterLegacyRecoveryRef.current = false
+          replayingLegacyRef.current = true
+          window.history.go(legacyReplayDeltaRef.current)
+        }
+      }
+
+      if (legacyRecoveryRef.current !== null) {
+        if (targetIndex === currentIndexRef.current) {
+          if (legacyRecoveryRef.current === 'probing') {
+            // The probe advanced from a legacy Back entry to the current entry.
+            legacyReplayDeltaRef.current = -1
+          }
+          completeLegacyRecovery()
+        } else if (legacyRecoveryRef.current === 'probing') {
+          // The probe moved farther forward, so the rejected legacy entry was
+          // ahead of the current entry. Return across both one-step traversals.
+          legacyReplayDeltaRef.current = 1
+          legacyRecoveryRef.current = 'returning'
+          window.history.go(-2)
+        }
+        return
+      }
 
       if (targetIndex === restoringIndexRef.current) {
         currentIndexRef.current = targetIndex
@@ -105,15 +139,31 @@ export function useNavigationHistory(
         return
       }
       if (accepted === false && traversal && targetIndex === undefined) {
-        restoringIndexRef.current = fromIndex
+        // Older HRIV entries have no position. Probe forward: reaching the
+        // indexed current entry means this was Back; any other entry means it
+        // was Forward. The probe result determines both restoration and replay.
+        legacyRecoveryRef.current = 'probing'
         window.history.go(1)
+        legacyRecoveryTimerRef.current = window.setTimeout(() => {
+          if (legacyRecoveryRef.current !== 'probing') return
+          // No forward entry exists, so this legacy target was immediately
+          // forward of the current entry.
+          legacyReplayDeltaRef.current = 1
+          legacyRecoveryRef.current = 'returning'
+          window.history.go(-1)
+        }, 100)
         return
       }
 
       if (targetIndex !== undefined) currentIndexRef.current = targetIndex
     }
     window.addEventListener('popstate', handler)
-    return () => window.removeEventListener('popstate', handler)
+    return () => {
+      window.removeEventListener('popstate', handler)
+      if (legacyRecoveryTimerRef.current !== null) {
+        window.clearTimeout(legacyRecoveryTimerRef.current)
+      }
+    }
   }, [])
 
   /**
@@ -143,8 +193,12 @@ export function useNavigationHistory(
   const replayPopState = useCallback((historyIndex?: number) => {
     const fromIndex = currentIndexRef.current
     if (historyIndex === undefined) {
+      if (legacyRecoveryRef.current !== null) {
+        replayAfterLegacyRecoveryRef.current = true
+        return
+      }
       replayingLegacyRef.current = true
-      window.history.go(-1)
+      window.history.go(legacyReplayDeltaRef.current)
       return
     }
     if (historyIndex === fromIndex) return
