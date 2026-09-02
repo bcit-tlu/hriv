@@ -332,6 +332,105 @@ describe('useCanvasAnnotations', () => {
       expect(mockUpdateImage).toHaveBeenCalledTimes(2)
     })
 
+    it('reconciles an indeterminate save before retrying queued edits', async () => {
+      const image = makeImage({ id: 1, version: 1 })
+      const first = [makeAnnotation({ id: 'first' })]
+      const second = [makeAnnotation({ id: 'second' })]
+      let rejectFirst!: (reason?: unknown) => void
+      const firstSave = new Promise<ImageItem>((_, reject) => {
+        rejectFirst = reject
+      })
+      mockUpdateImage
+        .mockReturnValueOnce(firstSave as never)
+        .mockResolvedValueOnce(
+          makeImage({ id: 1, version: 3, metadataExtra: { canvas_annotations: second } }),
+        )
+      const fetchImage = vi.fn().mockResolvedValue({
+        version: 2,
+        metadata_extra: { canvas_annotations: first },
+      })
+      const { result } = renderHook(() =>
+        useCanvasAnnotations(makeDeps({ selectedImage: image, fetchImage })),
+      )
+
+      act(() => {
+        result.current.handleCanvasAnnotationsChange(first)
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(600)
+      })
+      act(() => {
+        result.current.handleCanvasAnnotationsChange(second)
+      })
+
+      rejectFirst(new Error('Response lost after commit'))
+      await act(async () => {
+        await Promise.resolve()
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      expect(fetchImage).toHaveBeenCalledWith(1)
+      expect(mockUpdateImage).toHaveBeenCalledTimes(2)
+      expect(mockUpdateImage).toHaveBeenLastCalledWith(
+        1,
+        { metadata_extra_merge: { canvas_annotations: second } },
+        2,
+      )
+    })
+
+    it('discards a debounced edit when navigating to another image', async () => {
+      const firstImage = makeImage({ id: 1 })
+      const secondImage = makeImage({ id: 2 })
+      const { result, rerender } = renderHook(
+        (deps: UseCanvasAnnotationsDeps) => useCanvasAnnotations(deps),
+        { initialProps: makeDeps({ selectedImage: firstImage }) },
+      )
+
+      act(() => {
+        result.current.handleCanvasAnnotationsChange([makeAnnotation()])
+      })
+      rerender(makeDeps({ selectedImage: secondImage }))
+      await act(async () => {
+        vi.advanceTimersByTime(600)
+      })
+
+      expect(mockUpdateImage).not.toHaveBeenCalled()
+    })
+
+    it('discards queued edits when navigating away during a save', async () => {
+      const firstImage = makeImage({ id: 1 })
+      const secondImage = makeImage({ id: 2 })
+      const first = [makeAnnotation({ id: 'first' })]
+      const second = [makeAnnotation({ id: 'second' })]
+      let resolveFirst!: (value: ImageItem) => void
+      const firstSave = new Promise<ImageItem>((resolve) => {
+        resolveFirst = resolve
+      })
+      mockUpdateImage.mockReturnValueOnce(firstSave as never)
+      const { result, rerender } = renderHook(
+        (deps: UseCanvasAnnotationsDeps) => useCanvasAnnotations(deps),
+        { initialProps: makeDeps({ selectedImage: firstImage }) },
+      )
+
+      act(() => {
+        result.current.handleCanvasAnnotationsChange(first)
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(600)
+      })
+      act(() => {
+        result.current.handleCanvasAnnotationsChange(second)
+      })
+      rerender(makeDeps({ selectedImage: secondImage }))
+      resolveFirst(makeImage({ id: 1, version: 2, metadataExtra: { canvas_annotations: first } }))
+      await act(async () => {
+        await Promise.resolve()
+      })
+
+      expect(mockUpdateImage).toHaveBeenCalledOnce()
+    })
+
     it('preserves the in-flight save when the same image is refreshed', async () => {
       const image = makeImage({ id: 1, version: 1 })
       let resolveFirst!: (value: unknown) => void
@@ -560,6 +659,42 @@ describe('useCanvasAnnotations', () => {
 
       expect(mockUpdateImage).not.toHaveBeenCalled()
     })
+
+    it('awaits an in-flight save without relying on a timeout', async () => {
+      const image = makeImage({ id: 1 })
+      const annotations = [makeAnnotation()]
+      let resolveSave!: (value: ImageItem) => void
+      const save = new Promise<ImageItem>((resolve) => {
+        resolveSave = resolve
+      })
+      mockUpdateImage.mockReturnValueOnce(save as never)
+      const { result } = renderHook(() => useCanvasAnnotations(makeDeps({ selectedImage: image })))
+
+      act(() => {
+        result.current.handleCanvasAnnotationsChange(annotations)
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(600)
+      })
+
+      let flushed = false
+      const flush = result.current.flushCanvasAnnotations().then(() => {
+        flushed = true
+      })
+      await act(async () => {
+        await Promise.resolve()
+      })
+      expect(flushed).toBe(false)
+
+      resolveSave(
+        makeImage({ id: 1, version: 2, metadataExtra: { canvas_annotations: annotations } }),
+      )
+      await act(async () => {
+        await flush
+      })
+
+      expect(flushed).toBe(true)
+    })
   })
 
   describe('cancelCanvasAnnotations', () => {
@@ -735,14 +870,10 @@ describe('useCanvasAnnotations', () => {
       expect(result.current.localCanvasAnnotations).toEqual(original)
     })
 
-    it('rolls back a persisted edit when its refresh fails', async () => {
+    it('rolls back a persisted edit after an unsuccessful category refresh', async () => {
       const original = [makeAnnotation({ id: 'original' })]
       const edited = [makeAnnotation({ id: 'edited' })]
       const image = makeImage({ id: 1, metadataExtra: { canvas_annotations: original } })
-      let rejectRefresh!: (reason?: unknown) => void
-      const refresh = new Promise<void>((_, reject) => {
-        rejectRefresh = reject
-      })
       mockUpdateImage
         .mockResolvedValueOnce({
           ...image,
@@ -754,7 +885,9 @@ describe('useCanvasAnnotations', () => {
           version: 3,
           metadata_extra: { canvas_annotations: original },
         })
-      const loadCategories = vi.fn().mockReturnValueOnce(refresh).mockResolvedValue(undefined)
+      // loadCategories reports a failed refresh by resolving false rather
+      // than rejecting, matching useBrowseData's production contract.
+      const loadCategories = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true)
       const deps = makeDeps({ selectedImage: image, loadCategories })
       const { result } = renderHook(() => useCanvasAnnotations(deps))
 
@@ -768,11 +901,9 @@ describe('useCanvasAnnotations', () => {
       })
       expect(loadCategories).toHaveBeenCalledOnce()
 
-      const cancellation = result.current.cancelCanvasAnnotations(original)
-      rejectRefresh(new Error('Refresh failed'))
       let cancelled!: boolean
       await act(async () => {
-        cancelled = await cancellation
+        cancelled = await result.current.cancelCanvasAnnotations(original)
       })
 
       expect(cancelled).toBe(true)

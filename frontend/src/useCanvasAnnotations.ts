@@ -13,6 +13,8 @@ interface CanvasSaveResult {
 interface CanvasSaveState {
   inFlight: boolean
   inFlightPromise: Promise<CanvasSaveResult> | null
+  reconciling: boolean
+  reconciliationPromise: Promise<void> | null
   pending: CanvasAnnotation[] | null
   lastSavedAnnotations: CanvasAnnotation[]
   version: number
@@ -96,6 +98,8 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
     const state: CanvasSaveState = {
       inFlight: false,
       inFlightPromise: null,
+      reconciling: false,
+      reconciliationPromise: null,
       pending: null,
       lastSavedAnnotations: annotationsFromMetadata(image.metadataExtra),
       version: image.version,
@@ -131,6 +135,23 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
   }, [])
 
   // --- Effects ---
+
+  const lastCleanedSelectionIdRef = useRef<number | null>(null)
+
+  // Navigating away abandons edits which have not yet reached the server.
+  // Do not interrupt a genuine request: cancellation and reconciliation still
+  // need its result to keep the per-image version coherent.
+  useEffect(() => {
+    const previousImageId = lastCleanedSelectionIdRef.current
+    if (previousImageId !== currentImageId && previousImageId !== null) {
+      const timer = canvasSaveTimersRef.current.get(previousImageId)
+      if (timer) clearTimeout(timer)
+      canvasSaveTimersRef.current.delete(previousImageId)
+      const previousState = canvasSaveStatesRef.current.get(previousImageId)
+      if (previousState) previousState.pending = null
+    }
+    lastCleanedSelectionIdRef.current = currentImageId
+  }, [currentImageId])
 
   // Mirror the selected image's per-image state for other metadata operations.
   // In-flight work for other images deliberately remains intact.
@@ -185,6 +206,60 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
 
   // --- Callbacks ---
 
+  // A transport failure from updateImage is indeterminate: the server may
+  // already have committed the PATCH. Before retrying an edit queued behind
+  // such a request, re-read the image to obtain the server's CAS version.
+  const reconcilePendingCanvasSave = useCallback(
+    (targetImage: ImageItem): Promise<void> => {
+      const targetState = getCanvasSaveState(targetImage)
+      if (targetState.reconciliationPromise) return targetState.reconciliationPromise
+
+      targetState.reconciling = true
+      const reconciliation = (async () => {
+        try {
+          const authoritativeImage = await fetchImage(targetImage.id)
+          const authoritativeAnnotations = annotationsFromMetadata(
+            authoritativeImage.metadata_extra,
+          )
+          if (authoritativeImage.version >= targetState.version) {
+            targetState.version = authoritativeImage.version
+            targetState.metadata = authoritativeImage.metadata_extra ?? {}
+            targetState.lastSavedAnnotations = authoritativeAnnotations
+            syncCurrentImageRefs(targetImage.id, targetState)
+          }
+          uncertainCanvasSaveImageIdsRef.current.delete(targetImage.id)
+
+          // Cancellation or navigation may have discarded the queue while
+          // the read was in flight. In that case there is nothing to retry.
+          if (
+            targetState.pending === null ||
+            canvasCancellationImageIdsRef.current.has(targetImage.id) ||
+            prevSelectedImageIdRef.current !== targetImage.id
+          ) {
+            return
+          }
+          const queued = targetState.pending
+          targetState.pending = null
+          void startCanvasSaveRef.current(queued, targetImage)
+        } catch (err) {
+          // The original request already reported its failure. Keep the
+          // queued annotations and uncertain marker so a later edit, flush,
+          // or cancellation can reconcile safely instead of retrying stale.
+          console.error('Failed to reconcile queued canvas annotations', err)
+        }
+      })()
+      targetState.reconciliationPromise = reconciliation
+      void reconciliation.finally(() => {
+        if (targetState.reconciliationPromise === reconciliation) {
+          targetState.reconciling = false
+          targetState.reconciliationPromise = null
+        }
+      })
+      return reconciliation
+    },
+    [fetchImage, getCanvasSaveState, syncCurrentImageRefs],
+  )
+
   // Persist canvas annotations to server.  Called by the debounced handler below.
   const saveCanvasAnnotations = useCallback(
     async (
@@ -236,10 +311,20 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
         return { success: false, persisted, updated }
       } finally {
         targetState.inFlight = false
-        if (targetState.pending !== null) {
-          const queued = targetState.pending
+        if (
+          targetState.pending !== null &&
+          prevSelectedImageIdRef.current === targetImageId &&
+          !canvasCancellationImageIdsRef.current.has(targetImageId)
+        ) {
+          if (persisted) {
+            const queued = targetState.pending
+            targetState.pending = null
+            void startCanvasSaveRef.current(queued, targetImage)
+          } else {
+            void reconcilePendingCanvasSave(targetImage)
+          }
+        } else if (targetState.pending !== null) {
           targetState.pending = null
-          void startCanvasSaveRef.current(queued, targetImage)
         }
       }
     },
@@ -247,6 +332,7 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
       getCanvasSaveState,
       loadCategories,
       loadUncategorizedImages,
+      reconcilePendingCanvasSave,
       selectedImage,
       setErrorSnack,
       syncCurrentImageRefs,
@@ -299,13 +385,26 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
       setLocalCanvasAnnotations(annotations)
       latestCanvasAnnotationsRef.current = annotations
       clearCanvasSaveTimer(targetImage.id)
-      if (targetState.inFlight) {
-        // A save is in-flight for this image — queue the latest data.
+      if (targetState.inFlight || targetState.reconciling) {
+        // A save or recovery read is in-flight for this image — queue the
+        // latest data until its version is safe to use.
         targetState.pending = annotations
         return
       }
+      targetState.pending = null
       const timer = setTimeout(() => {
         canvasSaveTimersRef.current.delete(targetImage.id)
+        if (
+          prevSelectedImageIdRef.current !== targetImage.id ||
+          canvasCancellationImageIdsRef.current.has(targetImage.id)
+        ) {
+          return
+        }
+        const currentState = getCanvasSaveState(targetImage)
+        if (currentState.inFlight || currentState.reconciling) {
+          currentState.pending = annotations
+          return
+        }
         void startCanvasSaveRef.current(annotations, targetImage)
       }, 600)
       canvasSaveTimersRef.current.set(targetImage.id, timer)
@@ -321,29 +420,45 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
     const targetImage = selectedImage
     const targetState = getCanvasSaveState(targetImage)
     clearCanvasSaveTimer(targetImage.id)
-    const pending = targetState.pending
-    targetState.pending = null
-    if (targetState.inFlight) {
-      if (pending) targetState.pending = pending
-      for (let i = 0; i < 30 && targetState.inFlight; i++) {
-        await new Promise((r) => setTimeout(r, 100))
+    const awaitActiveSave = async () => {
+      while (true) {
+        const active = targetState.inFlightPromise ?? targetState.reconciliationPromise
+        if (!active) return
+        await active
       }
-      const stillPending = targetState.pending
-      if (stillPending && !targetState.inFlight) {
-        targetState.pending = null
-        await startCanvasSave(stillPending, targetImage)
-      }
+    }
+    if (targetState.inFlight || targetState.reconciling) {
+      await awaitActiveSave()
       return
+    }
+    if (
+      targetState.pending !== null &&
+      uncertainCanvasSaveImageIdsRef.current.has(targetImage.id)
+    ) {
+      await reconcilePendingCanvasSave(targetImage)
+      await awaitActiveSave()
+      if (uncertainCanvasSaveImageIdsRef.current.has(targetImage.id)) {
+        return
+      }
     }
     // Use the ref (always current) instead of localCanvasAnnotations state
     // which may be stale due to React's async state batching.
     const latest = latestCanvasAnnotationsRef.current
-    if (pending) {
+    if (targetState.pending !== null) {
+      const pending = targetState.pending
+      targetState.pending = null
       await startCanvasSave(pending, targetImage)
     } else if (latest) {
       await startCanvasSave(latest, targetImage)
     }
-  }, [clearCanvasSaveTimer, getCanvasSaveState, selectedImage, startCanvasSave])
+    await awaitActiveSave()
+  }, [
+    clearCanvasSaveTimer,
+    getCanvasSaveState,
+    reconcilePendingCanvasSave,
+    selectedImage,
+    startCanvasSave,
+  ])
 
   /**
    * Discard the current edit session.  Debounced and queued edits have not
@@ -360,6 +475,7 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
       try {
         const targetState = getCanvasSaveState(targetImage)
         const inFlightPromise = targetState.inFlightPromise
+        const reconciliationPromise = targetState.reconciliationPromise
         clearCanvasSaveTimer(targetImage.id)
         targetState.pending = null
         latestCanvasAnnotationsRef.current = null
@@ -379,6 +495,8 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
           )
           return rollback.success
         }
+
+        if (reconciliationPromise) await reconciliationPromise
 
         if (uncertainCanvasSaveImageIdsRef.current.has(targetImage.id)) {
           // A rejected PATCH may have committed server-side. Re-read the image
