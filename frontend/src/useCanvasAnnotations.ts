@@ -79,7 +79,11 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
 
   // --- Effects ---
 
-  // Reset version ref when the selected image changes
+  // Reset version and pending-save refs only when the selected image changes.
+  // The selected image object can be refreshed in place (for example, when a
+  // tile token is renewed) without changing its ID. Resetting on object
+  // identity would abandon an in-flight CAS save and make the next edit reuse
+  // the stale version, resulting in a 409 even though the first save worked.
   useEffect(() => {
     latestVersionRef.current = selectedImage?.version ?? 0
     latestMetadataRef.current = undefined // reset to 'uninitialised' so first read falls back to selectedImage
@@ -92,7 +96,8 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
     latestCanvasAnnotationsRef.current = null
     canvasSaveInFlightRef.current = false
     saveTargetImageIdRef.current = null
-  }, [selectedImage])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- selectedImage identity may change during a same-image refresh; only its ID starts a new save session
+  }, [selectedImage?.id])
 
   // --- Memos ---
 
