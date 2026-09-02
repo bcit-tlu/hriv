@@ -814,6 +814,51 @@ describe('CanvasOverlay', () => {
       expect(onEditModeChange).toHaveBeenCalledWith(false)
     })
 
+    it('cancels through the non-persisting callback without flushing', async () => {
+      const original = [makeAnnotation({ id: 'orig-1' })]
+      const onAnnotationsChange = vi.fn()
+      const onCancelAnnotations = vi.fn(async () => {})
+      const onAnnotationsCancelled = vi.fn()
+      const onFlushAnnotations = vi.fn(async () => {})
+      const onEditModeChange = vi.fn()
+      const { rerender } = render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={original}
+          onAnnotationsChange={onAnnotationsChange}
+          canEdit={true}
+          editMode={false}
+          onEditModeChange={onEditModeChange}
+          onFlushAnnotations={onFlushAnnotations}
+          onCancelAnnotations={onCancelAnnotations}
+          onAnnotationsCancelled={onAnnotationsCancelled}
+        />,
+      )
+      rerender(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={original}
+          onAnnotationsChange={onAnnotationsChange}
+          canEdit={true}
+          editMode={true}
+          onEditModeChange={onEditModeChange}
+          onFlushAnnotations={onFlushAnnotations}
+          onCancelAnnotations={onCancelAnnotations}
+          onAnnotationsCancelled={onAnnotationsCancelled}
+        />,
+      )
+
+      await act(async () => {
+        screen.getByLabelText('Cancel — discard changes').click()
+      })
+
+      expect(onCancelAnnotations).toHaveBeenCalledWith(original)
+      expect(onAnnotationsChange).not.toHaveBeenCalled()
+      expect(onFlushAnnotations).not.toHaveBeenCalled()
+      expect(onAnnotationsCancelled).toHaveBeenCalledOnce()
+      expect(onEditModeChange).toHaveBeenCalledWith(false)
+    })
+
     it('registers a cancel handler that mirrors the Cancel button behavior', async () => {
       const original = [makeAnnotation({ id: 'orig-1' })]
       const onAnnotationsChange = vi.fn()

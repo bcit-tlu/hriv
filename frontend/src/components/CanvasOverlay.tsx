@@ -107,6 +107,10 @@ interface CanvasOverlayProps {
   onEditModeChange: (mode: boolean) => void
   /** Flush any pending annotation save immediately (bypass debounce) */
   onFlushAnnotations?: () => Promise<void>
+  /** Discard the edit session and restore its entry snapshot. */
+  onCancelAnnotations?: (annotations: CanvasAnnotation[]) => Promise<void>
+  /** Notify the parent after canvas annotations have been cancelled. */
+  onAnnotationsCancelled?: () => void
   /** Lets the parent trigger the same discard-changes flow as the Cancel button */
   registerCancelHandler?: (handler: (() => Promise<void>) | null) => void
 }
@@ -256,6 +260,8 @@ export default function CanvasOverlay({
   canEdit: _canEdit,
   editMode,
   onFlushAnnotations,
+  onCancelAnnotations,
+  onAnnotationsCancelled,
   onEditModeChange,
   registerCancelHandler,
 }: CanvasOverlayProps) {
@@ -1208,17 +1214,21 @@ export default function CanvasOverlay({
   }, [emitAnnotations, onEditModeChange, onFlushAnnotations])
 
   const handleCancel = useCallback(async () => {
-    onAnnotationsChange(snapshotRef.current)
-    if (onFlushAnnotations) {
+    if (onCancelAnnotations) {
       setFlushing(true)
       try {
-        await onFlushAnnotations()
+        await onCancelAnnotations(snapshotRef.current)
       } finally {
         setFlushing(false)
       }
+    } else {
+      // Keep the overlay usable in isolation. The application supplies
+      // onCancelAnnotations so restoring the snapshot does not become a save.
+      onAnnotationsChange(snapshotRef.current)
     }
+    onAnnotationsCancelled?.()
     onEditModeChange(false)
-  }, [onAnnotationsChange, onEditModeChange, onFlushAnnotations])
+  }, [onAnnotationsChange, onAnnotationsCancelled, onCancelAnnotations, onEditModeChange])
 
   // Expose the cancel flow so the parent's toolbar toggle can discard changes
   useEffect(() => {

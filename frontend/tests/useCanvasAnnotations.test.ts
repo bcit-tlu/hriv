@@ -561,6 +561,67 @@ describe('useCanvasAnnotations', () => {
     })
   })
 
+  describe('cancelCanvasAnnotations', () => {
+    it('discards a debounced edit without issuing a save', async () => {
+      const original = [makeAnnotation({ id: 'original' })]
+      const image = makeImage({ id: 1, metadataExtra: { canvas_annotations: original } })
+      const deps = makeDeps({ selectedImage: image })
+      const { result } = renderHook(() => useCanvasAnnotations(deps))
+
+      act(() => {
+        result.current.handleCanvasAnnotationsChange([makeAnnotation({ id: 'edited' })])
+      })
+
+      await act(async () => {
+        await result.current.cancelCanvasAnnotations(original)
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(600)
+      })
+
+      expect(result.current.localCanvasAnnotations).toEqual(original)
+      expect(mockUpdateImage).not.toHaveBeenCalled()
+    })
+
+    it('rolls back an edit that was already autosaved', async () => {
+      const original = [makeAnnotation({ id: 'original' })]
+      const edited = [makeAnnotation({ id: 'edited' })]
+      const image = makeImage({ id: 1, metadataExtra: { canvas_annotations: original } })
+      mockUpdateImage
+        .mockResolvedValueOnce({
+          ...image,
+          version: 2,
+          metadata_extra: { canvas_annotations: edited },
+        })
+        .mockResolvedValueOnce({
+          ...image,
+          version: 3,
+          metadata_extra: { canvas_annotations: original },
+        })
+      const deps = makeDeps({ selectedImage: image })
+      const { result } = renderHook(() => useCanvasAnnotations(deps))
+
+      act(() => {
+        result.current.handleCanvasAnnotationsChange(edited)
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(600)
+      })
+
+      await act(async () => {
+        await result.current.cancelCanvasAnnotations(original)
+      })
+
+      expect(mockUpdateImage).toHaveBeenCalledTimes(2)
+      expect(mockUpdateImage).toHaveBeenLastCalledWith(
+        1,
+        { metadata_extra_merge: { canvas_annotations: original } },
+        2,
+      )
+      expect(result.current.localCanvasAnnotations).toEqual(original)
+    })
+  })
+
   describe('image change reset', () => {
     it('clears local annotations when selectedImage changes', () => {
       const image1 = makeImage({ id: 1, metadataExtra: { canvas_annotations: [makeAnnotation()] } })

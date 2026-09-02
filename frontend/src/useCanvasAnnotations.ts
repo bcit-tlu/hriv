@@ -40,6 +40,10 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
   /** Always-current annotations last passed to handleCanvasAnnotationsChange.
    *  Used by flushCanvasAnnotations to avoid reading stale React state. */
   const latestCanvasAnnotationsRef = useRef<CanvasAnnotation[] | null>(null)
+  // The last annotation set known to be persisted for this image.  Cancel can
+  // discard a debounced local edit without writing anything, but must roll
+  // back edits that already completed an autosave during the edit session.
+  const lastSavedCanvasAnnotationsRef = useRef<CanvasAnnotation[] | null>(null)
   // Track which image ID the current in-flight save targets so stale completions
   // don't overwrite refs after an image change
   const saveTargetImageIdRef = useRef<number | null>(null)
@@ -96,6 +100,10 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
     }
     pendingCanvasAnnotationsRef.current = null
     latestCanvasAnnotationsRef.current = null
+    const savedAnnotations = selectedImage?.metadataExtra?.canvas_annotations
+    lastSavedCanvasAnnotationsRef.current = Array.isArray(savedAnnotations)
+      ? (savedAnnotations as CanvasAnnotation[])
+      : []
     canvasSaveInFlightRef.current = false
     saveTargetImageIdRef.current = null
     // eslint-disable-next-line react-hooks/exhaustive-deps -- selectedImage identity may change during a same-image refresh; only its ID starts a new save session
@@ -152,6 +160,7 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
         ) {
           latestVersionRef.current = updated.version
           latestMetadataRef.current = updated.metadata_extra ?? {}
+          lastSavedCanvasAnnotationsRef.current = annotations
         }
         await loadCategories()
         loadUncategorizedImages()
@@ -233,6 +242,42 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
     }
   }, [saveCanvasAnnotations])
 
+  /**
+   * Discard the current edit session.  Debounced and queued edits have not
+   * reached the server yet, so they are dropped without a PATCH.  If an edit
+   * already completed an autosave, persist the entry snapshot to restore the
+   * server state before returning to view mode.
+   */
+  const cancelCanvasAnnotations = useCallback(
+    async (snapshot: CanvasAnnotation[]) => {
+      if (canvasSaveTimerRef.current) {
+        clearTimeout(canvasSaveTimerRef.current)
+        canvasSaveTimerRef.current = null
+      }
+      pendingCanvasAnnotationsRef.current = null
+      latestCanvasAnnotationsRef.current = null
+      setLocalCanvasAnnotations(snapshot)
+
+      if (!selectedImage) return
+
+      if (canvasSaveInFlightRef.current) {
+        // The in-flight request cannot be aborted. Queue the entry snapshot so
+        // its completion restores the server state, matching Cancel semantics.
+        pendingCanvasAnnotationsRef.current = snapshot
+        return
+      }
+
+      if (
+        JSON.stringify(lastSavedCanvasAnnotationsRef.current ?? []) === JSON.stringify(snapshot)
+      ) {
+        return
+      }
+
+      await saveCanvasAnnotations(snapshot)
+    },
+    [saveCanvasAnnotations, selectedImage],
+  )
+
   return {
     /** Local annotations (reflects edits immediately). Falls back to server data when null. */
     localCanvasAnnotations,
@@ -242,6 +287,8 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
     handleCanvasAnnotationsChange,
     /** Flush any pending save immediately (bypass debounce). */
     flushCanvasAnnotations,
+    /** Discard canvas edits, rolling back only edits already autosaved. */
+    cancelCanvasAnnotations,
     /** Latest known image version (survives across metadata operations without viewer remount). */
     latestVersionRef,
     /** Latest known metadata (survives across metadata operations without viewer remount). */

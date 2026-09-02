@@ -894,6 +894,7 @@ export default function App() {
     canvasAnnotations,
     handleCanvasAnnotationsChange,
     flushCanvasAnnotations,
+    cancelCanvasAnnotations,
     latestVersionRef,
     latestMetadataRef,
   } = useCanvasAnnotations({
@@ -902,6 +903,10 @@ export default function App() {
     loadUncategorizedImages,
     setErrorSnack,
   })
+
+  const handleCanvasAnnotationsCancelled = useCallback(() => {
+    setSuccessSnack({ message: 'Canvas annotations cancelled.' })
+  }, [])
 
   // Build measurement config from the selected image's metadata
   // Overlay persistence (extracted to useOverlayPersistence hook)
@@ -1658,6 +1663,8 @@ export default function App() {
                   canvasAnnotations={localCanvasAnnotations ?? canvasAnnotations}
                   onCanvasAnnotationsChange={handleCanvasAnnotationsChange}
                   onFlushCanvasAnnotations={flushCanvasAnnotations}
+                  onCancelCanvasAnnotations={cancelCanvasAnnotations}
+                  onCanvasAnnotationsCancelled={handleCanvasAnnotationsCancelled}
                   onCanvasEditModeChange={setCanvasEditActive}
                 />
               </Paper>
