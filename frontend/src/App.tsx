@@ -894,14 +894,30 @@ export default function App() {
     canvasAnnotations,
     handleCanvasAnnotationsChange,
     flushCanvasAnnotations,
+    cancelCanvasAnnotations,
+    canvasCancellationBaseline,
+    resetCanvasCancellationBaseline,
     latestVersionRef,
     latestMetadataRef,
   } = useCanvasAnnotations({
     selectedImage,
+    fetchImage: apiFetchImage,
     loadCategories,
     loadUncategorizedImages,
     setErrorSnack,
   })
+
+  const handleCanvasAnnotationsCancelled = useCallback(() => {
+    setSuccessSnack({ message: 'Canvas annotations cancelled.' })
+  }, [])
+
+  const handleCanvasEditModeChange = useCallback(
+    (active: boolean) => {
+      setCanvasEditActive(active)
+      if (!active) resetCanvasCancellationBaseline()
+    },
+    [resetCanvasCancellationBaseline],
+  )
 
   // Build measurement config from the selected image's metadata
   // Overlay persistence (extracted to useOverlayPersistence hook)
@@ -1658,7 +1674,14 @@ export default function App() {
                   canvasAnnotations={localCanvasAnnotations ?? canvasAnnotations}
                   onCanvasAnnotationsChange={handleCanvasAnnotationsChange}
                   onFlushCanvasAnnotations={flushCanvasAnnotations}
-                  onCanvasEditModeChange={setCanvasEditActive}
+                  onCancelCanvasAnnotations={cancelCanvasAnnotations}
+                  onCanvasAnnotationsCancelled={handleCanvasAnnotationsCancelled}
+                  canvasCancellationBaseline={
+                    canvasCancellationBaseline?.imageId === selectedImage.id
+                      ? canvasCancellationBaseline.annotations
+                      : undefined
+                  }
+                  onCanvasEditModeChange={handleCanvasEditModeChange}
                 />
               </Paper>
 
