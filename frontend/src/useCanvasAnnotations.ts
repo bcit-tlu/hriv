@@ -126,7 +126,6 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
   const prevSelectedImageIdRef = useRef<number | null>(null)
   const currentImageId = selectedImage?.id ?? null
   const currentImageVersion = selectedImage?.version ?? 0
-  const currentImageMetadata = selectedImage?.metadataExtra
   if (currentImageId !== prevSelectedImageIdRef.current) {
     prevSelectedImageIdRef.current = currentImageId
     setLocalCanvasAnnotations(null)
@@ -136,6 +135,18 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
     if (prevSelectedImageIdRef.current !== imageId) return
     latestVersionRef.current = state.version
     latestMetadataRef.current = state.metadata
+  }, [])
+
+  // A newer selected-image version is authoritative server data. Besides
+  // advancing the CAS token, it resolves a prior definitive conflict and
+  // replaces the saved annotation snapshot before new writes are allowed.
+  const refreshCanvasSaveState = useCallback((image: ImageItem, state: CanvasSaveState) => {
+    if (image.version <= state.version) return null
+    const conflictResolved = conflictedCanvasSaveImageIdsRef.current.delete(image.id)
+    state.version = image.version
+    state.metadata = image.metadataExtra ?? {}
+    state.lastSavedAnnotations = annotationsFromMetadata(image.metadataExtra)
+    return { conflictResolved }
   }, [])
 
   // --- Effects ---
@@ -167,13 +178,12 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
       return
     }
     const state = getCanvasSaveState(selectedImage)
-    if (selectedImage.version > state.version) {
-      state.version = selectedImage.version
-      state.metadata = selectedImage.metadataExtra ?? {}
-    }
+    const refresh = refreshCanvasSaveState(selectedImage, state)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- newer authoritative data invalidates the conflicting local draft
+    if (refresh?.conflictResolved) setLocalCanvasAnnotations(null)
     syncCurrentImageRefs(selectedImage.id, state)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- a new image ID starts a save session; same-image refreshes are handled below
-  }, [getCanvasSaveState, selectedImage?.id, syncCurrentImageRefs])
+  }, [getCanvasSaveState, refreshCanvasSaveState, selectedImage?.id, syncCurrentImageRefs])
 
   // Same-image updates can carry a newer server version (for example, after
   // editing image details or completing image processing). Keep the CAS token
@@ -184,15 +194,16 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
   useEffect(() => {
     if (currentImageId === null || !selectedImage) return
     const state = getCanvasSaveState(selectedImage)
-    if (currentImageVersion <= state.version) return
-    state.version = currentImageVersion
-    state.metadata = currentImageMetadata ?? {}
+    const refresh = refreshCanvasSaveState(selectedImage, state)
+    if (!refresh) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- newer authoritative data invalidates the conflicting local draft
+    if (refresh.conflictResolved) setLocalCanvasAnnotations(null)
     syncCurrentImageRefs(currentImageId, state)
   }, [
     currentImageId,
-    currentImageMetadata,
     currentImageVersion,
     getCanvasSaveState,
+    refreshCanvasSaveState,
     selectedImage,
     syncCurrentImageRefs,
   ])

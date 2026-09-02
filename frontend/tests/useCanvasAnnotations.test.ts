@@ -466,6 +466,104 @@ describe('useCanvasAnnotations', () => {
       expect(mockUpdateImage).toHaveBeenCalledOnce()
     })
 
+    it('resumes saving after a newer same-image refresh resolves a conflict', async () => {
+      const image = makeImage({ id: 1, version: 1 })
+      const conflictedEdit = [makeAnnotation({ id: 'conflicted' })]
+      const authoritative = [makeAnnotation({ id: 'authoritative' })]
+      const laterEdit = [makeAnnotation({ id: 'later' })]
+      mockUpdateImage
+        .mockRejectedValueOnce(new api.ApiError(409, 'This item was modified by another user.'))
+        .mockResolvedValueOnce(
+          makeImage({ id: 1, version: 3, metadataExtra: { canvas_annotations: laterEdit } }),
+        )
+      const { result, rerender } = renderHook(
+        (deps: UseCanvasAnnotationsDeps) => useCanvasAnnotations(deps),
+        { initialProps: makeDeps({ selectedImage: image }) },
+      )
+
+      act(() => {
+        result.current.handleCanvasAnnotationsChange(conflictedEdit)
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(600)
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+      rerender(
+        makeDeps({
+          selectedImage: makeImage({
+            id: 1,
+            version: 2,
+            metadataExtra: { canvas_annotations: authoritative },
+          }),
+        }),
+      )
+
+      expect(result.current.localCanvasAnnotations).toBeNull()
+      expect(result.current.latestVersionRef.current).toBe(2)
+      act(() => {
+        result.current.handleCanvasAnnotationsChange(laterEdit)
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(600)
+      })
+
+      expect(mockUpdateImage).toHaveBeenLastCalledWith(
+        1,
+        { metadata_extra_merge: { canvas_annotations: laterEdit } },
+        2,
+      )
+    })
+
+    it('resumes saving after navigating back to newer authoritative image data', async () => {
+      const image = makeImage({ id: 1, version: 1 })
+      const otherImage = makeImage({ id: 2, version: 1 })
+      const conflictedEdit = [makeAnnotation({ id: 'conflicted' })]
+      const authoritative = [makeAnnotation({ id: 'authoritative' })]
+      const laterEdit = [makeAnnotation({ id: 'later' })]
+      mockUpdateImage
+        .mockRejectedValueOnce(new api.ApiError(409, 'This item was modified by another user.'))
+        .mockResolvedValueOnce(
+          makeImage({ id: 1, version: 3, metadataExtra: { canvas_annotations: laterEdit } }),
+        )
+      const { result, rerender } = renderHook(
+        (deps: UseCanvasAnnotationsDeps) => useCanvasAnnotations(deps),
+        { initialProps: makeDeps({ selectedImage: image }) },
+      )
+
+      act(() => {
+        result.current.handleCanvasAnnotationsChange(conflictedEdit)
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(600)
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+      rerender(makeDeps({ selectedImage: otherImage }))
+      rerender(
+        makeDeps({
+          selectedImage: makeImage({
+            id: 1,
+            version: 2,
+            metadataExtra: { canvas_annotations: authoritative },
+          }),
+        }),
+      )
+
+      act(() => {
+        result.current.handleCanvasAnnotationsChange(laterEdit)
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(600)
+      })
+
+      expect(mockUpdateImage).toHaveBeenLastCalledWith(
+        1,
+        { metadata_extra_merge: { canvas_annotations: laterEdit } },
+        2,
+      )
+    })
+
     it('discards a debounced edit when navigating to another image', async () => {
       const firstImage = makeImage({ id: 1 })
       const secondImage = makeImage({ id: 2 })
