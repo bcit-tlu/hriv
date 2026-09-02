@@ -5,6 +5,8 @@ import type { ImageItem } from './types'
 
 interface CanvasSaveResult {
   success: boolean
+  // True when updateImage completed, even if a subsequent refresh failed.
+  persisted: boolean
   updated?: { version: number }
 }
 
@@ -42,6 +44,9 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
   const canvasSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const canvasSaveInFlightRef = useRef(false)
   const pendingCanvasAnnotationsRef = useRef<CanvasAnnotation[] | null>(null)
+  // While cancellation awaits an in-flight save or rollback, ignore new
+  // canvas events so they cannot be queued and replayed after cancellation.
+  const canvasCancellationInProgressRef = useRef(false)
   /** Always-current annotations last passed to handleCanvasAnnotationsChange.
    *  Used by flushCanvasAnnotations to avoid reading stale React state. */
   const latestCanvasAnnotationsRef = useRef<CanvasAnnotation[] | null>(null)
@@ -53,13 +58,16 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
   // Track which image ID the current in-flight save targets so stale completions
   // don't overwrite refs after an image change
   const saveTargetImageIdRef = useRef<number | null>(null)
+  // Keep the in-flight target available to cancellation even after an image
+  // change clears saveTargetImageIdRef to prevent stale queue flushes.
+  const canvasSaveInFlightImageIdRef = useRef<number | null>(null)
   // Stable ref for the save function so the callback can flush queued saves
   // without a self-reference (which the React Compiler cannot memoize).
   const saveCanvasAnnotationsRef = useRef<
     (annotations: CanvasAnnotation[]) => Promise<CanvasSaveResult>
-  >(async () => ({ success: true }))
+  >(async () => ({ success: true, persisted: true }))
   const startCanvasSaveRef = useRef<(annotations: CanvasAnnotation[]) => Promise<CanvasSaveResult>>(
-    async () => ({ success: true }),
+    async () => ({ success: true, persisted: true }),
   )
 
   // --- State ---
@@ -150,10 +158,13 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
       targetImage: ImageItem | null = selectedImage,
       versionOverride?: number,
     ): Promise<CanvasSaveResult> => {
-      if (!targetImage) return { success: true }
+      if (!targetImage) return { success: true, persisted: true }
       const targetImageId = targetImage.id
       saveTargetImageIdRef.current = targetImageId
+      canvasSaveInFlightImageIdRef.current = targetImageId
       canvasSaveInFlightRef.current = true
+      let persisted = false
+      let updated: Awaited<ReturnType<typeof updateImage>> | undefined
       try {
         const mergeValue = annotations.length > 0 ? annotations : null
         const currentVersion =
@@ -161,7 +172,7 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
           (targetImageId === selectedImage?.id
             ? latestVersionRef.current || targetImage.version
             : targetImage.version)
-        const updated = await updateImage(
+        updated = await updateImage(
           targetImageId,
           {
             metadata_extra_merge: {
@@ -170,6 +181,9 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
           },
           currentVersion,
         )
+        // A successful PATCH must still be rolled back if a later category
+        // refresh fails while cancellation is waiting for this save.
+        persisted = true
         // Only update shared refs if the image hasn't changed while we were saving
         if (
           saveTargetImageIdRef.current === targetImageId &&
@@ -182,12 +196,15 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
         }
         await loadCategories()
         loadUncategorizedImages()
-        return { success: true, updated }
+        return { success: true, persisted: true, updated }
       } catch (err) {
         console.error('Failed to save canvas annotations', err)
         setErrorSnack(userMessage(err, 'Failed to save annotations.'))
-        return { success: false }
+        return { success: false, persisted, updated }
       } finally {
+        if (canvasSaveInFlightImageIdRef.current === targetImageId) {
+          canvasSaveInFlightImageIdRef.current = null
+        }
         // Only clear in-flight flag and flush queue if still targeting the same image
         if (saveTargetImageIdRef.current === targetImageId) {
           canvasSaveInFlightRef.current = false
@@ -229,6 +246,7 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
   // latest data is queued and flushed when the current request completes.
   // Also eagerly updates local state so view mode reflects edits immediately.
   const handleCanvasAnnotationsChange = useCallback((annotations: CanvasAnnotation[]) => {
+    if (canvasCancellationInProgressRef.current) return
     setLocalCanvasAnnotations(annotations)
     latestCanvasAnnotationsRef.current = annotations
     if (canvasSaveTimerRef.current) clearTimeout(canvasSaveTimerRef.current)
@@ -290,42 +308,48 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
    */
   const cancelCanvasAnnotations = useCallback(
     async (snapshot: CanvasAnnotation[]): Promise<boolean> => {
-      const targetImage = selectedImage
-      const inFlightImageId = saveTargetImageIdRef.current
-      const inFlightPromise = canvasSaveInFlightPromiseRef.current
-      if (canvasSaveTimerRef.current) {
-        clearTimeout(canvasSaveTimerRef.current)
-        canvasSaveTimerRef.current = null
-      }
-      pendingCanvasAnnotationsRef.current = null
-      latestCanvasAnnotationsRef.current = null
-      setLocalCanvasAnnotations(snapshot)
+      if (canvasCancellationInProgressRef.current) return false
+      canvasCancellationInProgressRef.current = true
+      try {
+        const targetImage = selectedImage
+        const inFlightImageId = canvasSaveInFlightImageIdRef.current
+        const inFlightPromise = canvasSaveInFlightPromiseRef.current
+        if (canvasSaveTimerRef.current) {
+          clearTimeout(canvasSaveTimerRef.current)
+          canvasSaveTimerRef.current = null
+        }
+        pendingCanvasAnnotationsRef.current = null
+        latestCanvasAnnotationsRef.current = null
+        setLocalCanvasAnnotations(snapshot)
 
-      if (!targetImage) return true
+        if (!targetImage) return true
 
-      if (canvasSaveInFlightRef.current && inFlightPromise && inFlightImageId === targetImage.id) {
-        // The in-flight request cannot be aborted. Await it, then use its
-        // returned version to roll back the original image explicitly. The
-        // target image is captured so a later image switch cannot retarget the
-        // rollback request.
-        const result = await inFlightPromise
-        if (!result.success) return false
-        const rollback = await saveCanvasAnnotations(
-          snapshot,
-          targetImage,
-          result.updated?.version ?? targetImage.version,
-        )
+        if (inFlightPromise && inFlightImageId === targetImage.id) {
+          // The in-flight request cannot be aborted. Await it, then use its
+          // returned version to roll back the original image explicitly. The
+          // target image is captured so a later image switch cannot retarget the
+          // rollback request.
+          const result = await inFlightPromise
+          if (!result.persisted) return false
+          const rollback = await saveCanvasAnnotations(
+            snapshot,
+            targetImage,
+            result.updated?.version ?? targetImage.version,
+          )
+          return rollback.success
+        }
+
+        if (
+          JSON.stringify(lastSavedCanvasAnnotationsRef.current ?? []) === JSON.stringify(snapshot)
+        ) {
+          return true
+        }
+
+        const rollback = await startCanvasSave(snapshot)
         return rollback.success
+      } finally {
+        canvasCancellationInProgressRef.current = false
       }
-
-      if (
-        JSON.stringify(lastSavedCanvasAnnotationsRef.current ?? []) === JSON.stringify(snapshot)
-      ) {
-        return true
-      }
-
-      const rollback = await startCanvasSave(snapshot)
-      return rollback.success
     },
     [saveCanvasAnnotations, selectedImage, startCanvasSave],
   )

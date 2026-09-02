@@ -674,6 +674,115 @@ describe('useCanvasAnnotations', () => {
       )
     })
 
+    it('drops edits received while cancellation is in progress', async () => {
+      const original = [makeAnnotation({ id: 'original' })]
+      const edited = [makeAnnotation({ id: 'edited' })]
+      const later = [makeAnnotation({ id: 'later' })]
+      const image = makeImage({ id: 1, metadataExtra: { canvas_annotations: original } })
+      let resolveFirst!: (value: ImageItem) => void
+      let resolveRollback!: (value: ImageItem) => void
+      const firstSave = new Promise<ImageItem>((resolve) => {
+        resolveFirst = resolve
+      })
+      const rollbackSave = new Promise<ImageItem>((resolve) => {
+        resolveRollback = resolve
+      })
+      mockUpdateImage
+        .mockReturnValueOnce(firstSave as never)
+        .mockReturnValueOnce(rollbackSave as never)
+      const deps = makeDeps({ selectedImage: image })
+      const { result } = renderHook(() => useCanvasAnnotations(deps))
+
+      act(() => {
+        result.current.handleCanvasAnnotationsChange(edited)
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(600)
+      })
+
+      const cancellation = result.current.cancelCanvasAnnotations(original)
+      act(() => {
+        result.current.handleCanvasAnnotationsChange(later)
+      })
+      resolveFirst({
+        ...image,
+        version: 2,
+        metadata_extra: { canvas_annotations: edited },
+      })
+      await act(async () => {
+        await Promise.resolve()
+        await Promise.resolve()
+        await Promise.resolve()
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+      expect(mockUpdateImage).toHaveBeenCalledTimes(2)
+
+      resolveRollback({
+        ...image,
+        version: 3,
+        metadata_extra: { canvas_annotations: original },
+      })
+      await act(async () => {
+        await cancellation
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(600)
+      })
+
+      expect(mockUpdateImage).toHaveBeenCalledTimes(2)
+      expect(result.current.localCanvasAnnotations).toEqual(original)
+    })
+
+    it('rolls back a persisted edit when its refresh fails', async () => {
+      const original = [makeAnnotation({ id: 'original' })]
+      const edited = [makeAnnotation({ id: 'edited' })]
+      const image = makeImage({ id: 1, metadataExtra: { canvas_annotations: original } })
+      let rejectRefresh!: (reason?: unknown) => void
+      const refresh = new Promise<void>((_, reject) => {
+        rejectRefresh = reject
+      })
+      mockUpdateImage
+        .mockResolvedValueOnce({
+          ...image,
+          version: 2,
+          metadata_extra: { canvas_annotations: edited },
+        })
+        .mockResolvedValueOnce({
+          ...image,
+          version: 3,
+          metadata_extra: { canvas_annotations: original },
+        })
+      const loadCategories = vi.fn().mockReturnValueOnce(refresh).mockResolvedValue(undefined)
+      const deps = makeDeps({ selectedImage: image, loadCategories })
+      const { result } = renderHook(() => useCanvasAnnotations(deps))
+
+      act(() => {
+        result.current.handleCanvasAnnotationsChange(edited)
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(600)
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+      expect(loadCategories).toHaveBeenCalledOnce()
+
+      const cancellation = result.current.cancelCanvasAnnotations(original)
+      rejectRefresh(new Error('Refresh failed'))
+      let cancelled!: boolean
+      await act(async () => {
+        cancelled = await cancellation
+      })
+
+      expect(cancelled).toBe(true)
+      expect(mockUpdateImage).toHaveBeenCalledTimes(2)
+      expect(mockUpdateImage).toHaveBeenLastCalledWith(
+        1,
+        { metadata_extra_merge: { canvas_annotations: original } },
+        2,
+      )
+    })
+
     it('returns failure when an autosaved edit cannot be rolled back', async () => {
       const original = [makeAnnotation({ id: 'original' })]
       const edited = [makeAnnotation({ id: 'edited' })]
