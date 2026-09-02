@@ -509,11 +509,15 @@ async def reconciliation_sweep_task(ctx: dict[str, Any]) -> None:
     This is the ``required``-mode (dedicated worker pod) counterpart to the
     startup-time sweep that ``main.py`` runs directly in ``local`` mode (see
     ``reconciliation.py`` for why the split exists and why the reconcile
-    functions are imported lazily rather than at module load time).
+    functions are imported lazily rather than at module load time). Passes
+    this job's own arq ``job_id`` through so the stale-source-image check
+    can exclude the sweep's own in-flight queue entry from its
+    queue-idleness test (arq keeps a job's ID in the queue sorted set for
+    its entire execution).
     """
     from .reconciliation import run_reconciliation_sweep
 
-    await run_reconciliation_sweep()
+    await run_reconciliation_sweep(current_job_id=ctx.get("job_id"))
 
 
 # ── arq WorkerSettings ───────────────────────────────────

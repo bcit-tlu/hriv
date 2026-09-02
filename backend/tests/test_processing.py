@@ -473,6 +473,39 @@ async def test_reconcile_stale_source_images_updates_stale() -> None:
     session.commit.assert_awaited_once()
 
 
+async def test_reconcile_stale_source_images_forwards_current_job_id() -> None:
+    """The sweep's own arq job ID is forwarded to collect_queue_state so the
+    cron job's in-flight queue entry doesn't block pending-row reconciliation
+    (see worker.reconciliation_sweep_task)."""
+    processing_result = MagicMock()
+    processing_result.all.return_value = []
+    pending_result = MagicMock()
+    pending_result.all.return_value = []
+    session = AsyncMock()
+    session.execute = AsyncMock(side_effect=[processing_result, pending_result])
+
+    queue_state_mock = AsyncMock(
+        return_value={"queue_up": True, "worker_up": True, "depth": 0}
+    )
+    with patch(
+        "app.processing.collect_queue_state", queue_state_mock
+    ), patch(
+        "app.worker.get_pool",
+        new_callable=AsyncMock,
+        return_value=AsyncMock(zcount=AsyncMock(return_value=0)),
+    ):
+        await reconcile_stale_source_images(
+            session,
+            stale_after_seconds=900,
+            pending_stale_after_seconds=3600,
+            current_job_id="reconciliation_sweep_task:123",
+        )
+
+    queue_state_mock.assert_awaited_once_with(
+        exclude_job_ids={"reconciliation_sweep_task:123"}
+    )
+
+
 async def test_reconcile_processing_survives_coordinator_liveness_read_failure() -> None:
     """A Redis liveness failure does not skip processing-row reconciliation."""
     mock_row = MagicMock()

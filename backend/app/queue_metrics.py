@@ -76,8 +76,16 @@ def record_enqueue(job_type: str, outcome: str, reason: str) -> None:
     )
 
 
-async def collect_queue_state() -> dict[str, Any]:
-    """Read queue depth and worker heartbeat without breaking a scrape."""
+async def collect_queue_state(*, exclude_job_ids: set[str] | None = None) -> dict[str, Any]:
+    """Read queue depth and worker heartbeat without breaking a scrape.
+
+    *exclude_job_ids* lets a caller running as an arq job itself (e.g. the
+    reconciliation sweep's own cron job — see ``reconciliation.py``) discount
+    its own in-flight entry from ``depth``. arq keeps queued *and*
+    currently-executing job IDs in the queue sorted set until the job
+    finishes, so without this a periodic cron job would always observe
+    ``depth >= 1`` (itself) and never treat the queue as idle.
+    """
     from .worker import WorkerSettings, get_pool
 
     pool = await get_pool()
@@ -95,6 +103,12 @@ async def collect_queue_state() -> dict[str, Any]:
         now_ms = time.time() * 1000
         health_check_interval = WorkerSettings.health_check_interval
         depth = await pool.zcard(ARQ_QUEUE_NAME)
+        if exclude_job_ids:
+            ranks = await asyncio.gather(
+                *(pool.zrank(ARQ_QUEUE_NAME, job_id) for job_id in exclude_job_ids)
+            )
+            depth -= sum(1 for rank in ranks if rank is not None)
+            depth = max(depth, 0)
         oldest = await pool.zrange(ARQ_QUEUE_NAME, 0, 0, withscores=True)
         oldest_age = None
         if oldest:

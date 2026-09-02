@@ -222,9 +222,9 @@ async def test_reconciliation_sweep_task_delegates_to_shared_sweep() -> None:
     """The cron job is a thin wrapper delegating to the shared sweep so
     ``local``- and ``required``-mode reconciliation stay in sync."""
     with patch("app.reconciliation.run_reconciliation_sweep", new_callable=AsyncMock) as sweep:
-        await reconciliation_sweep_task({})
+        await reconciliation_sweep_task({"job_id": "reconciliation_sweep_task:123"})
 
-    sweep.assert_awaited_once()
+    sweep.assert_awaited_once_with(current_job_id="reconciliation_sweep_task:123")
 
 
 async def test_on_startup_logs_worker_identity() -> None:

@@ -52,6 +52,28 @@ async def test_run_reconciliation_sweep_calls_all_four_steps(monkeypatch) -> Non
     reconcile_bulk_import.assert_awaited_once()
 
 
+async def test_run_reconciliation_sweep_forwards_current_job_id(monkeypatch) -> None:
+    """The sweep's own arq job ID (when running as the required-mode cron
+    job) is forwarded to reconcile_stale_source_images so it can exclude its
+    own in-flight queue entry from the pending-row idleness check."""
+    from app import reconciliation, admin_ops, processing
+    from app.routers import bulk_import
+
+    session_factory = _session_factory_returning(AsyncMock())
+    monkeypatch.setattr(reconciliation, "get_async_session", MagicMock(return_value=session_factory))
+
+    monkeypatch.setattr(admin_ops, "reconcile_stale_tasks", AsyncMock())
+    monkeypatch.setattr(admin_ops, "enforce_files_import_archive_retention", AsyncMock())
+    reconcile_source_images = AsyncMock()
+    monkeypatch.setattr(processing, "reconcile_stale_source_images", reconcile_source_images)
+    monkeypatch.setattr(bulk_import, "reconcile_stale_bulk_import_jobs", AsyncMock())
+
+    await reconciliation.run_reconciliation_sweep(current_job_id="reconciliation_sweep_task:123")
+
+    _args, kwargs = reconcile_source_images.await_args
+    assert kwargs["current_job_id"] == "reconciliation_sweep_task:123"
+
+
 async def test_run_reconciliation_sweep_continues_when_one_step_fails(caplog, monkeypatch) -> None:
     """A failure in one reconciliation step must not prevent the others
     from running — each step is isolated in its own try/except."""

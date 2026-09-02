@@ -32,6 +32,40 @@ async def test_collect_queue_state_reads_depth_and_heartbeat() -> None:
     pool.ttl.assert_awaited_once_with(HEALTH_CHECK_KEY)
 
 
+async def test_collect_queue_state_excludes_own_job_id_from_depth() -> None:
+    """A caller running as an arq job itself (the reconciliation cron job)
+    can discount its own in-flight queue entry so it can still observe an
+    otherwise-idle queue (depth 0) while it is executing."""
+    pool = AsyncMock()
+    pool.zcard.return_value = 1
+    pool.zrank.return_value = 0
+    pool.zrange.return_value = [(b"reconciliation_sweep_task:123", 1_000.0)]
+    pool.ttl.return_value = 25
+    with patch("app.worker.get_pool", new_callable=AsyncMock, return_value=pool):
+        state = await collect_queue_state(
+            exclude_job_ids={"reconciliation_sweep_task:123"}
+        )
+
+    assert state["depth"] == 0
+    pool.zrank.assert_awaited_once_with(
+        ARQ_QUEUE_NAME, "reconciliation_sweep_task:123"
+    )
+
+
+async def test_collect_queue_state_ignores_excluded_job_id_not_in_queue() -> None:
+    """If the excluded job ID isn't present (e.g. it already finished),
+    depth is reported unmodified rather than going negative."""
+    pool = AsyncMock()
+    pool.zcard.return_value = 2
+    pool.zrank.return_value = None
+    pool.zrange.return_value = [(b"job", 1_000.0)]
+    pool.ttl.return_value = 25
+    with patch("app.worker.get_pool", new_callable=AsyncMock, return_value=pool):
+        state = await collect_queue_state(exclude_job_ids={"some-other-job"})
+
+    assert state["depth"] == 2
+
+
 async def test_queue_metrics_render_contains_execution_mode() -> None:
     with (
         patch("app.queue_metrics.collect_queue_state", new_callable=AsyncMock, return_value={

@@ -691,6 +691,25 @@ async def _update_task(
     await session.commit()
 
 
+async def _heartbeat_task(session: AsyncSession, task: AdminTask) -> None:
+    """Touch ``updated_at`` without appending a log line or changing status.
+
+    Some long-running admin operations only poll for cancellation (see
+    ``_poll_cancel_only`` below) without otherwise calling ``_update_task``
+    for their entire duration — e.g. a large Azure blob restore or a
+    filesystem export's initial file-count scan. Reconciliation now runs
+    periodically (an arq worker cron job in ``TASK_EXECUTION_MODE=required``,
+    not just once at API startup — see ``reconciliation.py``), so a task
+    whose ``updated_at`` goes untouched for longer than
+    ``ADMIN_TASK_STALE_SECONDS`` would otherwise be marked ``failed`` by
+    ``reconcile_stale_tasks`` while it is still genuinely running. Calling
+    this on the same cadence as the cancellation poll keeps such tasks
+    correctly recognised as alive.
+    """
+    task.updated_at = datetime.now(timezone.utc)
+    await session.commit()
+
+
 def _parse_dt(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -2333,6 +2352,7 @@ async def run_files_export(task_id: int) -> None:
                     if task.status in ("cancelling", "cancelled"):
                         cancel_event.set()
                         return
+                    await _heartbeat_task(session, task)
 
             # Scan the export tree first so the UI can report the total
             # source-only payload size before archiving begins.  The scan
@@ -2955,6 +2975,7 @@ async def run_file_restore(task_id: int) -> None:
                     if task.status in ("cancelling", "cancelled"):
                         cancel_event.set()
                         return
+                    await _heartbeat_task(session, task)
 
             restore_future = asyncio.ensure_future(
                 asyncio.to_thread(

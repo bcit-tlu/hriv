@@ -30,12 +30,18 @@ from .database import get_async_session
 logger = logging.getLogger(__name__)
 
 
-async def run_reconciliation_sweep() -> None:
+async def run_reconciliation_sweep(current_job_id: str | None = None) -> None:
     """Run the full best-effort reconciliation sweep.
 
     Each step opens its own session and is isolated in its own try/except
     so that a failure in one reconciliation step does not prevent the
     others from running.
+
+    *current_job_id* should be set when this sweep runs from within an arq
+    job itself (the ``required``-mode cron job — see
+    ``worker.reconciliation_sweep_task``), so the stale-source-image check's
+    queue-idleness test doesn't mistake the sweep's own in-flight job entry
+    for real queued work.
     """
     # Local imports to avoid a circular import: admin_ops and
     # routers.bulk_import both import from worker, and worker imports
@@ -78,7 +84,7 @@ async def run_reconciliation_sweep() -> None:
     # so they don't appear stuck in "processing" in the UI forever.
     try:
         async with get_async_session()() as session:
-            await reconcile_stale_source_images(session)
+            await reconcile_stale_source_images(session, current_job_id=current_job_id)
     except Exception as exc:  # pragma: no cover - best effort
         logger.warning(
             "Stale source image reconciliation failed: %s",
