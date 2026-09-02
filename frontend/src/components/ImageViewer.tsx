@@ -53,7 +53,7 @@ interface ImageViewerProps {
   /** Flush any pending canvas annotation save immediately (bypass debounce) */
   onFlushCanvasAnnotations?: () => Promise<void>
   /** Discard canvas edits and restore the entry snapshot. */
-  onCancelCanvasAnnotations?: (annotations: CanvasAnnotation[]) => Promise<void>
+  onCancelCanvasAnnotations?: (annotations: CanvasAnnotation[]) => Promise<boolean>
   /** Notified after canvas annotations are cancelled. */
   onCanvasAnnotationsCancelled?: () => void
   /** Notified when canvas edit mode changes (so parent can disable conflicting UI) */

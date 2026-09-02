@@ -817,7 +817,7 @@ describe('CanvasOverlay', () => {
     it('cancels through the non-persisting callback without flushing', async () => {
       const original = [makeAnnotation({ id: 'orig-1' })]
       const onAnnotationsChange = vi.fn()
-      const onCancelAnnotations = vi.fn(async () => {})
+      const onCancelAnnotations = vi.fn(async () => true)
       const onAnnotationsCancelled = vi.fn()
       const onFlushAnnotations = vi.fn(async () => {})
       const onEditModeChange = vi.fn()
@@ -857,6 +857,45 @@ describe('CanvasOverlay', () => {
       expect(onFlushAnnotations).not.toHaveBeenCalled()
       expect(onAnnotationsCancelled).toHaveBeenCalledOnce()
       expect(onEditModeChange).toHaveBeenCalledWith(false)
+    })
+
+    it('keeps edit mode open when cancellation rollback fails', async () => {
+      const original = [makeAnnotation({ id: 'orig-1' })]
+      const onCancelAnnotations = vi.fn(async () => false)
+      const onAnnotationsCancelled = vi.fn()
+      const onEditModeChange = vi.fn()
+      const { rerender } = render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={original}
+          onAnnotationsChange={vi.fn()}
+          canEdit={true}
+          editMode={false}
+          onEditModeChange={onEditModeChange}
+          onCancelAnnotations={onCancelAnnotations}
+          onAnnotationsCancelled={onAnnotationsCancelled}
+        />,
+      )
+      rerender(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={original}
+          onAnnotationsChange={vi.fn()}
+          canEdit={true}
+          editMode={true}
+          onEditModeChange={onEditModeChange}
+          onCancelAnnotations={onCancelAnnotations}
+          onAnnotationsCancelled={onAnnotationsCancelled}
+        />,
+      )
+
+      await act(async () => {
+        screen.getByLabelText('Cancel — discard changes').click()
+      })
+
+      expect(onCancelAnnotations).toHaveBeenCalledWith(original)
+      expect(onAnnotationsCancelled).not.toHaveBeenCalled()
+      expect(onEditModeChange).not.toHaveBeenCalledWith(false)
     })
 
     it('registers a cancel handler that mirrors the Cancel button behavior', async () => {

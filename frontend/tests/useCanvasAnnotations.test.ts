@@ -620,6 +620,91 @@ describe('useCanvasAnnotations', () => {
       )
       expect(result.current.localCanvasAnnotations).toEqual(original)
     })
+
+    it('awaits an in-flight rollback even when the selected image changes', async () => {
+      const original = [makeAnnotation({ id: 'original' })]
+      const edited = [makeAnnotation({ id: 'edited' })]
+      const image1 = makeImage({ id: 1, metadataExtra: { canvas_annotations: original } })
+      const image2 = makeImage({ id: 2 })
+      let resolveFirst!: (value: ImageItem) => void
+      const firstSave = new Promise<ImageItem>((resolve) => {
+        resolveFirst = resolve
+      })
+      mockUpdateImage.mockReturnValueOnce(firstSave as never).mockResolvedValueOnce({
+        ...image1,
+        version: 3,
+        metadata_extra: { canvas_annotations: original },
+      })
+      const deps = makeDeps({ selectedImage: image1 })
+      const { result, rerender } = renderHook(
+        (props: UseCanvasAnnotationsDeps) => useCanvasAnnotations(props),
+        { initialProps: deps },
+      )
+
+      act(() => {
+        result.current.handleCanvasAnnotationsChange(edited)
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(600)
+      })
+
+      const cancellation = result.current.cancelCanvasAnnotations(original)
+      rerender({ ...deps, selectedImage: image2 })
+      resolveFirst({
+        ...image1,
+        version: 2,
+        metadata_extra: { canvas_annotations: edited },
+      })
+      await act(async () => {
+        await cancellation
+      })
+
+      expect(mockUpdateImage).toHaveBeenCalledTimes(2)
+      expect(mockUpdateImage).toHaveBeenNthCalledWith(
+        1,
+        1,
+        { metadata_extra_merge: { canvas_annotations: edited } },
+        1,
+      )
+      expect(mockUpdateImage).toHaveBeenNthCalledWith(
+        2,
+        1,
+        { metadata_extra_merge: { canvas_annotations: original } },
+        2,
+      )
+    })
+
+    it('returns failure when an autosaved edit cannot be rolled back', async () => {
+      const original = [makeAnnotation({ id: 'original' })]
+      const edited = [makeAnnotation({ id: 'edited' })]
+      const image = makeImage({ id: 1, metadataExtra: { canvas_annotations: original } })
+      mockUpdateImage
+        .mockResolvedValueOnce({
+          ...image,
+          version: 2,
+          metadata_extra: { canvas_annotations: edited },
+        })
+        .mockRejectedValueOnce(new Error('Rollback failed'))
+      const setErrorSnack = vi.fn()
+      const deps = makeDeps({ selectedImage: image, setErrorSnack })
+      const { result } = renderHook(() => useCanvasAnnotations(deps))
+
+      act(() => {
+        result.current.handleCanvasAnnotationsChange(edited)
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(600)
+      })
+
+      let cancelled!: boolean
+      await act(async () => {
+        cancelled = await result.current.cancelCanvasAnnotations(original)
+      })
+
+      expect(cancelled).toBe(false)
+      expect(setErrorSnack).toHaveBeenCalled()
+      expect(mockUpdateImage).toHaveBeenCalledTimes(2)
+    })
   })
 
   describe('image change reset', () => {

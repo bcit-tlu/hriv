@@ -196,7 +196,7 @@ vi.mock('../../src/components/CanvasOverlay', () => ({
   }: {
     editMode: boolean
     onEditModeChange: (mode: boolean) => void
-    onCancelAnnotations?: (annotations: never[]) => Promise<void>
+    onCancelAnnotations?: (annotations: never[]) => Promise<boolean>
     onAnnotationsCancelled?: () => void
     registerCancelHandler: (handler: (() => Promise<void>) | null) => void
   }) => {
@@ -781,7 +781,7 @@ describe('ImageViewer overlay locking', () => {
 describe('ImageViewer canvas edit mode', () => {
   it('enters canvas edit mode from the toolbar and exits via the overlay cancel flow', async () => {
     const onCanvasEditModeChange = vi.fn()
-    const onCancelCanvasAnnotations = vi.fn(async () => {})
+    const onCancelCanvasAnnotations = vi.fn(async () => true)
     const onCanvasAnnotationsCancelled = vi.fn()
     render(
       <ImageViewer

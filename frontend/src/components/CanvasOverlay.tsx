@@ -108,7 +108,7 @@ interface CanvasOverlayProps {
   /** Flush any pending annotation save immediately (bypass debounce) */
   onFlushAnnotations?: () => Promise<void>
   /** Discard the edit session and restore its entry snapshot. */
-  onCancelAnnotations?: (annotations: CanvasAnnotation[]) => Promise<void>
+  onCancelAnnotations?: (annotations: CanvasAnnotation[]) => Promise<boolean>
   /** Notify the parent after canvas annotations have been cancelled. */
   onAnnotationsCancelled?: () => void
   /** Lets the parent trigger the same discard-changes flow as the Cancel button */
@@ -1214,10 +1214,11 @@ export default function CanvasOverlay({
   }, [emitAnnotations, onEditModeChange, onFlushAnnotations])
 
   const handleCancel = useCallback(async () => {
+    let cancelled = true
     if (onCancelAnnotations) {
       setFlushing(true)
       try {
-        await onCancelAnnotations(snapshotRef.current)
+        cancelled = await onCancelAnnotations(snapshotRef.current)
       } finally {
         setFlushing(false)
       }
@@ -1226,6 +1227,7 @@ export default function CanvasOverlay({
       // onCancelAnnotations so restoring the snapshot does not become a save.
       onAnnotationsChange(snapshotRef.current)
     }
+    if (!cancelled) return
     onAnnotationsCancelled?.()
     onEditModeChange(false)
   }, [onAnnotationsChange, onAnnotationsCancelled, onCancelAnnotations, onEditModeChange])
