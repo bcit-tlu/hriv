@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.50.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.49.1...backend-v0.50.0) (2026-09-02)
+
+
+### Features
+
+* **backend:** add durable job model foundation ([#1172](https://github.com/bcit-tlu/hriv/issues/1172)) ([8c34cb7](https://github.com/bcit-tlu/hriv/commit/8c34cb7cf4645ddfb6e540fb42cffa0e7d8c5ec4))
+
+
+### Bug Fixes
+
+* **backend:** close bulk-import race and add read-only jobs API ([#1175](https://github.com/bcit-tlu/hriv/issues/1175)) ([4f00833](https://github.com/bcit-tlu/hriv/commit/4f008335c3b167d97b9eceb15d9c002a3a67a668))
+* **backend:** remove bulk import coordinator slot accounting ([#1171](https://github.com/bcit-tlu/hriv/issues/1171)) ([c612c15](https://github.com/bcit-tlu/hriv/commit/c612c158511eb87b3d531697c66a2e041a83a6a9))
+
 ## [0.49.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.49.0...backend-v0.49.1) (2026-09-01)
 
 
