@@ -10,6 +10,22 @@ interface CanvasSaveResult {
   updated?: { version: number }
 }
 
+interface CanvasSaveState {
+  inFlight: boolean
+  inFlightPromise: Promise<CanvasSaveResult> | null
+  pending: CanvasAnnotation[] | null
+  lastSavedAnnotations: CanvasAnnotation[]
+  version: number
+  metadata: Record<string, unknown> | null | undefined
+}
+
+function annotationsFromMetadata(
+  metadata: Record<string, unknown> | null | undefined,
+): CanvasAnnotation[] {
+  const annotations = metadata?.canvas_annotations
+  return Array.isArray(annotations) ? (annotations as CanvasAnnotation[]) : []
+}
+
 /** Dependencies injected by the host component. */
 export interface UseCanvasAnnotationsDeps {
   selectedImage: ImageItem | null
@@ -44,37 +60,50 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
   // updated after every successful PATCH.
   // undefined = not yet initialised (use selectedImage); null/object = latest known server state
   const latestMetadataRef = useRef<Record<string, unknown> | null | undefined>(undefined)
-  // Debounce timer for canvas annotation saves to avoid 409 version conflicts
-  const canvasSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const canvasSaveInFlightRef = useRef(false)
-  const pendingCanvasAnnotationsRef = useRef<CanvasAnnotation[] | null>(null)
+  // Save coordination must remain isolated per image because users can switch
+  // images while prior saves and cancellation rollbacks are still in flight.
+  const canvasSaveStatesRef = useRef(new Map<number, CanvasSaveState>())
+  const canvasSaveTimersRef = useRef(new Map<number, ReturnType<typeof setTimeout>>())
   // While cancellation awaits an in-flight save or rollback, ignore new
   // canvas events for that image so they cannot be replayed after cancellation.
   const canvasCancellationImageIdsRef = useRef(new Set<number>())
   /** Always-current annotations last passed to handleCanvasAnnotationsChange.
    *  Used by flushCanvasAnnotations to avoid reading stale React state. */
   const latestCanvasAnnotationsRef = useRef<CanvasAnnotation[] | null>(null)
-  // The last annotation set known to be persisted for this image.  Cancel can
-  // discard a debounced local edit without writing anything, but must roll
-  // back edits that already completed an autosave during the edit session.
-  const lastSavedCanvasAnnotationsRef = useRef<CanvasAnnotation[] | null>(null)
-  // Saves can overlap across image switches, so cancellation must be able to
-  // await the request associated with the image being cancelled.
-  const canvasSaveInFlightPromisesRef = useRef(new Map<number, Promise<CanvasSaveResult>>())
-  // Track which image ID the current in-flight save targets so stale completions
-  // don't overwrite refs after an image change
-  const saveTargetImageIdRef = useRef<number | null>(null)
   // A rejected updateImage request has an indeterminate server outcome: the
   // PATCH may have committed even though its response did not reach the client.
   const uncertainCanvasSaveImageIdsRef = useRef(new Set<number>())
   // Stable ref for the save function so the callback can flush queued saves
   // without a self-reference (which the React Compiler cannot memoize).
   const saveCanvasAnnotationsRef = useRef<
-    (annotations: CanvasAnnotation[]) => Promise<CanvasSaveResult>
+    (
+      annotations: CanvasAnnotation[],
+      targetImage?: ImageItem | null,
+      versionOverride?: number,
+    ) => Promise<CanvasSaveResult>
   >(async () => ({ success: true, persisted: true }))
-  const startCanvasSaveRef = useRef<(annotations: CanvasAnnotation[]) => Promise<CanvasSaveResult>>(
-    async () => ({ success: true, persisted: true }),
-  )
+  const startCanvasSaveRef = useRef<
+    (
+      annotations: CanvasAnnotation[],
+      targetImage?: ImageItem | null,
+      versionOverride?: number,
+    ) => Promise<CanvasSaveResult>
+  >(async () => ({ success: true, persisted: true }))
+
+  const getCanvasSaveState = useCallback((image: ImageItem): CanvasSaveState => {
+    const existing = canvasSaveStatesRef.current.get(image.id)
+    if (existing) return existing
+    const state: CanvasSaveState = {
+      inFlight: false,
+      inFlightPromise: null,
+      pending: null,
+      lastSavedAnnotations: annotationsFromMetadata(image.metadataExtra),
+      version: image.version,
+      metadata: undefined,
+    }
+    canvasSaveStatesRef.current.set(image.id, state)
+    return state
+  }, [])
 
   // --- State ---
 
@@ -84,53 +113,42 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
     null,
   )
 
-  // Synchronously clear race-sensitive refs during render when the image
-  // changes.  The useEffect below runs as a passive effect (deferred), so
-  // there is a window between re-render and effect execution where an
-  // in-flight save's `finally` block could read stale guard refs and flush
-  // queued saves via `saveCanvasAnnotationsRef.current` — which already
-  // points to the new closure (wrong image).  Clearing synchronously
-  // eliminates that window.
+  // Track selection synchronously so late saves can update only their own
+  // state record and never the version/metadata exposed for another image.
   const prevSelectedImageIdRef = useRef<number | null>(null)
   const currentImageId = selectedImage?.id ?? null
   const currentImageVersion = selectedImage?.version ?? 0
   const currentImageMetadata = selectedImage?.metadataExtra
   if (currentImageId !== prevSelectedImageIdRef.current) {
     prevSelectedImageIdRef.current = currentImageId
-    // eslint-disable-next-line react-hooks/refs -- synchronous clearing required to prevent race; see comment above
-    pendingCanvasAnnotationsRef.current = null
-    // eslint-disable-next-line react-hooks/refs -- synchronous clearing required to prevent race; see comment above
-    saveTargetImageIdRef.current = null
-    // eslint-disable-next-line react-hooks/refs -- synchronous clearing required to prevent race; see comment above
-    canvasSaveInFlightRef.current = false
     setLocalCanvasAnnotations(null)
   }
 
+  const syncCurrentImageRefs = useCallback((imageId: number, state: CanvasSaveState) => {
+    if (prevSelectedImageIdRef.current !== imageId) return
+    latestVersionRef.current = state.version
+    latestMetadataRef.current = state.metadata
+  }, [])
+
   // --- Effects ---
 
-  // Reset version and pending-save refs only when the selected image changes.
-  // The selected image object can be refreshed in place (for example, when a
-  // tile token is renewed) without changing its ID. Resetting on object
-  // identity would abandon an in-flight CAS save and make the next edit reuse
-  // the stale version, resulting in a 409 even though the first save worked.
+  // Mirror the selected image's per-image state for other metadata operations.
+  // In-flight work for other images deliberately remains intact.
   useEffect(() => {
-    latestVersionRef.current = selectedImage?.version ?? 0
-    latestMetadataRef.current = undefined // reset to 'uninitialised' so first read falls back to selectedImage
-    // Clear any pending canvas annotation saves for the previous image
-    if (canvasSaveTimerRef.current) {
-      clearTimeout(canvasSaveTimerRef.current)
-      canvasSaveTimerRef.current = null
-    }
-    pendingCanvasAnnotationsRef.current = null
     latestCanvasAnnotationsRef.current = null
-    const savedAnnotations = selectedImage?.metadataExtra?.canvas_annotations
-    lastSavedCanvasAnnotationsRef.current = Array.isArray(savedAnnotations)
-      ? (savedAnnotations as CanvasAnnotation[])
-      : []
-    canvasSaveInFlightRef.current = false
-    saveTargetImageIdRef.current = null
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- selectedImage identity may change during a same-image refresh; only its ID starts a new save session
-  }, [selectedImage?.id])
+    if (!selectedImage) {
+      latestVersionRef.current = 0
+      latestMetadataRef.current = undefined
+      return
+    }
+    const state = getCanvasSaveState(selectedImage)
+    if (selectedImage.version > state.version) {
+      state.version = selectedImage.version
+      state.metadata = selectedImage.metadataExtra ?? {}
+    }
+    syncCurrentImageRefs(selectedImage.id, state)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- a new image ID starts a save session; same-image refreshes are handled below
+  }, [getCanvasSaveState, selectedImage?.id, syncCurrentImageRefs])
 
   // Same-image updates can carry a newer server version (for example, after
   // editing image details or completing image processing). Keep the CAS token
@@ -139,10 +157,20 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
   // prevents a stale same-image refresh from replacing metadata returned by a
   // newer annotation save.
   useEffect(() => {
-    if (currentImageId === null || currentImageVersion <= latestVersionRef.current) return
-    latestVersionRef.current = currentImageVersion
-    latestMetadataRef.current = currentImageMetadata ?? {}
-  }, [currentImageId, currentImageVersion, currentImageMetadata])
+    if (currentImageId === null || !selectedImage) return
+    const state = getCanvasSaveState(selectedImage)
+    if (currentImageVersion <= state.version) return
+    state.version = currentImageVersion
+    state.metadata = currentImageMetadata ?? {}
+    syncCurrentImageRefs(currentImageId, state)
+  }, [
+    currentImageId,
+    currentImageMetadata,
+    currentImageVersion,
+    getCanvasSaveState,
+    selectedImage,
+    syncCurrentImageRefs,
+  ])
 
   // --- Memos ---
 
@@ -166,17 +194,20 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
     ): Promise<CanvasSaveResult> => {
       if (!targetImage) return { success: true, persisted: true }
       const targetImageId = targetImage.id
-      saveTargetImageIdRef.current = targetImageId
-      canvasSaveInFlightRef.current = true
+      const targetState = getCanvasSaveState(targetImage)
+      targetState.inFlight = true
       let persisted = false
       let updated: Awaited<ReturnType<typeof updateImage>> | undefined
       try {
         const mergeValue = annotations.length > 0 ? annotations : null
-        const currentVersion =
-          versionOverride ??
-          (targetImageId === selectedImage?.id
-            ? latestVersionRef.current || targetImage.version
-            : targetImage.version)
+        if (
+          prevSelectedImageIdRef.current === targetImageId &&
+          latestVersionRef.current > targetState.version
+        ) {
+          targetState.version = latestVersionRef.current
+          targetState.metadata = latestMetadataRef.current
+        }
+        const currentVersion = versionOverride ?? targetState.version ?? targetImage.version
         updated = await updateImage(
           targetImageId,
           {
@@ -189,15 +220,11 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
         // A successful PATCH must still be rolled back if a later category
         // refresh fails while cancellation is waiting for this save.
         persisted = true
-        // Only update shared refs if the image hasn't changed while we were saving
-        if (
-          saveTargetImageIdRef.current === targetImageId &&
-          selectedImage?.id === targetImageId &&
-          updated.version >= latestVersionRef.current
-        ) {
-          latestVersionRef.current = updated.version
-          latestMetadataRef.current = updated.metadata_extra ?? {}
-          lastSavedCanvasAnnotationsRef.current = annotations
+        if (updated.version >= targetState.version) {
+          targetState.version = updated.version
+          targetState.metadata = updated.metadata_extra ?? {}
+          targetState.lastSavedAnnotations = annotations
+          syncCurrentImageRefs(targetImageId, targetState)
         }
         await loadCategories()
         loadUncategorizedImages()
@@ -208,93 +235,103 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
         setErrorSnack(userMessage(err, 'Failed to save annotations.'))
         return { success: false, persisted, updated }
       } finally {
-        // Only clear in-flight flag and flush queue if still targeting the same image
-        if (saveTargetImageIdRef.current === targetImageId) {
-          canvasSaveInFlightRef.current = false
-          if (pendingCanvasAnnotationsRef.current !== null) {
-            const queued = pendingCanvasAnnotationsRef.current
-            pendingCanvasAnnotationsRef.current = null
-            void startCanvasSaveRef.current(queued)
-          }
+        targetState.inFlight = false
+        if (targetState.pending !== null) {
+          const queued = targetState.pending
+          targetState.pending = null
+          void startCanvasSaveRef.current(queued, targetImage)
         }
       }
     },
-    [selectedImage, loadCategories, loadUncategorizedImages, setErrorSnack],
+    [
+      getCanvasSaveState,
+      loadCategories,
+      loadUncategorizedImages,
+      selectedImage,
+      setErrorSnack,
+      syncCurrentImageRefs,
+    ],
   )
   // eslint-disable-next-line react-hooks/refs -- must stay synchronous; read by in-flight save's finally block
   saveCanvasAnnotationsRef.current = saveCanvasAnnotations
 
-  const startCanvasSave = useCallback((annotations: CanvasAnnotation[]) => {
-    const targetImageId = prevSelectedImageIdRef.current
-    const promise = saveCanvasAnnotationsRef.current(annotations)
-    if (targetImageId === null) return promise
-    canvasSaveInFlightPromisesRef.current.set(targetImageId, promise)
-    void promise.then(
-      () => {
-        if (canvasSaveInFlightPromisesRef.current.get(targetImageId) === promise) {
-          canvasSaveInFlightPromisesRef.current.delete(targetImageId)
-        }
-      },
-      () => {
-        if (canvasSaveInFlightPromisesRef.current.get(targetImageId) === promise) {
-          canvasSaveInFlightPromisesRef.current.delete(targetImageId)
-        }
-      },
-    )
-    return promise
-  }, [])
+  const startCanvasSave = useCallback(
+    (
+      annotations: CanvasAnnotation[],
+      targetImage: ImageItem | null = selectedImage,
+      versionOverride?: number,
+    ) => {
+      if (!targetImage) return saveCanvasAnnotationsRef.current(annotations)
+      const targetState = getCanvasSaveState(targetImage)
+      const promise = saveCanvasAnnotationsRef.current(annotations, targetImage, versionOverride)
+      targetState.inFlightPromise = promise
+      void promise.then(
+        () => {
+          if (targetState.inFlightPromise === promise) targetState.inFlightPromise = null
+        },
+        () => {
+          if (targetState.inFlightPromise === promise) targetState.inFlightPromise = null
+        },
+      )
+      return promise
+    },
+    [getCanvasSaveState, selectedImage],
+  )
   // eslint-disable-next-line react-hooks/refs -- must stay synchronous; save finally starts queued work through this ref
   startCanvasSaveRef.current = startCanvasSave
+
+  const clearCanvasSaveTimer = useCallback((imageId: number) => {
+    const timer = canvasSaveTimersRef.current.get(imageId)
+    if (!timer) return
+    clearTimeout(timer)
+    canvasSaveTimersRef.current.delete(imageId)
+  }, [])
 
   // Save canvas annotations to image metadata_extra (debounced).
   // Rapid edits reset a 600ms timer; if a save is already in-flight the
   // latest data is queued and flushed when the current request completes.
   // Also eagerly updates local state so view mode reflects edits immediately.
-  const handleCanvasAnnotationsChange = useCallback((annotations: CanvasAnnotation[]) => {
-    const currentImageId = prevSelectedImageIdRef.current
-    if (currentImageId !== null && canvasCancellationImageIdsRef.current.has(currentImageId)) {
-      return
-    }
-    setLocalCanvasAnnotations(annotations)
-    latestCanvasAnnotationsRef.current = annotations
-    if (canvasSaveTimerRef.current) clearTimeout(canvasSaveTimerRef.current)
-    if (canvasSaveInFlightRef.current) {
-      // A save is in-flight — queue the latest data (replaces any prior queued data)
-      pendingCanvasAnnotationsRef.current = annotations
-      return
-    }
-    canvasSaveTimerRef.current = setTimeout(() => {
-      canvasSaveTimerRef.current = null
-      // Read through the ref so the debounce window never fires a stale closure
-      void startCanvasSaveRef.current(annotations)
-    }, 600)
-  }, [])
+  const handleCanvasAnnotationsChange = useCallback(
+    (annotations: CanvasAnnotation[]) => {
+      if (!selectedImage || canvasCancellationImageIdsRef.current.has(selectedImage.id)) return
+      const targetImage = selectedImage
+      const targetState = getCanvasSaveState(targetImage)
+      setLocalCanvasAnnotations(annotations)
+      latestCanvasAnnotationsRef.current = annotations
+      clearCanvasSaveTimer(targetImage.id)
+      if (targetState.inFlight) {
+        // A save is in-flight for this image — queue the latest data.
+        targetState.pending = annotations
+        return
+      }
+      const timer = setTimeout(() => {
+        canvasSaveTimersRef.current.delete(targetImage.id)
+        void startCanvasSaveRef.current(annotations, targetImage)
+      }, 600)
+      canvasSaveTimersRef.current.set(targetImage.id, timer)
+    },
+    [clearCanvasSaveTimer, getCanvasSaveState, selectedImage],
+  )
 
   // Flush any pending canvas annotation save immediately (bypass debounce).
   // Used by the "Done" button to ensure data is persisted before exiting edit mode,
   // and by lock/clear operations to avoid race conditions.
   const flushCanvasAnnotations = useCallback(async () => {
-    // Cancel any pending debounce timer
-    if (canvasSaveTimerRef.current) {
-      clearTimeout(canvasSaveTimerRef.current)
-      canvasSaveTimerRef.current = null
-    }
-    // If there's queued data waiting behind an in-flight save, grab it
-    const pending = pendingCanvasAnnotationsRef.current
-    pendingCanvasAnnotationsRef.current = null
-    // If a save is already in-flight we need to wait for it, then save queued data
-    if (canvasSaveInFlightRef.current) {
-      // Re-queue so the in-flight finally block picks it up
-      if (pending) pendingCanvasAnnotationsRef.current = pending
-      // Spin-wait (max ~3s) for the in-flight save to finish
-      for (let i = 0; i < 30 && canvasSaveInFlightRef.current; i++) {
+    if (!selectedImage) return
+    const targetImage = selectedImage
+    const targetState = getCanvasSaveState(targetImage)
+    clearCanvasSaveTimer(targetImage.id)
+    const pending = targetState.pending
+    targetState.pending = null
+    if (targetState.inFlight) {
+      if (pending) targetState.pending = pending
+      for (let i = 0; i < 30 && targetState.inFlight; i++) {
         await new Promise((r) => setTimeout(r, 100))
       }
-      // After waiting, save any data the in-flight handler didn't pick up
-      const stillPending = pendingCanvasAnnotationsRef.current
-      if (stillPending && !canvasSaveInFlightRef.current) {
-        pendingCanvasAnnotationsRef.current = null
-        await startCanvasSave(stillPending)
+      const stillPending = targetState.pending
+      if (stillPending && !targetState.inFlight) {
+        targetState.pending = null
+        await startCanvasSave(stillPending, targetImage)
       }
       return
     }
@@ -302,11 +339,11 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
     // which may be stale due to React's async state batching.
     const latest = latestCanvasAnnotationsRef.current
     if (pending) {
-      await startCanvasSave(pending)
+      await startCanvasSave(pending, targetImage)
     } else if (latest) {
-      await startCanvasSave(latest)
+      await startCanvasSave(latest, targetImage)
     }
-  }, [startCanvasSave])
+  }, [clearCanvasSaveTimer, getCanvasSaveState, selectedImage, startCanvasSave])
 
   /**
    * Discard the current edit session.  Debounced and queued edits have not
@@ -321,12 +358,10 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
       if (canvasCancellationImageIdsRef.current.has(targetImage.id)) return false
       canvasCancellationImageIdsRef.current.add(targetImage.id)
       try {
-        const inFlightPromise = canvasSaveInFlightPromisesRef.current.get(targetImage.id)
-        if (canvasSaveTimerRef.current) {
-          clearTimeout(canvasSaveTimerRef.current)
-          canvasSaveTimerRef.current = null
-        }
-        pendingCanvasAnnotationsRef.current = null
+        const targetState = getCanvasSaveState(targetImage)
+        const inFlightPromise = targetState.inFlightPromise
+        clearCanvasSaveTimer(targetImage.id)
+        targetState.pending = null
         latestCanvasAnnotationsRef.current = null
         setLocalCanvasAnnotations(snapshot)
 
@@ -337,7 +372,7 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
           // rollback request.
           const result = await inFlightPromise
           if (!result.persisted) return false
-          const rollback = await saveCanvasAnnotations(
+          const rollback = await startCanvasSave(
             snapshot,
             targetImage,
             result.updated?.version ?? targetImage.version,
@@ -347,7 +382,7 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
 
         if (uncertainCanvasSaveImageIdsRef.current.has(targetImage.id)) {
           // A rejected PATCH may have committed server-side. Re-read the image
-          // before trusting lastSavedCanvasAnnotationsRef or claiming success.
+          // before trusting the per-image saved snapshot or claiming success.
           let authoritativeImage
           try {
             authoritativeImage = await fetchImage(targetImage.id)
@@ -361,19 +396,17 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
           )
             ? (authoritativeImage.metadata_extra.canvas_annotations as CanvasAnnotation[])
             : []
-          // Synchronize only while this image is still selected. The fetch can
-          // finish after navigation, and its older image data must not replace
-          // the version or metadata currently tracked for another image.
-          if (
-            prevSelectedImageIdRef.current === targetImage.id &&
-            authoritativeImage.version >= latestVersionRef.current
-          ) {
-            latestVersionRef.current = authoritativeImage.version
-            latestMetadataRef.current = authoritativeImage.metadata_extra ?? {}
-            lastSavedCanvasAnnotationsRef.current = authoritativeAnnotations
+          if (authoritativeImage.version >= targetState.version) {
+            targetState.version = authoritativeImage.version
+            targetState.metadata = authoritativeImage.metadata_extra ?? {}
+            targetState.lastSavedAnnotations = authoritativeAnnotations
+            // Synchronize only while this image is still selected. The fetch
+            // can finish after navigation, and its older image data must not
+            // replace the version or metadata currently tracked for another.
+            syncCurrentImageRefs(targetImage.id, targetState)
           }
           if (JSON.stringify(authoritativeAnnotations) !== JSON.stringify(snapshot)) {
-            const rollback = await saveCanvasAnnotations(
+            const rollback = await startCanvasSave(
               snapshot,
               targetImage,
               authoritativeImage.version,
@@ -384,19 +417,25 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
           return true
         }
 
-        if (
-          JSON.stringify(lastSavedCanvasAnnotationsRef.current ?? []) === JSON.stringify(snapshot)
-        ) {
+        if (JSON.stringify(targetState.lastSavedAnnotations) === JSON.stringify(snapshot)) {
           return true
         }
 
-        const rollback = await startCanvasSave(snapshot)
+        const rollback = await startCanvasSave(snapshot, targetImage)
         return rollback.success
       } finally {
         canvasCancellationImageIdsRef.current.delete(targetImage.id)
       }
     },
-    [fetchImage, saveCanvasAnnotations, selectedImage, setErrorSnack, startCanvasSave],
+    [
+      clearCanvasSaveTimer,
+      fetchImage,
+      getCanvasSaveState,
+      selectedImage,
+      setErrorSnack,
+      startCanvasSave,
+      syncCurrentImageRefs,
+    ],
   )
 
   return {

@@ -1054,6 +1054,108 @@ describe('useCanvasAnnotations', () => {
       })
     })
 
+    it('serializes later edits for B while A cancellation rolls back', async () => {
+      const originalA = [makeAnnotation({ id: 'original-a' })]
+      const editedA = [makeAnnotation({ id: 'edited-a' })]
+      const firstBEdit = [makeAnnotation({ id: 'first-b' })]
+      const laterBEdit = [makeAnnotation({ id: 'later-b' })]
+      const imageA = makeImage({ id: 1, metadataExtra: { canvas_annotations: originalA } })
+      const imageB = makeImage({ id: 2 })
+      let resolveASave!: (value: ImageItem) => void
+      let resolveBSave!: (value: ImageItem) => void
+      let resolveARollback!: (value: ImageItem) => void
+      let resolveBLaterSave!: (value: ImageItem) => void
+      const aSave = new Promise<ImageItem>((resolve) => {
+        resolveASave = resolve
+      })
+      const bSave = new Promise<ImageItem>((resolve) => {
+        resolveBSave = resolve
+      })
+      const aRollback = new Promise<ImageItem>((resolve) => {
+        resolveARollback = resolve
+      })
+      const bLaterSave = new Promise<ImageItem>((resolve) => {
+        resolveBLaterSave = resolve
+      })
+      mockUpdateImage
+        .mockReturnValueOnce(aSave as never)
+        .mockReturnValueOnce(bSave as never)
+        .mockReturnValueOnce(aRollback as never)
+        .mockReturnValueOnce(bLaterSave as never)
+      const deps = makeDeps({ selectedImage: imageA })
+      const { result, rerender } = renderHook(
+        (props: UseCanvasAnnotationsDeps) => useCanvasAnnotations(props),
+        { initialProps: deps },
+      )
+
+      act(() => {
+        result.current.handleCanvasAnnotationsChange(editedA)
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(600)
+      })
+      const cancellation = result.current.cancelCanvasAnnotations(originalA)
+
+      rerender({ ...deps, selectedImage: imageB })
+      act(() => {
+        result.current.handleCanvasAnnotationsChange(firstBEdit)
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(600)
+      })
+
+      resolveASave({
+        ...imageA,
+        version: 2,
+        metadata_extra: { canvas_annotations: editedA },
+      })
+      await act(async () => {
+        await Promise.resolve()
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+      expect(mockUpdateImage).toHaveBeenNthCalledWith(
+        3,
+        1,
+        { metadata_extra_merge: { canvas_annotations: originalA } },
+        2,
+      )
+
+      act(() => {
+        result.current.handleCanvasAnnotationsChange(laterBEdit)
+      })
+      resolveBSave({
+        ...imageB,
+        version: 2,
+        metadata_extra: { canvas_annotations: firstBEdit },
+      })
+      await act(async () => {
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      expect(mockUpdateImage).toHaveBeenNthCalledWith(
+        4,
+        2,
+        { metadata_extra_merge: { canvas_annotations: laterBEdit } },
+        2,
+      )
+
+      resolveARollback({
+        ...imageA,
+        version: 3,
+        metadata_extra: { canvas_annotations: originalA },
+      })
+      resolveBLaterSave({
+        ...imageB,
+        version: 3,
+        metadata_extra: { canvas_annotations: laterBEdit },
+      })
+      await act(async () => {
+        await cancellation
+      })
+    })
+
     it('allows a new image to save while an old image cancellation is pending', async () => {
       const original1 = [makeAnnotation({ id: 'original-1' })]
       const edited1 = [makeAnnotation({ id: 'edited-1' })]
