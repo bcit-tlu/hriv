@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.51.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.50.1...backend-v0.51.0) (2026-09-02)
+
+
+### Features
+
+* **backend:** add durable JobItem leases ([#1193](https://github.com/bcit-tlu/hriv/issues/1193)) ([5ba7fa8](https://github.com/bcit-tlu/hriv/commit/5ba7fa86749d6057de61ed85bff126460fdff69c))
+
 ## [0.50.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.50.0...backend-v0.50.1) (2026-09-02)
 
 
