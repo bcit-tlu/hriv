@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.51.3](https://github.com/bcit-tlu/hriv/compare/frontend-v0.51.2...frontend-v0.51.3) (2026-09-02)
+
+
+### Bug Fixes
+
+* **frontend:** make canvas annotation editing explicit-save ([#1198](https://github.com/bcit-tlu/hriv/issues/1198)) ([e868287](https://github.com/bcit-tlu/hriv/commit/e868287fd52ba7235089401daec291c20bbd7964))
+
 ## [0.51.2](https://github.com/bcit-tlu/hriv/compare/frontend-v0.51.1...frontend-v0.51.2) (2026-09-02)
 
 
