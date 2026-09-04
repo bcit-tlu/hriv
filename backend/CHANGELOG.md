@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.52.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.51.1...backend-v0.52.0) (2026-09-04)
+
+
+### Features
+
+* **observability:** log image lifecycle names ([#1208](https://github.com/bcit-tlu/hriv/issues/1208)) ([b06410e](https://github.com/bcit-tlu/hriv/commit/b06410ed911cf3c95027991f17ab72b314f94dbe))
+
 ## [0.51.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.51.0...backend-v0.51.1) (2026-09-04)
 
 
