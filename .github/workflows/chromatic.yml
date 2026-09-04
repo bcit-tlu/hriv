@@ -6,11 +6,11 @@ on:
   # merge commits.  The pull_request event creates ephemeral merge commits
   # that can cause incorrect baseline comparisons.
   #
-  # Do NOT add a paths filter here: Chromatic needs a build for every commit
-  # on every branch so UI Review always has a baseline on the target branch.
-  # Skipping commits via path filtering breaks the baseline chain and forces
-  # manual patch builds (see chromatic.com/docs/github-actions).
+  # Do not add a paths filter: branch builds maintain Chromatic's baseline
+  # chain. TurboSnap's `untraced` setting instead bypasses snapshot capture
+  # for changes outside `frontend/`, without fragmenting that history.
   push:
+    branches: ['**']
   workflow_dispatch:
 
 env:

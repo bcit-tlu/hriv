@@ -54,6 +54,12 @@ and `ci.yaml` chart-publish loops. See
 chart artifact. This is the single biggest asymmetry in the system and
 matters for the flux-fleet flow below.
 
+`ci.yaml` uses path filters to run each component's quality gate only when its
+source or directly coupled build configuration changes. Workflow changes run
+all component gates; `helm-lint` remains a required, unconditional check.
+Skipped component jobs satisfy their required check status, while the
+corresponding reusable OCI build is skipped as well.
+
 ## Tag and version formats
 
 | Thing                      | Format                                                 | Example                            | Notes                                                                                                                                         |
