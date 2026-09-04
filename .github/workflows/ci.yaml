@@ -33,6 +33,7 @@ jobs:
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       backend-image: ${{ steps.filter.outputs.backend-image }}
+      backup: ${{ steps.filter.outputs.backup }}
       backup-image: ${{ steps.filter.outputs.backup-image }}
       frontend: ${{ steps.filter.outputs.frontend }}
       synthetic: ${{ steps.filter.outputs.synthetic }}
@@ -45,11 +46,13 @@ jobs:
           filters: |
             backend:
               - 'backend/**'
-              - 'backup/**'
-              - 'charts/backup/**'
               - '.github/workflows/ci.yaml'
             backend-image:
               - 'backend/**'
+              - '.github/workflows/ci.yaml'
+            backup:
+              - 'backup/**'
+              - 'charts/backup/**'
               - '.github/workflows/ci.yaml'
             backup-image:
               - 'backup/**'
@@ -120,6 +123,38 @@ jobs:
       # Coverage gate (≥ 80 %) enforced via addopts in pyproject.toml.
       - name: Run pytest with coverage
         run: poetry run pytest
+
+  backup-tests:
+    needs: [changes]
+    if: needs.changes.outputs.backup == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backup
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Configure in-project virtualenv
+        run: poetry config virtualenvs.in-project true
+
+      - uses: actions/cache@v5
+        with:
+          path: backup/.venv
+          key: backup-venv-py3.13-${{ hashFiles('backup/poetry.lock') }}
+          restore-keys: backup-venv-py3.13-
+
+      - name: Install dependencies
+        run: poetry install --no-root
+
+      - name: Run backup tests
+        run: poetry run python -m unittest discover tests
 
   frontend-checks:
     needs: [changes]
@@ -283,10 +318,10 @@ jobs:
     secrets: inherit
 
   build-backup:
-    needs: [changes, backend-tests]
+    needs: [changes, backup-tests]
     if: >-
       always() && needs.changes.outputs.backup-image == 'true' &&
-      needs.backend-tests.result == 'success'
+      needs.backup-tests.result == 'success'
     uses: bcit-tlu/.github/.github/workflows/oci-build.yaml@main
     permissions:
       contents: read
@@ -331,6 +366,12 @@ jobs:
     if: >-
       always() && github.event_name != 'pull_request' &&
       needs.helm-lint.result == 'success' &&
+      (needs.build-frontend.result == 'success' ||
+      needs.build-frontend.result == 'skipped') &&
+      (needs.build-backend.result == 'success' ||
+      needs.build-backend.result == 'skipped') &&
+      (needs.build-backup.result == 'success' ||
+      needs.build-backup.result == 'skipped') &&
       (needs.build-frontend.outputs.changed == 'true' ||
       needs.build-backend.outputs.changed == 'true' ||
       needs.build-backup.outputs.changed == 'true')
