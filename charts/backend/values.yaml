@@ -246,7 +246,16 @@ redis:
         failureThreshold: 10
     resources:
       requests:
-        memory: '512Mi'
+        # Sized from observed peak RSS during concurrent multi-GB
+        # image processing (~1.5-2.9Gi/pod for 3.6GB+ source files),
+        # not the historical 512Mi default. A request far below real
+        # usage understates the pod's true footprint to the scheduler
+        # (risking node-level memory overcommit) and, since the HPA's
+        # "averageUtilization" target is a percentage of this request,
+        # makes memory-based scaling report triple-digit percentages
+        # (e.g. 380%+) that reflect a mis-sized denominator rather than
+        # genuine saturation relative to the 4Gi limit below.
+        memory: '2Gi'
         cpu: '250m'
         ephemeral-storage: '256Mi'
       limits:
@@ -256,8 +265,11 @@ redis:
     # ── Worker Horizontal Pod Autoscaler ──────────────────────
     # Scales worker replicas based on CPU/memory utilisation so that
     # concurrent image-processing jobs are distributed across pods.
-    # Each worker handles maxJobs (default 4) tasks, so 3 replicas =
-    # 12 parallel processing slots.
+    # Each worker handles maxJobs (default 4) tasks, so N replicas =
+    # N x maxJobs parallel processing slots (e.g. maxReplicas: 5 =>
+    # up to 20 slots). The exact maxReplicas ceiling is an
+    # environment-specific value set in the deployment overlay
+    # (flux-fleet), not this chart default.
     #
     # Prerequisites:
     #   - Kubernetes Metrics Server must be running
