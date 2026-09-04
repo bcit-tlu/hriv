@@ -117,6 +117,60 @@ describe('ReportIssueModal', () => {
     expect(onSuccess).toHaveBeenCalledWith('Thanks! Your feedback has been received.', null)
   })
 
+  it('includes frontend_version in the reportIssue payload when provided', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    vi.mocked(reportIssue).mockResolvedValue({
+      destination: 'email',
+      tracking_url: null,
+      issue_url: null,
+    })
+    render(
+      <ReportIssueModal
+        open
+        onClose={vi.fn()}
+        page="browse"
+        frontendVersion="0.51.2"
+        onSuccess={vi.fn()}
+      />,
+    )
+
+    await user.type(screen.getByRole('textbox'), 'Button is broken')
+    await user.click(screen.getByRole('button', { name: /submit/i }))
+
+    await waitFor(() => {
+      expect(reportIssue).toHaveBeenCalledWith(
+        expect.objectContaining({ frontend_version: '0.51.2' }),
+      )
+    })
+  })
+
+  it('omits frontend_version from the reportIssue payload when the version is null/unavailable', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    vi.mocked(reportIssue).mockResolvedValue({
+      destination: 'email',
+      tracking_url: null,
+      issue_url: null,
+    })
+    render(
+      <ReportIssueModal
+        open
+        onClose={vi.fn()}
+        page="browse"
+        frontendVersion={null}
+        onSuccess={vi.fn()}
+      />,
+    )
+
+    await user.type(screen.getByRole('textbox'), 'Button is broken')
+    await user.click(screen.getByRole('button', { name: /submit/i }))
+
+    await waitFor(() => {
+      expect(reportIssue).toHaveBeenCalledWith(
+        expect.not.objectContaining({ frontend_version: expect.anything() }),
+      )
+    })
+  })
+
   it('auto-closes after success once the auto-close delay elapses', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     const onClose = vi.fn()

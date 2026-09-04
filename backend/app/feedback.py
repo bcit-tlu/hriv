@@ -14,7 +14,6 @@ from typing import Protocol
 
 import httpx
 
-from .component_versions import get_app_version
 
 
 _FEEDBACK_TYPE_LABELS = {
@@ -33,7 +32,9 @@ class FeedbackSubmission:
     page_url: str
     user_id: int
     user_role: str
-    app_version: str
+    frontend_version: str
+    backend_version: str
+    backup_version: str
     submitted_at: str
     feedback_type: str
 
@@ -100,7 +101,9 @@ class EmailFeedbackDelivery:
             f"Page URL: {submission.page_url}\n"
             f"User role: {submission.user_role}\n"
             f"User ID: {submission.user_id}\n"
-            f"App version: {submission.app_version}\n"
+            f"Frontend version: {submission.frontend_version}\n"
+            f"Backend version: {submission.backend_version}\n"
+            f"Backup version: {submission.backup_version}\n"
             f"Submitted at: {submission.submitted_at}"
         )
 
@@ -170,8 +173,16 @@ class TeamsFeedbackDelivery:
                                     },
                                     {"title": "Page", "value": submission.page_url},
                                     {
-                                        "title": "App version",
-                                        "value": submission.app_version,
+                                        "title": "Frontend version",
+                                        "value": submission.frontend_version,
+                                    },
+                                    {
+                                        "title": "Backend version",
+                                        "value": submission.backend_version,
+                                    },
+                                    {
+                                        "title": "Backup version",
+                                        "value": submission.backup_version,
                                     },
                                     {
                                         "title": "Submitted",
@@ -254,11 +265,6 @@ def _parse_smtp_port(raw: str) -> tuple[int, str]:
         return int(ssl_port), "ssl"
 
     raise ValueError(f"Invalid SMTP port value: {raw!r}")
-
-
-def get_feedback_app_version() -> str:
-    """Return the deployed app version for provider payloads."""
-    return get_app_version()
 
 
 def get_feedback_submission_timestamp() -> str:

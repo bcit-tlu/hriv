@@ -21,14 +21,16 @@ The modal now asks the user what kind of feedback they are submitting:
 - `problem_or_issue`
 - `comment_or_suggestion`
 
-That `feedback_type` is sent with `description` and `page_url` to
-`POST /api/issues/report`. The backend sanitizes the text, applies per-user rate
-limiting, and delegates delivery to a runtime provider.
+That `feedback_type` is sent with `description`, `page_url`, and an optional
+`frontend_version` to `POST /api/issues/report`. The backend sanitizes the
+text, applies per-user rate limiting, resolves component versions, and
+delegates delivery to a runtime provider.
 
 Backend delivery is abstracted in `backend/app/feedback.py`:
 
 - `FeedbackSubmission` carries `feedback_type`, `description`, `page_url`,
-  user id/role, app version, and submission timestamp.
+  user id/role, `frontend_version`, `backend_version`, `backup_version`, and
+  submission timestamp.
 - `FeedbackDelivery` is a `Protocol` with `submit()` returning a
   `FeedbackDeliveryResult` (`destination`, optional `tracking_url`,
   optional `external_id`).
@@ -40,6 +42,41 @@ Backend delivery is abstracted in `backend/app/feedback.py`:
 
 The GitHub issue provider and all related env/chart wiring were removed.
 
+## Component Versions
+
+Every delivered feedback report identifies the three independently deployed
+components explicitly — there is no ambiguous "App version" label:
+
+```text
+Frontend version: <value>
+Backend version: <value>
+Backup version: <value>
+```
+
+Sources and fallback behaviour (see issue
+[#1197](https://github.com/bcit-tlu/hriv/issues/1197)):
+
+- **Frontend version** — The browser fetches its own deployed version via
+  `GET /version` (`fetchFrontendVersion()` in `frontend/src/api.ts`), the same
+  source used by the footer and About dialog. `App.tsx` fetches this for every
+  authenticated user (including students, who never see the version strings
+  displayed) and passes it to `ReportIssueModal`, which includes it as
+  `frontend_version` in the submission only when a non-empty value is
+  available. If the browser's `/version` request fails, submission proceeds
+  without the field. If the client omits `frontend_version` (old clients, or a
+  failed `/version` fetch), the backend falls back to
+  `component_versions.get_frontend_version()`.
+- **Backend version** — Always resolved server-side at submission time via
+  `component_versions.get_backend_version()`. A client cannot override this
+  value.
+- **Backup version** — Always resolved server-side at submission time via
+  `component_versions.get_backup_version()`. A client cannot override this
+  value.
+
+`frontend_version` is validated as a short version token: letters, digits,
+`.`, `_`, `+`, and `-` only, capped at 100 characters. Invalid values (control
+characters, whitespace, or overlength strings) are rejected with `422`.
+
 ## API Contract
 
 `POST /api/issues/report` body:
@@ -48,7 +85,8 @@ The GitHub issue provider and all related env/chart wiring were removed.
 {
   "description": "string (1-2000 chars)",
   "page_url": "string (1-2000 chars)",
-  "feedback_type": "problem_or_issue" | "comment_or_suggestion"
+  "feedback_type": "problem_or_issue" | "comment_or_suggestion",
+  "frontend_version": "string (optional, max 100 chars)"
 }
 ```
 

@@ -12,12 +12,16 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from ..auth import get_current_user
+from ..component_versions import (
+    get_backend_version,
+    get_backup_version,
+    get_frontend_version,
+)
 from ..database import Settings
 from ..feedback import (
     FeedbackDeliveryError,
     FeedbackNotConfiguredError,
     FeedbackSubmission,
-    get_feedback_app_version,
     get_feedback_delivery,
     get_feedback_submission_timestamp,
 )
@@ -162,6 +166,17 @@ class ReportIssueRequest(BaseModel):
     description: str = Field(..., min_length=1, max_length=2000)
     page_url: str = Field(..., min_length=1, max_length=2000)
     feedback_type: Literal["problem_or_issue", "comment_or_suggestion"]
+    frontend_version: str | None = Field(
+        default=None,
+        max_length=100,
+        pattern=r"^[A-Za-z0-9._+-]+$",
+        description=(
+            "Deployed frontend version reported by the browser's "
+            "GET /version request. Letters, digits, '.', '_', '+', and "
+            "'-' only; falls back to the backend-resolved frontend "
+            "version when omitted."
+        ),
+    )
 
 
 class ReportIssueResponse(BaseModel):
@@ -213,7 +228,9 @@ async def report_issue(
         page_url=page_url,
         user_id=current_user.id,
         user_role=current_user.role,
-        app_version=get_feedback_app_version(),
+        frontend_version=body.frontend_version or get_frontend_version(),
+        backend_version=get_backend_version(),
+        backup_version=get_backup_version(),
         submitted_at=get_feedback_submission_timestamp(),
         feedback_type=body.feedback_type,
     )

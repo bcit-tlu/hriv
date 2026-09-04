@@ -11,7 +11,6 @@ from app.feedback import (
     FeedbackNotConfiguredError,
     FeedbackSubmission,
     TeamsFeedbackDelivery,
-    get_feedback_app_version,
     get_feedback_delivery,
     get_feedback_submission_timestamp,
 )
@@ -23,7 +22,9 @@ def _make_submission(feedback_type: str = "problem_or_issue") -> FeedbackSubmiss
         page_url="http://localhost/page",
         user_id=123,
         user_role="student",
-        app_version="0.27.1",
+        frontend_version="0.51.2",
+        backend_version="0.27.1",
+        backup_version="0.12.3",
         submitted_at="2026-07-03T00:00:00Z",
         feedback_type=feedback_type,
     )
@@ -226,7 +227,10 @@ async def test_email_feedback_delivery_success() -> None:
     assert "http://localhost/page" in sent_msg.get_content()
     assert "student" in sent_msg.get_content()
     assert "123" in sent_msg.get_content()
-    assert "0.27.1" in sent_msg.get_content()
+    assert "Frontend version: 0.51.2" in sent_msg.get_content()
+    assert "Backend version: 0.27.1" in sent_msg.get_content()
+    assert "Backup version: 0.12.3" in sent_msg.get_content()
+    assert "App version" not in sent_msg.get_content()
     assert "2026-07-03T00:00:00Z" in sent_msg.get_content()
 
 
@@ -315,7 +319,9 @@ async def test_teams_feedback_delivery_success() -> None:
         "Role": "student",
         "Internal user id": "123",
         "Page": "http://localhost/page",
-        "App version": "0.27.1",
+        "Frontend version": "0.51.2",
+        "Backend version": "0.27.1",
+        "Backup version": "0.12.3",
         "Submitted": "2026-07-03T00:00:00Z",
     }
     assert card["actions"] == [
@@ -407,22 +413,6 @@ async def test_teams_feedback_delivery_transport_error() -> None:
             await delivery.submit(submission)
 
     assert "Teams webhook request failed:" in str(exc.value)
-
-
-def test_get_feedback_app_version_defaults_to_unknown(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("APP_VERSION", raising=False)
-
-    assert get_feedback_app_version() == "unknown"
-
-
-def test_get_feedback_app_version_uses_env_var(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("APP_VERSION", "0.27.1")
-
-    assert get_feedback_app_version() == "0.27.1"
 
 
 def test_get_feedback_submission_timestamp_returns_utc_isoformat() -> None:

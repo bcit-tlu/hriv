@@ -363,6 +363,7 @@ vi.mock('../src/components/AppShell', () => ({
     logout,
     frontendVersion,
     backendVersion,
+    onReportIssue,
   }: {
     children: ReactNode
     onTabChange: (v: string) => void
@@ -373,11 +374,15 @@ vi.mock('../src/components/AppShell', () => ({
     logout: () => void
     frontendVersion: string | null
     backendVersion: string | null
+    onReportIssue: () => void
   }) => (
     <div>
       <div>
         versions: {String(frontendVersion)}/{String(backendVersion)}
       </div>
+      <button type="button" onClick={onReportIssue}>
+        Shell report issue
+      </button>
       <button type="button" onClick={() => onTabChange('admin')}>
         Shell tab admin
       </button>
@@ -581,7 +586,10 @@ vi.mock('../src/components/GroupManagementModal', () => ({
       </div>
     ) : null,
 }))
-vi.mock('../src/components/ReportIssueModal', () => ({ default: () => null }))
+vi.mock('../src/components/ReportIssueModal', () => ({
+  default: ({ open, frontendVersion }: { open: boolean; frontendVersion?: string | null }) =>
+    open ? <div>report issue frontend version: {String(frontendVersion)}</div> : null,
+}))
 vi.mock('../src/observability', () => ({
   emitEvent: (...args: unknown[]) => emitEventMock(...args),
   emitSessionStartedOnce: (...args: unknown[]) => emitSessionStartedOnceMock(...args),
@@ -1120,7 +1128,7 @@ describe('App breadcrumbs', () => {
     expect(vi.mocked(fetchFrontendVersion)).toHaveBeenCalledOnce()
   })
 
-  it('does not fetch component versions for students', async () => {
+  it('fetches the frontend version but not backend/backup versions for students', async () => {
     authState = {
       ...authState,
       currentUser: { ...mockCurrentUser, role: 'student' as const },
@@ -1129,8 +1137,34 @@ describe('App breadcrumbs', () => {
 
     render(<App />)
 
+    expect(await screen.findByText('versions: 1.0.0/null')).toBeInTheDocument()
     expect(vi.mocked(fetchVersions)).not.toHaveBeenCalled()
-    expect(vi.mocked(fetchFrontendVersion)).not.toHaveBeenCalled()
+    expect(vi.mocked(fetchFrontendVersion)).toHaveBeenCalledOnce()
+  })
+
+  it.each(['student', 'instructor', 'admin'] as const)(
+    'fetches the frontend version for %s users',
+    async (role) => {
+      authState = {
+        ...authState,
+        currentUser: { ...mockCurrentUser, role },
+        canEditContent: role !== 'student',
+      }
+
+      render(<App />)
+
+      expect(await screen.findByText(/versions: 1\.0\.0\//)).toBeInTheDocument()
+      expect(vi.mocked(fetchFrontendVersion)).toHaveBeenCalledOnce()
+    },
+  )
+
+  it('passes the same fetched frontend version to the footer/About surfaces and the feedback modal', async () => {
+    render(<App />)
+
+    expect(await screen.findByText('versions: 1.0.0/1.0.0')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shell report issue' }))
+    expect(await screen.findByText('report issue frontend version: 1.0.0')).toBeInTheDocument()
   })
 })
 
@@ -1246,7 +1280,7 @@ describe('App shell interactions', () => {
     expect(await screen.findByText('versions: 1.0.0/1.0.0')).toBeInTheDocument()
   })
 
-  it('clears versions when the version fetches fail', async () => {
+  it('clears backend/backup versions when content editing is disallowed, but keeps the frontend version', async () => {
     // Seed successful versions first so the null state is attributable to
     // the catch handlers rather than the initial render state.
     authState = { ...authState, canEditContent: true }
@@ -1255,14 +1289,23 @@ describe('App shell interactions', () => {
 
     authState = { ...authState, canEditContent: false }
     rerender(<App />)
-    expect(await screen.findByText('versions: null/null')).toBeInTheDocument()
+    // Frontend version is keyed off the authenticated user, not
+    // canEditContent, so it survives the backend/backup fetch clearing.
+    expect(await screen.findByText('versions: 1.0.0/null')).toBeInTheDocument()
 
     vi.mocked(fetchVersions).mockRejectedValueOnce(new Error('down'))
-    vi.mocked(fetchFrontendVersion).mockRejectedValueOnce(new Error('down'))
     authState = { ...authState, canEditContent: true }
     rerender(<App />)
     await waitFor(() => expect(fetchVersions).toHaveBeenCalledTimes(2))
-    expect(screen.getByText('versions: null/null')).toBeInTheDocument()
+    expect(screen.getByText('versions: 1.0.0/null')).toBeInTheDocument()
+  })
+
+  it('clears the frontend version when the /version fetch fails, without blocking submission', async () => {
+    vi.mocked(fetchFrontendVersion).mockRejectedValueOnce(new Error('down'))
+    render(<App />)
+
+    await waitFor(() => expect(fetchFrontendVersion).toHaveBeenCalledOnce())
+    expect(screen.getByText('versions: null/1.0.0')).toBeInTheDocument()
   })
 })
 
