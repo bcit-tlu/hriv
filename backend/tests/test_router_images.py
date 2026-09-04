@@ -548,8 +548,9 @@ async def test_bulk_update_images_not_found() -> None:
     assert exc.value.status_code == 404
 
 
-async def test_bulk_delete_images_success() -> None:
-    imgs = [_make_image(id=1), _make_image(id=2)]
+async def test_bulk_delete_images_success(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level("INFO", logger="app.routers.images")
+    imgs = [_make_image(id=1, name="first"), _make_image(id=2, name="second")]
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = imgs
 
@@ -561,6 +562,11 @@ async def test_bulk_delete_images_success() -> None:
     body = ImageBulkDelete(image_ids=[1, 2])
     await bulk_delete_images(body, _make_user(), db)
     assert db.delete.await_count == 2
+    deleted_logs = [record for record in caplog.records if record.message == "Image deleted"]
+    assert [(getattr(record, "image.id"), getattr(record, "image.name")) for record in deleted_logs] == [
+        (1, "first"),
+        (2, "second"),
+    ]
 
 
 async def test_bulk_delete_images_not_found() -> None:
@@ -635,8 +641,9 @@ async def test_update_image_metadata_extra_merge_from_empty() -> None:
     assert img.metadata_ == {"canvas_annotations": [{"type": "rect"}]}
 
 
-async def test_delete_image_success() -> None:
-    img = _make_image()
+async def test_delete_image_success(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level("INFO", logger="app.routers.images")
+    img = _make_image(name="deleted-image")
     db = AsyncMock()
     db.get = AsyncMock(return_value=img)
     db.delete = AsyncMock()
@@ -644,6 +651,12 @@ async def test_delete_image_success() -> None:
 
     await delete_image(1, _make_user(), db)
     db.delete.assert_awaited_once_with(img)
+    [deleted_log] = [record for record in caplog.records if record.message == "Image deleted"]
+    assert getattr(deleted_log, "event.name") == "image.deleted"
+    assert getattr(deleted_log, "event.outcome") == "success"
+    assert getattr(deleted_log, "image.id") == 1
+    assert getattr(deleted_log, "image.name") == "deleted-image"
+    assert getattr(deleted_log, "user.role") == "admin"
 
 
 async def test_delete_image_not_found() -> None:

@@ -172,6 +172,9 @@ assert_contains "$backend_worker_deployment" 'name: OTEL_SERVICE_NAME' \
   "backend worker deployment should set OTEL_SERVICE_NAME when OpenTelemetry is enabled"
 assert_contains "$backend_worker_deployment" 'value: "hriv-backend-worker"' \
   "backend worker deployment should identify itself as hriv-backend-worker"
+backend_worker_logging_auto_instrumentation="$(grep -F -A1 'name: OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED' <<<"$backend_worker_deployment")"
+assert_contains "$backend_worker_logging_auto_instrumentation" 'value: "true"' \
+  "backend worker deployment should bridge stdlib logs to OTLP when OpenTelemetry is enabled"
 assert_contains "$backend_worker_deployment" 'name: WORKER_IMAGE_TAG' \
   "backend worker deployment should surface the worker image tag for build-info metrics"
 

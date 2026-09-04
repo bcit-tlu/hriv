@@ -617,7 +617,7 @@ async def replace_image(
 @router.delete("/bulk", status_code=204)
 async def bulk_delete_images(
     body: ImageBulkDelete,
-    _user: Annotated[User, Depends(require_role("admin", "instructor"))],
+    user: Annotated[User, Depends(require_role("admin", "instructor"))],
     db: AsyncSession = Depends(get_db),
 ):
     """Bulk-delete multiple images."""
@@ -629,12 +629,26 @@ async def bulk_delete_images(
             images = result.scalars().all()
             if len(images) != len(set(body.image_ids)):
                 raise HTTPException(status_code=404, detail="One or more images not found")
-            browse_dirty = any(img.category_id is not None for img in images)
+            deleted_images = [(img.id, img.name, img.category_id) for img in images]
+            browse_dirty = any(category_id is not None for _, _, category_id in deleted_images)
             for img in images:
                 await db.delete(img)
             if browse_dirty:
                 await bump_browse_revision(db)
             await db.commit()
+            for image_id, image_name, category_id in deleted_images:
+                logger.info(
+                    "Image deleted",
+                    extra={
+                        "event.name": "image.deleted",
+                        "event.outcome": "success",
+                        "user.id": user.id,
+                        "user.role": user.role,
+                        "image.id": image_id,
+                        "image.name": image_name,
+                        "category.id": category_id,
+                    },
+                )
         except Exception as exc:
             record_exception_if_server_error(span, exc)
             raise
@@ -643,7 +657,7 @@ async def bulk_delete_images(
 @router.delete("/{image_id}", status_code=204)
 async def delete_image(
     image_id: int,
-    _user: Annotated[User, Depends(require_role("admin", "instructor"))],
+    user: Annotated[User, Depends(require_role("admin", "instructor"))],
     db: AsyncSession = Depends(get_db),
 ):
     with tracer.start_as_current_span("image.delete") as span:
@@ -652,10 +666,24 @@ async def delete_image(
             img = await db.get(Image, image_id)
             if not img:
                 raise HTTPException(status_code=404, detail="Image not found")
+            image_name = img.name
+            category_id = img.category_id
             await db.delete(img)
-            if img.category_id is not None:
+            if category_id is not None:
                 await bump_browse_revision(db)
             await db.commit()
+            logger.info(
+                "Image deleted",
+                extra={
+                    "event.name": "image.deleted",
+                    "event.outcome": "success",
+                    "user.id": user.id,
+                    "user.role": user.role,
+                    "image.id": image_id,
+                    "image.name": image_name,
+                    "category.id": category_id,
+                },
+            )
         except Exception as exc:
             record_exception_if_server_error(span, exc)
             raise

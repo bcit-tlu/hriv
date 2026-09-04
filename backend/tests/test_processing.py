@@ -297,8 +297,9 @@ async def test_process_replace_image_skips_terminal_row() -> None:
     mock_session.commit.assert_not_awaited()
 
 
-async def test_process_source_image_success() -> None:
-    """Successful processing creates Image and updates SourceImage."""
+async def test_process_source_image_success(caplog: pytest.LogCaptureFixture) -> None:
+    """Successful processing creates Image and emits a lifecycle event."""
+    caplog.set_level("INFO", logger="app.processing")
     src = SimpleNamespace(
         id=1,
         original_filename="test.tiff",
@@ -322,7 +323,11 @@ async def test_process_source_image_success() -> None:
         if hasattr(obj, "file_size"):
             captured_image["image"] = obj
 
+    async def assign_image_id() -> None:
+        captured_image["image"].id = 99
+
     mock_session.add = MagicMock(side_effect=capture_add)
+    mock_session.flush = AsyncMock(side_effect=assign_image_id)
     mock_session.__aenter__ = AsyncMock(return_value=mock_session)
     mock_session.__aexit__ = AsyncMock(return_value=False)
 
@@ -342,6 +347,16 @@ async def test_process_source_image_success() -> None:
     assert src.tiles_generated_at is not None
     # The fake stored_path does not exist, so the checksum is best-effort None.
     assert src.source_checksum is None
+    lifecycle_log = next(
+        record
+        for record in caplog.records
+        if record.message == "Image upload processed successfully"
+    )
+    assert getattr(lifecycle_log, "event.name") == "image.upload.processed"
+    assert getattr(lifecycle_log, "event.outcome") == "success"
+    assert getattr(lifecycle_log, "image.id") == 99
+    assert getattr(lifecycle_log, "image.name") == "Test Image"
+    assert getattr(lifecycle_log, "source_image.original_filename") == "test.tiff"
 
 
 async def test_process_source_image_failure() -> None:
