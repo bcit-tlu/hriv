@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.51.4](https://github.com/bcit-tlu/hriv/compare/frontend-v0.51.3...frontend-v0.51.4) (2026-09-04)
+
+
+### Bug Fixes
+
+* **feedback:** report deployed component versions accurately ([#1201](https://github.com/bcit-tlu/hriv/issues/1201)) ([ca51198](https://github.com/bcit-tlu/hriv/commit/ca5119811639d498ff55cbdb0a05d204446113ca))
+
 ## [0.51.3](https://github.com/bcit-tlu/hriv/compare/frontend-v0.51.2...frontend-v0.51.3) (2026-09-02)
 
 
