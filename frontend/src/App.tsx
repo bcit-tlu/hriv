@@ -786,22 +786,44 @@ export default function App() {
     }
   }, [searchOpen, canEditContent])
 
-  // Load deployed component versions for the footer and About dialog
-  // (admin and instructor). Backend+backup come from
-  // ``/api/admin/version`` (guarded to admin/instructor on the
-  // backend; students never see those strings). The frontend version
-  // is served by its own nginx and is not strictly role-guarded at
-  // the transport layer, but we only fetch it alongside the guarded
-  // versions — the displayed version string carries the same info as
-  // the image-tag filenames already visible in the public JS bundle,
-  // so there is no new information leak.
+  // Load the frontend version for every authenticated user (not just
+  // admin/instructor) — students may submit feedback and the deployed
+  // frontend version travels with the report even though it is not
+  // displayed to them. ``/version`` is served by its own nginx and is
+  // not role-guarded at the transport layer; the string carries the
+  // same info as the image-tag filenames already visible in the public
+  // JS bundle, so there is no new information leak.
+  useEffect(() => {
+    if (!currentUser) {
+      /* eslint-disable-next-line react-hooks/set-state-in-effect -- early-return cleanup in conditional fetch effect */
+      setFrontendVersion(null)
+      return
+    }
+    fetchFrontendVersion()
+      .then((v) => {
+        setFrontendVersion(v.frontend)
+      })
+      .catch(() => {
+        // ``/version`` is only served by the chart-deployed
+        // nginx; ``npm run dev`` / local Vite does not proxy
+        // this path, so a rejection here is expected outside
+        // Kubernetes and we fall back to ``"dev"`` at render
+        // time. A failed lookup must not block feedback
+        // submission — the backend falls back to its own
+        // resolved frontend version.
+        setFrontendVersion(null)
+      })
+  }, [currentUser])
+
+  // Load deployed backend/backup component versions for the footer and
+  // About dialog (admin and instructor only). These come from
+  // ``/api/admin/version`` which is guarded to admin/instructor on the
+  // backend; students never see those strings.
   useEffect(() => {
     if (!canEditContent) {
-      /* eslint-disable react-hooks/set-state-in-effect -- early-return cleanup in conditional fetch effect */
+      /* eslint-disable-next-line react-hooks/set-state-in-effect -- early-return cleanup in conditional fetch effect */
       setBackendVersion(null)
       setBackupVersion(null)
-      setFrontendVersion(null)
-      /* eslint-enable react-hooks/set-state-in-effect */
       return
     }
     fetchVersions()
@@ -812,18 +834,6 @@ export default function App() {
       .catch(() => {
         setBackendVersion(null)
         setBackupVersion(null)
-      })
-    fetchFrontendVersion()
-      .then((v) => {
-        setFrontendVersion(v.frontend)
-      })
-      .catch(() => {
-        // ``/version`` is only served by the chart-deployed
-        // nginx; ``npm run dev`` / local Vite does not proxy
-        // this path, so a rejection here is expected outside
-        // Kubernetes and we fall back to ``"dev"`` at render
-        // time.
-        setFrontendVersion(null)
       })
   }, [canEditContent])
 
@@ -2506,6 +2516,7 @@ export default function App() {
         open={reportIssueOpen}
         onClose={() => setReportIssueOpen(false)}
         page={page}
+        frontendVersion={frontendVersion}
         onSuccess={(message, trackingUrl) => {
           setSuccessSnack({ message, trackingUrl })
         }}
