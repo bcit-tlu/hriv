@@ -1,5 +1,6 @@
 """Source image upload and processing status endpoints."""
 
+import asyncio
 import contextlib
 import errno
 import logging
@@ -77,14 +78,18 @@ async def upload_source_image(
             unique_name = f"{uuid.uuid4().hex}{ext}"
             stored_path = os.path.join(settings.source_images_dir, unique_name)
 
-            # Stream the uploaded file to disk in chunks (handles large files)
+            # Stream the uploaded file to disk in chunks (handles large files).
+            # Each write is offloaded via asyncio.to_thread: f.write() is a
+            # blocking syscall, and on a networked PVC a multi-GB upload can
+            # stall the event loop long enough to starve concurrent requests
+            # (including the /api/health/ready readiness probe) if run inline.
             try:
                 with open(stored_path, "wb") as f:
                     while True:
                         chunk = await file.read(UPLOAD_CHUNK_SIZE)
                         if not chunk:
                             break
-                        f.write(chunk)
+                        await asyncio.to_thread(f.write, chunk)
             except OSError as exc:
                 with contextlib.suppress(OSError):
                     os.unlink(stored_path)

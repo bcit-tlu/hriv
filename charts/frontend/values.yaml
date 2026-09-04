@@ -85,6 +85,18 @@ ingress:
     # uploads visible to the backend immediately and avoids temp-disk
     # pressure before the frontend nginx receives the request.
     nginx.ingress.kubernetes.io/proxy-request-buffering: 'off'
+    # The ingress-nginx controller defaults to a 60s proxy-read/send
+    # timeout, which is far below the in-pod frontend nginx's 7200s
+    # upload timeout (see files/default.conf.template) and the arq
+    # worker's job_timeout. Without this override, large uploads that
+    # take longer than 60s to process are still fully received and
+    # processed by the backend, but the ingress returns a 504 to the
+    # browser before the response arrives, surfacing a false "Upload
+    # failed" error even though the image finishes processing
+    # successfully. Match the internal timeout so the ingress does not
+    # sever the connection first.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: '7200'
+    nginx.ingress.kubernetes.io/proxy-send-timeout: '7200'
   hosts: []
   tls: []
 
