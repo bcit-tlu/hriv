@@ -753,6 +753,23 @@ async def process_source_image(source_image_id: int) -> None:
                     "duration_ms": duration_ms,
                 },
             )
+            # This lifecycle event is emitted only after the Image row and its
+            # tiles have been committed, unlike the browser event that records
+            # source-file submission. It makes final image names available for
+            # both single and bulk uploads without adding them to metric labels.
+            logger.info(
+                "Image upload processed successfully",
+                extra={
+                    "event.name": "image.upload.processed",
+                    "event.outcome": "success",
+                    "event.duration_ms": duration_ms,
+                    "image.id": img.id,
+                    "image.name": img.name,
+                    "category.id": img.category_id,
+                    "source_image.id": src.id,
+                    "source_image.original_filename": src.original_filename,
+                },
+            )
 
         except Exception as exc:
             span.record_exception(exc)

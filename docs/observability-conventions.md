@@ -718,6 +718,25 @@ reflects the **session-initial** viewport; a mid-session browser resize is not
 re-sampled. Treat these fields as "environment the session started in", not a
 live measurement.
 
+### Image lifecycle logs
+
+The backend emits these authoritative structured-log events for operator-facing
+image lifecycle panels. They are distinct from the browser's aggregate
+`image.upload.completed` event, which records source-file submission before
+asynchronous processing finishes.
+
+| Event                    | Emitted when                                                                            | Fields                                                                                                            |
+| ------------------------ | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `image.upload.processed` | A source image has successfully generated tiles and the final `Image` row has committed | `image.id`, `image.name`, `category.id`, `source_image.id`, `source_image.original_filename`, `event.duration_ms` |
+| `image.deleted`          | A single or bulk image deletion has committed                                           | `image.id`, `image.name`, `category.id`, `user.id`, `user.role`                                                   |
+
+A bulk deletion emits one `image.deleted` record per image so dashboard tables
+can identify every deleted item. These fields are structured logs for Loki
+only; image identifiers and names must never become Prometheus labels. The
+processed-upload event intentionally has no uploader attribution because
+processing runs asynchronously; a future attribution refactor may add that
+relationship.
+
 ### Backend enrichment
 
 The endpoint enriches each event with:
@@ -773,9 +792,12 @@ users, login reports include first-time OIDC logins; filtering
 decision makers, provisioned from the external Grafana git-sync repository
 (rather than this Helm chart). Panels cover active users, sessions,
 successful/failed logins, successful image views, unique images, image-view
-success rate, activity by role, image views vs failures, and the bounded
-client-environment distributions. Every panel excludes synthetic traffic via
-the server-marked `event_synthetic` / `auth_synthetic` flag.
+success rate, activity by role, image views vs failures, the bounded
+client-environment distributions, and operator-facing processed-upload/deletion
+image tables. Browser usage-event panels exclude synthetic traffic via the
+server-marked `event_synthetic` / `auth_synthetic` flag. Processing and deletion
+lifecycle panels do not require synthetic filtering because synthetic monitoring
+only verifies student operations and does not upload or delete images.
 
 **No named-user panels are provisioned.** Grafana dashboard provisioning is
 broadly readable, so listing individual users on a provisioned dashboard would
