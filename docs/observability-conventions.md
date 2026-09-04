@@ -414,7 +414,10 @@ The Data and Recovery dashboard's image-processing panels require the backend
 and worker OTel metrics exporter. Set
 `observability.openTelemetry.exporter.metrics=otlp` when enabling the OTel
 collector; the chart default is `none` so deployments do not emit metrics
-unless explicitly configured.
+unless explicitly configured. When OpenTelemetry is enabled, both the API and
+worker deployments pass `loggingAutoInstrumentation` to
+`OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED`, ensuring stdlib lifecycle
+logs are bridged to the configured OTLP logs exporter.
 
 Prometheus scrapes `/api/metrics` directly from the backend ClusterIP through
 the ServiceMonitor. The frontend nginx configuration returns `404` for the

@@ -106,6 +106,8 @@ spec:
               value: "redis"
             - name: OTEL_PYTHON_FASTAPI_EXCLUDED_URLS
               value: {{ .Values.observability.openTelemetry.excludedUrls | quote }}
+            - name: OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED
+              value: {{ .Values.observability.openTelemetry.loggingAutoInstrumentation | quote }}
             {{- end }}
           {{- if get $workerLivenessProbe "enabled" | default false }}
           livenessProbe:
