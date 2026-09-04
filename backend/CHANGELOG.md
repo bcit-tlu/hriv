@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.51.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.51.0...backend-v0.51.1) (2026-09-04)
+
+
+### Bug Fixes
+
+* **backend/charts:** prevent false upload-failure on large multi-GB images ([#1202](https://github.com/bcit-tlu/hriv/issues/1202)) ([79f0c32](https://github.com/bcit-tlu/hriv/commit/79f0c329c25d986a78473129d90f05ed49ce427f))
+* **feedback:** report deployed component versions accurately ([#1201](https://github.com/bcit-tlu/hriv/issues/1201)) ([ca51198](https://github.com/bcit-tlu/hriv/commit/ca5119811639d498ff55cbdb0a05d204446113ca))
+
 ## [0.51.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.50.1...backend-v0.51.0) (2026-09-02)
 
 
