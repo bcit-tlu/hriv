@@ -64,13 +64,30 @@ configMounts:
 
 # emptyDir mounts required by the nginx container (writable paths on a
 # read-only root filesystem).
+#
+# Every emptyDir is bounded by a sizeLimit so a runaway write cannot
+# consume the node's root filesystem — emptyDir is backed by the node
+# disk, and without a limit a single pod can fill it and trigger
+# node-wide DiskPressure eviction of unrelated workloads. Sizes are set
+# well above observed steady-state usage (/tmp 4Ki, /var/cache/nginx
+# 40Ki, /var/run 0) while staying within the container's
+# ephemeral-storage limit below.
+#
+# nginx-cache is the largest because it backs proxy_temp_path: nginx
+# buffers upstream responses there, bounded by proxy_max_temp_file_size
+# (set to 256m in files/default.conf.template), so 512Mi leaves headroom
+# for concurrent large-image responses.
+emptyDirDefaultSizeLimit: 64Mi
 emptyDirMounts:
   - name: tmp
     mountPath: /tmp
+    sizeLimit: 64Mi
   - name: nginx-cache
     mountPath: /var/cache/nginx
+    sizeLimit: 512Mi
   - name: nginx-run
     mountPath: /var/run
+    sizeLimit: 1Mi
 
 ingress:
   enabled: false
@@ -103,7 +120,15 @@ ingress:
 networkPolicy:
   enabled: true
 
-resources: {}
+# The ephemeral-storage limit bounds the container's writable layer,
+# logs, and its emptyDir volumes against the node root filesystem. The
+# emptyDir sizeLimits above total 577Mi, so 1Gi leaves headroom while
+# keeping a runaway write from consuming a shared node's disk.
+resources:
+  requests:
+    ephemeral-storage: 128Mi
+  limits:
+    ephemeral-storage: 1Gi
 
 # ── High-availability / topology spreading ────────────────────
 # When enabled, adds a required pod anti-affinity rule so that no two

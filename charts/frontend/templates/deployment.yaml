@@ -98,7 +98,8 @@ spec:
         {{- end }}
         {{- range $m := (.Values.emptyDirMounts | default list) }}
         - name: {{ $m.name }}
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: {{ $m.sizeLimit | default $.Values.emptyDirDefaultSizeLimit }}
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
