@@ -90,6 +90,11 @@ type AnnotatedObject = fabric.FabricObject & {
   _filled?: boolean
 }
 
+type AnnotationGuideObject = fabric.FabricObject & {
+  _annotationGuideFor?: string
+  excludeFromExport?: boolean
+}
+
 interface SerializedObjectTransform {
   left: number
   top: number
@@ -133,16 +138,85 @@ function emitAnnotationEvent(
 
 const ANNOTATION_TYPES: ReadonlySet<string> = new Set(['rect', 'circle', 'arrow', 'text', 'link'])
 
+function isAnnotationGuide(obj: fabric.FabricObject): obj is AnnotationGuideObject {
+  return typeof (obj as AnnotationGuideObject)._annotationGuideFor === 'string'
+}
+
+function isAnnotationFabricObject(obj: fabric.FabricObject): obj is AnnotatedObject {
+  const aObj = obj as AnnotatedObject
+  return (
+    typeof aObj._annotationId === 'string' &&
+    typeof aObj._annotationType === 'string' &&
+    ANNOTATION_TYPES.has(aObj._annotationType)
+  )
+}
+
 /** Bounded annotation-type bucket for a set of fabric objects. */
 function annotationTypeOf(objs: fabric.FabricObject[]): CanvasAnnotation['type'] | 'mixed' {
   const types = new Set(
-    objs.map((obj) => {
-      const t = (obj as AnnotatedObject)._annotationType
-      return t !== undefined && ANNOTATION_TYPES.has(t) ? t : 'rect'
-    }),
+    objs
+      .filter(isAnnotationFabricObject)
+      .map((obj) => obj._annotationType as CanvasAnnotation['type']),
   )
+  if (types.size === 0) return 'rect'
   if (types.size === 1) return [...types][0] as CanvasAnnotation['type']
   return 'mixed'
+}
+
+function annotationObjectDimensions(obj: fabric.FabricObject): { width: number; height: number } {
+  const scaleX = Math.abs(obj.scaleX ?? 1)
+  const scaleY = Math.abs(obj.scaleY ?? 1)
+  if (obj instanceof fabric.Ellipse) {
+    return {
+      width: Math.max(1, Math.abs((obj.rx ?? 0) * 2 * scaleX)),
+      height: Math.max(1, Math.abs((obj.ry ?? 0) * 2 * scaleY)),
+    }
+  }
+
+  if (obj instanceof fabric.Line) {
+    const lineWidth =
+      Math.abs(((obj.x2 ?? 0) - (obj.x1 ?? 0)) * scaleX) || Math.abs((obj.width ?? 0) * scaleX)
+    const lineHeight =
+      Math.abs(((obj.y2 ?? 0) - (obj.y1 ?? 0)) * scaleY) || Math.abs((obj.height ?? 0) * scaleY)
+    return {
+      width: Math.max(1, lineWidth),
+      height: Math.max(1, lineHeight),
+    }
+  }
+
+  return {
+    width: Math.max(1, Math.abs((obj.width ?? 0) * scaleX)),
+    height: Math.max(1, Math.abs((obj.height ?? 0) * scaleY)),
+  }
+}
+
+function createAnnotationGuide(obj: AnnotatedObject): fabric.Rect | null {
+  if (!obj._annotationId) return null
+
+  const { width, height } = annotationObjectDimensions(obj)
+  const guide = new fabric.Rect({
+    originX: 'left',
+    originY: 'top',
+    left: obj.left ?? 0,
+    top: obj.top ?? 0,
+    width,
+    height,
+    angle: obj.angle ?? 0,
+    fill: 'transparent',
+    stroke: '#455a64',
+    strokeWidth: 1.5,
+    strokeDashArray: [5, 3],
+    strokeUniform: true,
+    selectable: false,
+    evented: false,
+    hasBorders: false,
+    hasControls: false,
+    objectCaching: false,
+  })
+  const guideObj = guide as AnnotationGuideObject
+  guideObj._annotationGuideFor = obj._annotationId
+  guideObj.excludeFromExport = true
+  return guide
 }
 
 /**
@@ -295,6 +369,32 @@ export default function CanvasOverlay({
   const snapshotRef = useRef<CanvasAnnotation[]>([])
   const dirtyRef = useRef(false)
 
+  const refreshBoundingGuides = useCallback(
+    (canvas: fabric.Canvas | null = fabricCanvasRef.current) => {
+      if (!canvas) return
+
+      const objects = canvas.getObjects()
+      for (const guide of objects.filter(isAnnotationGuide)) {
+        canvas.remove(guide)
+      }
+
+      const activeObject = canvas.getActiveObject()
+      const selectedObjects =
+        activeObject instanceof fabric.ActiveSelection
+          ? new Set(activeObject.getObjects().filter(isAnnotationFabricObject))
+          : activeObject && isAnnotationFabricObject(activeObject)
+            ? new Set([activeObject])
+            : new Set<fabric.FabricObject>()
+
+      for (const obj of objects) {
+        if (!isAnnotationFabricObject(obj) || selectedObjects.has(obj)) continue
+        const guide = createAnnotationGuide(obj)
+        if (guide) canvas.add(guide)
+      }
+    },
+    [],
+  )
+
   useEffect(() => {
     annotationsRef.current = annotations
   }, [annotations])
@@ -337,16 +437,6 @@ export default function CanvasOverlay({
         const endPt = viewer.viewport.pixelFromPoint(
           new OpenSeadragon.Point(ann.vpX2 ?? ann.vpX, ann.vpY2 ?? ann.vpY),
         )
-        ctx.setLineDash([5, 3])
-        ctx.strokeStyle = '#455a64'
-        ctx.lineWidth = 1.5
-        ctx.strokeRect(
-          Math.min(topLeft.x, endPt.x) - 3,
-          Math.min(topLeft.y, endPt.y) - 3,
-          Math.abs(endPt.x - topLeft.x) + 6,
-          Math.abs(endPt.y - topLeft.y) + 6,
-        )
-        ctx.setLineDash([])
         ctx.beginPath()
         ctx.moveTo(topLeft.x, topLeft.y)
         ctx.lineTo(endPt.x, endPt.y)
@@ -377,16 +467,6 @@ export default function CanvasOverlay({
       )
       const pw = bottomRight.x - topLeft.x
       const ph = bottomRight.y - topLeft.y
-
-      ctx.save()
-      ctx.translate(topLeft.x, topLeft.y)
-      if (ann.rotation) ctx.rotate((ann.rotation * Math.PI) / 180)
-      ctx.setLineDash([5, 3])
-      ctx.strokeStyle = '#455a64'
-      ctx.lineWidth = 1.5
-      ctx.strokeRect(-3, -3, Math.abs(pw) + 6, Math.abs(ph) + 6)
-      ctx.setLineDash([])
-      ctx.restore()
 
       if (ann.type === 'rect') {
         const sw = (ann.strokeWidth ?? 2) * viewer.viewport.getZoom()
@@ -634,10 +714,11 @@ export default function CanvasOverlay({
   const fabricToAnnotation = useCallback(
     (obj: fabric.FabricObject, transform?: SerializedObjectTransform): CanvasAnnotation | null => {
       if (!viewer.viewport) return null
+      if (isAnnotationGuide(obj) || !isAnnotationFabricObject(obj)) return null
 
-      const aObj = obj as AnnotatedObject
-      const id = aObj._annotationId || uid()
-      const type = (aObj._annotationType as CanvasAnnotation['type']) || 'rect'
+      const aObj = obj
+      const id = aObj._annotationId ?? uid()
+      const type = (aObj._annotationType ?? 'rect') as CanvasAnnotation['type']
 
       if (type === 'arrow' && obj instanceof fabric.Line) {
         // Use direct fabric properties (left/top/width/height/scaleX/scaleY/angle)
@@ -792,6 +873,7 @@ export default function CanvasOverlay({
           : null
       const annotations: CanvasAnnotation[] = []
       for (const obj of fc.getObjects()) {
+        if (isAnnotationGuide(obj) || !isAnnotationFabricObject(obj)) continue
         const transform =
           activeSelection instanceof fabric.ActiveSelection && selectedObjects?.has(obj)
             ? absoluteObjectTransform(obj, activeSelection)
@@ -857,6 +939,7 @@ export default function CanvasOverlay({
         fc.add(obj)
       }
     }
+    refreshBoundingGuides(fc)
     fc.renderAll()
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -876,6 +959,7 @@ export default function CanvasOverlay({
           fc.renderAll()
         }
         fc.discardActiveObject()
+        refreshBoundingGuides(fc)
         fc.renderAll()
         return
       }
@@ -939,6 +1023,7 @@ export default function CanvasOverlay({
           const sel = new fabric.ActiveSelection(newObjs, { canvas: fc })
           fc.setActiveObject(sel)
         }
+        refreshBoundingGuides(fc)
         fc.renderAll()
         if (newObjs.length > 0) {
           emitAnnotationEvent('annotation.created', annotationTypeOf(newObjs), newObjs.length)
@@ -967,11 +1052,22 @@ export default function CanvasOverlay({
     fc.on('text:changed', handleTextChanged)
     fc.on('text:editing:exited', handleTextEditingExited)
 
+    const handleSelectionChanged = () => {
+      refreshBoundingGuides(fc)
+      fc.renderAll()
+    }
+    fc.on('selection:created', handleSelectionChanged)
+    fc.on('selection:updated', handleSelectionChanged)
+    fc.on('selection:cleared', handleSelectionChanged)
+
     return () => {
       document.removeEventListener('keydown', handleKeyDown)
       if (fabricCanvasRef.current) {
         fabricCanvasRef.current.off('text:changed', handleTextChanged)
         fabricCanvasRef.current.off('text:editing:exited', handleTextEditingExited)
+        fabricCanvasRef.current.off('selection:created', handleSelectionChanged)
+        fabricCanvasRef.current.off('selection:updated', handleSelectionChanged)
+        fabricCanvasRef.current.off('selection:cleared', handleSelectionChanged)
         fabricCanvasRef.current.dispose()
         fabricCanvasRef.current = null
       }
@@ -983,6 +1079,7 @@ export default function CanvasOverlay({
     fabricToAnnotation,
     emitAnnotations,
     absoluteObjectTransform,
+    refreshBoundingGuides,
   ])
 
   // Drawing handlers for edit mode
@@ -993,6 +1090,11 @@ export default function CanvasOverlay({
 
     fc.selection = activeTool === 'select'
     fc.forEachObject((obj) => {
+      if (isAnnotationGuide(obj)) {
+        obj.selectable = false
+        obj.evented = false
+        return
+      }
       obj.selectable = activeTool === 'select'
       obj.evented = activeTool === 'select'
     })
@@ -1117,6 +1219,7 @@ export default function CanvasOverlay({
       if (obj) {
         obj.set({ selectable: true, evented: true })
         obj.setCoords()
+        refreshBoundingGuides(fc)
         if (activeTool === 'rect' || activeTool === 'circle' || activeTool === 'arrow') {
           emitAnnotationEvent('annotation.created', activeTool)
         }
@@ -1144,21 +1247,34 @@ export default function CanvasOverlay({
     activeArrowStyle,
     activeFillMode,
     emitAnnotations,
+    refreshBoundingGuides,
   ])
 
   // Emit on object modified (move/resize)
   useEffect(() => {
     const fc = fabricCanvasRef.current
     if (!fc || !editMode) return
-    const handler = () => {
+    const handleObjectModified = () => {
       console.debug(LOG_PREFIX, 'object:modified — emitting')
+      refreshBoundingGuides(fc)
+      fc.renderAll()
       emitAnnotations()
     }
-    fc.on('object:modified', handler)
-    return () => {
-      fc.off('object:modified', handler)
+    const handleObjectTransforming = () => {
+      refreshBoundingGuides(fc)
+      fc.renderAll()
     }
-  }, [editMode, emitAnnotations])
+    fc.on('object:modified', handleObjectModified)
+    fc.on('object:moving', handleObjectTransforming)
+    fc.on('object:scaling', handleObjectTransforming)
+    fc.on('object:rotating', handleObjectTransforming)
+    return () => {
+      fc.off('object:modified', handleObjectModified)
+      fc.off('object:moving', handleObjectTransforming)
+      fc.off('object:scaling', handleObjectTransforming)
+      fc.off('object:rotating', handleObjectTransforming)
+    }
+  }, [editMode, emitAnnotations, refreshBoundingGuides])
 
   // Tool actions
 
@@ -1181,11 +1297,12 @@ export default function CanvasOverlay({
     aObj._annotationType = 'text'
     fc.add(text)
     fc.setActiveObject(text)
+    refreshBoundingGuides(fc)
     fc.renderAll()
     emitAnnotationEvent('annotation.created', 'text')
     emitAnnotations()
     setActiveTool('select')
-  }, [activeColor, emitAnnotations])
+  }, [activeColor, emitAnnotations, refreshBoundingGuides])
 
   const handleAddLink = useCallback(() => {
     setLinkText('')
@@ -1215,11 +1332,12 @@ export default function CanvasOverlay({
     aObj._linkUrl = linkUrl
     fc.add(text)
     fc.setActiveObject(text)
+    refreshBoundingGuides(fc)
     fc.renderAll()
     emitAnnotationEvent('annotation.created', 'link')
     emitAnnotations()
     setActiveTool('select')
-  }, [linkText, linkUrl, activeColor, emitAnnotations])
+  }, [linkText, linkUrl, activeColor, emitAnnotations, refreshBoundingGuides])
 
   const handleDeleteSelected = useCallback(() => {
     const fc = fabricCanvasRef.current
@@ -1230,24 +1348,26 @@ export default function CanvasOverlay({
       fc.remove(obj)
     }
     fc.discardActiveObject()
+    refreshBoundingGuides(fc)
     fc.renderAll()
     if (active.length > 0) {
       emitAnnotationEvent('annotation.deleted', annotationTypeOf(active), active.length)
     }
     emitAnnotations()
-  }, [emitAnnotations])
+  }, [emitAnnotations, refreshBoundingGuides])
 
   const handleClearAll = useCallback(() => {
     const fc = fabricCanvasRef.current
     if (!fc) return
-    const objs = fc.getObjects()
+    const objs = fc.getObjects().filter(isAnnotationFabricObject)
     if (objs.length > 0) {
       emitAnnotationEvent('annotation.deleted', annotationTypeOf(objs), objs.length)
     }
     fc.clear()
+    refreshBoundingGuides(fc)
     fc.renderAll()
     emitAnnotations()
-  }, [emitAnnotations])
+  }, [emitAnnotations, refreshBoundingGuides])
 
   const handleDone = useCallback(async () => {
     const collected = collectAnnotations()

@@ -341,25 +341,23 @@ export default function CategoryPickerSelect({
                 >
                   <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0, flexGrow: 1 }}>
                     {opt.childCount > 0 ? (
-                      <Tooltip title={isExpanded(opt.id) ? 'Collapse category' : 'Expand category'}>
-                        <IconButton
-                          size="small"
-                          aria-label={`${isExpanded(opt.id) ? 'Collapse' : 'Expand'} ${opt.label}`}
-                          onMouseDown={(e) => e.stopPropagation()}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            e.preventDefault()
-                            toggleExpanded(opt.id)
-                          }}
-                          sx={{ mr: 0.5, p: 0.5 }}
-                        >
-                          {isExpanded(opt.id) ? (
-                            <ExpandMoreIcon fontSize="small" />
-                          ) : (
-                            <ChevronRightIcon fontSize="small" />
-                          )}
-                        </IconButton>
-                      </Tooltip>
+                      <IconButton
+                        size="small"
+                        aria-label={`${isExpanded(opt.id) ? 'Collapse' : 'Expand'} ${opt.label}`}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          e.preventDefault()
+                          toggleExpanded(opt.id)
+                        }}
+                        sx={{ mr: 0.5, p: 0.5 }}
+                      >
+                        {isExpanded(opt.id) ? (
+                          <ExpandMoreIcon fontSize="small" />
+                        ) : (
+                          <ChevronRightIcon fontSize="small" />
+                        )}
+                      </IconButton>
                     ) : (
                       <Box sx={{ width: 30, flexShrink: 0 }} />
                     )}

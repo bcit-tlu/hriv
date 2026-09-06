@@ -754,21 +754,19 @@ export default function ManageCategoriesDialog({
                   }
                 >
                   {hasChildren ? (
-                    <Tooltip title={isExpandedNow ? 'Collapse category' : 'Expand category'}>
-                      <IconButton
-                        edge="start"
-                        size="small"
-                        aria-label={`${isExpandedNow ? 'Collapse' : 'Expand'} ${opt.label}`}
-                        onClick={() => toggleExpanded(opt.id)}
-                        sx={{ mr: 0.5, flexShrink: 0 }}
-                      >
-                        {isExpandedNow ? (
-                          <ExpandMoreIcon fontSize="small" />
-                        ) : (
-                          <ChevronRightIcon fontSize="small" />
-                        )}
-                      </IconButton>
-                    </Tooltip>
+                    <IconButton
+                      edge="start"
+                      size="small"
+                      aria-label={`${isExpandedNow ? 'Collapse' : 'Expand'} ${opt.label}`}
+                      onClick={() => toggleExpanded(opt.id)}
+                      sx={{ mr: 0.5, flexShrink: 0 }}
+                    >
+                      {isExpandedNow ? (
+                        <ExpandMoreIcon fontSize="small" />
+                      ) : (
+                        <ChevronRightIcon fontSize="small" />
+                      )}
+                    </IconButton>
                   ) : (
                     <Box sx={{ width: 30, flexShrink: 0 }} />
                   )}

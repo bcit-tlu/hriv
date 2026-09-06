@@ -3,7 +3,6 @@ import Box from '@mui/material/Box'
 import Checkbox from '@mui/material/Checkbox'
 import IconButton from '@mui/material/IconButton'
 import Stack from '@mui/material/Stack'
-import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { alpha } from '@mui/material/styles'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
@@ -102,24 +101,22 @@ export default function CategoryFilterTreePanel({
               }}
             >
               {hasChildren ? (
-                <Tooltip title={expanded ? 'Collapse category' : 'Expand category'}>
-                  <IconButton
-                    edge="start"
-                    size="small"
-                    aria-label={`${expanded ? 'Collapse' : 'Expand'} ${option.label}`}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      toggleExpanded(option.id)
-                    }}
-                    sx={{ p: 0, width: 30, flexShrink: 0 }}
-                  >
-                    {expanded ? (
-                      <ExpandMoreIcon fontSize="small" />
-                    ) : (
-                      <ChevronRightIcon fontSize="small" />
-                    )}
-                  </IconButton>
-                </Tooltip>
+                <IconButton
+                  edge="start"
+                  size="small"
+                  aria-label={`${expanded ? 'Collapse' : 'Expand'} ${option.label}`}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    toggleExpanded(option.id)
+                  }}
+                  sx={{ p: 0, width: 30, flexShrink: 0 }}
+                >
+                  {expanded ? (
+                    <ExpandMoreIcon fontSize="small" />
+                  ) : (
+                    <ChevronRightIcon fontSize="small" />
+                  )}
+                </IconButton>
               ) : (
                 <Box sx={{ width: 30, flexShrink: 0 }} />
               )}
