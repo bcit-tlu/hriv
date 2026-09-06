@@ -591,6 +591,36 @@ describe('CanvasOverlay', () => {
       ).toEqual(['selected-one', 'selected-two', 'unselected'])
     })
 
+    it('updates an annotation guide while the annotation is being transformed', () => {
+      render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[makeAnnotation({ id: 'moving', type: 'rect' })]}
+          onAnnotationsChange={noop}
+          canEdit={true}
+          editMode={true}
+          onEditModeChange={noop}
+        />,
+      )
+
+      const fc = fabricTestState.canvases.at(-1)
+      const annotation = fc
+        .getObjects()
+        .find((obj: { _annotationId?: string }) => obj._annotationId === 'moving')
+      const guide = () =>
+        fc
+          .getObjects()
+          .find((obj: { _annotationGuideFor?: string }) => obj._annotationGuideFor === 'moving')
+
+      expect(guide()?.left).toBe(annotation.left)
+      annotation.set({ left: 240 })
+      act(() => {
+        fc.fire('object:moving', { target: annotation })
+      })
+
+      expect(guide()?.left).toBe(240)
+    })
+
     it('omits presentation guides from saved annotation snapshots', async () => {
       const onAnnotationsChange = vi.fn()
       render(
@@ -627,6 +657,29 @@ describe('CanvasOverlay', () => {
       >
       expect(saved).toHaveLength(2)
       expect(saved.some((annotation) => annotation._annotationGuideFor != null)).toBe(false)
+    })
+
+    it('does not persist presentation guides when clearing all annotations', async () => {
+      const onAnnotationsChange = vi.fn()
+      render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[
+            makeAnnotation({ id: 'clear-rect', type: 'rect' }),
+            makeAnnotation({ id: 'clear-circle', type: 'circle' }),
+          ]}
+          onAnnotationsChange={onAnnotationsChange}
+          canEdit={true}
+          editMode={true}
+          onEditModeChange={noop}
+        />,
+      )
+
+      await act(async () => {
+        screen.getByLabelText('Clear All Annotations').click()
+      })
+
+      expect(onAnnotationsChange).toHaveBeenLastCalledWith([])
     })
 
     it('creates text annotations as textboxes with independent dimension controls', () => {

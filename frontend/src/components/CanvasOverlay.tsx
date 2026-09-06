@@ -1254,15 +1254,25 @@ export default function CanvasOverlay({
   useEffect(() => {
     const fc = fabricCanvasRef.current
     if (!fc || !editMode) return
-    const handler = () => {
+    const handleObjectModified = () => {
       console.debug(LOG_PREFIX, 'object:modified — emitting')
       refreshBoundingGuides(fc)
       fc.renderAll()
       emitAnnotations()
     }
-    fc.on('object:modified', handler)
+    const handleObjectTransforming = () => {
+      refreshBoundingGuides(fc)
+      fc.renderAll()
+    }
+    fc.on('object:modified', handleObjectModified)
+    fc.on('object:moving', handleObjectTransforming)
+    fc.on('object:scaling', handleObjectTransforming)
+    fc.on('object:rotating', handleObjectTransforming)
     return () => {
-      fc.off('object:modified', handler)
+      fc.off('object:modified', handleObjectModified)
+      fc.off('object:moving', handleObjectTransforming)
+      fc.off('object:scaling', handleObjectTransforming)
+      fc.off('object:rotating', handleObjectTransforming)
     }
   }, [editMode, emitAnnotations, refreshBoundingGuides])
 
@@ -1349,7 +1359,7 @@ export default function CanvasOverlay({
   const handleClearAll = useCallback(() => {
     const fc = fabricCanvasRef.current
     if (!fc) return
-    const objs = fc.getObjects()
+    const objs = fc.getObjects().filter(isAnnotationFabricObject)
     if (objs.length > 0) {
       emitAnnotationEvent('annotation.deleted', annotationTypeOf(objs), objs.length)
     }
