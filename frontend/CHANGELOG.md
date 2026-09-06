@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.51.5](https://github.com/bcit-tlu/hriv/compare/frontend-v0.51.4...frontend-v0.51.5) (2026-09-06)
+
+
+### Bug Fixes
+
+* **frontend:** correct category and annotation presentation ([#1213](https://github.com/bcit-tlu/hriv/issues/1213)) ([8e67ec2](https://github.com/bcit-tlu/hriv/commit/8e67ec27a12d0f6b5afbb51d995518809b0c30d0))
+
 ## [0.51.4](https://github.com/bcit-tlu/hriv/compare/frontend-v0.51.3...frontend-v0.51.4) (2026-09-04)
 
 
