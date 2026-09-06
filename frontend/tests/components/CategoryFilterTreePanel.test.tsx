@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import CategoryFilterTreePanel from '../../src/components/CategoryFilterTreePanel'
 import { resetCategoryTreeExpansionPreferencesForTests } from '../../src/useCategoryTreeExpansionPreferences'
@@ -32,6 +32,7 @@ describe('CategoryFilterTreePanel', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     resetCategoryTreeExpansionPreferencesForTests()
   })
 
@@ -201,6 +202,26 @@ describe('CategoryFilterTreePanel', () => {
     expect(screen.getByText('Italian')).toBeInTheDocument()
 
     expect(onToggle).not.toHaveBeenCalled()
+  })
+
+  it('does not show a tooltip when hovering the expand/collapse toggle', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+
+    render(
+      <CategoryFilterTreePanel
+        categories={makeCategoryTree()}
+        selectedIds={new Set()}
+        onToggle={vi.fn()}
+      />,
+    )
+
+    await user.hover(screen.getByRole('button', { name: 'Collapse Architecture' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
   })
 
   it('reflects selected state from selectedIds', () => {

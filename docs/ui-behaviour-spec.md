@@ -92,9 +92,11 @@ images> / Empty` format used on category tiles.
   and **Discard Changes**. Browser unloads also receive the native unsaved
   changes warning while a draft is dirty. Overlay lock/clear actions do not
   implicitly save a canvas draft.
-- Every annotation has a subtle presentation-only bounding outline. Selected
-  Fabric objects use a darker, thicker outline with visible handles so the
-  selected object is distinct from other annotations and image content.
+- View mode renders annotations without bounding boxes. Edit mode renders subtle
+  dotted, presentation-only bounding boxes for unselected annotations; selected
+  Fabric objects use the solid selection border with visible handles while
+  unselected annotations retain their dotted boxes. Presentation guides are not
+  persisted in `metadata_extra.canvas_annotations`.
 - Touch pinch gestures use a per-gesture zoom-vs-rotate mode lock. The
   `ImageViewer` intercepts `canvas-pinch` and compares initial finger-line
   rotation against finger-separation change. The dominant motion wins:

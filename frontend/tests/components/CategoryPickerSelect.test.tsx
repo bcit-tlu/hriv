@@ -7,8 +7,8 @@
  * 3. Inherited restriction shows correct aria-label
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import CategoryPickerSelect from '../../src/components/CategoryPickerSelect'
 import ManageCategoriesDialog from '../../src/components/ManageCategoriesDialog'
@@ -18,6 +18,10 @@ import { makeCategory, makeImage } from '../helpers/fixtures'
 beforeEach(() => {
   localStorage.clear()
   resetCategoryTreeExpansionPreferencesForTests()
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 // ---------------------------------------------------------------------------
@@ -223,6 +227,27 @@ describe('CategoryPickerSelect — LockIcon', () => {
     await user.click(screen.getByRole('combobox'))
 
     expect(screen.getByRole('button', { name: 'Collapse Parent' })).toBeInTheDocument()
+  })
+
+  it('does not show a tooltip when hovering the expand/collapse control', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const categories = [
+      makeCategory({
+        id: 1,
+        label: 'Parent',
+        children: [makeCategory({ id: 2, label: 'Child', parentId: 1 })],
+      }),
+    ]
+    render(<CategoryPickerSelect categories={categories} value={null} onChange={vi.fn()} />)
+    await user.click(screen.getByRole('combobox'))
+
+    await user.hover(screen.getByRole('button', { name: 'Collapse Parent' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
   })
 
   it('collapses child categories from the picker tree', async () => {

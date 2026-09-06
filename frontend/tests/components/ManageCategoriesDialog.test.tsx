@@ -37,6 +37,7 @@ beforeEach(() => {
 // coordinator during render; reset it so no test's leftover scope state
 // can make another test's rendered sibling order order-dependent.
 afterEach(() => {
+  vi.useRealTimers()
   vi.restoreAllMocks()
   tileOrderingCoordinator.reset()
 })
@@ -171,6 +172,26 @@ describe('ManageCategoriesDialog — basics', () => {
     ]
     renderDialog({ categories })
     expect(screen.getByRole('button', { name: 'Collapse Parent' })).toBeInTheDocument()
+  })
+
+  it('does not show a tooltip when hovering the expand/collapse control', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const categories = [
+      makeCategory({
+        id: 1,
+        label: 'Parent',
+        children: [makeCategory({ id: 2, label: 'Child', parentId: 1 })],
+      }),
+    ]
+    renderDialog({ categories })
+
+    await user.hover(screen.getByRole('button', { name: 'Collapse Parent' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
   })
 
   it('collapses child categories when the collapse control is clicked', async () => {

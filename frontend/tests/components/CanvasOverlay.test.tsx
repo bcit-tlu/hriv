@@ -38,7 +38,10 @@ vi.mock('fabric', () => {
     this.handlers = new Map()
     this.activeObject = undefined
     this.dispose = vi.fn()
-    this.add = vi.fn((obj) => this.objects.push(obj))
+    this.add = vi.fn((obj) => {
+      obj.canvas = this
+      this.objects.push(obj)
+    })
     this.renderAll = vi.fn()
     this.requestRenderAll = vi.fn()
     this.getObjects = vi.fn(() => this.objects)
@@ -58,7 +61,13 @@ vi.mock('fabric', () => {
       for (const handler of this.handlers.get(event) ?? []) handler(payload)
     })
     this.getActiveObject = vi.fn(() => this.activeObject)
-    this.getActiveObjects = vi.fn(() => this.activeObject?.getObjects?.() ?? [])
+    this.getActiveObjects = vi.fn(() =>
+      this.activeObject instanceof FabricActiveSelection
+        ? this.activeObject.getObjects()
+        : this.activeObject
+          ? [this.activeObject]
+          : [],
+    )
     this.setActiveObject = vi.fn((obj) => {
       this.activeObject = obj
     })
@@ -68,8 +77,11 @@ vi.mock('fabric', () => {
       }
       this.activeObject = undefined
     })
-    this.forEachObject = vi.fn()
-    this.clear = vi.fn()
+    this.forEachObject = vi.fn((callback) => this.objects.forEach(callback))
+    this.clear = vi.fn(() => {
+      this.objects = []
+      this.activeObject = undefined
+    })
     this.getScenePoint = vi.fn(() => ({ x: 0, y: 0 }))
     this.remove = vi.fn((obj) => {
       this.objects = this.objects.filter((candidate: unknown) => candidate !== obj)
@@ -143,19 +155,62 @@ vi.mock('fabric', () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function FabricRect(this: any, options: Record<string, unknown> = {}) {
     Object.assign(this, options)
-    this.set = vi.fn()
+    this.set = vi.fn((keyOrValues: string | Record<string, unknown>, value?: unknown) => {
+      if (typeof keyOrValues === 'string') {
+        this[keyOrValues] = value
+      } else {
+        Object.assign(this, keyOrValues)
+      }
+      return this
+    })
     installObjectGeometry(this)
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function FabricEllipse(this: any, options: Record<string, unknown> = {}) {
     Object.assign(this, options)
-    this.set = vi.fn()
+    this.set = vi.fn((keyOrValues: string | Record<string, unknown>, value?: unknown) => {
+      if (typeof keyOrValues === 'string') {
+        this[keyOrValues] = value
+      } else {
+        Object.assign(this, keyOrValues)
+      }
+      return this
+    })
     installObjectGeometry(this)
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function FabricLine(this: any, options: Record<string, unknown> = {}) {
-    Object.assign(this, options)
-    this.set = vi.fn()
+  function FabricLine(
+    this: any,
+    pointsOrOptions: number[] | Record<string, unknown> = {},
+    lineOptions: Record<string, unknown> = {},
+  ) {
+    if (Array.isArray(pointsOrOptions)) {
+      const [x1 = 0, y1 = 0, x2 = 0, y2 = 0] = pointsOrOptions
+      Object.assign(
+        this,
+        {
+          x1,
+          y1,
+          x2,
+          y2,
+          left: Math.min(x1, x2),
+          top: Math.min(y1, y2),
+          width: Math.abs(x2 - x1),
+          height: Math.abs(y2 - y1),
+        },
+        lineOptions,
+      )
+    } else {
+      Object.assign(this, pointsOrOptions)
+    }
+    this.set = vi.fn((keyOrValues: string | Record<string, unknown>, value?: unknown) => {
+      if (typeof keyOrValues === 'string') {
+        this[keyOrValues] = value
+      } else {
+        Object.assign(this, keyOrValues)
+      }
+      return this
+    })
     installObjectGeometry(this)
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -178,7 +233,14 @@ vi.mock('fabric', () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function FabricObject(this: any, options: Record<string, unknown> = {}) {
     Object.assign(this, options)
-    this.set = vi.fn()
+    this.set = vi.fn((keyOrValues: string | Record<string, unknown>, value?: unknown) => {
+      if (typeof keyOrValues === 'string') {
+        this[keyOrValues] = value
+      } else {
+        Object.assign(this, keyOrValues)
+      }
+      return this
+    })
     installObjectGeometry(this)
   }
 
@@ -442,6 +504,129 @@ describe('CanvasOverlay', () => {
       )
       const canvases = container.querySelectorAll('canvas')
       expect(canvases.length).toBeGreaterThanOrEqual(1)
+    })
+
+    it('renders dotted presentation guides for unselected annotations only', () => {
+      render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[
+            makeAnnotation({ id: 'rect-guide', type: 'rect' }),
+            makeAnnotation({
+              id: 'text-guide',
+              type: 'text',
+              text: 'Label',
+              vpWidth: 0.2,
+              vpHeight: 0.05,
+            }),
+          ]}
+          onAnnotationsChange={noop}
+          canEdit={true}
+          editMode={true}
+          onEditModeChange={noop}
+        />,
+      )
+
+      const fc = fabricTestState.canvases.at(-1)
+      const guides = fc
+        .getObjects()
+        .filter((obj: { _annotationGuideFor?: string }) => obj._annotationGuideFor != null)
+
+      expect(
+        guides.map((guide: { _annotationGuideFor: string }) => guide._annotationGuideFor),
+      ).toEqual(['rect-guide', 'text-guide'])
+      for (const guide of guides) {
+        expect(guide.strokeDashArray).toEqual([5, 3])
+        expect(guide.selectable).toBe(false)
+        expect(guide.evented).toBe(false)
+        expect(guide.excludeFromExport).toBe(true)
+      }
+    })
+
+    it('removes guides from selected annotations while preserving guides on unselected ones', () => {
+      render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[
+            makeAnnotation({ id: 'selected-one', type: 'rect' }),
+            makeAnnotation({ id: 'selected-two', type: 'circle' }),
+            makeAnnotation({ id: 'unselected', type: 'text', text: 'Label' }),
+          ]}
+          onAnnotationsChange={noop}
+          canEdit={true}
+          editMode={true}
+          onEditModeChange={noop}
+        />,
+      )
+
+      const fc = fabricTestState.canvases.at(-1)
+      const annotationObjects = fc
+        .getObjects()
+        .filter((obj: { _annotationType?: string }) => obj._annotationType != null)
+      const selected = new fabric.ActiveSelection(annotationObjects.slice(0, 2), { canvas: fc })
+      fc.setActiveObject(selected)
+
+      act(() => {
+        fc.fire('selection:created', { selected: annotationObjects.slice(0, 2) })
+      })
+
+      expect(
+        fc
+          .getObjects()
+          .filter((obj: { _annotationGuideFor?: string }) => obj._annotationGuideFor != null)
+          .map((guide: { _annotationGuideFor: string }) => guide._annotationGuideFor),
+      ).toEqual(['unselected'])
+
+      fc.discardActiveObject()
+      act(() => {
+        fc.fire('selection:cleared', {})
+      })
+
+      expect(
+        fc
+          .getObjects()
+          .filter((obj: { _annotationGuideFor?: string }) => obj._annotationGuideFor != null)
+          .map((guide: { _annotationGuideFor: string }) => guide._annotationGuideFor)
+          .sort(),
+      ).toEqual(['selected-one', 'selected-two', 'unselected'])
+    })
+
+    it('omits presentation guides from saved annotation snapshots', async () => {
+      const onAnnotationsChange = vi.fn()
+      render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[
+            makeAnnotation({ id: 'serialize-rect', type: 'rect' }),
+            makeAnnotation({ id: 'serialize-text', type: 'text', text: 'Label' }),
+          ]}
+          onAnnotationsChange={onAnnotationsChange}
+          canEdit={true}
+          editMode={true}
+          onEditModeChange={noop}
+        />,
+      )
+
+      const fc = fabricTestState.canvases.at(-1)
+      expect(
+        fc
+          .getObjects()
+          .filter((obj: { _annotationGuideFor?: string }) => obj._annotationGuideFor != null),
+      ).toHaveLength(2)
+
+      await act(async () => {
+        screen.getByLabelText('Save & Exit Edit Mode').click()
+      })
+
+      expect(onAnnotationsChange).toHaveBeenCalledWith([
+        expect.objectContaining({ id: 'serialize-rect', type: 'rect' }),
+        expect.objectContaining({ id: 'serialize-text', type: 'text' }),
+      ])
+      const saved = onAnnotationsChange.mock.calls.at(-1)?.[0] as Array<
+        CanvasAnnotation & { _annotationGuideFor?: string }
+      >
+      expect(saved).toHaveLength(2)
+      expect(saved.some((annotation) => annotation._annotationGuideFor != null)).toBe(false)
     })
 
     it('creates text annotations as textboxes with independent dimension controls', () => {
@@ -1338,6 +1523,16 @@ describe('CanvasOverlay', () => {
 
       const rotateCalls = calls.filter((c) => c.method === 'rotate')
       expect(rotateCalls).toHaveLength(0)
+    })
+
+    it('does not draw presentation bounding boxes in view mode', () => {
+      const calls = renderAndCaptureCalls([
+        makeAnnotation({ id: 'arrow', type: 'arrow', vpX2: 0.4, vpY2: 0.4 }),
+        makeAnnotation({ id: 'text', type: 'text', text: 'No guide', vpFontSize: 0.02 }),
+      ])
+
+      expect(calls.filter((call) => call.method === 'setLineDash')).toHaveLength(0)
+      expect(calls.filter((call) => call.method === 'strokeRect')).toHaveLength(0)
     })
 
     it('applies save/translate/rotate for a rotated ellipse', () => {
