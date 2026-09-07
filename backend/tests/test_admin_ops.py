@@ -993,7 +993,29 @@ async def test_run_db_export_success(tmp_path) -> None:
         oidc_subject=None, role="admin", active=False, programs=[], last_access=None,
         metadata_={}, created_at=now, updated_at=now,
     )]
-    source_images = []
+    source_images = [
+        SimpleNamespace(
+            id=1,
+            original_filename="o.tiff",
+            stored_path="/s",
+            status="completed",
+            progress=100,
+            error_message=None,
+            name="src",
+            category_id=None,
+            copyright=None,
+            note=None,
+            active=True,
+            image_id=None,
+            uploaded_by=1,
+            file_size=1024,
+            source_checksum=None,
+            tile_settings_hash=None,
+            tiles_generated_at=None,
+            created_at=now,
+            updated_at=now,
+        )
+    ]
     changelog_entries = [
         SimpleNamespace(
             id=1,
@@ -1060,6 +1082,7 @@ async def test_run_db_export_success(tmp_path) -> None:
     by_id = {p["id"]: p for p in dump["programs"]}
     assert set(by_id) == {1, 2}
     assert "parent_program_id" not in by_id[1]
+    assert dump["source_images"][0]["uploaded_by"] == 1
     assert dump["changelog_entries"] == [
         {
             "id": 1,
@@ -1242,6 +1265,7 @@ def _full_dump() -> dict:
                 "status": "completed",
                 "progress": 100,
                 "image_id": 1,
+                "uploaded_by": 1,
             }
         ],
         "changelog_entries": [
@@ -1281,6 +1305,9 @@ async def test_run_db_import_happy_path(tmp_path) -> None:
     by_email = {u.email: u for u in imported_users}
     assert by_email["alice@example.com"].active is True
     assert by_email["bob@example.com"].active is False
+    imported_sources = [obj for obj in add_calls if type(obj).__name__ == "SourceImage"]
+    assert len(imported_sources) == 1
+    assert imported_sources[0].uploaded_by == 1
     # The importer unlinks the uploaded file on the `finally` branch.
     assert not input_file.exists()
 

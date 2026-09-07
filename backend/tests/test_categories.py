@@ -134,9 +134,19 @@ def _mock_db(categories: list, images: list) -> AsyncMock:
 
 
 def _make_user(
-    role: str = "admin", programs: list | None = None, groups: list | None = None,
+    role: str = "admin",
+    programs: list | None = None,
+    groups: list | None = None,
+    metadata_: dict | None = None,
 ) -> SimpleNamespace:
-    return SimpleNamespace(id=1, role=role, email=f"{role}@example.com", programs=programs or [], groups=groups or [])
+    return SimpleNamespace(
+        id=1,
+        role=role,
+        email=f"{role}@example.com",
+        programs=programs or [],
+        groups=groups or [],
+        metadata_=metadata_,
+    )
 
 
 def _categories_test_app(user_role: str, db: AsyncMock) -> FastAPI:
@@ -756,16 +766,25 @@ async def test_delete_category_endpoint_rejects_student() -> None:
     db.get.assert_not_called()
 
 
-async def test_delete_category_success() -> None:
+async def test_delete_category_success(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level("INFO", logger="app.routers.categories")
     cat = _make_category(1, "Cat")
     db = AsyncMock()
     db.get = AsyncMock(return_value=cat)
     db.delete = AsyncMock()
     db.commit = AsyncMock()
 
-    await delete_category(1, MagicMock(), db=db)
+    await delete_category(1, _make_user(), db=db)
     db.delete.assert_awaited_once()
     db.commit.assert_awaited_once()
+    [deleted_log] = [record for record in caplog.records if record.message == "Category deleted"]
+    assert getattr(deleted_log, "event.name") == "category.deleted"
+    assert getattr(deleted_log, "event.outcome") == "success"
+    assert getattr(deleted_log, "category.id") == 1
+    assert getattr(deleted_log, "category.label") == "Cat"
+    assert getattr(deleted_log, "user.id") == 1
+    assert getattr(deleted_log, "event.synthetic") is False
+    assert getattr(deleted_log, "event.client_synthetic") is False
 
 
 async def test_delete_category_not_found() -> None:

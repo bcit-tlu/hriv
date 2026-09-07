@@ -1,3 +1,5 @@
+import { getClientSyntheticMode } from './syntheticMode'
+
 const BASE = import.meta.env.VITE_API_URL ?? ''
 
 function getStorage(): Storage | null {
@@ -105,7 +107,10 @@ export function clearUserStorage(): void {
 }
 
 function authHeaders(): Record<string, string> {
-  const h: Record<string, string> = { 'X-Session-ID': SESSION_ID }
+  const h: Record<string, string> = {
+    'X-Session-ID': SESSION_ID,
+    'X-Client-Synthetic': getClientSyntheticMode() ? 'true' : 'false',
+  }
   if (_token) h['Authorization'] = `Bearer ${_token}`
   return h
 }

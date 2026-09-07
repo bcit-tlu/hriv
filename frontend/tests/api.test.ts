@@ -132,6 +132,8 @@ import {
   userMessage,
 } from '../src/api'
 
+import { setClientSyntheticMode } from '../src/syntheticMode'
+
 // ── Helpers ──────────────────────────────────────────────────────────────
 
 function jsonResponse(body: unknown, status = 200) {
@@ -799,6 +801,16 @@ describe('Image API', () => {
     const [url, init] = mockFetch.mock.calls[0]
     expect(url).toBe('/api/images/1')
     expect(init.method).toBe('DELETE')
+    expect(init.headers['X-Client-Synthetic']).toBe('false')
+  })
+
+  it('deleteImage propagates the client synthetic header when enabled', async () => {
+    setClientSyntheticMode(true)
+    mockFetch.mockReturnValueOnce(noContentResponse())
+    await deleteImage(1)
+    const [, init] = mockFetch.mock.calls[0]
+    expect(init.headers['X-Client-Synthetic']).toBe('true')
+    setClientSyntheticMode(false)
   })
 
   it('bulkUpdateImages sends PATCH to /api/images/bulk', async () => {
@@ -815,6 +827,16 @@ describe('Image API', () => {
     const [url, init] = mockFetch.mock.calls[0]
     expect(url).toBe('/api/images/bulk')
     expect(init.method).toBe('DELETE')
+    expect(init.headers['X-Client-Synthetic']).toBe('false')
+  })
+
+  it('bulkDeleteImages propagates the client synthetic header when enabled', async () => {
+    setClientSyntheticMode(true)
+    mockFetch.mockReturnValueOnce(noContentResponse())
+    await bulkDeleteImages({ image_ids: [1, 2] })
+    const [, init] = mockFetch.mock.calls[0]
+    expect(init.headers['X-Client-Synthetic']).toBe('true')
+    setClientSyntheticMode(false)
   })
 })
 

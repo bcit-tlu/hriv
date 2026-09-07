@@ -78,22 +78,25 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   `processing` / `completed` / `failed`); `progress`; `error_message`;
   `status_message`; `name`; `category_id` (`SET NULL`); `copyright`; `note`;
   `active`; `image_id` (FK to Image, `SET NULL` — linked after processing);
-  `file_size` (BigInteger).
+  `file_size` (BigInteger); `uploaded_by` (FK to User, `SET NULL` — audit only,
+  resolved at processing time rather than snapshotting role/synthetic metadata).
+
 - **Tile-cache provenance** _(added in `0014_add_tile_provenance`)_:
   `source_checksum` (SHA-256 of the source file), `tile_settings_hash`
   (settings/version fingerprint), `tiles_generated_at`. The effective
   `tile_cache_status` (`current` / `missing` / `stale` / `failed`) is a
   **computed property**, not a column, so it can't drift from the live pipeline
   version. See [`tile-cache-provenance.md`](tile-cache-provenance.md).
-- **Relationships:** `image` (nullable).
+- **Relationships:** `image` (nullable); `uploader` (nullable FK to `User`).
 
 ### BulkImportJob
 
 - **Purpose:** tracks multi-file upload/import operations.
 - **Key fields:** `status` (`pending` / `processing` / `completed` / `failed`);
   `category_id` (nullable FK, `SET NULL`); `total_count`; `completed_count`;
-  `failed_count`; `errors` (JSONB array).
-- **Relationships:** `category`.
+  `failed_count`; `errors` (JSONB array); `requested_by` (FK to User, `SET NULL`
+  — audit only).
+- **Relationships:** `category`; `requester` (nullable FK to `User`).
 
 ### Job _(added in `0022_add_jobs`)_
 
@@ -200,13 +203,21 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   and `Image` map the JSONB column `metadata` to the attribute `metadata_`.
 - **Nullable FKs use `SET NULL`** where deleting the parent should orphan rather
   than delete the child: `images.category_id`, `source_images.category_id`,
-  `source_images.image_id`, `bulk_import_jobs.category_id`,
-  `admin_tasks.created_by`, `groups.created_by_user_id`.
+  `source_images.image_id`, `source_images.uploaded_by`, `bulk_import_jobs.category_id`,
+  `bulk_import_jobs.requested_by`, `admin_tasks.created_by`,
+  `groups.created_by_user_id`.
 - **`active` (Image) vs `status` (Category)** are independent visibility
   mechanisms — don't conflate them.
 - **`sort_order`** exists on both `Category` and `Image` for manual ordering.
 - **Programs and groups are independent.** Group membership does not imply
   program membership; do not derive one from the other.
+- **Actor attribution is resolved at event time.** `SourceImage.uploaded_by` and
+  `BulkImportJob.requested_by` are stored as nullable FKs only. Role and
+  synthetic classification are derived from the referenced user when
+  `image.upload.processed`, `image.deleted`, or `category.deleted` events are
+  emitted, not persisted on the source/import row. This lets `event.synthetic`
+  reflect the current `User.metadata_` and keeps the API response schemas
+  (`SourceImageOut`, `BulkImportJobOut`) from exposing upload attribution.
 - **Migrations:** review `alembic revision --autogenerate` output carefully —
   several indexes are named explicitly in `__table_args__` to keep autogenerate
   from proposing spurious rename/drop operations.

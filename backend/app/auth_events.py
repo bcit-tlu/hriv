@@ -54,6 +54,26 @@ class AuthUser(Protocol):
     metadata_: Mapping[str, object] | None
 
 
+def actor_log_fields(
+    user: AuthUser | None,
+    *,
+    client_synthetic: bool | None = None,
+) -> dict[str, object]:
+    """Build canonical actor fields for lifecycle logs.
+
+    ``event.synthetic`` is derived server-side from the persisted user record.
+    ``event.client_synthetic`` is the non-authoritative client hint, recorded
+    only when explicitly supplied.
+    """
+    fields: dict[str, object] = {"event.synthetic": is_synthetic_user(user)}
+    if user is not None:
+        fields["user.id"] = user.id
+        fields["user.role"] = user.role
+    if client_synthetic is not None:
+        fields["event.client_synthetic"] = client_synthetic
+    return fields
+
+
 def is_synthetic_user(user: AuthUser | None) -> bool:
     """Return ``True`` when *user* is a synthetic monitoring account.
 
