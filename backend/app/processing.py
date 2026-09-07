@@ -14,9 +14,11 @@ import re
 import shutil
 import threading
 import time
+from collections.abc import Awaitable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import TypeVar
 from uuid import uuid4
 
 import pyvips
@@ -45,6 +47,7 @@ from .tile_provenance import (
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
+_T = TypeVar("_T")
 
 _meter = metrics.get_meter(__name__)
 
@@ -86,6 +89,16 @@ def _record_processing_finished(
         {"task_type": task_type, "outcome": "success" if success else "failure"},
     )
     _processing_duration_histogram.record(duration_s, {"task_type": task_type})
+
+
+async def _await_without_interruption(awaitable: Awaitable[_T]) -> _T:
+    future = asyncio.ensure_future(awaitable)
+    while not future.done():
+        try:
+            await asyncio.shield(future)
+        except asyncio.CancelledError:
+            continue
+    return future.result()
 
 
 def _is_enospc(exc: Exception) -> bool:
@@ -1400,17 +1413,27 @@ async def prepare_source_image_tile_rebuild(
         settings.tiles_dir,
         f".rebuild-{source.source_image_id}-{uuid4().hex}",
     )
+    tile_settings_hash = current_tile_settings_hash()
 
     try:
         with tracer.start_as_current_span("rebuild_generate_tiles"):
-            dzi_rel, thumb_rel, image_width, image_height = (
-                await asyncio.to_thread(
-                    generate_tiles, source.stored_path, temporary_dir,
-                )
+            generate_task = asyncio.create_task(
+                asyncio.to_thread(
+                    generate_tiles,
+                    source.stored_path,
+                    temporary_dir,
+                ),
             )
+            try:
+                dzi_rel, thumb_rel, image_width, image_height = (
+                    await asyncio.shield(generate_task)
+                )
+            except asyncio.CancelledError:
+                await _await_without_interruption(generate_task)
+                raise
         source_checksum = await _best_effort_source_checksum(source.stored_path)
-    except Exception:
-        await asyncio.to_thread(shutil.rmtree, temporary_dir, True)
+    except (Exception, asyncio.CancelledError):
+        await discard_tile_rebuild_tree(temporary_dir)
         raise
 
     return PreparedTileRebuild(
@@ -1422,13 +1445,18 @@ async def prepare_source_image_tile_rebuild(
         image_width=image_width,
         image_height=image_height,
         source_checksum=source_checksum,
-        tile_settings_hash=current_tile_settings_hash(),
+        tile_settings_hash=tile_settings_hash,
     )
+
+
+async def discard_tile_rebuild_tree(path: str) -> None:
+    """Remove a tile-rebuild artifact without leaving cancellation gaps."""
+    await _await_without_interruption(asyncio.to_thread(shutil.rmtree, path, True))
 
 
 async def discard_prepared_tile_rebuild(prepared: PreparedTileRebuild) -> None:
     """Remove a prepared tile tree that will not be promoted."""
-    await asyncio.to_thread(shutil.rmtree, prepared.temporary_dir, True)
+    await discard_tile_rebuild_tree(prepared.temporary_dir)
 
 
 async def rollback_promoted_tile_rebuild(
@@ -1442,7 +1470,7 @@ async def rollback_promoted_tile_rebuild(
         if promoted.backup_dir is not None:
             os.replace(promoted.backup_dir, prepared.output_dir)
 
-    await asyncio.to_thread(_restore)
+    await _await_without_interruption(asyncio.to_thread(_restore))
 
 
 async def promote_source_image_tile_rebuild(
@@ -1464,7 +1492,21 @@ async def promote_source_image_tile_rebuild(
             f"Source #{src.id} changed while its tiles were being prepared"
         )
 
-    img = await session.get(Image, src.image_id) if src.image_id else None
+    img = None
+    if src.image_id is not None:
+        img = await session.get(
+            Image,
+            src.image_id,
+            with_for_update=True,
+            populate_existing=True,
+        )
+        if img is None:
+            raise ValueError(f"Linked image #{src.image_id} no longer exists")
+        if _tile_source_id_from_url(img.tile_sources) != src.id:
+            raise ValueError(
+                f"Source #{src.id} is no longer authoritative for "
+                f"image #{src.image_id}"
+            )
     backup_dir = f"{prepared.output_dir}.old-{uuid4().hex}"
 
     def _swap() -> str | None:
@@ -1479,10 +1521,16 @@ async def promote_source_image_tile_rebuild(
             raise
         return backup_dir if had_existing else None
 
-    promoted = PromotedTileRebuild(
-        prepared=prepared,
-        backup_dir=await asyncio.to_thread(_swap),
-    )
+    swap_task = asyncio.create_task(asyncio.to_thread(_swap))
+    try:
+        backup = await asyncio.shield(swap_task)
+    except asyncio.CancelledError:
+        backup = await _await_without_interruption(swap_task)
+        promoted = PromotedTileRebuild(prepared=prepared, backup_dir=backup)
+        await rollback_promoted_tile_rebuild(promoted)
+        raise
+
+    promoted = PromotedTileRebuild(prepared=prepared, backup_dir=backup)
 
     try:
         src.source_checksum = prepared.source_checksum
@@ -1495,7 +1543,7 @@ async def promote_source_image_tile_rebuild(
             img.width = prepared.image_width
             img.height = prepared.image_height
             img.version = img.version + 1
-    except Exception:
+    except (Exception, asyncio.CancelledError):
         await rollback_promoted_tile_rebuild(promoted)
         raise
 
@@ -1508,7 +1556,7 @@ async def finish_promoted_tile_rebuild(
     """Discard the retained prior tile tree after a successful commit."""
     if promoted.backup_dir is not None:
         try:
-            await asyncio.to_thread(shutil.rmtree, promoted.backup_dir, True)
+            await discard_tile_rebuild_tree(promoted.backup_dir)
         except RuntimeError:
             logger.warning(
                 "Could not remove retained tile tree",
@@ -1552,14 +1600,14 @@ async def rebuild_source_image_tiles(
         )
         try:
             await session.commit()
-        except Exception:
+        except (Exception, asyncio.CancelledError):
             try:
-                await session.rollback()
+                await _await_without_interruption(session.rollback())
             finally:
                 await rollback_promoted_tile_rebuild(promoted)
             raise
         await finish_promoted_tile_rebuild(promoted)
-    except Exception:
+    except (Exception, asyncio.CancelledError):
         if prepared is not None and promoted is None:
             await discard_prepared_tile_rebuild(prepared)
         duration_ms = round((time.monotonic() - t_start) * 1000)
