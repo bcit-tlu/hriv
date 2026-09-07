@@ -1,5 +1,6 @@
 """Tests for the image processing pipeline."""
 
+import asyncio
 import errno
 import sys
 from types import SimpleNamespace
@@ -12,31 +13,39 @@ if "pyvips" not in sys.modules:
     sys.modules["pyvips"] = MagicMock()
     sys.modules["pyvips.enums"] = MagicMock()
 
+from app.models import Image, SourceImage
 from app.processing import (
-    ProgressTracker,
     REBUILD_SCOPE_ALL,
     REBUILD_SCOPE_MISSING,
     REBUILD_SCOPE_MISSING_STALE,
     REBUILD_SCOPE_STALE,
+    PreparedTileRebuild,
+    ProgressTracker,
+    PromotedTileRebuild,
+    TileRebuildSource,
+    _await_without_interruption,
     _best_effort_source_checksum,
-    _estimate_tile_count,
     _detect_openslide_pyramid,
     _detect_tiff_pyramid,
+    _estimate_tile_count,
     _extract_tiff_resolution,
     _get_float_field,
     _processing_failure_message,
     _tile_source_id_from_url,
     detect_pyramid_info,
+    discard_prepared_tile_rebuild,
+    finish_promoted_tile_rebuild,
     generate_tiles,
+    prepare_source_image_tile_rebuild,
     process_replace_image,
     process_source_image,
+    promote_source_image_tile_rebuild,
     rebuild_source_image_tiles,
     reconcile_stale_source_images,
+    rollback_promoted_tile_rebuild,
     select_rebuild_targets,
     tiles_present_on_disk,
 )
-from app.models import SourceImage
-
 
 # ── ProgressTracker tests ────────────────────────────────
 
@@ -1133,8 +1142,155 @@ async def test_select_rebuild_targets_invalid_scope_raises() -> None:
         await select_rebuild_targets(session, scope="bogus")
 
 
-async def test_rebuild_source_image_tiles_success() -> None:
-    """A successful rebuild updates provenance and the linked image record."""
+def _prepared_tile_rebuild() -> PreparedTileRebuild:
+    return PreparedTileRebuild(
+        source=TileRebuildSource(
+            source_image_id=5,
+            image_id=10,
+            stored_path="/data/source_images/5.tiff",
+        ),
+        temporary_dir="/data/tiles/.rebuild-5-prepared",
+        output_dir="/data/tiles/5",
+        dzi_rel="image.dzi",
+        thumb_rel="thumbnail.jpeg",
+        image_width=1024,
+        image_height=768,
+        source_checksum="source-checksum",
+        tile_settings_hash="tile-settings-hash",
+    )
+
+
+async def test_prepare_source_image_tile_rebuild_success() -> None:
+    """Preparation generates a unique temporary artifact without a session."""
+    source = TileRebuildSource(
+        source_image_id=5,
+        image_id=10,
+        stored_path="/data/source_images/5.tiff",
+    )
+
+    events = []
+
+    def generate(*_args):
+        events.append("generate")
+        return "image.dzi", "thumbnail.jpeg", 1024, 768
+
+    def current_hash():
+        events.append("hash")
+        return "settings-before-generation"
+
+    with (
+        patch(
+            "app.processing.generate_tiles",
+            side_effect=generate,
+        ) as mock_generate,
+        patch(
+            "app.processing._best_effort_source_checksum",
+            new=AsyncMock(return_value="source-checksum"),
+        ),
+        patch("app.processing.current_tile_settings_hash", side_effect=current_hash),
+        patch("app.processing.asyncio.to_thread", side_effect=lambda fn, *a: fn(*a)),
+        patch("app.processing.settings") as ms,
+        patch("app.processing.uuid4", return_value=SimpleNamespace(hex="unique")),
+        patch("app.processing.os.path.isfile", return_value=True),
+        patch("app.processing.shutil.rmtree") as mock_rmtree,
+    ):
+        ms.tiles_dir = "/data/tiles"
+        prepared = await prepare_source_image_tile_rebuild(source)
+
+    assert prepared == PreparedTileRebuild(
+        source=source,
+        temporary_dir="/data/tiles/.rebuild-5-unique",
+        output_dir="/data/tiles/5",
+        dzi_rel="image.dzi",
+        thumb_rel="thumbnail.jpeg",
+        image_width=1024,
+        image_height=768,
+        source_checksum="source-checksum",
+        tile_settings_hash="settings-before-generation",
+    )
+    assert events == ["hash", "generate"]
+    mock_generate.assert_called_once_with(
+        "/data/source_images/5.tiff",
+        "/data/tiles/.rebuild-5-unique",
+    )
+    mock_rmtree.assert_not_called()
+
+
+async def test_prepare_source_image_tile_rebuild_cleans_failed_artifact() -> None:
+    """Preparation removes its unique output when tile generation fails."""
+    source = TileRebuildSource(
+        source_image_id=5,
+        image_id=10,
+        stored_path="/data/source_images/5.tiff",
+    )
+
+    with (
+        patch(
+            "app.processing.generate_tiles",
+            side_effect=RuntimeError("generation failed"),
+        ),
+        patch("app.processing.asyncio.to_thread", side_effect=lambda fn, *a: fn(*a)),
+        patch("app.processing.settings") as ms,
+        patch("app.processing.uuid4", return_value=SimpleNamespace(hex="failed")),
+        patch("app.processing.os.path.isfile", return_value=True),
+        patch("app.processing.shutil.rmtree") as mock_rmtree,
+    ):
+        ms.tiles_dir = "/data/tiles"
+        with pytest.raises(RuntimeError, match="generation failed"):
+            await prepare_source_image_tile_rebuild(source)
+
+    mock_rmtree.assert_called_once_with(
+        "/data/tiles/.rebuild-5-failed", True,
+    )
+
+
+async def test_prepare_source_image_tile_rebuild_cleans_cancelled_artifact() -> None:
+    """A cancellation after generation removes the prepared temp tree."""
+    source = TileRebuildSource(
+        source_image_id=5,
+        image_id=10,
+        stored_path="/data/source_images/5.tiff",
+    )
+
+    with (
+        patch(
+            "app.processing.generate_tiles",
+            return_value=("image.dzi", "thumbnail.jpeg", 1024, 768),
+        ),
+        patch(
+            "app.processing._best_effort_source_checksum",
+            new=AsyncMock(side_effect=asyncio.CancelledError),
+        ),
+        patch("app.processing.asyncio.to_thread", side_effect=lambda fn, *a: fn(*a)),
+        patch("app.processing.settings") as ms,
+        patch("app.processing.uuid4", return_value=SimpleNamespace(hex="cancelled")),
+        patch("app.processing.os.path.isfile", return_value=True),
+        patch("app.processing.shutil.rmtree") as mock_rmtree,
+    ):
+        ms.tiles_dir = "/data/tiles"
+        with pytest.raises(asyncio.CancelledError):
+            await prepare_source_image_tile_rebuild(source)
+
+    mock_rmtree.assert_called_once_with(
+        "/data/tiles/.rebuild-5-cancelled", True,
+    )
+
+
+async def test_discard_prepared_tile_rebuild_removes_temporary_tree() -> None:
+    """A prepared artifact can be explicitly discarded before promotion."""
+    with (
+        patch("app.processing.asyncio.to_thread", side_effect=lambda fn, *a: fn(*a)),
+        patch("app.processing.shutil.rmtree") as mock_rmtree,
+    ):
+        await discard_prepared_tile_rebuild(_prepared_tile_rebuild())
+
+    mock_rmtree.assert_called_once_with(
+        "/data/tiles/.rebuild-5-prepared", True,
+    )
+
+
+async def test_promote_source_image_tile_rebuild_stages_without_commit() -> None:
+    """Promotion swaps artifacts and mutates provenance without committing."""
     src = SimpleNamespace(
         id=5, image_id=10, stored_path="/data/source_images/5.tiff",
         source_checksum=None, tile_settings_hash=None, tiles_generated_at=None,
@@ -1146,35 +1302,88 @@ async def test_rebuild_source_image_tiles_success() -> None:
     session = AsyncMock()
     session.get = AsyncMock(return_value=img)
     session.commit = AsyncMock()
+    prepared = _prepared_tile_rebuild()
 
     with (
-        patch(
-            "app.processing.generate_tiles",
-            return_value=("image.dzi", "thumbnail.jpeg", 1024, 768),
-        ),
         patch("app.processing.asyncio.to_thread", side_effect=lambda fn, *a: fn(*a)),
-        patch("app.processing.settings") as ms,
-        patch("app.processing.os.path.isfile", return_value=True),
         patch("app.processing.os.path.isdir", return_value=False),
         patch("app.processing.os.replace") as mock_replace,
     ):
-        ms.tiles_dir = "/data/tiles"
-        await rebuild_source_image_tiles(session, src)
+        promoted = await promote_source_image_tile_rebuild(
+            session, src, prepared,
+        )
 
-    from app.tile_provenance import current_tile_settings_hash
-
-    assert src.tile_settings_hash == current_tile_settings_hash()
+    assert promoted.backup_dir is None
+    assert src.source_checksum == "source-checksum"
+    assert src.tile_settings_hash == "tile-settings-hash"
     assert src.tiles_generated_at is not None
     assert img.tile_sources == "/api/tiles/5/image.dzi"
     assert img.thumb == "/api/tiles/5/thumbnail.jpeg"
     assert img.width == 1024
     assert img.height == 768
     assert img.version == 4
-    session.commit.assert_awaited()
-    mock_replace.assert_called_once()
+    session.get.assert_awaited_once_with(
+        Image,
+        10,
+        with_for_update=True,
+        populate_existing=True,
+    )
+    session.commit.assert_not_awaited()
+    mock_replace.assert_called_once_with(
+        "/data/tiles/.rebuild-5-prepared", "/data/tiles/5",
+    )
 
 
-async def test_rebuild_source_image_tiles_restores_old_tree_on_swap_failure() -> None:
+async def test_promote_source_image_tile_rebuild_rejects_changed_source() -> None:
+    """Promotion rejects an artifact prepared for superseded source state."""
+    src = SimpleNamespace(
+        id=5,
+        image_id=11,
+        stored_path="/data/source_images/replacement.tiff",
+    )
+    session = AsyncMock()
+
+    with (
+        patch("app.processing.os.replace") as mock_replace,
+        pytest.raises(ValueError, match="changed while"),
+    ):
+        await promote_source_image_tile_rebuild(
+            session, src, _prepared_tile_rebuild(),
+        )
+
+    session.get.assert_not_awaited()
+    mock_replace.assert_not_called()
+
+
+async def test_promote_source_image_tile_rebuild_rejects_superseded_source() -> None:
+    """Promotion rejects a source that is no longer authoritative."""
+    src = SimpleNamespace(
+        id=5,
+        image_id=10,
+        stored_path="/data/source_images/5.tiff",
+    )
+    img = SimpleNamespace(tile_sources="/api/tiles/99/image.dzi")
+    session = AsyncMock()
+    session.get = AsyncMock(return_value=img)
+
+    with (
+        patch("app.processing.os.replace") as mock_replace,
+        pytest.raises(ValueError, match="no longer authoritative"),
+    ):
+        await promote_source_image_tile_rebuild(
+            session, src, _prepared_tile_rebuild(),
+        )
+
+    session.get.assert_awaited_once_with(
+        Image,
+        10,
+        with_for_update=True,
+        populate_existing=True,
+    )
+    mock_replace.assert_not_called()
+
+
+async def test_promote_source_image_tile_rebuild_restores_on_swap_failure() -> None:
     """If promoting the new tree fails, the previous tree is moved back."""
     src = SimpleNamespace(
         id=5, image_id=10, stored_path="/data/source_images/5.tiff",
@@ -1187,14 +1396,251 @@ async def test_rebuild_source_image_tiles_restores_old_tree_on_swap_failure() ->
     session = AsyncMock()
     session.get = AsyncMock(return_value=img)
     session.commit = AsyncMock()
+    prepared = _prepared_tile_rebuild()
 
-    # Sequence: move existing aside (ok), promote new (fails), restore (ok).
     replace_calls = []
 
     def replace_side_effect(srcpath, dstpath):
         replace_calls.append((srcpath, dstpath))
         if len(replace_calls) == 2:
             raise OSError("promote failed")
+
+    with (
+        patch("app.processing.asyncio.to_thread", side_effect=lambda fn, *a: fn(*a)),
+        patch("app.processing.os.path.isdir", return_value=True),
+        patch("app.processing.os.replace", side_effect=replace_side_effect),
+        pytest.raises(OSError, match="promote failed"),
+    ):
+        await promote_source_image_tile_rebuild(session, src, prepared)
+
+    assert len(replace_calls) == 3
+    assert src.tile_settings_hash is None
+    session.commit.assert_not_awaited()
+
+
+async def test_promote_source_image_tile_rebuild_restores_on_update_failure() -> None:
+    """A provenance staging failure restores the retained prior tree."""
+    src = SimpleNamespace(
+        id=5, image_id=10, stored_path="/data/source_images/5.tiff",
+        source_checksum=None, tile_settings_hash=None, tiles_generated_at=None,
+    )
+    img = SimpleNamespace(
+        tile_sources="/api/tiles/5/old.dzi", thumb="old", width=1, height=1,
+        version=None,
+    )
+    session = AsyncMock()
+    session.get = AsyncMock(return_value=img)
+    replace_calls = []
+
+    def replace_side_effect(srcpath, dstpath):
+        replace_calls.append((srcpath, dstpath))
+
+    with (
+        patch("app.processing.asyncio.to_thread", side_effect=lambda fn, *a: fn(*a)),
+        patch("app.processing.os.path.isdir", return_value=True),
+        patch("app.processing.os.replace", side_effect=replace_side_effect),
+        patch("app.processing.shutil.rmtree") as mock_rmtree,
+        pytest.raises(TypeError),
+    ):
+        await promote_source_image_tile_rebuild(
+            session, src, _prepared_tile_rebuild(),
+        )
+
+    assert len(replace_calls) == 3
+    mock_rmtree.assert_called_once_with(
+        "/data/tiles/5", ignore_errors=True,
+    )
+
+
+async def test_finish_promoted_tile_rebuild_removes_retained_tree() -> None:
+    """Successful commit finalization removes the retained prior tree."""
+    prepared = _prepared_tile_rebuild()
+    promoted = PromotedTileRebuild(
+        prepared=prepared,
+        backup_dir="/data/tiles/5.old-backup",
+    )
+
+    with (
+        patch("app.processing.asyncio.to_thread", side_effect=lambda fn, *a: fn(*a)),
+        patch("app.processing.shutil.rmtree") as mock_rmtree,
+    ):
+        await finish_promoted_tile_rebuild(promoted)
+
+    mock_rmtree.assert_called_once_with("/data/tiles/5.old-backup", True)
+
+
+async def test_finish_promoted_tile_rebuild_ignores_dispatch_failure() -> None:
+    """A cleanup dispatch failure does not invalidate the committed rebuild."""
+    promoted = PromotedTileRebuild(
+        prepared=_prepared_tile_rebuild(),
+        backup_dir="/data/tiles/5.old-backup",
+    )
+
+    with patch(
+        "app.processing.asyncio.to_thread",
+        side_effect=RuntimeError("executor unavailable"),
+    ):
+        await finish_promoted_tile_rebuild(promoted)
+
+
+async def test_rebuild_source_image_tiles_propagates_finalization_cancel() -> None:
+    """Retained-tree cleanup completes before finalization cancellation propagates."""
+    src = SimpleNamespace(
+        id=5,
+        image_id=10,
+        stored_path="/data/source_images/5.tiff",
+    )
+    prepared = _prepared_tile_rebuild()
+    promoted = PromotedTileRebuild(
+        prepared=prepared,
+        backup_dir="/data/tiles/5.old-backup",
+    )
+    cleanup_started = asyncio.Event()
+    cleanup_release = asyncio.Event()
+    cleanup_completed = asyncio.Event()
+
+    async def cleanup_dispatch(_fn, *_args):
+        cleanup_started.set()
+        await cleanup_release.wait()
+        cleanup_completed.set()
+
+    session = AsyncMock()
+    session.commit = AsyncMock()
+    session.refresh = AsyncMock()
+
+    with (
+        patch(
+            "app.processing.prepare_source_image_tile_rebuild",
+            new=AsyncMock(return_value=prepared),
+        ),
+        patch(
+            "app.processing.promote_source_image_tile_rebuild",
+            new=AsyncMock(return_value=promoted),
+        ),
+        patch(
+            "app.processing.asyncio.to_thread",
+            side_effect=cleanup_dispatch,
+        ),
+    ):
+        rebuild_task = asyncio.create_task(
+            rebuild_source_image_tiles(session, src),
+        )
+        await cleanup_started.wait()
+        rebuild_task.cancel()
+        await asyncio.sleep(0)
+        cleanup_release.set()
+
+        with pytest.raises(asyncio.CancelledError):
+            _ = await rebuild_task
+
+    assert cleanup_completed.is_set()
+
+
+async def test_await_without_interruption_finishes_cleanup_after_cancel() -> None:
+    """Cancellation waits for protected cleanup before returning."""
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def cleanup() -> str:
+        started.set()
+        await release.wait()
+        return "finished"
+
+    task = asyncio.create_task(_await_without_interruption(cleanup()))
+    await started.wait()
+    task.cancel()
+    release.set()
+
+    assert await task == "finished"
+
+
+async def test_rollback_promoted_tile_rebuild_restores_retained_tree() -> None:
+    """Failed commit rollback replaces new tiles with the retained prior tree."""
+    promoted = PromotedTileRebuild(
+        prepared=_prepared_tile_rebuild(),
+        backup_dir="/data/tiles/5.old-backup",
+    )
+
+    with (
+        patch("app.processing.asyncio.to_thread", side_effect=lambda fn, *a: fn(*a)),
+        patch("app.processing.shutil.rmtree") as mock_rmtree,
+        patch("app.processing.os.replace") as mock_replace,
+    ):
+        await rollback_promoted_tile_rebuild(promoted)
+
+    mock_rmtree.assert_called_once_with("/data/tiles/5", ignore_errors=True)
+    mock_replace.assert_called_once_with(
+        "/data/tiles/5.old-backup", "/data/tiles/5",
+    )
+
+
+async def test_rebuild_source_image_tiles_success() -> None:
+    """The serial wrapper closes the read transaction before preparation."""
+    src = SimpleNamespace(
+        id=5, image_id=10, stored_path="/data/source_images/5.tiff",
+        source_checksum=None, tile_settings_hash=None, tiles_generated_at=None,
+    )
+    img = SimpleNamespace(
+        tile_sources="/api/tiles/5/old.dzi", thumb="old", width=1, height=1,
+        version=3,
+    )
+    events = []
+    session = AsyncMock()
+    session.get = AsyncMock(return_value=img)
+    session.refresh = AsyncMock(side_effect=lambda _src: events.append("refresh"))
+    session.commit = AsyncMock(side_effect=lambda: events.append("commit"))
+
+    def generate(*_args):
+        events.append("generate")
+        return "image.dzi", "thumbnail.jpeg", 1024, 768
+
+    with (
+        patch("app.processing.generate_tiles", side_effect=generate),
+        patch(
+            "app.processing._best_effort_source_checksum",
+            new=AsyncMock(return_value="source-checksum"),
+        ),
+        patch("app.processing.asyncio.to_thread", side_effect=lambda fn, *a: fn(*a)),
+        patch("app.processing.settings") as ms,
+        patch("app.processing.os.path.isfile", return_value=True),
+        patch("app.processing.os.path.isdir", return_value=False),
+        patch("app.processing.os.replace") as mock_replace,
+    ):
+        ms.tiles_dir = "/data/tiles"
+        await rebuild_source_image_tiles(session, src)
+
+    assert events == ["commit", "generate", "refresh", "commit"]
+    assert src.source_checksum == "source-checksum"
+    assert src.tiles_generated_at is not None
+    assert img.tile_sources == "/api/tiles/5/image.dzi"
+    assert img.thumb == "/api/tiles/5/thumbnail.jpeg"
+    assert img.width == 1024
+    assert img.height == 768
+    assert img.version == 4
+    mock_replace.assert_called_once()
+
+
+async def test_rebuild_source_image_tiles_restores_on_commit_failure() -> None:
+    """The serial wrapper restores the old tree when the DB commit fails."""
+    src = SimpleNamespace(
+        id=5, image_id=10, stored_path="/data/source_images/5.tiff",
+        source_checksum=None, tile_settings_hash=None, tiles_generated_at=None,
+    )
+    img = SimpleNamespace(
+        tile_sources="/api/tiles/5/old.dzi", thumb="old", width=1, height=1,
+        version=3,
+    )
+    session = AsyncMock()
+    session.get = AsyncMock(return_value=img)
+    session.refresh = AsyncMock()
+    session.commit = AsyncMock(
+        side_effect=[None, RuntimeError("commit failed")],
+    )
+    session.rollback = AsyncMock()
+    replace_calls = []
+
+    def replace_side_effect(srcpath, dstpath):
+        replace_calls.append((srcpath, dstpath))
 
     with (
         patch(
@@ -1206,16 +1652,62 @@ async def test_rebuild_source_image_tiles_restores_old_tree_on_swap_failure() ->
         patch("app.processing.os.path.isfile", return_value=True),
         patch("app.processing.os.path.isdir", return_value=True),
         patch("app.processing.os.replace", side_effect=replace_side_effect),
-        patch("app.processing.shutil.rmtree"),
+        patch("app.processing.shutil.rmtree") as mock_rmtree,
     ):
         ms.tiles_dir = "/data/tiles"
-        with pytest.raises(OSError, match="promote failed"):
+        with pytest.raises(RuntimeError, match="commit failed"):
             await rebuild_source_image_tiles(session, src)
 
-    # Three renames: aside, failed promote, restore. Provenance untouched.
+    session.rollback.assert_awaited_once()
     assert len(replace_calls) == 3
-    assert src.tile_settings_hash is None
-    session.commit.assert_not_awaited()
+    assert replace_calls[-1][1] == "/data/tiles/5"
+    mock_rmtree.assert_called_once_with(
+        "/data/tiles/5", ignore_errors=True,
+    )
+
+
+async def test_rebuild_source_image_tiles_restores_on_commit_cancellation() -> None:
+    """Commit cancellation restores the old tree before propagating."""
+    src = SimpleNamespace(
+        id=5, image_id=10, stored_path="/data/source_images/5.tiff",
+        source_checksum=None, tile_settings_hash=None, tiles_generated_at=None,
+    )
+    img = SimpleNamespace(
+        tile_sources="/api/tiles/5/old.dzi", thumb="old", width=1, height=1,
+        version=3,
+    )
+    session = AsyncMock()
+    session.get = AsyncMock(return_value=img)
+    session.refresh = AsyncMock()
+    session.commit = AsyncMock(side_effect=[None, asyncio.CancelledError])
+    session.rollback = AsyncMock()
+    replace_calls = []
+
+    def replace_side_effect(srcpath, dstpath):
+        replace_calls.append((srcpath, dstpath))
+
+    with (
+        patch(
+            "app.processing.generate_tiles",
+            return_value=("image.dzi", "thumbnail.jpeg", 1024, 768),
+        ),
+        patch("app.processing.asyncio.to_thread", side_effect=lambda fn, *a: fn(*a)),
+        patch("app.processing.settings") as ms,
+        patch("app.processing.os.path.isfile", return_value=True),
+        patch("app.processing.os.path.isdir", return_value=True),
+        patch("app.processing.os.replace", side_effect=replace_side_effect),
+        patch("app.processing.shutil.rmtree") as mock_rmtree,
+    ):
+        ms.tiles_dir = "/data/tiles"
+        with pytest.raises(asyncio.CancelledError):
+            await rebuild_source_image_tiles(session, src)
+
+    session.rollback.assert_awaited_once()
+    assert len(replace_calls) == 3
+    assert replace_calls[-1][1] == "/data/tiles/5"
+    mock_rmtree.assert_called_once_with(
+        "/data/tiles/5", ignore_errors=True,
+    )
 
 
 async def test_rebuild_source_image_tiles_missing_source_raises() -> None:
@@ -1237,3 +1729,4 @@ async def test_rebuild_source_image_tiles_missing_source_raises() -> None:
             await rebuild_source_image_tiles(session, src)
 
     mock_gen.assert_not_called()
+    session.commit.assert_awaited_once()
