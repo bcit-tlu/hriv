@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.4](https://github.com/bcit-tlu/hriv/compare/synthetic-monitoring-v1.2.3...synthetic-monitoring-v1.2.4) (2026-09-07)
+
+
+### Bug Fixes
+
+* **synthetic-monitoring:** narrow login link selector to current wording ([#1215](https://github.com/bcit-tlu/hriv/issues/1215)) ([f1a7b27](https://github.com/bcit-tlu/hriv/commit/f1a7b277b02d7e4e40be4bbc34f14f7728474782))
+
 ## [1.2.3](https://github.com/bcit-tlu/hriv/compare/synthetic-monitoring-v1.2.2...synthetic-monitoring-v1.2.3) (2026-08-10)
 
 
