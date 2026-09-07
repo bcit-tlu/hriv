@@ -1,8 +1,11 @@
 import asyncio
+import errno
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
+from sqlalchemy.exc import OperationalError
 
 from app import tile_rebuild_jobs
 from app.database import settings
@@ -11,14 +14,21 @@ from app.tile_rebuild_jobs import (
     ReservedRebuild,
     TileRebuildAlreadyActiveError,
     TileRebuildDispatch,
+    TileRebuildDispatchError,
     TileRebuildLeaseLostError,
     TileRebuildParallelDisabledError,
+    TileRebuildStateError,
     active_tile_rebuild_job_ids,
     claim_tile_rebuild_window,
     create_tile_rebuild_job,
+    is_transient_rebuild_error,
     process_tile_rebuild_item,
     pump_tile_rebuild_job,
+    rebuild_error_summary,
+    rebuild_retry_delay_seconds,
     reconcile_tile_rebuild_jobs,
+    request_job_cancellation,
+    retry_failed_job_items,
     tile_rebuild_arq_job_id,
 )
 
@@ -27,10 +37,13 @@ async def _wait_for_cancellation(*_args: object) -> None:
     await asyncio.Event().wait()
 
 
-def _execute_result(*, scalar=None):
+def _execute_result(*, scalar=None, rows=None):
     result = MagicMock()
     result.scalar_one_or_none.return_value = scalar
     result.scalar_one.return_value = scalar
+    scalars = MagicMock()
+    scalars.all.return_value = rows or []
+    result.scalars.return_value = scalars
     return result
 
 
@@ -45,6 +58,257 @@ def test_tile_rebuild_arq_job_id_is_attempt_specific() -> None:
     assert tile_rebuild_arq_job_id(7, 11, 3) == "rebuild:7:11:3"
 
 
+@pytest.mark.parametrize(
+    "exc",
+    [
+        TimeoutError(),
+        ConnectionError(),
+        OperationalError("SELECT 1", {}, Exception()),
+        OSError(errno.EAGAIN, "try again"),
+        TileRebuildDispatchError(),
+    ],
+)
+def test_transient_rebuild_error_classifier_accepts_typed_failures(
+    exc: BaseException,
+) -> None:
+    assert is_transient_rebuild_error(exc)
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        FileNotFoundError(),
+        PermissionError(),
+        OSError(errno.ENOSPC, "full"),
+        ValueError("invalid image"),
+    ],
+)
+def test_transient_rebuild_error_classifier_rejects_terminal_failures(
+    exc: BaseException,
+) -> None:
+    assert not is_transient_rebuild_error(exc)
+
+
+def test_transient_rebuild_error_classifier_checks_typed_causes() -> None:
+    try:
+        raise TimeoutError()
+    except TimeoutError as cause:
+        exc = RuntimeError("wrapper")
+        exc.__cause__ = cause
+
+    assert is_transient_rebuild_error(exc)
+
+
+def test_rebuild_error_summary_does_not_persist_exception_message() -> None:
+    summary = rebuild_error_summary(
+        RuntimeError("postgresql://user:secret@example.invalid/hriv")
+    )
+
+    assert summary == "builtins.RuntimeError"
+    assert "secret" not in summary
+
+
+@pytest.mark.parametrize(
+    ("attempts", "expected"),
+    [(1, 60), (2, 120), (3, 240), (10, 900)],
+)
+def test_rebuild_retry_delay_is_exponential_and_bounded(
+    attempts: int,
+    expected: int,
+) -> None:
+    assert rebuild_retry_delay_seconds(attempts, 60, 900) == expected
+
+
+def test_release_rebuild_attempt_schedules_retry() -> None:
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    job = SimpleNamespace(
+        status="running",
+        metadata_={
+            "max_attempts": 2,
+            "retry_backoff_base_seconds": 60,
+            "retry_backoff_cap_seconds": 900,
+        },
+    )
+    item = SimpleNamespace(
+        attempts=1,
+        claim_token="claim",
+        heartbeat_at=now,
+        lease_expires_at=now,
+        arq_job_id="rebuild:7:11:1",
+        started_at=now,
+    )
+
+    outcome = tile_rebuild_jobs._release_rebuild_attempt(
+        job,
+        item,
+        retryable=True,
+        error_message="builtins.TimeoutError",
+        now=now,
+    )
+
+    assert outcome == "queued"
+    assert item.status == "queued"
+    assert item.retry_not_before == now + timedelta(seconds=60)
+    assert item.claim_token is None
+    assert item.started_at is None
+
+
+def test_release_rebuild_attempt_fails_exhausted_retry() -> None:
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    job = SimpleNamespace(
+        status="running",
+        metadata_={"max_attempts": 2},
+    )
+    item = SimpleNamespace(
+        attempts=2,
+        claim_token="claim",
+        heartbeat_at=now,
+        lease_expires_at=now,
+        arq_job_id="rebuild:7:11:2",
+        started_at=now,
+    )
+
+    outcome = tile_rebuild_jobs._release_rebuild_attempt(
+        job,
+        item,
+        retryable=True,
+        error_message="builtins.TimeoutError",
+        now=now,
+    )
+
+    assert outcome == "failed"
+    assert item.status == "failed"
+    assert item.retry_not_before is None
+    assert item.completed_at == now
+
+
+def test_release_rebuild_attempt_cancellation_clears_failure() -> None:
+    now = datetime.now(timezone.utc)
+    job = SimpleNamespace(status="cancelling", metadata_={})
+    item = SimpleNamespace(
+        status="running",
+        attempts=1,
+        progress=25,
+        claim_token="claim",
+        heartbeat_at=now,
+        lease_expires_at=now,
+        retry_not_before=now,
+        arq_job_id="arq",
+        started_at=now,
+        completed_at=None,
+        error_message="previous failure",
+        updated_at=now,
+    )
+
+    outcome = tile_rebuild_jobs._release_rebuild_attempt(
+        job,
+        item,
+        retryable=True,
+        error_message="transient",
+        now=now,
+    )
+
+    assert outcome == "cancelled"
+    assert item.status == "cancelled"
+    assert item.error_message is None
+    assert item.retry_not_before is None
+    assert item.completed_at == now
+
+
+async def test_request_job_cancellation_is_bounded_and_repeatable(
+    monkeypatch,
+) -> None:
+    job = SimpleNamespace(status="running")
+    session = MagicMock()
+    cancel = AsyncMock(return_value=3)
+    refresh = AsyncMock()
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._lock_tile_rebuild_job",
+        AsyncMock(return_value=job),
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._cancel_pending_rebuild_items",
+        cancel,
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._refresh_tile_rebuild_job",
+        refresh,
+    )
+
+    assert await request_job_cancellation(
+        session,
+        7,
+        batch_size=3,
+    ) == 3
+    assert job.status == "cancelling"
+    cancel.assert_awaited_once()
+    refresh.assert_awaited_once_with(session, 7)
+
+
+async def test_retry_failed_job_items_preserves_attempt_history(
+    monkeypatch,
+) -> None:
+    job = SimpleNamespace(
+        status="completed_with_errors",
+        completed_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+    failed = SimpleNamespace(
+        id=11,
+        status="failed",
+        attempts=2,
+        progress=100,
+        error_message="builtins.TimeoutError",
+        claim_token=None,
+        heartbeat_at=None,
+        lease_expires_at=None,
+        retry_not_before=None,
+        arq_job_id=None,
+        started_at=None,
+        completed_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+    queued = SimpleNamespace(id=12, status="queued")
+    session = MagicMock()
+    session.execute = AsyncMock(
+        return_value=_execute_result(rows=[failed, queued])
+    )
+    refresh = AsyncMock()
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._lock_tile_rebuild_job",
+        AsyncMock(return_value=job),
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._refresh_tile_rebuild_job",
+        refresh,
+    )
+
+    assert await retry_failed_job_items(session, 7, [11, 12]) == 1
+    assert failed.status == "queued"
+    assert failed.attempts == 2
+    assert failed.retry_not_before is None
+    assert failed.completed_at is None
+    assert queued.status == "queued"
+    assert job.status == "running"
+    assert job.completed_at is None
+
+
+async def test_retry_failed_job_items_rejects_successful_items(
+    monkeypatch,
+) -> None:
+    job = SimpleNamespace(status="completed_with_errors")
+    completed = SimpleNamespace(id=11, status="completed")
+    session = MagicMock()
+    session.execute = AsyncMock(
+        return_value=_execute_result(rows=[completed])
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._lock_tile_rebuild_job",
+        AsyncMock(return_value=job),
+    )
+
+    with pytest.raises(TileRebuildStateError):
+        await retry_failed_job_items(session, 7, [11])
+
+
 async def test_refresh_tile_rebuild_job_completes_with_errors(
     monkeypatch,
 ) -> None:
@@ -54,6 +318,12 @@ async def test_refresh_tile_rebuild_job_completes_with_errors(
         completed_at=None,
     )
     counts = {
+        "queued": 0,
+        "running": 0,
+        "completed": 2,
+        "skipped": 0,
+        "failed": 1,
+        "cancelled": 0,
         "total_count": 3,
         "completed_count": 2,
         "skipped_count": 0,
@@ -280,7 +550,7 @@ async def test_claim_window_uses_database_running_count(
         lock,
     )
     monkeypatch.setattr(
-        "app.tile_rebuild_jobs.reclaim_expired_job_items",
+        "app.tile_rebuild_jobs._recover_expired_rebuild_items",
         reclaim,
     )
     monkeypatch.setattr("app.tile_rebuild_jobs.claim_job_items", claim)
@@ -350,6 +620,18 @@ async def test_pump_commits_claims_before_submission(monkeypatch) -> None:
         assert committed
         return True
 
+    async def _submit_claimed(
+        value: TileRebuildDispatch,
+        submit,
+    ) -> str:
+        assert committed
+        assert await submit(value)
+        return "submitted"
+
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._submit_claimed_rebuild",
+        _submit_claimed,
+    )
     result = await pump_tile_rebuild_job(7, _submit)
 
     assert result == PumpResult(claimed=1, submitted=1)
@@ -360,15 +642,7 @@ async def test_pump_releases_unstarted_claim_after_submission_failure(
 ) -> None:
     claim_session = MagicMock()
     claim_session.commit = AsyncMock()
-    release_session = MagicMock()
-    release_session.commit = AsyncMock()
-    contexts = iter(
-        [
-            _session_context(claim_session),
-            _session_context(release_session),
-        ]
-    )
-    factory = MagicMock(side_effect=lambda: next(contexts))
+    factory = MagicMock(return_value=_session_context(claim_session))
     dispatch = TileRebuildDispatch(
         job_id=7,
         item_id=11,
@@ -376,7 +650,6 @@ async def test_pump_releases_unstarted_claim_after_submission_failure(
         attempt=1,
         arq_job_id="rebuild:7:11:1",
     )
-    release = AsyncMock(return_value=True)
     monkeypatch.setattr(
         "app.tile_rebuild_jobs.get_async_session",
         MagicMock(return_value=factory),
@@ -385,8 +658,9 @@ async def test_pump_releases_unstarted_claim_after_submission_failure(
         "app.tile_rebuild_jobs.claim_tile_rebuild_window",
         AsyncMock(return_value=([dispatch], True)),
     )
+    release = AsyncMock(return_value="released")
     monkeypatch.setattr(
-        "app.tile_rebuild_jobs.release_job_item_claim",
+        "app.tile_rebuild_jobs._submit_claimed_rebuild",
         release,
     )
 
@@ -396,7 +670,7 @@ async def test_pump_releases_unstarted_claim_after_submission_failure(
     )
 
     assert result == PumpResult(claimed=1, released=1)
-    release.assert_awaited_once_with(release_session, 7, 11, "claim")
+    release.assert_awaited_once()
 
 
 async def test_duplicate_child_delivery_does_not_process(monkeypatch) -> None:
@@ -421,6 +695,96 @@ async def test_skipped_child_delivery_does_not_process(monkeypatch) -> None:
     assert await process_tile_rebuild_item(7, 11, "claim") == "skipped"
 
 
+async def test_cancelled_child_delivery_does_not_process(monkeypatch) -> None:
+    reserve = AsyncMock(return_value=ReservedRebuild(outcome="cancelled"))
+    load_processing = MagicMock()
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._reserve_rebuild_source",
+        reserve,
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._load_processing",
+        load_processing,
+    )
+
+    assert await process_tile_rebuild_item(7, 11, "claim") == "cancelled"
+    load_processing.assert_not_called()
+
+
+async def test_cancelling_child_discards_prepared_before_promotion(
+    monkeypatch,
+) -> None:
+    prepared = object()
+    processing = SimpleNamespace(
+        TileRebuildSource=SimpleNamespace,
+        prepare_source_image_tile_rebuild=AsyncMock(
+            return_value=prepared,
+        ),
+        promote_source_image_tile_rebuild=AsyncMock(),
+        finish_promoted_tile_rebuild=AsyncMock(),
+        rollback_promoted_tile_rebuild=AsyncMock(),
+        discard_prepared_tile_rebuild=AsyncMock(),
+    )
+    session = MagicMock()
+    session.execute = AsyncMock(
+        side_effect=[
+            _execute_result(
+                scalar=SimpleNamespace(status="cancelling"),
+            ),
+            _execute_result(scalar=object()),
+        ]
+    )
+    session.commit = AsyncMock()
+    session.rollback = AsyncMock()
+    factory = MagicMock(return_value=_session_context(session))
+    finalize = AsyncMock(return_value=True)
+    refresh = AsyncMock()
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._reserve_rebuild_source",
+        AsyncMock(
+            return_value=ReservedRebuild(
+                outcome="ready",
+                source_image_id=101,
+                image_id=201,
+                stored_path="/sources/one.svs",
+                heartbeat_seconds=30,
+                lease_seconds=90,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._heartbeat_rebuild_item",
+        AsyncMock(side_effect=_wait_for_cancellation),
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs.get_async_session",
+        MagicMock(return_value=factory),
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs.finalize_job_item",
+        finalize,
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._refresh_tile_rebuild_job",
+        refresh,
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._load_processing",
+        MagicMock(return_value=processing),
+    )
+
+    assert await process_tile_rebuild_item(7, 11, "claim") == "cancelled"
+    processing.discard_prepared_tile_rebuild.assert_awaited_once_with(prepared)
+    processing.promote_source_image_tile_rebuild.assert_not_awaited()
+    finalize.assert_awaited_once_with(
+        session,
+        11,
+        "claim",
+        "cancelled",
+    )
+    refresh.assert_awaited_once_with(session, 7)
+
+
 async def test_ready_child_promotes_and_finalizes_current_claim(
     monkeypatch,
 ) -> None:
@@ -440,7 +804,14 @@ async def test_ready_child_promotes_and_finalizes_current_claim(
         discard_prepared_tile_rebuild=AsyncMock(),
     )
     session = MagicMock()
-    session.execute = AsyncMock(return_value=_execute_result(scalar=object()))
+    session.execute = AsyncMock(
+        side_effect=[
+            _execute_result(
+                scalar=SimpleNamespace(status="running"),
+            ),
+            _execute_result(scalar=object()),
+        ]
+    )
     session.get = AsyncMock(return_value=source_image)
     session.commit = AsyncMock()
     session.rollback = AsyncMock()
@@ -521,7 +892,14 @@ async def test_commit_failure_rolls_back_promotion_and_fails_item(
         discard_prepared_tile_rebuild=AsyncMock(),
     )
     session = MagicMock()
-    session.execute = AsyncMock(return_value=_execute_result(scalar=object()))
+    session.execute = AsyncMock(
+        side_effect=[
+            _execute_result(
+                scalar=SimpleNamespace(status="running"),
+            ),
+            _execute_result(scalar=object()),
+        ]
+    )
     session.get = AsyncMock(return_value=SimpleNamespace(id=101))
     session.commit = AsyncMock(side_effect=RuntimeError("commit failed"))
     session.rollback = AsyncMock()
@@ -573,12 +951,9 @@ async def test_commit_failure_rolls_back_promotion_and_fails_item(
         promoted
     )
     processing.finish_promoted_tile_rebuild.assert_not_awaited()
-    finalize_failure.assert_awaited_once_with(
-        7,
-        11,
-        "claim",
-        "commit failed",
-    )
+    finalize_failure.assert_awaited_once()
+    assert finalize_failure.await_args.args[:3] == (7, 11, "claim")
+    assert isinstance(finalize_failure.await_args.args[3], RuntimeError)
 
 
 async def test_cancelled_child_discards_prepared_tiles(

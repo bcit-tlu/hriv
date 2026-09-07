@@ -5,13 +5,13 @@ identifiers are retained only as execution metadata; a child must present its
 claim token before it can heartbeat or finalize an item.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 from uuid import uuid4
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import Job, JobItem
@@ -20,6 +20,15 @@ JobItemTerminalStatus = Literal[
     "completed",
     "skipped",
     "failed",
+    "cancelled",
+]
+SupervisorStatus = Literal[
+    "queued",
+    "running",
+    "completed",
+    "completed_with_errors",
+    "failed",
+    "cancelling",
     "cancelled",
 ]
 
@@ -103,6 +112,10 @@ async def claim_job_items(
         .where(
             JobItem.job_id == job_id,
             JobItem.status == "queued",
+            or_(
+                JobItem.retry_not_before.is_(None),
+                JobItem.retry_not_before <= now,
+            ),
         )
         .order_by(JobItem.id)
         .limit(limit)
@@ -115,6 +128,7 @@ async def claim_job_items(
         item.claim_token = uuid4().hex
         item.heartbeat_at = now
         item.lease_expires_at = now + timedelta(seconds=lease_seconds)
+        item.retry_not_before = None
         item.arq_job_id = arq_job_id
         item.started_at = None
         item.completed_at = None
@@ -233,6 +247,7 @@ async def finalize_job_item(
         "claim_token": None,
         "heartbeat_at": None,
         "lease_expires_at": None,
+        "retry_not_before": None,
         "error_message": error_message,
     }
     if status in {"completed", "skipped"}:
@@ -250,6 +265,31 @@ async def finalize_job_item(
         .values(**values)
     )
     return result.rowcount == 1
+
+
+def derive_supervisor_status(
+    current_status: str,
+    counts: Mapping[str, int],
+) -> SupervisorStatus:
+    """Derive one durable supervisor state from item counts."""
+    queued = counts["queued"]
+    running = counts["running"]
+    completed = counts["completed"]
+    skipped = counts["skipped"]
+    failed = counts["failed"]
+    cancelled = counts["cancelled"]
+
+    if current_status == "cancelling":
+        return "cancelling" if queued or running else "cancelled"
+    if queued or running:
+        return "running"
+    if not sum((completed, skipped, failed, cancelled)):
+        return "completed"
+    if failed:
+        return "completed_with_errors" if completed or skipped else "failed"
+    if cancelled:
+        return "cancelled"
+    return "completed"
 
 
 async def reclaim_expired_job_items(

@@ -47,12 +47,14 @@ def test_job_item_model_defines_child_item_shape() -> None:
     assert columns.status.server_default.arg.text == "'queued'"
     assert columns.attempts.server_default.arg == "0"
     assert columns.claim_token.type.length == 64
+    assert columns.retry_not_before.nullable is True
     assert columns.arq_job_id.type.length == 255
     assert columns.metadata.name == "metadata"
 
     index_names = {index.name for index in JobItem.__table__.indexes}
     assert {
         "idx_job_items_job_status",
+        "idx_job_items_job_retry",
         "idx_job_items_lease",
         "idx_job_items_resource",
     } <= index_names
@@ -99,6 +101,7 @@ def test_job_schemas_expose_metadata_aliases() -> None:
         error_message=None,
         heartbeat_at=None,
         lease_expires_at=None,
+        retry_not_before=now,
         arq_job_id=None,
         metadata_={"filename": "slide.svs"},
         started_at=None,
@@ -111,3 +114,4 @@ def test_job_schemas_expose_metadata_aliases() -> None:
     assert JobItemOut.model_validate(item).metadata_extra == {
         "filename": "slide.svs"
     }
+    assert JobItemOut.model_validate(item).retry_not_before == now

@@ -85,6 +85,12 @@ spec:
               value: {{ .Values.tasks.rebuild.heartbeatSeconds | quote }}
             - name: REBUILD_PUMP_CADENCE_SECONDS
               value: {{ .Values.tasks.rebuild.pumpCadenceSeconds | quote }}
+            - name: REBUILD_MAX_ATTEMPTS
+              value: {{ .Values.tasks.rebuild.maxAttempts | quote }}
+            - name: REBUILD_RETRY_BACKOFF_BASE_SECONDS
+              value: {{ .Values.tasks.rebuild.retryBackoffBaseSeconds | quote }}
+            - name: REBUILD_RETRY_BACKOFF_CAP_SECONDS
+              value: {{ .Values.tasks.rebuild.retryBackoffCapSeconds | quote }}
             - name: WORKER_MAX_JOBS
               value: {{ .Values.redis.worker.maxJobs | quote }}
             - name: VIPS_CONCURRENCY

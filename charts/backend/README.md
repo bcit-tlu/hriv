@@ -170,11 +170,17 @@ execution window and recovery settings:
 - `childTimeoutSeconds` (`REBUILD_CHILD_TIMEOUT_SECONDS`, default `1800`);
 - `leaseSeconds` (`REBUILD_LEASE_SECONDS`, default `2100`);
 - `heartbeatSeconds` (`REBUILD_HEARTBEAT_SECONDS`, default `30`);
-- `pumpCadenceSeconds` (`REBUILD_PUMP_CADENCE_SECONDS`, default `60`).
+- `pumpCadenceSeconds` (`REBUILD_PUMP_CADENCE_SECONDS`, default `60`);
+- `maxAttempts` (`REBUILD_MAX_ATTEMPTS`, default `2`);
+- `retryBackoffBaseSeconds`
+  (`REBUILD_RETRY_BACKOFF_BASE_SECONDS`, default `60`);
+- `retryBackoffCapSeconds`
+  (`REBUILD_RETRY_BACKOFF_CAP_SECONDS`, default `900`).
 
 `parallelism` is intentionally independent from `redis.worker.maxJobs`.
 Heartbeat and child timeout values must remain shorter than the lease, and the
-pump cadence must be a whole-minute interval.
+pump cadence must be a whole-minute interval. Retry eligibility is stored in
+PostgreSQL and the retry base must not exceed the cap.
 
 ## Worker configuration
 

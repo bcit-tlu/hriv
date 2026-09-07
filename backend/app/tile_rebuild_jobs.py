@@ -1,13 +1,22 @@
 """Durable, PostgreSQL-authoritative tile-rebuild scheduling."""
 
 import asyncio
+import errno
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal, Protocol, TypeAlias, cast
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
+from sqlalchemy.exc import (
+    DisconnectionError,
+    InterfaceError,
+    OperationalError,
+)
+from sqlalchemy.exc import (
+    TimeoutError as SQLAlchemyTimeoutError,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .database import get_async_session, settings
@@ -15,11 +24,10 @@ from .job_state import (
     JobItemSpec,
     add_job_item_snapshot,
     claim_job_items,
+    derive_supervisor_status,
     finalize_job_item,
     heartbeat_job_item,
-    reclaim_expired_job_items,
     refresh_job_aggregate,
-    release_job_item_claim,
     reserve_job_item_execution,
 )
 from .models import ACTIVE_JOB_STATUSES, Job, JobItem, SourceImage
@@ -33,9 +41,15 @@ logger = logging.getLogger(__name__)
 
 REBUILD_JOB_TYPE = "rebuild_tiles"
 REBUILD_RESOURCE_TYPE = "source_image"
+REBUILD_RECONCILE_BATCH_SIZE = 100
 
-ExecutionStart = Literal["duplicate", "ready", "skipped"]
-TileRebuildResult = Literal["duplicate", "completed", "skipped"]
+ExecutionStart = Literal["cancelled", "duplicate", "ready", "skipped"]
+TileRebuildResult = Literal[
+    "cancelled",
+    "duplicate",
+    "completed",
+    "skipped",
+]
 JSONScalar: TypeAlias = str | int | float | bool | None
 JSONValue: TypeAlias = (
     JSONScalar | list["JSONValue"] | dict[str, "JSONValue"]
@@ -118,6 +132,18 @@ class TileRebuildLeaseLostError(RuntimeError):
     """Raised when a durable tile rebuild child loses its item lease."""
 
 
+class TileRebuildDispatchError(RuntimeError):
+    """Raised when a claimed child cannot be submitted."""
+
+
+class TileRebuildLeaseExpiredError(RuntimeError):
+    """Raised when reconciliation finds an expired child lease."""
+
+
+class TileRebuildStateError(RuntimeError):
+    """Raised when a requested rebuild transition is not valid."""
+
+
 @dataclass(frozen=True, slots=True)
 class TileRebuildDispatch:
     """One committed child claim ready for arq submission."""
@@ -151,6 +177,28 @@ class ReservedRebuild:
     lease_seconds: int | None = None
 
 
+TRANSIENT_FILESYSTEM_ERRNOS = frozenset(
+    {
+        errno.EAGAIN,
+        errno.EBUSY,
+        errno.EINTR,
+        errno.EMFILE,
+        errno.ENFILE,
+        errno.ETIMEDOUT,
+    }
+)
+TRANSIENT_REBUILD_ERROR_TYPES = (
+    ConnectionError,
+    TimeoutError,
+    DisconnectionError,
+    InterfaceError,
+    OperationalError,
+    SQLAlchemyTimeoutError,
+    TileRebuildDispatchError,
+    TileRebuildLeaseExpiredError,
+)
+
+
 def tile_rebuild_arq_job_id(
     job_id: int,
     item_id: int,
@@ -178,6 +226,159 @@ def _metadata_scope(metadata: JobMetadata | None) -> str:
     return value
 
 
+def is_transient_rebuild_error(exc: BaseException) -> bool:
+    """Classify bounded typed failures without inspecting message text."""
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, TRANSIENT_REBUILD_ERROR_TYPES):
+            return True
+        if (
+            isinstance(current, OSError)
+            and current.errno in TRANSIENT_FILESYSTEM_ERRNOS
+        ):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
+def rebuild_error_summary(exc: BaseException) -> str:
+    """Return a bounded error category safe for durable display."""
+    error_type = type(exc)
+    category = f"{error_type.__module__}.{error_type.__name__}"
+    if isinstance(exc, OSError) and exc.errno is not None:
+        category = (
+            f"{category} ({errno.errorcode.get(exc.errno, 'UNKNOWN')})"
+        )
+    return category[:255]
+
+
+def rebuild_retry_delay_seconds(
+    attempts: int,
+    base_seconds: int,
+    cap_seconds: int,
+) -> int:
+    """Return bounded exponential delay after a claimed attempt."""
+    if attempts <= 0 or base_seconds <= 0 or cap_seconds <= 0:
+        raise ValueError("Retry policy values must be positive")
+    if base_seconds >= cap_seconds:
+        return cap_seconds
+    max_doublings = (cap_seconds // base_seconds).bit_length()
+    exponent = min(attempts - 1, max_doublings)
+    return min(base_seconds * (2**exponent), cap_seconds)
+
+
+async def _lock_tile_rebuild_job(
+    session: AsyncSession,
+    job_id: int,
+) -> Job:
+    result = await session.execute(
+        select(Job)
+        .where(Job.id == job_id, Job.job_type == REBUILD_JOB_TYPE)
+        .with_for_update()
+    )
+    job = result.scalar_one_or_none()
+    if job is None:
+        raise ValueError(f"Tile rebuild job {job_id} does not exist")
+    return job
+
+
+def _clear_rebuild_item_ownership(item: JobItem) -> None:
+    item.claim_token = None
+    item.heartbeat_at = None
+    item.lease_expires_at = None
+    item.arq_job_id = None
+    item.started_at = None
+
+
+def _release_rebuild_attempt(
+    job: Job,
+    item: JobItem,
+    *,
+    retryable: bool,
+    error_message: str,
+    now: datetime,
+) -> Literal["cancelled", "failed", "queued"]:
+    _clear_rebuild_item_ownership(item)
+    item.updated_at = now
+
+    if job.status == "cancelling":
+        item.status = "cancelled"
+        item.retry_not_before = None
+        item.error_message = None
+        item.completed_at = now
+        return "cancelled"
+
+    item.error_message = error_message
+    max_attempts = _metadata_positive_int(
+        job.metadata_,
+        "max_attempts",
+        settings.rebuild_max_attempts,
+    )
+    if retryable and item.attempts < max_attempts:
+        base_seconds = _metadata_positive_int(
+            job.metadata_,
+            "retry_backoff_base_seconds",
+            settings.rebuild_retry_backoff_base_seconds,
+        )
+        cap_seconds = _metadata_positive_int(
+            job.metadata_,
+            "retry_backoff_cap_seconds",
+            settings.rebuild_retry_backoff_cap_seconds,
+        )
+        item.status = "queued"
+        item.progress = 0
+        item.retry_not_before = now + timedelta(
+            seconds=rebuild_retry_delay_seconds(
+                item.attempts,
+                base_seconds,
+                cap_seconds,
+            )
+        )
+        item.completed_at = None
+        return "queued"
+
+    item.status = "failed"
+    item.retry_not_before = None
+    item.completed_at = now
+    return "failed"
+
+
+async def _recover_expired_rebuild_items(
+    session: AsyncSession,
+    job: Job,
+    *,
+    limit: int,
+    now: datetime,
+) -> int:
+    if limit <= 0:
+        return 0
+    result = await session.execute(
+        select(JobItem)
+        .where(
+            JobItem.job_id == job.id,
+            JobItem.status == "running",
+            JobItem.lease_expires_at.is_not(None),
+            JobItem.lease_expires_at <= now,
+        )
+        .order_by(JobItem.id)
+        .limit(limit)
+        .with_for_update(skip_locked=True)
+    )
+    items = list(result.scalars().all())
+    error_message = rebuild_error_summary(TileRebuildLeaseExpiredError())
+    for item in items:
+        _release_rebuild_attempt(
+            job,
+            item,
+            retryable=True,
+            error_message=error_message,
+            now=now,
+        )
+    return len(items)
+
+
 async def _refresh_tile_rebuild_job(
     session: AsyncSession,
     job_id: int,
@@ -187,23 +388,166 @@ async def _refresh_tile_rebuild_job(
     if job is None:
         raise ValueError(f"Job {job_id} does not exist")
 
-    terminal_count = (
-        counts["completed_count"]
-        + counts["skipped_count"]
-        + counts["failed_count"]
-        + counts["cancelled_count"]
-    )
-    if counts["total_count"] > 0 and terminal_count == counts["total_count"]:
-        if job.status == "cancelling":
-            job.status = "cancelled"
-        elif counts["failed_count"] > 0:
-            job.status = "completed_with_errors"
-        else:
-            job.status = "completed"
+    status = derive_supervisor_status(job.status, counts)
+    job.status = status
+    if status in {
+        "completed",
+        "completed_with_errors",
+        "failed",
+        "cancelled",
+    }:
         job.progress = 100
-        job.completed_at = datetime.now(timezone.utc)
+        if job.completed_at is None:
+            job.completed_at = datetime.now(timezone.utc)
+    else:
+        job.completed_at = None
     await session.flush()
     return counts
+
+
+async def _cancel_pending_rebuild_items(
+    session: AsyncSession,
+    job_id: int,
+    *,
+    limit: int,
+    now: datetime,
+) -> int:
+    if limit <= 0:
+        return 0
+    result = await session.execute(
+        select(JobItem)
+        .where(
+            JobItem.job_id == job_id,
+            or_(
+                JobItem.status == "queued",
+                and_(
+                    JobItem.status == "running",
+                    JobItem.started_at.is_(None),
+                ),
+            ),
+        )
+        .order_by(JobItem.id)
+        .limit(limit)
+        .with_for_update(skip_locked=True)
+    )
+    items = list(result.scalars().all())
+    for item in items:
+        item.status = "cancelled"
+        item.claim_token = None
+        item.heartbeat_at = None
+        item.lease_expires_at = None
+        item.retry_not_before = None
+        item.arq_job_id = None
+        item.error_message = None
+        item.started_at = None
+        item.completed_at = now
+        item.updated_at = now
+    return len(items)
+
+
+async def request_job_cancellation(
+    session: AsyncSession,
+    job_id: int,
+    *,
+    batch_size: int = REBUILD_RECONCILE_BATCH_SIZE,
+    now: datetime | None = None,
+) -> int:
+    """Request cancellation and drain one bounded pending-item batch."""
+    current = now or datetime.now(timezone.utc)
+    job = await _lock_tile_rebuild_job(session, job_id)
+    if job.status in {
+        "completed",
+        "completed_with_errors",
+        "failed",
+        "cancelled",
+    }:
+        return 0
+    job.status = "cancelling"
+    cancelled = await _cancel_pending_rebuild_items(
+        session,
+        job_id,
+        limit=batch_size,
+        now=current,
+    )
+    await _refresh_tile_rebuild_job(session, job_id)
+    return cancelled
+
+
+async def retry_failed_job_items(
+    session: AsyncSession,
+    job_id: int,
+    item_ids: Sequence[int] | None = None,
+    *,
+    batch_size: int = REBUILD_RECONCILE_BATCH_SIZE,
+) -> int:
+    """Reset failed items to queued while preserving attempt history."""
+    job = await _lock_tile_rebuild_job(session, job_id)
+    if job.status in {"cancelling", "cancelled", "completed"}:
+        raise TileRebuildStateError(
+            f"Tile rebuild job {job_id} cannot retry from {job.status}"
+        )
+
+    if item_ids is None:
+        if batch_size <= 0:
+            return 0
+        result = await session.execute(
+            select(JobItem)
+            .where(
+                JobItem.job_id == job_id,
+                JobItem.status == "failed",
+            )
+            .order_by(JobItem.id)
+            .limit(batch_size)
+            .with_for_update(skip_locked=True)
+        )
+        items = list(result.scalars().all())
+    else:
+        requested_ids = set(item_ids)
+        if not requested_ids:
+            return 0
+        result = await session.execute(
+            select(JobItem)
+            .where(
+                JobItem.job_id == job_id,
+                JobItem.id.in_(requested_ids),
+            )
+            .order_by(JobItem.id)
+            .with_for_update()
+        )
+        items = list(result.scalars().all())
+        if {item.id for item in items} != requested_ids:
+            raise ValueError("One or more tile rebuild items do not exist")
+        invalid = [
+            item
+            for item in items
+            if item.status not in {"failed", "queued"}
+        ]
+        if invalid:
+            raise TileRebuildStateError(
+                "Tile rebuild items can only be retried from failed state"
+            )
+
+    retried = 0
+    for item in items:
+        if item.status == "queued":
+            continue
+        item.status = "queued"
+        item.progress = 0
+        item.error_message = None
+        item.claim_token = None
+        item.heartbeat_at = None
+        item.lease_expires_at = None
+        item.retry_not_before = None
+        item.arq_job_id = None
+        item.started_at = None
+        item.completed_at = None
+        retried += 1
+
+    if retried and job.status in {"completed_with_errors", "failed"}:
+        job.status = "running"
+        job.completed_at = None
+    await _refresh_tile_rebuild_job(session, job_id)
+    return retried
 
 
 async def create_tile_rebuild_job(
@@ -245,6 +589,13 @@ async def create_tile_rebuild_job(
         "lease_seconds": settings.rebuild_lease_seconds,
         "heartbeat_seconds": settings.rebuild_heartbeat_seconds,
         "pump_cadence_seconds": settings.rebuild_pump_cadence_seconds,
+        "max_attempts": settings.rebuild_max_attempts,
+        "retry_backoff_base_seconds": (
+            settings.rebuild_retry_backoff_base_seconds
+        ),
+        "retry_backoff_cap_seconds": (
+            settings.rebuild_retry_backoff_cap_seconds
+        ),
     }
     job = Job(
         job_type=REBUILD_JOB_TYPE,
@@ -294,7 +645,25 @@ async def claim_tile_rebuild_window(
         .with_for_update()
     )
     job = result.scalar_one_or_none()
-    if job is None or job.status not in {"queued", "running"}:
+    if job is None:
+        return [], True
+    current = datetime.now(timezone.utc)
+    await _recover_expired_rebuild_items(
+        session,
+        job,
+        limit=REBUILD_RECONCILE_BATCH_SIZE,
+        now=current,
+    )
+    if job.status == "cancelling":
+        await _cancel_pending_rebuild_items(
+            session,
+            job_id,
+            limit=REBUILD_RECONCILE_BATCH_SIZE,
+            now=current,
+        )
+        await _refresh_tile_rebuild_job(session, job_id)
+        return [], True
+    if job.status not in {"queued", "running"}:
         return [], True
 
     lease_seconds = _metadata_positive_int(
@@ -307,7 +676,6 @@ async def claim_tile_rebuild_window(
         "parallelism",
         settings.rebuild_parallelism,
     )
-    await reclaim_expired_job_items(session, job_id=job_id)
     running_count = int(
         (
             await session.execute(
@@ -366,32 +734,10 @@ async def pump_tile_rebuild_job(
     submitted = 0
     released = 0
     for dispatch in dispatches:
-        try:
-            queued = await submit(dispatch)
-        except Exception:
-            logger.warning(
-                "Tile rebuild child submission failed",
-                exc_info=True,
-                extra={
-                    "event": "rebuild.child_submission_failed",
-                    "job_id": dispatch.job_id,
-                    "item_id": dispatch.item_id,
-                    "arq_job_id": dispatch.arq_job_id,
-                },
-            )
-            queued = False
-        if queued:
+        outcome = await _submit_claimed_rebuild(dispatch, submit)
+        if outcome == "submitted":
             submitted += 1
-            continue
-        async with get_async_session()() as release_session:
-            was_released = await release_job_item_claim(
-                release_session,
-                dispatch.job_id,
-                dispatch.item_id,
-                dispatch.claim_token,
-            )
-            await release_session.commit()
-        if was_released:
+        elif outcome == "released":
             released += 1
 
     return PumpResult(
@@ -401,12 +747,93 @@ async def pump_tile_rebuild_job(
     )
 
 
+async def _submit_claimed_rebuild(
+    dispatch: TileRebuildDispatch,
+    submit: Callable[[TileRebuildDispatch], Awaitable[bool]],
+) -> Literal["duplicate", "released", "submitted"]:
+    async with get_async_session()() as session:
+        try:
+            job = await _lock_tile_rebuild_job(session, dispatch.job_id)
+        except ValueError:
+            await session.rollback()
+            return "duplicate"
+        result = await session.execute(
+            select(JobItem)
+            .where(
+                JobItem.id == dispatch.item_id,
+                JobItem.job_id == dispatch.job_id,
+                JobItem.status == "running",
+                JobItem.claim_token == dispatch.claim_token,
+                JobItem.started_at.is_(None),
+            )
+            .with_for_update()
+        )
+        item = result.scalar_one_or_none()
+        if item is None:
+            await session.rollback()
+            return "duplicate"
+
+        if job.status in {"queued", "running"}:
+            try:
+                queued = await submit(dispatch)
+            except Exception:
+                logger.warning(
+                    "Tile rebuild child submission failed",
+                    exc_info=True,
+                    extra={
+                        "event": "rebuild.child_submission_failed",
+                        "job_id": dispatch.job_id,
+                        "item_id": dispatch.item_id,
+                        "arq_job_id": dispatch.arq_job_id,
+                    },
+                )
+                dispatch_error = TileRebuildDispatchError()
+                queued = False
+            else:
+                dispatch_error = TileRebuildDispatchError()
+            if queued:
+                await session.commit()
+                return "submitted"
+        elif job.status != "cancelling":
+            await session.rollback()
+            return "duplicate"
+        else:
+            dispatch_error = TileRebuildDispatchError()
+
+        _release_rebuild_attempt(
+            job,
+            item,
+            retryable=True,
+            error_message=rebuild_error_summary(dispatch_error),
+            now=datetime.now(timezone.utc),
+        )
+        await _refresh_tile_rebuild_job(session, dispatch.job_id)
+        await session.commit()
+        return "released"
+
+
 async def _reserve_rebuild_source(
     job_id: int,
     item_id: int,
     claim_token: str,
 ) -> ReservedRebuild:
     async with get_async_session()() as session:
+        job = await _lock_tile_rebuild_job(session, job_id)
+        if job.status == "cancelling":
+            finalized = await finalize_job_item(
+                session,
+                item_id,
+                claim_token,
+                "cancelled",
+            )
+            if finalized:
+                await _refresh_tile_rebuild_job(session, job_id)
+            await session.commit()
+            return ReservedRebuild(outcome="cancelled")
+        if job.status not in {"queued", "running"}:
+            await session.rollback()
+            return ReservedRebuild(outcome="duplicate")
+
         reserved = await reserve_job_item_execution(
             session,
             job_id,
@@ -418,10 +845,8 @@ async def _reserve_rebuild_source(
             return ReservedRebuild(outcome="duplicate")
 
         item = await session.get(JobItem, item_id)
-        job = await session.get(Job, job_id)
         if (
             item is None
-            or job is None
             or item.job_id != job_id
             or item.resource_type != REBUILD_RESOURCE_TYPE
             or item.resource_id is None
@@ -476,18 +901,32 @@ async def _finalize_rebuild_failure(
     job_id: int,
     item_id: int,
     claim_token: str,
-    error_message: str,
+    exc: BaseException,
 ) -> None:
     async with get_async_session()() as session:
-        finalized = await finalize_job_item(
-            session,
-            item_id,
-            claim_token,
-            "failed",
-            error_message=error_message,
+        job = await _lock_tile_rebuild_job(session, job_id)
+        result = await session.execute(
+            select(JobItem)
+            .where(
+                JobItem.id == item_id,
+                JobItem.job_id == job_id,
+                JobItem.status == "running",
+                JobItem.claim_token == claim_token,
+            )
+            .with_for_update()
         )
-        if finalized:
-            await _refresh_tile_rebuild_job(session, job_id)
+        item = result.scalar_one_or_none()
+        if item is None:
+            await session.rollback()
+            return
+        _release_rebuild_attempt(
+            job,
+            item,
+            retryable=is_transient_rebuild_error(exc),
+            error_message=rebuild_error_summary(exc),
+            now=datetime.now(timezone.utc),
+        )
+        await _refresh_tile_rebuild_job(session, job_id)
         await session.commit()
 
 
@@ -542,6 +981,7 @@ async def _process_reserved_tile_rebuild(
             await asyncio.gather(preparation_task, return_exceptions=True)
             raise
         async with get_async_session()() as session:
+            job = await _lock_tile_rebuild_job(session, job_id)
             claim_result = await session.execute(
                 select(JobItem)
                 .where(
@@ -556,6 +996,25 @@ async def _process_reserved_tile_rebuild(
             if claim_result.scalar_one_or_none() is None:
                 await session.rollback()
                 await processing.discard_prepared_tile_rebuild(prepared)
+                return "duplicate"
+
+            if job.status == "cancelling":
+                finalized = await finalize_job_item(
+                    session,
+                    item_id,
+                    claim_token,
+                    "cancelled",
+                )
+                if finalized:
+                    await _refresh_tile_rebuild_job(session, job_id)
+                await session.commit()
+                await processing.discard_prepared_tile_rebuild(prepared)
+                prepared = None
+                return "cancelled"
+            if job.status not in {"queued", "running"}:
+                await session.rollback()
+                await processing.discard_prepared_tile_rebuild(prepared)
+                prepared = None
                 return "duplicate"
 
             source_image = await session.get(SourceImage, source_image_id)
@@ -610,7 +1069,7 @@ async def _process_reserved_tile_rebuild(
                 job_id,
                 item_id,
                 claim_token,
-                str(exc),
+                exc,
             )
         raise
 
@@ -684,8 +1143,13 @@ async def process_tile_rebuild_item(
         )
 
 
-async def active_tile_rebuild_job_ids() -> list[int]:
+async def active_tile_rebuild_job_ids(
+    *,
+    limit: int = REBUILD_RECONCILE_BATCH_SIZE,
+) -> list[int]:
     """Return durable rebuild jobs that may need pumping."""
+    if limit <= 0:
+        return []
     async with get_async_session()() as session:
         result = await session.execute(
             select(Job.id)
@@ -694,6 +1158,7 @@ async def active_tile_rebuild_job_ids() -> list[int]:
                 Job.status.in_(ACTIVE_JOB_STATUSES),
             )
             .order_by(Job.id)
+            .limit(limit)
         )
         return list(result.scalars().all())
 

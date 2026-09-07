@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     rebuild_lease_seconds: int = Field(default=2100, ge=120)
     rebuild_heartbeat_seconds: int = Field(default=30, ge=5)
     rebuild_pump_cadence_seconds: int = Field(default=60, ge=60, le=3600)
+    rebuild_max_attempts: int = Field(default=2, ge=1)
+    rebuild_retry_backoff_base_seconds: int = Field(default=60, ge=1)
+    rebuild_retry_backoff_cap_seconds: int = Field(default=900, ge=1)
 
     # Audit middleware: comma-separated list of URL paths whose request logs are
     # emitted at DEBUG instead of INFO. Entries without a trailing slash match
@@ -103,6 +106,14 @@ class Settings(BaseSettings):
         if self.rebuild_pump_cadence_seconds % 60:
             raise ValueError(
                 "REBUILD_PUMP_CADENCE_SECONDS must be a multiple of 60"
+            )
+        if (
+            self.rebuild_retry_backoff_base_seconds
+            > self.rebuild_retry_backoff_cap_seconds
+        ):
+            raise ValueError(
+                "REBUILD_RETRY_BACKOFF_BASE_SECONDS must not exceed "
+                "REBUILD_RETRY_BACKOFF_CAP_SECONDS"
             )
         return self
 

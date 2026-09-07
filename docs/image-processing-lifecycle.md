@@ -105,13 +105,15 @@ Task types registered on the worker:
 - `rebuild_tile_item` — reserves and processes one durable source-image item
 
 Durable rebuild children use their configured arq timeout as an execution
-boundary. Cancellation sets libvips' kill flag, waits for the generation thread
-to stop, removes the temporary tile tree, and then releases the worker slot.
-Lease heartbeats stop with the child; an uncommitted item becomes reclaimable
-after its lease expires. If heartbeat renewal loses the claim or raises an
-error, the child cancels active preparation, waits for libvips and temporary
-tree cleanup, and exits without committing the rebuild or finalizing that
-attempt.
+boundary. Task cancellation sets libvips' kill flag, waits for the generation
+thread to stop, removes the temporary tile tree, and then releases the worker
+slot. Operator-requested durable-job cancellation does not interrupt an active
+libvips call: the child continues heartbeating through generation and observes
+the persisted `cancelling` state before promotion. Lease heartbeats stop with
+the child; an uncommitted item is recovered after its lease expires. If
+heartbeat renewal loses the claim or raises an error, the child cancels active
+preparation, waits for libvips and temporary tree cleanup, and exits without
+committing the rebuild or finalizing that attempt.
 
 ### Task execution modes and Redis fallback
 

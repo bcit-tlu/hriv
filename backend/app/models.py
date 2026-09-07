@@ -556,6 +556,12 @@ class JobItem(Base):
     __tablename__ = "job_items"
     __table_args__ = (
         Index("idx_job_items_job_status", "job_id", "status"),
+        Index(
+            "idx_job_items_job_retry",
+            "job_id",
+            "status",
+            "retry_not_before",
+        ),
         Index("idx_job_items_lease", "status", "lease_expires_at"),
         Index("idx_job_items_resource", "resource_type", "resource_id"),
         UniqueConstraint(
@@ -593,6 +599,9 @@ class JobItem(Base):
         DateTime(timezone=True), nullable=True
     )
     lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    retry_not_before: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     arq_job_id: Mapped[str | None] = mapped_column(

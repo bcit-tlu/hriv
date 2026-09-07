@@ -61,17 +61,19 @@ Workers should update persisted state as execution proceeds:
 
 For child execution, a `running` item has a per-attempt claim token, heartbeat,
 lease expiry, and optional arq job ID. Only the current claim token may extend
-the lease or finalize the item. An expired lease may be returned to `queued` by
-reconciliation. The arq ID is diagnostic metadata only; it is never the
-authoritative completion record.
+the lease or finalize the item. An expired lease is reconciled through the
+workflow retry policy: it returns to `queued` with a persisted
+`retry_not_before` timestamp when another attempt remains, or finishes as
+`failed` after exhaustion. The arq ID is diagnostic metadata only; it is never
+the authoritative completion record.
 
 A claim does not mean that child execution started. Claiming sets the item to
 `running`, assigns ownership and lease metadata, increments `attempts`, and
 leaves `started_at` null. A delivered child atomically reserves execution by
 matching its job ID, item ID, claim token, running status, and null
 `started_at`. Only that successful reservation sets `started_at`; duplicate or
-stale deliveries exit without processing. Reclamation clears `started_at` so a
-later attempt can reserve execution.
+stale deliveries exit without processing. Recovery clears `started_at` and all
+stale ownership fields so a later attempt can reserve execution.
 
 Lease expiry is a recovery signal, not proof that the prior process stopped.
 A workflow using generic reclamation must therefore isolate or make idempotent
@@ -107,15 +109,16 @@ durable rebuild from starting concurrently without relying on Redis locks.
 Each pump:
 
 1. takes a non-blocking, per-job PostgreSQL advisory transaction lock;
-2. reclaims expired leases and counts valid running items in PostgreSQL;
+2. recovers expired leases and counts valid running items in PostgreSQL;
 3. claims only enough queued rows to fill the persisted parallelism window;
 4. persists `rebuild:{job_id}:{item_id}:{attempt}` as each attempt's arq ID;
 5. commits ownership before submitting child jobs to Redis/arq.
 
-If submission fails, an unstarted claim may be released immediately. If the
-process exits between commit and submission, periodic reconciliation reclaims
-the lease and assigns a new attempt-specific arq ID. Redis queue depth and arq
-result retention never determine active work.
+If submission fails, the attempt is released through the same bounded retry
+policy used for worker timeouts and expired leases. If the process exits
+between commit and submission, periodic reconciliation recovers the lease and
+assigns a new attempt-specific arq ID after the persisted backoff is due. Redis
+queue depth and arq result retention never determine active work.
 
 Children recheck the authoritative source-image and tile-provenance state after
 reserving execution. Current or superseded targets are skipped. Ready targets
@@ -123,6 +126,23 @@ reuse the same prepare/promote/rollback primitives as the serial rebuild,
 heartbeat their lease during processing, and finalize only with the current
 claim token. Child completion requests another pump after its database
 transaction commits; a periodic worker sweep is the backstop for lost triggers.
+
+Cancellation and retry are internal service boundaries in this phase. A
+cancellation request locks the supervisor, changes it to `cancelling`, and
+cancels queued or claimed-but-not-started items in bounded batches. Started
+children finish the active libvips generation rather than being forcibly
+interrupted, then recheck cancellation before promotion. The supervisor becomes
+`cancelled` only after running work drains, preserving work that committed
+before cancellation won the lock.
+
+Automatic retries are limited to typed transient failures such as connection
+and timeout errors, selected temporary filesystem errno values, dispatch
+failure, and lease expiry. Missing inputs, permission failures, exhausted
+storage, malformed input, and unclassified libvips failures are terminal.
+Persisted error summaries contain only the exception category and optional
+symbolic errno, not arbitrary exception messages. Attempts increment at claim
+time, duplicate delivery cannot consume another attempt, and explicit retry of
+failed items preserves attempt history.
 
 The scheduler settings are:
 
@@ -132,10 +152,14 @@ The scheduler settings are:
 - `REBUILD_LEASE_SECONDS=2100`
 - `REBUILD_HEARTBEAT_SECONDS=30`
 - `REBUILD_PUMP_CADENCE_SECONDS=60`
+- `REBUILD_MAX_ATTEMPTS=2`
+- `REBUILD_RETRY_BACKOFF_BASE_SECONDS=60`
+- `REBUILD_RETRY_BACKOFF_CAP_SECONDS=900`
 
 Parallelism is independent of `WORKER_MAX_JOBS`. Heartbeat and child timeout
 must both be shorter than the lease, and pump cadence uses whole-minute
-intervals.
+intervals. PostgreSQL `retry_not_before` timestamps, rather than delayed Redis
+jobs, determine when retry work is claimable.
 
 The existing admin rebuild endpoint and automatic post-import rebuild continue
 to create serial `AdminTask` work. Parallel creation requires both
