@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.52.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.51.5...frontend-v0.52.0) (2026-09-07)
+
+
+### Features
+
+* **backend,frontend:** upload actor attribution and deletion telemetry ([#1218](https://github.com/bcit-tlu/hriv/issues/1218)) ([d9e32a7](https://github.com/bcit-tlu/hriv/commit/d9e32a7a9203b3836c2eec792e02cea200e87c19))
+
 ## [0.51.5](https://github.com/bcit-tlu/hriv/compare/frontend-v0.51.4...frontend-v0.51.5) (2026-09-06)
 
 
