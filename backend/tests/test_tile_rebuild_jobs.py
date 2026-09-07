@@ -417,7 +417,7 @@ async def test_ready_child_promotes_and_finalizes_current_claim(
     promoted = object()
     source_image = SimpleNamespace(id=101)
     processing = SimpleNamespace(
-        TileRebuildSource=lambda **values: SimpleNamespace(**values),
+        TileRebuildSource=SimpleNamespace,
         prepare_source_image_tile_rebuild=AsyncMock(
             return_value=prepared,
         ),
@@ -498,7 +498,7 @@ async def test_commit_failure_rolls_back_promotion_and_fails_item(
     prepared = object()
     promoted = object()
     processing = SimpleNamespace(
-        TileRebuildSource=lambda **values: SimpleNamespace(**values),
+        TileRebuildSource=SimpleNamespace,
         prepare_source_image_tile_rebuild=AsyncMock(
             return_value=prepared,
         ),
@@ -575,7 +575,7 @@ async def test_cancelled_child_discards_prepared_tiles(
 ) -> None:
     prepared = object()
     processing = SimpleNamespace(
-        TileRebuildSource=lambda **values: SimpleNamespace(**values),
+        TileRebuildSource=SimpleNamespace,
         prepare_source_image_tile_rebuild=AsyncMock(
             return_value=prepared,
         ),
@@ -638,7 +638,7 @@ async def test_cancelled_child_stops_heartbeat_during_slow_preparation(
             heartbeat_stopped.set()
 
     processing = SimpleNamespace(
-        TileRebuildSource=lambda **values: SimpleNamespace(**values),
+        TileRebuildSource=SimpleNamespace,
         prepare_source_image_tile_rebuild=AsyncMock(
             side_effect=prepare_source_image_tile_rebuild,
         ),

@@ -3,7 +3,6 @@
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Literal, Protocol, TypeAlias, cast
@@ -621,8 +620,7 @@ async def process_tile_rebuild_item(
         raise
     finally:
         heartbeat_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await heartbeat_task
+        await asyncio.gather(heartbeat_task, return_exceptions=True)
 
 
 async def active_tile_rebuild_job_ids() -> list[int]:
