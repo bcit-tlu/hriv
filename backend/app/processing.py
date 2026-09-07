@@ -771,12 +771,21 @@ async def process_source_image(source_image_id: int) -> None:
             # Resolve the uploader at event time so role/synthetic metadata
             # reflect current user state and a concurrently deleted uploader is
             # reported as None. This lifecycle event is emitted only after the
-            # Image row and its tiles have been committed.
-            uploader = (
-                await db.get(User, src.uploaded_by)
-                if src.uploaded_by is not None
-                else None
-            )
+            # Image row and its tiles have been committed. A lookup failure must
+            # not roll back a successfully committed image, so it is isolated.
+            try:
+                uploader = (
+                    await db.get(User, src.uploaded_by)
+                    if src.uploaded_by is not None
+                    else None
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to resolve uploader for lifecycle event",
+                    extra={"source_image_id": src.id},
+                    exc_info=True,
+                )
+                uploader = None
             logger.info(
                 "Image upload processed successfully",
                 extra={
