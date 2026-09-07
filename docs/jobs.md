@@ -73,6 +73,13 @@ matching its job ID, item ID, claim token, running status, and null
 stale deliveries exit without processing. Reclamation clears `started_at` so a
 later attempt can reserve execution.
 
+Lease expiry is a recovery signal, not proof that the prior process stopped.
+A workflow using generic reclamation must therefore isolate or make idempotent
+any work performed before it revalidates the current claim. Durable tile
+rebuild attempts prepare into unique temporary trees, then lock and recheck the
+claim before promotion, so a stale overlapping attempt cannot publish or
+finalize work after ownership has moved.
+
 ## Execution boundary
 
 PostgreSQL is authoritative for business state and operator-visible history.

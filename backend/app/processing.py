@@ -1578,6 +1578,8 @@ async def promote_source_image_tile_rebuild(
             img.width = prepared.image_width
             img.height = prepared.image_height
             img.version = img.version + 1
+            if img.category_id is not None:
+                await bump_browse_revision(session)
     except (Exception, asyncio.CancelledError):
         await rollback_promoted_tile_rebuild(promoted)
         raise

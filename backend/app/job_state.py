@@ -259,7 +259,12 @@ async def reclaim_expired_job_items(
     now: datetime | None = None,
     limit: int | None = None,
 ) -> int:
-    """Return expired running items to ``queued`` for retry/recovery."""
+    """Return expired running items to ``queued`` for retry/recovery.
+
+    Reclamation clears the prior execution reservation. Workflows using this
+    helper must isolate side effects until they revalidate the current claim,
+    because a falsely expired lease can briefly overlap a replacement attempt.
+    """
     now = now or datetime.now(timezone.utc)
     stmt = (
         update(JobItem)

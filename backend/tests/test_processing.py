@@ -1337,7 +1337,10 @@ async def test_discard_prepared_tile_rebuild_removes_temporary_tree() -> None:
     )
 
 
-async def test_promote_source_image_tile_rebuild_stages_without_commit() -> None:
+@pytest.mark.parametrize("category_id", [42, None])
+async def test_promote_source_image_tile_rebuild_stages_without_commit(
+    category_id: int | None,
+) -> None:
     """Promotion swaps artifacts and mutates provenance without committing."""
     src = SimpleNamespace(
         id=5, image_id=10, stored_path="/data/source_images/5.tiff",
@@ -1345,7 +1348,7 @@ async def test_promote_source_image_tile_rebuild_stages_without_commit() -> None
     )
     img = SimpleNamespace(
         tile_sources="/api/tiles/5/old.dzi", thumb="old", width=1, height=1,
-        version=3,
+        version=3, category_id=category_id,
     )
     session = AsyncMock()
     session.get = AsyncMock(return_value=img)
@@ -1356,6 +1359,10 @@ async def test_promote_source_image_tile_rebuild_stages_without_commit() -> None
         patch("app.processing.asyncio.to_thread", side_effect=lambda fn, *a: fn(*a)),
         patch("app.processing.os.path.isdir", return_value=False),
         patch("app.processing.os.replace") as mock_replace,
+        patch(
+            "app.processing.bump_browse_revision",
+            new_callable=AsyncMock,
+        ) as bump_revision,
     ):
         promoted = await promote_source_image_tile_rebuild(
             session, src, prepared,
@@ -1377,6 +1384,9 @@ async def test_promote_source_image_tile_rebuild_stages_without_commit() -> None
         populate_existing=True,
     )
     session.commit.assert_not_awaited()
+    assert bump_revision.await_count == (1 if category_id is not None else 0)
+    if category_id is not None:
+        bump_revision.assert_awaited_once_with(session)
     mock_replace.assert_called_once_with(
         "/data/tiles/.rebuild-5-prepared", "/data/tiles/5",
     )
@@ -1439,7 +1449,7 @@ async def test_promote_source_image_tile_rebuild_restores_on_swap_failure() -> N
     )
     img = SimpleNamespace(
         tile_sources="/api/tiles/5/old.dzi", thumb="old", width=1, height=1,
-        version=3,
+        version=3, category_id=None,
     )
     session = AsyncMock()
     session.get = AsyncMock(return_value=img)
@@ -1630,7 +1640,7 @@ async def test_rebuild_source_image_tiles_success() -> None:
     )
     img = SimpleNamespace(
         tile_sources="/api/tiles/5/old.dzi", thumb="old", width=1, height=1,
-        version=3,
+        version=3, category_id=None,
     )
     events = []
     session = AsyncMock()
@@ -1676,7 +1686,7 @@ async def test_rebuild_source_image_tiles_restores_on_commit_failure() -> None:
     )
     img = SimpleNamespace(
         tile_sources="/api/tiles/5/old.dzi", thumb="old", width=1, height=1,
-        version=3,
+        version=3, category_id=None,
     )
     session = AsyncMock()
     session.get = AsyncMock(return_value=img)
@@ -1722,7 +1732,7 @@ async def test_rebuild_source_image_tiles_restores_on_commit_cancellation() -> N
     )
     img = SimpleNamespace(
         tile_sources="/api/tiles/5/old.dzi", thumb="old", width=1, height=1,
-        version=3,
+        version=3, category_id=None,
     )
     session = AsyncMock()
     session.get = AsyncMock(return_value=img)

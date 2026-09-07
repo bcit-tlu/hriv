@@ -957,6 +957,25 @@ async def test_poll_rebuild_task_heartbeats_until_cancellation() -> None:
     assert session.commit.await_count == 2
 
 
+async def test_run_rebuild_with_heartbeat_prefers_completed_operation() -> None:
+    """A completed rebuild wins a simultaneous cancellation poll."""
+    operation = AsyncMock()
+    poll = AsyncMock()
+
+    async def complete_both(tasks, **_kwargs):
+        await asyncio.gather(*tasks)
+        return set(tasks), set()
+
+    with (
+        patch("app.admin_ops._poll_rebuild_task", poll),
+        patch("app.admin_ops.asyncio.wait", side_effect=complete_both),
+    ):
+        await admin_ops._run_rebuild_with_heartbeat(17, operation())
+
+    operation.assert_awaited_once()
+    poll.assert_awaited_once_with(17)
+
+
 async def test_update_task_check_cancelled_also_raises_on_cancelled_status() -> None:
     """A status of ``cancelled`` (force-cancel) also aborts a live runner.
 

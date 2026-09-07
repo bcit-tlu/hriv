@@ -749,6 +749,10 @@ async def _run_rebuild_with_heartbeat(
             [operation_task, poll_task],
             return_when=asyncio.FIRST_COMPLETED,
         )
+        if operation_task in done:
+            poll_task.cancel()
+            return operation_task.result()
+
         if poll_task in done:
             poll_error = (
                 poll_task.exception()
@@ -761,9 +765,6 @@ async def _run_rebuild_with_heartbeat(
             if poll_error is not None:
                 raise poll_error
             raise TaskCancelled("Task cancelled by admin")
-
-        poll_task.cancel()
-        return operation_task.result()
     finally:
         if not operation_task.done():
             operation_task.cancel()
