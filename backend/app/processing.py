@@ -1568,6 +1568,9 @@ async def finish_promoted_tile_rebuild(
                     ),
                 },
             )
+        current_task = asyncio.current_task()
+        if current_task is not None and current_task.cancelling():
+            raise asyncio.CancelledError
 
 
 async def rebuild_source_image_tiles(

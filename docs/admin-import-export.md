@@ -359,7 +359,8 @@ never resurrected.
   in a short transaction without committing internally.
 - The prior tile tree is retained until the per-image database commit succeeds.
   A promotion, commit failure, or cancellation before commit restores it; a
-  successful commit removes the retained tree.
+  successful commit removes the retained tree. Cancellation during that cleanup
+  is propagated after the retained tree has been removed.
 - Each image commits independently; a per-image failure is logged and the batch
   continues. The task only ends `failed` for a fatal setup error (e.g. an
   unreadable parameters file), never because one image failed.

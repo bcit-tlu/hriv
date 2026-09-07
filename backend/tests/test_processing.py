@@ -1468,6 +1468,59 @@ async def test_finish_promoted_tile_rebuild_ignores_dispatch_failure() -> None:
         await finish_promoted_tile_rebuild(promoted)
 
 
+async def test_rebuild_source_image_tiles_propagates_finalization_cancel() -> None:
+    """Retained-tree cleanup completes before finalization cancellation propagates."""
+    src = SimpleNamespace(
+        id=5,
+        image_id=10,
+        stored_path="/data/source_images/5.tiff",
+    )
+    prepared = _prepared_tile_rebuild()
+    promoted = PromotedTileRebuild(
+        prepared=prepared,
+        backup_dir="/data/tiles/5.old-backup",
+    )
+    cleanup_started = asyncio.Event()
+    cleanup_release = asyncio.Event()
+    cleanup_completed = asyncio.Event()
+
+    async def cleanup_dispatch(_fn, *_args):
+        cleanup_started.set()
+        await cleanup_release.wait()
+        cleanup_completed.set()
+
+    session = AsyncMock()
+    session.commit = AsyncMock()
+    session.refresh = AsyncMock()
+
+    with (
+        patch(
+            "app.processing.prepare_source_image_tile_rebuild",
+            new=AsyncMock(return_value=prepared),
+        ),
+        patch(
+            "app.processing.promote_source_image_tile_rebuild",
+            new=AsyncMock(return_value=promoted),
+        ),
+        patch(
+            "app.processing.asyncio.to_thread",
+            side_effect=cleanup_dispatch,
+        ),
+    ):
+        rebuild_task = asyncio.create_task(
+            rebuild_source_image_tiles(session, src),
+        )
+        await cleanup_started.wait()
+        rebuild_task.cancel()
+        await asyncio.sleep(0)
+        cleanup_release.set()
+
+        with pytest.raises(asyncio.CancelledError):
+            await rebuild_task
+
+    assert cleanup_completed.is_set()
+
+
 async def test_await_without_interruption_finishes_cleanup_after_cancel() -> None:
     """Cancellation waits for protected cleanup before returning."""
     started = asyncio.Event()
