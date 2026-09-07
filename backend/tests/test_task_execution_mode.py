@@ -132,6 +132,7 @@ async def test_required_mode_call_site_matrix_rejects_without_runners(tmp_path) 
         failed_count=1,
         completed_count=0,
         total_count=1,
+        requested_by=1,
     )
     persisted_source = SimpleNamespace(
         id=5,

@@ -136,6 +136,32 @@ Reserved names for follow-on observability issues:
 
 New events must not introduce alternate spellings or separator styles.
 
+## Backend lifecycle events
+
+Backend-only structured-log events emitted by routers and processing:
+
+- `image.upload.processed` — a `SourceImage` finished tiling and the `Image`
+  record was saved.
+- `image.deleted` — one or more `Image` records were deleted.
+- `category.deleted` — a `Category` was deleted.
+
+These logs include `user.id`, `user.role`, `event.synthetic`, and (for deletion
+endpoints) `event.client_synthetic`.
+
+### Actor attribution in lifecycle logs
+
+`SourceImage.uploaded_by` and `BulkImportJob.requested_by` are nullable FKs to
+`users`. When `image.upload.processed` is emitted, the worker resolves the
+uploader at processing time and adds `user.id`, `user.role`, and
+`event.synthetic` (from `is_synthetic_user`). If the uploader is missing or has
+been deleted, `user.id` and `user.role` are omitted and `event.synthetic` is
+`false`.
+
+`image.deleted` and `category.deleted` also derive `event.synthetic` from the
+calling user. `image.deleted` accepts the `X-Client-Synthetic` header and stores
+it as `event.client_synthetic`; it never overrides the server-authoritative
+`event.synthetic`.
+
 ## Frontend Event Envelope
 
 The browser payload schema is versioned by `schema_version`. The backend
@@ -154,6 +180,7 @@ enriches accepted events into a structured-log envelope for Loki.
 | Request correlation      | Request `traceparent` / `X-Request-ID` | `trace.parent`, request logs carry `request_id` | Used for Loki and Tempo drill-down                                        |
 | User identity            | not emitted by browser                 | `user.id`, `user.role`                          | Derived from the authenticated backend user                               |
 | Synthetic classification | `synthetic` hint                       | `event.synthetic`                               | Server-authoritative from user metadata                                   |
+| Client synthetic         | Header `X-Client-Synthetic`            | `event.client_synthetic`                        | `true`/`false`; recorded but does **not** override `event.synthetic`      |
 | Route                    | not emitted by browser                 | request logs carry `route`                      | Aggregate on normalized routes only                                       |
 | Service version          | not emitted by browser                 | resource `service.version`                      | Derived from runtime config                                               |
 | Environment              | not emitted by browser                 | resource `deployment.environment.name`          | Derived from runtime config                                               |

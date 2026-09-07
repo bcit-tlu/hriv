@@ -271,7 +271,7 @@ async def test_process_source_image_not_found() -> None:
 
 async def test_process_source_image_skips_terminal_row() -> None:
     """A late child cannot overwrite a terminal source-image result."""
-    src = SimpleNamespace(id=100, status="failed")
+    src = SimpleNamespace(id=100, status="failed", uploaded_by=None)
     mock_session = AsyncMock()
     mock_session.get.return_value = src
     mock_session.__aenter__ = AsyncMock(return_value=mock_session)
@@ -312,11 +312,20 @@ async def test_process_source_image_success(caplog: pytest.LogCaptureFixture) ->
         note="a note",
         active=True,
         image_id=None,
+        uploaded_by=7,
         file_size=5242880,
     )
 
+    uploader = SimpleNamespace(id=7, role="admin", metadata_={"synthetic": True})
+
     mock_session = AsyncMock()
-    mock_session.get.return_value = src
+
+    def _get_side_effect(model, key):
+        if model is SourceImage:
+            return src
+        return uploader
+
+    mock_session.get.side_effect = _get_side_effect
     captured_image = {}
 
     def capture_add(obj):
@@ -357,6 +366,9 @@ async def test_process_source_image_success(caplog: pytest.LogCaptureFixture) ->
     assert getattr(lifecycle_log, "image.id") == 99
     assert getattr(lifecycle_log, "image.name") == "Test Image"
     assert getattr(lifecycle_log, "source_image.original_filename") == "test.tiff"
+    assert getattr(lifecycle_log, "user.id") == 7
+    assert getattr(lifecycle_log, "user.role") == "admin"
+    assert getattr(lifecycle_log, "event.synthetic") is True
 
 
 async def test_process_source_image_failure() -> None:
@@ -373,6 +385,7 @@ async def test_process_source_image_failure() -> None:
         note=None,
         active=True,
         image_id=None,
+        uploaded_by=None,
     )
 
     call_count = 0
@@ -413,6 +426,7 @@ async def test_process_source_image_enospc_failure() -> None:
         note=None,
         active=True,
         image_id=None,
+        uploaded_by=None,
     )
 
     mock_session = AsyncMock()
@@ -930,6 +944,7 @@ async def test_process_source_image_with_pyramid_metadata() -> None:
         note=None,
         active=True,
         image_id=None,
+        uploaded_by=None,
         file_size=2147483648,
     )
 

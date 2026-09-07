@@ -21,6 +21,7 @@ import {
 
 import { getToken, SESSION_ID, setApiFailureObserver, type ApiFailureContext } from './api'
 import { detectClientEnv, type ClientEnv } from './clientEnv'
+import { getClientSyntheticMode, setClientSyntheticMode } from './syntheticMode'
 
 /**
  * Version of the frontend telemetry payload. Bump this when the top-level
@@ -143,7 +144,7 @@ export interface FrontendPerformanceEventOptions {
 
 let _tracerProvider: WebTracerProvider | null = null
 let _initialized = false
-let _synthetic = false
+
 let _flushTimer: ReturnType<typeof setTimeout> | null = null
 let _clientEnv: ClientEnv | null | undefined
 let _appLoadMetricSent = false
@@ -177,7 +178,10 @@ function isBrowser(): boolean {
 }
 
 function authHeaders(): Record<string, string> {
-  const h: Record<string, string> = { 'X-Session-ID': SESSION_ID }
+  const h: Record<string, string> = {
+    'X-Session-ID': SESSION_ID,
+    'X-Client-Synthetic': getClientSyntheticMode() ? 'true' : 'false',
+  }
   const token = getToken()
   if (token) h.Authorization = `Bearer ${token}`
   return h
@@ -295,7 +299,7 @@ function normalizeEvent(event: TelemetryEvent): TelemetryPayload {
     schema_version: TELEMETRY_SCHEMA_VERSION,
     event_version: event.event_version ?? TELEMETRY_EVENT_VERSION,
     outcome: event.outcome ?? 'unknown',
-    synthetic: _synthetic || event.synthetic || false,
+    synthetic: getClientSyntheticMode() || event.synthetic || false,
     trace_id: event.trace_id ?? activeTraceId(),
   }
 }
@@ -494,7 +498,7 @@ export function initObservability(): void {
 
   try {
     if (new URLSearchParams(window.location.search).has('synthetic')) {
-      _synthetic = true
+      setClientSyntheticMode(true)
     }
     ;(window as unknown as Record<string, unknown>).__HRIV_SESSION_ID__ = SESSION_ID
   } catch {
@@ -648,7 +652,7 @@ export function getTraceHeaders(): Record<string, string> {
  * users while still correlating via the shared session-id model.
  */
 export function setSyntheticMode(enabled: boolean): void {
-  _synthetic = enabled
+  setClientSyntheticMode(enabled)
 }
 
 /**

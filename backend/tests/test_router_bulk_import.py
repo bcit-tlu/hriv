@@ -701,6 +701,7 @@ async def test_process_bulk_import_completes_successful_job(tmp_path) -> None:
         completed_count=0,
         failed_count=0,
         category_id=1,
+        requested_by=1,
         errors=[],
     )
     src = SimpleNamespace(
@@ -1212,6 +1213,7 @@ async def test_process_bulk_import_normalizes_empty_note(tmp_path) -> None:
         completed_count=1,
         failed_count=0,
         category_id=1,
+        requested_by=1,
         errors=[],
     )
     src = SimpleNamespace(
@@ -1266,6 +1268,7 @@ async def test_process_bulk_import_records_failure_for_failed_source(tmp_path) -
         completed_count=0,
         failed_count=1,  # simulate what the execute(update(...)) will do
         category_id=1,
+        requested_by=1,
         errors=[{"filename": "a.png", "error": "bad header"}],
     )
     src = SimpleNamespace(
@@ -1314,6 +1317,7 @@ async def test_process_bulk_import_records_failure_when_processing_raises(tmp_pa
         completed_count=0,
         failed_count=1,  # mutated by the update(...) after processing raises
         category_id=1,
+        requested_by=1,
         errors=[{"filename": "a.png", "error": "boom"}],
     )
     src = SimpleNamespace(
@@ -1363,6 +1367,7 @@ async def test_process_bulk_import_partial_success(tmp_path) -> None:
         completed_count=1,  # one succeeded
         failed_count=1,  # one failed
         category_id=1,
+        requested_by=1,
         errors=[{"filename": "bad.png", "error": "oops"}],
     )
 
@@ -1462,6 +1467,7 @@ async def test_process_bulk_import_counter_update_survives_db_error(tmp_path) ->
         completed_count=0,
         failed_count=0,
         category_id=1,
+        requested_by=1,
         errors=[],
     )
 
@@ -1498,6 +1504,7 @@ async def test_process_bulk_import_uses_queued_processing_when_available(tmp_pat
         completed_count=1,
         failed_count=0,
         category_id=1,
+        requested_by=1,
         errors=[],
     )
     src = SimpleNamespace(

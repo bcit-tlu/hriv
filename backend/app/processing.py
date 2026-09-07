@@ -27,7 +27,8 @@ from sqlalchemy.sql import func
 
 from .browse_state import bump_browse_revision
 from .database import async_session, settings
-from .models import Image, SourceImage
+from .auth_events import actor_log_fields
+from .models import Image, SourceImage, User
 from .queue_metrics import collect_queue_state
 from .task_constants import (
     BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
@@ -522,6 +523,7 @@ async def process_source_image(source_image_id: int) -> None:
 
     async with async_session() as db:
         src = await db.get(SourceImage, source_image_id)
+        uploader = await db.get(User, src.uploaded_by) if src is not None and src.uploaded_by is not None else None
         if src is None:
             logger.error(
                 "SourceImage not found, skipping processing",
@@ -768,6 +770,7 @@ async def process_source_image(source_image_id: int) -> None:
                     "category.id": img.category_id,
                     "source_image.id": src.id,
                     "source_image.original_filename": src.original_filename,
+                    **actor_log_fields(uploader),
                 },
             )
 

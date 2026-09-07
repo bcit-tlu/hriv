@@ -42,7 +42,7 @@ router = APIRouter(prefix="/source-images", tags=["source-images"])
 async def upload_source_image(
     file: Annotated[UploadFile, File()],
     background_tasks: BackgroundTasks,
-    _user: Annotated[User, Depends(require_role("admin", "instructor"))],
+    user: Annotated[User, Depends(require_role("admin", "instructor"))],
     name: Annotated[str | None, Form()] = None,
     category_id: Annotated[int | None, Form()] = None,
     copyright: Annotated[str | None, Form()] = None,
@@ -122,6 +122,7 @@ async def upload_source_image(
                 note=note,
                 active=active,
                 file_size=file_size,
+                uploaded_by=user.id,
             )
             db.add(src)
             await db.commit()

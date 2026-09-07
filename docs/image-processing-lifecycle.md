@@ -24,6 +24,20 @@ Serve
      Thumbnail at /api/tiles/<source_id>/thumbnail.jpeg
 ```
 
+## Upload actor attribution
+
+Single uploads, image replacement, and bulk-import child sources persist the
+acting user as `SourceImage.uploaded_by` (FK to `users.id`, `SET NULL`).
+`BulkImportJob.requested_by` records the user who started the bulk import.
+These columns are **not** exposed in API response schemas.
+
+When processing completes, `app.processing.process_source_image` resolves the
+uploader from `SourceImage.uploaded_by` and enriches the `image.upload.processed`
+structured log with `user.id`, `user.role`, and `event.synthetic` derived from
+`is_synthetic_user(user)`. If the uploader is unknown or has been deleted,
+`user.id` and `user.role` are omitted and `event.synthetic` is `false`.
+Role and synthetic metadata are never snapshotted into `SourceImage` itself.
+
 ## Filename normalization
 
 Client-supplied filenames are normalized once at ingestion by
