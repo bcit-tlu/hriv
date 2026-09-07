@@ -173,6 +173,18 @@ postgres:
 #              unless redis.enabled=true and redis.worker.enabled=true.
 tasks:
   executionMode: 'local'
+  rebuild:
+    # Durable parallel tile rebuilding is internal and disabled by default.
+    # Enabling it requires executionMode=required and a Redis-backed worker.
+    parallelEnabled: false
+    # PostgreSQL-authoritative child execution window. This is independent
+    # from redis.worker.maxJobs.
+    parallelism: 2
+    childTimeoutSeconds: 1800
+    leaseSeconds: 2100
+    heartbeatSeconds: 30
+    # arq cron expressions are minute-granular, so use whole-minute values.
+    pumpCadenceSeconds: 60
 
 # ── Redis / arq background worker ────────────────────────────
 # When enabled, the chart injects REDIS_URL into the backend pod and

@@ -73,6 +73,18 @@ spec:
               value: {{ .Values.redis.url | quote }}
             - name: TASK_EXECUTION_MODE
               value: {{ .Values.tasks.executionMode | quote }}
+            - name: REBUILD_PARALLEL_ENABLED
+              value: {{ .Values.tasks.rebuild.parallelEnabled | quote }}
+            - name: REBUILD_PARALLELISM
+              value: {{ .Values.tasks.rebuild.parallelism | quote }}
+            - name: REBUILD_CHILD_TIMEOUT_SECONDS
+              value: {{ .Values.tasks.rebuild.childTimeoutSeconds | quote }}
+            - name: REBUILD_LEASE_SECONDS
+              value: {{ .Values.tasks.rebuild.leaseSeconds | quote }}
+            - name: REBUILD_HEARTBEAT_SECONDS
+              value: {{ .Values.tasks.rebuild.heartbeatSeconds | quote }}
+            - name: REBUILD_PUMP_CADENCE_SECONDS
+              value: {{ .Values.tasks.rebuild.pumpCadenceSeconds | quote }}
             - name: WORKER_MAX_JOBS
               value: {{ .Values.redis.worker.maxJobs | quote }}
             - name: VIPS_CONCURRENCY

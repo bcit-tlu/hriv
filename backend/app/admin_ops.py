@@ -36,11 +36,9 @@ from .backup_access import (
     BackupSnapshotCancelledError,
     restore_snapshot_file,
 )
-from .component_versions import get_app_version
 from .browse_state import bump_browse_revision
+from .component_versions import get_app_version
 from .database import get_async_session, settings
-from .tile_order import INITIAL_SCOPE_REVISION
-from .worker import TaskQueueUnavailableError, enqueue_admin_task
 from .models import (
     ACTIVE_TASK_STATUSES,
     AdminTask,
@@ -53,6 +51,12 @@ from .models import (
     SourceImage,
     User,
 )
+from .rebuild_locks import (
+    acquire_rebuild_creation_lock,
+    find_active_rebuild,
+)
+from .tile_order import INITIAL_SCOPE_REVISION
+from .worker import TaskQueueUnavailableError, enqueue_admin_task
 
 logger = logging.getLogger(__name__)
 
@@ -1900,18 +1904,24 @@ async def _queue_rebuild_tiles_after_import(
 
     async with get_async_session()() as rebuild_session:
         try:
-            existing_result = await rebuild_session.execute(
-                select(AdminTask).where(
-                    AdminTask.task_type == "rebuild_tiles",
-                    AdminTask.status.in_(ACTIVE_TASK_STATUSES),
-                )
-            )
-            existing = existing_result.scalars().first()
+            await acquire_rebuild_creation_lock(rebuild_session)
+            existing = await find_active_rebuild(rebuild_session)
         except Exception:
             logger.warning("Failed to check for active rebuild task", exc_info=True)
-            existing = None
+            try:
+                os.unlink(params_path)
+            except OSError:
+                logger.debug(
+                    "Could not remove rebuild params file %s",
+                    params_path,
+                    exc_info=True,
+                )
+            return (
+                "Could not queue automatic tile rebuild. "
+                "Run Rebuild Tiles manually if needed."
+            )
 
-        if isinstance(existing, AdminTask):
+        if existing is not None:
             try:
                 os.unlink(params_path)
             except OSError:
@@ -1919,8 +1929,9 @@ async def _queue_rebuild_tiles_after_import(
                     "Could not remove rebuild params file %s", params_path, exc_info=True
                 )
             return (
-                f"A rebuild-tiles task is already active (#{existing.id}). "
-                "The automatic rebuild was skipped; run Rebuild Tiles manually after it completes if needed."
+                f"A tile rebuild is already active ({existing.kind} #{existing.id}). "
+                "The automatic rebuild was skipped; run Rebuild Tiles manually "
+                "after it completes if needed."
             )
 
         try:
@@ -1929,7 +1940,7 @@ async def _queue_rebuild_tiles_after_import(
                     task_type="rebuild_tiles",
                     status="pending",
                     input_path=params_path,
-                    created_by=getattr(import_task, "created_by", None),
+                    created_by=import_task.created_by,
                     log="Queued for automatic rebuild after filesystem import.\n",
                 ).returning(AdminTask.id)
             )

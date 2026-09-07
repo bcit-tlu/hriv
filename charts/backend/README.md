@@ -158,6 +158,24 @@ Chart rendering fails when `tasks.executionMode=required` and either
 Redis-backed worker Deployment could never execute background work. Production
 overlays should set `required`; leave `local` everywhere else.
 
+### Durable tile-rebuild scheduler (`tasks.rebuild`)
+
+`tasks.rebuild.parallelEnabled` renders `REBUILD_PARALLEL_ENABLED` on both the
+API and worker pods and defaults to `false`. Enabling it requires
+`tasks.executionMode=required`; serial admin rebuilds remain the rollback path.
+The remaining values render the independently tunable PostgreSQL-authoritative
+execution window and recovery settings:
+
+- `parallelism` (`REBUILD_PARALLELISM`, default `2`);
+- `childTimeoutSeconds` (`REBUILD_CHILD_TIMEOUT_SECONDS`, default `1800`);
+- `leaseSeconds` (`REBUILD_LEASE_SECONDS`, default `2100`);
+- `heartbeatSeconds` (`REBUILD_HEARTBEAT_SECONDS`, default `30`);
+- `pumpCadenceSeconds` (`REBUILD_PUMP_CADENCE_SECONDS`, default `60`).
+
+`parallelism` is intentionally independent from `redis.worker.maxJobs`.
+Heartbeat and child timeout values must remain shorter than the lease, and the
+pump cadence must be a whole-minute interval.
+
 ## Worker configuration
 
 Beyond resources, the worker Deployment exposes:

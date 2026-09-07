@@ -322,6 +322,12 @@ A `rebuild_tiles` task is queued **automatically** after a successful
 operator can start one manually — for example, after a cancelled automatic
 rebuild, a per-file restore, or a stale-tile cleanup.
 
+Serial task creation shares a PostgreSQL advisory lock with the default-off
+durable rebuild scheduler. An active serial `AdminTask` or durable
+`Job(job_type="rebuild_tiles")` blocks another rebuild, so parallel scheduler
+experimentation cannot overlap the established operator or post-import path.
+Redis locks and queue depth are not used for this correctness boundary.
+
 - Endpoint: `POST /admin/tasks/rebuild-tiles` (admin only). Optional JSON body
   `{ "scope": "missing_stale", "image_ids": [..] }`.
 - Runner: `run_rebuild_tiles` in `admin_ops.py`; per-image work lives in

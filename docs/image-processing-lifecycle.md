@@ -86,6 +86,9 @@ Task types registered on the worker:
 - `replace_image_task` — image replacement
 - `bulk_import_task` — legacy compatibility wrapper for already-queued
   bulk-import coordinators; new bulk imports use API-hosted coordination
+- `rebuild_tile_pump_task` — fills a durable tile-rebuild job's persisted,
+  PostgreSQL-derived execution window
+- `rebuild_tile_item` — reserves and processes one durable source-image item
 
 ### Task execution modes and Redis fallback
 
@@ -326,6 +329,13 @@ conservative abandoned-row path. Existing per-file `errors` and
 behind by a cancelled or killed arq job; the coordinator uses
 `max_tries=1` because retrying its non-idempotent batch would duplicate
 `SourceImage` rows.
+
+The same sweep reconciles default-off durable tile rebuild jobs independently.
+It reclaims expired `JobItem` leases, clears their execution reservation, and
+requests a new pump for each active rebuild. Rebuild reconciliation failure is
+logged without preventing the existing source-image, bulk-import, and
+`AdminTask` recovery steps. A separate worker cron cadence supplies a more
+frequent backstop for missed rebuild pump triggers.
 
 Because the coordinator now lives entirely in the API process
 (`BackgroundTasks`, not arq), its in-memory `file_entries` manifest does not

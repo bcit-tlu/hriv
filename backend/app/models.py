@@ -1,9 +1,24 @@
 from datetime import datetime
-from sqlalchemy import BigInteger, Boolean, Column, Index, Integer, String, Text, ForeignKey, DateTime, Table, UniqueConstraint, func, text
+
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Table,
+    Text,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from .database import Base
 
+from .database import Base
 
 user_programs = Table(
     "user_programs",
@@ -458,6 +473,15 @@ class Job(Base):
     __table_args__ = (
         Index("idx_jobs_status", "status"),
         Index("idx_jobs_job_type", "job_type"),
+        Index(
+            "uq_jobs_active_rebuild_tiles",
+            "job_type",
+            unique=True,
+            postgresql_where=text(
+                "job_type = 'rebuild_tiles' "
+                "AND status IN ('queued', 'running', 'cancelling')"
+            ),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

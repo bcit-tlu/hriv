@@ -1,15 +1,15 @@
 import asyncio
 import errno
+import fcntl
 import json
 import logging
-import fcntl
 import os
 import shutil
+import uuid
 from datetime import datetime, timedelta, timezone
 from io import BufferedWriter
 from pathlib import Path
 from typing import Annotated
-import uuid
 
 from fastapi import (
     APIRouter,
@@ -26,6 +26,21 @@ from jose import JWTError, jwt
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..admin_ops import (
+    _ensure_tasks_dir,
+    delete_files_import_archive,
+    files_import_archive_retention_policy,
+    format_bytes,
+    list_files_import_archives,
+    rerun_files_import_archive,
+    run_db_export,
+    run_db_import,
+    run_file_restore,
+    run_files_export,
+    run_files_import,
+    run_rebuild_tiles,
+)
+from ..auth import auth_settings, require_role
 from ..backup_access import (
     BackupRestoreNotConfiguredError,
     BackupSnapshotManifestError,
@@ -33,24 +48,11 @@ from ..backup_access import (
     BackupSnapshotNotFoundError,
     get_last_success_marker,
     get_snapshot_manifest,
-    list_snapshots as list_snapshot_blobs,
     normalize_restore_path,
 )
-from ..admin_ops import (
-    _ensure_tasks_dir,
-    format_bytes,
-    delete_files_import_archive,
-    files_import_archive_retention_policy,
-    list_files_import_archives,
-    run_file_restore,
-    run_db_export,
-    run_db_import,
-    run_files_export,
-    run_files_import,
-    rerun_files_import_archive,
-    run_rebuild_tiles,
+from ..backup_access import (
+    list_snapshots as list_snapshot_blobs,
 )
-from ..auth import auth_settings, require_role
 from ..component_versions import (
     get_backend_version,
     get_backup_version,
@@ -60,8 +62,16 @@ from ..component_versions import (
 )
 from ..database import async_session, get_db
 from ..filenames import sanitize_upload_filename
-from ..maintenance import disable_maintenance_mode, enable_maintenance_mode, is_maintenance_mode
+from ..maintenance import (
+    disable_maintenance_mode,
+    enable_maintenance_mode,
+    is_maintenance_mode,
+)
 from ..models import ACTIVE_TASK_STATUSES, AdminTask, User
+from ..rebuild_locks import (
+    acquire_rebuild_creation_lock,
+    find_active_rebuild,
+)
 from ..schemas import (
     FileRestoreRequest,
     FilesImportArchiveOut,
@@ -133,6 +143,20 @@ async def _create_task(
     input_path: str | None = None,
     status: str = "pending",
 ) -> AdminTask:
+    if task_type == "rebuild_tiles":
+        await acquire_rebuild_creation_lock(db)
+        active_rebuild = await find_active_rebuild(db)
+        if active_rebuild is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "A tile rebuild is already "
+                    f"{active_rebuild.status} "
+                    f"({active_rebuild.kind} #{active_rebuild.id}). "
+                    "Please wait for it to finish or cancel it first."
+                ),
+            )
+
     # Reject if a task of the same type is already pending or running
     existing = (
         await db.execute(

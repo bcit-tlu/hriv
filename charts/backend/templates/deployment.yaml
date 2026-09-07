@@ -10,6 +10,9 @@
 {{- if and (eq .Values.tasks.executionMode "required") (not .Values.redis.worker.enabled) }}
 {{- fail "tasks.executionMode=required requires redis.worker.enabled — required mode never falls back to in-process execution, so queued jobs would wait forever without a dedicated worker Deployment" }}
 {{- end }}
+{{- if and .Values.tasks.rebuild.parallelEnabled (ne .Values.tasks.executionMode "required") }}
+{{- fail "tasks.rebuild.parallelEnabled requires tasks.executionMode=required" }}
+{{- end }}
 {{- $backupVersionMountPath := trimSuffix "/" .Values.backupVersionConfigMap.mountPath -}}
 {{- $frontendVersionMountPath := trimSuffix "/" .Values.frontendVersionConfigMap.mountPath -}}
 {{- if and .Values.backupVersionConfigMap.enabled .Values.frontendVersionConfigMap.enabled (eq $backupVersionMountPath $frontendVersionMountPath) }}
@@ -241,6 +244,18 @@ spec:
             {{- end }}
             - name: TASK_EXECUTION_MODE
               value: {{ .Values.tasks.executionMode | quote }}
+            - name: REBUILD_PARALLEL_ENABLED
+              value: {{ .Values.tasks.rebuild.parallelEnabled | quote }}
+            - name: REBUILD_PARALLELISM
+              value: {{ .Values.tasks.rebuild.parallelism | quote }}
+            - name: REBUILD_CHILD_TIMEOUT_SECONDS
+              value: {{ .Values.tasks.rebuild.childTimeoutSeconds | quote }}
+            - name: REBUILD_LEASE_SECONDS
+              value: {{ .Values.tasks.rebuild.leaseSeconds | quote }}
+            - name: REBUILD_HEARTBEAT_SECONDS
+              value: {{ .Values.tasks.rebuild.heartbeatSeconds | quote }}
+            - name: REBUILD_PUMP_CADENCE_SECONDS
+              value: {{ .Values.tasks.rebuild.pumpCadenceSeconds | quote }}
             # WORKER_MAX_JOBS also bounds the in-process fallback
             # concurrency used by local-mode bulk imports.
             - name: WORKER_MAX_JOBS

@@ -18,7 +18,22 @@ def test_job_model_defines_durable_supervisor_shape() -> None:
     assert next(iter(columns.requested_by.foreign_keys)).ondelete == "SET NULL"
 
     index_names = {index.name for index in Job.__table__.indexes}
-    assert {"idx_jobs_status", "idx_jobs_job_type"} <= index_names
+    assert {
+        "idx_jobs_status",
+        "idx_jobs_job_type",
+        "uq_jobs_active_rebuild_tiles",
+    } <= index_names
+    active_rebuild_index = next(
+        index
+        for index in Job.__table__.indexes
+        if index.name == "uq_jobs_active_rebuild_tiles"
+    )
+    assert active_rebuild_index.unique
+    predicate = str(
+        active_rebuild_index.dialect_options["postgresql"]["where"]
+    )
+    assert "job_type = 'rebuild_tiles'" in predicate
+    assert "'queued', 'running', 'cancelling'" in predicate
 
 
 def test_job_item_model_defines_child_item_shape() -> None:

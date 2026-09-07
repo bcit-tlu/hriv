@@ -5,9 +5,10 @@ identifiers are retained only as execution metadata; a child must present its
 claim token before it can heartbeat or finalize an item.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Literal, Sequence
+from typing import Literal
 from uuid import uuid4
 
 from sqlalchemy import func, select, update
@@ -115,10 +116,69 @@ async def claim_job_items(
         item.heartbeat_at = now
         item.lease_expires_at = now + timedelta(seconds=lease_seconds)
         item.arq_job_id = arq_job_id
-        item.started_at = now
+        item.started_at = None
         item.completed_at = None
     await session.flush()
     return items
+
+
+async def reserve_job_item_execution(
+    session: AsyncSession,
+    job_id: int,
+    item_id: int,
+    claim_token: str,
+    *,
+    now: datetime | None = None,
+) -> bool:
+    """Mark an owned claim as executing exactly once."""
+    now = now or datetime.now(timezone.utc)
+    result = await session.execute(
+        update(JobItem)
+        .where(
+            JobItem.id == item_id,
+            JobItem.job_id == job_id,
+            JobItem.status == "running",
+            JobItem.claim_token == claim_token,
+            JobItem.started_at.is_(None),
+        )
+        .values(
+            started_at=now,
+            updated_at=now,
+        )
+    )
+    return result.rowcount == 1
+
+
+async def release_job_item_claim(
+    session: AsyncSession,
+    job_id: int,
+    item_id: int,
+    claim_token: str,
+    *,
+    now: datetime | None = None,
+) -> bool:
+    """Return an owned, unstarted claim to the queue after dispatch failure."""
+    now = now or datetime.now(timezone.utc)
+    result = await session.execute(
+        update(JobItem)
+        .where(
+            JobItem.id == item_id,
+            JobItem.job_id == job_id,
+            JobItem.status == "running",
+            JobItem.claim_token == claim_token,
+            JobItem.started_at.is_(None),
+        )
+        .values(
+            status="queued",
+            claim_token=None,
+            heartbeat_at=None,
+            lease_expires_at=None,
+            arq_job_id=None,
+            started_at=None,
+            updated_at=now,
+        )
+    )
+    return result.rowcount == 1
 
 
 async def heartbeat_job_item(
@@ -214,6 +274,7 @@ async def reclaim_expired_job_items(
             heartbeat_at=None,
             lease_expires_at=None,
             arq_job_id=None,
+            started_at=None,
             updated_at=now,
         )
     )

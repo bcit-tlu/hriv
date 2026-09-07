@@ -1,15 +1,14 @@
 """Tests for the admin router background task endpoints."""
 
+import json
 import os
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
-
-import json
-import pytest
 
 import app.auth as auth
 from app.backup_access import (
@@ -24,32 +23,36 @@ from app.routers.admin import (
     _kick_off,
     _safe_admin_task_file,
     _task_to_dict,
-    list_backup_snapshots_endpoint,
-    get_backup_snapshot_manifest,
-    get_version,
-    list_export_archives,
-    purge_backup_archive,
-    start_file_restore,
-    start_db_export,
-    start_db_import,
-    start_files_export,
-    start_files_import,
-    list_files_import_archives_endpoint,
-    rerun_files_import,
-    delete_files_import_archive_endpoint,
-    start_rebuild_tiles,
-    upload_task_file,
-    get_upload_status,
-    upload_task_chunk,
-    finalize_task_upload,
-    list_tasks,
-    get_task,
     cancel_task,
     create_task_download_token,
+    delete_files_import_archive_endpoint,
     download_task_result,
+    finalize_task_upload,
+    get_backup_snapshot_manifest,
+    get_task,
+    get_upload_status,
+    get_version,
+    list_backup_snapshots_endpoint,
+    list_export_archives,
+    list_files_import_archives_endpoint,
+    list_tasks,
+    purge_backup_archive,
+    rerun_files_import,
+    start_db_export,
+    start_db_import,
+    start_file_restore,
+    start_files_import,
+    start_rebuild_tiles,
+    upload_task_chunk,
+    upload_task_file,
+)
+from app.schemas import (
+    FileRestoreRequest,
+    FilesImportRerunRequest,
+    RebuildTilesRequest,
+    UploadFinalizeRequest,
 )
 from app.worker import EnqueueResult, TaskQueueUnavailableError
-from app.schemas import FileRestoreRequest, FilesImportRerunRequest, RebuildTilesRequest, UploadFinalizeRequest
 
 
 def _make_admin_task(
@@ -350,6 +353,33 @@ async def test_create_task_rejects_concurrent() -> None:
     assert exc.value.status_code == 409
     assert "already running" in exc.value.detail
     assert "#7" in exc.value.detail
+
+
+async def test_create_rebuild_task_rejects_active_durable_job() -> None:
+    db = AsyncMock()
+    user = SimpleNamespace(id=42)
+
+    with (
+        patch(
+            "app.routers.admin.acquire_rebuild_creation_lock",
+            new_callable=AsyncMock,
+        ) as acquire_lock,
+        patch(
+            "app.routers.admin.find_active_rebuild",
+            new_callable=AsyncMock,
+            return_value=SimpleNamespace(
+                kind="job",
+                id=17,
+                status="running",
+            ),
+        ),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await _create_task(db, "rebuild_tiles", user)
+
+    acquire_lock.assert_awaited_once_with(db)
+    assert exc.value.status_code == 409
+    assert "job #17" in exc.value.detail
 
 
 async def test_kick_off_redis_available() -> None:
