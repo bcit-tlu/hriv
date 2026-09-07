@@ -251,6 +251,7 @@ class JobItemOut(BaseModel):
     error_message: str | None = None
     heartbeat_at: datetime | None = None
     lease_expires_at: datetime | None = None
+    retry_not_before: datetime | None = None
     arq_job_id: str | None = None
     metadata_extra: Annotated[dict | None, Field(validation_alias="metadata_")] = None
     started_at: datetime | None = None

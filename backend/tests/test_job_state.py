@@ -10,6 +10,7 @@ from app.job_state import (
     add_job_item_snapshot,
     aggregate_job_items,
     claim_job_items,
+    derive_supervisor_status,
     finalize_job_item,
     heartbeat_job_item,
     reclaim_expired_job_items,
@@ -37,6 +38,53 @@ def test_terminal_item_statuses_include_skipped() -> None:
         "failed",
         "cancelled",
     }
+
+
+@pytest.mark.parametrize(
+    ("current_status", "states", "expected"),
+    [
+        ("running", {}, "completed"),
+        ("running", {"queued": 1}, "running"),
+        ("running", {"running": 1}, "running"),
+        ("running", {"completed": 1}, "completed"),
+        ("running", {"skipped": 1}, "completed"),
+        ("running", {"failed": 1}, "failed"),
+        (
+            "running",
+            {"completed": 1, "failed": 1},
+            "completed_with_errors",
+        ),
+        (
+            "running",
+            {"skipped": 1, "failed": 1},
+            "completed_with_errors",
+        ),
+        ("cancelling", {"queued": 1}, "cancelling"),
+        ("cancelling", {"running": 1}, "cancelling"),
+        ("cancelling", {"completed": 1}, "cancelled"),
+        (
+            "cancelling",
+            {"completed": 1, "failed": 1},
+            "cancelled",
+        ),
+    ],
+)
+def test_derive_supervisor_status_precedence(
+    current_status: str,
+    states: dict[str, int],
+    expected: str,
+) -> None:
+    counts = {
+        "queued": 0,
+        "running": 0,
+        "completed": 0,
+        "skipped": 0,
+        "failed": 0,
+        "cancelled": 0,
+        **states,
+    }
+
+    assert derive_supervisor_status(current_status, counts) == expected
 
 
 def test_add_job_item_snapshot_rejects_duplicate_resources() -> None:
@@ -115,6 +163,8 @@ async def test_claim_job_items_uses_skip_locked_and_assigns_claims() -> None:
 
     statement = session.execute.call_args.args[0]
     assert statement._for_update_arg.skip_locked is True
+    assert "job_items.retry_not_before IS NULL" in str(statement)
+    assert "job_items.retry_not_before <=" in str(statement)
     assert claimed == [first, second]
     for item, attempts in ((first, 1), (second, 4)):
         assert item.status == "running"
@@ -123,6 +173,7 @@ async def test_claim_job_items_uses_skip_locked_and_assigns_claims() -> None:
         assert len(item.claim_token) == 32
         assert item.heartbeat_at == now
         assert item.lease_expires_at == now + timedelta(seconds=90)
+        assert item.retry_not_before is None
         assert item.arq_job_id == "arq-7"
         assert item.started_at is None
     session.flush.assert_awaited_once()
@@ -224,6 +275,7 @@ async def test_finalize_clears_lease_and_marks_skipped() -> None:
     assert values["claim_token"] is None
     assert values["heartbeat_at"] is None
     assert values["lease_expires_at"] is None
+    assert values["retry_not_before"] is None
     assert "arq_job_id" not in values
 
 

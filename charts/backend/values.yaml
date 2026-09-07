@@ -185,6 +185,10 @@ tasks:
     heartbeatSeconds: 30
     # arq cron expressions are minute-granular, so use whole-minute values.
     pumpCadenceSeconds: 60
+    # PostgreSQL-authoritative retry policy. Attempts include the initial claim.
+    maxAttempts: 2
+    retryBackoffBaseSeconds: 60
+    retryBackoffCapSeconds: 900
 
 # ── Redis / arq background worker ────────────────────────────
 # When enabled, the chart injects REDIS_URL into the backend pod and

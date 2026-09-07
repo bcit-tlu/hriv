@@ -56,6 +56,9 @@ def test_parallel_rebuild_scheduler_is_disabled_by_default() -> None:
     assert settings.rebuild_parallel_enabled is False
     assert settings.rebuild_parallelism == 2
     assert settings.rebuild_parallelism != settings.worker_max_jobs
+    assert settings.rebuild_max_attempts == 2
+    assert settings.rebuild_retry_backoff_base_seconds == 60
+    assert settings.rebuild_retry_backoff_cap_seconds == 900
 
 
 def test_parallel_rebuild_scheduler_requires_timeout_below_lease() -> None:
@@ -77,3 +80,11 @@ def test_parallel_rebuild_scheduler_requires_heartbeat_below_lease() -> None:
 def test_parallel_rebuild_pump_cadence_uses_whole_minutes() -> None:
     with pytest.raises(ValidationError):
         Settings(rebuild_pump_cadence_seconds=61)
+
+
+def test_parallel_rebuild_retry_backoff_requires_valid_bounds() -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            rebuild_retry_backoff_base_seconds=61,
+            rebuild_retry_backoff_cap_seconds=60,
+        )

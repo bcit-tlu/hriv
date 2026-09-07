@@ -126,13 +126,15 @@ the schema** — change the model _and_ generate a migration in the same PR (see
 - **Key fields:** `job_id` (FK to Job, `CASCADE`); `resource_type`;
   `resource_id`; `status` (`queued` / `running` / `completed` / `skipped` /
   `failed` / `cancelled`); `attempts`; `progress`; `error_message`;
-  `claim_token`; `heartbeat_at`; `lease_expires_at`; optional `arq_job_id`;
-  `metadata_` (JSONB, DB column `metadata`); `started_at`; `completed_at`.
+  `claim_token`; `heartbeat_at`; `lease_expires_at`; `retry_not_before`;
+  optional `arq_job_id`; `metadata_` (JSONB, DB column `metadata`);
+  `started_at`; `completed_at`.
 - **Relationships:** `job`.
 - **Execution ownership:** claiming assigns a token, heartbeat, lease expiry,
   and diagnostic arq ID without setting `started_at`. A child sets
   `started_at` only through a matching compare-and-set execution reservation;
-  lease reclamation clears it for the next attempt.
+  lease recovery clears it for the next attempt. PostgreSQL
+  `retry_not_before` controls when a queued retry is claimable.
 
 ### Announcement
 
