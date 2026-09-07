@@ -1516,7 +1516,7 @@ async def test_rebuild_source_image_tiles_propagates_finalization_cancel() -> No
         cleanup_release.set()
 
         with pytest.raises(asyncio.CancelledError):
-            await rebuild_task
+            _ = await rebuild_task
 
     assert cleanup_completed.is_set()
 
