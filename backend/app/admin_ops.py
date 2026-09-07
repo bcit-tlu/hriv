@@ -751,7 +751,8 @@ async def _run_rebuild_with_heartbeat(
         )
         if operation_task in done:
             poll_task.cancel()
-            return operation_task.result()
+            operation_task.result()
+            return
 
         if poll_task in done:
             poll_error = (
