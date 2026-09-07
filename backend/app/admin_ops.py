@@ -1736,8 +1736,8 @@ async def run_rebuild_tiles(task_id: int) -> None:
                     raise
                 except Exception as exc:  # noqa: BLE001 — per-image isolation
                     failures += 1
-                    # The per-image commit never ran, so roll back any partial
-                    # session state before continuing to the next image.
+                    # Clear any partial session state before continuing to the
+                    # next image.
                     await session.rollback()
                     refreshed = await session.get(AdminTask, task_id)
                     if refreshed is not None:

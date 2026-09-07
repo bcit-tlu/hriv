@@ -14,6 +14,7 @@ import re
 import shutil
 import threading
 import time
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -1350,94 +1351,220 @@ async def select_rebuild_targets(
     return targets
 
 
-async def rebuild_source_image_tiles(
-    session: AsyncSession, src: SourceImage,
-) -> None:
-    """Regenerate the DZI tile tree for one existing source image.
+@dataclass(frozen=True, slots=True)
+class TileRebuildSource:
+    """Database-independent input for preparing one tile rebuild."""
 
-    Tiles are generated into a temporary directory and then atomically swapped
-    into place, so a failure mid-generation can never leave a half-written tile
-    tree where good tiles used to be. On success the source's tile-cache
-    provenance (``source_checksum``, ``tile_settings_hash``,
-    ``tiles_generated_at``) and the linked image's geometry / tile URLs are
-    updated and committed.
+    source_image_id: int
+    image_id: int | None
+    stored_path: str
 
-    Raises :class:`FileNotFoundError` when the preserved source file is missing
-    so the batch runner can record a per-image failure and continue. Image
-    metadata (annotations, overlays, measurement scale) is intentionally left
-    untouched because the geometry is unchanged by a regeneration from the same
-    source bytes.
-    """
-    span = trace.get_current_span()
-    span.set_attribute("source_image.id", src.id)
 
-    if not src.stored_path or not await asyncio.to_thread(
-        os.path.isfile, src.stored_path,
+@dataclass(frozen=True, slots=True)
+class PreparedTileRebuild:
+    """Generated tile artifacts awaiting promotion."""
+
+    source: TileRebuildSource
+    temporary_dir: str
+    output_dir: str
+    dzi_rel: str
+    thumb_rel: str
+    image_width: int
+    image_height: int
+    source_checksum: str | None
+    tile_settings_hash: str
+
+
+@dataclass(frozen=True, slots=True)
+class PromotedTileRebuild:
+    """Promoted tiles retained until the database commit succeeds."""
+
+    prepared: PreparedTileRebuild
+    backup_dir: str | None
+
+
+async def prepare_source_image_tile_rebuild(
+    source: TileRebuildSource,
+) -> PreparedTileRebuild:
+    """Generate a temporary tile tree without accessing the database."""
+    if not source.stored_path or not await asyncio.to_thread(
+        os.path.isfile, source.stored_path,
     ):
         raise FileNotFoundError(
-            f"Source image file not found for source #{src.id}: {src.stored_path!r}"
+            "Source image file not found for source "
+            f"#{source.source_image_id}: {source.stored_path!r}"
+        )
+
+    output_dir = os.path.join(settings.tiles_dir, str(source.source_image_id))
+    temporary_dir = os.path.join(
+        settings.tiles_dir,
+        f".rebuild-{source.source_image_id}-{uuid4().hex}",
+    )
+
+    try:
+        with tracer.start_as_current_span("rebuild_generate_tiles"):
+            dzi_rel, thumb_rel, image_width, image_height = (
+                await asyncio.to_thread(
+                    generate_tiles, source.stored_path, temporary_dir,
+                )
+            )
+        source_checksum = await _best_effort_source_checksum(source.stored_path)
+    except Exception:
+        await asyncio.to_thread(shutil.rmtree, temporary_dir, True)
+        raise
+
+    return PreparedTileRebuild(
+        source=source,
+        temporary_dir=temporary_dir,
+        output_dir=output_dir,
+        dzi_rel=dzi_rel,
+        thumb_rel=thumb_rel,
+        image_width=image_width,
+        image_height=image_height,
+        source_checksum=source_checksum,
+        tile_settings_hash=current_tile_settings_hash(),
+    )
+
+
+async def discard_prepared_tile_rebuild(prepared: PreparedTileRebuild) -> None:
+    """Remove a prepared tile tree that will not be promoted."""
+    await asyncio.to_thread(shutil.rmtree, prepared.temporary_dir, True)
+
+
+async def rollback_promoted_tile_rebuild(
+    promoted: PromotedTileRebuild,
+) -> None:
+    """Restore the prior tile tree after a failed database operation."""
+    prepared = promoted.prepared
+
+    def _restore() -> None:
+        shutil.rmtree(prepared.output_dir, ignore_errors=True)
+        if promoted.backup_dir is not None:
+            os.replace(promoted.backup_dir, prepared.output_dir)
+
+    await asyncio.to_thread(_restore)
+
+
+async def promote_source_image_tile_rebuild(
+    session: AsyncSession,
+    src: SourceImage,
+    prepared: PreparedTileRebuild,
+) -> PromotedTileRebuild:
+    """Promote prepared tiles and stage provenance updates without committing."""
+    if src.id != prepared.source.source_image_id:
+        raise ValueError(
+            f"Prepared tiles are for source #{prepared.source.source_image_id}, "
+            f"not source #{src.id}"
+        )
+    if (
+        src.image_id != prepared.source.image_id
+        or src.stored_path != prepared.source.stored_path
+    ):
+        raise ValueError(
+            f"Source #{src.id} changed while its tiles were being prepared"
         )
 
     img = await session.get(Image, src.image_id) if src.image_id else None
+    backup_dir = f"{prepared.output_dir}.old-{uuid4().hex}"
 
-    output_dir = os.path.join(settings.tiles_dir, str(src.id))
-    tmp_dir = os.path.join(
-        settings.tiles_dir, f".rebuild-{src.id}-{uuid4().hex}",
+    def _swap() -> str | None:
+        had_existing = os.path.isdir(prepared.output_dir)
+        if had_existing:
+            os.replace(prepared.output_dir, backup_dir)
+        try:
+            os.replace(prepared.temporary_dir, prepared.output_dir)
+        except Exception:
+            if had_existing:
+                os.replace(backup_dir, prepared.output_dir)
+            raise
+        return backup_dir if had_existing else None
+
+    promoted = PromotedTileRebuild(
+        prepared=prepared,
+        backup_dir=await asyncio.to_thread(_swap),
+    )
+
+    try:
+        src.source_checksum = prepared.source_checksum
+        src.tile_settings_hash = prepared.tile_settings_hash
+        src.tiles_generated_at = datetime.now(timezone.utc)
+
+        if img is not None:
+            img.tile_sources = f"/api/tiles/{src.id}/{prepared.dzi_rel}"
+            img.thumb = f"/api/tiles/{src.id}/{prepared.thumb_rel}"
+            img.width = prepared.image_width
+            img.height = prepared.image_height
+            img.version = img.version + 1
+    except Exception:
+        await rollback_promoted_tile_rebuild(promoted)
+        raise
+
+    return promoted
+
+
+async def finish_promoted_tile_rebuild(
+    promoted: PromotedTileRebuild,
+) -> None:
+    """Discard the retained prior tile tree after a successful commit."""
+    if promoted.backup_dir is not None:
+        try:
+            await asyncio.to_thread(shutil.rmtree, promoted.backup_dir, True)
+        except RuntimeError:
+            logger.warning(
+                "Could not remove retained tile tree",
+                exc_info=True,
+                extra={
+                    "event": "tiles.rebuild_backup_cleanup_failed",
+                    "source_image_id": (
+                        promoted.prepared.source.source_image_id
+                    ),
+                },
+            )
+
+
+async def rebuild_source_image_tiles(
+    session: AsyncSession, src: SourceImage,
+) -> None:
+    """Regenerate and commit one source image's tile tree.
+
+    This compatibility wrapper preserves the serial ``AdminTask`` behavior
+    while keeping slow tile generation outside a database transaction.
+    """
+    span = trace.get_current_span()
+    span.set_attribute("source_image.id", src.id)
+    source = TileRebuildSource(
+        source_image_id=src.id,
+        image_id=src.image_id,
+        stored_path=src.stored_path,
     )
 
     _record_processing_started("rebuild")
     t_start = time.monotonic()
+    prepared: PreparedTileRebuild | None = None
+    promoted: PromotedTileRebuild | None = None
 
     try:
-        with tracer.start_as_current_span("rebuild_generate_tiles"):
-            dzi_rel, thumb_rel, img_width, img_height = await asyncio.to_thread(
-                generate_tiles, src.stored_path, tmp_dir,
-            )
-
-        def _swap() -> None:
-            # Rename-based swap so the previous tile tree stays recoverable
-            # until the new one is promoted: move any existing tree aside, then
-            # rename the freshly generated tree into place (the target no longer
-            # exists, so the directory rename succeeds), then delete the old
-            # tree. If promotion fails, the old tree is restored so we never end
-            # up serving no tiles at all. Each step is a single rename, so the
-            # window where ``output_dir`` is absent is as small as possible.
-            backup_dir = f"{output_dir}.old-{uuid4().hex}"
-            had_existing = os.path.isdir(output_dir)
-            if had_existing:
-                os.replace(output_dir, backup_dir)
+        await session.commit()
+        prepared = await prepare_source_image_tile_rebuild(source)
+        await session.refresh(src)
+        promoted = await promote_source_image_tile_rebuild(
+            session, src, prepared,
+        )
+        try:
+            await session.commit()
+        except Exception:
             try:
-                os.replace(tmp_dir, output_dir)
-            except Exception:
-                if had_existing:
-                    os.replace(backup_dir, output_dir)
-                raise
-            if had_existing:
-                shutil.rmtree(backup_dir, ignore_errors=True)
-
-        await asyncio.to_thread(_swap)
+                await session.rollback()
+            finally:
+                await rollback_promoted_tile_rebuild(promoted)
+            raise
+        await finish_promoted_tile_rebuild(promoted)
     except Exception:
-        await asyncio.to_thread(shutil.rmtree, tmp_dir, True)
+        if prepared is not None and promoted is None:
+            await discard_prepared_tile_rebuild(prepared)
         duration_ms = round((time.monotonic() - t_start) * 1000)
         _record_processing_finished("rebuild", duration_ms / 1000, False)
         raise
-
-    source_checksum = await _best_effort_source_checksum(src.stored_path)
-
-    src.source_checksum = source_checksum
-    src.tile_settings_hash = current_tile_settings_hash()
-    src.tiles_generated_at = datetime.now(timezone.utc)
-
-    if img is not None:
-        img.tile_sources = f"/api/tiles/{src.id}/{dzi_rel}"
-        img.thumb = f"/api/tiles/{src.id}/{thumb_rel}"
-        img.width = img_width
-        img.height = img_height
-        # Bump the version so viewers refetch tiles rather than serving a
-        # browser-cached copy of the previous (missing/stale) tree.
-        img.version = img.version + 1
-
-    await session.commit()
 
     duration_ms = round((time.monotonic() - t_start) * 1000)
     _record_processing_finished("rebuild", duration_ms / 1000, True)
