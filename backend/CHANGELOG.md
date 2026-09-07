@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.54.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.53.0...backend-v0.54.0) (2026-09-07)
+
+
+### Features
+
+* **backend:** add durable tile rebuild scheduler ([#1220](https://github.com/bcit-tlu/hriv/issues/1220)) ([4eb58f3](https://github.com/bcit-tlu/hriv/commit/4eb58f3875faa8036ccd7b4d20429d6187309093))
+
 ## [0.53.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.52.0...backend-v0.53.0) (2026-09-07)
 
 
