@@ -94,7 +94,10 @@ Durable rebuild children use their configured arq timeout as an execution
 boundary. Cancellation sets libvips' kill flag, waits for the generation thread
 to stop, removes the temporary tile tree, and then releases the worker slot.
 Lease heartbeats stop with the child; an uncommitted item becomes reclaimable
-after its lease expires.
+after its lease expires. If heartbeat renewal loses the claim or raises an
+error, the child cancels active preparation, waits for libvips and temporary
+tree cleanup, and exits without committing the rebuild or finalizing that
+attempt.
 
 ### Task execution modes and Redis fallback
 

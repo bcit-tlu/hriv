@@ -11,6 +11,7 @@ from app.tile_rebuild_jobs import (
     ReservedRebuild,
     TileRebuildAlreadyActiveError,
     TileRebuildDispatch,
+    TileRebuildLeaseLostError,
     TileRebuildParallelDisabledError,
     active_tile_rebuild_job_ids,
     claim_tile_rebuild_window,
@@ -20,6 +21,10 @@ from app.tile_rebuild_jobs import (
     reconcile_tile_rebuild_jobs,
     tile_rebuild_arq_job_id,
 )
+
+
+async def _wait_for_cancellation(*_args: object) -> None:
+    await asyncio.Event().wait()
 
 
 def _execute_result(*, scalar=None):
@@ -91,7 +96,13 @@ async def test_rebuild_item_heartbeat_stops_when_claim_is_lost(
         AsyncMock(),
     )
 
-    await tile_rebuild_jobs._heartbeat_rebuild_item(11, "claim", 30, 90)
+    with pytest.raises(TileRebuildLeaseLostError):
+        await tile_rebuild_jobs._heartbeat_rebuild_item(
+            11,
+            "claim",
+            30,
+            90,
+        )
 
     heartbeat.assert_awaited_once_with(session, 11, "claim", 90)
     session.commit.assert_awaited_once()
@@ -451,7 +462,7 @@ async def test_ready_child_promotes_and_finalizes_current_claim(
     )
     monkeypatch.setattr(
         "app.tile_rebuild_jobs._heartbeat_rebuild_item",
-        AsyncMock(),
+        AsyncMock(side_effect=_wait_for_cancellation),
     )
     monkeypatch.setattr(
         "app.tile_rebuild_jobs.get_async_session",
@@ -531,7 +542,7 @@ async def test_commit_failure_rolls_back_promotion_and_fails_item(
     )
     monkeypatch.setattr(
         "app.tile_rebuild_jobs._heartbeat_rebuild_item",
-        AsyncMock(),
+        AsyncMock(side_effect=_wait_for_cancellation),
     )
     monkeypatch.setattr(
         "app.tile_rebuild_jobs.get_async_session",
@@ -679,6 +690,104 @@ async def test_cancelled_child_stops_heartbeat_during_slow_preparation(
     with pytest.raises(asyncio.CancelledError):
         await asyncio.wait_for(child, timeout=0.1)
 
+    processing.discard_prepared_tile_rebuild.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("renewed", "heartbeat_error"),
+    [
+        pytest.param(False, None, id="claim-lost"),
+        pytest.param(
+            None,
+            "heartbeat database unavailable",
+            id="database-error",
+        ),
+    ],
+)
+async def test_heartbeat_failure_cancels_slow_preparation_before_exit(
+    monkeypatch: pytest.MonkeyPatch,
+    renewed: bool | None,
+    heartbeat_error: str | None,
+) -> None:
+    preparation_started = asyncio.Event()
+    preparation_cancelled = asyncio.Event()
+    cleanup_release = asyncio.Event()
+    cleanup_finished = asyncio.Event()
+
+    async def prepare_source_image_tile_rebuild(_source: object) -> None:
+        preparation_started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            preparation_cancelled.set()
+            await cleanup_release.wait()
+            cleanup_finished.set()
+            raise
+
+    processing = SimpleNamespace(
+        TileRebuildSource=SimpleNamespace,
+        prepare_source_image_tile_rebuild=AsyncMock(
+            side_effect=prepare_source_image_tile_rebuild,
+        ),
+        discard_prepared_tile_rebuild=AsyncMock(),
+    )
+    session = MagicMock()
+    session.commit = AsyncMock()
+    factory = MagicMock(return_value=_session_context(session))
+    heartbeat = AsyncMock(return_value=renewed)
+    if heartbeat_error is not None:
+        heartbeat.side_effect = RuntimeError(heartbeat_error)
+    finalize_failure = AsyncMock()
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._reserve_rebuild_source",
+        AsyncMock(
+            return_value=ReservedRebuild(
+                outcome="ready",
+                source_image_id=101,
+                image_id=201,
+                stored_path="/sources/one.svs",
+                heartbeat_seconds=0.01,
+                lease_seconds=90,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs.get_async_session",
+        MagicMock(return_value=factory),
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs.heartbeat_job_item",
+        heartbeat,
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._finalize_rebuild_failure",
+        finalize_failure,
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._load_processing",
+        MagicMock(return_value=processing),
+    )
+
+    child = asyncio.create_task(
+        process_tile_rebuild_item(7, 11, "claim")
+    )
+    await preparation_started.wait()
+    await preparation_cancelled.wait()
+
+    assert not child.done()
+    assert not cleanup_finished.is_set()
+    cleanup_release.set()
+    if heartbeat_error is None:
+        with pytest.raises(TileRebuildLeaseLostError, match="lost claim"):
+            await asyncio.wait_for(child, timeout=0.1)
+        session.commit.assert_awaited_once()
+    else:
+        with pytest.raises(RuntimeError, match=heartbeat_error):
+            await asyncio.wait_for(child, timeout=0.1)
+        session.commit.assert_not_awaited()
+
+    assert cleanup_finished.is_set()
+    finalize_failure.assert_not_awaited()
     processing.discard_prepared_tile_rebuild.assert_not_awaited()
 
 

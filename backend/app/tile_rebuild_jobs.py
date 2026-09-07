@@ -114,6 +114,10 @@ class TileRebuildAlreadyActiveError(RuntimeError):
     """Raised when a serial or durable tile rebuild is already active."""
 
 
+class TileRebuildLeaseLostError(RuntimeError):
+    """Raised when a durable tile rebuild child loses its item lease."""
+
+
 @dataclass(frozen=True, slots=True)
 class TileRebuildDispatch:
     """One committed child claim ready for arq submission."""
@@ -504,39 +508,25 @@ async def _heartbeat_rebuild_item(
             )
             await session.commit()
         if not renewed:
-            return
+            raise TileRebuildLeaseLostError(
+                f"Tile rebuild item {item_id} lost claim {claim_token}"
+            )
 
 
-async def process_tile_rebuild_item(
+async def _process_reserved_tile_rebuild(
     job_id: int,
     item_id: int,
     claim_token: str,
+    processing: _ProcessingModule,
+    source_image_id: int,
+    image_id: int | None,
+    stored_path: str,
 ) -> TileRebuildResult:
-    """Reserve and process one durable tile rebuild child."""
-    reservation = await _reserve_rebuild_source(job_id, item_id, claim_token)
-    if reservation.outcome != "ready":
-        return reservation.outcome
-    if (
-        reservation.source_image_id is None
-        or reservation.stored_path is None
-        or reservation.heartbeat_seconds is None
-        or reservation.lease_seconds is None
-    ):
-        raise RuntimeError("Ready tile rebuild reservation has no source")
-
-    processing = _load_processing()
-    heartbeat_task = asyncio.create_task(
-        _heartbeat_rebuild_item(
-            item_id,
-            claim_token,
-            reservation.heartbeat_seconds,
-            reservation.lease_seconds,
-        )
-    )
+    """Process an already-reserved durable tile rebuild child."""
     source = processing.TileRebuildSource(
-        source_image_id=reservation.source_image_id,
-        image_id=reservation.image_id,
-        stored_path=reservation.stored_path,
+        source_image_id=source_image_id,
+        image_id=image_id,
+        stored_path=stored_path,
     )
     prepared = None
     promoted = None
@@ -548,8 +538,6 @@ async def process_tile_rebuild_item(
         try:
             prepared = await asyncio.shield(preparation_task)
         except asyncio.CancelledError:
-            heartbeat_task.cancel()
-            await asyncio.gather(heartbeat_task, return_exceptions=True)
             preparation_task.cancel()
             await asyncio.gather(preparation_task, return_exceptions=True)
             raise
@@ -570,7 +558,7 @@ async def process_tile_rebuild_item(
                 await processing.discard_prepared_tile_rebuild(prepared)
                 return "duplicate"
 
-            source_image = await session.get(SourceImage, source.source_image_id)
+            source_image = await session.get(SourceImage, source_image_id)
             if source_image is None:
                 await processing.discard_prepared_tile_rebuild(prepared)
                 finalized = await finalize_job_item(
@@ -625,9 +613,75 @@ async def process_tile_rebuild_item(
                 str(exc),
             )
         raise
+
+
+async def process_tile_rebuild_item(
+    job_id: int,
+    item_id: int,
+    claim_token: str,
+) -> TileRebuildResult:
+    """Reserve and process one durable tile rebuild child."""
+    reservation = await _reserve_rebuild_source(job_id, item_id, claim_token)
+    if reservation.outcome != "ready":
+        return reservation.outcome
+    if (
+        reservation.source_image_id is None
+        or reservation.stored_path is None
+        or reservation.heartbeat_seconds is None
+        or reservation.lease_seconds is None
+    ):
+        raise RuntimeError("Ready tile rebuild reservation has no source")
+
+    processing = _load_processing()
+    heartbeat_task = asyncio.create_task(
+        _heartbeat_rebuild_item(
+            item_id,
+            claim_token,
+            reservation.heartbeat_seconds,
+            reservation.lease_seconds,
+        )
+    )
+    operation_task = asyncio.create_task(
+        _process_reserved_tile_rebuild(
+            job_id,
+            item_id,
+            claim_token,
+            processing,
+            reservation.source_image_id,
+            reservation.image_id,
+            reservation.stored_path,
+        )
+    )
+    try:
+        done, _pending = await asyncio.wait(
+            [operation_task, heartbeat_task],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if operation_task in done:
+            heartbeat_task.cancel()
+            await asyncio.gather(heartbeat_task, return_exceptions=True)
+            return operation_task.result()
+
+        heartbeat_error = (
+            None
+            if heartbeat_task.cancelled()
+            else heartbeat_task.exception()
+        )
+        operation_task.cancel()
+        await asyncio.gather(operation_task, return_exceptions=True)
+        if heartbeat_error is not None:
+            raise heartbeat_error
+        raise TileRebuildLeaseLostError(
+            f"Tile rebuild item {item_id} heartbeat stopped"
+        )
     finally:
         heartbeat_task.cancel()
-        await asyncio.gather(heartbeat_task, return_exceptions=True)
+        operation_task.cancel()
+        await asyncio.gather(
+            heartbeat_task,
+            operation_task,
+            return_exceptions=True,
+        )
 
 
 async def active_tile_rebuild_job_ids() -> list[int]:
