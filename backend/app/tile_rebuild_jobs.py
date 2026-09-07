@@ -1009,12 +1009,10 @@ async def _process_reserved_tile_rebuild(
                     await _refresh_tile_rebuild_job(session, job_id)
                 await session.commit()
                 await processing.discard_prepared_tile_rebuild(prepared)
-                prepared = None
                 return "cancelled"
             if job.status not in {"queued", "running"}:
                 await session.rollback()
                 await processing.discard_prepared_tile_rebuild(prepared)
-                prepared = None
                 return "duplicate"
 
             source_image = await session.get(SourceImage, source_image_id)
