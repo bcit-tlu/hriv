@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.55.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.54.0...backend-v0.55.0) (2026-09-07)
+
+
+### Features
+
+* **backend:** add durable tile rebuild recovery ([#1225](https://github.com/bcit-tlu/hriv/issues/1225)) ([6e28bc5](https://github.com/bcit-tlu/hriv/commit/6e28bc59475c6e21eeeaa1ff5f7bb4c6923891a7))
+
 ## [0.54.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.53.0...backend-v0.54.0) (2026-09-07)
 
 
