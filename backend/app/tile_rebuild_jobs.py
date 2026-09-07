@@ -50,7 +50,8 @@ class _TileRebuildSourceFactory(Protocol):
         source_image_id: int,
         image_id: int | None,
         stored_path: str,
-    ) -> object: ...
+    ) -> object:
+        pass
 
 
 class _ProcessingModule(Protocol):
@@ -62,34 +63,40 @@ class _ProcessingModule(Protocol):
         *,
         scope: str,
         image_ids: list[int] | None,
-    ) -> list[SourceImage]: ...
+    ) -> list[SourceImage]:
+        pass
 
     async def prepare_source_image_tile_rebuild(
         self,
         source: object,
-    ) -> object: ...
+    ) -> object:
+        pass
 
     async def promote_source_image_tile_rebuild(
         self,
         session: AsyncSession,
         source_image: SourceImage,
         prepared: object,
-    ) -> object: ...
+    ) -> object:
+        pass
 
     async def finish_promoted_tile_rebuild(
         self,
         promoted: object,
-    ) -> None: ...
+    ) -> None:
+        pass
 
     async def rollback_promoted_tile_rebuild(
         self,
         promoted: object,
-    ) -> None: ...
+    ) -> None:
+        pass
 
     async def discard_prepared_tile_rebuild(
         self,
         prepared: object,
-    ) -> None: ...
+    ) -> None:
+        pass
 
 
 def _load_processing() -> _ProcessingModule:

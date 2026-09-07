@@ -196,7 +196,7 @@ async def test_serial_rebuild_heartbeat_prevents_stale_overlap(
         assert active.id == task_id
 
     work_release.set()
-    await runner
+    assert await runner is None
 
 
 @requires_db
