@@ -281,7 +281,7 @@ async def test_process_source_image_not_found() -> None:
 
 async def test_process_source_image_skips_terminal_row() -> None:
     """A late child cannot overwrite a terminal source-image result."""
-    src = SimpleNamespace(id=100, status="failed")
+    src = SimpleNamespace(id=100, status="failed", uploaded_by=None)
     mock_session = AsyncMock()
     mock_session.get.return_value = src
     mock_session.__aenter__ = AsyncMock(return_value=mock_session)
@@ -322,11 +322,20 @@ async def test_process_source_image_success(caplog: pytest.LogCaptureFixture) ->
         note="a note",
         active=True,
         image_id=None,
+        uploaded_by=7,
         file_size=5242880,
     )
 
+    uploader = SimpleNamespace(id=7, role="admin", metadata_={"synthetic": True})
+
     mock_session = AsyncMock()
-    mock_session.get.return_value = src
+
+    def _get_side_effect(model, key):
+        if model is SourceImage:
+            return src
+        return uploader
+
+    mock_session.get.side_effect = _get_side_effect
     captured_image = {}
 
     def capture_add(obj):
@@ -367,6 +376,190 @@ async def test_process_source_image_success(caplog: pytest.LogCaptureFixture) ->
     assert getattr(lifecycle_log, "image.id") == 99
     assert getattr(lifecycle_log, "image.name") == "Test Image"
     assert getattr(lifecycle_log, "source_image.original_filename") == "test.tiff"
+    assert getattr(lifecycle_log, "user.id") == 7
+    assert getattr(lifecycle_log, "user.role") == "admin"
+    assert getattr(lifecycle_log, "event.synthetic") is True
+
+
+async def test_process_source_image_uploader_deleted(caplog: pytest.LogCaptureFixture) -> None:
+    """A uploader deleted before the lifecycle event is emitted is logged as unknown."""
+    caplog.set_level("INFO", logger="app.processing")
+    src = SimpleNamespace(
+        id=1,
+        original_filename="test.tiff",
+        stored_path="/data/source_images/test.tiff",
+        status="pending",
+        progress=0,
+        name="Test Image",
+        category_id=5,
+        copyright="CC",
+        note="a note",
+        active=True,
+        image_id=None,
+        uploaded_by=7,
+        file_size=5242880,
+    )
+
+    def _get_side_effect(model, key):
+        if model is SourceImage:
+            return src
+        return None
+
+    mock_session = AsyncMock()
+    mock_session.get.side_effect = _get_side_effect
+    captured_image: dict = {}
+
+    def capture_add(obj):
+        if hasattr(obj, "file_size"):
+            captured_image["image"] = obj
+
+    async def assign_image_id() -> None:
+        captured_image["image"].id = 99
+
+    mock_session.add = MagicMock(side_effect=capture_add)
+    mock_session.flush = AsyncMock(side_effect=assign_image_id)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.processing.async_session", return_value=mock_session):
+        with patch("app.processing.generate_tiles", return_value=("image.dzi", "thumbnail.jpeg", 1024, 768)):
+            with patch("app.processing.asyncio.to_thread", side_effect=lambda fn, *a: fn(*a)):
+                with patch("app.processing.settings") as mock_settings:
+                    mock_settings.tiles_dir = "/data/tiles"
+                    await process_source_image(1)
+
+    lifecycle_log = next(
+        record
+        for record in caplog.records
+        if record.message == "Image upload processed successfully"
+    )
+    assert getattr(lifecycle_log, "event.name") == "image.upload.processed"
+    assert not hasattr(lifecycle_log, "user.id")
+    assert not hasattr(lifecycle_log, "user.role")
+    assert getattr(lifecycle_log, "event.synthetic") is False
+
+
+async def test_process_source_image_uploader_reflected_at_event_time(caplog: pytest.LogCaptureFixture) -> None:
+    """The lifecycle log reads the uploader's current role/synthetic metadata at event time."""
+    caplog.set_level("INFO", logger="app.processing")
+    src = SimpleNamespace(
+        id=1,
+        original_filename="test.tiff",
+        stored_path="/data/source_images/test.tiff",
+        status="pending",
+        progress=0,
+        name="Test Image",
+        category_id=5,
+        copyright="CC",
+        note="a note",
+        active=True,
+        image_id=None,
+        uploaded_by=7,
+        file_size=5242880,
+    )
+
+    uploader = SimpleNamespace(id=7, role="student", metadata_={"synthetic": False})
+
+    def _get_side_effect(model, key):
+        if model is SourceImage:
+            return src
+        return uploader
+
+    mock_session = AsyncMock()
+    mock_session.get.side_effect = _get_side_effect
+    captured_image: dict = {}
+
+    def capture_add(obj):
+        if hasattr(obj, "file_size"):
+            captured_image["image"] = obj
+
+    async def assign_image_id() -> None:
+        captured_image["image"].id = 99
+
+    mock_session.add = MagicMock(side_effect=capture_add)
+    mock_session.flush = AsyncMock(side_effect=assign_image_id)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.processing.async_session", return_value=mock_session):
+        with patch("app.processing.generate_tiles", return_value=("image.dzi", "thumbnail.jpeg", 1024, 768)):
+            with patch("app.processing.asyncio.to_thread", side_effect=lambda fn, *a: fn(*a)):
+                with patch("app.processing.settings") as mock_settings:
+                    mock_settings.tiles_dir = "/data/tiles"
+                    await process_source_image(1)
+
+    lifecycle_log = next(
+        record
+        for record in caplog.records
+        if record.message == "Image upload processed successfully"
+    )
+    assert getattr(lifecycle_log, "user.id") == 7
+    assert getattr(lifecycle_log, "user.role") == "student"
+    assert getattr(lifecycle_log, "event.synthetic") is False
+
+
+async def test_process_source_image_uploader_lookup_exception(caplog: pytest.LogCaptureFixture) -> None:
+    """A failing uploader lookup does not roll back a successfully committed image."""
+    caplog.set_level("INFO", logger="app.processing")
+    src = SimpleNamespace(
+        id=1,
+        original_filename="test.tiff",
+        stored_path="/data/source_images/test.tiff",
+        status="pending",
+        progress=0,
+        name="Test Image",
+        category_id=5,
+        copyright="CC",
+        note="a note",
+        active=True,
+        image_id=None,
+        uploaded_by=7,
+        file_size=5242880,
+    )
+
+    def _get_side_effect(model, key):
+        if model is SourceImage:
+            return src
+        raise RuntimeError("DB unavailable")
+
+    mock_session = AsyncMock()
+    mock_session.get.side_effect = _get_side_effect
+    captured_image: dict = {}
+
+    def capture_add(obj):
+        if hasattr(obj, "file_size"):
+            captured_image["image"] = obj
+
+    async def assign_image_id() -> None:
+        captured_image["image"].id = 99
+
+    mock_session.add = MagicMock(side_effect=capture_add)
+    mock_session.flush = AsyncMock(side_effect=assign_image_id)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.processing.async_session", return_value=mock_session):
+        with patch("app.processing.generate_tiles", return_value=("image.dzi", "thumbnail.jpeg", 1024, 768)):
+            with patch("app.processing.asyncio.to_thread", side_effect=lambda fn, *a: fn(*a)):
+                with patch("app.processing.settings") as mock_settings:
+                    mock_settings.tiles_dir = "/data/tiles"
+                    await process_source_image(1)
+
+    assert src.status == "completed"
+    lifecycle_log = next(
+        record
+        for record in caplog.records
+        if record.message == "Image upload processed successfully"
+    )
+    assert getattr(lifecycle_log, "event.name") == "image.upload.processed"
+    assert not hasattr(lifecycle_log, "user.id")
+    assert getattr(lifecycle_log, "event.synthetic") is False
+    warning = next(
+        record
+        for record in caplog.records
+        if record.message == "Failed to resolve uploader for lifecycle event"
+    )
+    assert warning.source_image_id == src.id
 
 
 async def test_process_source_image_failure() -> None:
@@ -383,6 +576,7 @@ async def test_process_source_image_failure() -> None:
         note=None,
         active=True,
         image_id=None,
+        uploaded_by=None,
     )
 
     call_count = 0
@@ -423,6 +617,7 @@ async def test_process_source_image_enospc_failure() -> None:
         note=None,
         active=True,
         image_id=None,
+        uploaded_by=None,
     )
 
     mock_session = AsyncMock()
@@ -940,6 +1135,7 @@ async def test_process_source_image_with_pyramid_metadata() -> None:
         note=None,
         active=True,
         image_id=None,
+        uploaded_by=None,
         file_size=2147483648,
     )
 

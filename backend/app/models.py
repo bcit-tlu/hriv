@@ -275,6 +275,9 @@ class SourceImage(Base):
         ForeignKey("images.id", ondelete="SET NULL"), nullable=True
     )
     file_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    uploaded_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     # Tile-cache provenance (see app/tile_provenance.py and docs/tile-cache-provenance.md).
     # Recorded when tiles are generated so currentness can be evaluated after a
     # restore, replacement, or pipeline change without inspecting the filesystem.
@@ -291,6 +294,7 @@ class SourceImage(Base):
     )
 
     image: Mapped["Image | None"] = relationship("Image")
+    uploader: Mapped["User | None"] = relationship("User")
 
     @property
     def tile_cache_status(self) -> str:
@@ -368,6 +372,9 @@ class BulkImportJob(Base):
         default=list,
         server_default=text("'[]'::jsonb"),
     )
+    requested_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -376,6 +383,7 @@ class BulkImportJob(Base):
     )
 
     category: Mapped["Category | None"] = relationship("Category")
+    requester: Mapped["User | None"] = relationship("User")
 
 
 class Announcement(Base):

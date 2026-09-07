@@ -65,11 +65,18 @@ def _make_image(
 
 
 def _make_user(
-    role: str = "admin", programs: list | None = None, groups: list | None = None,
+    role: str = "admin",
+    programs: list | None = None,
+    groups: list | None = None,
+    metadata_: dict | None = None,
 ) -> SimpleNamespace:
     return SimpleNamespace(
-        id=1, role=role, email=f"{role}@example.com",
-        programs=programs or [], groups=groups or [],
+        id=1,
+        role=role,
+        email=f"{role}@example.com",
+        programs=programs or [],
+        groups=groups or [],
+        metadata_=metadata_,
     )
 
 
@@ -560,13 +567,16 @@ async def test_bulk_delete_images_success(caplog: pytest.LogCaptureFixture) -> N
     db.commit = AsyncMock()
 
     body = ImageBulkDelete(image_ids=[1, 2])
-    await bulk_delete_images(body, _make_user(), db)
+    await bulk_delete_images(body, _make_user(), db=db)
     assert db.delete.await_count == 2
     deleted_logs = [record for record in caplog.records if record.message == "Image deleted"]
     assert [(getattr(record, "image.id"), getattr(record, "image.name")) for record in deleted_logs] == [
         (1, "first"),
         (2, "second"),
     ]
+    assert all(getattr(record, "user.id") == 1 for record in deleted_logs)
+    assert all(getattr(record, "event.synthetic") is False for record in deleted_logs)
+    assert all(getattr(record, "event.client_synthetic") is False for record in deleted_logs)
 
 
 async def test_bulk_delete_images_not_found() -> None:
@@ -579,7 +589,7 @@ async def test_bulk_delete_images_not_found() -> None:
 
     body = ImageBulkDelete(image_ids=[1, 2, 3])
     with pytest.raises(HTTPException) as exc:
-        await bulk_delete_images(body, _make_user(), db)
+        await bulk_delete_images(body, _make_user(), db=db)
     assert exc.value.status_code == 404
 
 
@@ -649,7 +659,7 @@ async def test_delete_image_success(caplog: pytest.LogCaptureFixture) -> None:
     db.delete = AsyncMock()
     db.commit = AsyncMock()
 
-    await delete_image(1, _make_user(), db)
+    await delete_image(1, _make_user(), db=db)
     db.delete.assert_awaited_once_with(img)
     [deleted_log] = [record for record in caplog.records if record.message == "Image deleted"]
     assert getattr(deleted_log, "event.name") == "image.deleted"
@@ -657,6 +667,37 @@ async def test_delete_image_success(caplog: pytest.LogCaptureFixture) -> None:
     assert getattr(deleted_log, "image.id") == 1
     assert getattr(deleted_log, "image.name") == "deleted-image"
     assert getattr(deleted_log, "user.role") == "admin"
+    assert getattr(deleted_log, "user.id") == 1
+    assert getattr(deleted_log, "event.synthetic") is False
+    assert getattr(deleted_log, "event.client_synthetic") is False
+
+
+async def test_delete_image_success_synthetic_user(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level("INFO", logger="app.routers.images")
+    img = _make_image(name="deleted-image")
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.delete = AsyncMock()
+    db.commit = AsyncMock()
+
+    await delete_image(1, _make_user(metadata_={"synthetic": True}), db=db)
+    [deleted_log] = [record for record in caplog.records if record.message == "Image deleted"]
+    assert getattr(deleted_log, "event.synthetic") is True
+    assert getattr(deleted_log, "event.client_synthetic") is False
+
+
+async def test_delete_image_success_client_synthetic(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level("INFO", logger="app.routers.images")
+    img = _make_image(name="deleted-image")
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.delete = AsyncMock()
+    db.commit = AsyncMock()
+
+    await delete_image(1, _make_user(), x_client_synthetic=True, db=db)
+    [deleted_log] = [record for record in caplog.records if record.message == "Image deleted"]
+    assert getattr(deleted_log, "event.synthetic") is False
+    assert getattr(deleted_log, "event.client_synthetic") is True
 
 
 async def test_delete_image_not_found() -> None:
@@ -664,7 +705,7 @@ async def test_delete_image_not_found() -> None:
     db.get = AsyncMock(return_value=None)
 
     with pytest.raises(HTTPException) as exc:
-        await delete_image(999, _make_user(), db)
+        await delete_image(999, _make_user(), db=db)
     assert exc.value.status_code == 404
 
 
@@ -809,6 +850,8 @@ async def test_replace_image_success(
     mock_enqueue.assert_awaited_once()
     assert result.original_filename == "test.jpg"
     assert result.status == "pending"
+    src = db.add.call_args.args[0]
+    assert src.uploaded_by == 1
 
 
 @patch("os.path.getsize", return_value=1024)

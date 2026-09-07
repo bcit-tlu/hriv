@@ -136,6 +136,32 @@ Reserved names for follow-on observability issues:
 
 New events must not introduce alternate spellings or separator styles.
 
+## Backend lifecycle events
+
+Backend-only structured-log events emitted by routers and processing:
+
+- `image.upload.processed` — a `SourceImage` finished tiling and the `Image`
+  record was saved.
+- `image.deleted` — one or more `Image` records were deleted.
+- `category.deleted` — a `Category` was deleted.
+
+These logs include `user.id`, `user.role`, `event.synthetic`, and (for deletion
+endpoints) `event.client_synthetic`.
+
+### Actor attribution in lifecycle logs
+
+`SourceImage.uploaded_by` and `BulkImportJob.requested_by` are nullable FKs to
+`users`. When `image.upload.processed` is emitted, the worker resolves the
+uploader at processing time and adds `user.id`, `user.role`, and
+`event.synthetic` (from `is_synthetic_user`). If the uploader is missing or has
+been deleted, `user.id` and `user.role` are omitted and `event.synthetic` is
+`false`.
+
+`image.deleted` and `category.deleted` also derive `event.synthetic` from the
+calling user. `image.deleted` accepts the `X-Client-Synthetic` header and stores
+it as `event.client_synthetic`; it never overrides the server-authoritative
+`event.synthetic`.
+
 ## Frontend Event Envelope
 
 The browser payload schema is versioned by `schema_version`. The backend
@@ -154,6 +180,7 @@ enriches accepted events into a structured-log envelope for Loki.
 | Request correlation      | Request `traceparent` / `X-Request-ID` | `trace.parent`, request logs carry `request_id` | Used for Loki and Tempo drill-down                                        |
 | User identity            | not emitted by browser                 | `user.id`, `user.role`                          | Derived from the authenticated backend user                               |
 | Synthetic classification | `synthetic` hint                       | `event.synthetic`                               | Server-authoritative from user metadata                                   |
+| Client synthetic         | Header `X-Client-Synthetic`            | `event.client_synthetic`                        | `true`/`false`; recorded but does **not** override `event.synthetic`      |
 | Route                    | not emitted by browser                 | request logs carry `route`                      | Aggregate on normalized routes only                                       |
 | Service version          | not emitted by browser                 | resource `service.version`                      | Derived from runtime config                                               |
 | Environment              | not emitted by browser                 | resource `deployment.environment.name`          | Derived from runtime config                                               |
@@ -728,17 +755,17 @@ image lifecycle panels. They are distinct from the browser's aggregate
 `image.upload.completed` event, which records source-file submission before
 asynchronous processing finishes.
 
-| Event                    | Emitted when                                                                            | Fields                                                                                                            |
-| ------------------------ | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `image.upload.processed` | A source image has successfully generated tiles and the final `Image` row has committed | `image.id`, `image.name`, `category.id`, `source_image.id`, `source_image.original_filename`, `event.duration_ms` |
-| `image.deleted`          | A single or bulk image deletion has committed                                           | `image.id`, `image.name`, `category.id`, `user.id`, `user.role`                                                   |
+| Event                    | Emitted when                                                                            | Fields                                                                                                                                                       |
+| ------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `image.upload.processed` | A source image has successfully generated tiles and the final `Image` row has committed | `image.id`, `image.name`, `category.id`, `source_image.id`, `source_image.original_filename`, `event.duration_ms`, `user.id`, `user.role`, `event.synthetic` |
+| `image.deleted`          | A single or bulk image deletion has committed                                           | `image.id`, `image.name`, `category.id`, `user.id`, `user.role`, `event.synthetic`, `event.client_synthetic`                                                 |
 
 A bulk deletion emits one `image.deleted` record per image so dashboard tables
 can identify every deleted item. These fields are structured logs for Loki
 only; image identifiers and names must never become Prometheus labels. The
-processed-upload event intentionally has no uploader attribution because
-processing runs asynchronously; a future attribution refactor may add that
-relationship.
+`image.upload.processed` event resolves the uploader when the event is emitted
+so the recorded `user.id`, `user.role`, and `event.synthetic` reflect the user's
+current state at processing completion.
 
 ### Backend enrichment
 

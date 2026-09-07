@@ -122,7 +122,7 @@ async def test_upload_source_image_no_filename() -> None:
 
     with pytest.raises(HTTPException) as exc:
         await upload_source_image(
-            file=file, background_tasks=bg, _user=MagicMock(),
+            file=file, background_tasks=bg, user=MagicMock(),
             db=db,
         )
     assert exc.value.status_code == 400
@@ -139,7 +139,7 @@ async def test_upload_source_image_invalid_type() -> None:
 
     with pytest.raises(HTTPException) as exc:
         await upload_source_image(
-            file=file, background_tasks=bg, _user=MagicMock(),
+            file=file, background_tasks=bg, user=MagicMock(),
             db=db,
         )
     assert exc.value.status_code == 400
@@ -152,23 +152,18 @@ async def test_upload_source_image_success(tmp_path) -> None:
     file.content_type = "image/png"
     file.read = AsyncMock(side_effect=[b"fake-png-data", b""])
 
-    src = SimpleNamespace(
-        id=1, original_filename="test.png", stored_path="/tmp/test.png",
-        status="pending", created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
-    )
-
     db = AsyncMock()
     db.add = MagicMock()
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
 
     bg = MagicMock()
+    user = MagicMock()
 
     with patch("app.routers.upload.settings") as mock_settings:
         mock_settings.source_images_dir = str(tmp_path)
         result = await upload_source_image(
-            file=file, background_tasks=bg, _user=MagicMock(),
+            file=file, background_tasks=bg, user=user,
             name="Test Image", category_id=1, copyright="CC0",
             note="A note", active=True,
             db=db,
@@ -177,6 +172,8 @@ async def test_upload_source_image_success(tmp_path) -> None:
     db.add.assert_called_once()
     db.commit.assert_awaited_once()
     bg.add_task.assert_called_once()
+    src = db.add.call_args.args[0]
+    assert src.uploaded_by == user.id
 
 
 async def test_upload_source_image_normalizes_empty_note(tmp_path) -> None:
@@ -195,7 +192,7 @@ async def test_upload_source_image_normalizes_empty_note(tmp_path) -> None:
         await upload_source_image(
             file=file,
             background_tasks=MagicMock(),
-            _user=MagicMock(),
+            user=MagicMock(),
             note="",
             db=db,
         )
@@ -248,7 +245,7 @@ async def test_upload_source_image_rejection_uses_fresh_session_when_bookkeeping
             await upload_source_image(
                 file=file,
                 background_tasks=background_tasks,
-                _user=MagicMock(),
+                user=MagicMock(),
                 db=db,
             )
 
@@ -285,7 +282,7 @@ async def test_upload_source_image_enospc(tmp_path) -> None:
         mock_settings.source_images_dir = str(tmp_path)
         with pytest.raises(HTTPException) as exc:
             await upload_source_image(
-                file=file, background_tasks=bg, _user=MagicMock(), db=db,
+                file=file, background_tasks=bg, user=MagicMock(), db=db,
             )
 
     assert exc.value.status_code == 507
@@ -313,7 +310,7 @@ async def test_upload_source_image_other_os_error(tmp_path) -> None:
         mock_settings.source_images_dir = str(tmp_path)
         with pytest.raises(OSError) as exc:
             await upload_source_image(
-                file=file, background_tasks=bg, _user=MagicMock(), db=db,
+                file=file, background_tasks=bg, user=MagicMock(), db=db,
             )
 
     assert exc.value.errno == errno.EACCES
@@ -336,7 +333,7 @@ async def test_upload_source_image_normalizes_original_filename(tmp_path) -> Non
         await upload_source_image(
             file=file,
             background_tasks=MagicMock(),
-            _user=MagicMock(),
+            user=MagicMock(),
             db=db,
         )
 
@@ -361,7 +358,7 @@ async def test_upload_source_image_keeps_ordinary_filename(tmp_path) -> None:
         await upload_source_image(
             file=file,
             background_tasks=MagicMock(),
-            _user=MagicMock(),
+            user=MagicMock(),
             db=db,
         )
 
@@ -387,7 +384,7 @@ async def test_upload_source_image_bounds_stored_extension(tmp_path) -> None:
         await upload_source_image(
             file=file,
             background_tasks=MagicMock(),
-            _user=MagicMock(),
+            user=MagicMock(),
             db=db,
         )
 

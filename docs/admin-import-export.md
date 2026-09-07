@@ -84,6 +84,11 @@ the `announcement`.
 Each exported **group** carries `name`, `description`, `created_by_user_id`,
 `member_ids`, and `instructor_ids`.
 
+Each exported **source image** carries `uploaded_by` (the original uploader's
+`users.id`), restored on import. Because `source_images` references both
+`images` (via `image_id`) and `users` (via `uploaded_by`), import inserts
+`source_images` after `users` and `images`.
+
 **Import** (`run_db_import`) clears existing data and re-inserts it. Order
 matters because of foreign keys.
 

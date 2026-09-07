@@ -2,11 +2,13 @@ import hashlib
 import json as _json
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+import logging
 from sqlalchemy import and_, select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import get_current_user, require_role
+from ..auth_events import actor_log_fields
 from ..authz import (
     can_attach_group_to_category,
     can_attach_program_to_category,
@@ -25,6 +27,8 @@ from ..browse_state import bump_browse_revision, get_browse_revision
 from ..tile_order import bump_scopes, scope_key_for
 from ..visibility import compute_excluded_category_ids, get_student_excluded_category_ids, is_category_visible_to_student
 
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
@@ -554,12 +558,25 @@ async def update_category(
 @router.delete("/{category_id}", status_code=204)
 async def delete_category(
     category_id: int,
-    _user: Annotated[User, Depends(require_role("admin", "instructor"))],
+    user: Annotated[User, Depends(require_role("admin", "instructor"))],
+    x_client_synthetic: Annotated[bool, Header(alias="X-Client-Synthetic")] = False,
     db: AsyncSession = Depends(get_db),
 ):
     cat = await db.get(Category, category_id)
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found")
+    category_id_value = cat.id
+    category_label = cat.label
     await db.delete(cat)
     await bump_browse_revision(db)
     await db.commit()
+    logger.info(
+        "Category deleted",
+        extra={
+            "event.name": "category.deleted",
+            "event.outcome": "success",
+            "category.id": category_id_value,
+            "category.label": category_label,
+            **actor_log_fields(user, client_synthetic=x_client_synthetic),
+        },
+    )
