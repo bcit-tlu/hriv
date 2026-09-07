@@ -7,12 +7,13 @@ import os
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Header, HTTPException, Request, Response, UploadFile
 from opentelemetry import trace
 from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import get_current_user, require_role
+from ..auth_events import actor_log_fields
 from ..browse_state import bump_browse_revision
 from ..database import async_session, get_db, settings
 from ..filenames import sanitize_upload_filename, storage_extension
@@ -462,6 +463,7 @@ async def replace_image(
                 note=img.note,
                 active=img.active,
                 file_size=file_size,
+                uploaded_by=_user.id,
                 image_id=image_id,
             )
             db.add(src)
@@ -618,6 +620,7 @@ async def replace_image(
 async def bulk_delete_images(
     body: ImageBulkDelete,
     user: Annotated[User, Depends(require_role("admin", "instructor"))],
+    x_client_synthetic: Annotated[bool, Header(alias="X-Client-Synthetic")] = False,
     db: AsyncSession = Depends(get_db),
 ):
     """Bulk-delete multiple images."""
@@ -642,11 +645,10 @@ async def bulk_delete_images(
                     extra={
                         "event.name": "image.deleted",
                         "event.outcome": "success",
-                        "user.id": user.id,
-                        "user.role": user.role,
                         "image.id": image_id,
                         "image.name": image_name,
                         "category.id": category_id,
+                        **actor_log_fields(user, client_synthetic=x_client_synthetic),
                     },
                 )
         except Exception as exc:
@@ -658,6 +660,7 @@ async def bulk_delete_images(
 async def delete_image(
     image_id: int,
     user: Annotated[User, Depends(require_role("admin", "instructor"))],
+    x_client_synthetic: Annotated[bool, Header(alias="X-Client-Synthetic")] = False,
     db: AsyncSession = Depends(get_db),
 ):
     with tracer.start_as_current_span("image.delete") as span:
@@ -677,11 +680,10 @@ async def delete_image(
                 extra={
                     "event.name": "image.deleted",
                     "event.outcome": "success",
-                    "user.id": user.id,
-                    "user.role": user.role,
                     "image.id": image_id,
                     "image.name": image_name,
                     "category.id": category_id,
+                    **actor_log_fields(user, client_synthetic=x_client_synthetic),
                 },
             )
         except Exception as exc:

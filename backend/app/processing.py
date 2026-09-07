@@ -30,7 +30,8 @@ from sqlalchemy.sql import func
 
 from .browse_state import bump_browse_revision
 from .database import async_session, settings
-from .models import Image, SourceImage
+from .auth_events import actor_log_fields
+from .models import Image, SourceImage, User
 from .queue_metrics import collect_queue_state
 from .task_constants import (
     BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
@@ -767,10 +768,24 @@ async def process_source_image(source_image_id: int) -> None:
                     "duration_ms": duration_ms,
                 },
             )
-            # This lifecycle event is emitted only after the Image row and its
-            # tiles have been committed, unlike the browser event that records
-            # source-file submission. It makes final image names available for
-            # both single and bulk uploads without adding them to metric labels.
+            # Resolve the uploader at event time so role/synthetic metadata
+            # reflect current user state and a concurrently deleted uploader is
+            # reported as None. This lifecycle event is emitted only after the
+            # Image row and its tiles have been committed. A lookup failure must
+            # not roll back a successfully committed image, so it is isolated.
+            try:
+                uploader = (
+                    await db.get(User, src.uploaded_by)
+                    if src.uploaded_by is not None
+                    else None
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to resolve uploader for lifecycle event",
+                    extra={"source_image_id": src.id},
+                    exc_info=True,
+                )
+                uploader = None
             logger.info(
                 "Image upload processed successfully",
                 extra={
@@ -782,6 +797,7 @@ async def process_source_image(source_image_id: int) -> None:
                     "category.id": img.category_id,
                     "source_image.id": src.id,
                     "source_image.original_filename": src.original_filename,
+                    **actor_log_fields(uploader),
                 },
             )
 

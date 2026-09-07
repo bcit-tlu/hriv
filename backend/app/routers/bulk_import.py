@@ -1119,6 +1119,7 @@ async def _process_bulk_import_impl(
                     copyright=copyright or "Public Domain",
                     note=note,
                     active=active,
+                    uploaded_by=job.requested_by,
                 )
                 db.add(src)
                 await db.commit()
@@ -1691,6 +1692,7 @@ async def bulk_import_images(
                 completed_count=0,
                 failed_count=0,
                 errors=[],
+                requested_by=_user.id,
                 # Persisted before the coordinator starts so that if the API
                 # process is restarted mid-import, startup reconciliation can
                 # identify and remove staged files that were never picked up
