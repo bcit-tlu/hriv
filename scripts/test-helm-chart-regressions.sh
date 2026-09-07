@@ -98,12 +98,30 @@ assert_contains "$backup_deployment" "ephemeral-storage:" \
   "backup deployment should set explicit ephemeral-storage requests and limits so an archive staging fallback to pod-local /tmp fails as a limit error"
 assert_not_contains "$backup_deployment" "BACKUP_STAGING_DIR" \
   "backup deployment should omit BACKUP_STAGING_DIR so the service keeps its <backups volume>/.staging default"
+assert_contains "$backup_deployment" 'value: "0 10 * * *"' \
+  "backup deployment should schedule heavy work at the non-peak 10:00 UTC window"
+
+backup_rwx_deployment="$(extract_yaml_doc \
+  "$(helm template test charts/backup \
+    --set persistence.sourceImages.existingClaim=hriv-backend-source-images \
+    --set colocateWithSourcePod=false)" \
+  "Deployment" "test-hriv-backup")"
+assert_not_contains "$backup_rwx_deployment" "podAffinity:" \
+  "backup deployment should allow heavy RWX reads to schedule away from backend pods"
 
 backup_staging_deployment="$(extract_yaml_doc \
   "$(helm template test charts/backup --set env.BACKUP_STAGING_DIR=/mnt/staging)" \
   "Deployment" "test-hriv-backup")"
 assert_contains "$backup_staging_deployment" 'value: "/mnt/staging"' \
   "backup deployment should render an explicit env.BACKUP_STAGING_DIR override"
+
+backup_restore_target_deployment="$(extract_yaml_doc \
+  "$(helm template test charts/backup --set restoreTarget.existingClaim=hriv-restore-source-images)" \
+  "Deployment" "test-hriv-backup")"
+assert_contains "$backup_restore_target_deployment" "claimName: hriv-restore-source-images" \
+  "backup deployment should mount an explicitly selected restore target claim"
+assert_contains "$backup_restore_target_deployment" "mountPath: /restore-target" \
+  "backup deployment should mount the restore target at its configured path"
 
 backend_zone_aa_manifest="$(helm template test charts/backend \
   --set scheduling.zoneAntiAffinity.enabled=true \

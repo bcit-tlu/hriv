@@ -10,15 +10,19 @@ system.
 > Longhorn snapshots for fast restore, but never rely on `.tar.gz` tile-tree
 > backups as the primary strategy. If the tile volume is lost, rebuild from
 > source images with the `rebuild-tiles` admin task.
+>
+> The normative consistency boundary, mismatch outcomes, recovery-set metadata,
+> scheduling constraints, and component-selective restore rules are defined in
+> [the HRIV recovery-set contract](recovery-set-contract.md).
 
 ## Data classification
 
-| Data            | Role          | Authoritative? | Primary protection                        | Secondary protection            |
-| --------------- | ------------- | -------------- | ----------------------------------------- | ------------------------------- |
-| PostgreSQL DB   | Metadata      | Yes            | HRIV backup service (`db.sql`) + Longhorn | Azure Blob (off-site archive)   |
-| Source images   | User uploads  | Yes            | HRIV backup service + Longhorn snapshot   | Azure Blob (off-site archive)   |
-| Generated tiles | Derived       | No             | Longhorn snapshot/backup (optional)       | `rebuild-tiles` admin task      |
-| Backup archives | Recovery data | Yes            | Azure Blob Storage replication            | Longhorn snapshot of backup PVC |
+| Data            | Role          | Authoritative? | Primary protection                  | Secondary protection         |
+| --------------- | ------------- | -------------- | ----------------------------------- | ---------------------------- |
+| PostgreSQL DB   | Metadata      | Yes            | CNPG base backups + continuous WAL  | Azure Blob recovery catalog  |
+| Source images   | User uploads  | Yes            | HRIV recovery archive               | Azure Blob off-site archive  |
+| Generated tiles | Derived       | No             | Longhorn snapshot/backup (optional) | `rebuild-tiles` admin task   |
+| Backup archives | Recovery data | Yes            | Azure Blob Storage replication      | Versioning and soft deletion |
 
 ## Volume layout (Kubernetes / Longhorn)
 
@@ -38,12 +42,12 @@ after the split. See [deploy/README.md](../deploy/README.md) for the cutover pro
 
 ### Recommended Longhorn policies
 
-| Volume                | Snapshot schedule              | Backup target        | Retention                              |
-| --------------------- | ------------------------------ | -------------------- | -------------------------------------- |
-| Database (PostgreSQL) | Daily, before HRIV backup cron | S3/NFS backup target | 30 days                                |
-| Source images PVC     | Daily                          | S3/NFS backup target | 30 days                                |
-| Tiles PVC             | Weekly (optional)              | S3/NFS (optional)    | 7 days (short — tiles are rebuildable) |
-| Backup PVC            | Weekly                         | S3/NFS backup target | 30 days                                |
+| Volume                | Snapshot schedule                    | Backup target     | Retention                              |
+| --------------------- | ------------------------------------ | ----------------- | -------------------------------------- |
+| Database (PostgreSQL) | CNPG daily base backup + WAL archive | Azure Blob        | 30-day recovery window                 |
+| Source images PVC     | Daily HRIV recovery archive          | Azure Blob        | 30 days                                |
+| Tiles PVC             | Weekly (optional)                    | S3/NFS (optional) | 7 days (short — tiles are rebuildable) |
+| Backup PVC            | Bounded state/scratch only           | Longhorn          | Operational, not authoritative         |
 
 > **Why a short retention for tiles?** Tiles can always be regenerated from
 > source images. Keeping a recent Longhorn snapshot avoids a full rebuild
@@ -56,11 +60,12 @@ The Python backup service (`backup/backup.py`) is **not** the primary
 protection for the large generated tile tree in production. Its supported
 production role is:
 
-- **Database + source images only** — archives `db.sql` and `/data/source_images`.
-- **Tiles excluded** — generated DZI tiles under `/data/tiles` are not included
-  in production-mode backups.
-- **Why** — walking and checksumming millions of tile files is slow, produces
-  enormous archives, and competes with Longhorn's efficient block-level snapshots.
+- **Source images only** — streams finalized `/data/source_images` files to Azure.
+- **CNPG recovery binding** — records the compatible CNPG target timestamp and
+  does not invoke `pg_dump` in production.
+- **Tiles excluded** — generated DZI tiles under `/data/tiles` are not included.
+- **Why** — CNPG provides PostgreSQL PITR, while walking and archiving millions
+  of generated tile files would waste capacity and compete with the application.
 
 This same source-only approach is what the Admin UI's Filesystem Export uses.
 Compression is parallelized with `pigz` when it is present in the container
@@ -115,19 +120,17 @@ timestamp; ambiguous prefixes are rejected.
 
 ### Archive staging and ephemeral storage
 
-Archives are built in `BACKUP_STAGING_DIR` (default `/backups/.staging`, on the
-backups PVC) and published with a same-filesystem rename, so a backup does not
-consume pod-local ephemeral storage proportional to the archive and does not
-need a second full copy to publish locally. Restores stage there too: the blob
-download and the extracted snapshot land in the same directory rather than in
-pod-local `/tmp`. Size the backups PVC for `retention count × archive size`
-plus one in-flight archive plus one extracted snapshot (uncompressed) for
-restores. If the staging directory is unusable the run degrades to pod-local
-`/tmp` and logs a warning;
-`charts/backup/values.yaml` sets explicit `ephemeral-storage` requests and
-limits so that fallback fails as a clear limit error rather than as node
-disk-pressure eviction. Staging directories left behind by an interrupted
-backup or restore are swept after 24 hours.
+Azure production archives stream through uncommitted block-blob blocks and are
+committed only after every inventoried source file remains stable and the tar
+stream completes. The complete archive is never staged on `/backups` or
+pod-local storage. The manifest sidecar and success marker are published only
+after archive commit; candidate blobs remain unselectable until publication.
+
+Filesystem restores stream the archive into a unique staging directory on the
+new target data PVC, validate checksums before promotion, and do not consume the
+backup PVC in proportion to archive size. `BACKUP_STAGING_DIR` remains for
+bounded state, development logical dumps, and local-only legacy archives.
+Stale bounded workspaces are swept after 24 hours.
 
 ## Restore order and decision points
 
@@ -135,31 +138,29 @@ After a failure or data loss, follow this order:
 
 ### 1. Restore the database
 
-```bash
-# Option A: HRIV backup archive
-kubectl exec -n hriv deploy/hriv-backup -- python backup.py restore [SNAPSHOT_NAME]
+Restore `pg-core` through CNPG using the recovery-set manifest's
+`database_recovery.cluster` and `database_recovery.target_time`. Use explicit
+source-specific database and owner values in the recovery manifest, then verify
+the recovered database/role inventory before application cutover.
 
-# Option B: Longhorn volume restore (if the PVC was lost)
-#   1. Create a Longhorn volume from the latest database backup snapshot
-#   2. Update the PostgreSQL PVC to point at the new volume
-#   3. Restart the PostgreSQL pod
-```
-
-**Decision:** Use the HRIV backup archive when you need point-in-time recovery
-from a specific snapshot. Use Longhorn restore when the entire PVC was lost
-and you need the most recent block-level state.
+Production source-image archives do not contain `db.sql`. Never run a legacy
+combined logical restore after a newer CNPG PITR recovery.
 
 ### 2. Restore source images
 
-```bash
-# The HRIV backup restore command (step 1) already restores source images
-# from the same archive. If you used Longhorn for the DB, also restore
-# the source-images PVC from Longhorn:
+Provision a new target PVC sized for the manifest's declared source bytes, mount
+it in the backup workload, and stream the matching archive in filesystem-only
+mode:
 
-#   1. Create a Longhorn volume from the latest source-images backup snapshot
-#   2. Update the source-images PVC to point at the new volume
-#   3. Restart the backend/worker/backup pods
+```bash
+kubectl exec -n hriv deploy/hriv-backup -- \
+  python backup.py restore-filesystem [SNAPSHOT_NAME] \
+  --data-dir /restore-target
 ```
+
+Validate all checksums and DB/file mismatch reports before changing the HRIV
+source-image claim. Existing target data is quarantined rather than deleted or
+used to synthesize database rows.
 
 ### 3. Restore or rebuild tiles
 
@@ -239,25 +240,28 @@ Use this when the entire cluster is lost or a fresh redeployment is needed.
 1. **Provision the cluster** — Flux reconciles the base manifests and
    stands up PostgreSQL (CNPG), backend, frontend, worker, and backup pods.
 
-2. **Restore the database** from the most recent HRIV backup archive:
+2. **Restore the database** through CNPG to the recovery-set target timestamp,
+   using a fresh recovery cluster and explicit source database/owner settings.
+
+3. **Restore source images** to a fresh PVC without applying SQL:
 
    ```bash
-   kubectl exec -n hriv deploy/hriv-backup -- python backup.py restore
+   kubectl exec -n hriv deploy/hriv-backup -- \
+     python backup.py restore-filesystem [SNAPSHOT_NAME]
    ```
 
-   This also restores source images to `/data/source_images` and enables
-   maintenance mode during the restore. In production mode, the tile tree
-   is left untouched (preserved if present, absent if the volume is new).
+   Verify the recovery manifest, checksums, source count, and DB/file mismatch
+   report before cutover. The production archive leaves generated tiles absent.
 
-3. **Disable maintenance mode** (the restore command does this automatically
-   on success, but verify):
+4. **Disable maintenance mode** after target validation and cutover (the restore
+   command clears its flag automatically on exit, but verify):
 
    ```bash
    curl -X PUT "https://<host>/api/admin/maintenance?enabled=false" \
      -H "Authorization: Bearer $TOKEN"
    ```
 
-4. **Rebuild tiles** (if the tile volume is new or was lost):
+5. **Rebuild tiles** (if the tile volume is new or was lost):
 
    ```bash
    curl -X POST "https://<host>/api/admin/tasks/rebuild-tiles" \
@@ -270,7 +274,7 @@ Use this when the entire cluster is lost or a fresh redeployment is needed.
    via the API. Large image sets may take hours; the task is safe to cancel
    and rerun.
 
-5. **Verify** — confirm health, viewer access, and tile-cache status as
+6. **Verify** — confirm health, viewer access, and tile-cache status as
    described above.
 
 If you only need to restore a single file from a snapshot, use the Admin UI’s
@@ -309,14 +313,15 @@ source-image restore leaves tiles stale.
 
 ## RTO / RPO expectations
 
-| Metric                           | Target     | Notes                                                   |
-| -------------------------------- | ---------- | ------------------------------------------------------- |
-| RPO                              | ≤ 24 hours | Daily backup cron + Longhorn snapshots                  |
-| RTO                              | 1–4 hours  | DB + source-image restore; tile rebuild may extend this |
-| RTO (with Longhorn tile restore) | 30–60 min  | When a recent tile snapshot is available                |
+| Metric                           | Target      | Notes                                                   |
+| -------------------------------- | ----------- | ------------------------------------------------------- |
+| Database RPO                     | ≤ 5 minutes | CNPG WAL archiving while healthy                        |
+| Source-image RPO                 | ≤ 24 hours  | Daily published source-image recovery set               |
+| RTO                              | Measured    | CNPG + source-image restore; tile rebuild may extend it |
+| RTO (with Longhorn tile restore) | Measured    | Optional optimization when a compatible snapshot exists |
 
-Actual numbers should be measured during the pre-production DR drill
-([#736](https://github.com/bcit-tlu/hriv/issues/736)) and updated here.
+Actual values must be measured by the production-shaped DR drill tracked in
+[#1230](https://github.com/bcit-tlu/hriv/issues/1230) and recorded here.
 
 ## Related documentation
 

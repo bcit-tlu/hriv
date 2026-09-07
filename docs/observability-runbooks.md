@@ -565,8 +565,10 @@ return to normal; queue and telemetry behavior stabilize.
 
 ## Backup Failed Or Overdue
 
-**Alert meaning:** Database or filesystem backups are stale, failing, or their
-telemetry is missing.
+**Alert meaning:** The HRIV recovery-set database binding or source-image archive
+is stale, failing, or its telemetry is missing. In production, the database
+signal means the source inventory was bound to a CNPG recovery timestamp; CNPG
+base-backup and WAL alerts remain authoritative for database recoverability.
 
 **User impact:** Recovery posture is degraded and recovery point objectives may
 no longer hold.
@@ -591,11 +593,13 @@ kubectl -n hriv exec deploy/hriv-backup -- python backup.py status
 kubectl -n hriv exec deploy/hriv-backup -- python backup.py list
 ```
 
-**Likely causes:** storage credential failure, backup pod crash, archive write
-failure, or state marker drift.
+**Likely causes:** storage credential failure, backup pod crash, source-image
+inventory query failure, file mutation/disappearance, block upload failure, or
+state/publication marker drift.
 
-**Mitigation:** Restore storage access, rerun a backup, and confirm the state
-marker updates correctly. Use
+**Mitigation:** Restore storage access or source consistency, rerun the shared
+scheduled/on-demand backup path, and confirm the candidate archive, manifest,
+state, and success marker reach published state. Use
 [`backup-restore-runbook.md`](backup-restore-runbook.md) for hands-on restore
 steps.
 

@@ -31,6 +31,8 @@ class _BackupTestCase(unittest.TestCase):
     _ENV_KEYS = (
         "BACKUP_MODE",
         "BACKUP_CRON_SCHEDULE",
+        "BACKUP_TIMEZONE",
+        "BACKUP_MUTATION_DRAIN_SECONDS",
         "BACKUP_RETENTION_COUNT",
         "AZURE_STORAGE_CONNECTION_STRING",
         "AZURE_STORAGE_CONTAINER",
@@ -38,6 +40,7 @@ class _BackupTestCase(unittest.TestCase):
         "BACKUP_STALE_HOURS",
         "BACKUP_STAGING_DIR",
         "DATABASE_URL",
+        "CNPG_CLUSTER_NAME",
         "DATA_DIR",
         "RESTORE_TEST_DATABASE_URL",
         "RESTORE_TEST_DATA_DIR",
@@ -58,6 +61,7 @@ class _BackupTestCase(unittest.TestCase):
     def _reload(self, env):
         for key in self._ENV_KEYS:
             os.environ.pop(key, None)
+        os.environ["BACKUP_MUTATION_DRAIN_SECONDS"] = "0"
         for key, value in env.items():
             os.environ[key] = value
         importlib.reload(backup)
@@ -76,9 +80,48 @@ class BackupModeTestCase(_BackupTestCase):
         self.assertEqual(backup.BACKUP_MODE, "production")
         self.assertTrue(backup._exclude_tiles())
 
+    def test_production_cnpg_cluster_defaults_and_override(self):
+        self._reload({"BACKUP_MODE": "production"})
+        self.assertEqual(backup.CNPG_CLUSTER_NAME, "pg-core")
+        self._reload({"BACKUP_MODE": "production", "CNPG_CLUSTER_NAME": "hriv-db"})
+        self.assertEqual(backup.CNPG_CLUSTER_NAME, "hriv-db")
+
     def test_invalid_mode_exits(self):
         with self.assertRaises(SystemExit):
             self._reload({"BACKUP_MODE": "invalid"})
+
+    def test_default_schedule_uses_unambiguous_utc_timezone(self):
+        self._reload({})
+        self.assertEqual(backup.BACKUP_CRON_SCHEDULE, "0 10 * * *")
+        self.assertEqual(backup.BACKUP_TIMEZONE, "UTC")
+        self.assertEqual(backup._BACKUP_TZ.key, "UTC")
+
+    def test_invalid_timezone_exits(self):
+        with self.assertRaises(SystemExit):
+            self._reload({"BACKUP_TIMEZONE": "not/a-timezone"})
+
+    def test_negative_mutation_drain_exits(self):
+        with self.assertRaises(SystemExit):
+            self._reload({"BACKUP_MUTATION_DRAIN_SECONDS": "-1"})
+
+
+class MaintenanceScopeTestCase(_BackupTestCase):
+    def setUp(self):
+        super().setUp()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self.data_dir = Path(self._tmpdir.name) / "data"
+        self._reload({"DATA_DIR": str(self.data_dir)})
+
+    def test_scope_removes_only_its_own_flag(self):
+        with backup._maintenance_scope():
+            self.assertTrue(backup._maintenance_flag_path().exists())
+        self.assertFalse(backup._maintenance_flag_path().exists())
+
+        backup._maintenance_flag_path().touch()
+        with backup._maintenance_scope():
+            self.assertTrue(backup._maintenance_flag_path().exists())
+        self.assertTrue(backup._maintenance_flag_path().exists())
 
 
 class LoggingSetupTestCase(_BackupTestCase):
@@ -109,7 +152,8 @@ class LoggingSetupTestCase(_BackupTestCase):
             console_handlers = [
                 handler
                 for handler in root.handlers
-                if isinstance(handler, logging.StreamHandler) and handler is not otel_handler
+                if isinstance(handler, logging.StreamHandler)
+                and handler is not otel_handler
             ]
             self.assertEqual(len(console_handlers), 1)
             self.assertEqual(console_handlers[0].formatter._fmt, backup.LOG_FORMAT)
@@ -153,7 +197,9 @@ class RestoreTestCase(_BackupTestCase):
         self.data_dir = self.tmp / "data"
         self.data_dir.mkdir()
         (self.data_dir / "source_images").mkdir()
-        (self.data_dir / "source_images" / "existing.jpg").write_bytes(b"existing source")
+        (self.data_dir / "source_images" / "existing.jpg").write_bytes(
+            b"existing source"
+        )
         (self.data_dir / "tiles").mkdir()
         (self.data_dir / "tiles" / "existing.dzi").write_bytes(b"existing tiles")
 
@@ -181,12 +227,16 @@ class RestoreTestCase(_BackupTestCase):
         archive_data = self.tmp / "archive_data"
         archive_data.mkdir()
         (archive_data / "source_images").mkdir()
-        (archive_data / "source_images" / "restored.jpg").write_bytes(b"restored source")
+        (archive_data / "source_images" / "restored.jpg").write_bytes(
+            b"restored source"
+        )
         (archive_data / "tiles").mkdir()
         (archive_data / "tiles" / "restored.dzi").write_bytes(b"restored tiles")
         archive = self._build_archive(archive_data, backup_mode="development")
 
-        with patch.object(backup, "_local_backup_dir", return_value=self.tmp / "backups"):
+        with patch.object(
+            backup, "_local_backup_dir", return_value=self.tmp / "backups"
+        ):
             self.assertTrue(backup._restore_from_archive(archive))
         self.assertEqual(
             (self.data_dir / "source_images" / "restored.jpg").read_bytes(),
@@ -197,7 +247,9 @@ class RestoreTestCase(_BackupTestCase):
             b"restored tiles",
         )
         self.assertFalse((self.data_dir / "source_images" / "existing.jpg").exists())
-        restore_state = json.loads((self.tmp / "backups" / "RESTORE_STATE.json").read_text())
+        restore_state = json.loads(
+            (self.tmp / "backups" / "RESTORE_STATE.json").read_text()
+        )
         self.assertTrue(restore_state["operator"]["database"]["success"])
         self.assertTrue(restore_state["operator"]["filesystem"]["success"])
 
@@ -207,12 +259,16 @@ class RestoreTestCase(_BackupTestCase):
         archive_data = self.tmp / "archive_data"
         archive_data.mkdir()
         (archive_data / "source_images").mkdir()
-        (archive_data / "source_images" / "restored.jpg").write_bytes(b"restored source")
+        (archive_data / "source_images" / "restored.jpg").write_bytes(
+            b"restored source"
+        )
         (archive_data / "tiles").mkdir()
         (archive_data / "tiles" / "restored.dzi").write_bytes(b"restored tiles")
         archive = self._build_archive(archive_data, backup_mode="development")
 
-        with patch.object(backup, "_local_backup_dir", return_value=self.tmp / "backups"):
+        with patch.object(
+            backup, "_local_backup_dir", return_value=self.tmp / "backups"
+        ):
             self.assertTrue(backup._restore_from_archive(archive))
         self.assertEqual(
             (self.data_dir / "source_images" / "restored.jpg").read_bytes(),
@@ -231,11 +287,15 @@ class RestoreTestCase(_BackupTestCase):
         archive_data = self.tmp / "archive_data"
         archive_data.mkdir()
         (archive_data / "source_images").mkdir()
-        (archive_data / "source_images" / "restored.jpg").write_bytes(b"restored source")
+        (archive_data / "source_images" / "restored.jpg").write_bytes(
+            b"restored source"
+        )
         archive = self._build_archive(archive_data, backup_mode="development")
 
         with self.assertLogs("hriv-backup", level="WARNING") as cm:
-            with patch.object(backup, "_local_backup_dir", return_value=self.tmp / "backups"):
+            with patch.object(
+                backup, "_local_backup_dir", return_value=self.tmp / "backups"
+            ):
                 self.assertTrue(backup._restore_from_archive(archive))
         self.assertTrue(
             any("mismatch" in msg.lower() for msg in cm.output),
@@ -243,18 +303,27 @@ class RestoreTestCase(_BackupTestCase):
         )
 
     @patch("backup.subprocess.run", return_value=MagicMock(returncode=0))
-    def test_restore_returns_false_when_archive_has_no_restorable_components(self, _mock_run):
+    def test_restore_returns_false_when_archive_has_no_restorable_components(
+        self, _mock_run
+    ):
         self._reload({"BACKUP_MODE": "development", "DATA_DIR": str(self.data_dir)})
         snapshot_dir = self.tmp / "empty_snapshot"
         snapshot_dir.mkdir()
         (snapshot_dir / "manifest.json").write_text(
-            json.dumps({"snapshot_name": "empty_snapshot", "created_at": "2026-01-01T00:00:00+00:00"})
+            json.dumps(
+                {
+                    "snapshot_name": "empty_snapshot",
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                }
+            )
         )
         archive = self.tmp / "empty-backup.tar.gz"
         with tarfile.open(archive, "w:gz") as tar:
             tar.add(snapshot_dir, arcname="empty_snapshot")
 
-        with patch.object(backup, "_local_backup_dir", return_value=self.tmp / "backups"):
+        with patch.object(
+            backup, "_local_backup_dir", return_value=self.tmp / "backups"
+        ):
             self.assertFalse(backup._restore_from_archive(archive))
 
     @patch("backup.subprocess.run", return_value=MagicMock(returncode=0))
@@ -263,10 +332,14 @@ class RestoreTestCase(_BackupTestCase):
         archive_data = self.tmp / "archive_state"
         archive_data.mkdir()
         (archive_data / "source_images").mkdir()
-        (archive_data / "source_images" / "restored.jpg").write_bytes(b"restored source")
+        (archive_data / "source_images" / "restored.jpg").write_bytes(
+            b"restored source"
+        )
         archive = self._build_archive(archive_data, backup_mode="development")
 
-        with patch.object(backup, "_local_backup_dir", return_value=self.tmp / "backups"):
+        with patch.object(
+            backup, "_local_backup_dir", return_value=self.tmp / "backups"
+        ):
             self.assertTrue(backup._restore_from_archive(archive))
 
         state = json.loads((self.tmp / "backups" / "RESTORE_STATE.json").read_text())
@@ -290,7 +363,9 @@ class RestoreTestCase(_BackupTestCase):
         archive_data = self.tmp / "archive_test"
         archive_data.mkdir()
         (archive_data / "source_images").mkdir()
-        (archive_data / "source_images" / "restored.jpg").write_bytes(b"restored source")
+        (archive_data / "source_images" / "restored.jpg").write_bytes(
+            b"restored source"
+        )
         archive = self._build_archive(archive_data, backup_mode="development")
         local_backups = self.tmp / "backups"
         local_backups.mkdir()
@@ -304,6 +379,246 @@ class RestoreTestCase(_BackupTestCase):
         state = json.loads((local_backups / "RESTORE_STATE.json").read_text())
         self.assertTrue(state["test"]["database"]["success"])
         self.assertTrue(state["test"]["filesystem"]["success"])
+
+    def test_run_restore_preserves_preexisting_maintenance(self):
+        self._reload({"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)})
+        backup._maintenance_flag_path().touch()
+        with patch.object(backup, "_run_restore_inner", return_value=True) as restore:
+            self.assertTrue(backup.run_restore("snapshot", components="filesystem"))
+        self.assertTrue(backup._maintenance_flag_path().exists())
+        restore.assert_called_once_with(
+            "snapshot",
+            purpose="operator",
+            database_url=None,
+            data_dir=None,
+            components="filesystem",
+        )
+
+    def test_cli_restore_filesystem_selects_only_filesystem(self):
+        with (
+            patch.object(
+                sys,
+                "argv",
+                [
+                    "backup.py",
+                    "restore-filesystem",
+                    "snapshot",
+                    "--data-dir",
+                    "/restore-target",
+                ],
+            ),
+            patch.object(backup, "run_restore", return_value=True) as restore,
+            self.assertRaises(SystemExit) as exited,
+        ):
+            backup.main()
+        self.assertEqual(exited.exception.code, 0)
+        restore.assert_called_once_with(
+            "snapshot",
+            components="filesystem",
+            data_dir="/restore-target",
+        )
+
+    def test_filesystem_only_restore_never_runs_psql(self):
+        self._reload({"BACKUP_MODE": "development", "DATA_DIR": str(self.data_dir)})
+        archive_data = self.tmp / "filesystem_only"
+        (archive_data / "source_images").mkdir(parents=True)
+        (archive_data / "source_images" / "restored.jpg").write_bytes(b"restored")
+        archive = self._build_archive(archive_data)
+        with (
+            patch.object(
+                backup, "_local_backup_dir", return_value=self.tmp / "backups"
+            ),
+            patch.object(backup.subprocess, "run") as run,
+        ):
+            self.assertTrue(
+                backup._restore_from_archive(archive, components="filesystem")
+            )
+        run.assert_not_called()
+
+    def test_database_only_restore_does_not_mutate_filesystem(self):
+        self._reload({"BACKUP_MODE": "development", "DATA_DIR": str(self.data_dir)})
+        archive_data = self.tmp / "database_only"
+        (archive_data / "source_images").mkdir(parents=True)
+        (archive_data / "source_images" / "restored.jpg").write_bytes(b"restored")
+        archive = self._build_archive(archive_data)
+        with (
+            patch.object(
+                backup, "_local_backup_dir", return_value=self.tmp / "backups"
+            ),
+            patch.object(
+                backup.subprocess, "run", return_value=MagicMock(returncode=0)
+            ),
+        ):
+            self.assertTrue(
+                backup._restore_from_archive(archive, components="database")
+            )
+        self.assertTrue((self.data_dir / "source_images" / "existing.jpg").exists())
+        self.assertFalse((self.data_dir / "source_images" / "restored.jpg").exists())
+
+    def test_restore_rejects_unsafe_link_before_side_effects(self):
+        self._reload({"DATA_DIR": str(self.data_dir)})
+        archive = self.tmp / "unsafe.tar.gz"
+        with tarfile.open(archive, "w:gz") as tar:
+            link = tarfile.TarInfo("snapshot/data/source_images/link")
+            link.type = tarfile.SYMTYPE
+            link.linkname = "/etc/passwd"
+            tar.addfile(link)
+        with patch.object(backup.subprocess, "run") as run:
+            with self.assertRaises(ValueError):
+                backup._restore_from_archive(archive, components="filesystem")
+        run.assert_not_called()
+
+    def test_restore_rejects_manifest_version_and_checksum(self):
+        self._reload({"DATA_DIR": str(self.data_dir)})
+        snapshot = self.tmp / "versioned"
+        (snapshot / "data" / "source_images").mkdir(parents=True)
+        image = snapshot / "data" / "source_images" / "image.jpg"
+        image.write_bytes(b"actual")
+        for version, digest in ((99, backup._sha256(image)), (2, "0" * 64)):
+            (snapshot / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": version,
+                        "files": {
+                            "data/source_images/image.jpg": {
+                                "size": 6,
+                                "sha256": digest,
+                            }
+                        },
+                    }
+                )
+            )
+            archive = self.tmp / f"invalid-{version}-{digest[0]}.tar.gz"
+            with tarfile.open(archive, "w:gz") as tar:
+                tar.add(snapshot, arcname="snapshot")
+            with patch.object(
+                backup, "_local_backup_dir", return_value=self.tmp / "backups"
+            ):
+                self.assertFalse(
+                    backup._restore_from_archive(archive, components="filesystem")
+                )
+        self.assertTrue((self.data_dir / "source_images" / "existing.jpg").exists())
+
+    def test_azure_chunk_reader_treats_empty_chunk_as_eof(self):
+        downloader = SimpleNamespace(chunks=lambda: iter([b""]))
+        reader = backup._AzureChunkReader(downloader)
+        self.assertEqual(reader.read(1), b"")
+
+    def test_azure_streaming_filesystem_restore_validates_before_promotion(self):
+        self._reload({"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)})
+        payload = b"streamed image"
+        manifest = {
+            "format_version": 2,
+            "schema_version": 2,
+            "file_count": 1,
+            "total_bytes": len(payload),
+            "files": {
+                "data/source_images/restored.jpg": {
+                    "size": len(payload),
+                    "sha256": __import__("hashlib").sha256(payload).hexdigest(),
+                }
+            },
+        }
+        archive_bytes = io.BytesIO()
+        with tarfile.open(fileobj=archive_bytes, mode="w:gz") as tar:
+            for name, content in (
+                ("snapshot/data/source_images/restored.jpg", payload),
+                ("snapshot/manifest.json", json.dumps(manifest).encode()),
+            ):
+                info = tarfile.TarInfo(name)
+                info.size = len(content)
+                tar.addfile(info, io.BytesIO(content))
+
+        class Downloader:
+            def chunks(self):
+                raw = archive_bytes.getvalue()
+                for offset in range(0, len(raw), 17):
+                    yield raw[offset : offset + 17]
+
+        real_temporary_directory = tempfile.TemporaryDirectory
+        staging_roots = []
+
+        def temporary_directory(*args, **kwargs):
+            staging_roots.append(kwargs.get("dir"))
+            return real_temporary_directory(*args, **kwargs)
+
+        with (
+            patch.object(
+                backup, "_local_backup_dir", return_value=self.tmp / "backups"
+            ),
+            patch.object(
+                backup.tempfile, "TemporaryDirectory", side_effect=temporary_directory
+            ),
+            patch.object(backup.subprocess, "run") as run,
+        ):
+            self.assertTrue(
+                backup._restore_from_stream(
+                    backup._AzureChunkReader(Downloader()),
+                    "snapshot.tar.gz",
+                    purpose="operator",
+                    database_url=backup.DATABASE_URL,
+                    data_dir=str(self.data_dir),
+                    components="filesystem",
+                )
+            )
+        run.assert_not_called()
+        self.assertEqual(staging_roots, [str(self.data_dir)])
+        self.assertEqual(list(self.data_dir.glob(f"{backup._RESTORE_PREFIX}*")), [])
+        self.assertEqual(
+            (self.data_dir / "source_images" / "restored.jpg").read_bytes(), payload
+        )
+        quarantines = list(
+            self.data_dir.glob(".restore-orphans-*/source_images/existing.jpg")
+        )
+        self.assertEqual(len(quarantines), 1)
+
+    def test_current_production_archive_requires_cnpg_for_database_selection(self):
+        self._reload({"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)})
+        snapshot = self.tmp / "production-source-only"
+        (snapshot / "data" / "source_images").mkdir(parents=True)
+        image = snapshot / "data" / "source_images" / "restored.jpg"
+        image.write_bytes(b"restored")
+        metadata = {"size": image.stat().st_size, "sha256": backup._sha256(image)}
+        (snapshot / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "format_version": 2,
+                    "schema_version": 2,
+                    "file_count": 1,
+                    "total_bytes": image.stat().st_size,
+                    "files": {"data/source_images/restored.jpg": metadata},
+                    "database_recovery": {
+                        "provider": "cloudnative-pg",
+                        "cluster": "pg-core",
+                        "target_time": "2026-01-01T00:00:00+00:00",
+                        "logical_dump_role": "not-included",
+                    },
+                }
+            )
+        )
+        archive = self.tmp / "production-source-only.tar.gz"
+        with tarfile.open(archive, "w:gz") as tar:
+            tar.add(snapshot, arcname="production-source-only")
+
+        for components in ("database", "all"):
+            with (
+                patch.object(
+                    backup, "_local_backup_dir", return_value=self.tmp / "backups"
+                ),
+                patch.object(backup.subprocess, "run") as run,
+                self.assertLogs("hriv-backup", level="ERROR") as logs,
+            ):
+                self.assertFalse(
+                    backup._restore_from_archive(archive, components=components)
+                )
+            run.assert_not_called()
+            self.assertTrue(
+                any("CloudNativePG recovery" in line for line in logs.output)
+            )
+            self.assertTrue((self.data_dir / "source_images" / "existing.jpg").exists())
+            self.assertFalse(
+                (self.data_dir / "source_images" / "restored.jpg").exists()
+            )
 
 
 class BackupRunTestCase(_BackupTestCase):
@@ -333,7 +648,9 @@ class BackupRunTestCase(_BackupTestCase):
         uploaded_path = self.tmp / "uploaded.tar.gz"
         uploads: dict[str, bytes] = {}
 
-        def fake_upload_blob(blob_name, data, overwrite=True, etag=None, match_condition=None):
+        def fake_upload_blob(
+            blob_name, data, overwrite=True, etag=None, match_condition=None
+        ):
             payload = data.read()
             uploads[blob_name] = payload
             if blob_name.endswith(".tar.gz"):
@@ -348,32 +665,79 @@ class BackupRunTestCase(_BackupTestCase):
                 readall=lambda: payload,
             )
 
+        staged: dict[str, list[bytes]] = {}
+        commit_conditions = []
+        published_metadata = []
+
+        class FakeBlobClient:
+            def __init__(self, name):
+                self.name = name
+
+            def stage_block(self, block_id, data, length):
+                staged.setdefault(self.name, []).append(data.read())
+
+            def commit_block_list(self, block_ids, if_none_match=None, metadata=None):
+                commit_conditions.append((if_none_match, metadata))
+                payload = b"".join(staged[self.name])
+                uploads[self.name] = payload
+                uploaded_path.write_bytes(payload)
+
+            def set_blob_metadata(self, metadata):
+                self.metadata = metadata
+                published_metadata.append(metadata)
+
+            def delete_blob(self):
+                uploads.pop(self.name, None)
+
         fake_container = MagicMock()
         fake_container.upload_blob = fake_upload_blob
         fake_container.download_blob = fake_download_blob
+        fake_container.get_blob_client.side_effect = FakeBlobClient
         fake_container.list_blobs.return_value = []
         fake_container.delete_blob = MagicMock()
 
-        def fake_subprocess_run(cmd, **_kwargs):
-            if cmd[0] == "pg_dump":
-                f_idx = cmd.index("-f")
-                Path(cmd[f_idx + 1]).write_text("dump")
-            return MagicMock(returncode=0)
-
-        with patch.object(backup, "_blob_container_client", return_value=fake_container), patch.object(backup, "subprocess", run=fake_subprocess_run):
+        local_dir = self.tmp / "backups"
+        inventory_run, commands = _production_inventory_run(self.data_dir)
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=local_dir),
+            patch.object(backup, "_blob_container_client", return_value=fake_container),
+            patch.object(backup.subprocess, "run", side_effect=inventory_run),
+        ):
             result = backup.run_backup()
+        self.assertTrue(any(cmd[0] == "psql" for cmd in commands))
+        self.assertFalse(any(cmd[0] == "pg_dump" for cmd in commands))
         self.assertIsNotNone(result)
         self.assertTrue(uploaded_path.exists())
+        self.assertEqual(list(local_dir.glob("*.tar.gz")), [])
         with tarfile.open(uploaded_path, "r:gz") as tar:
             names = tar.getnames()
         self.assertTrue(any("data/source_images/img.jpg" in n for n in names))
         self.assertFalse(any("data/tiles" in n for n in names))
+        self.assertFalse(any(name.endswith("db.sql") for name in names))
         marker_blob = "hriv-backups/LAST_SUCCESS.json"
         state_blob = "hriv-backups/BACKUP_STATE.json"
         self.assertIn(marker_blob, uploads)
         self.assertIn(state_blob, uploads)
-        sidecar_blob = f"hriv-backups/{result.name.removesuffix('.tar.gz')}.manifest.json"
+        sidecar_blob = (
+            f"hriv-backups/{result.name.removesuffix('.tar.gz')}.manifest.json"
+        )
         self.assertIn(sidecar_blob, uploads)
+        archive_blob = f"hriv-backups/{result.name}"
+        upload_order = list(uploads)
+        self.assertEqual(
+            commit_conditions,
+            [("*", {"hriv_publication_state": "candidate"})],
+        )
+        self.assertEqual(
+            published_metadata,
+            [{"hriv_publication_state": "published"}],
+        )
+        self.assertLess(
+            upload_order.index(archive_blob), upload_order.index(sidecar_blob)
+        )
+        self.assertLess(
+            upload_order.index(sidecar_blob), upload_order.index(marker_blob)
+        )
         sidecar = json.loads(uploads[sidecar_blob].decode())
         self.assertEqual(sidecar["snapshot_name"], result.name.removesuffix(".tar.gz"))
         self.assertIn("data/source_images/img.jpg", sidecar["files"])
@@ -386,9 +750,10 @@ class BackupRunTestCase(_BackupTestCase):
         self.assertEqual(state["schema_version"], 2)
         self.assertTrue(state["database"]["success"])
         self.assertTrue(state["filesystem"]["success"])
-        self.assertEqual(
-            state["database"]["last_success_archive_key"],
-            f"hriv-backups/{result.name}",
+        self.assertTrue(
+            state["database"]["last_success_archive_key"].startswith(
+                "cnpg://pg-core?target_time="
+            )
         )
         self.assertEqual(
             state["filesystem"]["last_success_archive_key"],
@@ -405,17 +770,13 @@ class BackupRunTestCase(_BackupTestCase):
         local_dir = self.tmp / "backups"
         local_dir.mkdir()
 
-        def fake_subprocess_run(cmd, **_kwargs):
-            if cmd[0] == "pg_dump":
-                f_idx = cmd.index("-f")
-                Path(cmd[f_idx + 1]).write_text("dump")
-            return MagicMock(returncode=0)
-
+        inventory_run, commands = _production_inventory_run(self.data_dir)
         with (
             patch.object(backup, "_local_backup_dir", return_value=local_dir),
-            patch.object(backup.subprocess, "run", side_effect=fake_subprocess_run),
+            patch.object(backup.subprocess, "run", side_effect=inventory_run),
         ):
             result = backup.run_backup()
+        self.assertFalse(any(cmd[0] == "pg_dump" for cmd in commands))
 
         archive = local_dir / result.name
         sidecar = local_dir / f"{result.name.removesuffix('.tar.gz')}.manifest.json"
@@ -430,7 +791,11 @@ class BackupRunTestCase(_BackupTestCase):
         self.assertEqual(state["schema_version"], 2)
         self.assertTrue(state["filesystem"]["success"])
         self.assertEqual(state["filesystem"]["last_success_archive_key"], str(archive))
-        self.assertEqual(state["database"]["last_success_archive_key"], str(archive))
+        self.assertTrue(
+            state["database"]["last_success_archive_key"].startswith(
+                "cnpg://pg-core?target_time="
+            )
+        )
 
     def test_run_backup_marker_records_completion_and_per_type_success(self):
         self._reload(
@@ -442,17 +807,13 @@ class BackupRunTestCase(_BackupTestCase):
         local_dir = self.tmp / "backups"
         local_dir.mkdir()
 
-        def fake_subprocess_run(cmd, **_kwargs):
-            if cmd[0] == "pg_dump":
-                f_idx = cmd.index("-f")
-                Path(cmd[f_idx + 1]).write_text("dump")
-            return MagicMock(returncode=0)
-
+        inventory_run, commands = _production_inventory_run(self.data_dir)
         with (
             patch.object(backup, "_local_backup_dir", return_value=local_dir),
-            patch.object(backup.subprocess, "run", side_effect=fake_subprocess_run),
+            patch.object(backup.subprocess, "run", side_effect=inventory_run),
         ):
             result = backup.run_backup()
+        self.assertFalse(any(cmd[0] == "pg_dump" for cmd in commands))
 
         marker = json.loads((local_dir / "LAST_SUCCESS.json").read_text())
         state = json.loads((local_dir / "BACKUP_STATE.json").read_text())
@@ -460,17 +821,19 @@ class BackupRunTestCase(_BackupTestCase):
         self.assertGreaterEqual(marker["completed_at"], marker["created_at"])
         self.assertEqual(marker["run_id"], state["run_id"])
         self.assertEqual(sorted(marker["types"]), ["database", "filesystem"])
-        self.assertEqual(marker["types"]["filesystem"]["archive_key"], str(local_dir / result.name))
+        self.assertEqual(
+            marker["types"]["filesystem"]["archive_key"], str(local_dir / result.name)
+        )
         self.assertEqual(state["database"]["run_id"], state["run_id"])
         self.assertEqual(
             sorted(entry["backup_type"] for entry in state["attempts"]),
             ["database", "filesystem"],
         )
 
-    def test_pg_dump_failure_updates_backup_state(self):
+    def test_development_pg_dump_failure_updates_backup_state(self):
         self._reload(
             {
-                "BACKUP_MODE": "production",
+                "BACKUP_MODE": "development",
                 "DATA_DIR": str(self.data_dir),
             }
         )
@@ -491,7 +854,27 @@ class BackupRunTestCase(_BackupTestCase):
         self.assertFalse(state["database"]["success"])
         self.assertIsNone(state["filesystem"]["started_at"])
 
-    def test_backup_state_preserves_previous_success_history_on_filesystem_failure(self):
+    def test_development_archive_keeps_logical_dump(self):
+        self._reload({"BACKUP_MODE": "development", "DATA_DIR": str(self.data_dir)})
+        local_dir = self.tmp / "backups"
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=local_dir),
+            patch.object(backup.subprocess, "run", side_effect=_fake_pg_dump_run),
+        ):
+            result = backup.run_backup()
+        with tarfile.open(result, "r:gz") as tar:
+            self.assertTrue(any(name.endswith("/db.sql") for name in tar.getnames()))
+        manifest = json.loads(
+            (
+                local_dir / f"{result.name.removesuffix('.tar.gz')}.manifest.json"
+            ).read_text()
+        )
+        self.assertEqual(manifest["database_recovery"]["provider"], "logical-dump")
+        self.assertEqual(manifest["database_recovery"]["logical_dump_role"], "primary")
+
+    def test_backup_state_preserves_previous_success_history_on_filesystem_failure(
+        self,
+    ):
         self._reload(
             {
                 "BACKUP_MODE": "production",
@@ -522,19 +905,17 @@ class BackupRunTestCase(_BackupTestCase):
             )
         )
 
-        def fake_subprocess_run(cmd, **_kwargs):
-            if cmd[0] == "pg_dump":
-                f_idx = cmd.index("-f")
-                Path(cmd[f_idx + 1]).write_text("dump")
-            return MagicMock(returncode=0)
-
+        inventory_run, commands = _production_inventory_run(self.data_dir)
         with (
             patch.object(backup, "_local_backup_dir", return_value=local_dir),
-            patch.object(backup.subprocess, "run", side_effect=fake_subprocess_run),
-            patch.object(backup.tarfile, "open", side_effect=RuntimeError("tar failed")),
+            patch.object(backup.subprocess, "run", side_effect=inventory_run),
+            patch.object(
+                backup.tarfile, "open", side_effect=RuntimeError("tar failed")
+            ),
         ):
             result = backup.run_backup()
 
+        self.assertFalse(any(cmd[0] == "pg_dump" for cmd in commands))
         self.assertIsNone(result)
         state = json.loads((local_dir / "BACKUP_STATE.json").read_text())
         self.assertTrue(state["database"]["success"])
@@ -544,6 +925,264 @@ class BackupRunTestCase(_BackupTestCase):
             "2026-07-11T08:09:00+00:00",
         )
         self.assertEqual(state["filesystem"]["last_success_archive_key"], "old-fs")
+
+    def test_mutation_leaves_azure_blocks_uncommitted_and_no_sidecar_or_marker(self):
+        self._reload(
+            {
+                "BACKUP_MODE": "production",
+                "DATA_DIR": str(self.data_dir),
+                "AZURE_STORAGE_CONNECTION_STRING": "fake",
+                "AZURE_STORAGE_CONTAINER": "fake",
+            }
+        )
+        local_dir = self.tmp / "backups"
+        events = []
+
+        class Blob:
+            def stage_block(self, block_id, data, length):
+                events.append("stage")
+
+            def commit_block_list(self, block_ids, if_none_match=None, metadata=None):
+                events.append("commit")
+
+            def set_blob_metadata(self, metadata):
+                events.append("publish")
+
+            def delete_blob(self):
+                events.append("delete")
+
+        container = MagicMock()
+        container.get_blob_client.return_value = Blob()
+        container.list_blobs.return_value = []
+        container.download_blob.side_effect = backup.ResourceNotFoundError("missing")
+        container.upload_blob.side_effect = (
+            lambda name, *_args, **_kwargs: events.append(name)
+        )
+        real_add = backup._add_streamed_file
+
+        def disappear(tar, snapshot_name, entry):
+            if entry["archive_path"].startswith("data/"):
+                entry["path"].unlink()
+            return real_add(tar, snapshot_name, entry)
+
+        inventory_run, commands = _production_inventory_run(self.data_dir)
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=local_dir),
+            patch.object(backup, "_blob_container_client", return_value=container),
+            patch.object(backup.subprocess, "run", side_effect=inventory_run),
+            patch.object(backup, "_add_streamed_file", side_effect=disappear),
+        ):
+            self.assertIsNone(backup.run_backup())
+        self.assertFalse(any(cmd[0] == "pg_dump" for cmd in commands))
+        self.assertNotIn("commit", events)
+        self.assertFalse(any(str(event).endswith(".manifest.json") for event in events))
+        self.assertFalse(
+            any(str(event).endswith("LAST_SUCCESS.json") for event in events)
+        )
+
+    def test_inventory_boundary_released_before_stream_and_excludes_new_files(self):
+        self._reload({"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)})
+        local_dir = self.tmp / "backups"
+        real_add = backup._add_streamed_file
+        maintenance_during_stream = []
+
+        def observe(tar, snapshot_name, entry):
+            maintenance_during_stream.append(backup._maintenance_flag_path().exists())
+            if entry["archive_path"].startswith("data/"):
+                (self.data_dir / "source_images" / "late.jpg").write_bytes(b"late")
+            return real_add(tar, snapshot_name, entry)
+
+        inventory_run, commands = _production_inventory_run(self.data_dir)
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=local_dir),
+            patch.object(backup.subprocess, "run", side_effect=inventory_run),
+            patch.object(backup, "_add_streamed_file", side_effect=observe),
+        ):
+            result = backup.run_backup()
+        self.assertFalse(any(cmd[0] == "pg_dump" for cmd in commands))
+        self.assertTrue(result)
+        self.assertEqual(maintenance_during_stream, [False])
+        with tarfile.open(result, "r:gz") as tar:
+            self.assertFalse(any(name.endswith("late.jpg") for name in tar.getnames()))
+
+    def test_production_manifest_declares_cnpg_primary_and_authoritative_inventory(
+        self,
+    ):
+        (self.data_dir / "admin").mkdir()
+        (self.data_dir / "admin" / "scratch.jpg").write_bytes(b"scratch")
+        self._reload({"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)})
+        local_dir = self.tmp / "backups"
+        inventory_run, commands = _production_inventory_run(self.data_dir)
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=local_dir),
+            patch.object(backup.subprocess, "run", side_effect=inventory_run),
+        ):
+            result = backup.run_backup()
+        self.assertFalse(any(cmd[0] == "pg_dump" for cmd in commands))
+        manifest = json.loads(
+            (
+                local_dir / f"{result.stem.removesuffix('.tar')}.manifest.json"
+            ).read_text()
+        )
+        self.assertEqual(manifest["format_version"], 2)
+        self.assertEqual(manifest["schema_version"], 2)
+        self.assertEqual(
+            manifest["recovery_set_id"], result.name.removesuffix(".tar.gz")
+        )
+        self.assertEqual(manifest["database_recovery"]["provider"], "cloudnative-pg")
+        self.assertEqual(manifest["database_recovery"]["cluster"], "pg-core")
+        self.assertEqual(
+            manifest["database_recovery"]["logical_dump_role"], "not-included"
+        )
+        self.assertEqual(manifest["file_count"], 1)
+        self.assertEqual(manifest["total_bytes"], len(b"source"))
+        self.assertIn("data/source_images/img.jpg", manifest["files"])
+        self.assertNotIn("db.sql", manifest["files"])
+        self.assertNotIn("data/admin/scratch.jpg", manifest["files"])
+        self.assertEqual(manifest["source_images"]["file_count"], 1)
+        self.assertEqual(manifest["source_images"]["total_bytes"], len(b"source"))
+        self.assertTrue(manifest["capture_started_at"])
+        self.assertTrue(manifest["capture_boundary_at"])
+        self.assertTrue(manifest["completed_at"])
+
+
+class AzurePublicationTestCase(_BackupTestCase):
+    def setUp(self):
+        super().setUp()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self.tmp = Path(self._tmpdir.name)
+        self.data_dir = self.tmp / "data"
+        (self.data_dir / "source_images").mkdir(parents=True)
+        (self.data_dir / "source_images" / "img.jpg").write_bytes(b"source")
+        (self.data_dir / "tiles").mkdir()
+        (self.data_dir / "tiles" / "img.dzi").write_bytes(b"tiles")
+
+    def test_hashing_reader_accepts_zero_length_read(self):
+        reader = backup._HashingReader(io.BytesIO(b"payload"), len(b"payload"))
+        self.assertEqual(reader.read(0), b"")
+        self.assertEqual(reader.remaining, len(b"payload"))
+
+    def test_candidate_archives_are_not_selectable(self):
+        candidate = SimpleNamespace(metadata={"hriv_publication_state": "candidate"})
+        published = SimpleNamespace(metadata={"hriv_publication_state": "published"})
+        legacy = SimpleNamespace(metadata={})
+
+        self.assertFalse(backup._archive_is_selectable(candidate))
+        self.assertTrue(backup._archive_is_selectable(published))
+        self.assertTrue(backup._archive_is_selectable(legacy))
+
+    def test_empty_azure_writer_cannot_commit(self):
+        with self.assertRaisesRegex(RuntimeError, "empty Azure archive"):
+            backup._StagedBlockWriter(MagicMock()).commit()
+
+    def test_committed_unpublished_candidate_can_be_discarded(self):
+        blob = MagicMock()
+        writer = backup._StagedBlockWriter(blob, block_size=4)
+        writer.write(b"payload")
+        writer.commit()
+        writer.discard_candidate()
+
+        blob.commit_block_list.assert_called_once_with(
+            writer.block_ids,
+            if_none_match="*",
+            metadata={"hriv_publication_state": "candidate"},
+        )
+        blob.delete_blob.assert_called_once_with()
+
+    def test_production_inventory_reports_missing_orphan_and_unsafe_rows(self):
+        orphan = self.data_dir / "source_images" / "orphan.jpg"
+        orphan.write_bytes(b"orphan")
+        incomplete = self.data_dir / "source_images" / "upload.part"
+        incomplete.write_bytes(b"partial")
+        pending = self.data_dir / "source_images" / "pending.jpg"
+        pending.write_bytes(b"pending")
+        rows = [
+            ("1", str(self.data_dir / "source_images" / "img.jpg"), "completed"),
+            ("2", str(self.data_dir / "source_images" / "missing.jpg"), "completed"),
+            ("3", "../outside.jpg", "completed"),
+            ("4", str(pending), "processing"),
+        ]
+        self._reload({"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)})
+        local_dir = self.tmp / "backups"
+        inventory_run, commands = _production_inventory_run(self.data_dir, rows)
+
+        def checked_inventory(cmd, **kwargs):
+            if cmd[0] == "psql":
+                self.assertTrue(backup._maintenance_flag_path().exists())
+            return inventory_run(cmd, **kwargs)
+
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=local_dir),
+            patch.object(backup.subprocess, "run", side_effect=checked_inventory),
+        ):
+            result = backup.run_backup()
+
+        self.assertTrue(result)
+        self.assertFalse(any(cmd[0] == "pg_dump" for cmd in commands))
+        with tarfile.open(result, "r:gz") as tar:
+            names = tar.getnames()
+        self.assertTrue(
+            any(name.endswith("data/source_images/img.jpg") for name in names)
+        )
+        self.assertFalse(any(name.endswith("orphan.jpg") for name in names))
+        self.assertTrue(any(name.endswith("pending.jpg") for name in names))
+        self.assertFalse(any(name.endswith("upload.part") for name in names))
+        manifest = json.loads(
+            (
+                local_dir / f"{result.name.removesuffix('.tar.gz')}.manifest.json"
+            ).read_text()
+        )
+        source_images = manifest["source_images"]
+        self.assertEqual(source_images["database_row_count"], 4)
+        self.assertEqual(source_images["included_row_count"], 2)
+        self.assertEqual(source_images["included_file_count"], 2)
+        self.assertEqual(source_images["missing_or_skipped_count"], 2)
+        self.assertEqual(source_images["orphan_count"], 1)
+        reasons = {
+            entry["reason"] for entry in manifest["validation"]["missing_sources"]
+        }
+        self.assertEqual(reasons, {"missing_source", "unsafe_or_out_of_root"})
+        self.assertEqual(
+            manifest["validation"]["orphan_sources"],
+            [
+                {
+                    "path": "data/source_images/orphan.jpg",
+                    "reason": "no_database_row",
+                    "policy": "quarantined_by_policy",
+                }
+            ],
+        )
+        self.assertTrue(
+            any(
+                entry["path"] == "data/source_images/upload.part"
+                for entry in manifest["validation"]["excluded_incomplete_artifacts"]
+            )
+        )
+        self.assertTrue(manifest["validation"]["accepted"])
+        self.assertTrue(orphan.exists())
+        self.assertTrue(pending.exists())
+        self.assertTrue(incomplete.exists())
+
+    def test_production_inventory_query_failure_rejects_without_publication(self):
+        self._reload({"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)})
+        local_dir = self.tmp / "backups"
+        inventory_run, commands = _production_inventory_run(self.data_dir, returncode=1)
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=local_dir),
+            patch.object(backup.subprocess, "run", side_effect=inventory_run),
+        ):
+            result = backup.run_backup()
+
+        self.assertIsNone(result)
+        self.assertTrue(any(cmd[0] == "psql" for cmd in commands))
+        self.assertFalse(any(cmd[0] == "pg_dump" for cmd in commands))
+        self.assertEqual(list(local_dir.glob("*.tar.gz")), [])
+        self.assertEqual(list(local_dir.glob("*.manifest.json")), [])
+        self.assertFalse((local_dir / "LAST_SUCCESS.json").exists())
+        state = json.loads((local_dir / "BACKUP_STATE.json").read_text())
+        self.assertFalse(state["database"]["success"])
+        self.assertFalse(state["filesystem"]["success"])
 
 
 class RetentionTestCase(_BackupTestCase):
@@ -633,7 +1272,9 @@ class StatusTestCase(_BackupTestCase):
             ]
         fake_container.list_blobs.return_value = snapshots
         if marker_payload is None:
-            fake_container.download_blob.side_effect = backup.ResourceNotFoundError("missing")
+            fake_container.download_blob.side_effect = backup.ResourceNotFoundError(
+                "missing"
+            )
         else:
             fake_container.download_blob.return_value = _Download(marker_payload)
         return fake_container
@@ -642,7 +1283,10 @@ class StatusTestCase(_BackupTestCase):
         marker_created_at = datetime.now(timezone.utc) - timedelta(minutes=30)
         fake_container = self._reload_status(marker_created_at=marker_created_at)
 
-        with patch.object(backup, "_blob_container_client", return_value=fake_container), contextlib.redirect_stdout(io.StringIO()) as stdout:
+        with (
+            patch.object(backup, "_blob_container_client", return_value=fake_container),
+            contextlib.redirect_stdout(io.StringIO()) as stdout,
+        ):
             self.assertTrue(backup.run_status())
 
         output = stdout.getvalue()
@@ -655,7 +1299,10 @@ class StatusTestCase(_BackupTestCase):
         marker_created_at = datetime.now(timezone.utc) - timedelta(hours=3)
         fake_container = self._reload_status(marker_created_at=marker_created_at)
 
-        with patch.object(backup, "_blob_container_client", return_value=fake_container), contextlib.redirect_stdout(io.StringIO()) as stdout:
+        with (
+            patch.object(backup, "_blob_container_client", return_value=fake_container),
+            contextlib.redirect_stdout(io.StringIO()) as stdout,
+        ):
             self.assertFalse(backup.run_status())
 
         output = stdout.getvalue()
@@ -665,22 +1312,30 @@ class StatusTestCase(_BackupTestCase):
     def test_status_fails_when_marker_missing(self):
         fake_container = self._reload_status(marker_created_at=None)
 
-        with patch.object(backup, "_blob_container_client", return_value=fake_container), contextlib.redirect_stdout(io.StringIO()) as stdout:
+        with (
+            patch.object(backup, "_blob_container_client", return_value=fake_container),
+            contextlib.redirect_stdout(io.StringIO()) as stdout,
+        ):
             self.assertFalse(backup.run_status())
 
         output = stdout.getvalue()
         self.assertIn("Status: MISSING", output)
         self.assertIn("Last successful backup: (missing)", output)
 
-    def test_status_reports_no_snapshots_when_marker_fresh(self):
+    def test_status_rejects_missing_marker_snapshot(self):
         marker_created_at = datetime.now(timezone.utc) - timedelta(minutes=10)
-        fake_container = self._reload_status(marker_created_at=marker_created_at, snapshots=[])
+        fake_container = self._reload_status(
+            marker_created_at=marker_created_at, snapshots=[]
+        )
 
-        with patch.object(backup, "_blob_container_client", return_value=fake_container), contextlib.redirect_stdout(io.StringIO()) as stdout:
+        with (
+            patch.object(backup, "_blob_container_client", return_value=fake_container),
+            contextlib.redirect_stdout(io.StringIO()) as stdout,
+        ):
             self.assertFalse(backup.run_status())
 
         output = stdout.getvalue()
-        self.assertIn("Status: NO_SNAPSHOTS", output)
+        self.assertIn("Status: MARKER_SNAPSHOT_MISSING", output)
         self.assertIn("Snapshot count: 0", output)
 
     def test_status_measures_age_from_completion_time(self):
@@ -691,7 +1346,10 @@ class StatusTestCase(_BackupTestCase):
             marker_completed_at=datetime.now(timezone.utc) - timedelta(minutes=30),
         )
 
-        with patch.object(backup, "_blob_container_client", return_value=fake_container), contextlib.redirect_stdout(io.StringIO()) as stdout:
+        with (
+            patch.object(backup, "_blob_container_client", return_value=fake_container),
+            contextlib.redirect_stdout(io.StringIO()) as stdout,
+        ):
             self.assertTrue(backup.run_status())
 
         self.assertIn("Status: FRESH", stdout.getvalue())
@@ -699,9 +1357,14 @@ class StatusTestCase(_BackupTestCase):
     def test_missing_marker_is_silent(self):
         self._reload_status(marker_created_at=datetime.now(timezone.utc))
         fake_container = MagicMock()
-        fake_container.download_blob.side_effect = backup.ResourceNotFoundError("missing")
+        fake_container.download_blob.side_effect = backup.ResourceNotFoundError(
+            "missing"
+        )
 
-        with patch.object(backup, "_blob_container_client", return_value=fake_container), self.assertNoLogs("hriv-backup", level="ERROR"):
+        with (
+            patch.object(backup, "_blob_container_client", return_value=fake_container),
+            self.assertNoLogs("hriv-backup", level="ERROR"),
+        ):
             self.assertIsNone(backup._read_last_success_marker())
 
 
@@ -728,7 +1391,9 @@ class SnapshotIdentityTestCase(_BackupTestCase):
     def test_new_name_rerolls_when_candidate_already_exists(self):
         self._reload({})
         created_at = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
-        (self.local_dir / "hriv-backup-20260102-030405-aaaaaaaa.tar.gz").write_bytes(b"")
+        (self.local_dir / "hriv-backup-20260102-030405-aaaaaaaa.tar.gz").write_bytes(
+            b""
+        )
         fakes = [
             SimpleNamespace(hex="aaaaaaaa" + "0" * 24),
             SimpleNamespace(hex="bbbbbbbb" + "0" * 24),
@@ -767,7 +1432,9 @@ class SnapshotIdentityTestCase(_BackupTestCase):
             "hriv-backup-20260102-030405-aaaaaaaa.tar.gz",
         ]
         self.assertEqual(
-            backup._resolve_snapshot_name("hriv-backup-20260101-000000.tar.gz", available),
+            backup._resolve_snapshot_name(
+                "hriv-backup-20260101-000000.tar.gz", available
+            ),
             "hriv-backup-20260101-000000.tar.gz",
         )
         self.assertEqual(
@@ -778,7 +1445,9 @@ class SnapshotIdentityTestCase(_BackupTestCase):
             backup._resolve_snapshot_name("hriv-backup-20260102-030405", available),
             "hriv-backup-20260102-030405-aaaaaaaa.tar.gz",
         )
-        self.assertIsNone(backup._resolve_snapshot_name("hriv-backup-20260104-000000", available))
+        self.assertIsNone(
+            backup._resolve_snapshot_name("hriv-backup-20260104-000000", available)
+        )
 
     def test_resolve_snapshot_name_rejects_ambiguous_prefix(self):
         self._reload({})
@@ -808,6 +1477,26 @@ def _fake_pg_dump_run(cmd, **_kwargs):
     return MagicMock(returncode=0)
 
 
+def _production_inventory_run(data_dir, rows=None, *, returncode=0):
+    commands = []
+    if rows is None:
+        rows = [("1", str(Path(data_dir) / "source_images" / "img.jpg"), "completed")]
+
+    def run(cmd, **kwargs):
+        commands.append(cmd)
+        if cmd[0] == "pg_dump":
+            raise AssertionError("production backup invoked pg_dump")
+        if cmd[0] == "psql" and returncode == 0:
+            lines = ["id,stored_path,status"]
+            lines.extend(",".join(row) for row in rows)
+            kwargs["stdout"].write(("\n".join(lines) + "\n").encode())
+        return MagicMock(
+            returncode=returncode, stderr=b"inventory failed" if returncode else b""
+        )
+
+    return run, commands
+
+
 class SameSecondBackupTestCase(_BackupTestCase):
     """Two backups started in the same second must not collide."""
 
@@ -822,7 +1511,7 @@ class SameSecondBackupTestCase(_BackupTestCase):
         self.local_dir = self.tmp / "backups"
         self.local_dir.mkdir()
 
-    def test_concurrent_local_backups_produce_distinct_archives(self):
+    def test_concurrent_local_backups_are_serialized_by_run_lock(self):
         self._reload({"DATA_DIR": str(self.data_dir), "BACKUP_RETENTION_COUNT": "5"})
         results: list[Path] = []
         errors: list[Exception] = []
@@ -849,16 +1538,22 @@ class SameSecondBackupTestCase(_BackupTestCase):
                 thread.join()
 
         self.assertEqual(errors, [])
-        self.assertEqual(len(results), 2)
-        self.assertEqual(len({p.name for p in results}), 2)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(len(list(self.local_dir.glob("*.tar.gz"))), 1)
         for archive in results:
             self.assertTrue(archive.exists())
             with tarfile.open(archive, "r:gz") as tar:
                 names = tar.getnames()
-            self.assertTrue(any(n.endswith("data/source_images/img.jpg") for n in names))
-            sidecar = self.local_dir / f"{archive.name.removesuffix('.tar.gz')}.manifest.json"
+            self.assertTrue(
+                any(n.endswith("data/source_images/img.jpg") for n in names)
+            )
+            sidecar = (
+                self.local_dir / f"{archive.name.removesuffix('.tar.gz')}.manifest.json"
+            )
             payload = json.loads(sidecar.read_text())
-            self.assertEqual(payload["snapshot_name"], archive.name.removesuffix(".tar.gz"))
+            self.assertEqual(
+                payload["snapshot_name"], archive.name.removesuffix(".tar.gz")
+            )
 
     def test_same_second_azure_backups_do_not_overwrite_each_other(self):
         self._reload(
@@ -869,14 +1564,44 @@ class SameSecondBackupTestCase(_BackupTestCase):
             }
         )
         uploads: dict[str, bytes] = {}
+        staged: dict[str, list[bytes]] = {}
 
-        def fake_upload_blob(blob_name, data, overwrite=True):
+        def fake_upload_blob(blob_name, data, overwrite=True, **_kwargs):
             if not overwrite and blob_name in uploads:
                 raise RuntimeError(f"blob already exists: {blob_name}")
             uploads[blob_name] = data.read()
 
+        def fake_download_blob(blob_name):
+            if blob_name not in uploads:
+                raise backup.ResourceNotFoundError("missing")
+            payload = uploads[blob_name]
+            return SimpleNamespace(
+                properties=SimpleNamespace(etag=f"etag-{len(payload)}"),
+                readall=lambda: payload,
+            )
+
+        class FakeBlobClient:
+            def __init__(self, name):
+                self.name = name
+
+            def stage_block(self, block_id, data, length):
+                staged.setdefault(self.name, []).append(data.read())
+
+            def commit_block_list(self, block_ids, if_none_match=None, metadata=None):
+                if self.name in uploads:
+                    raise RuntimeError(f"blob already exists: {self.name}")
+                uploads[self.name] = b"".join(staged[self.name])
+
+            def set_blob_metadata(self, metadata):
+                self.metadata = metadata
+
+            def delete_blob(self):
+                uploads.pop(self.name, None)
+
         fake_container = MagicMock()
         fake_container.upload_blob = fake_upload_blob
+        fake_container.download_blob.side_effect = fake_download_blob
+        fake_container.get_blob_client.side_effect = FakeBlobClient
         fake_container.list_blobs.return_value = []
 
         with (
@@ -940,7 +1665,9 @@ class StagingTestCase(_BackupTestCase):
 
         with (
             patch.object(backup, "_local_backup_dir", return_value=self.local_dir),
-            patch.object(backup.tempfile, "TemporaryDirectory", recording_temporary_directory),
+            patch.object(
+                backup.tempfile, "TemporaryDirectory", recording_temporary_directory
+            ),
             patch.object(backup.subprocess, "run", side_effect=_fake_pg_dump_run),
         ):
             result = backup.run_backup()
@@ -969,9 +1696,10 @@ class StagingTestCase(_BackupTestCase):
         self.assertFalse(stale.exists())
         self.assertTrue(fresh.exists())
 
-    def test_restore_extracts_on_backups_volume(self):
+    def test_filesystem_restore_extracts_on_target_volume(self):
         data_dir = self.tmp / "restore-target"
-        data_dir.mkdir()
+        (data_dir / "source_images").mkdir(parents=True)
+        (data_dir / "source_images" / "old.jpg").write_bytes(b"old")
         self._reload({"DATA_DIR": str(data_dir)})
         archive = self.local_dir / "hriv-backup-20260101-000000.tar.gz"
         snapshot = self.tmp / "hriv-backup-20260101-000000"
@@ -990,13 +1718,22 @@ class StagingTestCase(_BackupTestCase):
 
         with (
             patch.object(backup, "_local_backup_dir", return_value=self.local_dir),
-            patch.object(backup.tempfile, "TemporaryDirectory", recording_temporary_directory),
-            patch.object(backup.subprocess, "run", return_value=MagicMock(returncode=0)),
+            patch.object(
+                backup.tempfile, "TemporaryDirectory", recording_temporary_directory
+            ),
+            patch.object(
+                backup.subprocess, "run", return_value=MagicMock(returncode=0)
+            ),
         ):
             ok = backup._run_restore_inner(snapshot_name=archive.name)
 
         self.assertTrue(ok)
-        self.assertEqual(restore_dirs, [str(self.local_dir / ".staging")])
+        self.assertEqual(restore_dirs, [str(data_dir)])
+        self.assertEqual(
+            (data_dir / "source_images" / "img.jpg").read_bytes(), b"source"
+        )
+        quarantined = list(data_dir.glob(".restore-orphans-*/source_images/old.jpg"))
+        self.assertEqual(len(quarantined), 1)
 
     def test_sweep_stale_staging_removes_stale_restore_directories(self):
         self._reload({})
@@ -1063,7 +1800,9 @@ class NameDerivedRetentionTestCase(_BackupTestCase):
 
         deleted = [call.args[0] for call in fake_container.delete_blob.call_args_list]
         self.assertIn("hriv-backups/hriv-backup-20260101-000000.tar.gz", deleted)
-        self.assertNotIn("hriv-backups/hriv-backup-20260202-000000-aaaaaaaa.tar.gz", deleted)
+        self.assertNotIn(
+            "hriv-backups/hriv-backup-20260202-000000-aaaaaaaa.tar.gz", deleted
+        )
 
     def test_local_retention_keeps_newest_same_second_snapshots(self):
         self._reload({"BACKUP_RETENTION_COUNT": "2"})
@@ -1110,7 +1849,9 @@ class LegacySnapshotRestoreTestCase(_BackupTestCase):
 
         with (
             patch.object(backup, "_local_backup_dir", return_value=self.local_dir),
-            patch.object(backup, "_restore_from_archive", side_effect=fake_restore_from_archive),
+            patch.object(
+                backup, "_restore_from_archive", side_effect=fake_restore_from_archive
+            ),
         ):
             ok = backup._run_restore_inner(snapshot_name=snapshot_name)
         return ok, [p.name for p in restored]
@@ -1133,7 +1874,9 @@ class LegacySnapshotRestoreTestCase(_BackupTestCase):
 
     def test_restore_reports_available_snapshots_when_prefix_is_ambiguous(self):
         self._reload({})
-        (self.local_dir / "hriv-backup-20260202-030405-bbbbbbbb.tar.gz").write_bytes(b"archive")
+        (self.local_dir / "hriv-backup-20260202-030405-bbbbbbbb.tar.gz").write_bytes(
+            b"archive"
+        )
         with self.assertLogs("hriv-backup", level="ERROR") as logs:
             ok, restored = self._restore("hriv-backup-20260202-030405")
         self.assertFalse(ok)
@@ -1229,7 +1972,9 @@ def _section(**overrides) -> dict:
     return section
 
 
-def _attempt(run_id: str, started: str, completed: str | None, *, success=None, archive_key=None) -> dict:
+def _attempt(
+    run_id: str, started: str, completed: str | None, *, success=None, archive_key=None
+) -> dict:
     section = _section(
         run_id=run_id,
         started_at=started,
@@ -1244,7 +1989,13 @@ def _attempt(run_id: str, started: str, completed: str | None, *, success=None, 
     return section
 
 
-def _state(run_id: str, *, database: dict | None = None, filesystem: dict | None = None, snapshot_name="snap") -> dict:
+def _state(
+    run_id: str,
+    *,
+    database: dict | None = None,
+    filesystem: dict | None = None,
+    snapshot_name="snap",
+) -> dict:
     return {
         "schema_version": 2,
         "run_id": run_id,
@@ -1264,12 +2015,24 @@ class BackupStateMergeTestCase(unittest.TestCase):
         newer = _state(
             "newer",
             snapshot_name="snap-newer",
-            database=_attempt("newer", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True, archive_key="new-key"),
+            database=_attempt(
+                "newer",
+                "2026-08-01T10:00:00+00:00",
+                "2026-08-01T10:05:00+00:00",
+                success=True,
+                archive_key="new-key",
+            ),
         )
         older = _state(
             "older",
             snapshot_name="snap-older",
-            database=_attempt("older", "2026-08-01T09:00:00+00:00", "2026-08-01T10:03:00+00:00", success=True, archive_key="old-key"),
+            database=_attempt(
+                "older",
+                "2026-08-01T09:00:00+00:00",
+                "2026-08-01T10:03:00+00:00",
+                success=True,
+                archive_key="old-key",
+            ),
         )
 
         merged = backup._merge_backup_state(newer, older)
@@ -1282,12 +2045,24 @@ class BackupStateMergeTestCase(unittest.TestCase):
     def test_newer_completion_advances_state(self):
         older = _state(
             "older",
-            database=_attempt("older", "2026-08-01T09:00:00+00:00", "2026-08-01T09:05:00+00:00", success=True, archive_key="old-key"),
+            database=_attempt(
+                "older",
+                "2026-08-01T09:00:00+00:00",
+                "2026-08-01T09:05:00+00:00",
+                success=True,
+                archive_key="old-key",
+            ),
         )
         newer = _state(
             "newer",
             snapshot_name="snap-newer",
-            database=_attempt("newer", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True, archive_key="new-key"),
+            database=_attempt(
+                "newer",
+                "2026-08-01T10:00:00+00:00",
+                "2026-08-01T10:05:00+00:00",
+                success=True,
+                archive_key="new-key",
+            ),
         )
 
         merged = backup._merge_backup_state(older, newer)
@@ -1301,7 +2076,10 @@ class BackupStateMergeTestCase(unittest.TestCase):
         # exists, so the owning run re-commits an attempt whose timestamps are
         # already final.
         attempt = _attempt(
-            "run-1", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True
+            "run-1",
+            "2026-08-01T10:00:00+00:00",
+            "2026-08-01T10:05:00+00:00",
+            success=True,
         )
         stored = backup._merge_backup_state(None, _state("run-1", database=attempt))
 
@@ -1315,7 +2093,10 @@ class BackupStateMergeTestCase(unittest.TestCase):
 
     def test_same_run_enrichment_also_updates_its_history_entry(self):
         attempt = _attempt(
-            "run-1", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True
+            "run-1",
+            "2026-08-01T10:00:00+00:00",
+            "2026-08-01T10:05:00+00:00",
+            success=True,
         )
         stored = backup._merge_backup_state(None, _state("run-1", database=attempt))
 
@@ -1323,19 +2104,32 @@ class BackupStateMergeTestCase(unittest.TestCase):
         enriched["archive_key"] = "snap.tar.gz"
         merged = backup._merge_backup_state(stored, _state("run-1", database=enriched))
 
-        entries = [entry for entry in merged["attempts"] if entry["backup_type"] == "database"]
+        entries = [
+            entry for entry in merged["attempts"] if entry["backup_type"] == "database"
+        ]
         self.assertEqual(len(entries), 1)
         self.assertEqual(entries[0]["archive_key"], "snap.tar.gz")
 
     def test_late_finishing_older_failure_cannot_regress_newer_success(self):
         newer_success = _state(
             "newer",
-            filesystem=_attempt("newer", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True, archive_key="new-key"),
+            filesystem=_attempt(
+                "newer",
+                "2026-08-01T10:00:00+00:00",
+                "2026-08-01T10:05:00+00:00",
+                success=True,
+                archive_key="new-key",
+            ),
         )
         # An older run that started first but only failed afterwards.
         older_failure = _state(
             "older",
-            filesystem=_attempt("older", "2026-08-01T09:00:00+00:00", "2026-08-01T10:09:00+00:00", success=False),
+            filesystem=_attempt(
+                "older",
+                "2026-08-01T09:00:00+00:00",
+                "2026-08-01T10:09:00+00:00",
+                success=False,
+            ),
         )
 
         merged = backup._merge_backup_state(newer_success, older_failure)
@@ -1344,17 +2138,31 @@ class BackupStateMergeTestCase(unittest.TestCase):
         self.assertIs(merged["filesystem"]["success"], False)
         self.assertEqual(merged["filesystem"]["run_id"], "older")
         # … but the newer success history survives.
-        self.assertEqual(merged["filesystem"]["last_success_completed_at"], "2026-08-01T10:05:00+00:00")
+        self.assertEqual(
+            merged["filesystem"]["last_success_completed_at"],
+            "2026-08-01T10:05:00+00:00",
+        )
         self.assertEqual(merged["filesystem"]["last_success_archive_key"], "new-key")
 
     def test_older_failure_does_not_replace_newer_attempt(self):
         newer_success = _state(
             "newer",
-            filesystem=_attempt("newer", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True, archive_key="new-key"),
+            filesystem=_attempt(
+                "newer",
+                "2026-08-01T10:00:00+00:00",
+                "2026-08-01T10:05:00+00:00",
+                success=True,
+                archive_key="new-key",
+            ),
         )
         older_failure = _state(
             "older",
-            filesystem=_attempt("older", "2026-08-01T09:00:00+00:00", "2026-08-01T09:30:00+00:00", success=False),
+            filesystem=_attempt(
+                "older",
+                "2026-08-01T09:00:00+00:00",
+                "2026-08-01T09:30:00+00:00",
+                success=False,
+            ),
         )
 
         merged = backup._merge_backup_state(newer_success, older_failure)
@@ -1365,7 +2173,12 @@ class BackupStateMergeTestCase(unittest.TestCase):
     def test_in_progress_attempt_does_not_displace_finished_attempt(self):
         finished = _state(
             "finished",
-            database=_attempt("finished", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True),
+            database=_attempt(
+                "finished",
+                "2026-08-01T10:00:00+00:00",
+                "2026-08-01T10:05:00+00:00",
+                success=True,
+            ),
         )
         in_progress = _state(
             "running",
@@ -1380,13 +2193,36 @@ class BackupStateMergeTestCase(unittest.TestCase):
     def test_types_are_merged_independently(self):
         existing = _state(
             "a",
-            database=_attempt("a", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True, archive_key="a-key"),
-            filesystem=_attempt("a", "2026-08-01T10:05:00+00:00", "2026-08-01T10:30:00+00:00", success=False),
+            database=_attempt(
+                "a",
+                "2026-08-01T10:00:00+00:00",
+                "2026-08-01T10:05:00+00:00",
+                success=True,
+                archive_key="a-key",
+            ),
+            filesystem=_attempt(
+                "a",
+                "2026-08-01T10:05:00+00:00",
+                "2026-08-01T10:30:00+00:00",
+                success=False,
+            ),
         )
         incoming = _state(
             "b",
-            database=_attempt("b", "2026-08-01T09:00:00+00:00", "2026-08-01T09:05:00+00:00", success=True, archive_key="b-key"),
-            filesystem=_attempt("b", "2026-08-01T09:05:00+00:00", "2026-08-01T10:40:00+00:00", success=True, archive_key="b-fs"),
+            database=_attempt(
+                "b",
+                "2026-08-01T09:00:00+00:00",
+                "2026-08-01T09:05:00+00:00",
+                success=True,
+                archive_key="b-key",
+            ),
+            filesystem=_attempt(
+                "b",
+                "2026-08-01T09:05:00+00:00",
+                "2026-08-01T10:40:00+00:00",
+                success=True,
+                archive_key="b-fs",
+            ),
         )
 
         merged = backup._merge_backup_state(existing, incoming)
@@ -1397,18 +2233,33 @@ class BackupStateMergeTestCase(unittest.TestCase):
     def test_missing_or_legacy_state_is_replaced(self):
         incoming = _state("only")
         self.assertEqual(backup._merge_backup_state(None, incoming)["run_id"], "only")
-        self.assertEqual(backup._merge_backup_state({"schema_version": 1}, incoming)["run_id"], "only")
-        self.assertEqual(backup._merge_backup_state("garbage", incoming)["run_id"], "only")
+        self.assertEqual(
+            backup._merge_backup_state({"schema_version": 1}, incoming)["run_id"],
+            "only",
+        )
+        self.assertEqual(
+            backup._merge_backup_state("garbage", incoming)["run_id"], "only"
+        )
 
     def test_attempt_history_retains_losing_run(self):
         existing = _state(
             "newer",
-            database=_attempt("newer", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True),
+            database=_attempt(
+                "newer",
+                "2026-08-01T10:00:00+00:00",
+                "2026-08-01T10:05:00+00:00",
+                success=True,
+            ),
         )
         existing["attempts"] = backup._merge_attempt_history(None, existing)
         older = _state(
             "older",
-            database=_attempt("older", "2026-08-01T09:00:00+00:00", "2026-08-01T09:05:00+00:00", success=False),
+            database=_attempt(
+                "older",
+                "2026-08-01T09:00:00+00:00",
+                "2026-08-01T09:05:00+00:00",
+                success=False,
+            ),
         )
 
         merged = backup._merge_backup_state(existing, older)
@@ -1433,7 +2284,9 @@ class BackupStateMergeTestCase(unittest.TestCase):
             state = backup._merge_backup_state(state, incoming)
 
         self.assertEqual(len(state["attempts"]), backup._MAX_ATTEMPT_HISTORY)
-        self.assertEqual(state["attempts"][0]["run_id"], f"run-{backup._MAX_ATTEMPT_HISTORY + 4:02d}")
+        self.assertEqual(
+            state["attempts"][0]["run_id"], f"run-{backup._MAX_ATTEMPT_HISTORY + 4:02d}"
+        )
 
 
 class LastSuccessMarkerMergeTestCase(unittest.TestCase):
@@ -1452,18 +2305,35 @@ class LastSuccessMarkerMergeTestCase(unittest.TestCase):
         }
 
     def test_newest_completion_wins(self):
-        newer = self._marker("newer", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00")
-        older = self._marker("older", "2026-08-01T09:00:00+00:00", "2026-08-01T10:03:00+00:00")
+        newer = self._marker(
+            "newer", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00"
+        )
+        older = self._marker(
+            "older", "2026-08-01T09:00:00+00:00", "2026-08-01T10:03:00+00:00"
+        )
 
-        self.assertEqual(backup._merge_last_success_marker(newer, older)["run_id"], "newer")
-        self.assertEqual(backup._merge_last_success_marker(older, newer)["run_id"], "newer")
+        self.assertEqual(
+            backup._merge_last_success_marker(newer, older)["run_id"], "newer"
+        )
+        self.assertEqual(
+            backup._merge_last_success_marker(older, newer)["run_id"], "newer"
+        )
 
     def test_legacy_marker_without_completed_at_is_ordered_by_created_at(self):
-        legacy = {"snapshot_name": "snap-legacy", "created_at": "2026-08-01T08:00:00+00:00"}
-        newer = self._marker("newer", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00")
+        legacy = {
+            "snapshot_name": "snap-legacy",
+            "created_at": "2026-08-01T08:00:00+00:00",
+        }
+        newer = self._marker(
+            "newer", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00"
+        )
 
-        self.assertEqual(backup._merge_last_success_marker(legacy, newer)["run_id"], "newer")
-        self.assertEqual(backup._merge_last_success_marker(newer, legacy)["run_id"], "newer")
+        self.assertEqual(
+            backup._merge_last_success_marker(legacy, newer)["run_id"], "newer"
+        )
+        self.assertEqual(
+            backup._merge_last_success_marker(newer, legacy)["run_id"], "newer"
+        )
 
     def test_per_type_entries_keep_newest_of_each_type(self):
         existing = self._marker(
@@ -1471,7 +2341,11 @@ class LastSuccessMarkerMergeTestCase(unittest.TestCase):
             "2026-08-01T10:00:00+00:00",
             "2026-08-01T10:05:00+00:00",
             types={
-                "database": {"run_id": "a", "created_at": "2026-08-01T10:00:00+00:00", "completed_at": "2026-08-01T10:02:00+00:00"},
+                "database": {
+                    "run_id": "a",
+                    "created_at": "2026-08-01T10:00:00+00:00",
+                    "completed_at": "2026-08-01T10:02:00+00:00",
+                },
             },
         )
         incoming = self._marker(
@@ -1479,7 +2353,11 @@ class LastSuccessMarkerMergeTestCase(unittest.TestCase):
             "2026-08-01T09:00:00+00:00",
             "2026-08-01T10:03:00+00:00",
             types={
-                "filesystem": {"run_id": "b", "created_at": "2026-08-01T09:00:00+00:00", "completed_at": "2026-08-01T10:03:00+00:00"},
+                "filesystem": {
+                    "run_id": "b",
+                    "created_at": "2026-08-01T09:00:00+00:00",
+                    "completed_at": "2026-08-01T10:03:00+00:00",
+                },
             },
         )
 
@@ -1506,7 +2384,13 @@ class RestoreStateMergeTestCase(unittest.TestCase):
             "last_success_duration_seconds": None,
             "last_success_archive_name": None,
         }
-        section = dict(blank, run_id=run_id, started_at=started, completed_at=completed, success=success)
+        section = dict(
+            blank,
+            run_id=run_id,
+            started_at=started,
+            completed_at=completed,
+            success=success,
+        )
         if success:
             section["last_success_started_at"] = started
             section["last_success_completed_at"] = completed
@@ -1521,17 +2405,43 @@ class RestoreStateMergeTestCase(unittest.TestCase):
         return state
 
     def test_older_restore_failure_preserves_newer_success(self):
-        newer = self._restore_state("newer", "operator", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", True)
-        older = self._restore_state("older", "operator", "2026-08-01T09:00:00+00:00", "2026-08-01T10:09:00+00:00", False)
+        newer = self._restore_state(
+            "newer",
+            "operator",
+            "2026-08-01T10:00:00+00:00",
+            "2026-08-01T10:05:00+00:00",
+            True,
+        )
+        older = self._restore_state(
+            "older",
+            "operator",
+            "2026-08-01T09:00:00+00:00",
+            "2026-08-01T10:09:00+00:00",
+            False,
+        )
 
         merged = backup._merge_restore_state(newer, older)
 
         self.assertIs(merged["operator"]["database"]["success"], False)
-        self.assertEqual(merged["operator"]["database"]["last_success_archive_name"], "newer.tar.gz")
+        self.assertEqual(
+            merged["operator"]["database"]["last_success_archive_name"], "newer.tar.gz"
+        )
 
     def test_purposes_do_not_clobber_each_other(self):
-        operator = self._restore_state("op", "operator", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", True)
-        test_run = self._restore_state("test", "test", "2026-08-01T11:00:00+00:00", "2026-08-01T11:05:00+00:00", True)
+        operator = self._restore_state(
+            "op",
+            "operator",
+            "2026-08-01T10:00:00+00:00",
+            "2026-08-01T10:05:00+00:00",
+            True,
+        )
+        test_run = self._restore_state(
+            "test",
+            "test",
+            "2026-08-01T11:00:00+00:00",
+            "2026-08-01T11:05:00+00:00",
+            True,
+        )
 
         merged = backup._merge_restore_state(operator, test_run)
 
@@ -1568,11 +2478,23 @@ class LocalStateCommitTestCase(_BackupTestCase):
     def test_out_of_order_writers_converge_on_newest_result(self):
         newer = _state(
             "newer",
-            database=_attempt("newer", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True, archive_key="new-key"),
+            database=_attempt(
+                "newer",
+                "2026-08-01T10:00:00+00:00",
+                "2026-08-01T10:05:00+00:00",
+                success=True,
+                archive_key="new-key",
+            ),
         )
         older = _state(
             "older",
-            database=_attempt("older", "2026-08-01T09:00:00+00:00", "2026-08-01T10:04:00+00:00", success=True, archive_key="old-key"),
+            database=_attempt(
+                "older",
+                "2026-08-01T09:00:00+00:00",
+                "2026-08-01T10:04:00+00:00",
+                success=True,
+                archive_key="old-key",
+            ),
         )
 
         self._write_state(newer)
@@ -1593,16 +2515,29 @@ class LocalStateCommitTestCase(_BackupTestCase):
         self._reload({"BACKUP_MODE": "production", "BACKUP_RETENTION_COUNT": "1"})
         with patch.object(backup, "_local_backup_dir", return_value=self.local_dir):
             self._write_state(_state("only"))
-            for name in ("hriv-backup-20260101-020000.tar.gz", "hriv-backup-20260102-020000.tar.gz"):
+            for name in (
+                "hriv-backup-20260101-020000.tar.gz",
+                "hriv-backup-20260102-020000.tar.gz",
+            ):
                 (self.local_dir / name).write_bytes(b"archive")
 
             names = [snapshot["name"] for snapshot in backup.list_snapshots()]
             backup._enforce_local_retention()
 
-        self.assertEqual(names, ["hriv-backup-20260102-020000.tar.gz", "hriv-backup-20260101-020000.tar.gz"])
+        self.assertEqual(
+            names,
+            [
+                "hriv-backup-20260102-020000.tar.gz",
+                "hriv-backup-20260101-020000.tar.gz",
+            ],
+        )
         self.assertTrue((self.local_dir / backup.STATE_LOCK_FILENAME).exists())
-        self.assertTrue((self.local_dir / "hriv-backup-20260102-020000.tar.gz").exists())
-        self.assertFalse((self.local_dir / "hriv-backup-20260101-020000.tar.gz").exists())
+        self.assertTrue(
+            (self.local_dir / "hriv-backup-20260102-020000.tar.gz").exists()
+        )
+        self.assertFalse(
+            (self.local_dir / "hriv-backup-20260101-020000.tar.gz").exists()
+        )
 
     def test_corrupt_state_file_is_replaced(self):
         (self.local_dir / "BACKUP_STATE.json").write_text("{not json")
@@ -1790,7 +2725,9 @@ class AzureStateCommitTestCase(_BackupTestCase):
             }
         )
         self.store = _FakeBlobStore()
-        patcher = patch.object(backup, "_blob_container_client", return_value=self.store)
+        patcher = patch.object(
+            backup, "_blob_container_client", return_value=self.store
+        )
         patcher.start()
         self.addCleanup(patcher.stop)
         self.blob_name = "hriv-backups/BACKUP_STATE.json"
@@ -1820,12 +2757,20 @@ class AzureStateCommitTestCase(_BackupTestCase):
         name, overwrite, etag = self.store.calls[-1]
         self.assertEqual((name, overwrite), (self.blob_name, True))
         self.assertIsNotNone(etag)
-        self.assertEqual(self.store.match_conditions, [backup.MatchConditions.IfNotModified])
+        self.assertEqual(
+            self.store.match_conditions, [backup.MatchConditions.IfNotModified]
+        )
 
     def test_interleaved_writer_forces_a_re_merge(self):
         competitor = _state(
             "competitor",
-            filesystem=_attempt("competitor", "2026-08-01T10:00:00+00:00", "2026-08-01T10:05:00+00:00", success=True, archive_key="competitor-key"),
+            filesystem=_attempt(
+                "competitor",
+                "2026-08-01T10:00:00+00:00",
+                "2026-08-01T10:05:00+00:00",
+                success=True,
+                archive_key="competitor-key",
+            ),
         )
         self._write_state(_state("base"))
 
@@ -1836,26 +2781,37 @@ class AzureStateCommitTestCase(_BackupTestCase):
         self._write_state(
             _state(
                 "mine",
-                database=_attempt("mine", "2026-08-01T10:10:00+00:00", "2026-08-01T10:12:00+00:00", success=True, archive_key="my-key"),
+                database=_attempt(
+                    "mine",
+                    "2026-08-01T10:10:00+00:00",
+                    "2026-08-01T10:12:00+00:00",
+                    success=True,
+                    archive_key="my-key",
+                ),
             )
         )
 
         stored = self._stored()
         self.assertEqual(stored["database"]["last_success_archive_key"], "my-key")
-        self.assertEqual(stored["filesystem"]["last_success_archive_key"], "competitor-key")
+        self.assertEqual(
+            stored["filesystem"]["last_success_archive_key"], "competitor-key"
+        )
 
     def test_persistent_contention_gives_up_without_raising(self):
         self._write_state(_state("first"))
 
-        def always_conflict(name, data, overwrite=True, etag=None, match_condition=None):
+        def always_conflict(
+            name, data, overwrite=True, etag=None, match_condition=None
+        ):
             data.read()
             if overwrite and etag is not None:
                 raise backup.ResourceModifiedError("blob was modified")
             raise backup.ResourceExistsError("blob already exists")
 
-        with patch.object(self.store, "upload_blob", side_effect=always_conflict), self.assertLogs(
-            "hriv-backup", level="WARNING"
-        ) as logs:
+        with (
+            patch.object(self.store, "upload_blob", side_effect=always_conflict),
+            self.assertLogs("hriv-backup", level="WARNING") as logs,
+        ):
             self._write_state(_state("loser"))
 
         self.assertTrue(any("Gave up" in message for message in logs.output))
@@ -1915,7 +2871,9 @@ class AzureStateCommitTestCase(_BackupTestCase):
         self.store.seed(self.blob_name, _state("existing"))
 
         with (
-            patch.object(self.store, "download_blob", side_effect=RuntimeError("unreadable")),
+            patch.object(
+                self.store, "download_blob", side_effect=RuntimeError("unreadable")
+            ),
             self.assertLogs("hriv-backup", level="WARNING") as logs,
         ):
             self._write_state(_state("mine"))

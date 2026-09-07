@@ -1,6 +1,6 @@
 # HRIV Disaster Recovery Backup Service
 
-Standalone service that snapshots the HRIV PostgreSQL database and image filesystem on a configurable cron schedule, stores archives in Azure Blob Storage, and supports full restore after a fresh redeployment. In production deployments the service is intentionally narrowed to backing up the database and authoritative source images; generated DZI tiles are treated as derived data that should be protected by the storage layer (Longhorn snapshots/backups) or rebuilt from source images.
+Standalone service that publishes HRIV recovery archives on a configurable schedule, stores archives in Azure Blob Storage, and supports component-selective restore after a fresh redeployment. In production, CloudNativePG backup and WAL archiving protect PostgreSQL while this service streams authoritative source images directly to Azure; generated DZI tiles are derived data that can be rebuilt from source images. Development mode retains the legacy logical database plus filesystem archive.
 
 ## Quick Start
 
@@ -18,7 +18,7 @@ This creates a timestamped `.tar.gz` archive in the `backup_data` Docker volume 
 docker compose --profile backup up -d backup
 ```
 
-The service runs in the background and creates snapshots on the configured schedule (default: daily at 2:00 AM UTC).
+The service runs in the background and creates snapshots on the configured schedule (default: 10:00 UTC, or 02:00 PST / 03:00 PDT).
 
 ### List available snapshots
 
@@ -67,9 +67,9 @@ Each snapshot is a `.tar.gz` archive containing:
 
 | File            | Description                                                                                             |
 | --------------- | ------------------------------------------------------------------------------------------------------- |
-| `db.sql`        | Full PostgreSQL dump (`pg_dump --no-owner --no-acl`)                                                    |
+| `db.sql`        | Development-only logical PostgreSQL dump (`pg_dump --no-owner --no-acl`); omitted in production         |
 | `data/`         | Image filesystem (source images + DZI tiles in development mode; source images only in production mode) |
-| `manifest.json` | Metadata: timestamp, backup mode, file listing with SHA-256 checksums                                   |
+| `manifest.json` | Versioned recovery-set metadata, CNPG target time, file inventory, and SHA-256 checksums                |
 
 ## Production Role
 
@@ -79,11 +79,12 @@ Each snapshot is a `.tar.gz` archive containing:
 >
 > **Quick operator checklist:** [`docs/backup-restore-runbook.md`](../docs/backup-restore-runbook.md).
 
-In production deployments, the Python backup service is **not** the primary protection for the large generated tile tree. Its supported production role is:
+In production deployments, the Python backup service protects authoritative source images. Its supported role is:
 
-- **Database + source images:** the service archives and restores the PostgreSQL dump and the `/data/source_images` filesystem.
+- **Database recovery binding:** the manifest records the CNPG cluster and target timestamp; it does not run `pg_dump` or include `db.sql`.
+- **Source images:** DB-referenced files under `/data/source_images` are streamed directly to Azure without a complete local archive; missing references and orphan files are reported without reconciliation.
 - **Tiles excluded:** generated DZI tiles under `/data/tiles` are excluded from HRIV backups.
-- **Why:** tiles are derived data. They can be rebuilt from the authoritative source images using the `rebuild-tiles` admin task (see [`docs/admin-import-export.md`](../docs/admin-import-export.md)), or protected independently by the storage layer.
+- **Why:** CNPG provides database backup and PITR, while tiles are derived data that can be rebuilt with the `rebuild-tiles` admin task (see [`docs/admin-import-export.md`](../docs/admin-import-export.md)).
 
 Set `BACKUP_MODE=production` to enable this mode. The default is `development`, which preserves the historical behavior of archiving the full `/data` tree including tiles.
 
@@ -91,12 +92,12 @@ Set `BACKUP_MODE=production` to enable this mode. The default is `development`, 
 
 For Longhorn-backed Kubernetes deployments, protect each volume according to its role:
 
-| Volume                                    | Recommended protection                                                | Recovery path                                                                                                                    |
-| ----------------------------------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Database (PostgreSQL PVC)                 | Longhorn snapshot + backup                                            | Restore from Longhorn or replay from HRIV DB dump                                                                                |
-| Source images (`/data/source_images` PVC) | Longhorn snapshot + backup                                            | Restore from Longhorn or HRIV backup archive                                                                                     |
-| Generated tiles (`/data/tiles` PVC)       | Longhorn snapshot + backup (optional)                                 | Prefer tile rebuild from source images; restore from Longhorn only when the snapshot is newer than the last tile-pipeline change |
-| Backup archives (Azure / local PVC)       | Azure Blob Storage replication or Longhorn snapshot of the backup PVC | Azure Blob Storage or Longhorn restore of the backup PVC                                                                         |
+| Volume                                    | Recommended protection                          | Recovery path                                                                                                                    |
+| ----------------------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Database (PostgreSQL PVC)                 | CNPG base backups plus continuous WAL archiving | Restore through CNPG to the recovery-set target time                                                                             |
+| Source images (`/data/source_images` PVC) | HRIV source-image recovery archives in Azure    | Stream and validate with `restore-filesystem` into a new target PVC                                                              |
+| Generated tiles (`/data/tiles` PVC)       | Longhorn snapshot + backup (optional)           | Prefer tile rebuild from source images; restore from Longhorn only when the snapshot is newer than the last tile-pipeline change |
+| Backup archives (Azure / local PVC)       | Azure Blob Storage replication                  | Restore from an archive whose publication state, manifest, and success marker are valid                                          |
 
 ### Rebuild vs restore tiles
 
@@ -106,29 +107,32 @@ For Longhorn-backed Kubernetes deployments, protect each volume according to its
 
 ### Restore responsibilities
 
-| Data            | Restore source                                           |
-| --------------- | -------------------------------------------------------- |
-| Database        | HRIV backup archive (`db.sql`) or Longhorn restore       |
-| Source images   | HRIV backup archive or Longhorn restore                  |
-| Generated tiles | `rebuild-tiles` admin task or Longhorn restore           |
-| Backup archives | Azure Blob Storage or Longhorn restore of the backup PVC |
+| Data            | Restore source                                            |
+| --------------- | --------------------------------------------------------- |
+| Database        | CNPG base backup and WAL/PITR recovery                    |
+| Source images   | Published HRIV recovery archive with `restore-filesystem` |
+| Generated tiles | `rebuild-tiles` admin task or optional Longhorn restore   |
+| Backup archives | Azure Blob Storage                                        |
 
 ## Configuration
 
 All settings are controlled via environment variables in `docker-compose.yml` or the Helm chart:
 
-| Variable                          | Default                                                   | Description                                                                                                                      |
-| --------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`                    | `postgresql://hriv:hriv@db:5432/hriv`                     | PostgreSQL connection string                                                                                                     |
-| `DATA_DIR`                        | `/data`                                                   | Path to the image data volume                                                                                                    |
-| `BACKUP_CRON_SCHEDULE`            | `0 2 * * *`                                               | Cron expression for scheduled backups                                                                                            |
-| `BACKUP_RETENTION_COUNT`          | `30`                                                      | Number of snapshots to keep (older ones are deleted)                                                                             |
-| `BACKUP_STAGING_DIR`              | `/backups/.staging`                                       | Directory archives are built in before publication, and restores download/extract in; falls back to pod-local `/tmp` if unusable |
-| `BACKUP_STALE_HOURS`              | `26`                                                      | Freshness threshold for the `status` command before a backup is considered stale                                                 |
-| `BACKUP_MODE`                     | `development` (docker-compose), `production` (Helm chart) | `development` = DB + source images + tiles; `production` = DB + source images only                                               |
-| `AZURE_STORAGE_CONNECTION_STRING` | _(empty)_                                                 | Azure Blob Storage connection string                                                                                             |
-| `AZURE_STORAGE_CONTAINER`         | _(empty)_                                                 | Azure Blob Storage container name                                                                                                |
-| `AZURE_BLOB_PREFIX`               | `hriv-backups`                                            | Blob name prefix (folder) inside the container                                                                                   |
+| Variable                          | Default                                                   | Description                                                                              |
+| --------------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                    | `postgresql://hriv:hriv@db:5432/hriv`                     | PostgreSQL connection string                                                             |
+| `DATA_DIR`                        | `/data`                                                   | Path to the image data volume                                                            |
+| `BACKUP_CRON_SCHEDULE`            | `0 10 * * *`                                              | Cron expression for scheduled backups                                                    |
+| `BACKUP_TIMEZONE`                 | `UTC`                                                     | IANA timezone used to evaluate the schedule; UTC avoids DST gaps                         |
+| `BACKUP_MUTATION_DRAIN_SECONDS`   | `5`                                                       | Brief write-drain interval before the finalized source-image inventory is captured       |
+| `CNPG_CLUSTER_NAME`               | `pg-core`                                                 | CNPG cluster bound into production recovery-set metadata                                 |
+| `BACKUP_RETENTION_COUNT`          | `30`                                                      | Number of snapshots to keep (older ones are deleted)                                     |
+| `BACKUP_STAGING_DIR`              | `/backups/.staging`                                       | Bounded state/development scratch; Azure production archives bypass full local staging   |
+| `BACKUP_STALE_HOURS`              | `26`                                                      | Freshness threshold for the `status` command before a backup is considered stale         |
+| `BACKUP_MODE`                     | `development` (docker-compose), `production` (Helm chart) | `development` = logical DB + full data; `production` = CNPG binding + source images only |
+| `AZURE_STORAGE_CONNECTION_STRING` | _(empty)_                                                 | Azure Blob Storage connection string                                                     |
+| `AZURE_STORAGE_CONTAINER`         | _(empty)_                                                 | Azure Blob Storage container name                                                        |
+| `AZURE_BLOB_PREFIX`               | `hriv-backups`                                            | Blob name prefix (folder) inside the container                                           |
 
 ## Observability markers
 
@@ -193,7 +197,9 @@ runtime paths unchanged while mounting only the volumes the backup service
 actively uses by default:
 
 - source-images PVC mounted at `/data`
-- backup archives PVC mounted at `/backups`
+- backup state/scratch PVC mounted at `/backups`
+- optional `restoreTarget.existingClaim` mounted at `restoreTarget.mountPath`
+  (default `/restore-target`) for validated source-only recovery
 
 When `BACKUP_MODE=production` (the Helm chart default), the backup pod does
 not mount or provision the tiles PVC because generated tiles are excluded from
@@ -217,13 +223,13 @@ and `persistence.tiles.*` keys. The old backend chart PVC named
 
 ### Pod Resources
 
-The chart sets explicit `resources` for the backup pod. Snapshots are staged in
-`BACKUP_STAGING_DIR` on the `/backups` PVC, and marker state and the lock
-sidecar live there too, so neither scales with pod-local `ephemeral-storage`;
-the explicit request and limit exist so an unexpected `/tmp` fallback fails as
-a clear limit error rather than as node disk-pressure eviction. Raise them if
-you run with staging disabled, with a large source-image set, or with
-`BACKUP_MODE=development`, which keeps generated tiles in the archive.
+The chart sets explicit `resources` for the backup pod. In Azure-backed
+production mode, compressed tar data is written to uncommitted block-blob
+blocks and committed only after every inventoried file is read and validated;
+no complete archive is staged on `/backups` or pod-local storage. The backup PVC
+holds bounded state, locks, and database-dump or restore scratch used by legacy
+and development paths. Local-only backups and local legacy restores still use
+`BACKUP_STAGING_DIR`, so their capacity must match the selected archive.
 
 ### Local-Only Mode
 
@@ -237,33 +243,49 @@ Uncomment and configure the Azure variables in `docker-compose.yml` to enable of
 2. A Blob container within that account
 3. A connection string (found in the Azure Portal under Storage Account → Access keys)
 
-## Full Restore
+## Component-selective restore
 
-Follow these steps to restore from a backup on a running cluster.
-
-### 1. List available snapshots
+List published snapshots and select one whose recovery-set metadata matches the
+intended CNPG recovery point:
 
 ```bash
 kubectl exec -n hriv deploy/hriv-backup -- python backup.py list
 ```
 
-Pick the snapshot you want to restore (or omit the name in step 3 to use the latest).
-
-### 2. Run the restore
+The production sequence restores PostgreSQL through CNPG first, then restores
+the matching source-image archive to a new target PVC without applying SQL. Set
+`restoreTarget.existingClaim` on the backup chart to mount the prepared claim at
+`/restore-target`, then run:
 
 ```bash
-kubectl exec -n hriv deploy/hriv-backup -- python backup.py restore [SNAPSHOT_NAME]
+kubectl exec -n hriv deploy/hriv-backup -- \
+  python backup.py restore-filesystem [SNAPSHOT_NAME] \
+  --data-dir /restore-target
 ```
 
-The restore command automatically:
+Equivalent explicit syntax is:
 
-1. **Enables maintenance mode** — writes a flag file to the shared data volume. The backend middleware returns `503 Service Unavailable` on all non-health endpoints, and the frontend shows a "Maintenance in Progress" overlay.
-2. **Downloads** the snapshot archive from Azure Blob Storage (or uses a local archive).
-3. **Drops all tables** in the PostgreSQL database and restores from the `db.sql` dump.
-4. **Replaces files** in the data volume. In `development` mode this includes source images and DZI tiles. In `production` mode the tile tree is preserved and left untouched; regenerate tiles afterward with the `rebuild-tiles` admin task if needed.
-5. **Disables maintenance mode** — removes the flag file. The frontend automatically detects the change and reloads within 10 seconds.
+```bash
+python backup.py restore [SNAPSHOT_NAME] --components filesystem --data-dir /restore-target
+```
 
-If the restore fails, maintenance mode is still disabled automatically so the previous state remains accessible.
+Azure archives are read sequentially. Selected source files are extracted into
+a unique staging directory on the target data filesystem, validated against the
+manifest, and promoted only after validation succeeds. Existing unmatched
+target content is quarantined rather than reconciled or deleted. Production
+operators should use a fresh target PVC so validation and rollback do not depend
+on spare capacity in the active source-image volume.
+
+`restore-database` and `--components database` are available only for legacy or
+development archives containing `db.sql`. A current production source-only
+archive rejects database or combined restore before invoking `psql` and directs
+the operator to CNPG recovery. The unqualified `restore` command remains the
+legacy combined default for backward compatibility; do not run it after a newer
+CNPG PITR recovery.
+
+Operator restores enable and clear HRIV maintenance mode. Restore validation
+failure never performs automatic database-row deletion, row creation, orphan
+file deletion, or tile generation.
 
 ### 3. Verify
 
@@ -298,29 +320,31 @@ curl -X PUT "https://<host>/api/admin/maintenance?enabled=false" -H "Authorizati
 
 ## Full Disaster Recovery Procedure
 
-After a fresh redeployment (new server, new Docker volumes):
+For Kubernetes production recovery:
+
+1. Reconcile infrastructure and HRIV configuration from Flux and Vault.
+2. Select a published recovery set and inspect its manifest sidecar.
+3. Restore `pg-core` through CNPG to the manifest's `database_recovery.target_time`.
+4. Provision a new source-image PVC with capacity for the manifest's declared bytes.
+5. Run `restore-filesystem` against that target without executing `db.sql`.
+6. Verify checksums and review missing-source/orphan reports before cutover.
+7. Point the HRIV deployment at the validated CNPG/source-image targets.
+8. Rebuild derived tiles with the supported admin task.
+9. Verify health, authentication, browsing, representative viewer behavior, metadata, and annotations.
+
+Development and local-only recovery may continue to use the legacy combined
+archive after starting the local PostgreSQL service:
 
 ```bash
-# 1. Start the database
 docker compose up -d db
-
-# 2. Wait for it to be healthy
 docker compose exec db pg_isready -U hriv
-
-# 3. Restore the latest snapshot (database + source images; tiles are excluded in production mode)
 docker compose --profile backup run --rm backup restore
-
-# 4. Start the rest of the stack
 docker compose up -d
 ```
 
-The restore command will:
-
-1. Enable maintenance mode (frontend shows overlay)
-2. Download the snapshot from Azure Blob Storage (or use local `/backups` volume)
-3. Drop and recreate all database tables from the `pg_dump`
-4. Restore image files to the data volume. In `production` mode source images are restored and the existing tile tree is preserved; use the `rebuild-tiles` admin task or a Longhorn tile-volume restore to bring tiles back
-5. Disable maintenance mode (frontend recovers automatically)
+The authoritative production sequence is defined in
+[`docs/recovery-set-contract.md`](../docs/recovery-set-contract.md). It never
+restores a logical dump over a newer CNPG recovery point.
 
 ## Maintenance Mode
 
@@ -335,9 +359,9 @@ The backup service and the backend share a file-based maintenance flag at `<DATA
 The backup service works alongside the admin page's database import/export feature:
 
 - **Admin Export** (`GET /api/admin/export`): Exports a JSON document with categories, images, users, programs, and announcements. This is useful for quick manual backups of database records.
-- **Backup Service**: In `development` mode, creates comprehensive snapshots that include the full `pg_dump` (all tables, sequences, indexes) **and** the image filesystem. In `production` mode it backs up the `pg_dump` and source images only; generated tiles are recovered from Longhorn snapshots or regenerated with the `rebuild-tiles` admin task.
+- **Backup Service**: In `development` mode, creates legacy combined archives containing `db.sql` and the image filesystem. In `production`, it streams source images only and binds them to the CNPG recovery target in the manifest; generated tiles are rebuilt or optionally restored from Longhorn.
 
-For maximum safety, the admin export can be used for quick application-level backups, while the backup service handles full disaster recovery including the image filesystem.
+The admin export remains useful for quick application-level logical exports. Production disaster recovery uses CNPG for PostgreSQL and the backup service for the authoritative source-image filesystem.
 
 ## Docker Compose Profile
 

@@ -1,23 +1,26 @@
 """HRIV Disaster Recovery Backup Service.
 
-Standalone service that snapshots the PostgreSQL database and image
-filesystem on a cron schedule, uploads archives to Azure Blob Storage,
-and can restore from any snapshot after a fresh redeployment.
+Standalone service that publishes image-filesystem recovery archives on a cron
+schedule and supports component-selective restore. Production binds source-image
+archives to CNPG recovery timestamps; development retains logical database dumps.
 
 Usage:
-    python backup.py backup          # Run a one-shot backup now
-    python backup.py restore          # Restore the latest snapshot
-    python backup.py restore <name>   # Restore a specific snapshot
-    python backup.py restore-test     # Restore into the configured test target
-    python backup.py list             # List available snapshots
-    python backup.py status           # Show the last-success heartbeat
-    python backup.py cron             # Start the cron scheduler (default)
+    python backup.py backup                    # Run a one-shot backup now
+    python backup.py restore                    # Legacy combined restore
+    python backup.py restore-filesystem [name]  # Restore source files only
+    python backup.py restore-database [name]    # Restore a legacy logical dump only
+    python backup.py restore-test               # Restore into the configured test target
+    python backup.py list                       # List available snapshots
+    python backup.py status                     # Show the last-success heartbeat
+    python backup.py cron                       # Start the cron scheduler (default)
 """
 
 from __future__ import annotations
 
+import base64
 import contextlib
 import copy
+import csv
 import fcntl
 import hashlib
 import io
@@ -37,6 +40,7 @@ from collections.abc import Callable, Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from azure.core import MatchConditions
 from azure.core.exceptions import (
@@ -90,6 +94,7 @@ def _env(name: str, default: str | None = None, required: bool = False) -> str:
 
 # Database
 DATABASE_URL: str = _env("DATABASE_URL", "postgresql://hriv:hriv@db:5432/hriv")
+CNPG_CLUSTER_NAME: str = _env("CNPG_CLUSTER_NAME", "pg-core")
 
 # Filesystem
 DATA_DIR: str = _env("DATA_DIR", "/data")
@@ -100,9 +105,11 @@ AZURE_STORAGE_CONTAINER: str = _env("AZURE_STORAGE_CONTAINER", "")
 AZURE_BLOB_PREFIX: str = _env("AZURE_BLOB_PREFIX", "hriv-backups")
 
 # Schedule & retention
-BACKUP_CRON_SCHEDULE: str = _env("BACKUP_CRON_SCHEDULE", "0 2 * * *")
+BACKUP_CRON_SCHEDULE: str = _env("BACKUP_CRON_SCHEDULE", "0 10 * * *")
+BACKUP_TIMEZONE: str = _env("BACKUP_TIMEZONE", "UTC")
 BACKUP_RETENTION_COUNT: int = int(_env("BACKUP_RETENTION_COUNT", "30"))
 BACKUP_STALE_HOURS: int = int(_env("BACKUP_STALE_HOURS", "26"))
+BACKUP_MUTATION_DRAIN_SECONDS: float = float(_env("BACKUP_MUTATION_DRAIN_SECONDS", "5"))
 # Directory used to stage archives while they are being built. Defaults to a
 # hidden directory on the /backups volume so the archive never occupies
 # pod-local ephemeral storage.
@@ -111,11 +118,19 @@ RESTORE_TEST_DATABASE_URL: str = _env("RESTORE_TEST_DATABASE_URL", "")
 RESTORE_TEST_DATA_DIR: str = _env("RESTORE_TEST_DATA_DIR", "")
 
 # Operating mode: "development" backs up DB + source images + tiles.
-# "production" backs up DB + source images only; tiles are excluded and
-# must be protected by Longhorn snapshots or rebuilt from source images.
+# "production" binds source images to a CNPG recovery point; tiles are
+# excluded and must be rebuilt from source images.
 BACKUP_MODE: str = _env("BACKUP_MODE", "development").lower()
 if BACKUP_MODE not in ("development", "production"):
     log.error("BACKUP_MODE must be 'development' or 'production', got %s", BACKUP_MODE)
+    sys.exit(1)
+if BACKUP_MUTATION_DRAIN_SECONDS < 0:
+    log.error("BACKUP_MUTATION_DRAIN_SECONDS must not be negative")
+    sys.exit(1)
+try:
+    _BACKUP_TZ = ZoneInfo(BACKUP_TIMEZONE)
+except ZoneInfoNotFoundError:
+    log.error("BACKUP_TIMEZONE is not a valid IANA timezone: %s", BACKUP_TIMEZONE)
     sys.exit(1)
 
 
@@ -195,7 +210,9 @@ def _staging_tempdir(prefix: str) -> tempfile.TemporaryDirectory:
     root = _staging_root()
     if root is not None:
         _sweep_stale_staging(root)
-    return tempfile.TemporaryDirectory(prefix=prefix, dir=str(root) if root is not None else None)
+    return tempfile.TemporaryDirectory(
+        prefix=prefix, dir=str(root) if root is not None else None
+    )
 
 
 def _snapshot_stem(snapshot_name: str) -> str:
@@ -275,9 +292,12 @@ def _atomic_write_bytes(path: Path, payload: bytes) -> None:
 # ---------------------------------------------------------------------------
 
 STATE_LOCK_FILENAME = ".hriv-backup-state.lock"
+RUN_LOCK_FILENAME = ".hriv-backup-run.lock"
 BACKUP_STATE_SCHEMA_VERSION = 2
 RESTORE_STATE_SCHEMA_VERSION = 1
+RECOVERY_MANIFEST_SCHEMA_VERSION = 2
 _STATE_LOCK_TIMEOUT_SECONDS = 30.0
+_RUN_LOCK_TIMEOUT_SECONDS = 0.0
 _STATE_LOCK_POLL_SECONDS = 0.05
 _AZURE_CAS_ATTEMPTS = 5
 _MAX_ATTEMPT_HISTORY = 10
@@ -385,6 +405,41 @@ def _state_lock() -> Iterator[bool]:
         os.close(fd)
 
 
+def _run_lock_path() -> Path:
+    return _local_backup_dir() / RUN_LOCK_FILENAME
+
+
+@contextlib.contextmanager
+def _run_lock() -> Iterator[bool]:
+    """Acquire the shared backup-run lock without waiting for another run."""
+    path = _run_lock_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+    except OSError:
+        log.exception("Failed to open backup run lock %s", path)
+        yield False
+        return
+
+    acquired = False
+    try:
+        deadline = time.monotonic() + _RUN_LOCK_TIMEOUT_SECONDS
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(_STATE_LOCK_POLL_SECONDS)
+        yield acquired
+    finally:
+        if acquired:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+
 def _read_json_file(path: Path) -> dict | None:
     try:
         if not path.exists():
@@ -436,19 +491,23 @@ def _commit_shared_json(
     incoming: dict,
     merge: Callable[[dict | None, dict], dict],
     label: str,
-) -> None:
+) -> bool:
     """Merge ``incoming`` into the shared document and store the result."""
     try:
         if _azure_configured():
             container = _blob_container_client()
             for _ in range(_AZURE_CAS_ATTEMPTS):
-                existing, etag, presence = _download_json_with_etag(container, blob_name)
+                existing, etag, presence = _download_json_with_etag(
+                    container, blob_name
+                )
                 if presence == "unknown":
                     continue
                 payload = json.dumps(merge(existing, incoming), indent=2).encode()
                 try:
                     if presence == "missing":
-                        container.upload_blob(blob_name, io.BytesIO(payload), overwrite=False)
+                        container.upload_blob(
+                            blob_name, io.BytesIO(payload), overwrite=False
+                        )
                     else:
                         container.upload_blob(
                             blob_name,
@@ -457,22 +516,26 @@ def _commit_shared_json(
                             etag=etag,
                             match_condition=MatchConditions.IfNotModified,
                         )
-                    return
+                    return True
                 except (ResourceExistsError, ResourceModifiedError):
                     # Another writer won the race; re-read and merge again.
                     continue
-            log.warning("Gave up updating %s after %d attempts", label, _AZURE_CAS_ATTEMPTS)
-            return
+            log.warning(
+                "Gave up updating %s after %d attempts", label, _AZURE_CAS_ATTEMPTS
+            )
+            return False
 
         with _state_lock() as locked:
             if not locked:
                 log.warning("Skipping %s update; state lock unavailable", label)
-                return
+                return False
             existing = _read_json_file(local_path)
             payload = json.dumps(merge(existing, incoming), indent=2).encode()
             _atomic_write_bytes(local_path, payload)
+            return True
     except Exception:
         log.exception("Failed to write %s", label)
+        return False
 
 
 def _attempt_sort_key(section: object) -> tuple[datetime, datetime, str]:
@@ -539,7 +602,10 @@ def _merge_section(
 def _state_sort_key(state: object) -> tuple[datetime, datetime, str]:
     if not isinstance(state, dict):
         return (_EPOCH, _EPOCH, "")
-    return max(_attempt_sort_key(state.get(backup_type)) for backup_type in ("database", "filesystem"))
+    return max(
+        _attempt_sort_key(state.get(backup_type))
+        for backup_type in ("database", "filesystem")
+    )
 
 
 def _attempt_history_entries(state: dict) -> list[dict]:
@@ -575,7 +641,9 @@ def _merge_attempt_history(existing: dict | None, incoming: dict) -> list[dict]:
     history: dict[tuple[str, str], dict] = {}
     candidates: list[dict] = []
     if isinstance(existing, dict) and isinstance(existing.get("attempts"), list):
-        candidates.extend(entry for entry in existing["attempts"] if isinstance(entry, dict))
+        candidates.extend(
+            entry for entry in existing["attempts"] if isinstance(entry, dict)
+        )
     candidates.extend(_attempt_history_entries(incoming))
 
     for entry in candidates:
@@ -607,7 +675,13 @@ def _merge_backup_state(existing: dict | None, incoming: dict) -> dict:
     merged["schema_version"] = BACKUP_STATE_SCHEMA_VERSION
 
     if _state_sort_key(incoming) >= _state_sort_key(existing):
-        for key in ("run_id", "snapshot_name", "backup_mode", "tiles_excluded", "storage_prefix"):
+        for key in (
+            "run_id",
+            "snapshot_name",
+            "backup_mode",
+            "tiles_excluded",
+            "storage_prefix",
+        ):
             if key in incoming:
                 merged[key] = incoming[key]
 
@@ -680,7 +754,11 @@ def _marker_sort_key(marker: object) -> tuple[datetime, datetime, str]:
         return (_EPOCH, _EPOCH, "")
     created = _parse_iso(marker.get("created_at"))
     completed = _parse_iso(marker.get("completed_at"))
-    return (completed or created or _EPOCH, created or _EPOCH, str(marker.get("run_id") or ""))
+    return (
+        completed or created or _EPOCH,
+        created or _EPOCH,
+        str(marker.get("run_id") or ""),
+    )
 
 
 def _merge_marker_types(existing: object, incoming: object) -> dict:
@@ -784,9 +862,9 @@ def _mark_attempt_finished(
         section["last_success_archive_key"] = archive_key
 
 
-def _write_backup_state(state: dict) -> None:
+def _write_backup_state(state: dict) -> bool:
     state["updated_at"] = datetime.now(timezone.utc).isoformat()
-    _commit_shared_json(
+    return _commit_shared_json(
         local_path=_backup_state_path(),
         blob_name=_backup_state_blob_name(),
         incoming=state,
@@ -852,19 +930,23 @@ def _seed_restore_success_history(state: dict, previous_state: dict | None) -> N
     for purpose in ("operator", "test"):
         previous_purpose = previous_state.get(purpose)
         current_purpose = state.get(purpose)
-        if not isinstance(previous_purpose, dict) or not isinstance(current_purpose, dict):
+        if not isinstance(previous_purpose, dict) or not isinstance(
+            current_purpose, dict
+        ):
             continue
         for restore_type in ("database", "filesystem"):
             previous_section = previous_purpose.get(restore_type)
             current_section = current_purpose.get(restore_type)
-            if not isinstance(previous_section, dict) or not isinstance(current_section, dict):
+            if not isinstance(previous_section, dict) or not isinstance(
+                current_section, dict
+            ):
                 continue
             current_section.update(previous_section)
 
 
-def _write_restore_state(state: dict) -> None:
+def _write_restore_state(state: dict) -> bool:
     state["updated_at"] = datetime.now(timezone.utc).isoformat()
-    _commit_shared_json(
+    return _commit_shared_json(
         local_path=_restore_state_path(),
         blob_name=_restore_state_blob_name(),
         incoming=state,
@@ -919,7 +1001,9 @@ def _mark_restore_finished(
         section["last_success_archive_name"] = archive_name
 
 
-def _attach_archive_key_to_success(state: dict, backup_type: str, archive_key: str) -> None:
+def _attach_archive_key_to_success(
+    state: dict, backup_type: str, archive_key: str
+) -> None:
     section = state[backup_type]
     if section.get("success") is not True:
         return
@@ -956,7 +1040,7 @@ def _write_last_success_marker(
     archive_size: int | None,
     run_id: str | None = None,
     state: dict | None = None,
-) -> None:
+) -> bool:
     """Record the newest successful snapshot.
 
     ``created_at`` stays the snapshot's own timestamp (it names the archive);
@@ -975,7 +1059,7 @@ def _write_last_success_marker(
         "types": _marker_types_from_state(state, snapshot_name),
     }
 
-    _commit_shared_json(
+    return _commit_shared_json(
         local_path=_last_success_marker_path(),
         blob_name=_last_success_marker_blob_name(),
         incoming=marker,
@@ -1012,7 +1096,9 @@ def _seed_last_success_history(state: dict, previous_state: dict | None) -> None
     for backup_type in ("database", "filesystem"):
         previous_section = previous_state.get(backup_type)
         current_section = state.get(backup_type)
-        if not isinstance(previous_section, dict) or not isinstance(current_section, dict):
+        if not isinstance(previous_section, dict) or not isinstance(
+            current_section, dict
+        ):
             continue
         for key in (
             "last_success_started_at",
@@ -1063,6 +1149,7 @@ def _format_age(delta: timedelta) -> str:
 # Helpers – parse DATABASE_URL into pg* components
 # ---------------------------------------------------------------------------
 
+
 def _parse_db_url(url: str) -> dict[str, str]:
     """Parse a PostgreSQL URL into components for pg_dump / psql."""
     # Normalise async driver prefix
@@ -1088,6 +1175,7 @@ def _pg_env(db: dict[str, str]) -> dict[str, str]:
 # Azure Blob Storage client
 # ---------------------------------------------------------------------------
 
+
 def _blob_container_client() -> ContainerClient:
     """Create an Azure Blob Storage container client from env config."""
     service = BlobServiceClient.from_connection_string(AZURE_STORAGE_CONNECTION_STRING)
@@ -1101,6 +1189,7 @@ def _azure_configured() -> bool:
 # ---------------------------------------------------------------------------
 # Backup
 # ---------------------------------------------------------------------------
+
 
 def _snapshot_sort_key(name: str) -> tuple[str, str]:
     """Sort key for an ``hriv-backup-*`` archive name.
@@ -1126,7 +1215,9 @@ def _snapshot_exists(snapshot_name: str) -> bool:
                 for blob in container.list_blobs(name_starts_with=blob_name)
             )
         except Exception:
-            log.exception("Failed to check whether snapshot %s already exists", snapshot_name)
+            log.exception(
+                "Failed to check whether snapshot %s already exists", snapshot_name
+            )
             return False
     return (_local_backup_dir() / f"{snapshot_name}.tar.gz").exists()
 
@@ -1162,175 +1253,567 @@ def _tar_filter(
     def _filter(tarinfo: tarfile.TarInfo) -> tarfile.TarInfo | None:
         if not exclude_tiles:
             return tarinfo
-        if tarinfo.name == tiles_arcname or tarinfo.name.startswith(tiles_arcname + "/"):
+        if tarinfo.name == tiles_arcname or tarinfo.name.startswith(
+            tiles_arcname + "/"
+        ):
             return None
         return tarinfo
 
     return _filter
 
 
-def run_backup() -> Path | None:
-    """Create a snapshot archive and upload it to Azure Blob Storage.
+_INCOMPLETE_NAMES = {"admin", "scratch", "maintenance", "staging", "incomplete"}
+_INCOMPLETE_SUFFIXES = (".part", ".partial", ".tmp", ".uploading")
+_AZURE_BLOCK_SIZE = 4 * 1024 * 1024
+_MAX_LOGICAL_DUMP_BYTES = 16 * 1024 * 1024 * 1024
 
-    Returns the local path to the archive, or *None* on failure.
-    """
+
+def _is_finalized_file(path: Path, root: Path) -> bool:
+    """Return whether a data file is eligible for a recovery set."""
+    relative = path.relative_to(root)
+    if path.name == _MAINTENANCE_FILENAME or path.is_symlink():
+        return False
+    if any(part.lower().lstrip(".") in _INCOMPLETE_NAMES for part in relative.parts):
+        return False
+    return not path.name.lower().endswith(_INCOMPLETE_SUFFIXES)
+
+
+def _inventory_data_files(data_src: Path) -> tuple[list[dict], list[dict]]:
+    """Inventory finalized regular files while callers hold the mutation boundary."""
+    root = data_src / "source_images" if BACKUP_MODE == "production" else data_src
+    entries: list[dict] = []
+    excluded: list[dict] = []
+    if not root.exists():
+        return entries, excluded
+    for path in sorted(root.rglob("*")):
+        try:
+            is_file = path.is_file()
+        except OSError as exc:
+            raise RuntimeError(f"could not inventory {path}: {exc}") from exc
+        if not is_file:
+            continue
+        rel = path.relative_to(data_src).as_posix()
+        if not _is_finalized_file(path, data_src):
+            excluded.append(
+                {"path": f"data/{rel}", "reason": "incomplete_or_non_authoritative"}
+            )
+            continue
+        stat = path.stat(follow_symlinks=False)
+        entries.append(
+            {
+                "path": path,
+                "archive_path": f"data/{rel}",
+                "identity": (stat.st_dev, stat.st_ino),
+                "size": stat.st_size,
+                "mtime_ns": stat.st_mtime_ns,
+                "mode": stat.st_mode,
+            }
+        )
+    if BACKUP_MODE == "production" and data_src.exists():
+        for child in sorted(data_src.iterdir()):
+            if child.name not in ("source_images", _MAINTENANCE_FILENAME):
+                excluded.append(
+                    {
+                        "path": f"data/{child.name}",
+                        "reason": "non_authoritative_production_data",
+                    }
+                )
+    return entries, excluded
+
+
+_MAX_DB_INVENTORY_BYTES = 64 * 1024 * 1024
+_MAX_DB_INVENTORY_ROWS = 1_000_000
+_MAX_VALIDATION_VALUE_LENGTH = 512
+
+
+def _query_source_image_rows(db: dict[str, str], output_path: Path) -> list[dict]:
+    query = (
+        "COPY (SELECT id::text, stored_path, status FROM source_images ORDER BY id) "
+        "TO STDOUT WITH (FORMAT csv, HEADER true)"
+    )
+    with open(output_path, "wb") as output:
+        result = subprocess.run(
+            [
+                "psql",
+                "-h",
+                db["host"],
+                "-p",
+                db["port"],
+                "-U",
+                db["user"],
+                "-d",
+                db["dbname"],
+                "--no-psqlrc",
+                "--set",
+                "ON_ERROR_STOP=on",
+                "-c",
+                query,
+            ],
+            env=_pg_env(db),
+            stdout=output,
+            stderr=subprocess.PIPE,
+        )
+    if result.returncode != 0:
+        stderr = (
+            result.stderr.decode(errors="replace")
+            if isinstance(result.stderr, bytes)
+            else result.stderr
+        )
+        raise RuntimeError(
+            f"source-image database inventory failed: {stderr or 'psql failed'}"
+        )
+    if output_path.stat().st_size > _MAX_DB_INVENTORY_BYTES:
+        raise RuntimeError("source-image database inventory exceeds size limit")
+
+    rows: list[dict] = []
+    with open(output_path, newline="", encoding="utf-8") as source:
+        reader = csv.DictReader(source)
+        if reader.fieldnames != ["id", "stored_path", "status"]:
+            raise RuntimeError(
+                "source-image database inventory has invalid CSV columns"
+            )
+        for row in reader:
+            if len(rows) >= _MAX_DB_INVENTORY_ROWS:
+                raise RuntimeError("source-image database inventory exceeds row limit")
+            if (
+                row.get("id") is None
+                or row.get("stored_path") is None
+                or row.get("status") is None
+            ):
+                raise RuntimeError(
+                    "source-image database inventory contains an invalid row"
+                )
+            rows.append(row)
+    return rows
+
+
+def _bounded_validation_row(row: dict, reason: str) -> dict:
+    def bounded(value: object) -> str:
+        return str(value)[:_MAX_VALIDATION_VALUE_LENGTH]
+
+    return {
+        "row_id": bounded(row.get("id", "")),
+        "stored_path": bounded(row.get("stored_path", "")),
+        "status": bounded(row.get("status", "")),
+        "reason": reason,
+    }
+
+
+def _source_row_path(stored_path: str, data_src: Path) -> Path | None:
+    source_root = (data_src / "source_images").resolve()
+    raw = Path(stored_path)
+    candidate = (
+        raw
+        if raw.is_absolute()
+        else (
+            data_src / raw
+            if raw.parts and raw.parts[0] == "source_images"
+            else source_root / raw
+        )
+    )
+    try:
+        resolved = candidate.resolve(strict=False)
+        resolved.relative_to(source_root)
+    except (OSError, ValueError):
+        return None
+    return resolved
+
+
+def _match_production_inventory(
+    rows: list[dict],
+    filesystem_entries: list[dict],
+    data_src: Path,
+) -> tuple[list[dict], list[dict], list[dict], dict]:
+    entries_by_path = {entry["path"].resolve(): entry for entry in filesystem_entries}
+    included: list[dict] = []
+    skipped: list[dict] = []
+    matched_paths: set[Path] = set()
+    referenced_paths: set[Path] = set()
+    for row in rows:
+        path = _source_row_path(row["stored_path"], data_src)
+        if path is None:
+            skipped.append(_bounded_validation_row(row, "unsafe_or_out_of_root"))
+            continue
+        entry = entries_by_path.get(path)
+        if entry is not None:
+            referenced_paths.add(path)
+        if entry is None:
+            skipped.append(_bounded_validation_row(row, "missing_source"))
+            continue
+        if path in matched_paths:
+            skipped.append(_bounded_validation_row(row, "duplicate_source_reference"))
+            continue
+        matched_paths.add(path)
+        included.append(entry)
+
+    orphans = [
+        {
+            "path": entry["archive_path"][:_MAX_VALIDATION_VALUE_LENGTH],
+            "reason": "no_database_row",
+            "policy": "quarantined_by_policy",
+        }
+        for path, entry in entries_by_path.items()
+        if path not in referenced_paths
+    ]
+    counts = {
+        "database_row_count": len(rows),
+        "included_row_count": len(included),
+        "included_file_count": len(included),
+        "missing_or_skipped_count": len(skipped),
+        "orphan_count": len(orphans),
+    }
+    return included, skipped, orphans, counts
+
+
+def _entry_matches(entry: dict, stat: os.stat_result) -> bool:
+    return (
+        entry["identity"] == (stat.st_dev, stat.st_ino)
+        and entry["size"] == stat.st_size
+        and entry["mtime_ns"] == stat.st_mtime_ns
+    )
+
+
+class _HashingReader:
+    def __init__(self, stream, expected_size: int):
+        self.stream = stream
+        self.remaining = expected_size
+        self.hash = hashlib.sha256()
+
+    def read(self, size: int = -1) -> bytes:
+        if size == 0 or self.remaining <= 0:
+            return b""
+        if size < 0 or size > self.remaining:
+            size = self.remaining
+        payload = self.stream.read(size)
+        if not payload:
+            raise RuntimeError(
+                "inventoried file disappeared or was truncated while streaming"
+            )
+        self.remaining -= len(payload)
+        self.hash.update(payload)
+        return payload
+
+
+class _StagedBlockWriter:
+    """File-like Azure block-blob sink; staged data is invisible until commit."""
+
+    def __init__(self, blob_client, block_size: int = _AZURE_BLOCK_SIZE):
+        self.blob_client = blob_client
+        self.block_size = block_size
+        self.buffer = bytearray()
+        self.block_ids: list[str] = []
+        self.size = 0
+        self.committed = False
+        self.published = False
+
+    def writable(self) -> bool:
+        return True
+
+    def tell(self) -> int:
+        return self.size
+
+    def write(self, payload: bytes) -> int:
+        self.buffer.extend(payload)
+        self.size += len(payload)
+        while len(self.buffer) >= self.block_size:
+            self._stage(self.block_size)
+        return len(payload)
+
+    def flush(self) -> None:
+        return None
+
+    def _stage(self, size: int) -> None:
+        payload = bytes(self.buffer[:size])
+        del self.buffer[:size]
+        block_id = base64.b64encode(f"{len(self.block_ids):08d}".encode()).decode()
+        self.blob_client.stage_block(
+            block_id=block_id, data=io.BytesIO(payload), length=len(payload)
+        )
+        self.block_ids.append(block_id)
+
+    def commit(self) -> None:
+        if not self.buffer and not self.block_ids:
+            raise RuntimeError("cannot commit an empty Azure archive")
+        if self.buffer:
+            self._stage(len(self.buffer))
+        self.blob_client.commit_block_list(
+            self.block_ids,
+            if_none_match="*",
+            metadata={"hriv_publication_state": "candidate"},
+        )
+        self.committed = True
+
+    def publish(self) -> None:
+        self.blob_client.set_blob_metadata({"hriv_publication_state": "published"})
+        self.published = True
+
+    def discard_candidate(self) -> None:
+        if self.committed and not self.published:
+            self.blob_client.delete_blob()
+
+
+def _add_streamed_file(tar: tarfile.TarFile, snapshot_name: str, entry: dict) -> dict:
+    path = entry["path"]
+    try:
+        stream = open(path, "rb")
+    except OSError as exc:
+        raise RuntimeError(f"inventoried source file is missing: {path}") from exc
+    with stream:
+        if not _entry_matches(entry, os.fstat(stream.fileno())):
+            raise RuntimeError(
+                f"inventoried source file changed before streaming: {path}"
+            )
+        info = tarfile.TarInfo(f"{snapshot_name}/{entry['archive_path']}")
+        info.size = entry["size"]
+        info.mtime = entry["mtime_ns"] // 1_000_000_000
+        info.mode = entry["mode"] & 0o777
+        reader = _HashingReader(stream, entry["size"])
+        tar.addfile(info, reader)
+        if reader.remaining:
+            raise RuntimeError(f"inventoried source file was truncated: {path}")
+        try:
+            path_stat = path.stat(follow_symlinks=False)
+        except OSError as exc:
+            raise RuntimeError(f"inventoried source file disappeared: {path}") from exc
+        if not _entry_matches(entry, os.fstat(stream.fileno())) or not _entry_matches(
+            entry, path_stat
+        ):
+            raise RuntimeError(
+                f"inventoried source file changed while streaming: {path}"
+            )
+    return {"size": entry["size"], "sha256": reader.hash.hexdigest()}
+
+
+def _add_bytes(tar: tarfile.TarFile, name: str, payload: bytes) -> None:
+    info = tarfile.TarInfo(name)
+    info.size = len(payload)
+    info.mtime = int(time.time())
+    tar.addfile(info, io.BytesIO(payload))
+
+
+def _run_backup_inner() -> Path | None:
     created_at = datetime.now(timezone.utc)
     snapshot_name = _new_snapshot_name(created_at)
+    archive_name = f"{snapshot_name}.tar.gz"
     run_id = _new_run_id()
     log.info("Starting backup: %s (run %s)", snapshot_name, run_id)
     backup_state = _new_backup_state(snapshot_name, run_id)
     _seed_last_success_history(backup_state, _read_backup_state())
-
     db = _parse_db_url(DATABASE_URL)
-    pg = _pg_env(db)
 
     with _staging_tempdir(_STAGING_PREFIX) as tmpdir:
-        work = Path(tmpdir) / snapshot_name
-        work.mkdir()
-
-        # 1. pg_dump ----------------------------------------------------------
-        dump_path = work / "db.sql"
-        log.info("Dumping database %s@%s:%s/%s …", db["user"], db["host"], db["port"], db["dbname"])
+        dump_path: Path | None = None
+        dump_size: int | None = None
         db_started_at = datetime.now(timezone.utc)
         _mark_attempt_started(backup_state, "database", started_at=db_started_at)
         _write_backup_state(backup_state)
-        result = subprocess.run(
-            [
-                "pg_dump",
-                "-h", db["host"],
-                "-p", db["port"],
-                "-U", db["user"],
-                "-d", db["dbname"],
-                "--no-owner",
-                "--no-acl",
-                "-F", "plain",
-                "-f", str(dump_path),
-            ],
-            env=pg,
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            log.error("pg_dump failed: %s", result.stderr)
+        if BACKUP_MODE == "development":
+            dump_path = Path(tmpdir) / "db.sql"
+            result = subprocess.run(
+                [
+                    "pg_dump",
+                    "-h",
+                    db["host"],
+                    "-p",
+                    db["port"],
+                    "-U",
+                    db["user"],
+                    "-d",
+                    db["dbname"],
+                    "--no-owner",
+                    "--no-acl",
+                    "-F",
+                    "plain",
+                    "-f",
+                    str(dump_path),
+                ],
+                env=_pg_env(db),
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                log.error("pg_dump failed: %s", result.stderr)
+                _mark_attempt_finished(
+                    backup_state,
+                    "database",
+                    started_at=db_started_at,
+                    completed_at=datetime.now(timezone.utc),
+                    success=False,
+                    size_bytes=None,
+                )
+                _write_backup_state(backup_state)
+                return None
+            dump_size = dump_path.stat().st_size
             _mark_attempt_finished(
                 backup_state,
                 "database",
                 started_at=db_started_at,
                 completed_at=datetime.now(timezone.utc),
-                success=False,
-                size_bytes=None,
+                success=True,
+                size_bytes=dump_size,
             )
             _write_backup_state(backup_state)
-            return None
-        log.info("Database dump complete (%s bytes)", dump_path.stat().st_size)
-        _mark_attempt_finished(
-            backup_state,
-            "database",
-            started_at=db_started_at,
-            completed_at=datetime.now(timezone.utc),
-            success=True,
-            size_bytes=dump_path.stat().st_size,
+
+        filesystem_started_at = datetime.now(timezone.utc)
+        _mark_attempt_started(
+            backup_state, "filesystem", started_at=filesystem_started_at
         )
         _write_backup_state(backup_state)
+        writer = None
+        try:
+            with _maintenance_scope():
+                if BACKUP_MUTATION_DRAIN_SECONDS:
+                    time.sleep(BACKUP_MUTATION_DRAIN_SECONDS)
+                data_src = Path(DATA_DIR)
+                inventory, excluded = _inventory_data_files(data_src)
+                missing_sources: list[dict] = []
+                orphan_sources: list[dict] = []
+                inventory_counts = {
+                    "database_row_count": 0,
+                    "included_row_count": len(inventory),
+                    "included_file_count": len(inventory),
+                    "missing_or_skipped_count": 0,
+                    "orphan_count": 0,
+                }
+                if BACKUP_MODE == "production":
+                    rows = _query_source_image_rows(
+                        db, Path(tmpdir) / "source-images.csv"
+                    )
+                    inventory, missing_sources, orphan_sources, inventory_counts = (
+                        _match_production_inventory(rows, inventory, data_src)
+                    )
+                captured_at = datetime.now(timezone.utc)
 
-        # 2. Filesystem snapshot -----------------------------------------------
-        data_src = Path(DATA_DIR)
-        has_data = data_src.exists() and any(data_src.iterdir())
-        if not has_data:
-            log.warning("Data directory %s is empty or missing – skipping filesystem snapshot", DATA_DIR)
-        filesystem_started_at = datetime.now(timezone.utc)
-        _mark_attempt_started(backup_state, "filesystem", started_at=filesystem_started_at)
-        _write_backup_state(backup_state)
-
-        # 3. Manifest ----------------------------------------------------------
-        tiles_path = Path(DATA_DIR) / "tiles"
-        manifest = {
-            "snapshot_name": snapshot_name,
-            "created_at": created_at.isoformat(),
-            "database_url_host": db["host"],
-            "database_name": db["dbname"],
-            "data_dir": DATA_DIR,
-            "backup_mode": BACKUP_MODE,
-            "tiles_excluded": _exclude_tiles(),
-            "files": {},
-        }
-        filesystem_size_bytes = 0
-
-        for fpath in sorted(work.rglob("*")):
-            if fpath.is_file():
-                rel = str(fpath.relative_to(work))
-                manifest["files"][rel] = {
-                    "size": fpath.stat().st_size,
-                    "sha256": _sha256(fpath),
+            target_time = captured_at.isoformat()
+            if BACKUP_MODE == "production":
+                database_archive_key = (
+                    f"cnpg://{CNPG_CLUSTER_NAME}?target_time={target_time}"
+                )
+                _mark_attempt_finished(
+                    backup_state,
+                    "database",
+                    started_at=db_started_at,
+                    completed_at=captured_at,
+                    success=True,
+                    size_bytes=None,
+                    archive_key=database_archive_key,
+                )
+                _write_backup_state(backup_state)
+                database_recovery = {
+                    "provider": "cloudnative-pg",
+                    "cluster": CNPG_CLUSTER_NAME,
+                    "target_time": target_time,
+                    "logical_dump_role": "not-included",
+                }
+            else:
+                database_recovery = {
+                    "provider": "logical-dump",
+                    "cluster": None,
+                    "target_time": target_time,
+                    "logical_dump_role": "primary",
                 }
 
-        # Include checksums for filesystem data files
-        if has_data:
-            log.info("Computing checksums for filesystem data …")
-            for fpath in sorted(data_src.rglob("*")):
-                if fpath.is_file():
-                    if _exclude_tiles() and fpath.is_relative_to(tiles_path):
-                        continue
-                    filesystem_size_bytes += fpath.stat().st_size
-                    rel = "data/" + str(fpath.relative_to(data_src))
-                    manifest["files"][rel] = {
-                        "size": fpath.stat().st_size,
-                        "sha256": _sha256(fpath),
-                    }
+            source_inventory = [
+                entry
+                for entry in inventory
+                if entry["archive_path"].startswith("data/source_images/")
+            ]
+            source_image_files: dict[str, dict] = {}
+            manifest = {
+                "format_version": RECOVERY_MANIFEST_SCHEMA_VERSION,
+                "schema_version": RECOVERY_MANIFEST_SCHEMA_VERSION,
+                "recovery_set_id": snapshot_name,
+                "snapshot_name": snapshot_name,
+                "run_id": run_id,
+                "capture_started_at": created_at.isoformat(),
+                "capture_boundary_at": target_time,
+                "completed_at": None,
+                "database_url_host": db["host"],
+                "database_name": db["dbname"],
+                "database_recovery": database_recovery,
+                "versions": {
+                    "hriv": os.environ.get("HRIV_VERSION", "unknown"),
+                    "backup": os.environ.get("BACKUP_VERSION")
+                    or os.environ.get("APP_VERSION", "unknown"),
+                    "archive_format": RECOVERY_MANIFEST_SCHEMA_VERSION,
+                },
+                "backup_mode": BACKUP_MODE,
+                "tiles_excluded": _exclude_tiles(),
+                "selection": (
+                    "source_images"
+                    if BACKUP_MODE == "production"
+                    else "full_data_legacy"
+                ),
+                "source_images": {
+                    "file_count": len(source_inventory),
+                    "total_bytes": sum(entry["size"] for entry in source_inventory),
+                    "files": source_image_files,
+                    **inventory_counts,
+                },
+                "file_count": len(inventory),
+                "total_bytes": sum(entry["size"] for entry in inventory),
+                "files": {},
+                "excluded_incomplete_artifacts": excluded,
+                "validation": {
+                    "missing_sources": missing_sources,
+                    "orphan_sources": orphan_sources,
+                    "excluded_incomplete_artifacts": excluded,
+                    "accepted": True,
+                    "database_reconciliation": "disabled",
+                },
+            }
 
-        manifest_path = work / "manifest.json"
-        manifest_path.write_text(json.dumps(manifest, indent=2))
-        manifest_payload = manifest_path.read_bytes()
-
-        # 4. Create tar.gz (stream filesystem data directly into archive) ----
-        archive_name = f"{snapshot_name}.tar.gz"
-        archive_path = Path(tmpdir) / archive_name
-        archive_key: str
-        marker_archive_size: int | None = None
-        try:
-            log.info("Creating archive %s …", archive_name)
-            tiles_arcname = f"{snapshot_name}/data/tiles"
-            filter_func = _tar_filter(_exclude_tiles(), tiles_arcname)
-            with tarfile.open(str(archive_path), "w:gz") as tar:
-                # Add db dump and manifest from the work directory
-                tar.add(str(work), arcname=snapshot_name, filter=filter_func)
-                # Stream filesystem data directly into the archive (avoids 2x disk copy)
-                if has_data:
-                    log.info("Streaming filesystem data from %s into archive …", DATA_DIR)
-                    tar.add(str(data_src), arcname=f"{snapshot_name}/data", filter=filter_func)
-            archive_size = archive_path.stat().st_size
-            log.info("Archive created: %s (%s bytes)", archive_name, archive_size)
-
-            # 5. Upload to Azure Blob Storage --------------------------------
+            container = None
+            writer = None
+            archive_path = Path(tmpdir) / archive_name
             if _azure_configured():
-                blob_name = _archive_blob_name(archive_name)
-                log.info("Uploading to azure://%s/%s …", AZURE_STORAGE_CONTAINER, blob_name)
                 container = _blob_container_client()
-                with open(archive_path, "rb") as data:
-                    container.upload_blob(blob_name, data, overwrite=False)
-                log.info("Upload complete")
-                try:
-                    container.upload_blob(
-                        _manifest_sidecar_blob_name(snapshot_name),
-                        io.BytesIO(manifest_payload),
-                        overwrite=True,
-                    )
-                    log.info("Manifest sidecar uploaded")
-                except Exception:
-                    log.exception("Manifest sidecar upload failed")
-
-                # 6. Enforce retention policy --------------------------------
-                _enforce_retention(container)
-                archive_key = blob_name
-                marker_archive_size = archive_size
-            else:
-                log.warning(
-                    "Azure Blob Storage not configured – archive saved locally at %s only. "
-                    "Set AZURE_STORAGE_CONNECTION_STRING and AZURE_STORAGE_CONTAINER to enable cloud storage.",
-                    archive_path,
+                writer = _StagedBlockWriter(
+                    container.get_blob_client(_archive_blob_name(archive_name))
                 )
-                # Publish to a persistent location so it survives tmpdir cleanup.
-                # A same-filesystem rename avoids staging a second full copy.
+                tar_target = writer
+                tar_mode = "w|gz"
+            else:
+                tar_target = str(archive_path)
+                tar_mode = "w:gz"
+
+            with tarfile.open(
+                fileobj=tar_target if writer else None,
+                name=None if writer else tar_target,
+                mode=tar_mode,
+            ) as tar:
+                if dump_path is not None and dump_size is not None:
+                    dump_stat = dump_path.stat()
+                    dump_entry = {
+                        "path": dump_path,
+                        "archive_path": "db.sql",
+                        "identity": (dump_stat.st_dev, dump_stat.st_ino),
+                        "size": dump_size,
+                        "mtime_ns": dump_stat.st_mtime_ns,
+                        "mode": dump_stat.st_mode,
+                    }
+                    manifest["files"]["db.sql"] = _add_streamed_file(
+                        tar, snapshot_name, dump_entry
+                    )
+                for entry in inventory:
+                    file_metadata = _add_streamed_file(tar, snapshot_name, entry)
+                    manifest["files"][entry["archive_path"]] = file_metadata
+                    if entry["archive_path"].startswith("data/source_images/"):
+                        source_image_files[entry["archive_path"]] = file_metadata
+                manifest["completed_at"] = datetime.now(timezone.utc).isoformat()
+                manifest_payload = json.dumps(manifest, indent=2).encode()
+                _add_bytes(tar, f"{snapshot_name}/manifest.json", manifest_payload)
+
+            if writer:
+                writer.commit()
+                archive_key = _archive_blob_name(archive_name)
+                archive_size = writer.size
+                container.upload_blob(
+                    _manifest_sidecar_blob_name(snapshot_name),
+                    io.BytesIO(manifest_payload),
+                    overwrite=False,
+                )
+            else:
                 persistent = _local_backup_dir()
                 persistent.mkdir(parents=True, exist_ok=True)
                 final = persistent / archive_name
@@ -1338,55 +1821,127 @@ def run_backup() -> Path | None:
                     os.replace(str(archive_path), str(final))
                 except OSError:
                     shutil.move(str(archive_path), str(final))
-                log.info("Local backup saved to %s", final)
-                try:
-                    _atomic_write_bytes(_manifest_sidecar_path(final), manifest_payload)
-                    log.info("Local manifest sidecar saved to %s", _manifest_sidecar_path(final))
-                except Exception:
-                    log.exception("Local manifest sidecar write failed")
-                _enforce_local_retention()
                 archive_key = str(final)
-                marker_archive_size = final.stat().st_size
+                archive_size = final.stat().st_size
+                _atomic_write_bytes(_manifest_sidecar_path(final), manifest_payload)
         except Exception:
-            log.exception("Filesystem backup failed")
+            if writer:
+                try:
+                    writer.discard_candidate()
+                except Exception:
+                    log.exception(
+                        "Failed to remove committed, unpublished Azure candidate"
+                    )
+            log.exception(
+                "Filesystem backup failed; archive was not published",
+                extra={
+                    "event": "backup.archive_rejected",
+                    "staged_block_count": len(writer.block_ids) if writer else 0,
+                },
+            )
+            failed_at = datetime.now(timezone.utc)
             _mark_attempt_finished(
                 backup_state,
                 "filesystem",
                 started_at=filesystem_started_at,
-                completed_at=datetime.now(timezone.utc),
+                completed_at=failed_at,
                 success=False,
-                size_bytes=filesystem_size_bytes,
+                size_bytes=sum(
+                    entry["size"] for entry in locals().get("inventory", [])
+                ),
             )
+            if (
+                BACKUP_MODE == "production"
+                and backup_state["database"].get("success") is not True
+            ):
+                _mark_attempt_finished(
+                    backup_state,
+                    "database",
+                    started_at=db_started_at,
+                    completed_at=failed_at,
+                    success=False,
+                    size_bytes=None,
+                )
             _write_backup_state(backup_state)
             return None
 
-        filesystem_completed_at = datetime.now(timezone.utc)
+        completed_at = datetime.now(timezone.utc)
         _mark_attempt_finished(
             backup_state,
             "filesystem",
             started_at=filesystem_started_at,
-            completed_at=filesystem_completed_at,
+            completed_at=completed_at,
             success=True,
-            size_bytes=filesystem_size_bytes,
+            size_bytes=manifest["total_bytes"],
             archive_key=archive_key,
         )
-        _attach_archive_key_to_success(backup_state, "database", archive_key)
-        _write_backup_state(backup_state)
-        _write_last_success_marker(
-            snapshot_name,
-            created_at=created_at,
-            completed_at=filesystem_completed_at,
-            archive_size=marker_archive_size,
-            run_id=run_id,
-            state=backup_state,
-        )
+        if BACKUP_MODE == "development":
+            _attach_archive_key_to_success(backup_state, "database", archive_key)
+        try:
+            state_written = _write_backup_state(backup_state)
+            marker_written = _write_last_success_marker(
+                snapshot_name,
+                created_at=created_at,
+                completed_at=completed_at,
+                archive_size=archive_size,
+                run_id=run_id,
+                state=backup_state,
+            )
+            if not state_written or not marker_written:
+                raise RuntimeError(
+                    "backup state or success marker could not be committed"
+                )
+            if writer:
+                writer.publish()
+                _enforce_retention(container)
+            else:
+                _enforce_local_retention()
+        except Exception:
+            if writer:
+                try:
+                    writer.discard_candidate()
+                except Exception:
+                    log.exception("Failed to remove unpublished Azure candidate")
+            else:
+                Path(archive_key).unlink(missing_ok=True)
+                _manifest_sidecar_path(Path(archive_key)).unlink(missing_ok=True)
+            log.exception("Backup publication failed after archive validation")
+            return None
+        return Path(archive_key) if not _azure_configured() else Path(archive_name)
 
-        if not _azure_configured():
-            return Path(archive_key)
 
-    log.info("Backup %s completed successfully", snapshot_name)
-    # archive_path inside tmpdir is gone; return a sentinel Path for truthy check
-    return Path(archive_name)
+def run_backup() -> Path | None:
+    """Run one backup while excluding overlapping scheduled or on-demand calls."""
+    with _run_lock() as locked:
+        if not locked:
+            log.error(
+                "Backup skipped because another backup run holds %s", _run_lock_path()
+            )
+            now = datetime.now(timezone.utc)
+            state = _new_backup_state("overlap", _new_run_id())
+            _seed_last_success_history(state, _read_backup_state())
+            for backup_type in ("database", "filesystem"):
+                _mark_attempt_started(state, backup_type, started_at=now)
+                _mark_attempt_finished(
+                    state,
+                    backup_type,
+                    started_at=now,
+                    completed_at=now,
+                    success=False,
+                    size_bytes=None,
+                )
+            state["failure_reason"] = "overlapping_backup_run"
+            _write_backup_state(state)
+            return None
+        return _run_backup_inner()
+
+
+def _archive_is_selectable(blob) -> bool:
+    metadata = getattr(blob, "metadata", None)
+    return (
+        not isinstance(metadata, dict)
+        or metadata.get("hriv_publication_state") != "candidate"
+    )
 
 
 def _enforce_retention(container: ContainerClient) -> None:
@@ -1397,8 +1952,8 @@ def _enforce_retention(container: ContainerClient) -> None:
     prefix = f"{AZURE_BLOB_PREFIX}/" if AZURE_BLOB_PREFIX else ""
     try:
         blobs = []
-        for blob in container.list_blobs(name_starts_with=prefix):
-            if blob.name.endswith(".tar.gz"):
+        for blob in container.list_blobs(name_starts_with=prefix, include=["metadata"]):
+            if blob.name.endswith(".tar.gz") and _archive_is_selectable(blob):
                 blobs.append(blob)
 
         blobs.sort(
@@ -1416,10 +1971,14 @@ def _enforce_retention(container: ContainerClient) -> None:
             for blob in to_delete:
                 container.delete_blob(blob.name)
                 try:
-                    container.delete_blob(_manifest_sidecar_blob_name(blob.name.rsplit("/", 1)[-1]))
+                    container.delete_blob(
+                        _manifest_sidecar_blob_name(blob.name.rsplit("/", 1)[-1])
+                    )
                 except ResourceNotFoundError:
                     # Sidecar manifest may already be gone; continue retention cleanup.
-                    log.debug("Manifest sidecar already absent for %s; continuing", blob.name)
+                    log.debug(
+                        "Manifest sidecar already absent for %s; continuing", blob.name
+                    )
                 log.info("  Deleted %s", blob.name)
     except Exception:
         log.exception("Failed to enforce retention policy")
@@ -1453,13 +2012,16 @@ def _enforce_local_retention() -> None:
                 sidecar.unlink()
             except FileNotFoundError:
                 # Missing local sidecar is expected; archive deletion already succeeded.
-                log.debug("Local manifest sidecar already absent for %s; continuing", f.name)
+                log.debug(
+                    "Local manifest sidecar already absent for %s; continuing", f.name
+                )
             log.info("  Deleted %s", f.name)
 
 
 # ---------------------------------------------------------------------------
 # List
 # ---------------------------------------------------------------------------
+
 
 def list_snapshots() -> list[dict]:
     """List available snapshots in Azure Blob Storage or locally."""
@@ -1475,30 +2037,34 @@ def list_snapshots() -> list[dict]:
             key=_backup_sort_key,
             reverse=True,
         ):
-            snapshots.append({
-                "name": f.name,
-                "size": f.stat().st_size,
-                "last_modified": datetime.fromtimestamp(
-                    f.stat().st_mtime, tz=timezone.utc
-                ).isoformat(),
-                "location": "local",
-            })
+            snapshots.append(
+                {
+                    "name": f.name,
+                    "size": f.stat().st_size,
+                    "last_modified": datetime.fromtimestamp(
+                        f.stat().st_mtime, tz=timezone.utc
+                    ).isoformat(),
+                    "location": "local",
+                }
+            )
         return snapshots
 
     prefix = f"{AZURE_BLOB_PREFIX}/" if AZURE_BLOB_PREFIX else ""
     container = _blob_container_client()
 
     snapshots = []
-    for blob in container.list_blobs(name_starts_with=prefix):
-        if blob.name.endswith(".tar.gz"):
+    for blob in container.list_blobs(name_starts_with=prefix, include=["metadata"]):
+        if blob.name.endswith(".tar.gz") and _archive_is_selectable(blob):
             name = blob.name.rsplit("/", 1)[-1]
-            snapshots.append({
-                "name": name,
-                "blob_name": blob.name,
-                "size": blob.size,
-                "last_modified": blob.last_modified.isoformat(),
-                "location": "azure",
-            })
+            snapshots.append(
+                {
+                    "name": name,
+                    "blob_name": blob.name,
+                    "size": blob.size,
+                    "last_modified": blob.last_modified.isoformat(),
+                    "location": "azure",
+                }
+            )
 
     snapshots.sort(key=lambda s: _snapshot_sort_key(s["name"]), reverse=True)
     return snapshots
@@ -1526,21 +2092,28 @@ def run_status() -> bool:
     try:
         # Age is measured from when the snapshot became restorable, falling back
         # to the snapshot timestamp for markers written before completed_at.
-        completed_at = _parse_iso(marker.get("completed_at")) or _parse_iso(marker.get("created_at"))
+        completed_at = _parse_iso(marker.get("completed_at")) or _parse_iso(
+            marker.get("created_at")
+        )
         if completed_at is None:
             raise ValueError("marker has no usable timestamp")
         age = now - completed_at
         stale_after = timedelta(hours=BACKUP_STALE_HOURS)
         stale = age > stale_after
+        marker_snapshot = str(marker.get("snapshot_name") or "")
+        marker_available = any(
+            _snapshot_stem(snapshot["name"]) == _snapshot_stem(marker_snapshot)
+            for snapshot in snapshots
+        )
         status_label = "STALE" if stale else "FRESH"
-        if not stale and snapshot_count == 0:
-            status_label = "NO_SNAPSHOTS"
+        if not stale and not marker_available:
+            status_label = "MARKER_SNAPSHOT_MISSING"
         print(f"Status: {status_label}")
         print(f"Last successful backup: {completed_at.isoformat()}")
         print(f"Age: {_format_age(age)}")
         print(f"Backup mode: {marker.get('backup_mode', '?')}")
         print(f"Tiles excluded: {marker.get('tiles_excluded', '?')}")
-        if stale or snapshot_count == 0:
+        if stale or not marker_available:
             return False
         return True
     except Exception:
@@ -1576,9 +2149,28 @@ def _set_maintenance(enabled: bool) -> None:
         log.info("Maintenance mode DISABLED (%s)", path)
 
 
+@contextlib.contextmanager
+def _maintenance_scope() -> Iterator[None]:
+    already_enabled = _maintenance_flag_path().exists()
+    if not already_enabled:
+        _set_maintenance(True)
+    try:
+        yield
+    finally:
+        if not already_enabled:
+            _set_maintenance(False)
+
+
 # ---------------------------------------------------------------------------
 # Restore
 # ---------------------------------------------------------------------------
+
+
+def _validate_components(components: str) -> str:
+    if components not in ("all", "database", "filesystem"):
+        raise ValueError("components must be one of: all, database, filesystem")
+    return components
+
 
 def run_restore(
     snapshot_name: str | None = None,
@@ -1587,6 +2179,7 @@ def run_restore(
     database_url: str | None = None,
     data_dir: str | None = None,
     maintenance: bool = True,
+    components: str = "all",
 ) -> bool:
     """Download and restore a snapshot.
 
@@ -1594,21 +2187,21 @@ def run_restore(
     unavailable while tables and files are replaced. Restore tests target a
     separate database/data directory and therefore skip maintenance mode.
     """
-    if maintenance:
-        _set_maintenance(True)
-    try:
+    components = _validate_components(components)
+    scope = _maintenance_scope() if maintenance else contextlib.nullcontext()
+    with scope:
         return _run_restore_inner(
             snapshot_name,
             purpose=purpose,
             database_url=database_url,
             data_dir=data_dir,
+            components=components,
         )
-    finally:
-        if maintenance:
-            _set_maintenance(False)
 
 
-def run_restore_test(snapshot_name: str | None = None) -> bool:
+def run_restore_test(
+    snapshot_name: str | None = None, *, components: str = "all"
+) -> bool:
     """Restore a snapshot into the configured non-production test target."""
     if not RESTORE_TEST_DATABASE_URL or not RESTORE_TEST_DATA_DIR:
         log.error(
@@ -1623,6 +2216,7 @@ def run_restore_test(snapshot_name: str | None = None) -> bool:
         database_url=RESTORE_TEST_DATABASE_URL,
         data_dir=RESTORE_TEST_DATA_DIR,
         maintenance=False,
+        components=components,
     )
 
 
@@ -1632,8 +2226,10 @@ def _run_restore_inner(
     purpose: str = "operator",
     database_url: str | None = None,
     data_dir: str | None = None,
+    components: str = "all",
 ) -> bool:
     """Core restore logic (called inside the maintenance-flag guard)."""
+    components = _validate_components(components)
     target_database_url = database_url or DATABASE_URL
     target_data_dir = data_dir or DATA_DIR
 
@@ -1648,28 +2244,28 @@ def _run_restore_inner(
             available = [s["name"] for s in snapshots]
             resolved = _resolve_snapshot_name(snapshot_name, available)
             if resolved is None:
-                log.error("Snapshot %s not found. Available: %s", snapshot_name, available)
+                log.error(
+                    "Snapshot %s not found. Available: %s", snapshot_name, available
+                )
                 return False
             target = next(s for s in snapshots if s["name"] == resolved)
         else:
             target = snapshots[0]
             log.info("Using latest snapshot: %s", target["name"])
 
-        # Download ---------------------------------------------------------------
-        with _staging_tempdir(_RESTORE_PREFIX) as tmpdir:
-            archive_path = Path(tmpdir) / target["name"]
-            log.info("Downloading azure://%s/%s …", AZURE_STORAGE_CONTAINER, target["blob_name"])
-            container = _blob_container_client()
-            with open(archive_path, "wb") as f:
-                stream = container.download_blob(target["blob_name"])
-                stream.readinto(f)
-            log.info("Download complete (%s bytes)", archive_path.stat().st_size)
-            return _restore_from_archive(
-                archive_path,
-                purpose=purpose,
-                database_url=target_database_url,
-                data_dir=target_data_dir,
-            )
+        # Stream the archive; only bounded selected members are staged locally.
+        log.info(
+            "Streaming azure://%s/%s …", AZURE_STORAGE_CONTAINER, target["blob_name"]
+        )
+        stream = _blob_container_client().download_blob(target["blob_name"])
+        return _restore_from_stream(
+            _AzureChunkReader(stream),
+            target["name"],
+            purpose=purpose,
+            database_url=target_database_url,
+            data_dir=target_data_dir,
+            components=components,
+        )
     else:
         # Local restore
         local_dir = _local_backup_dir()
@@ -1712,6 +2308,7 @@ def _run_restore_inner(
             purpose=purpose,
             database_url=target_database_url,
             data_dir=target_data_dir,
+            components=components,
         )
 
 
@@ -1727,7 +2324,9 @@ def _resolve_snapshot_name(requested: str, available: list[str]) -> str | None:
     if exact:
         return exact[0]
 
-    prefixed = sorted(name for name in available if _snapshot_stem(name).startswith(stem))
+    prefixed = sorted(
+        name for name in available if _snapshot_stem(name).startswith(stem)
+    )
     if len(prefixed) == 1:
         return prefixed[0]
     if len(prefixed) > 1:
@@ -1735,21 +2334,415 @@ def _resolve_snapshot_name(requested: str, available: list[str]) -> str | None:
     return None
 
 
-def _restore_ignore_tiles(
-    data_archive: Path,
-    exclude_tiles: bool,
-) -> Callable[[str, list[str]], set[str]] | None:
-    """Return an ignore function for shutil.copytree that preserves the tiles tree in production mode."""
+class _AzureChunkReader:
+    """Minimal sequential reader over StorageStreamDownloader chunks."""
 
-    if not exclude_tiles:
-        return None
+    def __init__(self, downloader):
+        self.chunks = iter(downloader.chunks())
+        self.buffer = bytearray()
+        self.eof = False
 
-    def _ignore(_dir: str, names: list[str]) -> set[str]:
-        if Path(_dir) == data_archive and "tiles" in names:
-            return {"tiles"}
-        return set()
+    def read(self, size: int = -1) -> bytes:
+        if size < 0:
+            payload = bytes(self.buffer) + b"".join(self.chunks)
+            self.buffer.clear()
+            self.eof = True
+            return payload
+        while len(self.buffer) < size and not self.eof:
+            try:
+                chunk = next(self.chunks)
+            except StopIteration:
+                self.eof = True
+                continue
+            if not chunk:
+                self.eof = True
+                continue
+            self.buffer.extend(chunk)
+        payload = bytes(self.buffer[:size])
+        del self.buffer[:size]
+        return payload
 
-    return _ignore
+
+def _restore_database_dump(dump_path: Path, database_url: str) -> bool:
+    db = _parse_db_url(database_url)
+    pg = _pg_env(db)
+    drop_sql = """
+DO $$ DECLARE
+    r RECORD;
+BEGIN
+    FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+        EXECUTE 'DROP TABLE IF EXISTS public.' || quote_ident(r.tablename) || ' CASCADE';
+    END LOOP;
+END $$;
+"""
+    cleanup = subprocess.run(
+        [
+            "psql",
+            "-h",
+            db["host"],
+            "-p",
+            db["port"],
+            "-U",
+            db["user"],
+            "-d",
+            db["dbname"],
+            "-c",
+            drop_sql,
+        ],
+        env=pg,
+        capture_output=True,
+        text=True,
+    )
+    if cleanup.returncode != 0:
+        log.warning("Table cleanup returned non-zero: %s", cleanup.stderr)
+    result = subprocess.run(
+        [
+            "psql",
+            "-h",
+            db["host"],
+            "-p",
+            db["port"],
+            "-U",
+            db["user"],
+            "-d",
+            db["dbname"],
+            "--set",
+            "ON_ERROR_STOP=on",
+            "-f",
+            str(dump_path),
+        ],
+        env=pg,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        log.error("Database restore failed: %s", result.stderr)
+    return result.returncode == 0
+
+
+def _promote_streamed_filesystem(
+    staged_data: Path, target_data_dir: str, run_id: str
+) -> None:
+    """Promote validated data without deleting unmatched target files."""
+    destination = Path(target_data_dir)
+    destination.mkdir(parents=True, exist_ok=True)
+    quarantine = destination / f".restore-orphans-{run_id}"
+    for source in sorted(staged_data.iterdir()):
+        if source.name == _MAINTENANCE_FILENAME or (
+            _exclude_tiles() and source.name == "tiles"
+        ):
+            continue
+        target = destination / source.name
+        if target.exists():
+            quarantine.mkdir(exist_ok=True)
+            os.replace(str(target), str(quarantine / source.name))
+            log.warning("Quarantined unmatched restore target %s", target)
+        os.replace(str(source), str(target))
+
+
+def _restore_from_stream(
+    stream,
+    archive_name: str,
+    *,
+    purpose: str,
+    database_url: str,
+    data_dir: str,
+    components: str,
+) -> bool:
+    """Validate a sequential archive before promoting any selected component."""
+    components = _validate_components(components)
+    restore_state = _new_restore_state()
+    _seed_restore_success_history(restore_state, _read_restore_state())
+    if components in ("all", "filesystem"):
+        target_data = Path(data_dir)
+        target_data.mkdir(parents=True, exist_ok=True)
+        workspace_context = tempfile.TemporaryDirectory(
+            prefix=_RESTORE_PREFIX, dir=str(target_data)
+        )
+    else:
+        workspace_context = _staging_tempdir(_RESTORE_PREFIX)
+
+    try:
+        with workspace_context as tmpdir:
+            workspace = Path(tmpdir)
+            staged_data = workspace / "data"
+            dump_path = workspace / "db.sql"
+            actual: dict[str, dict] = {}
+            manifest = None
+            root_name = None
+            with tarfile.open(fileobj=stream, mode="r|gz") as tar:
+                for member in tar:
+                    _validate_tar_members([member])
+                    parts = Path(member.name).parts
+                    if not parts:
+                        raise ValueError("archive member has no snapshot root")
+                    if root_name is None:
+                        root_name = parts[0]
+                    if parts[0] != root_name:
+                        raise ValueError("archive contains multiple snapshot roots")
+                    rel = Path(*parts[1:]).as_posix() if len(parts) > 1 else ""
+                    if member.isdir():
+                        continue
+                    selected = (
+                        (rel == "db.sql" and components in ("all", "database"))
+                        or (
+                            rel.startswith("data/")
+                            and components in ("all", "filesystem")
+                        )
+                        or rel == "manifest.json"
+                    )
+                    fileobj = tar.extractfile(member)
+                    if fileobj is None:
+                        raise ValueError(
+                            f"could not read archive member: {member.name}"
+                        )
+                    if not selected:
+                        while fileobj.read(1 << 20):
+                            pass
+                        continue
+                    if rel == "manifest.json":
+                        if member.size > 16 * 1024 * 1024:
+                            raise ValueError("recovery manifest is unreasonably large")
+                        manifest = json.loads(fileobj.read())
+                        continue
+                    if rel == "db.sql" and member.size > _MAX_LOGICAL_DUMP_BYTES:
+                        raise ValueError(
+                            "logical database dump exceeds restore spool limit"
+                        )
+                    destination = (
+                        dump_path
+                        if rel == "db.sql"
+                        else staged_data / Path(rel).relative_to("data")
+                    )
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    digest = hashlib.sha256()
+                    size = 0
+                    with open(destination, "xb") as output:
+                        for chunk in iter(lambda: fileobj.read(1 << 20), b""):
+                            output.write(chunk)
+                            digest.update(chunk)
+                            size += len(chunk)
+                    actual[rel] = {"size": size, "sha256": digest.hexdigest()}
+
+            if manifest and _manifest_version(manifest) is not None:
+                manifest_version = _manifest_version(manifest)
+                if manifest_version != RECOVERY_MANIFEST_SCHEMA_VERSION:
+                    raise ValueError(
+                        f"unsupported recovery manifest version: {manifest_version}"
+                    )
+                expected_files = manifest.get("files")
+                if not isinstance(expected_files, dict):
+                    raise ValueError("recovery manifest files must be an object")
+                expected = {
+                    path: metadata
+                    for path, metadata in expected_files.items()
+                    if (path == "db.sql" and components in ("all", "database"))
+                    or (
+                        path.startswith("data/") and components in ("all", "filesystem")
+                    )
+                }
+                if expected != actual:
+                    raise ValueError(
+                        "archive members do not match recovery manifest checksums"
+                    )
+                data_files = {
+                    path: value
+                    for path, value in expected_files.items()
+                    if path.startswith("data/")
+                }
+                if manifest.get("file_count") != len(data_files):
+                    raise ValueError("recovery manifest file count mismatch")
+                if manifest.get("total_bytes") != sum(
+                    value.get("size", -1) for value in data_files.values()
+                ):
+                    raise ValueError("recovery manifest byte count mismatch")
+                source_images = manifest.get("source_images")
+                if isinstance(source_images, dict):
+                    source_files = {
+                        path: value
+                        for path, value in expected_files.items()
+                        if path.startswith("data/source_images/")
+                    }
+                    if source_images.get("files") != source_files:
+                        raise ValueError(
+                            "recovery manifest source-image index mismatch"
+                        )
+                    if source_images.get("file_count") != len(source_files):
+                        raise ValueError(
+                            "recovery manifest source-image count mismatch"
+                        )
+                    if source_images.get("total_bytes") != sum(
+                        value.get("size", -1) for value in source_files.values()
+                    ):
+                        raise ValueError(
+                            "recovery manifest source-image byte count mismatch"
+                        )
+            elif manifest is not None and not isinstance(manifest, dict):
+                raise ValueError("legacy manifest is not an object")
+
+            if components in ("all", "database") and isinstance(manifest, dict):
+                recovery = manifest.get("database_recovery")
+                if (
+                    isinstance(recovery, dict)
+                    and recovery.get("provider") == "cloudnative-pg"
+                    and not dump_path.is_file()
+                ):
+                    log.error(
+                        "Archive requires CloudNativePG recovery for cluster %s at %s; db.sql restore is unavailable",
+                        recovery.get("cluster", "?"),
+                        recovery.get("target_time", "?"),
+                    )
+                    started = datetime.now(timezone.utc)
+                    _mark_restore_started(
+                        restore_state,
+                        purpose,
+                        "database",
+                        started_at=started,
+                        archive_name=archive_name,
+                    )
+                    _mark_restore_finished(
+                        restore_state,
+                        purpose,
+                        "database",
+                        started_at=started,
+                        completed_at=started,
+                        success=False,
+                        archive_name=archive_name,
+                    )
+                    _write_restore_state(restore_state)
+                    return False
+
+            selected_success: list[bool] = []
+            if components in ("all", "database"):
+                started = datetime.now(timezone.utc)
+                _mark_restore_started(
+                    restore_state,
+                    purpose,
+                    "database",
+                    started_at=started,
+                    archive_name=archive_name,
+                )
+                success = dump_path.is_file() and _restore_database_dump(
+                    dump_path, database_url
+                )
+                _mark_restore_finished(
+                    restore_state,
+                    purpose,
+                    "database",
+                    started_at=started,
+                    completed_at=datetime.now(timezone.utc),
+                    success=success,
+                    archive_name=archive_name,
+                )
+                selected_success.append(success)
+            if components in ("all", "filesystem"):
+                started = datetime.now(timezone.utc)
+                _mark_restore_started(
+                    restore_state,
+                    purpose,
+                    "filesystem",
+                    started_at=started,
+                    archive_name=archive_name,
+                )
+                success = staged_data.is_dir()
+                if success:
+                    _promote_streamed_filesystem(
+                        staged_data, data_dir, restore_state["run_id"]
+                    )
+                _mark_restore_finished(
+                    restore_state,
+                    purpose,
+                    "filesystem",
+                    started_at=started,
+                    completed_at=datetime.now(timezone.utc),
+                    success=success,
+                    archive_name=archive_name,
+                )
+                selected_success.append(success)
+            _write_restore_state(restore_state)
+            return all(selected_success)
+    except Exception:
+        log.exception("Streaming restore validation failed")
+        return False
+
+
+def _manifest_version(manifest: dict) -> object:
+    return manifest.get("format_version", manifest.get("schema_version"))
+
+
+def _validate_tar_members(members: list[tarfile.TarInfo]) -> None:
+    for member in members:
+        parts = Path(member.name).parts
+        if not member.name or member.name.startswith("/") or ".." in parts:
+            raise ValueError(f"unsafe archive path: {member.name}")
+        if member.issym() or member.islnk() or not (member.isfile() or member.isdir()):
+            raise ValueError(f"unsafe archive member type: {member.name}")
+
+
+def _validate_extracted_manifest(
+    snapshot_dir: Path, manifest: dict | None, components: str
+) -> None:
+    if not manifest or _manifest_version(manifest) is None:
+        return
+    manifest_version = _manifest_version(manifest)
+    if manifest_version != RECOVERY_MANIFEST_SCHEMA_VERSION:
+        raise ValueError(f"unsupported recovery manifest version: {manifest_version}")
+    files = manifest.get("files")
+    if not isinstance(files, dict):
+        raise ValueError("recovery manifest files must be an object")
+    prefixes = (
+        ("data/",)
+        if components == "filesystem"
+        else (("db.sql",) if components == "database" else ("data/", "db.sql"))
+    )
+    expected_files = {
+        rel: expected
+        for rel, expected in files.items()
+        if any(rel == prefix or rel.startswith(prefix) for prefix in prefixes)
+    }
+    actual_files = {
+        path.relative_to(snapshot_dir).as_posix()
+        for path in snapshot_dir.rglob("*")
+        if path.is_file()
+        and path.name != "manifest.json"
+        and any(
+            path.relative_to(snapshot_dir).as_posix() == prefix
+            or path.relative_to(snapshot_dir).as_posix().startswith(prefix)
+            for prefix in prefixes
+        )
+    }
+    if set(expected_files) != actual_files:
+        raise ValueError("archive members do not match recovery manifest")
+    for rel, expected in expected_files.items():
+        path = snapshot_dir / rel
+        if (
+            path.is_symlink()
+            or path.stat().st_size != expected.get("size")
+            or _sha256(path) != expected.get("sha256")
+        ):
+            raise ValueError(f"manifest checksum mismatch: {rel}")
+    data_files = {rel: value for rel, value in files.items() if rel.startswith("data/")}
+    if manifest.get("file_count") != len(data_files):
+        raise ValueError("recovery manifest file count mismatch")
+    if manifest.get("total_bytes") != sum(
+        value.get("size", -1) for value in data_files.values()
+    ):
+        raise ValueError("recovery manifest byte count mismatch")
+    source_images = manifest.get("source_images")
+    if isinstance(source_images, dict):
+        source_files = {
+            rel: value
+            for rel, value in files.items()
+            if rel.startswith("data/source_images/")
+        }
+        if source_images.get("files") != source_files:
+            raise ValueError("recovery manifest source-image index mismatch")
+        if source_images.get("file_count") != len(source_files):
+            raise ValueError("recovery manifest source-image count mismatch")
+        if source_images.get("total_bytes") != sum(
+            value.get("size", -1) for value in source_files.values()
+        ):
+            raise ValueError("recovery manifest source-image byte count mismatch")
 
 
 def _restore_from_archive(
@@ -1758,6 +2751,7 @@ def _restore_from_archive(
     purpose: str = "operator",
     database_url: str | None = None,
     data_dir: str | None = None,
+    components: str = "all",
 ) -> bool:
     """Extract an archive and restore database + filesystem."""
     log.info(
@@ -1771,16 +2765,26 @@ def _restore_from_archive(
         },
     )
 
+    components = _validate_components(components)
     restore_state = _new_restore_state()
     _seed_restore_success_history(restore_state, _read_restore_state())
     target_database_url = database_url or DATABASE_URL
     target_data_dir = data_dir or DATA_DIR
+    if components in ("all", "filesystem"):
+        target_data = Path(target_data_dir)
+        target_data.mkdir(parents=True, exist_ok=True)
+        workspace_context = tempfile.TemporaryDirectory(
+            prefix=_RESTORE_PREFIX, dir=str(target_data)
+        )
+    else:
+        workspace_context = _staging_tempdir(_RESTORE_PREFIX)
 
-    with _staging_tempdir(_RESTORE_PREFIX) as tmpdir:
+    with workspace_context as tmpdir:
         # Extract ---------------------------------------------------------------
         log.info("Extracting archive …")
         with tarfile.open(str(archive_path), "r:gz") as tar:
-            tar.extractall(path=tmpdir, filter="data")
+            _validate_tar_members(tar.getmembers())
+            tar.extractall(path=tmpdir)
 
         # Find the snapshot directory (first dir inside the archive)
         entries = list(Path(tmpdir).iterdir())
@@ -1792,10 +2796,15 @@ def _restore_from_archive(
         # Read manifest
         manifest_path = snapshot_dir / "manifest.json"
         archive_backup_mode = None
+        manifest = None
         if manifest_path.exists():
             manifest = json.loads(manifest_path.read_text())
             archive_backup_mode = manifest.get("backup_mode")
-            log.info("Snapshot: %s (created %s)", manifest.get("snapshot_name", "?"), manifest.get("created_at", "?"))
+            log.info(
+                "Snapshot: %s (created %s)",
+                manifest.get("snapshot_name", "?"),
+                manifest.get("created_at", "?"),
+            )
             if archive_backup_mode and archive_backup_mode != BACKUP_MODE:
                 log.warning(
                     "Backup mode mismatch: archive was created in %r but current BACKUP_MODE is %r. "
@@ -1803,13 +2812,30 @@ def _restore_from_archive(
                     archive_backup_mode,
                     BACKUP_MODE,
                 )
+        try:
+            _validate_extracted_manifest(snapshot_dir, manifest, components)
+        except (OSError, ValueError, TypeError):
+            log.exception("Archive recovery manifest validation failed")
+            return False
 
         # 1. Restore database ---------------------------------------------------
         dump_path = snapshot_dir / "db.sql"
-        if dump_path.exists():
-            db = _parse_db_url(target_database_url)
-            pg = _pg_env(db)
-
+        recovery = (
+            manifest.get("database_recovery") if isinstance(manifest, dict) else None
+        )
+        if (
+            components in ("all", "database")
+            and isinstance(recovery, dict)
+            and recovery.get("provider") == "cloudnative-pg"
+            and not dump_path.is_file()
+        ):
+            log.error(
+                "Archive requires CloudNativePG recovery for cluster %s at %s; db.sql restore is unavailable",
+                recovery.get("cluster", "?"),
+                recovery.get("target_time", "?"),
+            )
+            return False
+        if components in ("all", "database") and dump_path.exists():
             log.info("Restoring database …")
             database_started_at = datetime.now(timezone.utc)
             _mark_restore_started(
@@ -1820,74 +2846,21 @@ def _restore_from_archive(
                 archive_name=archive_path.name,
             )
             _write_restore_state(restore_state)
-
-            # Drop and recreate the database contents by restoring into a clean state
-            # First, terminate existing connections and drop/recreate tables
-            drop_sql = """
-DO $$ DECLARE
-    r RECORD;
-BEGIN
-    FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
-        EXECUTE 'DROP TABLE IF EXISTS public.' || quote_ident(r.tablename) || ' CASCADE';
-    END LOOP;
-END $$;
-"""
-            result = subprocess.run(
-                [
-                    "psql",
-                    "-h", db["host"],
-                    "-p", db["port"],
-                    "-U", db["user"],
-                    "-d", db["dbname"],
-                    "-c", drop_sql,
-                ],
-                env=pg,
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode != 0:
-                log.warning("Table cleanup returned non-zero: %s", result.stderr)
-
-            # Restore the dump
-            result = subprocess.run(
-                [
-                    "psql",
-                    "-h", db["host"],
-                    "-p", db["port"],
-                    "-U", db["user"],
-                    "-d", db["dbname"],
-                    "--set", "ON_ERROR_STOP=on",
-                    "-f", str(dump_path),
-                ],
-                env=pg,
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode != 0:
-                log.error("Database restore failed: %s", result.stderr)
-                _mark_restore_finished(
-                    restore_state,
-                    purpose,
-                    "database",
-                    started_at=database_started_at,
-                    completed_at=datetime.now(timezone.utc),
-                    success=False,
-                    archive_name=archive_path.name,
-                )
-                _write_restore_state(restore_state)
-                return False
+            database_success = _restore_database_dump(dump_path, target_database_url)
             _mark_restore_finished(
                 restore_state,
                 purpose,
                 "database",
                 started_at=database_started_at,
                 completed_at=datetime.now(timezone.utc),
-                success=True,
+                success=database_success,
                 archive_name=archive_path.name,
             )
             _write_restore_state(restore_state)
+            if not database_success:
+                return False
             log.info("Database restored successfully")
-        else:
+        elif components in ("all", "database"):
             log.warning("No db.sql found in snapshot – skipping database restore")
             database_started_at = datetime.now(timezone.utc)
             _mark_restore_started(
@@ -1910,8 +2883,11 @@ END $$;
 
         # 2. Restore filesystem -------------------------------------------------
         data_archive = snapshot_dir / "data"
-        if data_archive.exists() and data_archive.is_dir():
-            data_dest = Path(target_data_dir)
+        if (
+            components in ("all", "filesystem")
+            and data_archive.exists()
+            and data_archive.is_dir()
+        ):
             filesystem_started_at = datetime.now(timezone.utc)
             _mark_restore_started(
                 restore_state,
@@ -1923,25 +2899,9 @@ END $$;
             _write_restore_state(restore_state)
             log.info("Restoring filesystem data to %s …", target_data_dir)
             try:
-                exclude_tiles = _exclude_tiles()
-                # Clear existing data (preserve the maintenance flag and, in production, the tiles tree)
-                if data_dest.exists():
-                    for child in data_dest.iterdir():
-                        if child.name == _MAINTENANCE_FILENAME:
-                            continue
-                        if exclude_tiles and child.name == "tiles":
-                            continue
-                        if child.is_dir():
-                            shutil.rmtree(str(child))
-                        else:
-                            child.unlink()
-
-                # Copy restored data
-                ignore = _restore_ignore_tiles(data_archive, exclude_tiles)
-                if ignore:
-                    shutil.copytree(str(data_archive), str(data_dest), dirs_exist_ok=True, ignore=ignore)
-                else:
-                    shutil.copytree(str(data_archive), str(data_dest), dirs_exist_ok=True)
+                _promote_streamed_filesystem(
+                    data_archive, target_data_dir, restore_state["run_id"]
+                )
             except Exception:
                 _mark_restore_finished(
                     restore_state,
@@ -1965,7 +2925,7 @@ END $$;
             )
             _write_restore_state(restore_state)
             log.info("Filesystem data restored")
-        else:
+        elif components in ("all", "filesystem"):
             log.warning("No data/ directory in snapshot – skipping filesystem restore")
             filesystem_started_at = datetime.now(timezone.utc)
             _mark_restore_started(
@@ -1986,9 +2946,18 @@ END $$;
             )
             _write_restore_state(restore_state)
 
-    database_success = _restore_section(restore_state, purpose, "database").get("success") is True
-    filesystem_success = _restore_section(restore_state, purpose, "filesystem").get("success") is True
-    overall_success = database_success and filesystem_success
+    database_success = (
+        _restore_section(restore_state, purpose, "database").get("success") is True
+    )
+    filesystem_success = (
+        _restore_section(restore_state, purpose, "filesystem").get("success") is True
+    )
+    selected_results = []
+    if components in ("all", "database"):
+        selected_results.append(database_success)
+    if components in ("all", "filesystem"):
+        selected_results.append(filesystem_success)
+    overall_success = all(selected_results)
     if overall_success:
         log.info(
             "Restore completed successfully",
@@ -2032,21 +3001,28 @@ def run_cron() -> None:
     signal.signal(signal.SIGINT, _handle_signal)
 
     log.info("HRIV Backup Service started")
-    log.info("  Schedule : %s", BACKUP_CRON_SCHEDULE)
+    log.info("  Schedule : %s (%s)", BACKUP_CRON_SCHEDULE, BACKUP_TIMEZONE)
     log.info("  Retention: %d snapshots", BACKUP_RETENTION_COUNT)
     log.info("  Mode     : %s", BACKUP_MODE)
-    log.info("  Azure container: %s", AZURE_STORAGE_CONTAINER or "(not configured – local only)")
+    log.info(
+        "  Azure container: %s",
+        AZURE_STORAGE_CONTAINER or "(not configured – local only)",
+    )
     log.info("  Data dir : %s", DATA_DIR)
 
-    cron = croniter(BACKUP_CRON_SCHEDULE, datetime.now(timezone.utc))
+    cron = croniter(BACKUP_CRON_SCHEDULE, datetime.now(_BACKUP_TZ))
 
     while not _shutdown:
         next_run = cron.get_next(datetime)
-        log.info("Next backup scheduled for %s UTC", next_run.strftime("%Y-%m-%d %H:%M:%S"))
+        log.info(
+            "Next backup scheduled for %s %s",
+            next_run.strftime("%Y-%m-%d %H:%M:%S"),
+            BACKUP_TIMEZONE,
+        )
 
         # Sleep until the next run, checking for shutdown every 30s
         while not _shutdown:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(_BACKUP_TZ)
             remaining = (next_run - now).total_seconds()
             if remaining <= 0:
                 break
@@ -2068,6 +3044,7 @@ def run_cron() -> None:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     command = sys.argv[1] if len(sys.argv) > 1 else "cron"
 
@@ -2075,14 +3052,46 @@ def main() -> None:
         result = run_backup()
         sys.exit(0 if result else 1)
 
-    elif command == "restore":
-        name = sys.argv[2] if len(sys.argv) > 2 else None
-        success = run_restore(name)
+    elif command in ("restore", "restore-database", "restore-filesystem"):
+        args = sys.argv[2:]
+        components = command.removeprefix("restore-") if command != "restore" else "all"
+        if "--components" in args:
+            index = args.index("--components")
+            try:
+                components = args[index + 1]
+            except IndexError:
+                raise SystemExit("--components requires all, database, or filesystem")
+            del args[index : index + 2]
+        component_args = [arg for arg in args if arg.startswith("--components=")]
+        if component_args:
+            components = component_args[-1].split("=", 1)[1]
+            args = [arg for arg in args if not arg.startswith("--components=")]
+        data_dir = None
+        if "--data-dir" in args:
+            index = args.index("--data-dir")
+            try:
+                data_dir = args[index + 1]
+            except IndexError:
+                raise SystemExit("--data-dir requires a target path")
+            del args[index : index + 2]
+        data_dir_args = [arg for arg in args if arg.startswith("--data-dir=")]
+        if data_dir_args:
+            data_dir = data_dir_args[-1].split("=", 1)[1]
+            args = [arg for arg in args if not arg.startswith("--data-dir=")]
+        if len(args) > 1:
+            raise SystemExit("restore accepts at most one snapshot name")
+        kwargs = {"components": components}
+        if data_dir is not None:
+            kwargs["data_dir"] = data_dir
+        success = run_restore(args[0] if args else None, **kwargs)
         sys.exit(0 if success else 1)
 
     elif command == "restore-test":
-        name = sys.argv[2] if len(sys.argv) > 2 else None
-        success = run_restore_test(name)
+        args = sys.argv[2:]
+        components = "all"
+        if args and args[-1] in ("all", "database", "filesystem"):
+            components = args.pop()
+        success = run_restore_test(args[0] if args else None, components=components)
         sys.exit(0 if success else 1)
 
     elif command == "list":
@@ -2094,7 +3103,9 @@ def main() -> None:
             print("-" * 100)
             for s in snapshots:
                 size_mb = s["size"] / (1024 * 1024)
-                print(f"{s['name']:<45} {size_mb:>10.1f}MB {s['last_modified']:>28} {s['location']:>10}")
+                print(
+                    f"{s['name']:<45} {size_mb:>10.1f}MB {s['last_modified']:>28} {s['location']:>10}"
+                )
 
     elif command == "status":
         sys.exit(0 if run_status() else 1)

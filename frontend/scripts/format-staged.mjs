@@ -41,9 +41,7 @@ function getIndexMode(file) {
   return indexEntry[0]
 }
 
-const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
-  encoding: 'utf8',
-}).trim()
+const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
 
 const stagedRaw = gitBuffer([
   'diff',
