@@ -325,7 +325,8 @@ rebuild, a per-file restore, or a stale-tile cleanup.
 - Endpoint: `POST /admin/tasks/rebuild-tiles` (admin only). Optional JSON body
   `{ "scope": "missing_stale", "image_ids": [..] }`.
 - Runner: `run_rebuild_tiles` in `admin_ops.py`; per-image work lives in
-  `processing.rebuild_source_image_tiles` and target selection in
+  `processing.rebuild_source_image_tiles`, with explicit preparation and
+  promotion helpers for future durable workers, and target selection in
   `processing.select_rebuild_targets`.
 - Parameters are persisted to a small JSON file referenced by the task's
   `input_path` (mirroring the db-import staging pattern) and deleted when the
@@ -351,6 +352,15 @@ never resurrected.
 
 - Tiles are generated into a temp directory and atomically swapped into place,
   so a mid-generation failure never destroys a good tile tree.
+- Slow libvips generation and source checksumming run in the preparation phase
+  after the serial runner closes its read transaction. Promotion revalidates
+  the source, locks the linked image row, confirms that image still points to
+  the rebuilding source, swaps the prepared tree, and stages provenance updates
+  in a short transaction without committing internally.
+- The prior tile tree is retained until the per-image database commit succeeds.
+  A promotion, commit failure, or cancellation before commit restores it; a
+  successful commit removes the retained tree. Cancellation during that cleanup
+  is propagated after the retained tree has been removed.
 - Each image commits independently; a per-image failure is logged and the batch
   continues. The task only ends `failed` for a fatal setup error (e.g. an
   unreadable parameters file), never because one image failed.
