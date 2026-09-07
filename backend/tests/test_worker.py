@@ -6,11 +6,11 @@ from types import ModuleType
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
-from fakeredis import aioredis
 from arq.constants import abort_jobs_ss, job_key_prefix
 from arq.jobs import serialize_job
 from arq.utils import timestamp_ms
 from arq.worker import Worker, func
+from fakeredis import aioredis
 from opentelemetry.trace import StatusCode
 
 from app.database import settings
@@ -18,16 +18,20 @@ from app.worker import (
     EnqueueResult,
     TaskQueueUnavailableError,
     WorkerSettings,
+    _parse_redis_settings,
     admin_task_runner,
     bulk_import_task,
     enqueue_admin_task,
     enqueue_process_source_image,
+    enqueue_tile_rebuild_pump,
     get_pool,
-    _parse_redis_settings,
     on_startup,
     process_source_image_task,
+    rebuild_tile_item,
+    rebuild_tile_pump_task,
     reconciliation_sweep_task,
     replace_image_task,
+    tile_rebuild_pump_sweep_task,
 )
 
 
@@ -224,7 +228,10 @@ async def test_reconciliation_sweep_task_delegates_to_shared_sweep() -> None:
     with patch("app.reconciliation.run_reconciliation_sweep", new_callable=AsyncMock) as sweep:
         await reconciliation_sweep_task({"job_id": "reconciliation_sweep_task:123"})
 
-    sweep.assert_awaited_once_with(current_job_id="reconciliation_sweep_task:123")
+    sweep.assert_awaited_once_with(
+        current_job_id="reconciliation_sweep_task:123",
+        rebuild_submit=ANY,
+    )
 
 
 async def test_on_startup_logs_worker_identity() -> None:
@@ -254,10 +261,12 @@ def test_worker_settings_only_extend_timeout_for_admin_tasks() -> None:
     assert WorkerSettings.allow_abort_jobs is True
     assert WorkerSettings.health_check_interval == 30
     assert WorkerSettings.health_check_key == "arq:queue:health-check"
-    assert len(WorkerSettings.cron_jobs) == 1
+    assert len(WorkerSettings.cron_jobs) == 2
     reconciliation_job = WorkerSettings.cron_jobs[0]
     assert reconciliation_job.coroutine == reconciliation_sweep_task
     assert reconciliation_job.run_at_startup is True
+    rebuild_pump_job = WorkerSettings.cron_jobs[1]
+    assert rebuild_pump_job.coroutine == tile_rebuild_pump_sweep_task
     assert WorkerSettings.functions[:2] == [
         process_source_image_task,
         replace_image_task,
@@ -268,6 +277,53 @@ def test_worker_settings_only_extend_timeout_for_admin_tasks() -> None:
     admin_fn = WorkerSettings.functions[3]
     assert admin_fn.name == "admin_task_runner"
     assert admin_fn.timeout_s == 86400
+    rebuild_pump_fn = WorkerSettings.functions[4]
+    assert rebuild_pump_fn.name == "rebuild_tile_pump_task"
+    assert rebuild_pump_fn.max_tries == 1
+    rebuild_child_fn = WorkerSettings.functions[5]
+    assert rebuild_child_fn.name == "rebuild_tile_item"
+    assert rebuild_child_fn.timeout_s == settings.rebuild_child_timeout_seconds
+    assert rebuild_child_fn.max_tries == 1
+
+
+async def test_enqueue_tile_rebuild_pump_uses_deterministic_id() -> None:
+    pool = AsyncMock()
+    with patch("app.worker.get_pool", new_callable=AsyncMock, return_value=pool):
+        assert await enqueue_tile_rebuild_pump(7, "initial")
+
+    pool.enqueue_job.assert_awaited_once_with(
+        "rebuild_tile_pump_task",
+        7,
+        ANY,
+        _job_id="rebuild-pump:7:initial",
+    )
+
+
+async def test_rebuild_tile_pump_task_delegates() -> None:
+    with patch(
+        "app.worker.pump_tile_rebuild_job",
+        new_callable=AsyncMock,
+    ) as pump:
+        await rebuild_tile_pump_task({}, 7)
+
+    assert pump.await_args.args[0] == 7
+
+
+async def test_rebuild_tile_item_requests_follow_up_pump() -> None:
+    with (
+        patch(
+            "app.worker.process_tile_rebuild_item",
+            new_callable=AsyncMock,
+        ) as process,
+        patch(
+            "app.worker.enqueue_tile_rebuild_pump",
+            new_callable=AsyncMock,
+        ) as enqueue_pump,
+    ):
+        await rebuild_tile_item({}, 7, 11, "claim")
+
+    process.assert_awaited_once_with(7, 11, "claim")
+    enqueue_pump.assert_awaited_once_with(7, "item:11:claim")
 
 
 # ── Admin task enqueue tests ──────────────────────────────

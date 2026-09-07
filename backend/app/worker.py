@@ -36,6 +36,7 @@ from opentelemetry import trace
 from opentelemetry.context import attach, detach
 from opentelemetry.propagate import extract, inject
 from opentelemetry.trace import Status, StatusCode
+
 from .component_versions import get_worker_version
 from .database import async_session, settings
 from .logging_config import setup_logging
@@ -46,6 +47,12 @@ from .queue_metrics import (
     HEALTH_CHECK_KEY,
 )
 from .task_constants import WORKER_JOB_TIMEOUT_SECONDS
+from .tile_rebuild_jobs import (
+    TileRebuildDispatch,
+    active_tile_rebuild_job_ids,
+    process_tile_rebuild_item,
+    pump_tile_rebuild_job,
+)
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -294,6 +301,69 @@ async def enqueue_admin_task(task_id: int, task_type: str) -> EnqueueResult:
     )
 
 
+async def _submit_tile_rebuild_dispatch(
+    dispatch: TileRebuildDispatch,
+) -> bool:
+    """Submit one committed durable claim using its exact arq ID."""
+    pool = await get_pool()
+    if pool is None:
+        return False
+    carrier: dict[str, str] = {}
+    inject(carrier)
+    try:
+        await pool.enqueue_job(
+            "rebuild_tile_item",
+            dispatch.job_id,
+            dispatch.item_id,
+            dispatch.claim_token,
+            carrier,
+            _job_id=dispatch.arq_job_id,
+        )
+    except Exception:
+        logger.warning(
+            "Tile rebuild child queue submission failed",
+            exc_info=True,
+            extra={
+                "event": "worker.rebuild_child_submission_failed",
+                "job_id": dispatch.job_id,
+                "item_id": dispatch.item_id,
+                "arq_job_id": dispatch.arq_job_id,
+            },
+        )
+        return False
+    return True
+
+
+async def enqueue_tile_rebuild_pump(
+    job_id: int,
+    trigger_id: str,
+) -> bool:
+    """Coalesce one pump trigger through arq's deterministic job IDs."""
+    pool = await get_pool()
+    if pool is None:
+        return False
+    carrier: dict[str, str] = {}
+    inject(carrier)
+    try:
+        await pool.enqueue_job(
+            "rebuild_tile_pump_task",
+            job_id,
+            carrier,
+            _job_id=f"rebuild-pump:{job_id}:{trigger_id}",
+        )
+    except Exception:
+        logger.warning(
+            "Tile rebuild pump submission failed",
+            exc_info=True,
+            extra={
+                "event": "worker.rebuild_pump_submission_failed",
+                "job_id": job_id,
+            },
+        )
+        return False
+    return True
+
+
 # ── arq task functions ────────────────────────────────────
 
 async def process_source_image_task(
@@ -487,6 +557,76 @@ async def admin_task_runner(
             detach(token)
 
 
+async def rebuild_tile_pump_task(
+    ctx: dict[str, object],
+    job_id: int,
+    trace_headers: dict[str, str] | None = None,
+) -> None:
+    """Fill the durable rebuild's PostgreSQL-derived execution window."""
+    parent_ctx = extract(trace_headers) if trace_headers else None
+    token = attach(parent_ctx) if parent_ctx else None
+    try:
+        with tracer.start_as_current_span(
+            "rebuild_tile_pump_task",
+            attributes={"job.id": job_id},
+        ):
+            await pump_tile_rebuild_job(
+                job_id,
+                _submit_tile_rebuild_dispatch,
+            )
+    finally:
+        if token is not None:
+            detach(token)
+
+
+async def rebuild_tile_item(
+    ctx: dict[str, object],
+    job_id: int,
+    item_id: int,
+    claim_token: str,
+    trace_headers: dict[str, str] | None = None,
+) -> None:
+    """Reserve and execute one durable tile-rebuild item."""
+    parent_ctx = extract(trace_headers) if trace_headers else None
+    token = attach(parent_ctx) if parent_ctx else None
+    try:
+        with tracer.start_as_current_span(
+            "rebuild_tile_item",
+            attributes={
+                "job.id": job_id,
+                "job_item.id": item_id,
+            },
+        ) as span:
+            try:
+                await process_tile_rebuild_item(
+                    job_id,
+                    item_id,
+                    claim_token,
+                )
+            except Exception as exc:
+                span.set_status(Status(StatusCode.ERROR, str(exc)))
+                span.record_exception(exc)
+                raise
+    finally:
+        await enqueue_tile_rebuild_pump(
+            job_id,
+            f"item:{item_id}:{claim_token}",
+        )
+        if token is not None:
+            detach(token)
+
+
+async def tile_rebuild_pump_sweep_task(
+    ctx: dict[str, object],
+) -> None:
+    """Periodic durable backstop for missed pump and enqueue triggers."""
+    for job_id in await active_tile_rebuild_job_ids():
+        await pump_tile_rebuild_job(
+            job_id,
+            _submit_tile_rebuild_dispatch,
+        )
+
+
 # ── arq lifecycle hooks ───────────────────────────────────
 
 
@@ -517,7 +657,10 @@ async def reconciliation_sweep_task(ctx: dict[str, Any]) -> None:
     """
     from .reconciliation import run_reconciliation_sweep
 
-    await run_reconciliation_sweep(current_job_id=ctx.get("job_id"))
+    await run_reconciliation_sweep(
+        current_job_id=ctx.get("job_id"),
+        rebuild_submit=_submit_tile_rebuild_dispatch,
+    )
 
 
 # ── arq WorkerSettings ───────────────────────────────────
@@ -529,6 +672,12 @@ class WorkerSettings:
         replace_image_task,
         func(bulk_import_task, max_tries=1),
         func(admin_task_runner, timeout=86400),
+        func(rebuild_tile_pump_task, max_tries=1),
+        func(
+            rebuild_tile_item,
+            timeout=settings.rebuild_child_timeout_seconds,
+            max_tries=1,
+        ),
     ]
     # Runs the reconciliation sweep (stale admin tasks, archive retention,
     # stale source images, stale bulk-import jobs) every 15 minutes, plus
@@ -541,6 +690,20 @@ class WorkerSettings:
             reconciliation_sweep_task,
             minute={0, 15, 30, 45},
             run_at_startup=True,
+            unique=True,
+            timeout=WORKER_JOB_TIMEOUT_SECONDS,
+            max_tries=1,
+        ),
+        cron(
+            tile_rebuild_pump_sweep_task,
+            minute=set(
+                range(
+                    0,
+                    60,
+                    settings.rebuild_pump_cadence_seconds // 60,
+                )
+            ),
+            second=30,
             unique=True,
             timeout=WORKER_JOB_TIMEOUT_SECONDS,
             max_tries=1,

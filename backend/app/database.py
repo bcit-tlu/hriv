@@ -1,3 +1,7 @@
+from typing import Literal
+
+from pydantic import Field, model_validator
+from pydantic_settings import BaseSettings
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -5,10 +9,6 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase
-from typing import Literal
-
-from pydantic import Field, model_validator
-from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379"
     task_execution_mode: Literal["local", "required"] = "local"
     worker_max_jobs: int = Field(default=4, ge=2)
+    rebuild_parallel_enabled: bool = False
+    rebuild_parallelism: int = Field(default=2, ge=1)
+    rebuild_child_timeout_seconds: int = Field(default=1800, ge=60)
+    rebuild_lease_seconds: int = Field(default=2100, ge=120)
+    rebuild_heartbeat_seconds: int = Field(default=30, ge=5)
+    rebuild_pump_cadence_seconds: int = Field(default=60, ge=60, le=3600)
 
     # Audit middleware: comma-separated list of URL paths whose request logs are
     # emitted at DEBUG instead of INFO. Entries without a trailing slash match
@@ -79,6 +85,24 @@ class Settings(BaseSettings):
         if self.database_url.startswith("postgresql://"):
             self.database_url = self.database_url.replace(
                 "postgresql://", "postgresql+asyncpg://", 1
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_rebuild_scheduler(self) -> "Settings":
+        if self.rebuild_heartbeat_seconds >= self.rebuild_lease_seconds:
+            raise ValueError(
+                "REBUILD_HEARTBEAT_SECONDS must be shorter than "
+                "REBUILD_LEASE_SECONDS"
+            )
+        if self.rebuild_child_timeout_seconds >= self.rebuild_lease_seconds:
+            raise ValueError(
+                "REBUILD_CHILD_TIMEOUT_SECONDS must be shorter than "
+                "REBUILD_LEASE_SECONDS"
+            )
+        if self.rebuild_pump_cadence_seconds % 60:
+            raise ValueError(
+                "REBUILD_PUMP_CADENCE_SECONDS must be a multiple of 60"
             )
         return self
 

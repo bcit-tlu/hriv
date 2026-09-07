@@ -20,7 +20,7 @@ import tempfile
 import threading
 import time
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Awaitable, Callable, Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TypeVar
@@ -36,11 +36,9 @@ from .backup_access import (
     BackupSnapshotCancelledError,
     restore_snapshot_file,
 )
-from .component_versions import get_app_version
 from .browse_state import bump_browse_revision
+from .component_versions import get_app_version
 from .database import get_async_session, settings
-from .tile_order import INITIAL_SCOPE_REVISION
-from .worker import TaskQueueUnavailableError, enqueue_admin_task
 from .models import (
     ACTIVE_TASK_STATUSES,
     AdminTask,
@@ -53,6 +51,12 @@ from .models import (
     SourceImage,
     User,
 )
+from .rebuild_locks import (
+    acquire_rebuild_creation_lock,
+    find_active_rebuild,
+)
+from .tile_order import INITIAL_SCOPE_REVISION
+from .worker import TaskQueueUnavailableError, enqueue_admin_task
 
 logger = logging.getLogger(__name__)
 
@@ -552,6 +556,7 @@ def _swap_imported_entries(
 _STALE_TASK_THRESHOLD_SECONDS = int(
     os.environ.get("ADMIN_TASK_STALE_SECONDS", "900")
 )
+_REBUILD_HEARTBEAT_INTERVAL_SECONDS = 2
 
 
 # ── Helpers ────────────────────────────────────────────────
@@ -710,6 +715,67 @@ async def _heartbeat_task(session: AsyncSession, task: AdminTask) -> None:
     """
     task.updated_at = datetime.now(timezone.utc)
     await session.commit()
+
+
+async def _poll_rebuild_task(task_id: int) -> None:
+    """Heartbeat a serial rebuild and return when cancellation is requested."""
+    async with get_async_session()() as session:
+        while True:
+            await asyncio.sleep(_REBUILD_HEARTBEAT_INTERVAL_SECONDS)
+            result = await session.execute(
+                update(AdminTask)
+                .where(
+                    AdminTask.id == task_id,
+                    AdminTask.status.in_(ACTIVE_TASK_STATUSES),
+                )
+                .values(updated_at=func.now())
+                .returning(AdminTask.status)
+            )
+            status = result.scalar_one_or_none()
+            await session.commit()
+            if status is None or status in ("cancelling", "cancelled"):
+                return
+
+
+async def _run_rebuild_with_heartbeat(
+    task_id: int,
+    operation: Awaitable[None],
+) -> None:
+    """Run one serial image rebuild with independent status heartbeats."""
+    operation_task = asyncio.ensure_future(operation)
+    poll_task = asyncio.create_task(_poll_rebuild_task(task_id))
+    try:
+        done, _pending = await asyncio.wait(
+            [operation_task, poll_task],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if operation_task in done:
+            poll_task.cancel()
+            operation_task.result()
+            return
+
+        if poll_task in done:
+            poll_error = (
+                poll_task.exception()
+                if not poll_task.cancelled()
+                else None
+            )
+            if not operation_task.done():
+                operation_task.cancel()
+            await asyncio.gather(operation_task, return_exceptions=True)
+            if poll_error is not None:
+                raise poll_error
+            raise TaskCancelled("Task cancelled by admin")
+    finally:
+        if not operation_task.done():
+            operation_task.cancel()
+        if not poll_task.done():
+            poll_task.cancel()
+        await asyncio.gather(
+            operation_task,
+            poll_task,
+            return_exceptions=True,
+        )
 
 
 def _parse_dt(value: str | None) -> datetime | None:
@@ -1728,7 +1794,10 @@ async def run_rebuild_tiles(task_id: int) -> None:
                             ),
                         )
                     else:
-                        await processing.rebuild_source_image_tiles(session, src)
+                        await _run_rebuild_with_heartbeat(
+                            task_id,
+                            processing.rebuild_source_image_tiles(session, src),
+                        )
                         rebuilt += 1
                         await _update_task(
                             session, task,
@@ -1902,18 +1971,24 @@ async def _queue_rebuild_tiles_after_import(
 
     async with get_async_session()() as rebuild_session:
         try:
-            existing_result = await rebuild_session.execute(
-                select(AdminTask).where(
-                    AdminTask.task_type == "rebuild_tiles",
-                    AdminTask.status.in_(ACTIVE_TASK_STATUSES),
-                )
-            )
-            existing = existing_result.scalars().first()
+            await acquire_rebuild_creation_lock(rebuild_session)
+            existing = await find_active_rebuild(rebuild_session)
         except Exception:
             logger.warning("Failed to check for active rebuild task", exc_info=True)
-            existing = None
+            try:
+                os.unlink(params_path)
+            except OSError:
+                logger.debug(
+                    "Could not remove rebuild params file %s",
+                    params_path,
+                    exc_info=True,
+                )
+            return (
+                "Could not queue automatic tile rebuild. "
+                "Run Rebuild Tiles manually if needed."
+            )
 
-        if isinstance(existing, AdminTask):
+        if existing is not None:
             try:
                 os.unlink(params_path)
             except OSError:
@@ -1921,8 +1996,9 @@ async def _queue_rebuild_tiles_after_import(
                     "Could not remove rebuild params file %s", params_path, exc_info=True
                 )
             return (
-                f"A rebuild-tiles task is already active (#{existing.id}). "
-                "The automatic rebuild was skipped; run Rebuild Tiles manually after it completes if needed."
+                f"A tile rebuild is already active ({existing.kind} #{existing.id}). "
+                "The automatic rebuild was skipped; run Rebuild Tiles manually "
+                "after it completes if needed."
             )
 
         try:
@@ -1931,7 +2007,7 @@ async def _queue_rebuild_tiles_after_import(
                     task_type="rebuild_tiles",
                     status="pending",
                     input_path=params_path,
-                    created_by=getattr(import_task, "created_by", None),
+                    created_by=import_task.created_by,
                     log="Queued for automatic rebuild after filesystem import.\n",
                 ).returning(AdminTask.id)
             )

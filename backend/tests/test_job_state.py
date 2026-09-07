@@ -14,6 +14,8 @@ from app.job_state import (
     heartbeat_job_item,
     reclaim_expired_job_items,
     refresh_job_aggregate,
+    release_job_item_claim,
+    reserve_job_item_execution,
 )
 
 
@@ -122,8 +124,63 @@ async def test_claim_job_items_uses_skip_locked_and_assigns_claims() -> None:
         assert item.heartbeat_at == now
         assert item.lease_expires_at == now + timedelta(seconds=90)
         assert item.arq_job_id == "arq-7"
-        assert item.started_at == now
+        assert item.started_at is None
     session.flush.assert_awaited_once()
+
+
+async def test_reserve_job_item_execution_is_compare_and_set() -> None:
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    session = MagicMock()
+    session.execute = AsyncMock(return_value=_execute_result(rowcount=1))
+
+    assert await reserve_job_item_execution(
+        session,
+        7,
+        11,
+        "claim-token",
+        now=now,
+    )
+
+    statement = session.execute.call_args.args[0]
+    rendered = str(statement)
+    assert "job_items.job_id" in rendered
+    assert "job_items.id" in rendered
+    assert "job_items.claim_token" in rendered
+    assert "job_items.status" in rendered
+    assert "job_items.started_at IS NULL" in rendered
+    values = {
+        key.name: value.value for key, value in statement._values.items()
+    }
+    assert values["started_at"] == now
+
+
+async def test_reserve_job_item_execution_rejects_stale_delivery() -> None:
+    session = MagicMock()
+    session.execute = AsyncMock(return_value=_execute_result(rowcount=0))
+
+    assert not await reserve_job_item_execution(
+        session,
+        7,
+        11,
+        "stale-token",
+    )
+
+
+async def test_release_unstarted_claim_returns_item_to_queue() -> None:
+    session = MagicMock()
+    session.execute = AsyncMock(return_value=_execute_result(rowcount=1))
+
+    assert await release_job_item_claim(session, 7, 11, "claim-token")
+
+    statement = session.execute.call_args.args[0]
+    assert "job_items.started_at IS NULL" in str(statement)
+    values = {
+        key.name: value.value for key, value in statement._values.items()
+    }
+    assert values["status"] == "queued"
+    assert values["claim_token"] is None
+    assert values["arq_job_id"] is None
+    assert values["started_at"] is None
 
 
 async def test_heartbeat_only_updates_the_current_claim() -> None:
@@ -201,6 +258,10 @@ async def test_reclaim_expired_job_items_is_bounded() -> None:
     )].value == "queued"
     assert "job_items.status" in str(statement)
     assert "job_items.lease_expires_at" in str(statement)
+    values = {
+        key.name: value.value for key, value in statement._values.items()
+    }
+    assert values["started_at"] is None
 
 
 async def test_aggregate_job_items_counts_terminal_progress() -> None:

@@ -111,6 +111,8 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   (FK to User, `SET NULL`); `started_at`; `completed_at`.
 - **Relationships:** `requester`; `items` (one-to-many `JobItem`, cascade
   delete).
+- **Rebuild uniqueness:** PostgreSQL has a partial unique index permitting only
+  one `rebuild_tiles` job in `queued`, `running`, or `cancelling` at a time.
 - **Import/export:** operational history, not application content; not included
   in database export/import payloads unless a future workflow explicitly changes
   that boundary.
@@ -127,6 +129,10 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   `claim_token`; `heartbeat_at`; `lease_expires_at`; optional `arq_job_id`;
   `metadata_` (JSONB, DB column `metadata`); `started_at`; `completed_at`.
 - **Relationships:** `job`.
+- **Execution ownership:** claiming assigns a token, heartbeat, lease expiry,
+  and diagnostic arq ID without setting `started_at`. A child sets
+  `started_at` only through a matching compare-and-set execution reservation;
+  lease reclamation clears it for the next attempt.
 
 ### Announcement
 

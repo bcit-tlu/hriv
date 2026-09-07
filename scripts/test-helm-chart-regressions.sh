@@ -184,6 +184,11 @@ assert_contains "$backend_mode_default_deployment" 'name: TASK_EXECUTION_MODE' \
   "backend deployment should always render TASK_EXECUTION_MODE"
 assert_contains "$backend_mode_default_deployment" 'value: "local"' \
   "backend deployment should default TASK_EXECUTION_MODE to local"
+assert_contains "$backend_mode_default_deployment" 'name: REBUILD_PARALLEL_ENABLED' \
+  "backend deployment should render the durable rebuild feature flag"
+backend_default_rebuild_enabled="$(grep -F -A1 'name: REBUILD_PARALLEL_ENABLED' <<<"$backend_mode_default_deployment")"
+assert_contains "$backend_default_rebuild_enabled" 'value: "false"' \
+  "backend deployment should default durable parallel rebuilding to disabled"
 assert_contains "$backend_mode_default_deployment" 'name: WORKER_MAX_JOBS' \
   "backend deployment should render WORKER_MAX_JOBS for the in-process fallback concurrency"
 assert_not_contains "$backend_mode_default_deployment" 'name: WORKER_TOTAL_SLOTS' \
@@ -237,6 +242,9 @@ assert_not_contains "$backend_feedback_values_to_from_deployment" 'key: from' \
 
 backend_required_manifest="$(helm template test charts/backend \
   --set tasks.executionMode=required \
+  --set tasks.rebuild.parallelEnabled=true \
+  --set tasks.rebuild.parallelism=3 \
+  --set tasks.rebuild.pumpCadenceSeconds=120 \
   --set redis.enabled=true \
   --set redis.worker.enabled=true \
   --set redis.worker.totalSlots=8)"
@@ -244,6 +252,21 @@ backend_required_manifest="$(helm template test charts/backend \
 backend_required_api="$(extract_yaml_doc "$backend_required_manifest" "Deployment" "test-hriv-backend")"
 assert_contains "$backend_required_api" 'value: "required"' \
   "backend deployment should render TASK_EXECUTION_MODE=required"
+assert_contains "$backend_required_api" 'name: REBUILD_PARALLEL_ENABLED' \
+  "backend deployment should render the durable rebuild feature flag"
+backend_required_rebuild_enabled="$(grep -F -A1 'name: REBUILD_PARALLEL_ENABLED' <<<"$backend_required_api")"
+assert_contains "$backend_required_rebuild_enabled" 'value: "true"' \
+  "backend deployment should permit durable rebuilding in required mode"
+assert_contains "$backend_required_api" 'name: REBUILD_PARALLELISM' \
+  "backend deployment should render the durable rebuild execution window"
+backend_required_rebuild_parallelism="$(grep -F -A1 'name: REBUILD_PARALLELISM' <<<"$backend_required_api")"
+assert_contains "$backend_required_rebuild_parallelism" 'value: "3"' \
+  "backend deployment should render the configured rebuild parallelism"
+assert_contains "$backend_required_api" 'name: REBUILD_PUMP_CADENCE_SECONDS' \
+  "backend deployment should render the rebuild pump cadence"
+backend_required_rebuild_cadence="$(grep -F -A1 'name: REBUILD_PUMP_CADENCE_SECONDS' <<<"$backend_required_api")"
+assert_contains "$backend_required_rebuild_cadence" 'value: "120"' \
+  "backend deployment should render the configured pump cadence"
 assert_not_contains "$backend_required_api" 'name: WORKER_TOTAL_SLOTS' \
   "backend deployment should not render deprecated WORKER_TOTAL_SLOTS"
 
@@ -252,6 +275,14 @@ assert_contains "$backend_required_worker" 'name: TASK_EXECUTION_MODE' \
   "worker deployment should render TASK_EXECUTION_MODE"
 assert_contains "$backend_required_worker" 'value: "required"' \
   "worker deployment should render TASK_EXECUTION_MODE=required"
+assert_contains "$backend_required_worker" 'name: REBUILD_PARALLEL_ENABLED' \
+  "worker deployment should render the durable rebuild feature flag"
+assert_contains "$backend_required_worker" 'name: REBUILD_CHILD_TIMEOUT_SECONDS' \
+  "worker deployment should render the durable rebuild child timeout"
+assert_contains "$backend_required_worker" 'name: REBUILD_LEASE_SECONDS' \
+  "worker deployment should render the durable rebuild lease"
+assert_contains "$backend_required_worker" 'name: REBUILD_HEARTBEAT_SECONDS' \
+  "worker deployment should render the durable rebuild heartbeat cadence"
 assert_contains "$backend_required_worker" 'name: WORKER_MAX_JOBS' \
   "worker deployment should render WORKER_MAX_JOBS"
 assert_not_contains "$backend_required_worker" 'name: WORKER_TOTAL_SLOTS' \
@@ -287,6 +318,13 @@ if backend_required_no_worker_output="$(helm template test charts/backend \
 fi
 assert_contains "$backend_required_no_worker_output" "requires redis.worker.enabled" \
   "backend chart should explain that required execution mode needs the worker Deployment"
+
+if backend_rebuild_local_output="$(helm template test charts/backend \
+  --set tasks.rebuild.parallelEnabled=true 2>&1)"; then
+  fail "expected durable rebuilding in local execution mode to be rejected"
+fi
+assert_contains "$backend_rebuild_local_output" "requires tasks.executionMode=required" \
+  "backend chart should require durable rebuilding to use the dedicated worker"
 
 if backend_low_max_jobs_output="$(helm template test charts/backend \
   --set redis.worker.maxJobs=1 2>&1)"; then

@@ -20,10 +20,6 @@ import pytest
 from sqlalchemy.sql.dml import Update
 
 from app import admin_ops
-from app.database import settings
-from app.models import AdminTask
-from app.worker import EnqueueResult, TaskQueueUnavailableError
-
 from app.admin_ops import (
     FILES_EXPORT_FORMAT_VERSION,
     FILES_EXPORT_MANIFEST_NAME,
@@ -31,33 +27,35 @@ from app.admin_ops import (
     _create_tar_file,
     _ensure_import_staging_same_device,
     _ensure_tasks_dir,
-    _extract_archive_stream,
     _extract_and_restore,
+    _extract_archive_stream,
     _iter_export_files,
     _parse_dt,
+    _queue_rebuild_tiles_after_import,
     _read_file,
     _run_with_cancel_poll,
+    _swap_imported_entries,
     _update_task,
+    _validate_retained_files_import_archive_path,
     _write_file,
+    build_files_export_manifest,
+    compute_archive_sha256,
     delete_files_import_archive,
     enforce_files_import_archive_retention,
     files_import_archive_retention_policy,
     list_files_import_archives,
     reconcile_stale_tasks,
+    rerun_files_import_archive,
     run_db_export,
     run_db_import,
     run_file_restore,
     run_files_export,
     run_files_import,
-    rerun_files_import_archive,
     run_rebuild_tiles,
-    _validate_retained_files_import_archive_path,
-    _swap_imported_entries,
-    _queue_rebuild_tiles_after_import,
-    build_files_export_manifest,
-    compute_archive_sha256,
 )
-
+from app.database import settings
+from app.models import AdminTask
+from app.worker import EnqueueResult, TaskQueueUnavailableError
 
 # ── Helper unit tests ──────────────────────────────────────
 
@@ -381,7 +379,7 @@ def test_build_files_export_manifest_uses_app_version_env(monkeypatch) -> None:
 
 def test_extract_and_restore_empty_archive(tmp_path) -> None:
     archive = str(tmp_path / "empty.tar.gz")
-    with tarfile.open(archive, "w:gz") as tar:
+    with tarfile.open(archive, "w:gz"):
         pass
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -928,6 +926,54 @@ async def test_reconcile_stale_tasks_no_stale_returns_zero() -> None:
 
     assert count == 0
     session.commit.assert_awaited_once()
+
+
+async def test_poll_rebuild_task_heartbeats_until_cancellation() -> None:
+    """Serial rebuild liveness uses its own session and active status."""
+    session = AsyncMock()
+    result = MagicMock()
+    result.scalar_one_or_none = MagicMock(
+        side_effect=["running", "cancelling"],
+    )
+    session.execute = AsyncMock(return_value=result)
+    session.commit = AsyncMock()
+    factory = MagicMock()
+    factory.return_value.__aenter__ = AsyncMock(return_value=session)
+    factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=factory),
+        patch("app.admin_ops.asyncio.sleep", new=AsyncMock()),
+    ):
+        await admin_ops._poll_rebuild_task(17)
+
+    assert session.execute.await_count == 2
+    stmt = session.execute.await_args.args[0]
+    compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+    assert "UPDATE admin_tasks" in compiled
+    assert "admin_tasks.id = 17" in compiled
+    assert "admin_tasks.status IN" in compiled
+    assert "updated_at=now()" in compiled.replace(" ", "")
+    assert session.commit.await_count == 2
+
+
+async def test_run_rebuild_with_heartbeat_prefers_completed_operation() -> None:
+    """A completed rebuild wins a simultaneous cancellation poll."""
+    operation = AsyncMock()
+    poll = AsyncMock()
+
+    async def complete_both(tasks, **_kwargs):
+        await asyncio.gather(*tasks)
+        return set(tasks), set()
+
+    with (
+        patch("app.admin_ops._poll_rebuild_task", poll),
+        patch("app.admin_ops.asyncio.wait", side_effect=complete_both),
+    ):
+        await admin_ops._run_rebuild_with_heartbeat(17, operation())
+
+    operation.assert_awaited_once()
+    poll.assert_awaited_once_with(17)
 
 
 async def test_update_task_check_cancelled_also_raises_on_cancelled_status() -> None:
@@ -1981,7 +2027,7 @@ async def test_run_files_import_uses_import_staging_dir_and_preserves_data(tmp_p
     task = SimpleNamespace(
         id=1, task_type="files_import", status="pending", progress=0, log="",
         result_filename=None, result_path=None, input_path=archive,
-        input_checksum=None, error_message=None,
+        input_checksum=None, error_message=None, created_by=None,
     )
 
     mock_session = AsyncMock()
@@ -2851,6 +2897,48 @@ async def test_run_rebuild_tiles_reports_per_image_failures() -> None:
     assert source_get_ids == [1, 2, 3]
 
 
+async def test_run_rebuild_tiles_heartbeats_during_long_image() -> None:
+    """A serial image rebuild stays active while generation is in progress."""
+    task = _rebuild_task()
+    session, factory = _rebuild_factory(task)
+    source = SimpleNamespace(id=1, image_id=10)
+    session.get = AsyncMock(
+        side_effect=lambda model, _ident: (
+            source
+            if getattr(model, "__name__", "") == "SourceImage"
+            else task
+        )
+    )
+    heartbeat_started = asyncio.Event()
+
+    async def poll_rebuild_task(_task_id: int) -> None:
+        heartbeat_started.set()
+        await asyncio.Event().wait()
+
+    async def rebuild_source_image_tiles(_session, _source) -> None:
+        await heartbeat_started.wait()
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=factory),
+        patch(
+            "app.processing.select_rebuild_targets",
+            AsyncMock(return_value=[source]),
+        ),
+        patch(
+            "app.processing.rebuild_source_image_tiles",
+            side_effect=rebuild_source_image_tiles,
+        ),
+        patch(
+            "app.admin_ops._poll_rebuild_task",
+            side_effect=poll_rebuild_task,
+        ) as poll,
+    ):
+        await run_rebuild_tiles(1)
+
+    assert task.status == "completed"
+    poll.assert_awaited_once_with(1)
+
+
 async def test_run_rebuild_tiles_skips_source_deleted_mid_batch() -> None:
     """A source that vanishes mid-batch is skipped, not rebuilt."""
     task = _rebuild_task()
@@ -2961,7 +3049,7 @@ def _queue_session_factory(existing=None, insert_id=99, raise_on_insert=False):
     async def _execute(stmt):
         nonlocal call_count
         call_count += 1
-        if raise_on_insert and call_count == 2:
+        if raise_on_insert and call_count == 4:
             raise RuntimeError("insert failed")
         return exec_result
 
@@ -2993,7 +3081,37 @@ async def test_queue_rebuild_tiles_after_import_skips_active_and_cleans_params(t
     ):
         message = await _queue_rebuild_tiles_after_import(import_task)
 
-    assert "already active (#77)" in message
+    assert "already active (task #77)" in message
+    assert not any(tmp_path.glob("rebuild-after-import-*.json"))
+    mock_enqueue.assert_not_awaited()
+
+
+async def test_queue_rebuild_tiles_after_import_skips_active_durable_job(
+    tmp_path,
+) -> None:
+    import_task = SimpleNamespace(
+        input_path=str(tmp_path / "import.tar.gz"),
+        created_by=1,
+    )
+    _, session_factory = _queue_session_factory()
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=session_factory),
+        patch(
+            "app.admin_ops.find_active_rebuild",
+            new_callable=AsyncMock,
+            return_value=SimpleNamespace(
+                kind="job",
+                id=88,
+                status="running",
+            ),
+        ),
+        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock) as mock_enqueue,
+        patch("app.admin_ops._ensure_tasks_dir", return_value=str(tmp_path)),
+    ):
+        message = await _queue_rebuild_tiles_after_import(import_task)
+
+    assert "already active (job #88)" in message
     assert not any(tmp_path.glob("rebuild-after-import-*.json"))
     mock_enqueue.assert_not_awaited()
 
@@ -3015,7 +3133,7 @@ async def test_queue_rebuild_tiles_after_import_marks_failed_on_enqueue_error(tm
 
     assert "Could not queue automatic tile rebuild" in message
     assert not any(tmp_path.glob("rebuild-after-import-*.json"))
-    assert session.execute.await_count == 3  # select, insert, update
+    assert session.execute.await_count == 5  # lock, two selects, insert, update
     session.commit.assert_awaited()
 
 
@@ -3052,7 +3170,7 @@ async def test_queue_rebuild_tiles_after_import_logs_expected_rejection_without_
     ]
     assert rejection_records
     assert all(record.exc_info is None for record in rejection_records)
-    assert session.execute.await_count == 3
+    assert session.execute.await_count == 5
 
 
 async def test_queue_rebuild_tiles_after_import_queues_on_success(tmp_path) -> None:
@@ -3075,7 +3193,7 @@ async def test_queue_rebuild_tiles_after_import_queues_on_success(tmp_path) -> N
     assert len(params_files) == 1
     with open(params_files[0], "r", encoding="utf-8") as f:
         assert json.load(f)["scope"] == "missing_stale"
-    assert session.execute.await_count == 2  # select, insert
+    assert session.execute.await_count == 4  # lock, two selects, insert
 
 
 async def test_queue_rebuild_tiles_after_import_falls_back_to_background_tasks(tmp_path) -> None:
@@ -3096,7 +3214,7 @@ async def test_queue_rebuild_tiles_after_import_falls_back_to_background_tasks(t
         message = await _queue_rebuild_tiles_after_import(import_task, bg)
 
     assert "Tile rebuild task #99 was scheduled to run automatically" in message
-    assert session.execute.await_count == 2  # select, insert
+    assert session.execute.await_count == 4  # lock, two selects, insert
     bg.add_task.assert_called_once_with(run_rebuild_tiles, 99)
     # Params file is left for the in-process runner to consume and delete.
     params_files = list(tmp_path.glob("rebuild-after-import-*.json"))

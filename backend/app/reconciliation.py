@@ -16,21 +16,27 @@ This sweep has two homes depending on ``TASK_EXECUTION_MODE``:
   deployments/restarts, not just at boot, and keeps the reconciliation
   path off the API pod's startup critical section.
 
-The reconcile functions themselves are imported lazily inside
-``run_reconciliation_sweep`` (rather than at module import time) because
-``admin_ops`` and ``routers.bulk_import`` both import from ``worker`` —
-importing them eagerly here would create a circular import when
-``worker.py`` imports this module.
+Reconcile functions that depend on ``worker`` are imported lazily inside
+``run_reconciliation_sweep`` to avoid circular imports.
 """
 
 import logging
+from collections.abc import Awaitable, Callable
 
+from . import tile_rebuild_jobs
 from .database import get_async_session
 
 logger = logging.getLogger(__name__)
 
 
-async def run_reconciliation_sweep(current_job_id: str | None = None) -> None:
+async def run_reconciliation_sweep(
+    current_job_id: str | None = None,
+    rebuild_submit: Callable[
+        [tile_rebuild_jobs.TileRebuildDispatch],
+        Awaitable[bool],
+    ]
+    | None = None,
+) -> None:
     """Run the full best-effort reconciliation sweep.
 
     Each step opens its own session and is isolated in its own try/except
@@ -49,7 +55,6 @@ async def run_reconciliation_sweep(current_job_id: str | None = None) -> None:
     from .admin_ops import enforce_files_import_archive_retention, reconcile_stale_tasks
     from .processing import reconcile_stale_source_images
     from .routers.bulk_import import reconcile_stale_bulk_import_jobs
-
     # Reconcile admin tasks orphaned by a previous pod crash/rollout so
     # their concurrency guard doesn't permanently block new imports or
     # exports.  Stale-timestamp protection keeps multi-replica deployments
@@ -104,3 +109,18 @@ async def run_reconciliation_sweep(current_job_id: str | None = None) -> None:
                 "error": str(exc),
             },
         )
+
+    if rebuild_submit is not None:
+        try:
+            await tile_rebuild_jobs.reconcile_tile_rebuild_jobs(
+                rebuild_submit
+            )
+        except Exception as exc:  # pragma: no cover - best effort
+            logger.warning(
+                "Durable tile-rebuild reconciliation failed: %s",
+                exc,
+                extra={
+                    "event": "rebuild.reconcile_failed",
+                    "error": str(exc),
+                },
+            )

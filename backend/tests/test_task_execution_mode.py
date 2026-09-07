@@ -1,8 +1,8 @@
 """Regression coverage for required-mode queue boundaries."""
 
 import inspect
-from io import BytesIO
 import sys
+from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -13,8 +13,8 @@ if "pyvips" not in sys.modules:
 
 from fastapi import UploadFile
 
-from app.database import settings
 from app.admin_ops import _queue_rebuild_tiles_after_import
+from app.database import settings
 from app.routers import admin, bulk_import, images, upload
 from app.worker import TaskQueueUnavailableError
 
@@ -213,7 +213,13 @@ async def test_required_mode_call_site_matrix_rejects_without_runners(tmp_path) 
     insert_result = MagicMock()
     insert_result.scalar.return_value = 7
     rebuild_session.execute = AsyncMock(
-        side_effect=[existing_result, insert_result, MagicMock()],
+        side_effect=[
+            MagicMock(),
+            existing_result,
+            existing_result,
+            insert_result,
+            MagicMock(),
+        ],
     )
     rebuild_session.commit = AsyncMock()
     rebuild_context = MagicMock()
@@ -233,7 +239,7 @@ async def test_required_mode_call_site_matrix_rejects_without_runners(tmp_path) 
     ):
         message = await _queue_rebuild_tiles_after_import(import_task)
     assert "Could not queue automatic tile rebuild" in message
-    assert rebuild_session.execute.await_count == 3
+    assert rebuild_session.execute.await_count == 5
     assert rebuild_session.commit.await_count == 2
 
 

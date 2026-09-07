@@ -1,9 +1,59 @@
-# Scalable Rebuild Architecture for Backup Restores (Design)
+# Scalable Rebuild Architecture for Backup Restores
 
-Proposal only — this document plans the next-stage rebuild architecture for
-production-scale restore fidelity (issue #863). Nothing here is implemented;
-it exists so a fresh session can decompose the plan into concrete sub-tasks
-and PRs.
+This document records the staged rebuild architecture for production-scale
+restore fidelity (issues #863 and #1067). The initial proposal below is retained
+for design history; the implementation status section is authoritative where
+the shipped architecture differs from that proposal.
+
+## Implementation status
+
+Wave 0 separated tile generation from promotion while retaining the serial
+`AdminTask` rebuild. A source image is prepared outside a database transaction,
+then revalidated, promoted atomically, and committed with rollback support.
+
+Wave 1 implements the default-off durable scheduler foundation:
+
+- Generic `Job` / `JobItem` rows, rather than a rebuild-specific work-item
+  table, persist the supervisor and one child item per selected source image.
+- PostgreSQL is authoritative for claims, execution reservations, aggregates,
+  leases, and terminal state. Redis/arq only delivers pump and child work.
+- One active serial-or-durable rebuild is protected by a shared PostgreSQL
+  advisory creation lock plus a partial unique index for active durable jobs.
+- Per-job advisory locks make pumps single-writer without blocking duplicate
+  triggers.
+- The execution window is derived from PostgreSQL running-item counts and the
+  independently persisted `REBUILD_PARALLELISM` value.
+- Claim ownership commits before enqueue. Attempt-specific arq IDs have the
+  form `rebuild:{job_id}:{item_id}:{attempt}`.
+- A child must atomically reserve its running claim before setting
+  `started_at`; duplicate deliveries cannot execute the same attempt twice.
+- Children heartbeat leases and recheck source/tile authority before using the
+  Wave 0 preparation and promotion boundary.
+- Periodic reconciliation reclaims expired ownership and repumps active jobs,
+  covering worker loss, Redis interruption, and commit-before-enqueue gaps.
+
+Wave 1 intentionally does not expose a parallel rebuild endpoint or UI. The
+existing `POST /admin/tasks/rebuild-tiles` endpoint and automatic post-import
+rebuild remain serial, and the serial runner remains the immediate rollback
+path. Durable creation requires `TASK_EXECUTION_MODE=required` and
+`REBUILD_PARALLEL_ENABLED=true`; the flag defaults to false.
+
+Current scheduler controls are:
+
+| Setting                          | Default | Purpose                                      |
+| -------------------------------- | ------- | -------------------------------------------- |
+| `REBUILD_PARALLEL_ENABLED`       | `false` | Gates creation of durable parallel rebuilds  |
+| `REBUILD_PARALLELISM`            | `2`     | Independent PostgreSQL-derived child window  |
+| `REBUILD_CHILD_TIMEOUT_SECONDS`  | `1800`  | Per-child arq timeout                         |
+| `REBUILD_LEASE_SECONDS`          | `2100`  | Ownership recovery horizon                   |
+| `REBUILD_HEARTBEAT_SECONDS`      | `30`    | Lease renewal cadence during tile generation |
+| `REBUILD_PUMP_CADENCE_SECONDS`   | `60`    | Periodic missed-trigger recovery cadence     |
+
+`WORKER_MAX_JOBS` remains the worker's overall arq capacity and does not
+silently define rebuild parallelism.
+
+Cancellation/retry controls, public admin creation and item controls, scale
+rehearsal, measurement-based tuning, and default enablement remain later waves.
 
 ## Problem
 
@@ -40,7 +90,12 @@ Non-goals: changing tile generation itself (libvips pipeline), changing what
 counts as `missing`/`stale`, or introducing new infrastructure beyond the
 existing Postgres + Redis/arq pair.
 
-## Proposed architecture
+## Original proposal
+
+The following proposal predates the generic durable job model. Its goals and
+operational constraints remain useful, but references to a dedicated
+`rebuild_work_items` table, an `AdminTask` durable supervisor, and Redis-less
+parallel fallback are superseded by the implementation status above.
 
 ### 1. Supervisor task model with persisted child work items
 
