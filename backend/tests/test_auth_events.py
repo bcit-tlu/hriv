@@ -9,6 +9,7 @@ from app.auth_events import (
     AUTH_METHOD_OIDC,
     AUTH_OUTCOME_FAILURE,
     AUTH_OUTCOME_SUCCESS,
+    actor_log_fields,
     auth_event_fields,
     is_synthetic_user,
 )
@@ -59,3 +60,26 @@ def test_auth_event_fields_explicit_overrides() -> None:
     assert fields["auth.user_id"] == 3
     assert fields["auth.role"] == "admin"
     assert fields["auth.synthetic"] is False
+
+
+def test_actor_log_fields_includes_user_and_synthetic() -> None:
+    user = SimpleNamespace(id=42, role="instructor", metadata_={"synthetic": True})
+    fields = actor_log_fields(user)
+    assert fields["user.id"] == 42
+    assert fields["user.role"] == "instructor"
+    assert fields["event.synthetic"] is True
+
+
+def test_actor_log_fields_missing_user_is_non_synthetic() -> None:
+    fields = actor_log_fields(None)
+    assert fields["event.synthetic"] is False
+    assert "user.id" not in fields
+    assert "user.role" not in fields
+
+
+def test_actor_log_fields_records_client_synthetic_hint() -> None:
+    user = SimpleNamespace(id=7, role="admin", metadata_={"synthetic": False})
+    fields = actor_log_fields(user, client_synthetic=True)
+    assert fields["event.client_synthetic"] is True
+    assert fields["user.id"] == 7
+    assert fields["event.synthetic"] is False

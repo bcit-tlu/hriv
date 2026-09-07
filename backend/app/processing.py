@@ -537,7 +537,6 @@ async def process_source_image(source_image_id: int) -> None:
 
     async with async_session() as db:
         src = await db.get(SourceImage, source_image_id)
-        uploader = await db.get(User, src.uploaded_by) if src is not None and src.uploaded_by is not None else None
         if src is None:
             logger.error(
                 "SourceImage not found, skipping processing",
@@ -769,10 +768,15 @@ async def process_source_image(source_image_id: int) -> None:
                     "duration_ms": duration_ms,
                 },
             )
-            # This lifecycle event is emitted only after the Image row and its
-            # tiles have been committed, unlike the browser event that records
-            # source-file submission. It makes final image names available for
-            # both single and bulk uploads without adding them to metric labels.
+            # Resolve the uploader at event time so role/synthetic metadata
+            # reflect current user state and a concurrently deleted uploader is
+            # reported as None. This lifecycle event is emitted only after the
+            # Image row and its tiles have been committed.
+            uploader = (
+                await db.get(User, src.uploaded_by)
+                if src.uploaded_by is not None
+                else None
+            )
             logger.info(
                 "Image upload processed successfully",
                 extra={

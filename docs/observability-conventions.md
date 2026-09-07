@@ -755,17 +755,17 @@ image lifecycle panels. They are distinct from the browser's aggregate
 `image.upload.completed` event, which records source-file submission before
 asynchronous processing finishes.
 
-| Event                    | Emitted when                                                                            | Fields                                                                                                            |
-| ------------------------ | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `image.upload.processed` | A source image has successfully generated tiles and the final `Image` row has committed | `image.id`, `image.name`, `category.id`, `source_image.id`, `source_image.original_filename`, `event.duration_ms` |
-| `image.deleted`          | A single or bulk image deletion has committed                                           | `image.id`, `image.name`, `category.id`, `user.id`, `user.role`                                                   |
+| Event                    | Emitted when                                                                            | Fields                                                                                                                                                       |
+| ------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `image.upload.processed` | A source image has successfully generated tiles and the final `Image` row has committed | `image.id`, `image.name`, `category.id`, `source_image.id`, `source_image.original_filename`, `event.duration_ms`, `user.id`, `user.role`, `event.synthetic` |
+| `image.deleted`          | A single or bulk image deletion has committed                                           | `image.id`, `image.name`, `category.id`, `user.id`, `user.role`, `event.synthetic`, `event.client_synthetic`                                                 |
 
 A bulk deletion emits one `image.deleted` record per image so dashboard tables
 can identify every deleted item. These fields are structured logs for Loki
 only; image identifiers and names must never become Prometheus labels. The
-processed-upload event intentionally has no uploader attribution because
-processing runs asynchronously; a future attribution refactor may add that
-relationship.
+`image.upload.processed` event resolves the uploader when the event is emitted
+so the recorded `user.id`, `user.role`, and `event.synthetic` reflect the user's
+current state at processing completion.
 
 ### Backend enrichment
 
