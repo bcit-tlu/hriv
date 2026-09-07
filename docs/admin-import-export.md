@@ -363,6 +363,10 @@ never resurrected.
   the source, locks the linked image row, confirms that image still points to
   the rebuilding source, swaps the prepared tree, and stages provenance updates
   in a short transaction without committing internally.
+- While an image is in the long preparation phase, the serial runner refreshes
+  the task's `updated_at` from a separate database session. The same poll
+  observes cancellation without sharing the image-processing session, so stale
+  reconciliation cannot admit an overlapping rebuild while libvips is active.
 - The prior tile tree is retained until the per-image database commit succeeds.
   A promotion, commit failure, or cancellation before commit restores it; a
   successful commit removes the retained tree. Cancellation during that cleanup

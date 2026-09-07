@@ -20,7 +20,7 @@ import tempfile
 import threading
 import time
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Awaitable, Callable, Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TypeVar
@@ -556,6 +556,7 @@ def _swap_imported_entries(
 _STALE_TASK_THRESHOLD_SECONDS = int(
     os.environ.get("ADMIN_TASK_STALE_SECONDS", "900")
 )
+_REBUILD_HEARTBEAT_INTERVAL_SECONDS = 2
 
 
 # ── Helpers ────────────────────────────────────────────────
@@ -714,6 +715,65 @@ async def _heartbeat_task(session: AsyncSession, task: AdminTask) -> None:
     """
     task.updated_at = datetime.now(timezone.utc)
     await session.commit()
+
+
+async def _poll_rebuild_task(task_id: int) -> None:
+    """Heartbeat a serial rebuild and return when cancellation is requested."""
+    async with get_async_session()() as session:
+        while True:
+            await asyncio.sleep(_REBUILD_HEARTBEAT_INTERVAL_SECONDS)
+            result = await session.execute(
+                update(AdminTask)
+                .where(
+                    AdminTask.id == task_id,
+                    AdminTask.status.in_(ACTIVE_TASK_STATUSES),
+                )
+                .values(updated_at=func.now())
+                .returning(AdminTask.status)
+            )
+            status = result.scalar_one_or_none()
+            await session.commit()
+            if status is None or status in ("cancelling", "cancelled"):
+                return
+
+
+async def _run_rebuild_with_heartbeat(
+    task_id: int,
+    operation: Awaitable[None],
+) -> None:
+    """Run one serial image rebuild with independent status heartbeats."""
+    operation_task = asyncio.ensure_future(operation)
+    poll_task = asyncio.create_task(_poll_rebuild_task(task_id))
+    try:
+        done, _pending = await asyncio.wait(
+            [operation_task, poll_task],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if poll_task in done:
+            poll_error = (
+                poll_task.exception()
+                if not poll_task.cancelled()
+                else None
+            )
+            if not operation_task.done():
+                operation_task.cancel()
+            await asyncio.gather(operation_task, return_exceptions=True)
+            if poll_error is not None:
+                raise poll_error
+            raise TaskCancelled("Task cancelled by admin")
+
+        poll_task.cancel()
+        return operation_task.result()
+    finally:
+        if not operation_task.done():
+            operation_task.cancel()
+        if not poll_task.done():
+            poll_task.cancel()
+        await asyncio.gather(
+            operation_task,
+            poll_task,
+            return_exceptions=True,
+        )
 
 
 def _parse_dt(value: str | None) -> datetime | None:
@@ -1730,7 +1790,10 @@ async def run_rebuild_tiles(task_id: int) -> None:
                             ),
                         )
                     else:
-                        await processing.rebuild_source_image_tiles(session, src)
+                        await _run_rebuild_with_heartbeat(
+                            task_id,
+                            processing.rebuild_source_image_tiles(session, src),
+                        )
                         rebuilt += 1
                         await _update_task(
                             session, task,

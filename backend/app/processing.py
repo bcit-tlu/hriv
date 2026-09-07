@@ -352,6 +352,29 @@ class ProgressTracker:
             return self._progress, self._message
 
 
+class TileGenerationCancellation:
+    """Thread-safe cancellation control for an active libvips image."""
+
+    def __init__(self) -> None:
+        self._cancelled = threading.Event()
+        self._image: pyvips.Image | None = None
+        self._lock = threading.Lock()
+
+    def bind(self, image: pyvips.Image) -> None:
+        with self._lock:
+            self._image = image
+            cancelled = self._cancelled.is_set()
+        if cancelled:
+            image.set_kill(True)
+
+    def cancel(self) -> None:
+        self._cancelled.set()
+        with self._lock:
+            image = self._image
+        if image is not None:
+            image.set_kill(True)
+
+
 def _estimate_tile_count(width: int, height: int, tile_size: int = DZI_TILE_SIZE) -> int:
     """Estimate the total number of DZI tiles across all pyramid levels."""
     total = 0
@@ -368,6 +391,7 @@ def generate_tiles(
     source_path: str,
     output_dir: str,
     tracker: ProgressTracker | None = None,
+    cancellation: TileGenerationCancellation | None = None,
 ) -> tuple[str, str, int, int]:
     """Use pyvips to generate DZI tiles and a thumbnail from a source image.
 
@@ -381,6 +405,8 @@ def generate_tiles(
     os.makedirs(output_dir, exist_ok=True)
 
     image = pyvips.Image.new_from_file(source_path, access="sequential")
+    if cancellation is not None:
+        cancellation.bind(image)
 
     estimated_tiles = _estimate_tile_count(image.width, image.height)
     span.set_attributes({
@@ -503,6 +529,8 @@ def generate_tiles(
     thumb = pyvips.Image.thumbnail(
         source_path, 256, height=256, crop="centre",
     )
+    if cancellation is not None:
+        cancellation.bind(thumb)
     thumb.jpegsave(thumb_path, Q=85)
 
     if tracker:
@@ -1414,6 +1442,7 @@ async def prepare_source_image_tile_rebuild(
         f".rebuild-{source.source_image_id}-{uuid4().hex}",
     )
     tile_settings_hash = current_tile_settings_hash()
+    cancellation = TileGenerationCancellation()
 
     try:
         with tracer.start_as_current_span("rebuild_generate_tiles"):
@@ -1422,6 +1451,8 @@ async def prepare_source_image_tile_rebuild(
                     generate_tiles,
                     source.stored_path,
                     temporary_dir,
+                    None,
+                    cancellation,
                 ),
             )
             try:
@@ -1429,7 +1460,11 @@ async def prepare_source_image_tile_rebuild(
                     await asyncio.shield(generate_task)
                 )
             except asyncio.CancelledError:
-                await _await_without_interruption(generate_task)
+                cancellation.cancel()
+                await asyncio.gather(
+                    generate_task,
+                    return_exceptions=True,
+                )
                 raise
         source_checksum = await _best_effort_source_checksum(source.stored_path)
     except (Exception, asyncio.CancelledError):

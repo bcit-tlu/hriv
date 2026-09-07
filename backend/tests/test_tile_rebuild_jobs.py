@@ -202,8 +202,12 @@ async def test_create_tile_rebuild_job_snapshots_selected_sources(
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(
-        "app.tile_rebuild_jobs.processing.select_rebuild_targets",
-        select_targets,
+        "app.tile_rebuild_jobs._load_processing",
+        MagicMock(
+            return_value=SimpleNamespace(
+                select_rebuild_targets=select_targets,
+            )
+        ),
     )
     monkeypatch.setattr(
         "app.tile_rebuild_jobs.refresh_job_aggregate",
@@ -461,7 +465,10 @@ async def test_ready_child_promotes_and_finalizes_current_claim(
         "app.tile_rebuild_jobs._refresh_tile_rebuild_job",
         refresh,
     )
-    monkeypatch.setattr(tile_rebuild_jobs, "processing", processing)
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._load_processing",
+        MagicMock(return_value=processing),
+    )
 
     result = await process_tile_rebuild_item(7, 11, "claim")
 
@@ -542,7 +549,10 @@ async def test_commit_failure_rolls_back_promotion_and_fails_item(
         "app.tile_rebuild_jobs._finalize_rebuild_failure",
         finalize_failure,
     )
-    monkeypatch.setattr(tile_rebuild_jobs, "processing", processing)
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._load_processing",
+        MagicMock(return_value=processing),
+    )
 
     with pytest.raises(RuntimeError, match="commit failed"):
         await process_tile_rebuild_item(7, 11, "claim")
@@ -592,12 +602,84 @@ async def test_cancelled_child_discards_prepared_tiles(
         "app.tile_rebuild_jobs.get_async_session",
         MagicMock(return_value=factory),
     )
-    monkeypatch.setattr(tile_rebuild_jobs, "processing", processing)
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._load_processing",
+        MagicMock(return_value=processing),
+    )
 
     with pytest.raises(asyncio.CancelledError):
         await process_tile_rebuild_item(7, 11, "claim")
 
     processing.discard_prepared_tile_rebuild.assert_awaited_once_with(prepared)
+
+
+async def test_cancelled_child_stops_heartbeat_during_slow_preparation(
+    monkeypatch,
+) -> None:
+    """Child timeout stops lease renewal while preparation is cancelled."""
+    preparation_started = asyncio.Event()
+    preparation_cancelled = asyncio.Event()
+    cleanup_release = asyncio.Event()
+    heartbeat_stopped = asyncio.Event()
+
+    async def prepare_source_image_tile_rebuild(_source):
+        preparation_started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            preparation_cancelled.set()
+            await cleanup_release.wait()
+            raise
+
+    async def heartbeat_rebuild_item(*_args) -> None:
+        try:
+            await asyncio.Event().wait()
+        finally:
+            heartbeat_stopped.set()
+
+    processing = SimpleNamespace(
+        TileRebuildSource=lambda **values: SimpleNamespace(**values),
+        prepare_source_image_tile_rebuild=AsyncMock(
+            side_effect=prepare_source_image_tile_rebuild,
+        ),
+        discard_prepared_tile_rebuild=AsyncMock(),
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._reserve_rebuild_source",
+        AsyncMock(
+            return_value=ReservedRebuild(
+                outcome="ready",
+                source_image_id=101,
+                image_id=201,
+                stored_path="/sources/one.svs",
+                heartbeat_seconds=30,
+                lease_seconds=90,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._heartbeat_rebuild_item",
+        heartbeat_rebuild_item,
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._load_processing",
+        MagicMock(return_value=processing),
+    )
+
+    child = asyncio.create_task(
+        process_tile_rebuild_item(7, 11, "claim")
+    )
+    await preparation_started.wait()
+    child.cancel()
+    await preparation_cancelled.wait()
+
+    assert heartbeat_stopped.is_set()
+    assert not child.done()
+    cleanup_release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(child, timeout=0.1)
+
+    processing.discard_prepared_tile_rebuild.assert_not_awaited()
 
 
 async def test_active_tile_rebuild_job_ids_reads_postgres(

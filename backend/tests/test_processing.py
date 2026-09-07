@@ -22,6 +22,7 @@ from app.processing import (
     PreparedTileRebuild,
     ProgressTracker,
     PromotedTileRebuild,
+    TileGenerationCancellation,
     TileRebuildSource,
     _await_without_interruption,
     _best_effort_source_checksum,
@@ -1194,10 +1195,14 @@ async def test_prepare_source_image_tile_rebuild_success() -> None:
         tile_settings_hash="settings-before-generation",
     )
     assert events == ["hash", "generate"]
-    mock_generate.assert_called_once_with(
+    mock_generate.assert_called_once()
+    generate_args = mock_generate.call_args.args
+    assert generate_args[:3] == (
         "/data/source_images/5.tiff",
         "/data/tiles/.rebuild-5-unique",
+        None,
     )
+    assert isinstance(generate_args[3], TileGenerationCancellation)
     mock_rmtree.assert_not_called()
 
 
@@ -1258,6 +1263,64 @@ async def test_prepare_source_image_tile_rebuild_cleans_cancelled_artifact() -> 
 
     mock_rmtree.assert_called_once_with(
         "/data/tiles/.rebuild-5-cancelled", True,
+    )
+
+
+async def test_prepare_source_image_tile_rebuild_stops_slow_generation() -> None:
+    """Cancellation stops libvips before cleaning the temporary tree."""
+    source = TileRebuildSource(
+        source_image_id=5,
+        image_id=10,
+        stored_path="/data/source_images/5.tiff",
+    )
+    generation_started = asyncio.Event()
+    generation_release = asyncio.Event()
+    cleanup_completed = asyncio.Event()
+    is_file = MagicMock(return_value=True)
+    generate = MagicMock()
+    remove_tree = MagicMock()
+    image = MagicMock()
+    image.set_kill = MagicMock(side_effect=lambda _value: generation_release.set())
+
+    async def to_thread(fn, *args):
+        if fn is is_file:
+            return True
+        if fn is generate:
+            generation_started.set()
+            cancellation = args[3]
+            cancellation.bind(image)
+            await generation_release.wait()
+            raise RuntimeError("generation cancelled")
+        if fn is remove_tree:
+            remove_tree(*args)
+            cleanup_completed.set()
+            return None
+        return fn(*args)
+
+    with (
+        patch("app.processing.asyncio.to_thread", side_effect=to_thread),
+        patch("app.processing.generate_tiles", new=generate),
+        patch("app.processing.os.path.isfile", new=is_file),
+        patch("app.processing.shutil.rmtree", new=remove_tree),
+        patch("app.processing.settings") as mocked_settings,
+        patch("app.processing.uuid4", return_value=SimpleNamespace(hex="slow")),
+    ):
+        mocked_settings.tiles_dir = "/data/tiles"
+        task = asyncio.create_task(
+            prepare_source_image_tile_rebuild(source)
+        )
+        await generation_started.wait()
+        task.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, timeout=0.1)
+
+        assert cleanup_completed.is_set()
+
+    image.set_kill.assert_called_once_with(True)
+    remove_tree.assert_called_once_with(
+        "/data/tiles/.rebuild-5-slow",
+        True,
     )
 
 

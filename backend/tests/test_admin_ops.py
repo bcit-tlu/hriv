@@ -928,6 +928,35 @@ async def test_reconcile_stale_tasks_no_stale_returns_zero() -> None:
     session.commit.assert_awaited_once()
 
 
+async def test_poll_rebuild_task_heartbeats_until_cancellation() -> None:
+    """Serial rebuild liveness uses its own session and active status."""
+    session = AsyncMock()
+    result = MagicMock()
+    result.scalar_one_or_none = MagicMock(
+        side_effect=["running", "cancelling"],
+    )
+    session.execute = AsyncMock(return_value=result)
+    session.commit = AsyncMock()
+    factory = MagicMock()
+    factory.return_value.__aenter__ = AsyncMock(return_value=session)
+    factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=factory),
+        patch("app.admin_ops.asyncio.sleep", new=AsyncMock()),
+    ):
+        await admin_ops._poll_rebuild_task(17)
+
+    assert session.execute.await_count == 2
+    stmt = session.execute.await_args.args[0]
+    compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+    assert "UPDATE admin_tasks" in compiled
+    assert "admin_tasks.id = 17" in compiled
+    assert "admin_tasks.status IN" in compiled
+    assert "updated_at=now()" in compiled.replace(" ", "")
+    assert session.commit.await_count == 2
+
+
 async def test_update_task_check_cancelled_also_raises_on_cancelled_status() -> None:
     """A status of ``cancelled`` (force-cancel) also aborts a live runner.
 
@@ -2820,6 +2849,48 @@ async def test_run_rebuild_tiles_reports_per_image_failures() -> None:
     assert rebuild_mock.await_count == 3
     # Each source is re-fetched exactly once, even after the failure rollback.
     assert source_get_ids == [1, 2, 3]
+
+
+async def test_run_rebuild_tiles_heartbeats_during_long_image() -> None:
+    """A serial image rebuild stays active while generation is in progress."""
+    task = _rebuild_task()
+    session, factory = _rebuild_factory(task)
+    source = SimpleNamespace(id=1, image_id=10)
+    session.get = AsyncMock(
+        side_effect=lambda model, _ident: (
+            source
+            if getattr(model, "__name__", "") == "SourceImage"
+            else task
+        )
+    )
+    heartbeat_started = asyncio.Event()
+
+    async def poll_rebuild_task(_task_id: int) -> None:
+        heartbeat_started.set()
+        await asyncio.Event().wait()
+
+    async def rebuild_source_image_tiles(_session, _source) -> None:
+        await heartbeat_started.wait()
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=factory),
+        patch(
+            "app.processing.select_rebuild_targets",
+            AsyncMock(return_value=[source]),
+        ),
+        patch(
+            "app.processing.rebuild_source_image_tiles",
+            side_effect=rebuild_source_image_tiles,
+        ),
+        patch(
+            "app.admin_ops._poll_rebuild_task",
+            side_effect=poll_rebuild_task,
+        ) as poll,
+    ):
+        await run_rebuild_tiles(1)
+
+    assert task.status == "completed"
+    poll.assert_awaited_once_with(1)
 
 
 async def test_run_rebuild_tiles_skips_source_deleted_mid_batch() -> None:

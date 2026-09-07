@@ -90,6 +90,12 @@ Task types registered on the worker:
   PostgreSQL-derived execution window
 - `rebuild_tile_item` — reserves and processes one durable source-image item
 
+Durable rebuild children use their configured arq timeout as an execution
+boundary. Cancellation sets libvips' kill flag, waits for the generation thread
+to stop, removes the temporary tile tree, and then releases the worker slot.
+Lease heartbeats stop with the child; an uncommitted item becomes reclaimable
+after its lease expires.
+
 ### Task execution modes and Redis fallback
 
 `TASK_EXECUTION_MODE=local` preserves the development behavior: a Redis

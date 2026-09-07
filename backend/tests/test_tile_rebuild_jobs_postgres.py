@@ -7,6 +7,10 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.admin_ops import (
+    _run_rebuild_with_heartbeat,
+    reconcile_stale_tasks,
+)
 from app.job_state import (
     claim_job_items,
     reclaim_expired_job_items,
@@ -145,6 +149,54 @@ async def test_creation_lock_serializes_serial_and_durable_rebuilds(
         assert active.kind == "task"
         assert active.id == serial.id
         await second.rollback()
+
+
+@requires_db
+async def test_serial_rebuild_heartbeat_prevents_stale_overlap(
+    db_factory,
+    monkeypatch,
+) -> None:
+    async with db_factory() as session:
+        serial = AdminTask(
+            task_type="rebuild_tiles",
+            status="running",
+            log="wave-1-postgres-test",
+            updated_at=datetime.now(timezone.utc) - timedelta(seconds=5),
+        )
+        session.add(serial)
+        await session.commit()
+        task_id = serial.id
+
+    work_started = asyncio.Event()
+    work_release = asyncio.Event()
+
+    async def long_image_rebuild() -> None:
+        work_started.set()
+        await work_release.wait()
+
+    monkeypatch.setattr(
+        "app.admin_ops.get_async_session",
+        lambda: db_factory,
+    )
+    monkeypatch.setattr(
+        "app.admin_ops._REBUILD_HEARTBEAT_INTERVAL_SECONDS",
+        0.01,
+    )
+    runner = asyncio.create_task(
+        _run_rebuild_with_heartbeat(task_id, long_image_rebuild())
+    )
+    await work_started.wait()
+    await asyncio.sleep(0.05)
+
+    async with db_factory() as session:
+        assert await reconcile_stale_tasks(session, stale_after_seconds=1) == 0
+        active = await find_active_rebuild(session)
+        assert active is not None
+        assert active.kind == "task"
+        assert active.id == task_id
+
+    work_release.set()
+    await runner
 
 
 @requires_db

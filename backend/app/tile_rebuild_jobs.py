@@ -6,12 +6,11 @@ from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Literal, TypeAlias
+from typing import Literal, Protocol, TypeAlias, cast
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from . import processing
 from .database import get_async_session, settings
 from .job_state import (
     JobItemSpec,
@@ -43,6 +42,62 @@ JSONValue: TypeAlias = (
     JSONScalar | list["JSONValue"] | dict[str, "JSONValue"]
 )
 JobMetadata: TypeAlias = dict[str, JSONValue]
+
+
+class _TileRebuildSourceFactory(Protocol):
+    def __call__(
+        self,
+        *,
+        source_image_id: int,
+        image_id: int | None,
+        stored_path: str,
+    ) -> object: ...
+
+
+class _ProcessingModule(Protocol):
+    TileRebuildSource: _TileRebuildSourceFactory
+
+    async def select_rebuild_targets(
+        self,
+        session: AsyncSession,
+        *,
+        scope: str,
+        image_ids: list[int] | None,
+    ) -> list[SourceImage]: ...
+
+    async def prepare_source_image_tile_rebuild(
+        self,
+        source: object,
+    ) -> object: ...
+
+    async def promote_source_image_tile_rebuild(
+        self,
+        session: AsyncSession,
+        source_image: SourceImage,
+        prepared: object,
+    ) -> object: ...
+
+    async def finish_promoted_tile_rebuild(
+        self,
+        promoted: object,
+    ) -> None: ...
+
+    async def rollback_promoted_tile_rebuild(
+        self,
+        promoted: object,
+    ) -> None: ...
+
+    async def discard_prepared_tile_rebuild(
+        self,
+        prepared: object,
+    ) -> None: ...
+
+
+def _load_processing() -> _ProcessingModule:
+    """Load the libvips-backed pipeline only when rebuild work needs it."""
+    from . import processing
+
+    return cast(_ProcessingModule, processing)
 
 
 class TileRebuildParallelDisabledError(RuntimeError):
@@ -164,6 +219,7 @@ async def create_tile_rebuild_job(
             f"Tile rebuild {active.kind} #{active.id} is {active.status}"
         )
 
+    processing = _load_processing()
     targets = await processing.select_rebuild_targets(
         session,
         scope=scope,
@@ -376,6 +432,7 @@ async def _reserve_rebuild_source(
         source = await session.get(SourceImage, source_id)
         targets = []
         if source is not None and source.image_id is not None:
+            processing = _load_processing()
             targets = await processing.select_rebuild_targets(
                 session,
                 scope=_metadata_scope(job.metadata_),
@@ -461,6 +518,7 @@ async def process_tile_rebuild_item(
     ):
         raise RuntimeError("Ready tile rebuild reservation has no source")
 
+    processing = _load_processing()
     heartbeat_task = asyncio.create_task(
         _heartbeat_rebuild_item(
             item_id,
@@ -478,7 +536,17 @@ async def process_tile_rebuild_item(
     promoted = None
     committed = False
     try:
-        prepared = await processing.prepare_source_image_tile_rebuild(source)
+        preparation_task = asyncio.create_task(
+            processing.prepare_source_image_tile_rebuild(source)
+        )
+        try:
+            prepared = await asyncio.shield(preparation_task)
+        except asyncio.CancelledError:
+            heartbeat_task.cancel()
+            await asyncio.gather(heartbeat_task, return_exceptions=True)
+            preparation_task.cancel()
+            await asyncio.gather(preparation_task, return_exceptions=True)
+            raise
         async with get_async_session()() as session:
             claim_result = await session.execute(
                 select(JobItem)
