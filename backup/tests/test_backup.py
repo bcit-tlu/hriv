@@ -356,6 +356,58 @@ class RestoreTestCase(_BackupTestCase):
         self.assertTrue(state["operator"]["filesystem"]["success"])
         self.assertIsNone(state["test"]["database"]["started_at"])
 
+    def test_combined_restore_preflight_requires_both_components_local_and_stream(self):
+        archives = []
+        for missing in ("database", "filesystem"):
+            snapshot = self.tmp / f"missing-{missing}"
+            snapshot.mkdir()
+            files = {}
+            if missing != "database":
+                image = snapshot / "data" / "source_images" / "image.jpg"
+                image.parent.mkdir(parents=True)
+                image.write_bytes(b"image")
+                files["data/source_images/image.jpg"] = {
+                    "size": image.stat().st_size,
+                    "sha256": backup._sha256(image),
+                }
+            if missing != "filesystem":
+                dump = snapshot / "db.sql"
+                dump.write_bytes(b"dump")
+                files["db.sql"] = {
+                    "size": dump.stat().st_size,
+                    "sha256": backup._sha256(dump),
+                }
+            (snapshot / "manifest.json").write_text(json.dumps({"files": files}))
+            archive = self.tmp / f"missing-{missing}.tar.gz"
+            with tarfile.open(archive, "w:gz") as tar:
+                tar.add(snapshot, arcname=snapshot.name)
+            archives.append(archive)
+
+        local_dir = self.tmp / "preflight-state"
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=local_dir),
+            patch.object(backup, "_restore_database_dump") as restore_database,
+            patch.object(backup, "_promote_streamed_filesystem") as promote,
+        ):
+            for archive in archives:
+                self.assertFalse(
+                    backup._restore_from_archive(
+                        archive, components="all", data_dir=str(self.data_dir)
+                    )
+                )
+                self.assertFalse(
+                    backup._restore_from_stream(
+                        io.BytesIO(archive.read_bytes()),
+                        archive.name,
+                        purpose="operator",
+                        database_url=backup.DATABASE_URL,
+                        data_dir=str(self.data_dir),
+                        components="all",
+                    )
+                )
+        restore_database.assert_not_called()
+        promote.assert_not_called()
+
     @patch("backup.subprocess.run", return_value=MagicMock(returncode=0))
     def test_run_restore_test_uses_separate_targets(self, _mock_run):
         test_data_dir = self.tmp / "restore-test-data"
@@ -386,6 +438,70 @@ class RestoreTestCase(_BackupTestCase):
         state = json.loads((local_backups / "RESTORE_STATE.json").read_text())
         self.assertTrue(state["test"]["database"]["success"])
         self.assertTrue(state["test"]["filesystem"]["success"])
+
+    def test_run_restore_test_requires_only_selected_target_configuration(self):
+        database_url = "postgresql://restore:test@db:5432/restore_test"
+        data_dir = str(self.tmp / "filesystem-test")
+        cases = (
+            (
+                "filesystem",
+                {"RESTORE_TEST_DATA_DIR": data_dir},
+                {"database_url": "", "data_dir": data_dir},
+            ),
+            (
+                "database",
+                {"RESTORE_TEST_DATABASE_URL": database_url},
+                {"database_url": database_url, "data_dir": ""},
+            ),
+        )
+        for components, env, expected in cases:
+            with self.subTest(components=components):
+                self._reload(env)
+                with patch.object(backup, "run_restore", return_value=True) as restore:
+                    self.assertTrue(
+                        backup.run_restore_test("snapshot", components=components)
+                    )
+                restore.assert_called_once_with(
+                    "snapshot",
+                    purpose="test",
+                    database_url=expected["database_url"],
+                    data_dir=expected["data_dir"],
+                    maintenance=False,
+                    components=components,
+                )
+        for env in (
+            {"RESTORE_TEST_DATABASE_URL": database_url},
+            {"RESTORE_TEST_DATA_DIR": data_dir},
+        ):
+            self._reload(env)
+            with patch.object(backup, "run_restore") as restore:
+                self.assertFalse(backup.run_restore_test(components="all"))
+            restore.assert_not_called()
+
+    def test_run_restore_inner_does_not_resolve_unselected_production_target(self):
+        self._reload({"DATABASE_URL": "production-db", "DATA_DIR": "/production-data"})
+        with patch.object(backup, "_local_backup_dir", return_value=self.tmp):
+            archive = self.tmp / "hriv-backup-20260101-000000.tar.gz"
+            archive.write_bytes(b"unused")
+            with patch.object(
+                backup, "_restore_from_archive", return_value=True
+            ) as restore:
+                self.assertTrue(
+                    backup._run_restore_inner(
+                        archive.name,
+                        database_url="test-db",
+                        components="database",
+                    )
+                )
+                self.assertEqual(restore.call_args.kwargs["data_dir"], "")
+                self.assertTrue(
+                    backup._run_restore_inner(
+                        archive.name,
+                        data_dir="test-data",
+                        components="filesystem",
+                    )
+                )
+                self.assertEqual(restore.call_args.kwargs["database_url"], "")
 
     def test_run_restore_preserves_preexisting_maintenance(self):
         self._reload({"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)})
@@ -1583,6 +1699,86 @@ class AzurePublicationTestCase(_BackupTestCase):
         )
         blob.delete_blob.assert_called_once_with()
 
+    def test_local_journal_reconciliation_handles_final_rename_crash_points(self):
+        self._reload({})
+        for crash_after in ("sidecar", "archive"):
+            with self.subTest(crash_after=crash_after):
+                root = self.tmp / f"local-{crash_after}"
+                root.mkdir()
+                snapshot = f"snapshot-{crash_after}"
+                candidate_archive = root / f".{snapshot}.tar.gz.run.candidate"
+                candidate_sidecar = root / f".{snapshot}.manifest.json.run.candidate"
+                final_archive = root / f"{snapshot}.tar.gz"
+                final_sidecar = root / f"{snapshot}.manifest.json"
+                if crash_after == "sidecar":
+                    candidate_archive.write_bytes(b"archive")
+                    final_sidecar.write_bytes(b"manifest")
+                else:
+                    final_archive.write_bytes(b"archive")
+                    final_sidecar.write_bytes(b"manifest")
+                journal = {
+                    "schema_version": 1,
+                    "snapshot_name": snapshot,
+                    "run_id": "run",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "phase": "marker_written",
+                    "archive_name": candidate_archive.name,
+                    "sidecar_name": candidate_sidecar.name,
+                    "final_archive_name": final_archive.name,
+                    "final_sidecar_name": final_sidecar.name,
+                    "prior_backup_state": None,
+                    "prior_last_success": None,
+                }
+                journal_path = root / f".publication-{snapshot}.json"
+                journal_path.write_text(json.dumps(journal))
+                with (
+                    patch.object(backup, "_local_backup_dir", return_value=root),
+                    patch.object(
+                        backup, "_documents_owned_by_run", return_value=(True, True)
+                    ),
+                ):
+                    backup._reconcile_local_publications()
+                self.assertTrue(final_archive.exists())
+                self.assertTrue(final_sidecar.exists())
+                self.assertFalse(journal_path.exists())
+                self.assertFalse(candidate_archive.exists())
+                self.assertFalse(candidate_sidecar.exists())
+
+    def test_local_partial_journal_rollback_removes_all_artifact_paths(self):
+        self._reload({})
+        root = self.tmp / "local-partial"
+        root.mkdir()
+        snapshot = "snapshot-partial"
+        names = {
+            "archive_name": f".{snapshot}.tar.gz.run.candidate",
+            "sidecar_name": f".{snapshot}.manifest.json.run.candidate",
+            "final_archive_name": f"{snapshot}.tar.gz",
+            "final_sidecar_name": f"{snapshot}.manifest.json",
+        }
+        for name in names.values():
+            (root / name).write_bytes(b"partial")
+        journal = {
+            "schema_version": 1,
+            "snapshot_name": snapshot,
+            "run_id": "run",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "phase": "state_written",
+            **names,
+            "prior_backup_state": {"run_id": "prior"},
+            "prior_last_success": {"run_id": "prior"},
+        }
+        journal_path = root / f".publication-{snapshot}.json"
+        journal_path.write_text(json.dumps(journal))
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=root),
+            patch.object(backup, "_documents_owned_by_run", return_value=(True, False)),
+            patch.object(backup, "_rollback_publication_documents") as rollback,
+        ):
+            backup._reconcile_local_publications()
+        rollback.assert_called_once()
+        self.assertFalse(journal_path.exists())
+        self.assertFalse(any((root / name).exists() for name in names.values()))
+
     def _journal_fixture(self):
         snapshot = "hriv-backup-20260101-000000-journal"
         archive = f"hriv-backups/{snapshot}.tar.gz"
@@ -1636,6 +1832,17 @@ class AzurePublicationTestCase(_BackupTestCase):
         archive_client.set_blob_metadata.assert_called_once_with(
             {"hriv_publication_state": "published"}
         )
+        container.delete_blob.assert_called_once_with(journal_name)
+
+    def test_reconcile_removes_journal_after_archive_was_published(self):
+        container, archive_client, _journal, journal_name = self._journal_fixture()
+        container.list_blobs.return_value[0].metadata = {
+            "hriv_publication_state": "published"
+        }
+
+        backup._reconcile_azure_publications(container)
+
+        archive_client.set_blob_metadata.assert_not_called()
         container.delete_blob.assert_called_once_with(journal_name)
 
     def test_reconcile_partial_publication_rolls_back_and_removes_artifacts(self):
@@ -2238,6 +2445,17 @@ class SameSecondBackupTestCase(_BackupTestCase):
             self.assertEqual(
                 payload["snapshot_name"], archive.name.removesuffix(".tar.gz")
             )
+        state = json.loads((self.local_dir / "BACKUP_STATE.json").read_text())
+        self.assertEqual(state["run_id"], state["database"]["run_id"])
+        overlap_attempts = [
+            attempt
+            for attempt in state["attempts"]
+            if attempt.get("failure_reason") == "overlapping_backup_run"
+        ]
+        self.assertEqual(
+            sorted(attempt["backup_type"] for attempt in overlap_attempts),
+            ["database", "filesystem"],
+        )
 
     def test_same_second_azure_backups_do_not_overwrite_each_other(self):
         self._reload(

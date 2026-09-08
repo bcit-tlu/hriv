@@ -664,6 +664,8 @@ def _publication_journal(
     prior_marker: dict | None,
     archive_name: str,
     sidecar_name: str,
+    final_archive_name: str,
+    final_sidecar_name: str,
 ) -> dict:
     return {
         "schema_version": PUBLICATION_JOURNAL_SCHEMA_VERSION,
@@ -673,6 +675,8 @@ def _publication_journal(
         "phase": "candidate_ready",
         "archive_name": archive_name,
         "sidecar_name": sidecar_name,
+        "final_archive_name": final_archive_name,
+        "final_sidecar_name": final_sidecar_name,
         "prior_backup_state": prior_state,
         "prior_last_success": prior_marker,
     }
@@ -764,6 +768,8 @@ def _attempt_history_entries(state: dict) -> list[dict]:
                 "success": section.get("success"),
                 "size_bytes": section.get("size_bytes"),
                 "archive_key": section.get("archive_key"),
+                "failure_reason": section.get("failure_reason")
+                or state.get("failure_reason"),
             }
         )
     return entries
@@ -794,6 +800,33 @@ def _merge_attempt_history(existing: dict | None, incoming: dict) -> list[dict]:
 
     ordered = sorted(history.values(), key=_attempt_sort_key, reverse=True)
     return ordered[:_MAX_ATTEMPT_HISTORY]
+
+
+def _merge_overlap_rejection(existing: dict | None, incoming: dict) -> dict:
+    if (
+        isinstance(existing, dict)
+        and existing.get("schema_version") == BACKUP_STATE_SCHEMA_VERSION
+    ):
+        merged = copy.deepcopy(existing)
+    else:
+        merged = _new_backup_state("", None)
+        merged["run_id"] = None
+        merged["snapshot_name"] = None
+        merged["failure_reason"] = None
+    merged["attempts"] = _merge_attempt_history(merged, incoming)
+    merged["updated_at"] = incoming.get("updated_at")
+    return merged
+
+
+def _write_overlap_rejection(state: dict) -> bool:
+    state["updated_at"] = datetime.now(timezone.utc).isoformat()
+    return _commit_shared_json(
+        local_path=_backup_state_path(),
+        blob_name=_backup_state_blob_name(),
+        incoming=state,
+        merge=_merge_overlap_rejection,
+        label="backup overlap rejection",
+    )
 
 
 def _merge_backup_state(existing: dict | None, incoming: dict) -> dict:
@@ -2011,6 +2044,12 @@ def _run_backup_inner() -> Path | None:
                     if writer
                     else local_candidate_sidecar.name
                 ),
+                final_archive_name=(archive_key if writer else Path(archive_key).name),
+                final_sidecar_name=(
+                    _manifest_sidecar_blob_name(snapshot_name)
+                    if writer
+                    else _manifest_sidecar_path(Path(archive_key)).name
+                ),
             )
             _write_publication_journal(journal)
         except Exception:
@@ -2174,8 +2213,10 @@ def run_backup() -> Path | None:
                     size_bytes=None,
                 )
             state["failure_reason"] = "overlapping_backup_run"
+            if not _write_overlap_rejection(state):
+                log.warning("Could not persist backup overlap rejection")
             log.warning(
-                "Overlap rejection is not written while the active publication owns shared state",
+                "Overlap rejection was appended without changing active publication ownership",
                 extra={"event": "backup.overlap_rejected", "run_id": state["run_id"]},
             )
             return None
@@ -2211,11 +2252,10 @@ def _reconcile_azure_publications(container: ContainerClient) -> None:
         names = {blob.name for blob in blobs}
         for blob in blobs:
             metadata = getattr(blob, "metadata", None)
-            if (
-                not blob.name.endswith(".tar.gz")
-                or not isinstance(metadata, dict)
-                or metadata.get("hriv_publication_state") != "candidate"
-            ):
+            if not blob.name.endswith(".tar.gz") or not isinstance(metadata, dict):
+                continue
+            publication_state = metadata.get("hriv_publication_state")
+            if publication_state not in ("candidate", "published"):
                 continue
             snapshot_name = blob.name.rsplit("/", 1)[-1]
             journal_name = _publication_journal_blob_name(snapshot_name)
@@ -2231,6 +2271,10 @@ def _reconcile_azure_publications(container: ContainerClient) -> None:
                 or journal.get("schema_version") != PUBLICATION_JOURNAL_SCHEMA_VERSION
                 or journal.get("snapshot_name") != _snapshot_stem(snapshot_name)
             ):
+                continue
+            if publication_state == "published":
+                container.delete_blob(journal_name)
+                log.warning("Removed completed publication journal for %s", blob.name)
                 continue
             run_id = str(journal.get("run_id") or "")
             sidecar_name = str(journal.get("sidecar_name") or "")
@@ -2254,7 +2298,7 @@ def _reconcile_azure_publications(container: ContainerClient) -> None:
                     container.delete_blob(name)
                 except ResourceNotFoundError:
                     pass
-            log.warning("Rolled back stale interrupted publication for %s", blob.name)
+            log.warning("Rolled back interrupted publication for %s", blob.name)
     except Exception:
         log.exception("Failed to reconcile Azure backup publications")
 
@@ -2271,18 +2315,31 @@ def _reconcile_local_publications() -> None:
         run_id = str(journal.get("run_id") or "")
         candidate_archive = root / Path(str(journal.get("archive_name") or "")).name
         candidate_sidecar = root / Path(str(journal.get("sidecar_name") or "")).name
+        final_archive = (
+            root
+            / Path(
+                str(journal.get("final_archive_name") or f"{snapshot_name}.tar.gz")
+            ).name
+        )
+        final_sidecar = (
+            root
+            / Path(
+                str(
+                    journal.get("final_sidecar_name")
+                    or _manifest_sidecar_path(final_archive).name
+                )
+            ).name
+        )
         state_owned, marker_owned = _documents_owned_by_run(run_id)
-        if (
-            state_owned
-            and marker_owned
-            and candidate_archive.is_file()
-            and candidate_sidecar.is_file()
-        ):
-            final_archive = root / f"{snapshot_name}.tar.gz"
-            os.replace(
-                str(candidate_sidecar), str(_manifest_sidecar_path(final_archive))
-            )
-            os.replace(str(candidate_archive), str(final_archive))
+        archive_exists = candidate_archive.is_file() or final_archive.is_file()
+        sidecar_exists = candidate_sidecar.is_file() or final_sidecar.is_file()
+        if state_owned and marker_owned and archive_exists and sidecar_exists:
+            if not final_sidecar.is_file():
+                os.replace(str(candidate_sidecar), str(final_sidecar))
+            if not final_archive.is_file():
+                os.replace(str(candidate_archive), str(final_archive))
+            candidate_archive.unlink(missing_ok=True)
+            candidate_sidecar.unlink(missing_ok=True)
             journal_path.unlink(missing_ok=True)
             log.warning("Completed interrupted local publication for %s", snapshot_name)
             continue
@@ -2291,11 +2348,16 @@ def _reconcile_local_publications() -> None:
             journal.get("prior_last_success"),
             run_id,
         )
-        candidate_archive.unlink(missing_ok=True)
-        candidate_sidecar.unlink(missing_ok=True)
+        for artifact in (
+            candidate_archive,
+            candidate_sidecar,
+            final_archive,
+            final_sidecar,
+        ):
+            artifact.unlink(missing_ok=True)
         journal_path.unlink(missing_ok=True)
         log.warning(
-            "Rolled back stale interrupted local publication for %s", snapshot_name
+            "Rolled back interrupted local publication for %s", snapshot_name
         )
 
 
@@ -2665,9 +2727,16 @@ def run_restore_test(
     snapshot_name: str | None = None, *, components: str = "all"
 ) -> bool:
     """Restore a snapshot into the configured non-production test target."""
-    if not RESTORE_TEST_DATABASE_URL or not RESTORE_TEST_DATA_DIR:
+    components = _validate_components(components)
+    if components in ("all", "database") and not RESTORE_TEST_DATABASE_URL:
         log.error(
-            "RESTORE_TEST_DATABASE_URL and RESTORE_TEST_DATA_DIR must be set for restore-test",
+            "RESTORE_TEST_DATABASE_URL must be set for the selected restore-test components",
+            extra={"event": "restore.test_not_configured"},
+        )
+        return False
+    if components in ("all", "filesystem") and not RESTORE_TEST_DATA_DIR:
+        log.error(
+            "RESTORE_TEST_DATA_DIR must be set for the selected restore-test components",
             extra={"event": "restore.test_not_configured"},
         )
         return False
@@ -2675,8 +2744,10 @@ def run_restore_test(
     return run_restore(
         snapshot_name,
         purpose="test",
-        database_url=RESTORE_TEST_DATABASE_URL,
-        data_dir=RESTORE_TEST_DATA_DIR,
+        database_url=(
+            RESTORE_TEST_DATABASE_URL if components in ("all", "database") else ""
+        ),
+        data_dir=(RESTORE_TEST_DATA_DIR if components in ("all", "filesystem") else ""),
         maintenance=False,
         components=components,
     )
@@ -2692,8 +2763,12 @@ def _run_restore_inner(
 ) -> bool:
     """Core restore logic (called inside the maintenance-flag guard)."""
     components = _validate_components(components)
-    target_database_url = database_url or DATABASE_URL
-    target_data_dir = data_dir or DATA_DIR
+    target_database_url = (
+        (database_url or DATABASE_URL) if components in ("all", "database") else ""
+    )
+    target_data_dir = (
+        (data_dir or DATA_DIR) if components in ("all", "filesystem") else ""
+    )
 
     # Locate the snapshot -------------------------------------------------------
     if _azure_configured():
@@ -3096,6 +3171,17 @@ def _restore_from_stream(
                     )
                     return False
 
+            database_selected = components in ("all", "database")
+            filesystem_selected = components in ("all", "filesystem")
+            if (database_selected and not dump_path.is_file()) or (
+                filesystem_selected and not filesystem_manifest_selected
+            ):
+                log.error("Archive does not contain every selected restore component")
+                _fail_incomplete_restore_attempts(
+                    restore_state, purpose, restore_started, archive_name
+                )
+                return False
+
             selected_success: list[bool] = []
             if components in ("all", "database"):
                 started = restore_started["database"]
@@ -3288,8 +3374,12 @@ def _restore_from_archive(
         restore_state, purpose, components, archive_path.name
     )
     database_committed = False
-    target_database_url = database_url or DATABASE_URL
-    target_data_dir = data_dir or DATA_DIR
+    target_database_url = (
+        (database_url or DATABASE_URL) if components in ("all", "database") else ""
+    )
+    target_data_dir = (
+        (data_dir or DATA_DIR) if components in ("all", "filesystem") else ""
+    )
     if components in ("all", "filesystem"):
         target_data = Path(target_data_dir)
         target_data.mkdir(parents=True, exist_ok=True)
@@ -3377,6 +3467,23 @@ def _restore_from_archive(
                 restore_state, purpose, restore_started, archive_path.name
             )
             return False
+        filesystem_manifest_selected = any(
+            path.startswith("data/") for path in manifest_files
+        ) or (
+            manifest_version == RECOVERY_MANIFEST_SCHEMA_VERSION
+            and isinstance(manifest.get("source_images"), dict)
+            and manifest["source_images"].get("file_count") == 0
+        )
+        database_selected = components in ("all", "database")
+        filesystem_selected = components in ("all", "filesystem")
+        if (database_selected and not dump_path.is_file()) or (
+            filesystem_selected and not filesystem_manifest_selected
+        ):
+            log.error("Archive does not contain every selected restore component")
+            _fail_incomplete_restore_attempts(
+                restore_state, purpose, restore_started, archive_path.name
+            )
+            return False
         if components in ("all", "database") and dump_path.exists():
             log.info("Restoring database …")
             database_started_at = restore_started["database"]
@@ -3408,13 +3515,6 @@ def _restore_from_archive(
 
         # 2. Restore filesystem -------------------------------------------------
         data_archive = snapshot_dir / "data"
-        filesystem_manifest_selected = any(
-            path.startswith("data/") for path in manifest_files
-        ) or (
-            manifest_version == RECOVERY_MANIFEST_SCHEMA_VERSION
-            and isinstance(manifest.get("source_images"), dict)
-            and manifest["source_images"].get("file_count") == 0
-        )
         if components in ("all", "filesystem") and filesystem_manifest_selected:
             (data_archive / "source_images").mkdir(parents=True, exist_ok=True)
             filesystem_started_at = restore_started["filesystem"]

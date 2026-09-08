@@ -154,7 +154,7 @@ current backup remains visible even when an older success exists.
 
 Scheduled and on-demand backup calls share a non-blocking `flock` on
 `/backups/.hriv-backup-run.lock`. Only one run may inventory or stream data; an
-overlapping call returns failure and logs the rejection without changing the active publication's shared state. Supported
+overlapping call returns failure and appends two bounded failed attempt-history entries without changing the active publication's top-level ownership, current component sections, or last-success fields. Supported
 production triggers execute in the single backup Deployment with the same
 `hriv-backup-backups` PVC. A future Job or CronJob must mount that claim or use
 cluster-wide coordination. Marker coordination remains separate and uses read →

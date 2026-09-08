@@ -104,9 +104,10 @@ capture is in progress.
 
 State-document coordination is separate from the execution lock. Local JSON
 updates use `/backups/.hriv-backup-state.lock`, while Azure markers use ETag
-compare-and-set and merge ordering. These mechanisms preserve prior
-last-success values when a later attempt fails; they do not permit overlapping
-backup execution.
+compare-and-set and merge ordering. An overlap rejection appends bounded failed
+attempt-history entries without changing the active run's top-level ownership,
+current component sections, or last-success fields. The active run preserves
+those entries when it completes; overlapping backup execution remains disabled.
 
 Each accepted run gets a collision-resistant
 `hriv-backup-<YYYYMMDD-HHMMSS>-<8 hex chars>` identity. Listing and retention
