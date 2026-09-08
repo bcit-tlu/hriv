@@ -119,6 +119,9 @@ BACKUP_TIMEZONE: str = _env("BACKUP_TIMEZONE", "UTC")
 BACKUP_RETENTION_COUNT: int = int(_env("BACKUP_RETENTION_COUNT", "30"))
 BACKUP_STALE_HOURS: int = int(_env("BACKUP_STALE_HOURS", "26"))
 BACKUP_MUTATION_DRAIN_SECONDS: float = _float_env("BACKUP_MUTATION_DRAIN_SECONDS", "5")
+BACKUP_INVENTORY_TIMEOUT_SECONDS: float = _float_env(
+    "BACKUP_INVENTORY_TIMEOUT_SECONDS", "120"
+)
 BACKUP_WAL_FENCE_TIMEOUT_SECONDS: float = _float_env(
     "BACKUP_WAL_FENCE_TIMEOUT_SECONDS", "600"
 )
@@ -139,6 +142,11 @@ if BACKUP_MODE not in ("development", "production"):
     sys.exit(1)
 if BACKUP_MUTATION_DRAIN_SECONDS < 0:
     log.error("BACKUP_MUTATION_DRAIN_SECONDS must not be negative")
+    sys.exit(1)
+if not math.isfinite(BACKUP_INVENTORY_TIMEOUT_SECONDS) or (
+    BACKUP_INVENTORY_TIMEOUT_SECONDS <= 0
+):
+    log.error("BACKUP_INVENTORY_TIMEOUT_SECONDS must be finite and greater than zero")
     sys.exit(1)
 if not math.isfinite(BACKUP_WAL_FENCE_TIMEOUT_SECONDS) or (
     BACKUP_WAL_FENCE_TIMEOUT_SECONDS <= 0
@@ -1572,8 +1580,12 @@ def _psql_command(db: dict[str, str], query: str) -> list[str]:
 def _query_source_image_rows(
     db: dict[str, str], output_path: Path
 ) -> tuple[datetime, str, list[dict]]:
+    timeout_milliseconds = max(1, math.ceil(BACKUP_INVENTORY_TIMEOUT_SECONDS * 1000))
     query = (
-        "BEGIN; LOCK TABLE public.source_images IN SHARE MODE; "
+        "BEGIN; "
+        f"SET LOCAL lock_timeout = '{timeout_milliseconds}ms'; "
+        f"SET LOCAL statement_timeout = '{timeout_milliseconds}ms'; "
+        "LOCK TABLE public.source_images IN SHARE MODE; "
         "COPY (WITH boundary AS MATERIALIZED (SELECT "
         f"to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC', '{_UTC_SQL_FORMAT}') AS target_time, "
         "pg_current_wal_lsn()::text AS target_lsn), "
@@ -1588,12 +1600,19 @@ def _query_source_image_rows(
         "COMMIT;"
     )
     with open(output_path, "wb") as output:
-        result = subprocess.run(
-            _psql_command(db, query),
-            env=_pg_env(db),
-            stdout=output,
-            stderr=subprocess.PIPE,
-        )
+        try:
+            result = subprocess.run(
+                _psql_command(db, query),
+                env=_pg_env(db),
+                stdout=output,
+                stderr=subprocess.PIPE,
+                timeout=BACKUP_INVENTORY_TIMEOUT_SECONDS + 5,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                "source-image database inventory subprocess exceeded "
+                f"{BACKUP_INVENTORY_TIMEOUT_SECONDS + 5:g} seconds"
+            ) from exc
     if result.returncode != 0:
         stderr = (
             result.stderr.decode(errors="replace")

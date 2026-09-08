@@ -110,16 +110,18 @@ Use fake or isolated Azure storage and a representative source-image inventory.
 5. Confirm manifest format 2 records one snapshot's UTC target time and target
    LSN, `archive_timeout_seconds`, the fence WAL/commit/archive timestamps,
    checksums, counts, missing-source rows, and orphan-file reports.
-6. Verify archive-timeout query → `BEGIN` → source-table SHARE lock → inventory
-   `COPY` → `COMMIT` → filesystem matching → committed singleton-row UPDATE fence
-   occurs in order while maintenance exists. Archive polling follows maintenance;
+6. Verify archive-timeout query → `BEGIN` → local lock/statement deadlines →
+   source-table SHARE lock → inventory `COPY` → `COMMIT` → filesystem matching →
+   committed singleton-row UPDATE fence occurs in order while maintenance exists. Archive polling follows maintenance;
    `.partial` segments normalize, while NULL, history, backup, and prior-timeline
    statuses keep polling. A timeout or subprocess failure must leave no archive,
    sidecar, journal, or new success marker and preserve prior last-success values.
 7. Configure test polling with positive `BACKUP_WAL_FENCE_TIMEOUT_SECONDS` and
    `BACKUP_WAL_FENCE_POLL_SECONDS`; verify invalid, zero, and poll-greater-than-timeout
    values fail startup. PostgreSQL `archive_timeout` must also be positive and
-   strictly lower than the configured fence timeout.
+   strictly lower than the configured fence timeout. Validate finite positive
+   `BACKUP_INVENTORY_TIMEOUT_SECONDS` values and confirm database/client inventory
+   timeouts clear maintenance, publish nothing, and preserve prior success.
 8. Restore with `restore-filesystem` into a new data target and verify `psql` is
    never invoked. Database/all restore against the production archive must fail
    safely and direct the operator to CNPG.

@@ -66,6 +66,8 @@ spec:
               value: {{ .Values.env.BACKUP_TIMEZONE | quote }}
             - name: BACKUP_MUTATION_DRAIN_SECONDS
               value: {{ .Values.env.BACKUP_MUTATION_DRAIN_SECONDS | quote }}
+            - name: BACKUP_INVENTORY_TIMEOUT_SECONDS
+              value: {{ .Values.env.BACKUP_INVENTORY_TIMEOUT_SECONDS | quote }}
             - name: BACKUP_WAL_FENCE_TIMEOUT_SECONDS
               value: {{ .Values.env.BACKUP_WAL_FENCE_TIMEOUT_SECONDS | quote }}
             - name: BACKUP_WAL_FENCE_POLL_SECONDS

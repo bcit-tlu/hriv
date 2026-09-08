@@ -33,6 +33,7 @@ class _BackupTestCase(unittest.TestCase):
         "BACKUP_CRON_SCHEDULE",
         "BACKUP_TIMEZONE",
         "BACKUP_MUTATION_DRAIN_SECONDS",
+        "BACKUP_INVENTORY_TIMEOUT_SECONDS",
         "BACKUP_WAL_FENCE_TIMEOUT_SECONDS",
         "BACKUP_WAL_FENCE_POLL_SECONDS",
         "BACKUP_RETENTION_COUNT",
@@ -133,6 +134,13 @@ class BackupModeTestCase(_BackupTestCase):
     def test_negative_mutation_drain_exits(self):
         with self.assertRaises(SystemExit):
             self._reload({"BACKUP_MUTATION_DRAIN_SECONDS": "-1"})
+
+    def test_inventory_timeout_default_and_validation(self):
+        self._reload({})
+        self.assertEqual(backup.BACKUP_INVENTORY_TIMEOUT_SECONDS, 120)
+        for value in ("0", "-1", "nan", "inf", "invalid"):
+            with self.subTest(value=value), self.assertRaises(SystemExit):
+                self._reload({"BACKUP_INVENTORY_TIMEOUT_SECONDS": value})
 
     def test_wal_fence_settings_defaults_and_validation(self):
         self._reload({})
@@ -1626,11 +1634,22 @@ class BackupRunTestCase(_BackupTestCase):
         self.assertIn("archive_timeout", psql_queries[0])
         inventory_query = psql_queries[1]
         self.assertLess(
-            inventory_query.index("BEGIN;"), inventory_query.index("LOCK TABLE")
+            inventory_query.index("BEGIN;"),
+            inventory_query.index("SET LOCAL lock_timeout"),
+        )
+        self.assertLess(
+            inventory_query.index("SET LOCAL lock_timeout"),
+            inventory_query.index("SET LOCAL statement_timeout"),
+        )
+        self.assertLess(
+            inventory_query.index("SET LOCAL statement_timeout"),
+            inventory_query.index("LOCK TABLE"),
         )
         self.assertLess(
             inventory_query.index("LOCK TABLE"), inventory_query.index("COPY (")
         )
+        self.assertIn("SET LOCAL lock_timeout = '120000ms'", inventory_query)
+        self.assertIn("SET LOCAL statement_timeout = '120000ms'", inventory_query)
         self.assertLess(
             inventory_query.index("COPY ("), inventory_query.index("COMMIT;")
         )
@@ -2138,6 +2157,74 @@ class AzurePublicationTestCase(_BackupTestCase):
                 backup._parse_db_url(backup.DATABASE_URL), self.tmp / "inventory.csv"
             )
 
+    def test_inventory_timeouts_fail_closed_and_preserve_prior_success(self):
+        for failure in ("subprocess", "database"):
+            with self.subTest(failure=failure):
+                self._reload(
+                    {"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)}
+                )
+                local_dir = self.tmp / f"inventory-timeout-{failure}"
+                local_dir.mkdir()
+                _prior_state, prior_marker = self._seed_prior_publication(local_dir)
+                inventory_run, commands = _production_inventory_run(
+                    self.data_dir, returncode=1 if failure == "database" else 0
+                )
+                observed_timeout = []
+
+                def timeout_run(cmd, **kwargs):
+                    if cmd[0] == "psql" and "source_images" in cmd[-1]:
+                        observed_timeout.append(kwargs.get("timeout"))
+                        if failure == "subprocess":
+                            raise subprocess.TimeoutExpired(cmd, kwargs["timeout"])
+                        commands.append(cmd)
+                        return MagicMock(
+                            returncode=1,
+                            stderr=b"canceling statement due to lock timeout",
+                        )
+                    return inventory_run(cmd, **kwargs)
+
+                with (
+                    patch.object(backup, "_local_backup_dir", return_value=local_dir),
+                    patch.object(backup.subprocess, "run", side_effect=timeout_run),
+                    self.assertLogs("hriv-backup", level="ERROR") as captured_logs,
+                ):
+                    self.assertIsNone(backup.run_backup())
+
+                expected_error = (
+                    "subprocess exceeded 125 seconds"
+                    if failure == "subprocess"
+                    else "canceling statement due to lock timeout"
+                )
+                self.assertIn(expected_error, "\n".join(captured_logs.output))
+                self.assertEqual(observed_timeout, [125])
+                self.assertFalse(backup._maintenance_flag_path().exists())
+                state = json.loads((local_dir / "BACKUP_STATE.json").read_text())
+                self.assertFalse(state["database"]["success"])
+                self.assertFalse(state["filesystem"]["success"])
+                self.assertEqual(
+                    state["database"]["last_success_archive_key"], "prior-database"
+                )
+                self.assertEqual(
+                    state["filesystem"]["last_success_archive_key"],
+                    "prior-filesystem",
+                )
+                self.assertEqual(
+                    json.loads((local_dir / "LAST_SUCCESS.json").read_text()),
+                    prior_marker,
+                )
+                self.assertEqual(list(local_dir.glob("*.tar.gz")), [])
+                self.assertEqual(list(local_dir.glob("*.manifest.json")), [])
+                self.assertEqual(list(local_dir.glob(".publication-*.json")), [])
+                inventory_queries = [
+                    cmd[-1]
+                    for cmd in commands
+                    if cmd[0] == "psql" and "source_images" in cmd[-1]
+                ]
+                if failure == "subprocess":
+                    self.assertEqual(inventory_queries, [])
+                else:
+                    self.assertEqual(len(inventory_queries), 1)
+
     def test_archive_timeout_precondition_rejects_invalid_values_without_publication(
         self,
     ):
@@ -2357,11 +2444,22 @@ class AzurePublicationTestCase(_BackupTestCase):
             if cmd[0] == "psql" and "source_images" in cmd[-1]
         )
         self.assertLess(
-            inventory_query.index("BEGIN;"), inventory_query.index("LOCK TABLE")
+            inventory_query.index("BEGIN;"),
+            inventory_query.index("SET LOCAL lock_timeout"),
+        )
+        self.assertLess(
+            inventory_query.index("SET LOCAL lock_timeout"),
+            inventory_query.index("SET LOCAL statement_timeout"),
+        )
+        self.assertLess(
+            inventory_query.index("SET LOCAL statement_timeout"),
+            inventory_query.index("LOCK TABLE"),
         )
         self.assertLess(
             inventory_query.index("LOCK TABLE"), inventory_query.index("COPY (")
         )
+        self.assertIn("SET LOCAL lock_timeout = '120000ms'", inventory_query)
+        self.assertIn("SET LOCAL statement_timeout = '120000ms'", inventory_query)
         self.assertLess(
             inventory_query.index("COPY ("), inventory_query.index("COMMIT;")
         )

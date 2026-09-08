@@ -47,11 +47,14 @@ Scheduled and on-demand backups use the same capture implementation:
    work; the drain is not the consistency boundary.
 4. Require PostgreSQL `archive_timeout` to be positive and strictly below the
    configured WAL-fence wait timeout.
-5. In one behaviorally read-only `BEGIN; LOCK ... IN SHARE MODE; COPY ...; COMMIT;`
-   transaction, wait out existing source writers, then materialize UTC target
-   time, `pg_current_wal_lsn()` target LSN, and authoritative `source_images` rows
-   from the post-lock snapshot while source writes remain blocked. Do not declare
-   the transaction `READ ONLY`, because PostgreSQL may reject the explicit lock.
+5. In one behaviorally read-only transaction, set local lock and statement
+   timeouts, then execute `BEGIN; SET LOCAL ...; LOCK ... IN SHARE MODE; COPY ...;
+COMMIT;`. Wait out existing source writers, then materialize UTC target time,
+   `pg_current_wal_lsn()` target LSN, and authoritative `source_images` rows from
+   the post-lock snapshot while source writes remain blocked. Do not declare the
+   transaction `READ ONLY`, because PostgreSQL may reject the explicit lock. The
+   client deadline is five seconds longer than the database timeout and failure
+   exits maintenance without matching, fencing, or publication.
 6. Inventory finalized filesystem files and match them only to rows visible in
    that database snapshot. A mutation committing after the snapshot is outside
    the PITR target; any resulting file is reported as an orphan and excluded.

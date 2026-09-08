@@ -81,10 +81,14 @@ the full `/data` tree.
 Production first requires PostgreSQL `archive_timeout` to be positive and below
 the configured fence wait. The CNPG target time, `pg_current_wal_lsn()` target
 LSN, and `source_images` rows then come from the post-lock snapshot of one
-behaviorally read-only `BEGIN; LOCK TABLE ... IN SHARE MODE; COPY ...; COMMIT;`
-transaction. The maintenance gate blocks new HTTP mutations while the SHARE lock
-waits out existing source writers and blocks source writes through capture; the
-configured drain remains only a best-effort reduction of in-flight work. After
+behaviorally read-only transaction that sets local lock/statement deadlines
+before `LOCK TABLE ... IN SHARE MODE; COPY ...; COMMIT;`. The maintenance gate
+blocks new HTTP mutations while the SHARE lock waits out existing source writers
+and blocks source writes through capture. The database deadline defaults to 120
+seconds and the client aborts after a five-second grace; including the default
+five-second drain, a timeout path clears maintenance within 130 seconds and
+publishes nothing. The configured drain remains only a best-effort reduction of
+in-flight work. After
 file matching and while that gate remains enabled, the service commits its only
 production write: a bounded update of the singleton
 `public.backup_recovery_wal_fence` row that increments `generation` and records

@@ -89,6 +89,13 @@ In production deployments, the Python backup service protects authoritative sour
 
 Set `BACKUP_MODE=production` to enable this mode. The default is `development`, which preserves the historical behavior of archiving the full `/data` tree including tiles.
 
+The lock and COPY each use `BACKUP_INVENTORY_TIMEOUT_SECONDS`; the `psql` client
+has a five-second grace before it is killed. On an inventory timeout, maintenance
+is therefore cleared after at most the configured drain plus 125 seconds by
+default (130 seconds total), with no file matching, fence, or publication. A
+successful inventory remains in maintenance for the subsequent filesystem
+matching and fence operations.
+
 ### Longhorn protection policy
 
 For Longhorn-backed Kubernetes deployments, protect each volume according to its role:
@@ -119,23 +126,24 @@ For Longhorn-backed Kubernetes deployments, protect each volume according to its
 
 All settings are controlled via environment variables in `docker-compose.yml` or the Helm chart:
 
-| Variable                           | Default                                                   | Description                                                                              |
-| ---------------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `DATABASE_URL`                     | `postgresql://hriv:hriv@db:5432/hriv`                     | PostgreSQL connection string                                                             |
-| `DATA_DIR`                         | `/data`                                                   | Path to the image data volume                                                            |
-| `BACKUP_CRON_SCHEDULE`             | `0 10 * * *`                                              | Cron expression for scheduled backups                                                    |
-| `BACKUP_TIMEZONE`                  | `UTC`                                                     | IANA timezone used to evaluate the schedule; UTC avoids DST gaps                         |
-| `BACKUP_MUTATION_DRAIN_SECONDS`    | `5`                                                       | Brief write-drain interval before the finalized source-image inventory is captured       |
-| `BACKUP_WAL_FENCE_TIMEOUT_SECONDS` | `600`                                                     | Fail-closed archive wait; PostgreSQL `archive_timeout` must be positive and lower        |
-| `BACKUP_WAL_FENCE_POLL_SECONDS`    | `5`                                                       | Poll interval while waiting for `pg_stat_archiver` to reach the fence on its timeline    |
-| `CNPG_CLUSTER_NAME`                | `pg-core`                                                 | CNPG cluster bound into production recovery-set metadata                                 |
-| `BACKUP_RETENTION_COUNT`           | `30`                                                      | Number of snapshots to keep (older ones are deleted)                                     |
-| `BACKUP_STAGING_DIR`               | `/backups/.staging`                                       | Bounded state/development scratch; Azure production archives bypass full local staging   |
-| `BACKUP_STALE_HOURS`               | `26`                                                      | Freshness threshold for the `status` command before a backup is considered stale         |
-| `BACKUP_MODE`                      | `development` (docker-compose), `production` (Helm chart) | `development` = logical DB + full data; `production` = CNPG binding + source images only |
-| `AZURE_STORAGE_CONNECTION_STRING`  | _(empty)_                                                 | Azure Blob Storage connection string                                                     |
-| `AZURE_STORAGE_CONTAINER`          | _(empty)_                                                 | Azure Blob Storage container name                                                        |
-| `AZURE_BLOB_PREFIX`                | `hriv-backups`                                            | Blob name prefix (folder) inside the container                                           |
+| Variable                           | Default                                                   | Description                                                                               |
+| ---------------------------------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                     | `postgresql://hriv:hriv@db:5432/hriv`                     | PostgreSQL connection string                                                              |
+| `DATA_DIR`                         | `/data`                                                   | Path to the image data volume                                                             |
+| `BACKUP_CRON_SCHEDULE`             | `0 10 * * *`                                              | Cron expression for scheduled backups                                                     |
+| `BACKUP_TIMEZONE`                  | `UTC`                                                     | IANA timezone used to evaluate the schedule; UTC avoids DST gaps                          |
+| `BACKUP_MUTATION_DRAIN_SECONDS`    | `5`                                                       | Brief write-drain interval before the finalized source-image inventory is captured        |
+| `BACKUP_INVENTORY_TIMEOUT_SECONDS` | `120`                                                     | DB lock/COPY deadline; the client aborts five seconds later if PostgreSQL does not return |
+| `BACKUP_WAL_FENCE_TIMEOUT_SECONDS` | `600`                                                     | Fail-closed archive wait; PostgreSQL `archive_timeout` must be positive and lower         |
+| `BACKUP_WAL_FENCE_POLL_SECONDS`    | `5`                                                       | Poll interval while waiting for `pg_stat_archiver` to reach the fence on its timeline     |
+| `CNPG_CLUSTER_NAME`                | `pg-core`                                                 | CNPG cluster bound into production recovery-set metadata                                  |
+| `BACKUP_RETENTION_COUNT`           | `30`                                                      | Number of snapshots to keep (older ones are deleted)                                      |
+| `BACKUP_STAGING_DIR`               | `/backups/.staging`                                       | Bounded state/development scratch; Azure production archives bypass full local staging    |
+| `BACKUP_STALE_HOURS`               | `26`                                                      | Freshness threshold for the `status` command before a backup is considered stale          |
+| `BACKUP_MODE`                      | `development` (docker-compose), `production` (Helm chart) | `development` = logical DB + full data; `production` = CNPG binding + source images only  |
+| `AZURE_STORAGE_CONNECTION_STRING`  | _(empty)_                                                 | Azure Blob Storage connection string                                                      |
+| `AZURE_STORAGE_CONTAINER`          | _(empty)_                                                 | Azure Blob Storage container name                                                         |
+| `AZURE_BLOB_PREFIX`                | `hriv-backups`                                            | Blob name prefix (folder) inside the container                                            |
 
 ## Observability markers
 
