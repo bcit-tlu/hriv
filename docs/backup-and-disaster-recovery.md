@@ -93,10 +93,14 @@ configuration, environment variables, and Docker Compose usage.
 
 Scheduled and on-demand calls share a non-blocking execution `flock` at
 `/backups/.hriv-backup-run.lock`. If another backup holds it, the new call is
-rejected, records an overlap failure, and performs no database inventory,
-filesystem read, or archive upload. Restore remains a separate operator action;
-do not run a restore against an active source volume while backup capture is in
-progress.
+rejected and logged without disturbing the active run's publication state, and performs no database inventory,
+filesystem read, or archive upload. All supported production scheduled and
+on-demand invocations execute in the single backup Deployment and mount the same
+`hriv-backup-backups` PVC, which makes this flock shared. Any future Job or
+CronJob must mount that same claim or introduce cluster-wide coordination before
+it can be a supported invocation path. Restore remains a separate operator
+action; do not run a restore against an active source volume while backup
+capture is in progress.
 
 State-document coordination is separate from the execution lock. Local JSON
 updates use `/backups/.hriv-backup-state.lock`, while Azure markers use ETag
@@ -118,10 +122,14 @@ committed only after every inventoried source file remains stable and the tar
 stream completes. The complete archive is never staged on `/backups` or
 pod-local storage. The archive remains a non-selectable candidate while its embedded manifest,
 sidecar, backup state, and last-success marker are established; published blob
-metadata is the final selectability operation. Failure compensates by removing
-the candidate and sidecar and restoring prior owned state without overwriting a
-newer writer. Unpublished candidates older than 24 hours and their exact sidecars
-are cleaned up without entering normal retention or changing last-success state.
+metadata is the final selectability operation. A per-snapshot publication
+journal makes this sequence recoverable after process death. Reconciliation
+first acquires the same execution lock, then finishes a fully established
+publication or immediately restores still-owned prior state and removes a
+partial journaled publication without overwriting a newer writer. The journal
+contains recovery metadata only, never credentials. Unjournaled candidates
+older than 24 hours and their exact sidecars are cleaned up without entering
+normal retention or changing last-success state.
 
 Filesystem restores stream the archive into a unique staging directory on the
 new target data PVC, validate checksums before promotion, and do not consume the

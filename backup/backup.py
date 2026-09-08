@@ -237,6 +237,19 @@ def _archive_blob_name(snapshot_name: str) -> str:
     return f"{prefix}{_snapshot_stem(snapshot_name)}.tar.gz"
 
 
+def _publication_journal_name(snapshot_name: str) -> str:
+    return f".publication-{_snapshot_stem(snapshot_name)}.json"
+
+
+def _publication_journal_blob_name(snapshot_name: str) -> str:
+    prefix = f"{AZURE_BLOB_PREFIX}/" if AZURE_BLOB_PREFIX else ""
+    return f"{prefix}{_publication_journal_name(snapshot_name)}"
+
+
+def _publication_journal_path(snapshot_name: str) -> Path:
+    return _local_backup_dir() / _publication_journal_name(snapshot_name)
+
+
 def _last_success_marker_path() -> Path:
     return _local_backup_dir() / "LAST_SUCCESS.json"
 
@@ -616,31 +629,53 @@ def _rollback_publication_documents(
         )
 
 
-def _record_publication_failure(
-    prior_state: dict | None,
+PUBLICATION_JOURNAL_SCHEMA_VERSION = 1
+_PUBLICATION_STALE_HOURS = 24
+
+
+def _write_publication_journal(journal: dict) -> None:
+    payload = json.dumps(journal, indent=2).encode()
+    if _azure_configured():
+        _blob_container_client().upload_blob(
+            _publication_journal_blob_name(journal["snapshot_name"]),
+            io.BytesIO(payload),
+            overwrite=journal.get("phase") != "candidate_ready",
+        )
+    else:
+        _atomic_write_bytes(
+            _publication_journal_path(journal["snapshot_name"]), payload
+        )
+
+
+def _delete_publication_journal(snapshot_name: str) -> None:
+    if _azure_configured():
+        _blob_container_client().delete_blob(
+            _publication_journal_blob_name(snapshot_name)
+        )
+    else:
+        _publication_journal_path(snapshot_name).unlink(missing_ok=True)
+
+
+def _publication_journal(
+    *,
     snapshot_name: str,
     run_id: str,
-    database_started_at: datetime,
-    filesystem_started_at: datetime,
-) -> None:
-    failed_at = datetime.now(timezone.utc)
-    failed_state = _new_backup_state(snapshot_name, run_id)
-    _seed_last_success_history(failed_state, prior_state)
-    for backup_type, started_at in (
-        ("database", database_started_at),
-        ("filesystem", filesystem_started_at),
-    ):
-        _mark_attempt_started(failed_state, backup_type, started_at=started_at)
-        _mark_attempt_finished(
-            failed_state,
-            backup_type,
-            started_at=started_at,
-            completed_at=failed_at,
-            success=False,
-            size_bytes=None,
-        )
-    failed_state["failure_reason"] = "publication_failed"
-    _write_backup_state(failed_state)
+    prior_state: dict | None,
+    prior_marker: dict | None,
+    archive_name: str,
+    sidecar_name: str,
+) -> dict:
+    return {
+        "schema_version": PUBLICATION_JOURNAL_SCHEMA_VERSION,
+        "snapshot_name": snapshot_name,
+        "run_id": run_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "phase": "candidate_ready",
+        "archive_name": archive_name,
+        "sidecar_name": sidecar_name,
+        "prior_backup_state": prior_state,
+        "prior_last_success": prior_marker,
+    }
 
 
 def _attempt_sort_key(section: object) -> tuple[datetime, datetime, str]:
@@ -685,18 +720,18 @@ def _merge_section(
 
     incoming_key = _attempt_sort_key(incoming)
     existing_key = _attempt_sort_key(existing)
-    same_attempt = incoming_key == existing_key and bool(incoming.get("run_id"))
+    same_attempt = incoming.get("run_id") == existing.get("run_id") and bool(
+        incoming.get("run_id")
+    )
 
-    if incoming_key > existing_key or same_attempt:
+    if incoming_key[:2] >= existing_key[:2] or same_attempt:
         for field in attempt_fields:
             merged[field] = incoming.get(field)
 
     incoming_success = _success_sort_key(incoming)
     existing_success = _success_sort_key(existing)
     if incoming_success is not None and (
-        existing_success is None
-        or incoming_success > existing_success
-        or (same_attempt and incoming_success == existing_success)
+        existing_success is None or incoming_success >= existing_success or same_attempt
     ):
         for field in success_fields:
             merged[field] = incoming.get(field)
@@ -779,7 +814,7 @@ def _merge_backup_state(existing: dict | None, incoming: dict) -> dict:
     merged = copy.deepcopy(existing)
     merged["schema_version"] = BACKUP_STATE_SCHEMA_VERSION
 
-    if _state_sort_key(incoming) >= _state_sort_key(existing):
+    if _state_sort_key(incoming)[:2] >= _state_sort_key(existing)[:2]:
         for key in (
             "run_id",
             "snapshot_name",
@@ -1570,9 +1605,6 @@ def _match_production_inventory(
         entry = entries_by_path.get(path)
         if entry is not None:
             referenced_paths.add(path)
-        if row["status"] != "completed":
-            skipped.append(_bounded_validation_row(row, "status_not_finalized"))
-            continue
         if entry is None:
             skipped.append(_bounded_validation_row(row, "missing_source"))
             continue
@@ -1800,6 +1832,7 @@ def _run_backup_inner() -> Path | None:
         writer = None
         local_candidate_archive: Path | None = None
         local_candidate_sidecar: Path | None = None
+        journal: dict | None = None
         try:
             with _maintenance_scope():
                 if BACKUP_MUTATION_DRAIN_SECONDS:
@@ -1964,6 +1997,19 @@ def _run_backup_inner() -> Path | None:
                 archive_key = str(final)
                 archive_size = local_candidate_archive.stat().st_size
                 _atomic_write_bytes(local_candidate_sidecar, manifest_payload)
+            journal = _publication_journal(
+                snapshot_name=snapshot_name,
+                run_id=run_id,
+                prior_state=prior_backup_state,
+                prior_marker=prior_success_marker,
+                archive_name=(archive_key if writer else local_candidate_archive.name),
+                sidecar_name=(
+                    _manifest_sidecar_blob_name(snapshot_name)
+                    if writer
+                    else local_candidate_sidecar.name
+                ),
+            )
+            _write_publication_journal(journal)
         except Exception:
             if writer:
                 try:
@@ -1976,6 +2022,11 @@ def _run_backup_inner() -> Path | None:
                 local_candidate_archive.unlink(missing_ok=True)
             if local_candidate_sidecar is not None:
                 local_candidate_sidecar.unlink(missing_ok=True)
+            if journal is not None:
+                try:
+                    _delete_publication_journal(snapshot_name)
+                except Exception:
+                    log.exception("Failed to remove rejected publication journal")
             log.exception(
                 "Filesystem backup failed; archive was not published",
                 extra={
@@ -2034,6 +2085,8 @@ def _run_backup_inner() -> Path | None:
                 _attach_archive_key_to_success(backup_state, "database", archive_key)
             if not _write_backup_state(backup_state):
                 raise RuntimeError("backup state could not be committed")
+            journal["phase"] = "state_written"
+            _write_publication_journal(journal)
             if not _write_last_success_marker(
                 snapshot_name,
                 created_at=created_at,
@@ -2043,6 +2096,12 @@ def _run_backup_inner() -> Path | None:
                 state=backup_state,
             ):
                 raise RuntimeError("backup success marker could not be committed")
+            journal["phase"] = "marker_written"
+            _write_publication_journal(journal)
+            if _documents_owned_by_run(run_id) != (True, True):
+                raise RuntimeError(
+                    "backup state and success marker are not owned by this publication"
+                )
             if writer:
                 writer.publish()
             else:
@@ -2051,6 +2110,7 @@ def _run_backup_inner() -> Path | None:
                     str(_manifest_sidecar_path(Path(archive_key))),
                 )
                 os.replace(str(local_candidate_archive), archive_key)
+            _delete_publication_journal(snapshot_name)
         except Exception:
             _rollback_publication_documents(
                 prior_backup_state, prior_success_marker, run_id
@@ -2075,13 +2135,12 @@ def _run_backup_inner() -> Path | None:
                 ):
                     if path is not None:
                         path.unlink(missing_ok=True)
-            _record_publication_failure(
-                prior_backup_state,
-                snapshot_name,
-                run_id,
-                db_started_at,
-                filesystem_started_at,
-            )
+            try:
+                _delete_publication_journal(snapshot_name)
+            except ResourceNotFoundError:
+                pass
+            except Exception:
+                log.exception("Failed to remove rejected publication journal")
             log.exception("Backup publication failed after archive validation")
             return None
         if writer:
@@ -2112,24 +2171,158 @@ def run_backup() -> Path | None:
                     size_bytes=None,
                 )
             state["failure_reason"] = "overlapping_backup_run"
-            _write_backup_state(state)
+            log.warning(
+                "Overlap rejection is not written while the active publication owns shared state",
+                extra={"event": "backup.overlap_rejected", "run_id": state["run_id"]},
+            )
             return None
+        _reconcile_publications(lock_held=True)
         return _run_backup_inner()
 
 
 def _archive_is_selectable(blob) -> bool:
     metadata = getattr(blob, "metadata", None)
+    if metadata is None or metadata == {}:
+        return True
     return (
-        not isinstance(metadata, dict)
-        or metadata.get("hriv_publication_state") != "candidate"
+        isinstance(metadata, dict)
+        and metadata.get("hriv_publication_state") == "published"
     )
 
 
-def _cleanup_stale_candidates(container: ContainerClient) -> None:
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+def _documents_owned_by_run(run_id: str) -> tuple[bool, bool]:
+    state = _read_backup_state()
+    marker = _read_last_success_marker()
+    return (
+        isinstance(state, dict) and state.get("run_id") == run_id,
+        isinstance(marker, dict) and marker.get("run_id") == run_id,
+    )
+
+
+def _reconcile_azure_publications(container: ContainerClient) -> None:
     prefix = f"{AZURE_BLOB_PREFIX}/" if AZURE_BLOB_PREFIX else ""
     try:
-        for blob in container.list_blobs(name_starts_with=prefix, include=["metadata"]):
+        blobs = list(
+            container.list_blobs(name_starts_with=prefix, include=["metadata"])
+        )
+        names = {blob.name for blob in blobs}
+        for blob in blobs:
+            metadata = getattr(blob, "metadata", None)
+            if (
+                not blob.name.endswith(".tar.gz")
+                or not isinstance(metadata, dict)
+                or metadata.get("hriv_publication_state") != "candidate"
+            ):
+                continue
+            snapshot_name = blob.name.rsplit("/", 1)[-1]
+            journal_name = _publication_journal_blob_name(snapshot_name)
+            if journal_name not in names:
+                continue
+            try:
+                journal = json.loads(container.download_blob(journal_name).readall())
+            except Exception:
+                log.exception("Failed to read publication journal %s", journal_name)
+                continue
+            if (
+                not isinstance(journal, dict)
+                or journal.get("schema_version") != PUBLICATION_JOURNAL_SCHEMA_VERSION
+                or journal.get("snapshot_name") != _snapshot_stem(snapshot_name)
+            ):
+                continue
+            run_id = str(journal.get("run_id") or "")
+            sidecar_name = str(journal.get("sidecar_name") or "")
+            state_owned, marker_owned = _documents_owned_by_run(run_id)
+            if state_owned and marker_owned and sidecar_name in names:
+                container.get_blob_client(blob.name).set_blob_metadata(
+                    {"hriv_publication_state": "published"}
+                )
+                container.delete_blob(journal_name)
+                log.warning("Completed interrupted publication for %s", blob.name)
+                continue
+            _rollback_publication_documents(
+                journal.get("prior_backup_state"),
+                journal.get("prior_last_success"),
+                run_id,
+            )
+            for name in (blob.name, sidecar_name, journal_name):
+                if not name:
+                    continue
+                try:
+                    container.delete_blob(name)
+                except ResourceNotFoundError:
+                    pass
+            log.warning("Rolled back stale interrupted publication for %s", blob.name)
+    except Exception:
+        log.exception("Failed to reconcile Azure backup publications")
+
+
+def _reconcile_local_publications() -> None:
+    root = _local_backup_dir()
+    if not root.exists():
+        return
+    for journal_path in root.glob(".publication-*.json"):
+        journal = _read_json_file(journal_path)
+        if not isinstance(journal, dict):
+            continue
+        snapshot_name = str(journal.get("snapshot_name") or "")
+        run_id = str(journal.get("run_id") or "")
+        candidate_archive = root / Path(str(journal.get("archive_name") or "")).name
+        candidate_sidecar = root / Path(str(journal.get("sidecar_name") or "")).name
+        state_owned, marker_owned = _documents_owned_by_run(run_id)
+        if (
+            state_owned
+            and marker_owned
+            and candidate_archive.is_file()
+            and candidate_sidecar.is_file()
+        ):
+            final_archive = root / f"{snapshot_name}.tar.gz"
+            os.replace(
+                str(candidate_sidecar), str(_manifest_sidecar_path(final_archive))
+            )
+            os.replace(str(candidate_archive), str(final_archive))
+            journal_path.unlink(missing_ok=True)
+            log.warning("Completed interrupted local publication for %s", snapshot_name)
+            continue
+        _rollback_publication_documents(
+            journal.get("prior_backup_state"),
+            journal.get("prior_last_success"),
+            run_id,
+        )
+        candidate_archive.unlink(missing_ok=True)
+        candidate_sidecar.unlink(missing_ok=True)
+        journal_path.unlink(missing_ok=True)
+        log.warning(
+            "Rolled back stale interrupted local publication for %s", snapshot_name
+        )
+
+
+def _reconcile_publications(
+    container: ContainerClient | None = None, *, lock_held: bool = False
+) -> None:
+    if not lock_held:
+        with _run_lock() as locked:
+            if not locked:
+                return
+            _reconcile_publications(container, lock_held=True)
+        return
+    try:
+        if _azure_configured():
+            _reconcile_azure_publications(container or _blob_container_client())
+        else:
+            _reconcile_local_publications()
+    except Exception:
+        log.exception("Failed to reconcile interrupted backup publications")
+
+
+def _cleanup_stale_candidates(container: ContainerClient) -> None:
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=_PUBLICATION_STALE_HOURS)
+    prefix = f"{AZURE_BLOB_PREFIX}/" if AZURE_BLOB_PREFIX else ""
+    try:
+        blobs = list(
+            container.list_blobs(name_starts_with=prefix, include=["metadata"])
+        )
+        names = {blob.name for blob in blobs}
+        for blob in blobs:
             metadata = getattr(blob, "metadata", None)
             modified = getattr(blob, "last_modified", None)
             if (
@@ -2137,6 +2330,7 @@ def _cleanup_stale_candidates(container: ContainerClient) -> None:
                 or not isinstance(metadata, dict)
                 or metadata.get("hriv_publication_state") != "candidate"
                 or not isinstance(modified, datetime)
+                or _publication_journal_blob_name(blob.name.rsplit("/", 1)[-1]) in names
             ):
                 continue
             if modified.tzinfo is None:
@@ -2157,6 +2351,7 @@ def _cleanup_stale_candidates(container: ContainerClient) -> None:
 
 def _enforce_retention(container: ContainerClient) -> None:
     """Delete old snapshots beyond BACKUP_RETENTION_COUNT."""
+    _reconcile_azure_publications(container)
     _cleanup_stale_candidates(container)
     if BACKUP_RETENTION_COUNT <= 0:
         return
@@ -2198,6 +2393,7 @@ def _enforce_retention(container: ContainerClient) -> None:
 
 def _enforce_local_retention() -> None:
     """Delete old local snapshots beyond BACKUP_RETENTION_COUNT."""
+    _reconcile_publications(lock_held=True)
     if BACKUP_RETENTION_COUNT <= 0:
         return
 
@@ -2237,6 +2433,7 @@ def _enforce_local_retention() -> None:
 
 def list_snapshots() -> list[dict]:
     """List available snapshots in Azure Blob Storage or locally."""
+    _reconcile_publications()
     if not _azure_configured():
         # List local backups
         local_dir = _local_backup_dir()
@@ -2685,33 +2882,50 @@ END $$;
 def _promote_streamed_filesystem(
     staged_data: Path, target_data_dir: str, run_id: str
 ) -> None:
-    """Promote validated data and roll every prior move back on failure."""
+    """Quarantine active target content, promote the restore, and roll back atomically."""
     destination = Path(target_data_dir)
     destination.mkdir(parents=True, exist_ok=True)
     quarantine = destination / f".restore-orphans-{run_id}"
-    moves: list[tuple[Path, Path, Path | None]] = []
+    workspace = staged_data
+    while workspace.parent != destination and workspace.parent != workspace:
+        workspace = workspace.parent
+    workspace_name = workspace.name
+    moves: list[tuple[Path, Path]] = []
+
+    def preserved(entry: Path) -> bool:
+        return (
+            entry.name == _MAINTENANCE_FILENAME
+            or entry.name == workspace_name
+            or entry.name.startswith(".restore-orphans-")
+            or (_exclude_tiles() and entry.name == "tiles")
+        )
+
     try:
+        active_entries = [
+            entry for entry in sorted(destination.iterdir()) if not preserved(entry)
+        ]
+        if active_entries:
+            quarantine.mkdir(exist_ok=False)
+        for target in active_entries:
+            quarantined = quarantine / target.name
+            os.replace(str(target), str(quarantined))
+            moves.append((target, quarantined))
+            log.warning("Quarantined unmatched restore target %s", target)
         for source in sorted(staged_data.iterdir()):
             if source.name == _MAINTENANCE_FILENAME or (
                 _exclude_tiles() and source.name == "tiles"
             ):
                 continue
             target = destination / source.name
-            old_target = None
-            if target.exists():
-                quarantine.mkdir(exist_ok=True)
-                old_target = quarantine / source.name
-                os.replace(str(target), str(old_target))
-                log.warning("Quarantined unmatched restore target %s", target)
-            moves.append((source, target, old_target))
             os.replace(str(source), str(target))
+            moves.append((source, target))
     except Exception as promotion_error:
         try:
-            for source, target, old_target in reversed(moves):
-                if target.exists():
-                    os.replace(str(target), str(source))
-                if old_target is not None and old_target.exists():
-                    os.replace(str(old_target), str(target))
+            for original, moved in reversed(moves):
+                if moved.exists():
+                    os.replace(str(moved), str(original))
+            if quarantine.exists() and not any(quarantine.iterdir()):
+                quarantine.rmdir()
         except Exception as rollback_error:
             raise RestoreSafetyError(
                 "filesystem promotion failed and rollback could not restore the target"
@@ -3304,6 +3518,7 @@ def run_cron() -> None:
         AZURE_STORAGE_CONTAINER or "(not configured – local only)",
     )
     log.info("  Data dir : %s", DATA_DIR)
+    _reconcile_publications()
 
     cron = croniter(BACKUP_CRON_SCHEDULE, datetime.now(_BACKUP_TZ))
 

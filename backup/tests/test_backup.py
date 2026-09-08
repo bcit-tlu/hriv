@@ -799,6 +799,39 @@ class RestoreTestCase(_BackupTestCase):
         self.assertTrue(state["operator"]["database"]["success"])
         self.assertFalse(state["operator"]["filesystem"]["success"])
 
+    def test_promotion_quarantines_all_active_unmatched_entries_and_preserves_exceptions(
+        self,
+    ):
+        self._reload({"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)})
+        target = self.tmp / "promotion-complete"
+        workspace = target / f"{backup._RESTORE_PREFIX}active"
+        staged = workspace / "data"
+        (staged / "source_images").mkdir(parents=True)
+        (staged / "source_images" / "new.jpg").write_bytes(b"new")
+        (target / "source_images").mkdir(parents=True)
+        (target / "source_images" / "old.jpg").write_bytes(b"old")
+        (target / "unmatched-dir").mkdir()
+        (target / "unmatched-dir" / "value").write_text("old dir")
+        (target / "unmatched.txt").write_text("old file")
+        (target / backup._MAINTENANCE_FILENAME).touch()
+        (target / "tiles").mkdir()
+        (target / "tiles" / "keep").write_text("tile")
+        prior_quarantine = target / ".restore-orphans-prior"
+        prior_quarantine.mkdir()
+        (prior_quarantine / "keep").write_text("prior")
+
+        backup._promote_streamed_filesystem(staged, str(target), "current")
+
+        quarantine = target / ".restore-orphans-current"
+        self.assertTrue((quarantine / "source_images" / "old.jpg").exists())
+        self.assertTrue((quarantine / "unmatched-dir" / "value").exists())
+        self.assertTrue((quarantine / "unmatched.txt").exists())
+        self.assertEqual((target / "source_images" / "new.jpg").read_bytes(), b"new")
+        self.assertTrue((target / backup._MAINTENANCE_FILENAME).exists())
+        self.assertTrue((target / "tiles" / "keep").exists())
+        self.assertTrue((workspace).exists())
+        self.assertTrue((prior_quarantine / "keep").exists())
+
     def test_promotion_failure_rolls_back_all_prior_moves(self):
         staged = self.tmp / "staged"
         target = self.tmp / "promotion-target"
@@ -948,14 +981,10 @@ class BackupRunTestCase(_BackupTestCase):
                     ),
                 ):
                     self.assertIsNone(backup.run_backup())
-                failed_state = json.loads((local_dir / "BACKUP_STATE.json").read_text())
-                self.assertEqual(failed_state["failure_reason"], "publication_failed")
-                for backup_type in ("database", "filesystem"):
-                    self.assertFalse(failed_state[backup_type]["success"])
-                    self.assertEqual(
-                        failed_state[backup_type]["last_success_archive_key"],
-                        prior_state[backup_type]["last_success_archive_key"],
-                    )
+                restored_state = json.loads(
+                    (local_dir / "BACKUP_STATE.json").read_text()
+                )
+                self.assertEqual(restored_state, prior_state)
                 self.assertEqual(
                     json.loads((local_dir / "LAST_SUCCESS.json").read_text()),
                     prior_marker,
@@ -1005,6 +1034,7 @@ class BackupRunTestCase(_BackupTestCase):
             patch.object(backup.subprocess, "run", side_effect=inventory_run),
             patch.object(backup, "_write_backup_state", return_value=True),
             patch.object(backup, "_write_last_success_marker", return_value=True),
+            patch.object(backup, "_documents_owned_by_run", return_value=(True, True)),
             patch.object(
                 backup._StagedBlockWriter,
                 "publish",
@@ -1080,7 +1110,9 @@ class BackupRunTestCase(_BackupTestCase):
         fake_container.download_blob = fake_download_blob
         fake_container.get_blob_client.side_effect = FakeBlobClient
         fake_container.list_blobs.return_value = []
-        fake_container.delete_blob = MagicMock()
+        fake_container.delete_blob.side_effect = lambda name, **_kwargs: uploads.pop(
+            name, None
+        )
 
         local_dir = self.tmp / "backups"
         inventory_run, commands = _production_inventory_run(self.data_dir)
@@ -1108,6 +1140,7 @@ class BackupRunTestCase(_BackupTestCase):
             f"hriv-backups/{result.name.removesuffix('.tar.gz')}.manifest.json"
         )
         self.assertIn(sidecar_blob, uploads)
+        self.assertFalse(any("/.publication-" in name for name in uploads))
         archive_blob = f"hriv-backups/{result.name}"
         upload_order = list(uploads)
         self.assertEqual(
@@ -1453,11 +1486,84 @@ class AzurePublicationTestCase(_BackupTestCase):
     def test_candidate_archives_are_not_selectable(self):
         candidate = SimpleNamespace(metadata={"hriv_publication_state": "candidate"})
         published = SimpleNamespace(metadata={"hriv_publication_state": "published"})
-        legacy = SimpleNamespace(metadata={})
+        unknown = SimpleNamespace(metadata={"hriv_publication_state": "future"})
+        legacy_empty = SimpleNamespace(metadata={})
+        legacy_absent = SimpleNamespace(metadata=None)
 
         self.assertFalse(backup._archive_is_selectable(candidate))
+        self.assertFalse(backup._archive_is_selectable(unknown))
         self.assertTrue(backup._archive_is_selectable(published))
-        self.assertTrue(backup._archive_is_selectable(legacy))
+        self.assertTrue(backup._archive_is_selectable(legacy_empty))
+        self.assertTrue(backup._archive_is_selectable(legacy_absent))
+
+    def test_explicit_unknown_state_is_hidden_from_list_retention_and_status(self):
+        self._reload(
+            {
+                "AZURE_STORAGE_CONNECTION_STRING": "fake",
+                "AZURE_STORAGE_CONTAINER": "fake",
+                "BACKUP_RETENTION_COUNT": "1",
+            }
+        )
+        now = datetime.now(timezone.utc)
+        blobs = [
+            SimpleNamespace(
+                name=f"hriv-backups/{name}.tar.gz",
+                metadata=metadata,
+                last_modified=now + timedelta(minutes=index),
+                size=1,
+            )
+            for index, (name, metadata) in enumerate(
+                (
+                    ("hriv-backup-20260101-000000-legacy", None),
+                    (
+                        "hriv-backup-20260102-000000-published",
+                        {"hriv_publication_state": "published"},
+                    ),
+                    (
+                        "hriv-backup-20260103-000000-candidate",
+                        {"hriv_publication_state": "candidate"},
+                    ),
+                    (
+                        "hriv-backup-20260104-000000-future",
+                        {"hriv_publication_state": "future"},
+                    ),
+                )
+            )
+        ]
+        container = MagicMock()
+        container.list_blobs.return_value = blobs
+        container.download_blob.side_effect = backup.ResourceNotFoundError("missing")
+        with patch.object(backup, "_blob_container_client", return_value=container):
+            snapshots = backup.list_snapshots()
+            backup._enforce_retention(container)
+            with (
+                patch.object(
+                    backup,
+                    "_read_last_success_marker",
+                    return_value={
+                        "snapshot_name": "hriv-backup-20260104-000000-future",
+                        "created_at": now.isoformat(),
+                        "completed_at": now.isoformat(),
+                    },
+                ),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                self.assertFalse(backup.run_status())
+        self.assertEqual(
+            [snapshot["name"] for snapshot in snapshots],
+            [
+                "hriv-backup-20260102-000000-published.tar.gz",
+                "hriv-backup-20260101-000000-legacy.tar.gz",
+            ],
+        )
+        deleted = [call.args[0] for call in container.delete_blob.call_args_list]
+        self.assertIn("hriv-backups/hriv-backup-20260101-000000-legacy.tar.gz", deleted)
+        self.assertFalse(
+            any(
+                "candidate.tar.gz" in name or "future.tar.gz" in name
+                for name in deleted
+            )
+        )
 
     def test_empty_azure_writer_cannot_commit(self):
         with self.assertRaisesRegex(RuntimeError, "empty Azure archive"):
@@ -1476,6 +1582,79 @@ class AzurePublicationTestCase(_BackupTestCase):
             metadata={"hriv_publication_state": "candidate"},
         )
         blob.delete_blob.assert_called_once_with()
+
+    def _journal_fixture(self):
+        snapshot = "hriv-backup-20260101-000000-journal"
+        archive = f"hriv-backups/{snapshot}.tar.gz"
+        sidecar = f"hriv-backups/{snapshot}.manifest.json"
+        journal_name = f"hriv-backups/.publication-{snapshot}.json"
+        created = datetime.now(timezone.utc) - timedelta(hours=1)
+        journal = {
+            "schema_version": 1,
+            "snapshot_name": snapshot,
+            "run_id": "journal-run",
+            "created_at": created.isoformat(),
+            "phase": "marker_written",
+            "archive_name": archive,
+            "sidecar_name": sidecar,
+            "prior_backup_state": {"run_id": "prior-state"},
+            "prior_last_success": {"run_id": "prior-marker"},
+        }
+        blobs = [
+            SimpleNamespace(
+                name=archive,
+                metadata={"hriv_publication_state": "candidate"},
+                last_modified=created,
+            ),
+            SimpleNamespace(name=sidecar, metadata=None, last_modified=created),
+            SimpleNamespace(name=journal_name, metadata=None, last_modified=created),
+        ]
+        container = MagicMock()
+        container.list_blobs.return_value = blobs
+        container.download_blob.return_value = SimpleNamespace(
+            readall=lambda: json.dumps(journal).encode()
+        )
+        archive_client = MagicMock()
+        container.get_blob_client.return_value = archive_client
+        return container, archive_client, journal, journal_name
+
+    def test_reconcile_skips_while_an_active_run_holds_the_lock(self):
+        with (
+            patch.object(
+                backup, "_run_lock", return_value=contextlib.nullcontext(False)
+            ),
+            patch.object(backup, "_reconcile_local_publications") as reconcile,
+        ):
+            backup._reconcile_publications()
+        reconcile.assert_not_called()
+
+    def test_reconcile_finishes_candidate_owned_by_state_and_marker(self):
+        container, archive_client, journal, journal_name = self._journal_fixture()
+        with patch.object(backup, "_documents_owned_by_run", return_value=(True, True)):
+            backup._reconcile_azure_publications(container)
+
+        archive_client.set_blob_metadata.assert_called_once_with(
+            {"hriv_publication_state": "published"}
+        )
+        container.delete_blob.assert_called_once_with(journal_name)
+
+    def test_reconcile_partial_publication_rolls_back_and_removes_artifacts(self):
+        container, _archive_client, journal, journal_name = self._journal_fixture()
+        with (
+            patch.object(backup, "_documents_owned_by_run", return_value=(True, False)),
+            patch.object(backup, "_rollback_publication_documents") as rollback,
+        ):
+            backup._reconcile_azure_publications(container)
+
+        rollback.assert_called_once_with(
+            journal["prior_backup_state"],
+            journal["prior_last_success"],
+            journal["run_id"],
+        )
+        self.assertEqual(
+            [call.args[0] for call in container.delete_blob.call_args_list],
+            [journal["archive_name"], journal["sidecar_name"], journal_name],
+        )
 
     def test_cleanup_deletes_only_stale_candidates_and_matching_sidecar(self):
         now = datetime.now(timezone.utc)
@@ -1550,7 +1729,7 @@ class AzurePublicationTestCase(_BackupTestCase):
             any(name.endswith("data/source_images/img.jpg") for name in names)
         )
         self.assertFalse(any(name.endswith("orphan.jpg") for name in names))
-        self.assertFalse(any(name.endswith("pending.jpg") for name in names))
+        self.assertTrue(any(name.endswith("pending.jpg") for name in names))
         self.assertFalse(any(name.endswith("upload.part") for name in names))
         manifest = json.loads(
             (
@@ -1559,17 +1738,14 @@ class AzurePublicationTestCase(_BackupTestCase):
         )
         source_images = manifest["source_images"]
         self.assertEqual(source_images["database_row_count"], 4)
-        self.assertEqual(source_images["included_row_count"], 1)
-        self.assertEqual(source_images["included_file_count"], 1)
-        self.assertEqual(source_images["missing_or_skipped_count"], 3)
+        self.assertEqual(source_images["included_row_count"], 2)
+        self.assertEqual(source_images["included_file_count"], 2)
+        self.assertEqual(source_images["missing_or_skipped_count"], 2)
         self.assertEqual(source_images["orphan_count"], 1)
         reasons = {
             entry["reason"] for entry in manifest["validation"]["missing_sources"]
         }
-        self.assertEqual(
-            reasons,
-            {"missing_source", "unsafe_or_out_of_root", "status_not_finalized"},
-        )
+        self.assertEqual(reasons, {"missing_source", "unsafe_or_out_of_root"})
         self.assertEqual(
             manifest["validation"]["orphan_sources"],
             [

@@ -154,8 +154,11 @@ current backup remains visible even when an older success exists.
 
 Scheduled and on-demand backup calls share a non-blocking `flock` on
 `/backups/.hriv-backup-run.lock`. Only one run may inventory or stream data; an
-overlapping call returns failure and records the rejected attempt. Marker
-coordination remains separate and uses read → merge → write semantics:
+overlapping call returns failure and logs the rejection without changing the active publication's shared state. Supported
+production triggers execute in the single backup Deployment with the same
+`hriv-backup-backups` PVC. A future Job or CronJob must mount that claim or use
+cluster-wide coordination. Marker coordination remains separate and uses read →
+merge → write semantics:
 
 - Local markers are serialised with an advisory `flock` on
   `/backups/.hriv-backup-state.lock`, a sidecar file that lives on the same
@@ -228,8 +231,9 @@ The chart sets explicit `resources` for the backup pod. In Azure-backed
 production mode, compressed tar data is written to uncommitted block-blob
 blocks and committed only after every inventoried file is read and validated.
 The committed blob stays a candidate until its sidecar and shared state/marker
-transaction succeeds; published metadata is the final selectability step, and
-failure removes the candidate and restores still-owned prior documents. No
+transaction succeeds; published metadata is the final selectability step. A
+per-snapshot journal lets lock-owning startup/list reconciliation finish a
+complete interrupted publication or roll back partial still-owned state. No
 complete archive is staged on `/backups` or pod-local storage. The backup PVC
 holds bounded state, locks, and database-dump or restore scratch used by legacy
 and development paths. Local-only backups and local legacy restores still use
