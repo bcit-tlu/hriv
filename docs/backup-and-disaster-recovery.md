@@ -116,14 +116,19 @@ unambiguous prefix.
 Azure production archives stream through uncommitted block-blob blocks and are
 committed only after every inventoried source file remains stable and the tar
 stream completes. The complete archive is never staged on `/backups` or
-pod-local storage. The manifest sidecar and success marker are published only
-after archive commit; candidate blobs remain unselectable until publication.
-Unpublished candidates older than 24 hours and their exact manifest sidecars
+pod-local storage. The archive remains a non-selectable candidate while its embedded manifest,
+sidecar, backup state, and last-success marker are established; published blob
+metadata is the final selectability operation. Failure compensates by removing
+the candidate and sidecar and restoring prior owned state without overwriting a
+newer writer. Unpublished candidates older than 24 hours and their exact sidecars
 are cleaned up without entering normal retention or changing last-success state.
 
 Filesystem restores stream the archive into a unique staging directory on the
 new target data PVC, validate checksums before promotion, and do not consume the
-backup PVC in proportion to archive size. `BACKUP_STAGING_DIR` remains for
+backup PVC in proportion to archive size. A populated target temporarily needs
+space for both staged restored bytes and quarantined existing bytes and can
+approach twice the source-image usage. Production therefore defaults to a fresh,
+empty target PVC sized from the manifest with operational headroom. `BACKUP_STAGING_DIR` remains for
 bounded state, development logical dumps, and local-only legacy archives.
 Stale bounded workspaces are swept after 24 hours.
 
@@ -235,8 +240,11 @@ Use this when the entire cluster is lost or a fresh redeployment is needed.
 1. **Provision the cluster** — Flux reconciles the base manifests and
    stands up PostgreSQL (CNPG), backend, frontend, worker, and backup pods.
 
-2. **Restore the database** through CNPG to the recovery-set target timestamp,
-   using a fresh recovery cluster and explicit source database/owner settings.
+2. **Restore the database** through CNPG to the exact PostgreSQL-snapshot
+   `database_recovery.target_time`, using a fresh recovery cluster and explicit
+   source database/owner settings. The latest recovery set is accepted as a
+   canary only after its restored `source_images` row inventory matches the
+   manifest's included/missing/orphan outcome.
 
 3. **Restore source images** to a fresh PVC without applying SQL:
 

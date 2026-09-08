@@ -226,8 +226,11 @@ and `persistence.tiles.*` keys. The old backend chart PVC named
 
 The chart sets explicit `resources` for the backup pod. In Azure-backed
 production mode, compressed tar data is written to uncommitted block-blob
-blocks and committed only after every inventoried file is read and validated;
-no complete archive is staged on `/backups` or pod-local storage. The backup PVC
+blocks and committed only after every inventoried file is read and validated.
+The committed blob stays a candidate until its sidecar and shared state/marker
+transaction succeeds; published metadata is the final selectability step, and
+failure removes the candidate and restores still-owned prior documents. No
+complete archive is staged on `/backups` or pod-local storage. The backup PVC
 holds bounded state, locks, and database-dump or restore scratch used by legacy
 and development paths. Local-only backups and local legacy restores still use
 `BACKUP_STAGING_DIR`, so their capacity must match the selected archive.
@@ -275,9 +278,11 @@ unversioned manifests are accepted only when their `files` map has valid size
 and SHA-256 metadata for every selected member. Selected source files are
 extracted into a unique staging directory on the target data filesystem,
 validated against the manifest, and promoted only after validation succeeds. Existing unmatched
-target content is quarantined rather than reconciled or deleted. Production
-operators should use a fresh target PVC so validation and rollback do not depend
-on spare capacity in the active source-image volume.
+target content is quarantined rather than reconciled or deleted. A populated
+target can temporarily require staged restored bytes plus quarantined existing
+bytes, approaching twice the source-image usage. Production operators should use
+a fresh empty target PVC sized from the manifest plus headroom so validation and
+rollback do not depend on spare capacity in the active volume.
 
 `restore-database` and `--components database` are available only for legacy or
 development archives containing `db.sql`. A current production source-only

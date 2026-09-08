@@ -157,13 +157,18 @@ Production restoration is component-selective:
    valid size and SHA-256 for every selected member; manifestless archives fail
    closed.
 2. Restore PostgreSQL through CNPG to the bound recovery point.
-3. Restore source images using filesystem-only mode to a new target PVC.
+3. Restore source images using filesystem-only mode to a fresh empty target PVC
+   sized from manifest bytes plus headroom. A populated target may temporarily
+   require staged restored bytes plus quarantined existing bytes, approaching
+   twice the source-image usage.
 4. Validate all archive and per-file checksums before promotion.
 5. Report database/file mismatches using the deterministic outcomes above.
 6. Quiesce HRIV and cut over only after the new targets pass validation.
 7. Rebuild derived tiles with the supported serial operation.
-8. Verify health, authentication, browsing, representative viewer behavior, and
-   metadata before disabling maintenance mode.
+8. Treat the latest recovery set as the acceptance canary: restore CNPG to the
+   exact database-snapshot `target_time`, verify its source inventory against the
+   manifest, then verify health, authentication, browsing, representative viewer
+   behavior, and metadata before disabling maintenance mode.
 
 A filesystem-only restore must never execute `db.sql`. A database-only restore
 must never modify source-image or tile paths. Legacy combined archives remain

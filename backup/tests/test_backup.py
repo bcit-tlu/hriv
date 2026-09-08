@@ -464,6 +464,20 @@ class RestoreTestCase(_BackupTestCase):
         self.assertTrue((self.data_dir / "source_images" / "existing.jpg").exists())
         self.assertFalse((self.data_dir / "source_images" / "restored.jpg").exists())
 
+    def test_failed_logical_database_restore_requires_maintenance(self):
+        self._reload({"BACKUP_MODE": "development", "DATA_DIR": str(self.data_dir)})
+        archive_data = self.tmp / "failed_database"
+        archive_data.mkdir()
+        archive = self._build_archive(archive_data)
+        with (
+            patch.object(
+                backup, "_local_backup_dir", return_value=self.tmp / "backups"
+            ),
+            patch.object(backup, "_restore_database_dump", return_value=False),
+            self.assertRaises(backup.RestoreSafetyError),
+        ):
+            backup._restore_from_archive(archive, components="database")
+
     def test_restore_rejects_unsafe_link_before_side_effects(self):
         self._reload({"DATA_DIR": str(self.data_dir)})
         archive = self.tmp / "unsafe.tar.gz"
@@ -472,12 +486,19 @@ class RestoreTestCase(_BackupTestCase):
             link.type = tarfile.SYMTYPE
             link.linkname = "/etc/passwd"
             tar.addfile(link)
-        with patch.object(backup.subprocess, "run") as run:
-            with self.assertRaises(ValueError):
+        local_dir = self.tmp / "backups"
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=local_dir),
+            patch.object(backup.subprocess, "run") as run,
+        ):
+            self.assertFalse(
                 backup._restore_from_archive(
                     archive, components="filesystem", data_dir=str(self.data_dir)
                 )
+            )
         run.assert_not_called()
+        state = json.loads((local_dir / "RESTORE_STATE.json").read_text())
+        self.assertFalse(state["operator"]["filesystem"]["success"])
 
     def test_restore_rejects_manifest_version_and_checksum(self):
         self._reload({"DATA_DIR": str(self.data_dir)})
@@ -510,6 +531,8 @@ class RestoreTestCase(_BackupTestCase):
                         archive, components="filesystem", data_dir=str(self.data_dir)
                     )
                 )
+        state = json.loads((self.tmp / "backups" / "RESTORE_STATE.json").read_text())
+        self.assertFalse(state["operator"]["filesystem"]["success"])
         self.assertTrue((self.data_dir / "source_images" / "existing.jpg").exists())
 
     def test_azure_chunk_reader_treats_empty_chunk_as_eof(self):
@@ -640,7 +663,11 @@ class RestoreTestCase(_BackupTestCase):
         archive = self.tmp / "manifestless.tar.gz"
         with tarfile.open(archive, "w:gz") as tar:
             tar.add(snapshot, arcname="manifestless")
-        with patch.object(backup.subprocess, "run") as run:
+        local_dir = self.tmp / "backups"
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=local_dir),
+            patch.object(backup.subprocess, "run") as run,
+        ):
             self.assertFalse(
                 backup._restore_from_archive(
                     archive, components="filesystem", data_dir=str(self.data_dir)
@@ -657,6 +684,9 @@ class RestoreTestCase(_BackupTestCase):
                 )
             )
         run.assert_not_called()
+        state = json.loads((local_dir / "RESTORE_STATE.json").read_text())
+        self.assertFalse(state["operator"]["filesystem"]["success"])
+        self.assertIsNotNone(state["operator"]["filesystem"]["completed_at"])
         self.assertTrue((self.data_dir / "source_images" / "existing.jpg").exists())
         self.assertFalse((self.data_dir / "source_images" / "new.jpg").exists())
 
@@ -710,6 +740,64 @@ class RestoreTestCase(_BackupTestCase):
             len(list(self.data_dir.glob(".restore-orphans-*/source_images/again.jpg"))),
             1,
         )
+
+    def test_combined_local_restore_keeps_maintenance_after_database_commit(self):
+        archive_data = self.tmp / "mixed-local"
+        (archive_data / "source_images").mkdir(parents=True)
+        (archive_data / "source_images" / "new.jpg").write_bytes(b"new")
+        archive = self._build_archive(archive_data)
+        local_dir = self.tmp / "backups"
+        local_dir.mkdir()
+        shutil.copy2(archive, local_dir / archive.name)
+        self._reload({"DATA_DIR": str(self.data_dir)})
+
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=local_dir),
+            patch.object(
+                backup.subprocess, "run", return_value=MagicMock(returncode=0)
+            ),
+            patch.object(
+                backup,
+                "_promote_streamed_filesystem",
+                side_effect=OSError("promotion failed"),
+            ),
+        ):
+            with self.assertRaises(backup.RestoreSafetyError):
+                backup.run_restore(archive.name, components="all")
+        self.assertTrue(backup._maintenance_flag_path().exists())
+        state = json.loads((local_dir / "RESTORE_STATE.json").read_text())
+        self.assertTrue(state["operator"]["database"]["success"])
+        self.assertFalse(state["operator"]["filesystem"]["success"])
+
+    def test_combined_stream_restore_is_safety_error_after_database_commit(self):
+        archive_data = self.tmp / "mixed-stream"
+        (archive_data / "source_images").mkdir(parents=True)
+        (archive_data / "source_images" / "new.jpg").write_bytes(b"new")
+        archive = self._build_archive(archive_data)
+        local_dir = self.tmp / "backups"
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=local_dir),
+            patch.object(
+                backup.subprocess, "run", return_value=MagicMock(returncode=0)
+            ),
+            patch.object(
+                backup,
+                "_promote_streamed_filesystem",
+                side_effect=OSError("promotion failed"),
+            ),
+        ):
+            with self.assertRaises(backup.RestoreSafetyError):
+                backup._restore_from_stream(
+                    io.BytesIO(archive.read_bytes()),
+                    archive.name,
+                    purpose="operator",
+                    database_url=backup.DATABASE_URL,
+                    data_dir=str(self.data_dir),
+                    components="all",
+                )
+        state = json.loads((local_dir / "RESTORE_STATE.json").read_text())
+        self.assertTrue(state["operator"]["database"]["success"])
+        self.assertFalse(state["operator"]["filesystem"]["success"])
 
     def test_promotion_failure_rolls_back_all_prior_moves(self):
         staged = self.tmp / "staged"
@@ -783,6 +871,156 @@ class BackupRunTestCase(_BackupTestCase):
         (self.data_dir / "source_images" / "img.jpg").write_bytes(b"source")
         (self.data_dir / "tiles").mkdir()
         (self.data_dir / "tiles" / "img.dzi").write_bytes(b"tiles")
+
+    def _seed_prior_publication(self, local_dir):
+        started = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        completed = started + timedelta(minutes=1)
+        state = backup._new_backup_state("prior", "prior-run")
+        for backup_type in ("database", "filesystem"):
+            backup._mark_attempt_started(state, backup_type, started_at=started)
+            backup._mark_attempt_finished(
+                state,
+                backup_type,
+                started_at=started,
+                completed_at=completed,
+                success=True,
+                size_bytes=1,
+                archive_key=f"prior-{backup_type}",
+            )
+        marker = {
+            "snapshot_name": "prior",
+            "created_at": started.isoformat(),
+            "completed_at": completed.isoformat(),
+            "run_id": "prior-run",
+            "types": {},
+        }
+        (local_dir / "BACKUP_STATE.json").write_text(json.dumps(state))
+        (local_dir / "LAST_SUCCESS.json").write_text(json.dumps(marker))
+        return state, marker
+
+    def test_local_publication_state_or_marker_failure_restores_prior_documents(self):
+        for failure in ("state", "marker"):
+            with self.subTest(failure=failure):
+                local_dir = self.tmp / f"backups-{failure}"
+                local_dir.mkdir()
+                prior_state, prior_marker = self._seed_prior_publication(local_dir)
+                self._reload(
+                    {"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)}
+                )
+                inventory_run, _commands = _production_inventory_run(self.data_dir)
+                real_write_state = backup._write_backup_state
+
+                def write_state(state):
+                    if (
+                        failure == "state"
+                        and state["filesystem"].get("success") is True
+                    ):
+                        return False
+                    return real_write_state(state)
+
+                def write_marker(*args, **kwargs):
+                    if failure == "marker":
+                        return False
+                    return backup._commit_shared_json(
+                        local_path=backup._last_success_marker_path(),
+                        blob_name=backup._last_success_marker_blob_name(),
+                        incoming={
+                            "snapshot_name": args[0],
+                            "created_at": kwargs["created_at"].isoformat(),
+                            "completed_at": kwargs["completed_at"].isoformat(),
+                            "run_id": kwargs["run_id"],
+                            "types": backup._marker_types_from_state(
+                                kwargs["state"], args[0]
+                            ),
+                        },
+                        merge=backup._merge_last_success_marker,
+                        label="last-success marker",
+                    )
+
+                with (
+                    patch.object(backup, "_local_backup_dir", return_value=local_dir),
+                    patch.object(backup.subprocess, "run", side_effect=inventory_run),
+                    patch.object(
+                        backup, "_write_backup_state", side_effect=write_state
+                    ),
+                    patch.object(
+                        backup, "_write_last_success_marker", side_effect=write_marker
+                    ),
+                ):
+                    self.assertIsNone(backup.run_backup())
+                failed_state = json.loads((local_dir / "BACKUP_STATE.json").read_text())
+                self.assertEqual(failed_state["failure_reason"], "publication_failed")
+                for backup_type in ("database", "filesystem"):
+                    self.assertFalse(failed_state[backup_type]["success"])
+                    self.assertEqual(
+                        failed_state[backup_type]["last_success_archive_key"],
+                        prior_state[backup_type]["last_success_archive_key"],
+                    )
+                self.assertEqual(
+                    json.loads((local_dir / "LAST_SUCCESS.json").read_text()),
+                    prior_marker,
+                )
+                self.assertEqual(list(local_dir.glob("*.tar.gz")), [])
+                self.assertEqual(list(local_dir.glob("*.manifest.json")), [])
+
+    def test_publication_rollback_does_not_overwrite_newer_owner(self):
+        local_dir = self.tmp / "ownership"
+        local_dir.mkdir()
+        current = {"run_id": "newer", "value": 2}
+        (local_dir / "BACKUP_STATE.json").write_text(json.dumps(current))
+        with patch.object(backup, "_local_backup_dir", return_value=local_dir):
+            self.assertFalse(
+                backup._rollback_shared_json_if_owned(
+                    local_path=backup._backup_state_path(),
+                    blob_name=backup._backup_state_blob_name(),
+                    previous={"run_id": "older", "value": 1},
+                    run_id="failed-run",
+                    label="backup state",
+                )
+            )
+        self.assertEqual(
+            json.loads((local_dir / "BACKUP_STATE.json").read_text()), current
+        )
+
+    def test_azure_publish_failure_deletes_candidate_and_rolls_back_documents(self):
+        self._reload(
+            {
+                "BACKUP_MODE": "production",
+                "DATA_DIR": str(self.data_dir),
+                "AZURE_STORAGE_CONNECTION_STRING": "fake",
+                "AZURE_STORAGE_CONTAINER": "fake",
+            }
+        )
+        local_dir = self.tmp / "publish-failure"
+        blob = MagicMock()
+        container = MagicMock()
+        container.get_blob_client.return_value = blob
+        container.list_blobs.return_value = []
+        inventory_run, _commands = _production_inventory_run(self.data_dir)
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=local_dir),
+            patch.object(backup, "_blob_container_client", return_value=container),
+            patch.object(backup, "_read_backup_state", return_value=None),
+            patch.object(backup, "_read_last_success_marker", return_value=None),
+            patch.object(backup.subprocess, "run", side_effect=inventory_run),
+            patch.object(backup, "_write_backup_state", return_value=True),
+            patch.object(backup, "_write_last_success_marker", return_value=True),
+            patch.object(
+                backup._StagedBlockWriter,
+                "publish",
+                side_effect=RuntimeError("publish failed"),
+            ),
+            patch.object(backup, "_rollback_publication_documents") as rollback,
+        ):
+            self.assertIsNone(backup.run_backup())
+        blob.delete_blob.assert_called_once_with()
+        self.assertTrue(
+            any(
+                call.args[0].endswith(".manifest.json")
+                for call in container.delete_blob.call_args_list
+            )
+        )
+        rollback.assert_called_once()
 
     def test_run_backup_excludes_tiles_in_production(self):
         self._reload(

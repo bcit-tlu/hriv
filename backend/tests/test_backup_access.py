@@ -41,13 +41,35 @@ class _FakeDownloader:
             yield self._payload[idx : idx + 256]
 
 
+class _FakeBlobClient:
+    def __init__(self, container, blob_name: str) -> None:
+        self._container = container
+        self._blob_name = blob_name
+
+    def get_blob_properties(self):
+        for blob in self._container._blobs:
+            if blob.name == self._blob_name:
+                return blob
+        if self._blob_name in self._container._downloads:
+            return SimpleNamespace(metadata=None)
+        sidecar = self._blob_name.removesuffix(".tar.gz") + ".manifest.json"
+        if sidecar in self._container._downloads:
+            return SimpleNamespace(metadata=None)
+        raise ResourceNotFoundError(message=f"{self._blob_name} not found")
+
+
 class _FakeContainer:
-    def __init__(self, blobs: list[SimpleNamespace], downloads: dict[str, bytes]) -> None:
+    def __init__(
+        self, blobs: list[SimpleNamespace], downloads: dict[str, bytes]
+    ) -> None:
         self._blobs = blobs
         self._downloads = downloads
 
-    def list_blobs(self, name_starts_with: str = ""):
+    def list_blobs(self, name_starts_with: str = "", include=None):
         return [blob for blob in self._blobs if blob.name.startswith(name_starts_with)]
+
+    def get_blob_client(self, blob_name: str):
+        return _FakeBlobClient(self, blob_name)
 
     def download_blob(self, blob_name: str):
         try:
@@ -58,10 +80,16 @@ class _FakeContainer:
 
 
 def _configure(monkeypatch, tmp_path: Path, fake_container: _FakeContainer) -> None:
-    monkeypatch.setattr(backup_access.settings, "azure_read_sas_url", "https://example/container?sig=read")
+    monkeypatch.setattr(
+        backup_access.settings,
+        "azure_read_sas_url",
+        "https://example/container?sig=read",
+    )
     monkeypatch.setattr(backup_access.settings, "azure_backup_prefix", "hriv-backups")
     monkeypatch.setattr(backup_access.settings, "data_dir", str(tmp_path / "data"))
-    monkeypatch.setattr(backup_access.ContainerClient, "from_container_url", lambda _url: fake_container)
+    monkeypatch.setattr(
+        backup_access.ContainerClient, "from_container_url", lambda _url: fake_container
+    )
 
 
 def _snapshot_manifest(snapshot_name: str, files: dict[str, tuple[bytes, str]]):
@@ -107,6 +135,12 @@ def _tar_bytes(
     return buffer.getvalue()
 
 
+def test_chunked_blob_reader_treats_empty_chunk_as_eof() -> None:
+    downloader = SimpleNamespace(chunks=lambda: iter([b""]))
+    reader = backup_access._ChunkedBlobReader(downloader)
+    assert reader.read(1) == b""
+
+
 def test_list_snapshots_uses_azure_container(monkeypatch, tmp_path) -> None:
     blobs = [
         SimpleNamespace(
@@ -135,12 +169,55 @@ def test_list_snapshots_uses_azure_container(monkeypatch, tmp_path) -> None:
     ]
 
 
+def test_lists_hide_candidate_and_unknown_publication_states(
+    monkeypatch, tmp_path
+) -> None:
+    now = datetime(2026, 1, 2, tzinfo=timezone.utc)
+    blobs = [
+        SimpleNamespace(
+            name=f"hriv-backups/{state}.tar.gz",
+            size=1,
+            last_modified=now,
+            metadata={"hriv_publication_state": state},
+        )
+        for state in ("published", "candidate", "unexpected")
+    ]
+    blobs.append(
+        SimpleNamespace(
+            name="hriv-backups/legacy.tar.gz",
+            size=1,
+            last_modified=now,
+            metadata=None,
+        )
+    )
+    fake_container = _FakeContainer(blobs, {})
+    _configure(monkeypatch, tmp_path, fake_container)
+
+    assert [item["name"] for item in list_snapshots()] == [
+        "published.tar.gz",
+        "legacy.tar.gz",
+    ]
+    with patch.object(
+        backup_access,
+        "get_snapshot_manifest",
+        return_value={"files": {"data/source_images/a.jpg": {}}},
+    ) as manifest:
+        summary = list_retained_backup_archives()
+    assert summary["filesystem"]["count"] == 2
+    assert [call.args[0] for call in manifest.call_args_list] == [
+        "published.tar.gz",
+        "legacy.tar.gz",
+    ]
+
+
 def test_get_last_success_marker_downloads_prefixed_marker() -> None:
     marker = {"created_at": "2026-01-02T02:00:00+00:00"}
 
     with (
         patch.object(backup_access, "_backup_prefix", return_value="hriv-backups/"),
-        patch.object(backup_access, "_download_json_blob", return_value=marker) as download,
+        patch.object(
+            backup_access, "_download_json_blob", return_value=marker
+        ) as download,
     ):
         result = get_last_success_marker()
 
@@ -178,8 +255,12 @@ def test_get_backup_observability_state_prefers_v2_state() -> None:
     }
 
     with (
-        patch.object(backup_access, "_backup_state_blob_name", return_value="BACKUP_STATE.json"),
-        patch.object(backup_access, "_download_json_blob", return_value=state) as download,
+        patch.object(
+            backup_access, "_backup_state_blob_name", return_value="BACKUP_STATE.json"
+        ),
+        patch.object(
+            backup_access, "_download_json_blob", return_value=state
+        ) as download,
     ):
         result = get_backup_observability_state()
 
@@ -197,9 +278,17 @@ def test_get_backup_observability_state_falls_back_to_legacy_marker() -> None:
     }
 
     with (
-        patch.object(backup_access, "_backup_state_blob_name", return_value="BACKUP_STATE.json"),
-        patch.object(backup_access, "_download_json_blob", side_effect=ResourceNotFoundError(message="missing")),
-        patch.object(backup_access, "get_last_success_marker", return_value=legacy_marker),
+        patch.object(
+            backup_access, "_backup_state_blob_name", return_value="BACKUP_STATE.json"
+        ),
+        patch.object(
+            backup_access,
+            "_download_json_blob",
+            side_effect=ResourceNotFoundError(message="missing"),
+        ),
+        patch.object(
+            backup_access, "get_last_success_marker", return_value=legacy_marker
+        ),
     ):
         state = get_backup_observability_state()
 
@@ -219,8 +308,14 @@ def test_legacy_marker_fallback_prefers_completion_time() -> None:
     }
 
     with (
-        patch.object(backup_access, "_backup_state_blob_name", return_value="BACKUP_STATE.json"),
-        patch.object(backup_access, "_download_json_blob", side_effect=ResourceNotFoundError(message="missing")),
+        patch.object(
+            backup_access, "_backup_state_blob_name", return_value="BACKUP_STATE.json"
+        ),
+        patch.object(
+            backup_access,
+            "_download_json_blob",
+            side_effect=ResourceNotFoundError(message="missing"),
+        ),
         patch.object(backup_access, "get_last_success_marker", return_value=marker),
     ):
         state = get_backup_observability_state()
@@ -240,8 +335,14 @@ def test_legacy_marker_fallback_without_completion_time_uses_created_at() -> Non
     }
 
     with (
-        patch.object(backup_access, "_backup_state_blob_name", return_value="BACKUP_STATE.json"),
-        patch.object(backup_access, "_download_json_blob", side_effect=ResourceNotFoundError(message="missing")),
+        patch.object(
+            backup_access, "_backup_state_blob_name", return_value="BACKUP_STATE.json"
+        ),
+        patch.object(
+            backup_access,
+            "_download_json_blob",
+            side_effect=ResourceNotFoundError(message="missing"),
+        ),
         patch.object(backup_access, "get_last_success_marker", return_value=marker),
     ):
         state = get_backup_observability_state()
@@ -249,7 +350,9 @@ def test_legacy_marker_fallback_without_completion_time_uses_created_at() -> Non
     assert state["database"]["last_success_completed_at"] == "2026-01-02T02:00:00+00:00"
 
 
-def test_list_retained_backup_archives_classifies_by_manifest(monkeypatch, tmp_path) -> None:
+def test_list_retained_backup_archives_classifies_by_manifest(
+    monkeypatch, tmp_path
+) -> None:
     blobs = [
         SimpleNamespace(
             name="hriv-backups/hriv-backup-20260102-020000.tar.gz",
@@ -318,10 +421,17 @@ def test_list_retained_backup_archives_skips_unclassifiable_archive(
 
 def test_get_snapshot_manifest_prefers_sidecar(monkeypatch, tmp_path) -> None:
     snapshot_name = "hriv-backup-20260102-020000"
-    manifest = _snapshot_manifest(snapshot_name, {"data/source_images/a.jpg": (b"abc", hashlib.sha256(b"abc").hexdigest())})
+    manifest = _snapshot_manifest(
+        snapshot_name,
+        {"data/source_images/a.jpg": (b"abc", hashlib.sha256(b"abc").hexdigest())},
+    )
     fake_container = _FakeContainer(
         [],
-        {f"hriv-backups/{snapshot_name}.manifest.json": json.dumps(manifest).encode("utf-8")},
+        {
+            f"hriv-backups/{snapshot_name}.manifest.json": json.dumps(manifest).encode(
+                "utf-8"
+            )
+        },
     )
     _configure(monkeypatch, tmp_path, fake_container)
 
@@ -330,14 +440,42 @@ def test_get_snapshot_manifest_prefers_sidecar(monkeypatch, tmp_path) -> None:
     assert result == manifest
 
 
+def test_get_snapshot_manifest_rejects_candidate_before_sidecar(
+    monkeypatch, tmp_path
+) -> None:
+    snapshot_name = "hriv-backup-20260102-020000"
+    blob_name = f"hriv-backups/{snapshot_name}.tar.gz"
+    sidecar_name = f"hriv-backups/{snapshot_name}.manifest.json"
+    fake_container = _FakeContainer(
+        [
+            SimpleNamespace(
+                name=blob_name,
+                metadata={"hriv_publication_state": "candidate"},
+            )
+        ],
+        {sidecar_name: b"{}"},
+    )
+    _configure(monkeypatch, tmp_path, fake_container)
+
+    with pytest.raises(BackupSnapshotNotFoundError):
+        get_snapshot_manifest(snapshot_name)
+
+
 def test_get_snapshot_manifest_falls_back_to_tar_member(monkeypatch, tmp_path) -> None:
     snapshot_name = "hriv-backup-20260102-020000"
     file_payload = b"abc"
     manifest = _snapshot_manifest(
         snapshot_name,
-        {"data/source_images/a.jpg": (file_payload, hashlib.sha256(file_payload).hexdigest())},
+        {
+            "data/source_images/a.jpg": (
+                file_payload,
+                hashlib.sha256(file_payload).hexdigest(),
+            )
+        },
     )
-    tar_payload = _tar_bytes(snapshot_name, manifest, {"data/source_images/a.jpg": file_payload})
+    tar_payload = _tar_bytes(
+        snapshot_name, manifest, {"data/source_images/a.jpg": file_payload}
+    )
     fake_container = _FakeContainer(
         [],
         {
@@ -351,7 +489,9 @@ def test_get_snapshot_manifest_falls_back_to_tar_member(monkeypatch, tmp_path) -
     assert result == manifest
 
 
-def test_get_snapshot_manifest_missing_archive_raises_not_found(monkeypatch, tmp_path) -> None:
+def test_get_snapshot_manifest_missing_archive_raises_not_found(
+    monkeypatch, tmp_path
+) -> None:
     snapshot_name = "hriv-backup-20260102-020000"
     fake_container = _FakeContainer(
         [],
@@ -371,11 +511,15 @@ def test_restore_snapshot_file_happy_path(monkeypatch, tmp_path) -> None:
         snapshot_name,
         {"data/source_images/a.jpg": (file_payload, sha256)},
     )
-    tar_payload = _tar_bytes(snapshot_name, manifest, {"data/source_images/a.jpg": file_payload})
+    tar_payload = _tar_bytes(
+        snapshot_name, manifest, {"data/source_images/a.jpg": file_payload}
+    )
     fake_container = _FakeContainer(
         [],
         {
-            f"hriv-backups/{snapshot_name}.manifest.json": json.dumps(manifest).encode("utf-8"),
+            f"hriv-backups/{snapshot_name}.manifest.json": json.dumps(manifest).encode(
+                "utf-8"
+            ),
             f"hriv-backups/{snapshot_name}.tar.gz": tar_payload,
         },
     )
@@ -389,7 +533,9 @@ def test_restore_snapshot_file_happy_path(monkeypatch, tmp_path) -> None:
     assert result["member_path"] == "data/source_images/a.jpg"
 
 
-def test_restore_snapshot_file_uses_cached_manifest_entry(monkeypatch, tmp_path) -> None:
+def test_restore_snapshot_file_uses_cached_manifest_entry(
+    monkeypatch, tmp_path
+) -> None:
     snapshot_name = "hriv-backup-20260102-020000"
     file_payload = b"restored payload"
     sha256 = hashlib.sha256(file_payload).hexdigest()
@@ -397,7 +543,9 @@ def test_restore_snapshot_file_uses_cached_manifest_entry(monkeypatch, tmp_path)
         snapshot_name,
         {"data/source_images/a.jpg": (file_payload, sha256)},
     )
-    tar_payload = _tar_bytes(snapshot_name, manifest, {"data/source_images/a.jpg": file_payload})
+    tar_payload = _tar_bytes(
+        snapshot_name, manifest, {"data/source_images/a.jpg": file_payload}
+    )
     fake_container = _FakeContainer(
         [],
         {f"hriv-backups/{snapshot_name}.tar.gz": tar_payload},
@@ -420,9 +568,37 @@ def test_restore_snapshot_file_uses_cached_manifest_entry(monkeypatch, tmp_path)
     assert result["sha256"] == sha256
 
 
-def test_restore_snapshot_file_cached_entry_missing_fields_raises(monkeypatch, tmp_path) -> None:
+def test_restore_snapshot_file_cached_entry_rejects_candidate(
+    monkeypatch, tmp_path
+) -> None:
     snapshot_name = "hriv-backup-20260102-020000"
-    fake_container = _FakeContainer([], {})
+    fake_container = _FakeContainer(
+        [
+            SimpleNamespace(
+                name=f"hriv-backups/{snapshot_name}.tar.gz",
+                metadata={"hriv_publication_state": "candidate"},
+            )
+        ],
+        {},
+    )
+    _configure(monkeypatch, tmp_path, fake_container)
+
+    with pytest.raises(BackupSnapshotNotFoundError):
+        restore_snapshot_file(
+            snapshot_name,
+            "data/source_images/a.jpg",
+            manifest_entry={"size": 3, "sha256": hashlib.sha256(b"abc").hexdigest()},
+        )
+
+
+def test_restore_snapshot_file_cached_entry_missing_fields_raises(
+    monkeypatch, tmp_path
+) -> None:
+    snapshot_name = "hriv-backup-20260102-020000"
+    fake_container = _FakeContainer(
+        [SimpleNamespace(name=f"hriv-backups/{snapshot_name}.tar.gz", metadata=None)],
+        {},
+    )
     _configure(monkeypatch, tmp_path, fake_container)
 
     with pytest.raises(BackupSnapshotManifestError, match="missing sha256"):
@@ -433,7 +609,9 @@ def test_restore_snapshot_file_cached_entry_missing_fields_raises(monkeypatch, t
         )
 
 
-def test_restore_snapshot_file_missing_archive_raises_not_found(monkeypatch, tmp_path) -> None:
+def test_restore_snapshot_file_missing_archive_raises_not_found(
+    monkeypatch, tmp_path
+) -> None:
     snapshot_name = "hriv-backup-20260102-020000"
     file_payload = b"restored payload"
     sha256 = hashlib.sha256(file_payload).hexdigest()
@@ -444,7 +622,9 @@ def test_restore_snapshot_file_missing_archive_raises_not_found(monkeypatch, tmp
     fake_container = _FakeContainer(
         [],
         {
-            f"hriv-backups/{snapshot_name}.manifest.json": json.dumps(manifest).encode("utf-8"),
+            f"hriv-backups/{snapshot_name}.manifest.json": json.dumps(manifest).encode(
+                "utf-8"
+            ),
         },
     )
     _configure(monkeypatch, tmp_path, fake_container)
@@ -459,13 +639,22 @@ def test_restore_snapshot_file_checksum_mismatch(monkeypatch, tmp_path) -> None:
     expected_payload = b"expected"
     manifest = _snapshot_manifest(
         snapshot_name,
-        {"data/source_images/a.jpg": (expected_payload, hashlib.sha256(expected_payload).hexdigest())},
+        {
+            "data/source_images/a.jpg": (
+                expected_payload,
+                hashlib.sha256(expected_payload).hexdigest(),
+            )
+        },
     )
-    tar_payload = _tar_bytes(snapshot_name, manifest, {"data/source_images/a.jpg": file_payload})
+    tar_payload = _tar_bytes(
+        snapshot_name, manifest, {"data/source_images/a.jpg": file_payload}
+    )
     fake_container = _FakeContainer(
         [],
         {
-            f"hriv-backups/{snapshot_name}.manifest.json": json.dumps(manifest).encode("utf-8"),
+            f"hriv-backups/{snapshot_name}.manifest.json": json.dumps(manifest).encode(
+                "utf-8"
+            ),
             f"hriv-backups/{snapshot_name}.tar.gz": tar_payload,
         },
     )
@@ -482,16 +671,27 @@ def test_restore_snapshot_file_checksum_mismatch(monkeypatch, tmp_path) -> None:
     "requested_path",
     ["db.sql", "/absolute/path", "data/../db.sql", "../db.sql"],
 )
-def test_restore_snapshot_file_rejects_invalid_paths(monkeypatch, tmp_path, requested_path: str) -> None:
+def test_restore_snapshot_file_rejects_invalid_paths(
+    monkeypatch, tmp_path, requested_path: str
+) -> None:
     snapshot_name = "hriv-backup-20260102-020000"
     file_payload = b"abc"
     manifest = _snapshot_manifest(
         snapshot_name,
-        {"data/source_images/a.jpg": (file_payload, hashlib.sha256(file_payload).hexdigest())},
+        {
+            "data/source_images/a.jpg": (
+                file_payload,
+                hashlib.sha256(file_payload).hexdigest(),
+            )
+        },
     )
     fake_container = _FakeContainer(
         [],
-        {f"hriv-backups/{snapshot_name}.manifest.json": json.dumps(manifest).encode("utf-8")},
+        {
+            f"hriv-backups/{snapshot_name}.manifest.json": json.dumps(manifest).encode(
+                "utf-8"
+            )
+        },
     )
     _configure(monkeypatch, tmp_path, fake_container)
 
@@ -504,7 +704,12 @@ def test_restore_snapshot_file_rejects_symlink_member(monkeypatch, tmp_path) -> 
     file_payload = b"abc"
     manifest = _snapshot_manifest(
         snapshot_name,
-        {"data/source_images/a.jpg": (file_payload, hashlib.sha256(file_payload).hexdigest())},
+        {
+            "data/source_images/a.jpg": (
+                file_payload,
+                hashlib.sha256(file_payload).hexdigest(),
+            )
+        },
     )
     tar_payload = _tar_bytes(
         snapshot_name,
@@ -515,7 +720,9 @@ def test_restore_snapshot_file_rejects_symlink_member(monkeypatch, tmp_path) -> 
     fake_container = _FakeContainer(
         [],
         {
-            f"hriv-backups/{snapshot_name}.manifest.json": json.dumps(manifest).encode("utf-8"),
+            f"hriv-backups/{snapshot_name}.manifest.json": json.dumps(manifest).encode(
+                "utf-8"
+            ),
             f"hriv-backups/{snapshot_name}.tar.gz": tar_payload,
         },
     )
@@ -525,7 +732,9 @@ def test_restore_snapshot_file_rejects_symlink_member(monkeypatch, tmp_path) -> 
         restore_snapshot_file(snapshot_name, "data/source_images/a.jpg")
 
 
-def test_backup_access_disabled_short_circuits_without_client(monkeypatch, tmp_path) -> None:
+def test_backup_access_disabled_short_circuits_without_client(
+    monkeypatch, tmp_path
+) -> None:
     monkeypatch.setattr(backup_access.settings, "azure_read_sas_url", "")
     monkeypatch.setattr(backup_access.settings, "azure_backup_prefix", "hriv-backups")
     with patch.object(
@@ -538,5 +747,7 @@ def test_backup_access_disabled_short_circuits_without_client(monkeypatch, tmp_p
         with pytest.raises(BackupRestoreNotConfiguredError):
             get_snapshot_manifest("hriv-backup-20260102-020000")
         with pytest.raises(BackupRestoreNotConfiguredError):
-            restore_snapshot_file("hriv-backup-20260102-020000", "data/source_images/a.jpg")
+            restore_snapshot_file(
+                "hriv-backup-20260102-020000", "data/source_images/a.jpg"
+            )
     mock_from_url.assert_not_called()

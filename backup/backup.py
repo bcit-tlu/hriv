@@ -538,6 +538,111 @@ def _commit_shared_json(
         return False
 
 
+def _rollback_shared_json_if_owned(
+    *,
+    local_path: Path,
+    blob_name: str,
+    previous: dict | None,
+    run_id: str,
+    label: str,
+) -> bool:
+    """Restore a shared document only while its current revision belongs to this run."""
+    try:
+        if _azure_configured():
+            container = _blob_container_client()
+            current, etag, presence = _download_json_with_etag(container, blob_name)
+            if (
+                presence != "exists"
+                or not isinstance(current, dict)
+                or current.get("run_id") != run_id
+                or not etag
+            ):
+                return False
+            if previous is None:
+                container.delete_blob(
+                    blob_name,
+                    etag=etag,
+                    match_condition=MatchConditions.IfNotModified,
+                )
+            else:
+                container.upload_blob(
+                    blob_name,
+                    io.BytesIO(json.dumps(previous, indent=2).encode()),
+                    overwrite=True,
+                    etag=etag,
+                    match_condition=MatchConditions.IfNotModified,
+                )
+            return True
+
+        with _state_lock() as locked:
+            if not locked:
+                return False
+            current = _read_json_file(local_path)
+            if not isinstance(current, dict) or current.get("run_id") != run_id:
+                return False
+            if previous is None:
+                local_path.unlink(missing_ok=True)
+            else:
+                _atomic_write_bytes(local_path, json.dumps(previous, indent=2).encode())
+            return True
+    except (ResourceModifiedError, ResourceNotFoundError):
+        return False
+    except Exception:
+        log.exception("Failed to roll back %s", label)
+        return False
+
+
+def _rollback_publication_documents(
+    prior_state: dict | None, prior_marker: dict | None, run_id: str
+) -> None:
+    marker_restored = _rollback_shared_json_if_owned(
+        local_path=_last_success_marker_path(),
+        blob_name=_last_success_marker_blob_name(),
+        previous=prior_marker,
+        run_id=run_id,
+        label="last-success marker",
+    )
+    state_restored = _rollback_shared_json_if_owned(
+        local_path=_backup_state_path(),
+        blob_name=_backup_state_blob_name(),
+        previous=prior_state,
+        run_id=run_id,
+        label="backup state",
+    )
+    if not marker_restored or not state_restored:
+        log.warning(
+            "Publication rollback left newer or unavailable shared state untouched",
+            extra={"event": "backup.publication_rollback_not_owned", "run_id": run_id},
+        )
+
+
+def _record_publication_failure(
+    prior_state: dict | None,
+    snapshot_name: str,
+    run_id: str,
+    database_started_at: datetime,
+    filesystem_started_at: datetime,
+) -> None:
+    failed_at = datetime.now(timezone.utc)
+    failed_state = _new_backup_state(snapshot_name, run_id)
+    _seed_last_success_history(failed_state, prior_state)
+    for backup_type, started_at in (
+        ("database", database_started_at),
+        ("filesystem", filesystem_started_at),
+    ):
+        _mark_attempt_started(failed_state, backup_type, started_at=started_at)
+        _mark_attempt_finished(
+            failed_state,
+            backup_type,
+            started_at=started_at,
+            completed_at=failed_at,
+            success=False,
+            size_bytes=None,
+        )
+    failed_state["failure_reason"] = "publication_failed"
+    _write_backup_state(failed_state)
+
+
 def _attempt_sort_key(section: object) -> tuple[datetime, datetime, str]:
     """Order attempt records by completion, then start, then run id.
 
@@ -684,6 +789,7 @@ def _merge_backup_state(existing: dict | None, incoming: dict) -> dict:
         ):
             if key in incoming:
                 merged[key] = incoming[key]
+        merged["failure_reason"] = incoming.get("failure_reason")
 
     for backup_type in ("database", "filesystem"):
         incoming_section = incoming.get(backup_type)
@@ -1628,7 +1734,9 @@ def _run_backup_inner() -> Path | None:
     run_id = _new_run_id()
     log.info("Starting backup: %s (run %s)", snapshot_name, run_id)
     backup_state = _new_backup_state(snapshot_name, run_id)
-    _seed_last_success_history(backup_state, _read_backup_state())
+    prior_backup_state = _read_backup_state()
+    prior_success_marker = _read_last_success_marker()
+    _seed_last_success_history(backup_state, prior_backup_state)
     db = _parse_db_url(DATABASE_URL)
 
     with _staging_tempdir(_STAGING_PREFIX) as tmpdir:
@@ -1690,6 +1798,8 @@ def _run_backup_inner() -> Path | None:
         )
         _write_backup_state(backup_state)
         writer = None
+        local_candidate_archive: Path | None = None
+        local_candidate_sidecar: Path | None = None
         try:
             with _maintenance_scope():
                 if BACKUP_MUTATION_DRAIN_SECONDS:
@@ -1787,6 +1897,8 @@ def _run_backup_inner() -> Path | None:
 
             container = None
             writer = None
+            local_candidate_archive: Path | None = None
+            local_candidate_sidecar: Path | None = None
             archive_path = Path(tmpdir) / archive_name
             if _azure_configured():
                 container = _blob_container_client()
@@ -1839,13 +1951,19 @@ def _run_backup_inner() -> Path | None:
                 persistent = _local_backup_dir()
                 persistent.mkdir(parents=True, exist_ok=True)
                 final = persistent / archive_name
+                local_candidate_archive = (
+                    persistent / f".{archive_name}.{run_id}.candidate"
+                )
+                local_candidate_sidecar = persistent / (
+                    f".{_manifest_sidecar_name(snapshot_name)}.{run_id}.candidate"
+                )
                 try:
-                    os.replace(str(archive_path), str(final))
+                    os.replace(str(archive_path), str(local_candidate_archive))
                 except OSError:
-                    shutil.move(str(archive_path), str(final))
+                    shutil.move(str(archive_path), str(local_candidate_archive))
                 archive_key = str(final)
-                archive_size = final.stat().st_size
-                _atomic_write_bytes(_manifest_sidecar_path(final), manifest_payload)
+                archive_size = local_candidate_archive.stat().st_size
+                _atomic_write_bytes(local_candidate_sidecar, manifest_payload)
         except Exception:
             if writer:
                 try:
@@ -1854,6 +1972,10 @@ def _run_backup_inner() -> Path | None:
                     log.exception(
                         "Failed to remove committed, unpublished Azure candidate"
                     )
+            if local_candidate_archive is not None:
+                local_candidate_archive.unlink(missing_ok=True)
+            if local_candidate_sidecar is not None:
+                local_candidate_sidecar.unlink(missing_ok=True)
             log.exception(
                 "Filesystem backup failed; archive was not published",
                 extra={
@@ -1889,8 +2011,6 @@ def _run_backup_inner() -> Path | None:
 
         completed_at = datetime.now(timezone.utc)
         try:
-            if writer:
-                writer.publish()
             _mark_attempt_finished(
                 backup_state,
                 "filesystem",
@@ -1924,36 +2044,50 @@ def _run_backup_inner() -> Path | None:
             ):
                 raise RuntimeError("backup success marker could not be committed")
             if writer:
-                _enforce_retention(container)
+                writer.publish()
             else:
-                _enforce_local_retention()
-        except Exception:
-            if writer and not writer.published:
-                try:
-                    writer.discard_candidate()
-                except Exception:
-                    log.exception("Failed to remove unpublished Azure candidate")
-                failed_at = datetime.now(timezone.utc)
-                _mark_attempt_finished(
-                    backup_state,
-                    "filesystem",
-                    started_at=filesystem_started_at,
-                    completed_at=failed_at,
-                    success=False,
-                    size_bytes=manifest["total_bytes"],
+                os.replace(
+                    str(local_candidate_sidecar),
+                    str(_manifest_sidecar_path(Path(archive_key))),
                 )
-                if BACKUP_MODE == "production":
-                    _mark_attempt_finished(
-                        backup_state,
-                        "database",
-                        started_at=db_started_at,
-                        completed_at=failed_at,
-                        success=False,
-                        size_bytes=None,
-                    )
-                _write_backup_state(backup_state)
+                os.replace(str(local_candidate_archive), archive_key)
+        except Exception:
+            _rollback_publication_documents(
+                prior_backup_state, prior_success_marker, run_id
+            )
+            if writer:
+                try:
+                    writer.blob_client.delete_blob()
+                except Exception:
+                    log.exception("Failed to remove rejected Azure archive")
+                try:
+                    container.delete_blob(_manifest_sidecar_blob_name(snapshot_name))
+                except ResourceNotFoundError:
+                    pass
+                except Exception:
+                    log.exception("Failed to remove rejected Azure manifest sidecar")
+            else:
+                for path in (
+                    local_candidate_archive,
+                    local_candidate_sidecar,
+                    Path(archive_key),
+                    _manifest_sidecar_path(Path(archive_key)),
+                ):
+                    if path is not None:
+                        path.unlink(missing_ok=True)
+            _record_publication_failure(
+                prior_backup_state,
+                snapshot_name,
+                run_id,
+                db_started_at,
+                filesystem_started_at,
+            )
             log.exception("Backup publication failed after archive validation")
             return None
+        if writer:
+            _enforce_retention(container)
+        else:
+            _enforce_local_retention()
         return Path(archive_key) if not _azure_configured() else Path(archive_name)
 
 
@@ -2251,6 +2385,47 @@ def _maintenance_scope() -> Iterator[None]:
 # ---------------------------------------------------------------------------
 # Restore
 # ---------------------------------------------------------------------------
+
+
+def _start_selected_restore_attempts(
+    state: dict, purpose: str, components: str, archive_name: str
+) -> dict[str, datetime]:
+    started: dict[str, datetime] = {}
+    for restore_type in ("database", "filesystem"):
+        if components != "all" and components != restore_type:
+            continue
+        started[restore_type] = datetime.now(timezone.utc)
+        _mark_restore_started(
+            state,
+            purpose,
+            restore_type,
+            started_at=started[restore_type],
+            archive_name=archive_name,
+        )
+    _write_restore_state(state)
+    return started
+
+
+def _fail_incomplete_restore_attempts(
+    state: dict,
+    purpose: str,
+    started: dict[str, datetime],
+    archive_name: str,
+) -> None:
+    completed_at = datetime.now(timezone.utc)
+    for restore_type, started_at in started.items():
+        if _restore_section(state, purpose, restore_type).get("success") is True:
+            continue
+        _mark_restore_finished(
+            state,
+            purpose,
+            restore_type,
+            started_at=started_at,
+            completed_at=completed_at,
+            success=False,
+            archive_name=archive_name,
+        )
+    _write_restore_state(state)
 
 
 def _validate_components(components: str) -> str:
@@ -2557,6 +2732,10 @@ def _restore_from_stream(
     components = _validate_components(components)
     restore_state = _new_restore_state()
     _seed_restore_success_history(restore_state, _read_restore_state())
+    restore_started = _start_selected_restore_attempts(
+        restore_state, purpose, components, archive_name
+    )
+    database_committed = False
     if components in ("all", "filesystem"):
         target_data = Path(data_dir)
         target_data.mkdir(parents=True, exist_ok=True)
@@ -2695,37 +2874,16 @@ def _restore_from_stream(
                         recovery.get("cluster", "?"),
                         recovery.get("target_time", "?"),
                     )
-                    started = datetime.now(timezone.utc)
-                    _mark_restore_started(
-                        restore_state,
-                        purpose,
-                        "database",
-                        started_at=started,
-                        archive_name=archive_name,
+                    _fail_incomplete_restore_attempts(
+                        restore_state, purpose, restore_started, archive_name
                     )
-                    _mark_restore_finished(
-                        restore_state,
-                        purpose,
-                        "database",
-                        started_at=started,
-                        completed_at=started,
-                        success=False,
-                        archive_name=archive_name,
-                    )
-                    _write_restore_state(restore_state)
                     return False
 
             selected_success: list[bool] = []
             if components in ("all", "database"):
-                started = datetime.now(timezone.utc)
-                _mark_restore_started(
-                    restore_state,
-                    purpose,
-                    "database",
-                    started_at=started,
-                    archive_name=archive_name,
-                )
-                success = dump_path.is_file() and _restore_database_dump(
+                started = restore_started["database"]
+                database_attempted = dump_path.is_file()
+                success = database_attempted and _restore_database_dump(
                     dump_path, database_url
                 )
                 _mark_restore_finished(
@@ -2737,16 +2895,15 @@ def _restore_from_stream(
                     success=success,
                     archive_name=archive_name,
                 )
+                database_committed = success
+                _write_restore_state(restore_state)
+                if database_attempted and not success:
+                    raise RestoreSafetyError(
+                        "logical database restore may have changed the target before failing"
+                    )
                 selected_success.append(success)
             if components in ("all", "filesystem"):
-                started = datetime.now(timezone.utc)
-                _mark_restore_started(
-                    restore_state,
-                    purpose,
-                    "filesystem",
-                    started_at=started,
-                    archive_name=archive_name,
-                )
+                started = restore_started["filesystem"]
                 success = filesystem_manifest_selected
                 if success:
                     _promote_streamed_filesystem(
@@ -2763,12 +2920,29 @@ def _restore_from_stream(
                 )
                 selected_success.append(success)
             _write_restore_state(restore_state)
-            return all(selected_success)
+            overall_success = all(selected_success)
+            if components == "all" and database_committed and not overall_success:
+                raise RestoreSafetyError(
+                    "database restore committed but filesystem restore did not complete"
+                )
+            return overall_success
     except RestoreSafetyError:
-        log.critical("Streaming restore promotion rollback failed", exc_info=True)
+        _fail_incomplete_restore_attempts(
+            restore_state, purpose, restore_started, archive_name
+        )
+        log.critical(
+            "Streaming restore left a mixed or uncertain target", exc_info=True
+        )
         raise
-    except Exception:
+    except Exception as exc:
+        _fail_incomplete_restore_attempts(
+            restore_state, purpose, restore_started, archive_name
+        )
         log.exception("Streaming restore validation failed")
+        if components == "all" and database_committed:
+            raise RestoreSafetyError(
+                "database restore committed before filesystem restore failed"
+            ) from exc
         return False
 
 
@@ -2893,6 +3067,10 @@ def _restore_from_archive(
     components = _validate_components(components)
     restore_state = _new_restore_state()
     _seed_restore_success_history(restore_state, _read_restore_state())
+    restore_started = _start_selected_restore_attempts(
+        restore_state, purpose, components, archive_path.name
+    )
+    database_committed = False
     target_database_url = database_url or DATABASE_URL
     target_data_dir = data_dir or DATA_DIR
     if components in ("all", "filesystem"):
@@ -2907,9 +3085,16 @@ def _restore_from_archive(
     with workspace_context as tmpdir:
         # Extract ---------------------------------------------------------------
         log.info("Extracting archive …")
-        with tarfile.open(str(archive_path), "r:gz") as tar:
-            _validate_tar_members(tar.getmembers())
-            tar.extractall(path=tmpdir)
+        try:
+            with tarfile.open(str(archive_path), "r:gz") as tar:
+                _validate_tar_members(tar.getmembers())
+                tar.extractall(path=tmpdir)
+        except Exception:
+            _fail_incomplete_restore_attempts(
+                restore_state, purpose, restore_started, archive_path.name
+            )
+            log.exception("Archive extraction validation failed")
+            return False
 
         # Find the snapshot directory (first dir inside the archive)
         entries = list(Path(tmpdir).iterdir())
@@ -2923,7 +3108,14 @@ def _restore_from_archive(
         archive_backup_mode = None
         manifest = None
         if manifest_path.exists():
-            manifest = json.loads(manifest_path.read_text())
+            try:
+                manifest = json.loads(manifest_path.read_text())
+            except Exception:
+                _fail_incomplete_restore_attempts(
+                    restore_state, purpose, restore_started, archive_path.name
+                )
+                log.exception("Archive manifest parsing failed")
+                return False
             archive_backup_mode = manifest.get("backup_mode")
             log.info(
                 "Snapshot: %s (created %s)",
@@ -2942,6 +3134,9 @@ def _restore_from_archive(
                 snapshot_dir, manifest, components
             )
         except (OSError, ValueError, TypeError):
+            _fail_incomplete_restore_attempts(
+                restore_state, purpose, restore_started, archive_path.name
+            )
             log.exception("Archive recovery manifest validation failed")
             return False
 
@@ -2961,18 +3156,13 @@ def _restore_from_archive(
                 recovery.get("cluster", "?"),
                 recovery.get("target_time", "?"),
             )
+            _fail_incomplete_restore_attempts(
+                restore_state, purpose, restore_started, archive_path.name
+            )
             return False
         if components in ("all", "database") and dump_path.exists():
             log.info("Restoring database …")
-            database_started_at = datetime.now(timezone.utc)
-            _mark_restore_started(
-                restore_state,
-                purpose,
-                "database",
-                started_at=database_started_at,
-                archive_name=archive_path.name,
-            )
-            _write_restore_state(restore_state)
+            database_started_at = restore_started["database"]
             database_success = _restore_database_dump(dump_path, target_database_url)
             _mark_restore_finished(
                 restore_state,
@@ -2983,30 +3173,21 @@ def _restore_from_archive(
                 success=database_success,
                 archive_name=archive_path.name,
             )
+            database_committed = database_success
             _write_restore_state(restore_state)
             if not database_success:
-                return False
+                _fail_incomplete_restore_attempts(
+                    restore_state, purpose, restore_started, archive_path.name
+                )
+                raise RestoreSafetyError(
+                    "logical database restore may have changed the target before failing"
+                )
             log.info("Database restored successfully")
         elif components in ("all", "database"):
             log.warning("No db.sql found in snapshot – skipping database restore")
-            database_started_at = datetime.now(timezone.utc)
-            _mark_restore_started(
-                restore_state,
-                purpose,
-                "database",
-                started_at=database_started_at,
-                archive_name=archive_path.name,
+            _fail_incomplete_restore_attempts(
+                restore_state, purpose, restore_started, archive_path.name
             )
-            _mark_restore_finished(
-                restore_state,
-                purpose,
-                "database",
-                started_at=database_started_at,
-                completed_at=database_started_at,
-                success=False,
-                archive_name=archive_path.name,
-            )
-            _write_restore_state(restore_state)
 
         # 2. Restore filesystem -------------------------------------------------
         data_archive = snapshot_dir / "data"
@@ -3019,32 +3200,26 @@ def _restore_from_archive(
         )
         if components in ("all", "filesystem") and filesystem_manifest_selected:
             (data_archive / "source_images").mkdir(parents=True, exist_ok=True)
-            filesystem_started_at = datetime.now(timezone.utc)
-            _mark_restore_started(
-                restore_state,
-                purpose,
-                "filesystem",
-                started_at=filesystem_started_at,
-                archive_name=archive_path.name,
-            )
-            _write_restore_state(restore_state)
+            filesystem_started_at = restore_started["filesystem"]
             log.info("Restoring filesystem data to %s …", target_data_dir)
             try:
                 _promote_streamed_filesystem(
                     data_archive, target_data_dir, restore_state["run_id"]
                 )
-            except Exception:
-                _mark_restore_finished(
-                    restore_state,
-                    purpose,
-                    "filesystem",
-                    started_at=filesystem_started_at,
-                    completed_at=datetime.now(timezone.utc),
-                    success=False,
-                    archive_name=archive_path.name,
+            except RestoreSafetyError:
+                _fail_incomplete_restore_attempts(
+                    restore_state, purpose, restore_started, archive_path.name
                 )
-                _write_restore_state(restore_state)
                 raise
+            except Exception as exc:
+                _fail_incomplete_restore_attempts(
+                    restore_state, purpose, restore_started, archive_path.name
+                )
+                if components == "all" and database_committed:
+                    raise RestoreSafetyError(
+                        "database restore committed before filesystem promotion failed"
+                    ) from exc
+                return False
             _mark_restore_finished(
                 restore_state,
                 purpose,
@@ -3057,25 +3232,10 @@ def _restore_from_archive(
             _write_restore_state(restore_state)
             log.info("Filesystem data restored")
         elif components in ("all", "filesystem"):
-            log.warning("No data/ directory in snapshot – skipping filesystem restore")
-            filesystem_started_at = datetime.now(timezone.utc)
-            _mark_restore_started(
-                restore_state,
-                purpose,
-                "filesystem",
-                started_at=filesystem_started_at,
-                archive_name=archive_path.name,
+            log.warning("No data/ selection in snapshot – skipping filesystem restore")
+            _fail_incomplete_restore_attempts(
+                restore_state, purpose, restore_started, archive_path.name
             )
-            _mark_restore_finished(
-                restore_state,
-                purpose,
-                "filesystem",
-                started_at=filesystem_started_at,
-                completed_at=filesystem_started_at,
-                success=False,
-                archive_name=archive_path.name,
-            )
-            _write_restore_state(restore_state)
 
     database_success = (
         _restore_section(restore_state, purpose, "database").get("success") is True
@@ -3089,6 +3249,10 @@ def _restore_from_archive(
     if components in ("all", "filesystem"):
         selected_results.append(filesystem_success)
     overall_success = all(selected_results)
+    if components == "all" and database_committed and not filesystem_success:
+        raise RestoreSafetyError(
+            "database restore committed but filesystem restore did not complete"
+        )
     if overall_success:
         log.info(
             "Restore completed successfully",
