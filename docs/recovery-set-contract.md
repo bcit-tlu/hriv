@@ -42,12 +42,16 @@ manifest, and success marker are committed and independently readable.
 Scheduled and on-demand backups use the same capture implementation:
 
 1. Acquire the backup execution lock. Reject an overlapping run.
-2. Enable the source-image mutation gate.
-3. Drain in-flight upload, replacement, bulk-import, and source-image restore
-   mutations.
-4. Record the recovery-set ID, UTC capture timestamp, CNPG cluster identity, and
-   CNPG-recoverable target timestamp.
-5. Inventory DB-referenced source-image files and exclude incomplete/staging paths.
+2. Enable the source-image mutation gate, which blocks new HTTP mutations.
+3. Wait for the configured bounded drain as a best-effort reduction of in-flight
+   work; the drain is not the consistency boundary.
+4. In one read-only PostgreSQL snapshot statement, materialize the UTC
+   CNPG-recoverable target timestamp and inventory the authoritative
+   `source_images` rows. The returned timestamp, not a local process clock, is
+   the database boundary.
+5. Inventory finalized filesystem files and match them only to rows visible in
+   that database snapshot. A mutation committing after the snapshot is outside
+   the PITR target; any resulting file is reported as an orphan and excluded.
 6. Release the mutation gate.
 7. Hash, compress, and upload the inventoried files asynchronously.
 8. Detect disappearance or mutation before and after each file read.
@@ -64,7 +68,7 @@ the large checksum, compression, or Azure transfer.
 | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | Database row exists and source file exists with expected identity                      | Include and validate normally.                                                                                                               |
 | Database row exists but source file is missing                                         | Emit a durable error, preserve and skip the row, do not delete it, do not synthesize downstream state, and skip tile rebuild until repaired. |
-| Source file exists without a database row                                              | Report and quarantine it as an orphan; do not create a row and do not delete the file automatically.                                         |
+| Source file exists without a database row                                              | Report it as an orphan quarantined by policy and exclude it; leave it in place, create no row, and do not delete it.                         |
 | Source file disappears or changes identity, size, or modification time after inventory | Reject the candidate; commit no archive or success marker.                                                                                   |
 | File checksum differs from the manifest                                                | Reject backup validation or restore promotion.                                                                                               |
 | Manifest/schema/archive version is unsupported                                         | Fail closed before target promotion.                                                                                                         |
@@ -148,7 +152,10 @@ failed, and cancelled candidates never replace last-success metadata.
 
 Production restoration is component-selective:
 
-1. Validate the selected recovery-set metadata.
+1. Require and validate `manifest.json` before side effects. Historical manifests
+   without a format version remain valid only when their `files` map supplies a
+   valid size and SHA-256 for every selected member; manifestless archives fail
+   closed.
 2. Restore PostgreSQL through CNPG to the bound recovery point.
 3. Restore source images using filesystem-only mode to a new target PVC.
 4. Validate all archive and per-file checksums before promotion.

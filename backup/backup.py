@@ -1326,10 +1326,17 @@ _MAX_DB_INVENTORY_ROWS = 1_000_000
 _MAX_VALIDATION_VALUE_LENGTH = 512
 
 
-def _query_source_image_rows(db: dict[str, str], output_path: Path) -> list[dict]:
+def _query_source_image_rows(
+    db: dict[str, str], output_path: Path
+) -> tuple[datetime, list[dict]]:
     query = (
-        "COPY (SELECT id::text, stored_path, status FROM source_images ORDER BY id) "
-        "TO STDOUT WITH (FORMAT csv, HEADER true)"
+        "COPY (WITH boundary AS MATERIALIZED (SELECT CURRENT_TIMESTAMP AS target_time), "
+        "inventory AS MATERIALIZED (SELECT id, stored_path, status FROM source_images) "
+        "SELECT record_type, boundary_time, id, stored_path, status FROM ("
+        "SELECT 0 AS position, 'boundary'::text AS record_type, target_time::text AS boundary_time, "
+        "NULL::text AS id, NULL::text AS stored_path, NULL::text AS status FROM boundary "
+        "UNION ALL SELECT 1, 'source', NULL, id::text, stored_path, status FROM inventory"
+        ") captured ORDER BY position, id) TO STDOUT WITH (FORMAT csv, HEADER true)"
     )
     with open(output_path, "wb") as output:
         result = subprocess.run(
@@ -1366,25 +1373,45 @@ def _query_source_image_rows(db: dict[str, str], output_path: Path) -> list[dict
         raise RuntimeError("source-image database inventory exceeds size limit")
 
     rows: list[dict] = []
+    boundary: datetime | None = None
     with open(output_path, newline="", encoding="utf-8") as source:
         reader = csv.DictReader(source)
-        if reader.fieldnames != ["id", "stored_path", "status"]:
+        if reader.fieldnames != [
+            "record_type",
+            "boundary_time",
+            "id",
+            "stored_path",
+            "status",
+        ]:
             raise RuntimeError(
                 "source-image database inventory has invalid CSV columns"
             )
         for row in reader:
+            if row.get("record_type") == "boundary":
+                if boundary is not None:
+                    raise RuntimeError(
+                        "source-image database inventory has multiple boundaries"
+                    )
+                boundary = _parse_iso(row.get("boundary_time"))
+                continue
+            if row.get("record_type") != "source":
+                raise RuntimeError(
+                    "source-image database inventory has an invalid record type"
+                )
             if len(rows) >= _MAX_DB_INVENTORY_ROWS:
                 raise RuntimeError("source-image database inventory exceeds row limit")
             if (
-                row.get("id") is None
+                not row.get("id")
                 or row.get("stored_path") is None
-                or row.get("status") is None
+                or not row.get("status")
             ):
                 raise RuntimeError(
                     "source-image database inventory contains an invalid row"
                 )
             rows.append(row)
-    return rows
+    if boundary is None:
+        raise RuntimeError("source-image database inventory has no boundary")
+    return boundary, rows
 
 
 def _bounded_validation_row(row: dict, reason: str) -> dict:
@@ -1437,6 +1464,9 @@ def _match_production_inventory(
         entry = entries_by_path.get(path)
         if entry is not None:
             referenced_paths.add(path)
+        if row["status"] != "completed":
+            skipped.append(_bounded_validation_row(row, "status_not_finalized"))
+            continue
         if entry is None:
             skipped.append(_bounded_validation_row(row, "missing_source"))
             continue
@@ -1665,40 +1695,32 @@ def _run_backup_inner() -> Path | None:
                 if BACKUP_MUTATION_DRAIN_SECONDS:
                     time.sleep(BACKUP_MUTATION_DRAIN_SECONDS)
                 data_src = Path(DATA_DIR)
-                inventory, excluded = _inventory_data_files(data_src)
                 missing_sources: list[dict] = []
                 orphan_sources: list[dict] = []
-                inventory_counts = {
-                    "database_row_count": 0,
-                    "included_row_count": len(inventory),
-                    "included_file_count": len(inventory),
-                    "missing_or_skipped_count": 0,
-                    "orphan_count": 0,
-                }
                 if BACKUP_MODE == "production":
-                    rows = _query_source_image_rows(
+                    captured_at, rows = _query_source_image_rows(
                         db, Path(tmpdir) / "source-images.csv"
                     )
+                    inventory, excluded = _inventory_data_files(data_src)
                     inventory, missing_sources, orphan_sources, inventory_counts = (
                         _match_production_inventory(rows, inventory, data_src)
                     )
-                captured_at = datetime.now(timezone.utc)
+                else:
+                    inventory, excluded = _inventory_data_files(data_src)
+                    captured_at = datetime.now(timezone.utc)
+                    inventory_counts = {
+                        "database_row_count": 0,
+                        "included_row_count": len(inventory),
+                        "included_file_count": len(inventory),
+                        "missing_or_skipped_count": 0,
+                        "orphan_count": 0,
+                    }
 
             target_time = captured_at.isoformat()
             if BACKUP_MODE == "production":
                 database_archive_key = (
                     f"cnpg://{CNPG_CLUSTER_NAME}?target_time={target_time}"
                 )
-                _mark_attempt_finished(
-                    backup_state,
-                    "database",
-                    started_at=db_started_at,
-                    completed_at=captured_at,
-                    success=True,
-                    size_bytes=None,
-                    archive_key=database_archive_key,
-                )
-                _write_backup_state(backup_state)
                 database_recovery = {
                     "provider": "cloudnative-pg",
                     "cluster": CNPG_CLUSTER_NAME,
@@ -1866,45 +1888,70 @@ def _run_backup_inner() -> Path | None:
             return None
 
         completed_at = datetime.now(timezone.utc)
-        _mark_attempt_finished(
-            backup_state,
-            "filesystem",
-            started_at=filesystem_started_at,
-            completed_at=completed_at,
-            success=True,
-            size_bytes=manifest["total_bytes"],
-            archive_key=archive_key,
-        )
-        if BACKUP_MODE == "development":
-            _attach_archive_key_to_success(backup_state, "database", archive_key)
         try:
-            state_written = _write_backup_state(backup_state)
-            marker_written = _write_last_success_marker(
+            if writer:
+                writer.publish()
+            _mark_attempt_finished(
+                backup_state,
+                "filesystem",
+                started_at=filesystem_started_at,
+                completed_at=completed_at,
+                success=True,
+                size_bytes=manifest["total_bytes"],
+                archive_key=archive_key,
+            )
+            if BACKUP_MODE == "production":
+                _mark_attempt_finished(
+                    backup_state,
+                    "database",
+                    started_at=db_started_at,
+                    completed_at=completed_at,
+                    success=True,
+                    size_bytes=None,
+                    archive_key=database_archive_key,
+                )
+            else:
+                _attach_archive_key_to_success(backup_state, "database", archive_key)
+            if not _write_backup_state(backup_state):
+                raise RuntimeError("backup state could not be committed")
+            if not _write_last_success_marker(
                 snapshot_name,
                 created_at=created_at,
                 completed_at=completed_at,
                 archive_size=archive_size,
                 run_id=run_id,
                 state=backup_state,
-            )
-            if not state_written or not marker_written:
-                raise RuntimeError(
-                    "backup state or success marker could not be committed"
-                )
+            ):
+                raise RuntimeError("backup success marker could not be committed")
             if writer:
-                writer.publish()
                 _enforce_retention(container)
             else:
                 _enforce_local_retention()
         except Exception:
-            if writer:
+            if writer and not writer.published:
                 try:
                     writer.discard_candidate()
                 except Exception:
                     log.exception("Failed to remove unpublished Azure candidate")
-            else:
-                Path(archive_key).unlink(missing_ok=True)
-                _manifest_sidecar_path(Path(archive_key)).unlink(missing_ok=True)
+                failed_at = datetime.now(timezone.utc)
+                _mark_attempt_finished(
+                    backup_state,
+                    "filesystem",
+                    started_at=filesystem_started_at,
+                    completed_at=failed_at,
+                    success=False,
+                    size_bytes=manifest["total_bytes"],
+                )
+                if BACKUP_MODE == "production":
+                    _mark_attempt_finished(
+                        backup_state,
+                        "database",
+                        started_at=db_started_at,
+                        completed_at=failed_at,
+                        success=False,
+                        size_bytes=None,
+                    )
+                _write_backup_state(backup_state)
             log.exception("Backup publication failed after archive validation")
             return None
         return Path(archive_key) if not _azure_configured() else Path(archive_name)
@@ -1944,8 +1991,39 @@ def _archive_is_selectable(blob) -> bool:
     )
 
 
+def _cleanup_stale_candidates(container: ContainerClient) -> None:
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    prefix = f"{AZURE_BLOB_PREFIX}/" if AZURE_BLOB_PREFIX else ""
+    try:
+        for blob in container.list_blobs(name_starts_with=prefix, include=["metadata"]):
+            metadata = getattr(blob, "metadata", None)
+            modified = getattr(blob, "last_modified", None)
+            if (
+                not blob.name.endswith(".tar.gz")
+                or not isinstance(metadata, dict)
+                or metadata.get("hriv_publication_state") != "candidate"
+                or not isinstance(modified, datetime)
+            ):
+                continue
+            if modified.tzinfo is None:
+                modified = modified.replace(tzinfo=timezone.utc)
+            if modified.astimezone(timezone.utc) >= cutoff:
+                continue
+            container.delete_blob(blob.name)
+            try:
+                container.delete_blob(
+                    _manifest_sidecar_blob_name(blob.name.rsplit("/", 1)[-1])
+                )
+            except ResourceNotFoundError:
+                pass
+            log.warning("Deleted stale unpublished backup candidate %s", blob.name)
+    except Exception:
+        log.exception("Failed to clean stale unpublished backup candidates")
+
+
 def _enforce_retention(container: ContainerClient) -> None:
     """Delete old snapshots beyond BACKUP_RETENTION_COUNT."""
+    _cleanup_stale_candidates(container)
     if BACKUP_RETENTION_COUNT <= 0:
         return
 
@@ -2051,6 +2129,7 @@ def list_snapshots() -> list[dict]:
 
     prefix = f"{AZURE_BLOB_PREFIX}/" if AZURE_BLOB_PREFIX else ""
     container = _blob_container_client()
+    _cleanup_stale_candidates(container)
 
     snapshots = []
     for blob in container.list_blobs(name_starts_with=prefix, include=["metadata"]):
@@ -2149,15 +2228,23 @@ def _set_maintenance(enabled: bool) -> None:
         log.info("Maintenance mode DISABLED (%s)", path)
 
 
+class RestoreSafetyError(RuntimeError):
+    keep_maintenance = True
+
+
 @contextlib.contextmanager
 def _maintenance_scope() -> Iterator[None]:
     already_enabled = _maintenance_flag_path().exists()
+    keep_maintenance = False
     if not already_enabled:
         _set_maintenance(True)
     try:
         yield
+    except BaseException as exc:
+        keep_maintenance = bool(getattr(exc, "keep_maintenance", False))
+        raise
     finally:
-        if not already_enabled:
+        if not already_enabled and not keep_maintenance:
             _set_maintenance(False)
 
 
@@ -2423,21 +2510,38 @@ END $$;
 def _promote_streamed_filesystem(
     staged_data: Path, target_data_dir: str, run_id: str
 ) -> None:
-    """Promote validated data without deleting unmatched target files."""
+    """Promote validated data and roll every prior move back on failure."""
     destination = Path(target_data_dir)
     destination.mkdir(parents=True, exist_ok=True)
     quarantine = destination / f".restore-orphans-{run_id}"
-    for source in sorted(staged_data.iterdir()):
-        if source.name == _MAINTENANCE_FILENAME or (
-            _exclude_tiles() and source.name == "tiles"
-        ):
-            continue
-        target = destination / source.name
-        if target.exists():
-            quarantine.mkdir(exist_ok=True)
-            os.replace(str(target), str(quarantine / source.name))
-            log.warning("Quarantined unmatched restore target %s", target)
-        os.replace(str(source), str(target))
+    moves: list[tuple[Path, Path, Path | None]] = []
+    try:
+        for source in sorted(staged_data.iterdir()):
+            if source.name == _MAINTENANCE_FILENAME or (
+                _exclude_tiles() and source.name == "tiles"
+            ):
+                continue
+            target = destination / source.name
+            old_target = None
+            if target.exists():
+                quarantine.mkdir(exist_ok=True)
+                old_target = quarantine / source.name
+                os.replace(str(target), str(old_target))
+                log.warning("Quarantined unmatched restore target %s", target)
+            moves.append((source, target, old_target))
+            os.replace(str(source), str(target))
+    except Exception as promotion_error:
+        try:
+            for source, target, old_target in reversed(moves):
+                if target.exists():
+                    os.replace(str(target), str(source))
+                if old_target is not None and old_target.exists():
+                    os.replace(str(old_target), str(target))
+        except Exception as rollback_error:
+            raise RestoreSafetyError(
+                "filesystem promotion failed and rollback could not restore the target"
+            ) from rollback_error
+        raise promotion_error
 
 
 def _restore_from_stream(
@@ -2524,27 +2628,18 @@ def _restore_from_stream(
                             size += len(chunk)
                     actual[rel] = {"size": size, "sha256": digest.hexdigest()}
 
-            if manifest and _manifest_version(manifest) is not None:
-                manifest_version = _manifest_version(manifest)
-                if manifest_version != RECOVERY_MANIFEST_SCHEMA_VERSION:
-                    raise ValueError(
-                        f"unsupported recovery manifest version: {manifest_version}"
-                    )
-                expected_files = manifest.get("files")
-                if not isinstance(expected_files, dict):
-                    raise ValueError("recovery manifest files must be an object")
-                expected = {
-                    path: metadata
-                    for path, metadata in expected_files.items()
-                    if (path == "db.sql" and components in ("all", "database"))
-                    or (
-                        path.startswith("data/") and components in ("all", "filesystem")
-                    )
-                }
-                if expected != actual:
-                    raise ValueError(
-                        "archive members do not match recovery manifest checksums"
-                    )
+            manifest_version, expected_files = _validate_manifest_document(manifest)
+            expected = {
+                path: metadata
+                for path, metadata in expected_files.items()
+                if (path == "db.sql" and components in ("all", "database"))
+                or (path.startswith("data/") and components in ("all", "filesystem"))
+            }
+            if expected != actual:
+                raise ValueError(
+                    "archive members do not match recovery manifest checksums"
+                )
+            if manifest_version is not None:
                 data_files = {
                     path: value
                     for path, value in expected_files.items()
@@ -2577,8 +2672,16 @@ def _restore_from_stream(
                         raise ValueError(
                             "recovery manifest source-image byte count mismatch"
                         )
-            elif manifest is not None and not isinstance(manifest, dict):
-                raise ValueError("legacy manifest is not an object")
+
+            filesystem_manifest_selected = any(
+                path.startswith("data/") for path in expected_files
+            ) or (
+                manifest_version == RECOVERY_MANIFEST_SCHEMA_VERSION
+                and isinstance(manifest.get("source_images"), dict)
+                and manifest["source_images"].get("file_count") == 0
+            )
+            if components in ("all", "filesystem") and filesystem_manifest_selected:
+                (staged_data / "source_images").mkdir(parents=True, exist_ok=True)
 
             if components in ("all", "database") and isinstance(manifest, dict):
                 recovery = manifest.get("database_recovery")
@@ -2644,7 +2747,7 @@ def _restore_from_stream(
                     started_at=started,
                     archive_name=archive_name,
                 )
-                success = staged_data.is_dir()
+                success = filesystem_manifest_selected
                 if success:
                     _promote_streamed_filesystem(
                         staged_data, data_dir, restore_state["run_id"]
@@ -2661,6 +2764,9 @@ def _restore_from_stream(
                 selected_success.append(success)
             _write_restore_state(restore_state)
             return all(selected_success)
+    except RestoreSafetyError:
+        log.critical("Streaming restore promotion rollback failed", exc_info=True)
+        raise
     except Exception:
         log.exception("Streaming restore validation failed")
         return False
@@ -2668,6 +2774,28 @@ def _restore_from_stream(
 
 def _manifest_version(manifest: dict) -> object:
     return manifest.get("format_version", manifest.get("schema_version"))
+
+
+def _validate_manifest_document(manifest: object) -> tuple[object, dict]:
+    if not isinstance(manifest, dict):
+        raise ValueError("archive is missing manifest.json")
+    files = manifest.get("files")
+    if not isinstance(files, dict):
+        raise ValueError("recovery manifest files must be an object")
+    for path, metadata in files.items():
+        if (
+            not isinstance(path, str)
+            or not isinstance(metadata, dict)
+            or not isinstance(metadata.get("size"), int)
+            or metadata["size"] < 0
+            or not isinstance(metadata.get("sha256"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", metadata["sha256"]) is None
+        ):
+            raise ValueError(f"invalid recovery manifest file entry: {path!r}")
+    version = _manifest_version(manifest)
+    if version is not None and version != RECOVERY_MANIFEST_SCHEMA_VERSION:
+        raise ValueError(f"unsupported recovery manifest version: {version}")
+    return version, files
 
 
 def _validate_tar_members(members: list[tarfile.TarInfo]) -> None:
@@ -2681,15 +2809,8 @@ def _validate_tar_members(members: list[tarfile.TarInfo]) -> None:
 
 def _validate_extracted_manifest(
     snapshot_dir: Path, manifest: dict | None, components: str
-) -> None:
-    if not manifest or _manifest_version(manifest) is None:
-        return
-    manifest_version = _manifest_version(manifest)
-    if manifest_version != RECOVERY_MANIFEST_SCHEMA_VERSION:
-        raise ValueError(f"unsupported recovery manifest version: {manifest_version}")
-    files = manifest.get("files")
-    if not isinstance(files, dict):
-        raise ValueError("recovery manifest files must be an object")
+) -> tuple[object, dict]:
+    manifest_version, files = _validate_manifest_document(manifest)
     prefixes = (
         ("data/",)
         if components == "filesystem"
@@ -2721,28 +2842,32 @@ def _validate_extracted_manifest(
             or _sha256(path) != expected.get("sha256")
         ):
             raise ValueError(f"manifest checksum mismatch: {rel}")
-    data_files = {rel: value for rel, value in files.items() if rel.startswith("data/")}
-    if manifest.get("file_count") != len(data_files):
-        raise ValueError("recovery manifest file count mismatch")
-    if manifest.get("total_bytes") != sum(
-        value.get("size", -1) for value in data_files.values()
-    ):
-        raise ValueError("recovery manifest byte count mismatch")
-    source_images = manifest.get("source_images")
-    if isinstance(source_images, dict):
-        source_files = {
-            rel: value
-            for rel, value in files.items()
-            if rel.startswith("data/source_images/")
+    if manifest_version is not None:
+        data_files = {
+            rel: value for rel, value in files.items() if rel.startswith("data/")
         }
-        if source_images.get("files") != source_files:
-            raise ValueError("recovery manifest source-image index mismatch")
-        if source_images.get("file_count") != len(source_files):
-            raise ValueError("recovery manifest source-image count mismatch")
-        if source_images.get("total_bytes") != sum(
-            value.get("size", -1) for value in source_files.values()
+        if manifest.get("file_count") != len(data_files):
+            raise ValueError("recovery manifest file count mismatch")
+        if manifest.get("total_bytes") != sum(
+            value.get("size", -1) for value in data_files.values()
         ):
-            raise ValueError("recovery manifest source-image byte count mismatch")
+            raise ValueError("recovery manifest byte count mismatch")
+        source_images = manifest.get("source_images")
+        if isinstance(source_images, dict):
+            source_files = {
+                rel: value
+                for rel, value in files.items()
+                if rel.startswith("data/source_images/")
+            }
+            if source_images.get("files") != source_files:
+                raise ValueError("recovery manifest source-image index mismatch")
+            if source_images.get("file_count") != len(source_files):
+                raise ValueError("recovery manifest source-image count mismatch")
+            if source_images.get("total_bytes") != sum(
+                value.get("size", -1) for value in source_files.values()
+            ):
+                raise ValueError("recovery manifest source-image byte count mismatch")
+    return manifest_version, files
 
 
 def _restore_from_archive(
@@ -2813,7 +2938,9 @@ def _restore_from_archive(
                     BACKUP_MODE,
                 )
         try:
-            _validate_extracted_manifest(snapshot_dir, manifest, components)
+            manifest_version, manifest_files = _validate_extracted_manifest(
+                snapshot_dir, manifest, components
+            )
         except (OSError, ValueError, TypeError):
             log.exception("Archive recovery manifest validation failed")
             return False
@@ -2883,11 +3010,15 @@ def _restore_from_archive(
 
         # 2. Restore filesystem -------------------------------------------------
         data_archive = snapshot_dir / "data"
-        if (
-            components in ("all", "filesystem")
-            and data_archive.exists()
-            and data_archive.is_dir()
-        ):
+        filesystem_manifest_selected = any(
+            path.startswith("data/") for path in manifest_files
+        ) or (
+            manifest_version == RECOVERY_MANIFEST_SCHEMA_VERSION
+            and isinstance(manifest.get("source_images"), dict)
+            and manifest["source_images"].get("file_count") == 0
+        )
+        if components in ("all", "filesystem") and filesystem_manifest_selected:
+            (data_archive / "source_images").mkdir(parents=True, exist_ok=True)
             filesystem_started_at = datetime.now(timezone.utc)
             _mark_restore_started(
                 restore_state,

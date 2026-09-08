@@ -52,9 +52,10 @@ resolved arbitrarily.
 ## Snapshot Naming
 
 Snapshots are named `hriv-backup-<YYYYMMDD-HHMMSS>-<8 hex chars>`, e.g.
-`hriv-backup-20260101-020000-9f3c1ab2`. The random suffix gives concurrent
-invocations distinct archives, manifests, and blob keys; the fixed-width
-timestamp prefix keeps lexical ordering chronological, so `list`, retention, and
+`hriv-backup-20260101-020000-9f3c1ab2`. Overlapping invocations are rejected by
+the shared execution lock; the random suffix still prevents identity collisions
+between accepted runs. The fixed-width timestamp prefix keeps lexical ordering
+chronological, so `list`, retention, and
 "latest snapshot" selection all sort by the timestamp in the name (with the full
 name as tie-break) rather than by file or blob modification time.
 
@@ -82,7 +83,7 @@ Each snapshot is a `.tar.gz` archive containing:
 In production deployments, the Python backup service protects authoritative source images. Its supported role is:
 
 - **Database recovery binding:** the manifest records the CNPG cluster and target timestamp; it does not run `pg_dump` or include `db.sql`.
-- **Source images:** DB-referenced files under `/data/source_images` are streamed directly to Azure without a complete local archive; missing references and orphan files are reported without reconciliation.
+- **Source images:** DB-referenced files under `/data/source_images` are streamed directly to Azure without a complete local archive; missing references and orphan files are reported without reconciliation. One read-only PostgreSQL statement returns both the CNPG target time and the authoritative row inventory. Files from mutations committed after that snapshot are outside the target recovery point and are excluded as orphans. The configured drain is best effort, not the consistency boundary.
 - **Tiles excluded:** generated DZI tiles under `/data/tiles` are excluded from HRIV backups.
 - **Why:** CNPG provides database backup and PITR, while tiles are derived data that can be rebuilt with the `rebuild-tiles` admin task (see [`docs/admin-import-export.md`](../docs/admin-import-export.md)).
 
@@ -151,10 +152,10 @@ current backup remains visible even when an older success exists.
 
 ### Concurrent runs
 
-More than one run can be in flight at a time — the cron loop plus an on-demand
-`kubectl exec … backup` invocation, or two containers sharing the `/backups`
-volume. Every marker update is therefore a read → merge → write cycle rather
-than a blind overwrite:
+Scheduled and on-demand backup calls share a non-blocking `flock` on
+`/backups/.hriv-backup-run.lock`. Only one run may inventory or stream data; an
+overlapping call returns failure and records the rejected attempt. Marker
+coordination remains separate and uses read → merge → write semantics:
 
 - Local markers are serialised with an advisory `flock` on
   `/backups/.hriv-backup-state.lock`, a sidecar file that lives on the same
@@ -269,9 +270,11 @@ Equivalent explicit syntax is:
 python backup.py restore [SNAPSHOT_NAME] --components filesystem --data-dir /restore-target
 ```
 
-Azure archives are read sequentially. Selected source files are extracted into
-a unique staging directory on the target data filesystem, validated against the
-manifest, and promoted only after validation succeeds. Existing unmatched
+Azure archives are read sequentially. `manifest.json` is mandatory; historical
+unversioned manifests are accepted only when their `files` map has valid size
+and SHA-256 metadata for every selected member. Selected source files are
+extracted into a unique staging directory on the target data filesystem,
+validated against the manifest, and promoted only after validation succeeds. Existing unmatched
 target content is quarantined rather than reconciled or deleted. Production
 operators should use a fresh target PVC so validation and rollback do not depend
 on spare capacity in the active source-image volume.

@@ -78,45 +78,38 @@ Set `BACKUP_MODE=production` (the Helm chart default) to enable this mode.
 Use `BACKUP_MODE=development` for local dev or manual exports that include
 the full `/data` tree.
 
+The production CNPG target time and `source_images` rows come from one read-only
+PostgreSQL statement and therefore one database snapshot. The maintenance gate
+blocks new HTTP mutations; the configured drain is only a best-effort reduction
+of in-flight work. A mutation that commits after that snapshot is outside the
+PITR target. Its file, even if visible during the subsequent filesystem walk, is
+reported as an orphan and excluded rather than being attached to the earlier
+database recovery point.
+
 See [backup/README.md](../backup/README.md) for the full backup service
 configuration, environment variables, and Docker Compose usage.
 
 ### Concurrent backup runs
 
-State files (`BACKUP_STATE.json`, `RESTORE_STATE.json`, `LAST_SUCCESS.json`, and
-local manifest sidecars) are written atomically through a per-writer temporary
-file in the backups directory, so an on-demand run
-(`docker compose --profile backup run --rm backup backup` locally, or
-`kubectl exec` in Kubernetes) can share the `/backups` volume with the scheduled
-cron loop without the two clobbering each other's temporary files. Backup and
-restore operations themselves are still not serialized; avoid running a restore
-while a backup is in flight.
+Scheduled and on-demand calls share a non-blocking execution `flock` at
+`/backups/.hriv-backup-run.lock`. If another backup holds it, the new call is
+rejected, records an overlap failure, and performs no database inventory,
+filesystem read, or archive upload. Restore remains a separate operator action;
+do not run a restore against an active source volume while backup capture is in
+progress.
 
-The state documents are also merged rather than replaced, so runs that finish out
-of order still converge on the newest result. Each update takes the latest shared
-document (an exclusive `flock` on `/backups/.hriv-backup-state.lock` for volume
-markers, an ETag compare-and-set for Azure Blob markers), applies its own
-attempt, and writes the result. Attempts are ordered by completion time, so a
-slower older run cannot overwrite a newer run's outcome and a late-finishing
-failure records the failure without erasing a newer success. A killed writer's
-lock is released by the kernel, and a lock that cannot be taken within 30 seconds
-makes the run skip the marker update instead of writing it unserialised, so state
-bookkeeping never blocks a backup and never drops another run's result. `LAST_SUCCESS.json` now
-records `completed_at` (when the snapshot became restorable) in addition to
-`created_at`, and freshness checks use it. See
-[backup/README.md](../backup/README.md) for the full merge rules.
+State-document coordination is separate from the execution lock. Local JSON
+updates use `/backups/.hriv-backup-state.lock`, while Azure markers use ETag
+compare-and-set and merge ordering. These mechanisms preserve prior
+last-success values when a later attempt fails; they do not permit overlapping
+backup execution.
 
-Each run also gets its own snapshot identity,
-`hriv-backup-<YYYYMMDD-HHMMSS>-<8 hex chars>`, so two backups starting in the
-same second produce distinct archives, manifest sidecars, and blob keys. The
-timestamp prefix stays fixed-width and leading, so `list`, retention, and
-"latest snapshot" selection sort chronologically by the name (with the full name
-as tie-break) instead of by modification time; snapshots created under the old
-timestamp-only naming still list, sort, and restore. Archive uploads use
-`overwrite=False`, so a genuine key collision fails the run loudly rather than
-replacing an existing archive. Restore accepts a full archive name, a name
-without the `.tar.gz` suffix, or an unambiguous prefix such as the bare
-timestamp; ambiguous prefixes are rejected.
+Each accepted run gets a collision-resistant
+`hriv-backup-<YYYYMMDD-HHMMSS>-<8 hex chars>` identity. Listing and retention
+sort by the timestamp in that name, legacy timestamp-only archives remain
+restorable, and conditional Azure creation prevents replacement on a genuine
+key collision. Restore accepts a full name, a name without `.tar.gz`, or an
+unambiguous prefix.
 
 ### Archive staging and ephemeral storage
 
@@ -125,6 +118,8 @@ committed only after every inventoried source file remains stable and the tar
 stream completes. The complete archive is never staged on `/backups` or
 pod-local storage. The manifest sidecar and success marker are published only
 after archive commit; candidate blobs remain unselectable until publication.
+Unpublished candidates older than 24 hours and their exact manifest sidecars
+are cleaned up without entering normal retention or changing last-success state.
 
 Filesystem restores stream the archive into a unique staging directory on the
 new target data PVC, validate checksums before promotion, and do not consume the
