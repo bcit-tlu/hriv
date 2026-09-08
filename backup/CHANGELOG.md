@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.13.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.12.3...backup-v0.13.0) (2026-09-08)
+
+
+### Features
+
+* stream coordinated recovery archives ([#1234](https://github.com/bcit-tlu/hriv/issues/1234)) ([7fc893d](https://github.com/bcit-tlu/hriv/commit/7fc893d0447819755b21f7254f62b6021c94580d))
+
+
+### Bug Fixes
+
+* fence backup recovery targets with archived WAL ([#1239](https://github.com/bcit-tlu/hriv/issues/1239)) ([90c186e](https://github.com/bcit-tlu/hriv/commit/90c186e25f0a180f763bcc84c0f4063f5aad03f0))
+
 ## [0.12.3](https://github.com/bcit-tlu/hriv/compare/backup-v0.12.2...backup-v0.12.3) (2026-08-31)
 
 
