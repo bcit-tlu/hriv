@@ -911,7 +911,10 @@ def _merge_marker_types(existing: object, incoming: object) -> dict:
             if not isinstance(entry, dict):
                 continue
             current = merged.get(backup_type)
-            if current is None or _marker_sort_key(entry) > _marker_sort_key(current):
+            if (
+                current is None
+                or _marker_sort_key(entry)[:2] >= _marker_sort_key(current)[:2]
+            ):
                 merged[backup_type] = copy.deepcopy(entry)
     return merged
 
@@ -923,7 +926,7 @@ def _merge_last_success_marker(existing: dict | None, incoming: dict) -> dict:
         merged["types"] = _merge_marker_types(None, incoming.get("types"))
         return merged
 
-    if _marker_sort_key(incoming) >= _marker_sort_key(existing):
+    if _marker_sort_key(incoming)[:2] >= _marker_sort_key(existing)[:2]:
         merged = copy.deepcopy(incoming)
     else:
         merged = copy.deepcopy(existing)

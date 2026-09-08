@@ -3021,6 +3021,23 @@ class LastSuccessMarkerMergeTestCase(unittest.TestCase):
             backup._merge_last_success_marker(older, newer)["run_id"], "newer"
         )
 
+    def test_equal_timestamps_use_serialized_incoming_marker(self):
+        existing = self._marker(
+            "z-existing",
+            "2026-08-01T10:00:00+00:00",
+            "2026-08-01T10:05:00+00:00",
+        )
+        incoming = self._marker(
+            "a-incoming",
+            "2026-08-01T10:00:00+00:00",
+            "2026-08-01T10:05:00+00:00",
+        )
+
+        self.assertEqual(
+            backup._merge_last_success_marker(existing, incoming)["run_id"],
+            "a-incoming",
+        )
+
     def test_legacy_marker_without_completed_at_is_ordered_by_created_at(self):
         legacy = {
             "snapshot_name": "snap-legacy",
