@@ -2015,7 +2015,7 @@ def _cleanup_stale_candidates(container: ContainerClient) -> None:
                     _manifest_sidecar_blob_name(blob.name.rsplit("/", 1)[-1])
                 )
             except ResourceNotFoundError:
-                pass
+                log.debug("Candidate sidecar already absent for %s", blob.name)
             log.warning("Deleted stale unpublished backup candidate %s", blob.name)
     except Exception:
         log.exception("Failed to clean stale unpublished backup candidates")
