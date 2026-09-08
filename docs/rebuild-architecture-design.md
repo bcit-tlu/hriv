@@ -40,14 +40,14 @@ path. Durable creation requires `TASK_EXECUTION_MODE=required` and
 
 Current scheduler controls are:
 
-| Setting                          | Default | Purpose                                      |
-| -------------------------------- | ------- | -------------------------------------------- |
-| `REBUILD_PARALLEL_ENABLED`       | `false` | Gates creation of durable parallel rebuilds  |
-| `REBUILD_PARALLELISM`            | `2`     | Independent PostgreSQL-derived child window  |
-| `REBUILD_CHILD_TIMEOUT_SECONDS`  | `1800`  | Per-child arq timeout                         |
-| `REBUILD_LEASE_SECONDS`          | `2100`  | Ownership recovery horizon                   |
-| `REBUILD_HEARTBEAT_SECONDS`      | `30`    | Lease renewal cadence during tile generation |
-| `REBUILD_PUMP_CADENCE_SECONDS`   | `60`    | Periodic missed-trigger recovery cadence     |
+| Setting                         | Default | Purpose                                      |
+| ------------------------------- | ------- | -------------------------------------------- |
+| `REBUILD_PARALLEL_ENABLED`      | `false` | Gates creation of durable parallel rebuilds  |
+| `REBUILD_PARALLELISM`           | `2`     | Independent PostgreSQL-derived child window  |
+| `REBUILD_CHILD_TIMEOUT_SECONDS` | `1800`  | Per-child arq timeout                        |
+| `REBUILD_LEASE_SECONDS`         | `2100`  | Ownership recovery horizon                   |
+| `REBUILD_HEARTBEAT_SECONDS`     | `30`    | Lease renewal cadence during tile generation |
+| `REBUILD_PUMP_CADENCE_SECONDS`  | `60`    | Periodic missed-trigger recovery cadence     |
 
 `WORKER_MAX_JOBS` remains the worker's overall arq capacity and does not
 silently define rebuild parallelism.
