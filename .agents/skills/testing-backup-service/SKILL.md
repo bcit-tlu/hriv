@@ -7,7 +7,7 @@ description: Test the HRIV backup service for database and filesystem backup, lo
 
 ## Overview
 
-The backup service (`backup/`) publishes source-image recovery archives and supports component-selective restore. Production binds each source archive to a CNPG recovery timestamp and never runs `pg_dump`; local development retains the legacy logical database plus filesystem archive.
+The backup service (`backup/`) publishes source-image recovery archives and supports component-selective restore. Production binds each source archive to an authoritative CNPG target LSN, commits a narrow WAL fence, waits for that fence to archive, and never runs `pg_dump`; local development retains the legacy logical database plus filesystem archive.
 
 ## Prerequisites
 
@@ -107,10 +107,20 @@ Use fake or isolated Azure storage and a representative source-image inventory.
 3. Confirm the backup PVC does not contain a full `.tar.gz` staging artifact.
 4. Inspect the archive and sidecar: only DB-referenced source images are present;
    `db.sql`, tiles, incomplete uploads, and orphan files are absent.
-5. Confirm manifest format 2 records the CNPG target time, checksums, counts,
-   missing-source rows, and orphan-file reports.
-6. Verify a mutation or inventory failure leaves no published archive or success marker.
-7. Restore with `restore-filesystem` into a new data target and verify `psql` is
+5. Confirm manifest format 2 records one snapshot's UTC target time and target
+   LSN, `archive_timeout_seconds`, the fence WAL/commit/archive timestamps,
+   checksums, counts, missing-source rows, and orphan-file reports.
+6. Verify archive-timeout query → `BEGIN` → source-table SHARE lock → inventory
+   `COPY` → `COMMIT` → filesystem matching → committed singleton-row UPDATE fence
+   occurs in order while maintenance exists. Archive polling follows maintenance;
+   `.partial` segments normalize, while NULL, history, backup, and prior-timeline
+   statuses keep polling. A timeout or subprocess failure must leave no archive,
+   sidecar, journal, or new success marker and preserve prior last-success values.
+7. Configure test polling with positive `BACKUP_WAL_FENCE_TIMEOUT_SECONDS` and
+   `BACKUP_WAL_FENCE_POLL_SECONDS`; verify invalid, zero, and poll-greater-than-timeout
+   values fail startup. PostgreSQL `archive_timeout` must also be positive and
+   strictly lower than the configured fence timeout.
+8. Restore with `restore-filesystem` into a new data target and verify `psql` is
    never invoked. Database/all restore against the production archive must fail
    safely and direct the operator to CNPG.
 

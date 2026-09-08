@@ -45,18 +45,26 @@ Scheduled and on-demand backups use the same capture implementation:
 2. Enable the source-image mutation gate, which blocks new HTTP mutations.
 3. Wait for the configured bounded drain as a best-effort reduction of in-flight
    work; the drain is not the consistency boundary.
-4. In one read-only PostgreSQL snapshot statement, materialize the UTC
-   CNPG-recoverable target timestamp and inventory the authoritative
-   `source_images` rows. The returned timestamp, not a local process clock, is
-   the database boundary.
-5. Inventory finalized filesystem files and match them only to rows visible in
+4. Require PostgreSQL `archive_timeout` to be positive and strictly below the
+   configured WAL-fence wait timeout.
+5. In one behaviorally read-only `BEGIN; LOCK ... IN SHARE MODE; COPY ...; COMMIT;`
+   transaction, wait out existing source writers, then materialize UTC target
+   time, `pg_current_wal_lsn()` target LSN, and authoritative `source_images` rows
+   from the post-lock snapshot while source writes remain blocked. Do not declare
+   the transaction `READ ONLY`, because PostgreSQL may reject the explicit lock.
+6. Inventory finalized filesystem files and match them only to rows visible in
    that database snapshot. A mutation committing after the snapshot is outside
    the PITR target; any resulting file is reported as an orphan and excluded.
-6. Release the mutation gate.
-7. Hash, compress, and upload the inventoried files asynchronously.
-8. Detect disappearance or mutation before and after each file read.
-9. Commit the archive only after the stream completes.
-10. Publish the immutable manifest sidecar and success marker only after all
+7. While the mutation gate remains enabled, commit a bounded update of the
+   singleton `public.backup_recovery_wal_fence` row, incrementing `generation`
+   and recording `fenced_at`; then query the at-or-after WAL upper-bound file
+   after commit. This is the only production write.
+8. Release the mutation gate and fail closed while polling until CNPG reports a
+   same-timeline archived WAL file lexically at or beyond the fence upper bound.
+9. Hash, compress, and upload the inventoried files asynchronously.
+10. Detect disappearance or mutation before and after each file read.
+11. Commit the archive only after the stream completes.
+12. Publish the immutable manifest sidecar and success marker only after all
     validation succeeds.
 
 The mutation gate is only a boundary operation. It must not remain enabled for
@@ -91,12 +99,18 @@ A successful manifest is versioned and records at least:
   "run_id": "<execution identity>",
   "capture_started_at": "<UTC timestamp>",
   "capture_boundary_at": "<UTC timestamp>",
+  "capture_boundary_lsn": "<PostgreSQL LSN>",
   "completed_at": "<UTC timestamp>",
   "backup_mode": "production",
   "database_recovery": {
     "provider": "cloudnative-pg",
     "cluster": "pg-core",
-    "target_time": "<UTC timestamp>",
+    "target_time": "<UTC timestamp for audit>",
+    "target_lsn": "<authoritative PostgreSQL recovery LSN>",
+    "archive_timeout_seconds": 300,
+    "wal_fence_file": "<24-hex-character WAL archive upper bound>",
+    "wal_fence_committed_at": "<UTC timestamp>",
+    "wal_fence_archived_at": "<UTC timestamp>",
     "logical_dump_role": "not-included"
   },
   "versions": {
@@ -124,8 +138,18 @@ A successful manifest is versioned and records at least:
 ```
 
 Implementations may add fields but cannot change the meaning of existing fields
-without a format-version change. High-cardinality mismatch details belong in
-the manifest and structured logs, not metric labels.
+without a format-version change. These WAL-fence fields are additive-compatible
+with format 2. Production capture first verifies that PostgreSQL `archive_timeout`
+is positive and strictly less than the configured fence wait timeout, recording
+it as `archive_timeout_seconds`. The inventory statement captures `target_time`,
+`target_lsn`, and rows from one snapshot acquired after the source-table SHARE
+lock; `target_lsn` precedes the separately committed singleton-row update fence.
+The post-commit WAL query may observe a later segment under concurrent database
+activity, so `wal_fence_file` is a conservative at-or-after archive upper bound,
+not necessarily the segment containing the fence tuple. Publication safely waits
+until `pg_stat_archiver` reaches that bound on the same timeline, making the
+earlier target reachable even on an otherwise idle database. High-cardinality
+mismatch details belong in the manifest and structured logs, not metric labels.
 
 ## Candidate state model
 
@@ -156,7 +180,7 @@ Production restoration is component-selective:
    without a format version remain valid only when their `files` map supplies a
    valid size and SHA-256 for every selected member; manifestless archives fail
    closed.
-2. Restore PostgreSQL through CNPG to the bound recovery point.
+2. Restore PostgreSQL through CNPG with `recoveryTarget.targetLSN` set to the manifest's authoritative `database_recovery.target_lsn`; `target_time` is audit metadata, not the restore target.
 3. Restore source images using filesystem-only mode to a fresh empty target PVC
    sized from manifest bytes plus headroom. A populated target may temporarily
    require staged restored bytes plus quarantined existing bytes, approaching
@@ -166,7 +190,7 @@ Production restoration is component-selective:
 6. Quiesce HRIV and cut over only after the new targets pass validation.
 7. Rebuild derived tiles with the supported serial operation.
 8. Treat the latest recovery set as the acceptance canary: restore CNPG to the
-   exact database-snapshot `target_time`, verify its source inventory against the
+   exact database-snapshot `target_lsn`, verify its source inventory against the
    manifest, then verify health, authentication, browsing, representative viewer
    behavior, and metadata before disabling maintenance mode.
 

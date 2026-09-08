@@ -26,6 +26,7 @@ import hashlib
 import io
 import json
 import logging
+import math
 import os
 import re
 import shutil
@@ -92,6 +93,14 @@ def _env(name: str, default: str | None = None, required: bool = False) -> str:
     return value or ""
 
 
+def _float_env(name: str, default: str) -> float:
+    try:
+        return float(_env(name, default))
+    except ValueError:
+        log.error("%s must be a number", name)
+        sys.exit(1)
+
+
 # Database
 DATABASE_URL: str = _env("DATABASE_URL", "postgresql://hriv:hriv@db:5432/hriv")
 CNPG_CLUSTER_NAME: str = _env("CNPG_CLUSTER_NAME", "pg-core")
@@ -109,7 +118,11 @@ BACKUP_CRON_SCHEDULE: str = _env("BACKUP_CRON_SCHEDULE", "0 10 * * *")
 BACKUP_TIMEZONE: str = _env("BACKUP_TIMEZONE", "UTC")
 BACKUP_RETENTION_COUNT: int = int(_env("BACKUP_RETENTION_COUNT", "30"))
 BACKUP_STALE_HOURS: int = int(_env("BACKUP_STALE_HOURS", "26"))
-BACKUP_MUTATION_DRAIN_SECONDS: float = float(_env("BACKUP_MUTATION_DRAIN_SECONDS", "5"))
+BACKUP_MUTATION_DRAIN_SECONDS: float = _float_env("BACKUP_MUTATION_DRAIN_SECONDS", "5")
+BACKUP_WAL_FENCE_TIMEOUT_SECONDS: float = _float_env(
+    "BACKUP_WAL_FENCE_TIMEOUT_SECONDS", "600"
+)
+BACKUP_WAL_FENCE_POLL_SECONDS: float = _float_env("BACKUP_WAL_FENCE_POLL_SECONDS", "5")
 # Directory used to stage archives while they are being built. Defaults to a
 # hidden directory on the /backups volume so the archive never occupies
 # pod-local ephemeral storage.
@@ -126,6 +139,22 @@ if BACKUP_MODE not in ("development", "production"):
     sys.exit(1)
 if BACKUP_MUTATION_DRAIN_SECONDS < 0:
     log.error("BACKUP_MUTATION_DRAIN_SECONDS must not be negative")
+    sys.exit(1)
+if not math.isfinite(BACKUP_WAL_FENCE_TIMEOUT_SECONDS) or (
+    BACKUP_WAL_FENCE_TIMEOUT_SECONDS <= 0
+):
+    log.error("BACKUP_WAL_FENCE_TIMEOUT_SECONDS must be finite and greater than zero")
+    sys.exit(1)
+if not math.isfinite(BACKUP_WAL_FENCE_POLL_SECONDS) or (
+    BACKUP_WAL_FENCE_POLL_SECONDS <= 0
+):
+    log.error("BACKUP_WAL_FENCE_POLL_SECONDS must be finite and greater than zero")
+    sys.exit(1)
+if BACKUP_WAL_FENCE_POLL_SECONDS > BACKUP_WAL_FENCE_TIMEOUT_SECONDS:
+    log.error(
+        "BACKUP_WAL_FENCE_POLL_SECONDS must not exceed "
+        "BACKUP_WAL_FENCE_TIMEOUT_SECONDS"
+    )
     sys.exit(1)
 try:
     _BACKUP_TZ = ZoneInfo(BACKUP_TIMEZONE)
@@ -1501,38 +1530,66 @@ def _inventory_data_files(data_src: Path) -> tuple[list[dict], list[dict]]:
 _MAX_DB_INVENTORY_BYTES = 64 * 1024 * 1024
 _MAX_DB_INVENTORY_ROWS = 1_000_000
 _MAX_VALIDATION_VALUE_LENGTH = 512
+_POSTGRES_LSN_RE = re.compile(r"^[0-9A-F]+/[0-9A-F]+$")
+_WAL_FILE_RE = re.compile(r"^[0-9A-F]{24}$")
+_ARCHIVED_WAL_FILE_RE = re.compile(r"^([0-9A-F]{24})(?:\.partial)?$")
+_WAL_TIMELINE_PREFIX_RE = re.compile(r"^([0-9A-F]{8})")
+_UTC_SQL_FORMAT = 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'
+_UTC_TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$")
+
+
+def _parse_utc_sql_timestamp(value: object) -> datetime | None:
+    if not isinstance(value, str) or not _UTC_TIMESTAMP_RE.fullmatch(value):
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%dT%H:%M:%S.%fZ").replace(
+            tzinfo=timezone.utc
+        )
+    except ValueError:
+        return None
+
+
+def _psql_command(db: dict[str, str], query: str) -> list[str]:
+    return [
+        "psql",
+        "-h",
+        db["host"],
+        "-p",
+        db["port"],
+        "-U",
+        db["user"],
+        "-d",
+        db["dbname"],
+        "--no-psqlrc",
+        "--quiet",
+        "--set",
+        "ON_ERROR_STOP=on",
+        "-c",
+        query,
+    ]
 
 
 def _query_source_image_rows(
     db: dict[str, str], output_path: Path
-) -> tuple[datetime, list[dict]]:
+) -> tuple[datetime, str, list[dict]]:
     query = (
-        "COPY (WITH boundary AS MATERIALIZED (SELECT CURRENT_TIMESTAMP AS target_time), "
-        "inventory AS MATERIALIZED (SELECT id, stored_path, status FROM source_images) "
-        "SELECT record_type, boundary_time, id, stored_path, status FROM ("
-        "SELECT 0 AS position, 'boundary'::text AS record_type, target_time::text AS boundary_time, "
-        "NULL::text AS id, NULL::text AS stored_path, NULL::text AS status FROM boundary "
-        "UNION ALL SELECT 1, 'source', NULL, id::text, stored_path, status FROM inventory"
-        ") captured ORDER BY position, id) TO STDOUT WITH (FORMAT csv, HEADER true)"
+        "BEGIN; LOCK TABLE public.source_images IN SHARE MODE; "
+        "COPY (WITH boundary AS MATERIALIZED (SELECT "
+        f"to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC', '{_UTC_SQL_FORMAT}') AS target_time, "
+        "pg_current_wal_lsn()::text AS target_lsn), "
+        "inventory AS MATERIALIZED (SELECT id, stored_path, status "
+        "FROM public.source_images) "
+        "SELECT record_type, boundary_time, boundary_lsn, id, stored_path, status FROM ("
+        "SELECT 0 AS position, 'boundary'::text AS record_type, target_time AS boundary_time, "
+        "target_lsn AS boundary_lsn, NULL::text AS id, NULL::text AS stored_path, "
+        "NULL::text AS status FROM boundary "
+        "UNION ALL SELECT 1, 'source', NULL, NULL, id::text, stored_path, status FROM inventory"
+        ") captured ORDER BY position, id) TO STDOUT WITH (FORMAT csv, HEADER true); "
+        "COMMIT;"
     )
     with open(output_path, "wb") as output:
         result = subprocess.run(
-            [
-                "psql",
-                "-h",
-                db["host"],
-                "-p",
-                db["port"],
-                "-U",
-                db["user"],
-                "-d",
-                db["dbname"],
-                "--no-psqlrc",
-                "--set",
-                "ON_ERROR_STOP=on",
-                "-c",
-                query,
-            ],
+            _psql_command(db, query),
             env=_pg_env(db),
             stdout=output,
             stderr=subprocess.PIPE,
@@ -1551,11 +1608,13 @@ def _query_source_image_rows(
 
     rows: list[dict] = []
     boundary: datetime | None = None
+    boundary_lsn: str | None = None
     with open(output_path, newline="", encoding="utf-8") as source:
-        reader = csv.DictReader(source)
+        reader = csv.DictReader(source, strict=True)
         if reader.fieldnames != [
             "record_type",
             "boundary_time",
+            "boundary_lsn",
             "id",
             "stored_path",
             "status",
@@ -1564,16 +1623,35 @@ def _query_source_image_rows(
                 "source-image database inventory has invalid CSV columns"
             )
         for row in reader:
+            if None in row:
+                raise RuntimeError("source-image database inventory has invalid CSV")
             if row.get("record_type") == "boundary":
                 if boundary is not None:
                     raise RuntimeError(
                         "source-image database inventory has multiple boundaries"
                     )
-                boundary = _parse_iso(row.get("boundary_time"))
+                if row.get("id") or row.get("stored_path") or row.get("status"):
+                    raise RuntimeError(
+                        "source-image database inventory has an invalid boundary row"
+                    )
+                boundary = _parse_utc_sql_timestamp(row.get("boundary_time"))
+                boundary_lsn = row.get("boundary_lsn")
+                if boundary is None:
+                    raise RuntimeError(
+                        "source-image database inventory has invalid boundary time"
+                    )
+                if not boundary_lsn or not _POSTGRES_LSN_RE.fullmatch(boundary_lsn):
+                    raise RuntimeError(
+                        "source-image database inventory has invalid boundary LSN"
+                    )
                 continue
             if row.get("record_type") != "source":
                 raise RuntimeError(
                     "source-image database inventory has an invalid record type"
+                )
+            if boundary is None or row.get("boundary_time") or row.get("boundary_lsn"):
+                raise RuntimeError(
+                    "source-image database inventory has an invalid source row"
                 )
             if len(rows) >= _MAX_DB_INVENTORY_ROWS:
                 raise RuntimeError("source-image database inventory exceeds row limit")
@@ -1586,9 +1664,163 @@ def _query_source_image_rows(
                     "source-image database inventory contains an invalid row"
                 )
             rows.append(row)
-    if boundary is None:
+    if boundary is None or boundary_lsn is None:
         raise RuntimeError("source-image database inventory has no boundary")
-    return boundary, rows
+    return boundary, boundary_lsn, rows
+
+
+def _run_psql_text(db: dict[str, str], query: str, label: str) -> str:
+    result = subprocess.run(
+        _psql_command(db, query),
+        env=_pg_env(db),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"{label} failed: {result.stderr or 'psql failed'}")
+    return result.stdout
+
+
+def _single_csv_row(payload: str, columns: list[str], label: str) -> dict[str, str]:
+    try:
+        reader = csv.DictReader(io.StringIO(payload), strict=True)
+        if reader.fieldnames != columns:
+            raise RuntimeError(f"{label} has invalid CSV columns")
+        rows = list(reader)
+    except csv.Error as exc:
+        raise RuntimeError(f"{label} has invalid CSV") from exc
+    if len(rows) != 1 or None in rows[0]:
+        raise RuntimeError(f"{label} must return exactly one row")
+    return rows[0]
+
+
+def _query_archive_timeout_seconds(db: dict[str, str]) -> int:
+    payload = _run_psql_text(
+        db,
+        "COPY (SELECT setting AS archive_timeout_seconds FROM pg_settings "
+        "WHERE name = 'archive_timeout') TO STDOUT WITH (FORMAT csv, HEADER true)",
+        "PostgreSQL archive_timeout query",
+    )
+    row = _single_csv_row(
+        payload,
+        ["archive_timeout_seconds"],
+        "PostgreSQL archive_timeout query",
+    )
+    raw_timeout = row["archive_timeout_seconds"]
+    try:
+        archive_timeout_seconds = int(raw_timeout)
+    except ValueError as exc:
+        raise RuntimeError(
+            "PostgreSQL archive_timeout is not a finite integer"
+        ) from exc
+    if (
+        archive_timeout_seconds <= 0
+        or str(archive_timeout_seconds) != raw_timeout
+        or archive_timeout_seconds >= BACKUP_WAL_FENCE_TIMEOUT_SECONDS
+    ):
+        raise RuntimeError(
+            "PostgreSQL archive_timeout must be positive and strictly less than "
+            "BACKUP_WAL_FENCE_TIMEOUT_SECONDS"
+        )
+    return archive_timeout_seconds
+
+
+def _emit_wal_fence(db: dict[str, str]) -> tuple[str, datetime]:
+    """Commit the sole production backup write, then identify its WAL file."""
+    update_payload = _run_psql_text(
+        db,
+        "COPY (WITH fence AS (UPDATE public.backup_recovery_wal_fence "
+        "SET generation = generation + 1, fenced_at = CURRENT_TIMESTAMP "
+        "WHERE singleton RETURNING generation) SELECT generation FROM fence) "
+        "TO STDOUT WITH (FORMAT csv, HEADER true)",
+        "backup WAL fence transaction",
+    )
+    update_row = _single_csv_row(
+        update_payload,
+        ["generation"],
+        "backup WAL fence transaction",
+    )
+    try:
+        generation = int(update_row["generation"])
+    except ValueError as exc:
+        raise RuntimeError(
+            "backup WAL fence transaction returned an invalid generation"
+        ) from exc
+    if generation <= 0 or str(generation) != update_row["generation"]:
+        raise RuntimeError(
+            "backup WAL fence transaction returned an invalid generation"
+        )
+
+    payload = _run_psql_text(
+        db,
+        "COPY (SELECT pg_walfile_name(pg_current_wal_lsn() - 1) AS wal_fence_file, "
+        f"to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC', '{_UTC_SQL_FORMAT}') "
+        "AS wal_fence_committed_at) TO STDOUT WITH (FORMAT csv, HEADER true)",
+        "backup WAL fence boundary query",
+    )
+    row = _single_csv_row(
+        payload,
+        ["wal_fence_file", "wal_fence_committed_at"],
+        "backup WAL fence boundary query",
+    )
+    wal_file = row["wal_fence_file"]
+    committed_at = _parse_utc_sql_timestamp(row["wal_fence_committed_at"])
+    if not _WAL_FILE_RE.fullmatch(wal_file) or committed_at is None:
+        raise RuntimeError("backup WAL fence boundary query returned invalid values")
+    return wal_file, committed_at
+
+
+def _query_last_archived_wal(
+    db: dict[str, str],
+) -> tuple[str | None, datetime | None, str | None]:
+    payload = _run_psql_text(
+        db,
+        "COPY (SELECT last_archived_wal, "
+        f"to_char(last_archived_time AT TIME ZONE 'UTC', '{_UTC_SQL_FORMAT}') "
+        "AS last_archived_time FROM pg_stat_archiver) "
+        "TO STDOUT WITH (FORMAT csv, HEADER true)",
+        "backup WAL archive status query",
+    )
+    row = _single_csv_row(
+        payload,
+        ["last_archived_wal", "last_archived_time"],
+        "backup WAL archive status query",
+    )
+    raw_wal_file = row["last_archived_wal"] or None
+    if raw_wal_file is None:
+        return None, None, None
+    wal_match = _ARCHIVED_WAL_FILE_RE.fullmatch(raw_wal_file)
+    if wal_match is None:
+        return None, None, raw_wal_file
+    archived_at = _parse_utc_sql_timestamp(row["last_archived_time"])
+    if archived_at is None:
+        raise RuntimeError(
+            "backup WAL archive status query returned an invalid timestamp"
+        )
+    return wal_match.group(1), archived_at, raw_wal_file
+
+
+def _wait_for_wal_fence_archive(db: dict[str, str], fence_file: str) -> datetime:
+    deadline = time.monotonic() + BACKUP_WAL_FENCE_TIMEOUT_SECONDS
+    fence_timeline = fence_file[:8]
+    last_observed_timeline = "unknown"
+    while True:
+        archived_file, archived_at, raw_wal_file = _query_last_archived_wal(db)
+        if raw_wal_file is not None:
+            timeline_match = _WAL_TIMELINE_PREFIX_RE.match(raw_wal_file)
+            if timeline_match is not None:
+                last_observed_timeline = timeline_match.group(1)
+        if archived_file is not None and archived_file[:8] == fence_timeline:
+            if archived_file >= fence_file:
+                assert archived_at is not None
+                return archived_at
+        if time.monotonic() >= deadline:
+            raise RuntimeError(
+                f"timed out waiting for archived WAL to reach fence {fence_file}; "
+                f"expected timeline {fence_timeline}, last archive-status timeline "
+                f"{last_observed_timeline}"
+            )
+        time.sleep(BACKUP_WAL_FENCE_POLL_SECONDS)
 
 
 def _bounded_validation_row(row: dict, reason: str) -> dict:
@@ -1877,16 +2109,25 @@ def _run_backup_inner() -> Path | None:
                 missing_sources: list[dict] = []
                 orphan_sources: list[dict] = []
                 if BACKUP_MODE == "production":
-                    captured_at, rows = _query_source_image_rows(
+                    archive_timeout_seconds = _query_archive_timeout_seconds(db)
+                    captured_at, target_lsn, rows = _query_source_image_rows(
                         db, Path(tmpdir) / "source-images.csv"
                     )
                     inventory, excluded = _inventory_data_files(data_src)
                     inventory, missing_sources, orphan_sources, inventory_counts = (
                         _match_production_inventory(rows, inventory, data_src)
                     )
+                    # This committed singleton-row update is the only production write.
+                    # Maintenance remains enabled so new source mutations cannot begin
+                    # until the snapshot boundary has been fenced into later WAL.
+                    wal_fence_file, wal_fence_committed_at = _emit_wal_fence(db)
                 else:
                     inventory, excluded = _inventory_data_files(data_src)
                     captured_at = datetime.now(timezone.utc)
+                    target_lsn = None
+                    archive_timeout_seconds = None
+                    wal_fence_file = None
+                    wal_fence_committed_at = None
                     inventory_counts = {
                         "database_row_count": 0,
                         "included_row_count": len(inventory),
@@ -1895,15 +2136,25 @@ def _run_backup_inner() -> Path | None:
                         "orphan_count": 0,
                     }
 
+            wal_fence_archived_at = None
+            if BACKUP_MODE == "production":
+                wal_fence_archived_at = _wait_for_wal_fence_archive(db, wal_fence_file)
+
             target_time = captured_at.isoformat()
             if BACKUP_MODE == "production":
                 database_archive_key = (
                     f"cnpg://{CNPG_CLUSTER_NAME}?target_time={target_time}"
+                    f"&target_lsn={target_lsn}"
                 )
                 database_recovery = {
                     "provider": "cloudnative-pg",
                     "cluster": CNPG_CLUSTER_NAME,
                     "target_time": target_time,
+                    "target_lsn": target_lsn,
+                    "archive_timeout_seconds": archive_timeout_seconds,
+                    "wal_fence_file": wal_fence_file,
+                    "wal_fence_committed_at": wal_fence_committed_at.isoformat(),
+                    "wal_fence_archived_at": wal_fence_archived_at.isoformat(),
                     "logical_dump_role": "not-included",
                 }
             else:
@@ -1928,6 +2179,7 @@ def _run_backup_inner() -> Path | None:
                 "run_id": run_id,
                 "capture_started_at": created_at.isoformat(),
                 "capture_boundary_at": target_time,
+                "capture_boundary_lsn": target_lsn,
                 "completed_at": None,
                 "database_url_host": db["host"],
                 "database_name": db["dbname"],
@@ -2356,9 +2608,7 @@ def _reconcile_local_publications() -> None:
         ):
             artifact.unlink(missing_ok=True)
         journal_path.unlink(missing_ok=True)
-        log.warning(
-            "Rolled back interrupted local publication for %s", snapshot_name
-        )
+        log.warning("Rolled back interrupted local publication for %s", snapshot_name)
 
 
 def _reconcile_publications(

@@ -61,8 +61,8 @@ protection for the large generated tile tree in production. Its supported
 production role is:
 
 - **Source images only** — streams finalized `/data/source_images` files to Azure.
-- **CNPG recovery binding** — records the compatible CNPG target timestamp and
-  does not invoke `pg_dump` in production.
+- **CNPG recovery binding** — records the authoritative CNPG target LSN, audit
+  timestamp, and confirmed archived WAL fence; it does not invoke `pg_dump` in production.
 - **Tiles excluded** — generated DZI tiles under `/data/tiles` are not included.
 - **Why** — CNPG provides PostgreSQL PITR, while walking and archiving millions
   of generated tile files would waste capacity and compete with the application.
@@ -78,13 +78,25 @@ Set `BACKUP_MODE=production` (the Helm chart default) to enable this mode.
 Use `BACKUP_MODE=development` for local dev or manual exports that include
 the full `/data` tree.
 
-The production CNPG target time and `source_images` rows come from one read-only
-PostgreSQL statement and therefore one database snapshot. The maintenance gate
-blocks new HTTP mutations; the configured drain is only a best-effort reduction
-of in-flight work. A mutation that commits after that snapshot is outside the
-PITR target. Its file, even if visible during the subsequent filesystem walk, is
-reported as an orphan and excluded rather than being attached to the earlier
-database recovery point.
+Production first requires PostgreSQL `archive_timeout` to be positive and below
+the configured fence wait. The CNPG target time, `pg_current_wal_lsn()` target
+LSN, and `source_images` rows then come from the post-lock snapshot of one
+behaviorally read-only `BEGIN; LOCK TABLE ... IN SHARE MODE; COPY ...; COMMIT;`
+transaction. The maintenance gate blocks new HTTP mutations while the SHARE lock
+waits out existing source writers and blocks source writes through capture; the
+configured drain remains only a best-effort reduction of in-flight work. After
+file matching and while that gate remains enabled, the service commits its only
+production write: a bounded update of the singleton
+`public.backup_recovery_wal_fence` row that increments `generation` and records
+`fenced_at`. The post-commit query may conservatively observe a later WAL segment
+under concurrency. The service therefore treats `wal_fence_file` as an
+at-or-after archive upper bound, releases the gate, and waits fail-closed for
+`pg_stat_archiver` to reach that bound on the same timeline before streaming or
+publication. This makes the earlier
+target LSN reachable on an idle database. A mutation that commits after the
+snapshot is outside the PITR target. Its file, even if visible during the
+subsequent filesystem walk, is reported as an orphan and excluded rather than
+being attached to the earlier database recovery point.
 
 See [backup/README.md](../backup/README.md) for the full backup service
 configuration, environment variables, and Docker Compose usage.
@@ -148,8 +160,11 @@ After a failure or data loss, follow this order:
 ### 1. Restore the database
 
 Restore `pg-core` through CNPG using the recovery-set manifest's
-`database_recovery.cluster` and `database_recovery.target_time`. Use explicit
-source-specific database and owner values in the recovery manifest, then verify
+`database_recovery.cluster` and authoritative `database_recovery.target_lsn` as
+CNPG `recoveryTarget.targetLSN`. Keep `target_time` for audit only. The manifest's
+archived fence WAL proves that the earlier target LSN is reachable even when the
+database was otherwise idle. Use explicit source-specific database and owner
+values in the recovery manifest, then verify
 the recovered database/role inventory before application cutover.
 
 Production source-image archives do not contain `db.sql`. Never run a legacy
@@ -250,8 +265,9 @@ Use this when the entire cluster is lost or a fresh redeployment is needed.
    stands up PostgreSQL (CNPG), backend, frontend, worker, and backup pods.
 
 2. **Restore the database** through CNPG to the exact PostgreSQL-snapshot
-   `database_recovery.target_time`, using a fresh recovery cluster and explicit
-   source database/owner settings. The latest recovery set is accepted as a
+   `database_recovery.target_lsn` via `recoveryTarget.targetLSN`, using a fresh
+   recovery cluster and explicit source database/owner settings. Treat
+   `target_time` as audit metadata. The latest recovery set is accepted as a
    canary only after its restored `source_images` row inventory matches the
    manifest's included/missing/orphan outcome.
 

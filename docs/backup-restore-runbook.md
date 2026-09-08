@@ -41,9 +41,14 @@ normative [`recovery-set-contract.md`](recovery-set-contract.md).
    kubectl -n hriv exec deploy/hriv-backup -- python backup.py list
    ```
 
-2. Restore PostgreSQL through CNPG to the snapshot manifest's
-   `database_recovery.target_time`, using a fresh recovery cluster with explicit
-   source database and owner settings.
+2. Restore PostgreSQL through CNPG using a fresh recovery cluster with explicit
+   source database and owner settings. Set CNPG `recoveryTarget.targetLSN` to the
+   snapshot manifest's authoritative `database_recovery.target_lsn`; do **not**
+   configure `targetTime` from `target_time`, which is retained only for audit.
+   Confirm the manifest also has positive `archive_timeout_seconds`,
+   `wal_fence_file`, and `wal_fence_archived_at`. The latter fields prove the
+   bounded singleton-table UPDATE's conservative at-or-after WAL upper bound was
+   archived; the named segment need not be the exact segment containing the row.
 
 3. Set `restoreTarget.existingClaim` on the backup chart to mount a new
    source-image target PVC at `/restore-target`, then restore only the filesystem
