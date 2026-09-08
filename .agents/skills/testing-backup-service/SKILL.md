@@ -7,7 +7,7 @@ description: Test the HRIV backup service for database and filesystem backup, lo
 
 ## Overview
 
-The backup service (`backup/`) is a standalone Docker service for disaster recovery. It snapshots the PostgreSQL database and filesystem, stores archives locally or in S3-compatible storage, and supports full restore.
+The backup service (`backup/`) publishes source-image recovery archives and supports component-selective restore. Production binds each source archive to a CNPG recovery timestamp and never runs `pg_dump`; local development retains the legacy logical database plus filesystem archive.
 
 ## Prerequisites
 
@@ -19,15 +19,13 @@ The backup service (`backup/`) is a standalone Docker service for disaster recov
 ## Devin Secrets Needed
 
 - None for local-only testing
-- For S3 testing: `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` (and optionally `S3_ENDPOINT_URL` for non-AWS providers)
+- For Azure integration testing: an isolated `AZURE_STORAGE_CONNECTION_STRING` and `AZURE_STORAGE_CONTAINER`; never use production credentials in local tests
 
 ## Critical: PostgreSQL Version Compatibility
 
-- The `db` service runs `postgres:16-alpine` (PG 16)
-- The backup Dockerfile MUST use `postgresql-client-16` (not 17)
-- PG 17's `pg_dump` emits `SET transaction_timeout = 0;` which PG 16 does not recognise, causing restore to fail with: `ERROR: unrecognized configuration parameter 'transaction_timeout'`
-- The Dockerfile uses `python:3.13-slim-bookworm` (Debian Bookworm) + PGDG apt repo to pin PG 16 client
-- If the server image is ever upgraded to PG 17, the backup Dockerfile should be updated to match
+- The local `db` service runs `postgres:16-alpine`, and development combined archives use the image's matching PostgreSQL 16 `pg_dump`/`psql` tools.
+- Production CNPG currently runs PostgreSQL 17, but production backup mode must not invoke `pg_dump`; CNPG base backups and WAL archiving are authoritative.
+- Never change the local client version merely to make production source-image backups work. If local development PostgreSQL changes major version, update the client and logical-restore tests together.
 
 ## Running Tests
 
@@ -94,20 +92,31 @@ for i in $(seq 1 15); do docker compose exec db pg_isready -U hriv && break; sle
    docker compose --profile backup run --rm backup backup &
    wait
    ```
-3. Both runs should succeed and produce two distinct
-   `hriv-backup-<YYYYMMDD-HHMMSS>-<8 hex>.tar.gz` archives, each with its own
-   `.manifest.json` sidecar:
-   ```bash
-   docker run --rm -v hriv_backup_data:/backups alpine sh -c "ls -1 /backups"
-   ```
-4. Restore by unambiguous prefix should fail with an "ambiguous" error when both
-   archives share the same second; restoring by full name should succeed.
-5. `/backups/.staging` should be empty after the runs (archives are staged there,
-   not in pod-local `/tmp`, and published with a rename).
+3. Exactly one run should acquire the shared backup lock and complete. The other
+   must fail with `overlapping_backup_run` without creating an archive.
+4. The successful run produces one
+   `hriv-backup-<YYYYMMDD-HHMMSS>-<8 hex>.tar.gz` archive and manifest sidecar.
+5. `/backups/.staging` should be empty after the successful local run.
+
+### Test 4: Production recovery archive
+
+Use fake or isolated Azure storage and a representative source-image inventory.
+
+1. Set `BACKUP_MODE=production`, `CNPG_CLUSTER_NAME=pg-core`, and Azure settings.
+2. Run `backup` and confirm no `pg_dump` command executes.
+3. Confirm the backup PVC does not contain a full `.tar.gz` staging artifact.
+4. Inspect the archive and sidecar: only DB-referenced source images are present;
+   `db.sql`, tiles, incomplete uploads, and orphan files are absent.
+5. Confirm manifest format 2 records the CNPG target time, checksums, counts,
+   missing-source rows, and orphan-file reports.
+6. Verify a mutation or inventory failure leaves no published archive or success marker.
+7. Restore with `restore-filesystem` into a new data target and verify `psql` is
+   never invoked. Database/all restore against the production archive must fail
+   safely and direct the operator to CNPG.
 
 ## Troubleshooting
 
-- If restore fails with "unrecognized configuration parameter", check PG client version in the Docker image (`pg_dump --version` inside the container). It must match the server major version.
+- If a development logical restore fails with "unrecognized configuration parameter", verify the backup image client matches the local server major version. Production database recovery uses CNPG instead.
 - The `hriv_image_data` volume might not be created by Docker Compose if you're only running `db`. Use `docker run --rm -v hriv_image_data:/data alpine ...` to interact with it.
 - The backup service uses Docker Compose profiles. Use `--profile backup` to include it.
 - If you see "volume already exists but was not created by Docker Compose" warnings, these are harmless.

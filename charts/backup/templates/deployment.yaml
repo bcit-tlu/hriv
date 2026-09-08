@@ -14,8 +14,10 @@
   {{- $sourceImagesExistingClaim = $legacyData.existingClaim -}}
 {{- end -}}
 {{- $tilesEnabled := eq (include "hriv-backup.tilesEnabled" .) "true" -}}
+{{- $colocateWithSourcePod := and .Values.colocateWithSourcePod $sourceImagesExistingClaim -}}
 {{- $backupsEnabled := .Values.persistence.backups.enabled -}}
-{{- $hasDataVolumes := or $sourceImagesEnabled $tilesEnabled $backupsEnabled -}}
+{{- $restoreTargetClaim := .Values.restoreTarget.existingClaim -}}
+{{- $hasDataVolumes := or $sourceImagesEnabled $tilesEnabled $backupsEnabled $restoreTargetClaim -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -60,6 +62,12 @@ spec:
               value: {{ .Values.env.DATA_DIR | quote }}
             - name: BACKUP_CRON_SCHEDULE
               value: {{ .Values.env.BACKUP_CRON_SCHEDULE | quote }}
+            - name: BACKUP_TIMEZONE
+              value: {{ .Values.env.BACKUP_TIMEZONE | quote }}
+            - name: BACKUP_MUTATION_DRAIN_SECONDS
+              value: {{ .Values.env.BACKUP_MUTATION_DRAIN_SECONDS | quote }}
+            - name: CNPG_CLUSTER_NAME
+              value: {{ .Values.env.CNPG_CLUSTER_NAME | quote }}
             - name: BACKUP_RETENTION_COUNT
               value: {{ .Values.env.BACKUP_RETENTION_COUNT | quote }}
             - name: BACKUP_STALE_HOURS
@@ -111,6 +119,10 @@ spec:
             - name: backups
               mountPath: /backups
             {{- end }}
+            {{- if $restoreTargetClaim }}
+            - name: restore-target
+              mountPath: {{ .Values.restoreTarget.mountPath }}
+            {{- end }}
           {{- end }}
       {{- if $hasDataVolumes }}
       volumes:
@@ -129,6 +141,11 @@ spec:
           persistentVolumeClaim:
             claimName: {{ include "hriv-backup.fullname" . }}-backups
         {{- end }}
+        {{- if $restoreTargetClaim }}
+        - name: restore-target
+          persistentVolumeClaim:
+            claimName: {{ $restoreTargetClaim }}
+        {{- end }}
       {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
@@ -138,9 +155,9 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if or .Values.affinity $sourceImagesExistingClaim (and $tilesEnabled .Values.persistence.tiles.existingClaim) }}
+      {{- if or .Values.affinity $colocateWithSourcePod (and $tilesEnabled .Values.persistence.tiles.existingClaim) }}
       affinity:
-        {{- if or $sourceImagesExistingClaim (and $tilesEnabled .Values.persistence.tiles.existingClaim) }}
+        {{- if or $colocateWithSourcePod (and $tilesEnabled .Values.persistence.tiles.existingClaim) }}
         podAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
             - labelSelector:

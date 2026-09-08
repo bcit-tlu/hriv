@@ -2,7 +2,8 @@
 
 Use this when you are under pressure and need the shortest path to a backup
 health check or a restore. For the deeper design and tradeoffs, see
-[`backup-and-disaster-recovery.md`](backup-and-disaster-recovery.md).
+[`backup-and-disaster-recovery.md`](backup-and-disaster-recovery.md) and the
+normative [`recovery-set-contract.md`](recovery-set-contract.md).
 
 ## 1) Is the backup running / healthy?
 
@@ -40,13 +41,24 @@ health check or a restore. For the deeper design and tradeoffs, see
    kubectl -n hriv exec deploy/hriv-backup -- python backup.py list
    ```
 
-2. Restore that snapshot:
+2. Restore PostgreSQL through CNPG to the snapshot manifest's
+   `database_recovery.target_time`, using a fresh recovery cluster with explicit
+   source database and owner settings.
+
+3. Set `restoreTarget.existingClaim` on the backup chart to mount a new
+   source-image target PVC at `/restore-target`, then restore only the filesystem
+   component:
 
    ```bash
-   kubectl -n hriv exec deploy/hriv-backup -- python backup.py restore <SNAPSHOT_NAME>
+   kubectl -n hriv exec deploy/hriv-backup -- \
+     python backup.py restore-filesystem <SNAPSHOT_NAME> \
+     --data-dir /restore-target
    ```
 
-   The restore command toggles maintenance mode automatically.
+   The restore command toggles maintenance mode automatically. The unqualified
+   `restore` command is legacy/development-only and must not be run after a
+   newer CNPG recovery because it also attempts `db.sql`. Current production
+   archives reject that combined path before invoking `psql`.
 
    `<SNAPSHOT_NAME>` may be the full archive name
    (`hriv-backup-20260101-020000-9f3c1ab2.tar.gz`), the name without the
@@ -55,7 +67,7 @@ health check or a restore. For the deeper design and tradeoffs, see
    unchanged. If a prefix matches more than one snapshot the command fails and
    logs the matches — rerun it with the full name.
 
-3. Rebuild tiles after the files restore:
+4. Rebuild tiles after the files restore:
 
    ```bash
    curl -X POST "https://<host>/api/admin/tasks/rebuild-tiles" \
@@ -66,7 +78,7 @@ health check or a restore. For the deeper design and tradeoffs, see
 
    Wait for the task to finish.
 
-4. Verify the system:
+5. Verify the system:
    - `kubectl -n hriv exec deploy/hriv-backend -- curl -s http://localhost:8000/api/health`
    - `kubectl -n hriv exec deploy/hriv-backend -- curl -s http://localhost:8000/api/status`
    - Confirm maintenance mode is off.

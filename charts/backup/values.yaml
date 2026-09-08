@@ -24,12 +24,17 @@ postgresSecretName: postgres-db-credentials
 azureSecretName: azure-storage-credentials
 
 # Pod label used for pod affinity when sharing the backend's RWO data PVC.
-# Ensures the backup pod is co-located on the same node as the backend.
+# Disable colocation when the existing source-images claim is RWX so heavy backup
+# reads can be scheduled away from the application pod.
+colocateWithSourcePod: true
 colocateWithPodLabel: hriv-backend
 
 env:
   DATA_DIR: /data
-  BACKUP_CRON_SCHEDULE: '0 2 * * *'
+  BACKUP_CRON_SCHEDULE: '0 10 * * *'
+  BACKUP_TIMEZONE: UTC
+  BACKUP_MUTATION_DRAIN_SECONDS: '5'
+  CNPG_CLUSTER_NAME: pg-core
   BACKUP_RETENTION_COUNT: '30'
   BACKUP_STALE_HOURS: '26'
   # Archives are staged here while they are built (and restores download and
@@ -102,6 +107,10 @@ persistence:
     size: 10Gi
     accessModes:
       - ReadWriteOnce
+
+restoreTarget:
+  existingClaim: ''
+  mountPath: /restore-target
 
 # Backups and restores stage on the /backups PVC (see BACKUP_STAGING_DIR), so
 # pod-local ephemeral storage only holds logs and pg_dump/psql scratch. The explicit
