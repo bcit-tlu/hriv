@@ -100,6 +100,16 @@ assert_not_contains "$backup_deployment" "BACKUP_STAGING_DIR" \
   "backup deployment should omit BACKUP_STAGING_DIR so the service keeps its <backups volume>/.staging default"
 assert_contains "$backup_deployment" 'value: "0 10 * * *"' \
   "backup deployment should schedule heavy work at the non-peak 10:00 UTC window"
+assert_contains "$backup_deployment" "name: BACKUP_INVENTORY_TIMEOUT_SECONDS" \
+  "backup deployment should render the bounded inventory timeout"
+assert_contains "$backup_deployment" 'value: "120"' \
+  "backup deployment should default the bounded inventory timeout to 120 seconds"
+
+backup_inventory_timeout_deployment="$(extract_yaml_doc \
+  "$(helm template test charts/backup --set env.BACKUP_INVENTORY_TIMEOUT_SECONDS=45)" \
+  "Deployment" "test-hriv-backup")"
+assert_contains "$backup_inventory_timeout_deployment" 'value: "45"' \
+  "backup deployment should render an explicit inventory timeout override"
 
 backup_rwx_deployment="$(extract_yaml_doc \
   "$(helm template test charts/backup \

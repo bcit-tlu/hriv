@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     Column,
     DateTime,
     ForeignKey,
@@ -19,6 +20,20 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
+
+# Internal coordination table used only by the production backup service to
+# force a bounded WAL record. It deliberately has no ORM/API model.
+backup_recovery_wal_fence = Table(
+    "backup_recovery_wal_fence",
+    Base.metadata,
+    Column("singleton", Boolean, nullable=False, primary_key=True),
+    Column("generation", BigInteger, nullable=False),
+    Column("fenced_at", DateTime(timezone=True), nullable=False),
+    CheckConstraint(
+        "singleton",
+        name="ck_backup_recovery_wal_fence_singleton",
+    ),
+)
 
 user_programs = Table(
     "user_programs",

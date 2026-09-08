@@ -33,6 +33,9 @@ class _BackupTestCase(unittest.TestCase):
         "BACKUP_CRON_SCHEDULE",
         "BACKUP_TIMEZONE",
         "BACKUP_MUTATION_DRAIN_SECONDS",
+        "BACKUP_INVENTORY_TIMEOUT_SECONDS",
+        "BACKUP_WAL_FENCE_TIMEOUT_SECONDS",
+        "BACKUP_WAL_FENCE_POLL_SECONDS",
         "BACKUP_RETENTION_COUNT",
         "AZURE_STORAGE_CONNECTION_STRING",
         "AZURE_STORAGE_CONTAINER",
@@ -62,9 +65,37 @@ class _BackupTestCase(unittest.TestCase):
         for key in self._ENV_KEYS:
             os.environ.pop(key, None)
         os.environ["BACKUP_MUTATION_DRAIN_SECONDS"] = "0"
+        os.environ["BACKUP_WAL_FENCE_TIMEOUT_SECONDS"] = "600"
+        os.environ["BACKUP_WAL_FENCE_POLL_SECONDS"] = "0.001"
         for key, value in env.items():
             os.environ[key] = value
         importlib.reload(backup)
+
+    def _seed_prior_publication(self, local_dir):
+        started = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        completed = started + timedelta(minutes=1)
+        state = backup._new_backup_state("prior", "prior-run")
+        for backup_type in ("database", "filesystem"):
+            backup._mark_attempt_started(state, backup_type, started_at=started)
+            backup._mark_attempt_finished(
+                state,
+                backup_type,
+                started_at=started,
+                completed_at=completed,
+                success=True,
+                size_bytes=1,
+                archive_key=f"prior-{backup_type}",
+            )
+        marker = {
+            "snapshot_name": "prior",
+            "created_at": started.isoformat(),
+            "completed_at": completed.isoformat(),
+            "run_id": "prior-run",
+            "types": {},
+        }
+        (local_dir / "BACKUP_STATE.json").write_text(json.dumps(state))
+        (local_dir / "LAST_SUCCESS.json").write_text(json.dumps(marker))
+        return state, marker
 
 
 class BackupModeTestCase(_BackupTestCase):
@@ -103,6 +134,33 @@ class BackupModeTestCase(_BackupTestCase):
     def test_negative_mutation_drain_exits(self):
         with self.assertRaises(SystemExit):
             self._reload({"BACKUP_MUTATION_DRAIN_SECONDS": "-1"})
+
+    def test_inventory_timeout_default_and_validation(self):
+        self._reload({})
+        self.assertEqual(backup.BACKUP_INVENTORY_TIMEOUT_SECONDS, 120)
+        for value in ("0", "-1", "nan", "inf", "invalid"):
+            with self.subTest(value=value), self.assertRaises(SystemExit):
+                self._reload({"BACKUP_INVENTORY_TIMEOUT_SECONDS": value})
+
+    def test_wal_fence_settings_defaults_and_validation(self):
+        self._reload({})
+        os.environ.pop("BACKUP_WAL_FENCE_TIMEOUT_SECONDS")
+        os.environ.pop("BACKUP_WAL_FENCE_POLL_SECONDS")
+        importlib.reload(backup)
+        self.assertEqual(backup.BACKUP_WAL_FENCE_TIMEOUT_SECONDS, 600)
+        self.assertEqual(backup.BACKUP_WAL_FENCE_POLL_SECONDS, 5)
+        for env in (
+            {"BACKUP_WAL_FENCE_TIMEOUT_SECONDS": "0"},
+            {"BACKUP_WAL_FENCE_POLL_SECONDS": "0"},
+            {
+                "BACKUP_WAL_FENCE_TIMEOUT_SECONDS": "1",
+                "BACKUP_WAL_FENCE_POLL_SECONDS": "2",
+            },
+            {"BACKUP_WAL_FENCE_TIMEOUT_SECONDS": "invalid"},
+            {"BACKUP_WAL_FENCE_POLL_SECONDS": "nan"},
+        ):
+            with self.subTest(env=env), self.assertRaises(SystemExit):
+                self._reload(env)
 
 
 class MaintenanceScopeTestCase(_BackupTestCase):
@@ -1021,32 +1079,6 @@ class BackupRunTestCase(_BackupTestCase):
         (self.data_dir / "tiles").mkdir()
         (self.data_dir / "tiles" / "img.dzi").write_bytes(b"tiles")
 
-    def _seed_prior_publication(self, local_dir):
-        started = datetime(2026, 1, 1, tzinfo=timezone.utc)
-        completed = started + timedelta(minutes=1)
-        state = backup._new_backup_state("prior", "prior-run")
-        for backup_type in ("database", "filesystem"):
-            backup._mark_attempt_started(state, backup_type, started_at=started)
-            backup._mark_attempt_finished(
-                state,
-                backup_type,
-                started_at=started,
-                completed_at=completed,
-                success=True,
-                size_bytes=1,
-                archive_key=f"prior-{backup_type}",
-            )
-        marker = {
-            "snapshot_name": "prior",
-            "created_at": started.isoformat(),
-            "completed_at": completed.isoformat(),
-            "run_id": "prior-run",
-            "types": {},
-        }
-        (local_dir / "BACKUP_STATE.json").write_text(json.dumps(state))
-        (local_dir / "LAST_SUCCESS.json").write_text(json.dumps(marker))
-        return state, marker
-
     def test_local_publication_state_or_marker_failure_restores_prior_documents(self):
         for failure in ("state", "marker"):
             with self.subTest(failure=failure):
@@ -1392,11 +1424,18 @@ class BackupRunTestCase(_BackupTestCase):
     def test_development_archive_keeps_logical_dump(self):
         self._reload({"BACKUP_MODE": "development", "DATA_DIR": str(self.data_dir)})
         local_dir = self.tmp / "backups"
+        commands = []
+
+        def tracked_dump(cmd, **kwargs):
+            commands.append(cmd)
+            return _fake_pg_dump_run(cmd, **kwargs)
+
         with (
             patch.object(backup, "_local_backup_dir", return_value=local_dir),
-            patch.object(backup.subprocess, "run", side_effect=_fake_pg_dump_run),
+            patch.object(backup.subprocess, "run", side_effect=tracked_dump),
         ):
             result = backup.run_backup()
+        self.assertFalse(any(cmd[0] == "psql" for cmd in commands))
         with tarfile.open(result, "r:gz") as tar:
             self.assertTrue(any(name.endswith("/db.sql") for name in tar.getnames()))
         manifest = json.loads(
@@ -1579,7 +1618,51 @@ class BackupRunTestCase(_BackupTestCase):
         self.assertEqual(manifest["source_images"]["total_bytes"], len(b"source"))
         self.assertTrue(manifest["capture_started_at"])
         self.assertTrue(manifest["capture_boundary_at"])
+        self.assertEqual(manifest["capture_boundary_lsn"], "0/5000000")
         self.assertTrue(manifest["completed_at"])
+        recovery = manifest["database_recovery"]
+        self.assertEqual(recovery["target_lsn"], "0/5000000")
+        self.assertEqual(recovery["archive_timeout_seconds"], 300)
+        self.assertEqual(recovery["wal_fence_file"], "000000010000000000000006")
+        self.assertEqual(
+            recovery["wal_fence_committed_at"], "2026-01-02T03:04:06+00:00"
+        )
+        self.assertEqual(recovery["wal_fence_archived_at"], "2026-01-02T03:04:07+00:00")
+        psql_commands = [cmd for cmd in commands if cmd[0] == "psql"]
+        self.assertTrue(all("--quiet" in cmd for cmd in psql_commands))
+        psql_queries = [cmd[-1] for cmd in psql_commands]
+        self.assertIn("archive_timeout", psql_queries[0])
+        inventory_query = psql_queries[1]
+        self.assertLess(
+            inventory_query.index("BEGIN;"),
+            inventory_query.index("SET LOCAL lock_timeout"),
+        )
+        self.assertLess(
+            inventory_query.index("SET LOCAL lock_timeout"),
+            inventory_query.index("SET LOCAL statement_timeout"),
+        )
+        self.assertLess(
+            inventory_query.index("SET LOCAL statement_timeout"),
+            inventory_query.index("LOCK TABLE"),
+        )
+        self.assertLess(
+            inventory_query.index("LOCK TABLE"), inventory_query.index("COPY (")
+        )
+        self.assertIn("SET LOCAL lock_timeout = '120000ms'", inventory_query)
+        self.assertIn("SET LOCAL statement_timeout = '120000ms'", inventory_query)
+        self.assertLess(
+            inventory_query.index("COPY ("), inventory_query.index("COMMIT;")
+        )
+        self.assertIn("LOCK TABLE public.source_images IN SHARE MODE", inventory_query)
+        self.assertIn("AT TIME ZONE 'UTC'", inventory_query)
+        self.assertIn("UPDATE public.backup_recovery_wal_fence", psql_queries[2])
+        self.assertIn("generation = generation + 1", psql_queries[2])
+        self.assertIn("fenced_at = CURRENT_TIMESTAMP", psql_queries[2])
+        self.assertIn("TO STDOUT WITH (FORMAT csv, HEADER true)", psql_queries[2])
+        self.assertIn("pg_walfile_name", psql_queries[3])
+        self.assertIn("AT TIME ZONE 'UTC'", psql_queries[3])
+        self.assertIn("pg_stat_archiver", psql_queries[4])
+        self.assertIn("AT TIME ZONE 'UTC'", psql_queries[4])
 
 
 class AzurePublicationTestCase(_BackupTestCase):
@@ -1918,8 +2001,17 @@ class AzurePublicationTestCase(_BackupTestCase):
         inventory_run, commands = _production_inventory_run(self.data_dir, rows)
 
         def checked_inventory(cmd, **kwargs):
-            if cmd[0] == "psql":
+            if cmd[0] == "psql" and any(
+                token in cmd[-1]
+                for token in (
+                    "source_images",
+                    "UPDATE public.backup_recovery_wal_fence",
+                    "pg_walfile_name",
+                )
+            ):
                 self.assertTrue(backup._maintenance_flag_path().exists())
+            if cmd[0] == "psql" and "pg_stat_archiver" in cmd[-1]:
+                self.assertFalse(backup._maintenance_flag_path().exists())
             return inventory_run(cmd, **kwargs)
 
         with (
@@ -1984,7 +2076,7 @@ class AzurePublicationTestCase(_BackupTestCase):
 
         inventory_run, _commands = _production_inventory_run(
             self.data_dir,
-            boundary="2026-02-03T04:05:06+00:00",
+            boundary="2026-02-03T04:05:06.000000Z",
             after_boundary=commit_after_snapshot,
         )
         with (
@@ -2015,13 +2107,236 @@ class AzurePublicationTestCase(_BackupTestCase):
         )
         self.assertTrue(late.exists())
 
+    def test_database_timestamps_require_canonical_utc_csv_format(self):
+        parsed = backup._parse_utc_sql_timestamp("2026-01-02T03:04:05.123456Z")
+        self.assertEqual(parsed.isoformat(), "2026-01-02T03:04:05.123456+00:00")
+        for value in (
+            "2026-01-02T03:04:05Z",
+            "2026-01-02T03:04:05.123456+00:00",
+            "2026-02-30T03:04:05.123456Z",
+            None,
+        ):
+            with self.subTest(value=value):
+                self.assertIsNone(backup._parse_utc_sql_timestamp(value))
+
+    def test_inventory_boundary_rejects_invalid_time_and_lsn(self):
+        self._reload({"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)})
+        for kwargs, error in (
+            ({"boundary": "not-a-time"}, "invalid boundary time"),
+            (
+                {"boundary": "2026-01-02T03:04:05+00:00"},
+                "invalid boundary time",
+            ),
+            ({"target_lsn": "not-an-lsn"}, "invalid boundary LSN"),
+        ):
+            with self.subTest(kwargs=kwargs):
+                inventory_run, _commands = _production_inventory_run(
+                    self.data_dir, **kwargs
+                )
+                with (
+                    patch.object(backup.subprocess, "run", side_effect=inventory_run),
+                    self.assertRaisesRegex(RuntimeError, error),
+                ):
+                    backup._query_source_image_rows(
+                        backup._parse_db_url(backup.DATABASE_URL),
+                        self.tmp / "inventory.csv",
+                    )
+
+    def test_inventory_boundary_rejects_non_strict_csv_columns(self):
+        self._reload({"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)})
+
+        def invalid_csv(_cmd, **kwargs):
+            kwargs["stdout"].write(b"record_type,boundary_time,id\nboundary,now,\n")
+            return MagicMock(returncode=0, stderr=b"")
+
+        with (
+            patch.object(backup.subprocess, "run", side_effect=invalid_csv),
+            self.assertRaisesRegex(RuntimeError, "invalid CSV columns"),
+        ):
+            backup._query_source_image_rows(
+                backup._parse_db_url(backup.DATABASE_URL), self.tmp / "inventory.csv"
+            )
+
+    def test_inventory_timeouts_fail_closed_and_preserve_prior_success(self):
+        for failure in ("subprocess", "database"):
+            with self.subTest(failure=failure):
+                self._reload(
+                    {"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)}
+                )
+                local_dir = self.tmp / f"inventory-timeout-{failure}"
+                local_dir.mkdir()
+                _prior_state, prior_marker = self._seed_prior_publication(local_dir)
+                inventory_run, commands = _production_inventory_run(
+                    self.data_dir, returncode=1 if failure == "database" else 0
+                )
+                observed_timeout = []
+
+                def timeout_run(cmd, **kwargs):
+                    if cmd[0] == "psql" and "source_images" in cmd[-1]:
+                        observed_timeout.append(kwargs.get("timeout"))
+                        if failure == "subprocess":
+                            raise subprocess.TimeoutExpired(cmd, kwargs["timeout"])
+                        commands.append(cmd)
+                        return MagicMock(
+                            returncode=1,
+                            stderr=b"canceling statement due to lock timeout",
+                        )
+                    return inventory_run(cmd, **kwargs)
+
+                with (
+                    patch.object(backup, "_local_backup_dir", return_value=local_dir),
+                    patch.object(backup.subprocess, "run", side_effect=timeout_run),
+                    self.assertLogs("hriv-backup", level="ERROR") as captured_logs,
+                ):
+                    self.assertIsNone(backup.run_backup())
+
+                expected_error = (
+                    "subprocess exceeded 125 seconds"
+                    if failure == "subprocess"
+                    else "canceling statement due to lock timeout"
+                )
+                self.assertIn(expected_error, "\n".join(captured_logs.output))
+                self.assertEqual(observed_timeout, [125])
+                self.assertFalse(backup._maintenance_flag_path().exists())
+                state = json.loads((local_dir / "BACKUP_STATE.json").read_text())
+                self.assertFalse(state["database"]["success"])
+                self.assertFalse(state["filesystem"]["success"])
+                self.assertEqual(
+                    state["database"]["last_success_archive_key"], "prior-database"
+                )
+                self.assertEqual(
+                    state["filesystem"]["last_success_archive_key"],
+                    "prior-filesystem",
+                )
+                self.assertEqual(
+                    json.loads((local_dir / "LAST_SUCCESS.json").read_text()),
+                    prior_marker,
+                )
+                self.assertEqual(list(local_dir.glob("*.tar.gz")), [])
+                self.assertEqual(list(local_dir.glob("*.manifest.json")), [])
+                self.assertEqual(list(local_dir.glob(".publication-*.json")), [])
+                inventory_queries = [
+                    cmd[-1]
+                    for cmd in commands
+                    if cmd[0] == "psql" and "source_images" in cmd[-1]
+                ]
+                if failure == "subprocess":
+                    self.assertEqual(inventory_queries, [])
+                else:
+                    self.assertEqual(len(inventory_queries), 1)
+
+    def test_archive_timeout_precondition_rejects_invalid_values_without_publication(
+        self,
+    ):
+        for archive_timeout in ("0", "600", "601", "malformed"):
+            with self.subTest(archive_timeout=archive_timeout):
+                self._reload(
+                    {"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)}
+                )
+                local_dir = self.tmp / f"archive-timeout-{archive_timeout}"
+                local_dir.mkdir()
+                _prior_state, prior_marker = self._seed_prior_publication(local_dir)
+                inventory_run, commands = _production_inventory_run(
+                    self.data_dir, archive_timeout=archive_timeout
+                )
+                with (
+                    patch.object(backup, "_local_backup_dir", return_value=local_dir),
+                    patch.object(backup.subprocess, "run", side_effect=inventory_run),
+                ):
+                    self.assertIsNone(backup.run_backup())
+                state = json.loads((local_dir / "BACKUP_STATE.json").read_text())
+                self.assertFalse(state["database"]["success"])
+                self.assertFalse(state["filesystem"]["success"])
+                self.assertEqual(
+                    state["database"]["last_success_archive_key"], "prior-database"
+                )
+                self.assertEqual(
+                    json.loads((local_dir / "LAST_SUCCESS.json").read_text()),
+                    prior_marker,
+                )
+                self.assertEqual(list(local_dir.glob("*.tar.gz")), [])
+                self.assertEqual(list(local_dir.glob("*.manifest.json")), [])
+                psql_queries = [cmd[-1] for cmd in commands if cmd[0] == "psql"]
+                self.assertEqual(len(psql_queries), 1)
+                self.assertIn("archive_timeout", psql_queries[0])
+
+    def test_wal_fence_update_requires_exactly_one_positive_generation_row(self):
+        self._reload({"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)})
+        db = backup._parse_db_url(backup.DATABASE_URL)
+        for payload in (
+            "generation\n",
+            "generation\n0\n",
+            "generation\ninvalid\n",
+            "generation\n1\n2\n",
+            "wrong_column\n1\n",
+        ):
+            with self.subTest(payload=payload):
+                commands = []
+
+                def invalid_update(cmd, **_kwargs):
+                    commands.append(cmd)
+                    return MagicMock(returncode=0, stdout=payload, stderr="")
+
+                with (
+                    patch.object(backup.subprocess, "run", side_effect=invalid_update),
+                    self.assertRaises(RuntimeError),
+                ):
+                    backup._emit_wal_fence(db)
+                self.assertEqual(len(commands), 1)
+                self.assertIn(
+                    "UPDATE public.backup_recovery_wal_fence", commands[0][-1]
+                )
+
+    def test_wal_fence_wait_polls_until_same_timeline_file_is_archived(self):
+        self._reload({"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)})
+        fence = "000000010000000000000006"
+        inventory_run, _commands = _production_inventory_run(
+            self.data_dir,
+            archived_files=[
+                "000000020000000000000006",
+                "00000002.history",
+                "000000010000000000000006.backup",
+                None,
+                "000000010000000000000005",
+                f"{fence}.partial",
+            ],
+        )
+        with (
+            patch.object(backup.subprocess, "run", side_effect=inventory_run),
+            patch.object(backup.time, "sleep") as sleep,
+        ):
+            archived_at = backup._wait_for_wal_fence_archive(
+                backup._parse_db_url(backup.DATABASE_URL), fence
+            )
+        self.assertEqual(archived_at.isoformat(), "2026-01-02T03:04:07+00:00")
+        self.assertEqual(sleep.call_count, 5)
+        sleep.assert_called_with(backup.BACKUP_WAL_FENCE_POLL_SECONDS)
+
+    def test_wal_fence_wait_times_out_fail_closed(self):
+        self._reload({"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)})
+        fence = "000000010000000000000006"
+        inventory_run, _commands = _production_inventory_run(
+            self.data_dir, archived_files=["000000010000000000000005"]
+        )
+        with (
+            patch.object(backup.subprocess, "run", side_effect=inventory_run),
+            patch.object(backup.time, "monotonic", side_effect=[0, 601]),
+            self.assertRaisesRegex(
+                RuntimeError,
+                "expected timeline 00000001, last archive-status timeline 00000001",
+            ),
+        ):
+            backup._wait_for_wal_fence_archive(
+                backup._parse_db_url(backup.DATABASE_URL), fence
+            )
+
     def test_zero_source_rows_still_return_snapshot_boundary(self):
         self._reload({"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)})
         local_dir = self.tmp / "backups"
         inventory_run, _commands = _production_inventory_run(
             self.data_dir,
             rows=[],
-            boundary="2026-03-04T05:06:07+00:00",
+            boundary="2026-03-04T05:06:07.000000Z",
         )
         with (
             patch.object(backup, "_local_backup_dir", return_value=local_dir),
@@ -2045,6 +2360,72 @@ class AzurePublicationTestCase(_BackupTestCase):
             "data/source_images/img.jpg",
         )
 
+    def test_fence_subprocess_failure_publishes_nothing_and_preserves_prior_success(
+        self,
+    ):
+        self._reload({"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)})
+        local_dir = self.tmp / "fence-failure"
+        local_dir.mkdir()
+        prior_state, prior_marker = self._seed_prior_publication(local_dir)
+        inventory_run, _commands = _production_inventory_run(self.data_dir)
+
+        def fail_fence(cmd, **kwargs):
+            if (
+                cmd[0] == "psql"
+                and "UPDATE public.backup_recovery_wal_fence" in cmd[-1]
+            ):
+                return MagicMock(returncode=1, stdout="", stderr="permission denied")
+            return inventory_run(cmd, **kwargs)
+
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=local_dir),
+            patch.object(backup.subprocess, "run", side_effect=fail_fence),
+        ):
+            self.assertIsNone(backup.run_backup())
+        state = json.loads((local_dir / "BACKUP_STATE.json").read_text())
+        self.assertFalse(state["database"]["success"])
+        self.assertFalse(state["filesystem"]["success"])
+        self.assertEqual(
+            state["database"]["last_success_archive_key"], "prior-database"
+        )
+        self.assertEqual(
+            state["filesystem"]["last_success_archive_key"], "prior-filesystem"
+        )
+        self.assertEqual(
+            json.loads((local_dir / "LAST_SUCCESS.json").read_text()), prior_marker
+        )
+        self.assertEqual(list(local_dir.glob("*.tar.gz")), [])
+        self.assertEqual(list(local_dir.glob("*.manifest.json")), [])
+        self.assertNotEqual(state, prior_state)
+
+    def test_fence_archive_timeout_publishes_nothing_and_preserves_prior_success(self):
+        self._reload({"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)})
+        local_dir = self.tmp / "fence-timeout"
+        local_dir.mkdir()
+        _prior_state, prior_marker = self._seed_prior_publication(local_dir)
+        inventory_run, _commands = _production_inventory_run(self.data_dir)
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=local_dir),
+            patch.object(backup.subprocess, "run", side_effect=inventory_run),
+            patch.object(
+                backup,
+                "_wait_for_wal_fence_archive",
+                side_effect=RuntimeError("timed out waiting for WAL fence"),
+            ),
+        ):
+            self.assertIsNone(backup.run_backup())
+        state = json.loads((local_dir / "BACKUP_STATE.json").read_text())
+        self.assertFalse(state["database"]["success"])
+        self.assertEqual(
+            state["database"]["last_success_archive_key"], "prior-database"
+        )
+        self.assertEqual(
+            json.loads((local_dir / "LAST_SUCCESS.json").read_text()), prior_marker
+        )
+        self.assertEqual(list(local_dir.glob("*.tar.gz")), [])
+        self.assertEqual(list(local_dir.glob("*.manifest.json")), [])
+        self.assertEqual(list(local_dir.glob(".publication-*.json")), [])
+
     def test_production_inventory_query_failure_rejects_without_publication(self):
         self._reload({"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)})
         local_dir = self.tmp / "backups"
@@ -2057,6 +2438,31 @@ class AzurePublicationTestCase(_BackupTestCase):
 
         self.assertIsNone(result)
         self.assertTrue(any(cmd[0] == "psql" for cmd in commands))
+        inventory_query = next(
+            cmd[-1]
+            for cmd in commands
+            if cmd[0] == "psql" and "source_images" in cmd[-1]
+        )
+        self.assertLess(
+            inventory_query.index("BEGIN;"),
+            inventory_query.index("SET LOCAL lock_timeout"),
+        )
+        self.assertLess(
+            inventory_query.index("SET LOCAL lock_timeout"),
+            inventory_query.index("SET LOCAL statement_timeout"),
+        )
+        self.assertLess(
+            inventory_query.index("SET LOCAL statement_timeout"),
+            inventory_query.index("LOCK TABLE"),
+        )
+        self.assertLess(
+            inventory_query.index("LOCK TABLE"), inventory_query.index("COPY (")
+        )
+        self.assertIn("SET LOCAL lock_timeout = '120000ms'", inventory_query)
+        self.assertIn("SET LOCAL statement_timeout = '120000ms'", inventory_query)
+        self.assertLess(
+            inventory_query.index("COPY ("), inventory_query.index("COMMIT;")
+        )
         self.assertFalse(any(cmd[0] == "pg_dump" for cmd in commands))
         self.assertEqual(list(local_dir.glob("*.tar.gz")), [])
         self.assertEqual(list(local_dir.glob("*.manifest.json")), [])
@@ -2363,27 +2769,68 @@ def _production_inventory_run(
     rows=None,
     *,
     returncode=0,
-    boundary="2026-01-02T03:04:05+00:00",
+    boundary="2026-01-02T03:04:05.000000Z",
+    target_lsn="0/5000000",
+    archive_timeout="300",
+    fence_file="000000010000000000000006",
+    archived_files=None,
     after_boundary=None,
 ):
     commands = []
     if rows is None:
         rows = [("1", str(Path(data_dir) / "source_images" / "img.jpg"), "completed")]
+    archived = iter(archived_files or [fence_file])
 
     def run(cmd, **kwargs):
         commands.append(cmd)
         if cmd[0] == "pg_dump":
             raise AssertionError("production backup invoked pg_dump")
-        if cmd[0] == "psql" and returncode == 0:
-            lines = ["record_type,boundary_time,id,stored_path,status"]
-            lines.append(f"boundary,{boundary},,,")
-            lines.extend(f"source,,{','.join(row)}" for row in rows)
+        if cmd[0] != "psql":
+            return MagicMock(returncode=0)
+        query = cmd[-1]
+        if "pg_settings" in query and "archive_timeout" in query:
+            return MagicMock(
+                returncode=0,
+                stdout=("archive_timeout_seconds\n" f"{archive_timeout}\n"),
+                stderr="",
+            )
+        if returncode != 0 and "source_images" in query:
+            return MagicMock(returncode=returncode, stderr=b"inventory failed")
+        if "source_images" in query:
+            lines = ["record_type,boundary_time,boundary_lsn,id,stored_path,status"]
+            lines.append(f"boundary,{boundary},{target_lsn},,,")
+            lines.extend(f"source,,,{','.join(row)}" for row in rows)
             kwargs["stdout"].write(("\n".join(lines) + "\n").encode())
             if after_boundary:
                 after_boundary()
-        return MagicMock(
-            returncode=returncode, stderr=b"inventory failed" if returncode else b""
-        )
+            return MagicMock(returncode=0, stderr=b"")
+        if "UPDATE public.backup_recovery_wal_fence" in query:
+            return MagicMock(
+                returncode=0,
+                stdout="generation\n1\n",
+                stderr="",
+            )
+        if "pg_walfile_name" in query:
+            return MagicMock(
+                returncode=0,
+                stdout=(
+                    "wal_fence_file,wal_fence_committed_at\n"
+                    f"{fence_file},2026-01-02T03:04:06.000000Z\n"
+                ),
+                stderr="",
+            )
+        if "pg_stat_archiver" in query:
+            archived_file = next(archived, fence_file)
+            archived_at = "2026-01-02T03:04:07.000000Z" if archived_file else ""
+            return MagicMock(
+                returncode=0,
+                stdout=(
+                    "last_archived_wal,last_archived_time\n"
+                    f"{archived_file or ''},{archived_at}\n"
+                ),
+                stderr="",
+            )
+        raise AssertionError(f"unexpected psql query: {query}")
 
     return run, commands
 
