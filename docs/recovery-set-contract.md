@@ -111,6 +111,7 @@ A successful manifest is versioned and records at least:
   "capture_boundary_lsn": "<PostgreSQL LSN>",
   "completed_at": "<UTC timestamp>",
   "backup_mode": "production",
+  "database_name": "hriv",
   "database_recovery": {
     "provider": "cloudnative-pg",
     "cluster": "pg-core",
@@ -145,6 +146,12 @@ A successful manifest is versioned and records at least:
   }
 }
 ```
+
+The top-level format-2 `database_name` is the application connection database inventoried at the
+snapshot boundary (`hriv` for HRIV). It is not a CNPG bootstrap/recovery database name, database
+owner, or restore-validation source profile; those recovery settings are independently controlled
+and cross-checked. Existing format-2 manifests already emit `database_name`, so this is a contract
+documentation correction and requires no manifest-schema or backup-code change.
 
 Implementations may add fields but cannot change the meaning of existing fields
 without a format-version change. These WAL-fence fields are additive-compatible
