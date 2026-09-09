@@ -157,6 +157,15 @@ existing externally managed Secrets. Do not put a connection string in Helm
 values: an empty `azureSecretName` fails rendering with instructions to provide
 the external Secret.
 
+For upgrade compatibility, a vault-disabled release that already owns the named
+Secret is detected with Helm `lookup`. The chart retains that object as a
+metadata-only shell with `helm.sh/resource-policy: keep`; it never copies Secret
+data into the rendered release. This prevents Helm from pruning an
+operator-replaced credential during the transition to external ownership.
+Pre-existing Secrets not owned by the release and Vault-managed Secrets are not
+adopted. After transferring ownership, remove the Helm ownership annotations;
+the keep policy protects the Secret when a later upgrade omits it.
+
 ## Observability markers
 
 The backup service writes two small JSON marker files alongside the retained

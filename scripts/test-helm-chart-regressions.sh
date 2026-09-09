@@ -115,6 +115,15 @@ assert_contains "$backup_existing_secret_deployment" "key: AZURE_STORAGE_CONNECT
 assert_not_contains "$backup_default_manifest$backup_vault_manifest$backup_existing_secret_manifest" \
   "azureConnectionString" \
   "backup chart output must never contain the former placeholder Azure credential"
+backup_secret_template="$(cat charts/backup/templates/secrets.yaml)"
+assert_contains "$backup_secret_template" 'lookup "v1" "Secret"' \
+  "backup chart should detect a legacy Helm-owned Secret during a live upgrade"
+assert_contains "$backup_secret_template" 'meta.helm.sh/release-name' \
+  "backup chart should preserve only a Secret owned by the same Helm release"
+assert_contains "$backup_secret_template" 'helm.sh/resource-policy: keep' \
+  "backup chart should protect a retained legacy Secret from later pruning"
+assert_not_contains "$backup_secret_template" "azureConnectionString" \
+  "backup Secret migration template must not embed the former placeholder"
 
 for vault_enabled in false true; do
   if backup_missing_azure_secret_output="$(helm template test charts/backup \

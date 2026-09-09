@@ -51,6 +51,16 @@ create that target; a vault-disabled standalone install must precreate it.
 Leaving the name empty fails Helm rendering rather than deploying a placeholder
 credential.
 
+A vault-disabled upgrade may encounter a Secret owned by the previous chart,
+including one whose original placeholder was replaced by an operator. Helm
+`lookup` detects only an object annotated as owned by the same release and keeps
+it as a metadata-only resource with `helm.sh/resource-policy: keep`; credential
+data is not copied into rendered release manifests. Externally owned and
+Vault-managed Secrets are never adopted. Transfer legacy objects to external
+ownership by removing their Helm ownership annotations after the first hardened
+upgrade; the keep policy prevents pruning when the chart subsequently omits the
+resource.
+
 The backup pod runs non-root as UID/GID `10001` by default. Pod security uses
 `fsGroup: 10001`, `fsGroupChangePolicy: OnRootMismatch`, and the runtime-default
 seccomp profile; container security drops all capabilities, blocks privilege
