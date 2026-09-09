@@ -28,6 +28,18 @@ assert_not_contains() {
   fi
 }
 
+assert_occurrences() {
+  local haystack="$1"
+  local needle="$2"
+  local expected="$3"
+  local message="$4"
+  local actual
+  actual="$(grep -Fc -- "$needle" <<<"$haystack")"
+  if [[ "$actual" -ne "$expected" ]]; then
+    fail "$message (expected $expected, found $actual)"
+  fi
+}
+
 extract_yaml_doc() {
   local manifest="$1"
   local kind="$2"
@@ -83,6 +95,7 @@ assert_contains "$backup_explicit_tiles_manifest" "claimName: hriv-backend-tiles
   "backup chart should keep the explicit split-PVC tiles claim when provided alongside the legacy shared data claim"
 
 backup_no_volumes_manifest="$(helm template test charts/backup \
+  --set onDemandBackup.enabled=false \
   --set persistence.sourceImages.enabled=false \
   --set persistence.tiles.enabled=false \
   --set persistence.backups.enabled=false)"
@@ -96,6 +109,7 @@ assert_not_contains "$backup_no_volumes_manifest" "persistentVolumeClaim:" \
 
 backup_default_manifest="$(helm template test charts/backup)"
 backup_deployment="$(extract_yaml_doc "$backup_default_manifest" "Deployment" "test-hriv-backup")"
+backup_on_demand_cronjob="$(extract_yaml_doc "$backup_default_manifest" "CronJob" "test-hriv-backup-on-demand")"
 backup_vault_manifest="$(helm template test charts/backup \
   --set vault.enabled=true \
   --set env.AZURE_STORAGE_CONTAINER=hrivbackup)"
@@ -106,6 +120,141 @@ backup_existing_secret_deployment="$(extract_yaml_doc \
   "$backup_existing_secret_manifest" "Deployment" "test-hriv-backup")"
 backup_vault_deployment="$(extract_yaml_doc \
   "$backup_vault_manifest" "Deployment" "test-hriv-backup")"
+backup_existing_secret_on_demand="$(extract_yaml_doc \
+  "$backup_existing_secret_manifest" "CronJob" "test-hriv-backup-on-demand")"
+backup_vault_on_demand="$(extract_yaml_doc \
+  "$backup_vault_manifest" "CronJob" "test-hriv-backup-on-demand")"
+
+assert_contains "$backup_on_demand_cronjob" "schedule: \"0 0 31 2 *\"" \
+  "on-demand CronJob should use the inert default schedule"
+assert_contains "$backup_on_demand_cronjob" "suspend: true" \
+  "on-demand CronJob must remain suspended"
+assert_contains "$backup_on_demand_cronjob" "concurrencyPolicy: Forbid" \
+  "on-demand CronJob should reject controller-level overlap"
+assert_contains "$backup_on_demand_cronjob" 'args: ["backup"]' \
+  "on-demand CronJob should invoke the one-shot backup command"
+assert_contains "$backup_on_demand_cronjob" "restartPolicy: Never" \
+  "on-demand Job pods must not restart"
+assert_contains "$backup_on_demand_cronjob" "backoffLimit: 0" \
+  "on-demand Jobs must not retry overlap rejection"
+assert_contains "$backup_on_demand_cronjob" "activeDeadlineSeconds: 21600" \
+  "on-demand Jobs should default to a six-hour deadline"
+assert_not_contains "$backup_on_demand_cronjob" "ttlSecondsAfterFinished" \
+  "on-demand Jobs should remain inspectable until manually deleted"
+assert_contains "$backup_on_demand_cronjob" "claimName: test-hriv-backup-source-images" \
+  "on-demand Jobs should mount the same source-images PVC as the Deployment"
+assert_contains "$backup_on_demand_cronjob" "claimName: test-hriv-backup-backups" \
+  "on-demand Jobs should mount the shared lock and state PVC"
+assert_contains "$backup_on_demand_cronjob" "mountPath: /tmp" \
+  "on-demand Jobs should retain the writable tmp mount"
+assert_contains "$backup_on_demand_cronjob" "emptyDir:" \
+  "on-demand Jobs should use the same tmp emptyDir"
+assert_contains "$backup_on_demand_cronjob" "ephemeral-storage:" \
+  "on-demand Jobs should use the same resource requests and limits"
+assert_contains "$backup_on_demand_cronjob" "app.kubernetes.io/name: hriv-backup-on-demand" \
+  "on-demand Job pods should not match the backup Deployment selector"
+assert_contains "$backup_on_demand_cronjob" "automountServiceAccountToken: false" \
+  "on-demand Jobs should use the Deployment automount setting"
+assert_contains "$backup_on_demand_cronjob" "runAsUser: 10001" \
+  "on-demand Jobs should use the Deployment pod security context"
+assert_contains "$backup_on_demand_cronjob" "readOnlyRootFilesystem: true" \
+  "on-demand Jobs should use the Deployment container security context"
+assert_contains "$backup_on_demand_cronjob" "name: DATABASE_URL" \
+  "on-demand Jobs should use the production PostgreSQL Secret reference"
+assert_contains "$backup_on_demand_cronjob" 'value: "0 10 * * *"' \
+  "on-demand Jobs should inherit the unchanged internal scheduler environment"
+assert_contains "$backup_deployment" 'args: ["cron"]' \
+  "long-running backup Deployment should remain the internal cron scheduler"
+assert_contains "$backup_deployment" 'value: "0 10 * * *"' \
+  "long-running backup Deployment should retain the 10:00 UTC schedule"
+
+backup_disabled_on_demand_manifest="$(helm template test charts/backup \
+  --set onDemandBackup.enabled=false)"
+assert_not_contains "$backup_disabled_on_demand_manifest" "test-hriv-backup-on-demand" \
+  "disabled on-demand backup should omit the CronJob"
+
+if backup_missing_shared_pvc_output="$(helm template test charts/backup \
+  --set persistence.backups.enabled=false 2>&1)"; then
+  fail "expected enabled on-demand backup without the shared backup PVC to be rejected"
+fi
+assert_contains "$backup_missing_shared_pvc_output" "onDemandBackup.enabled=true requires persistence.backups.enabled=true" \
+  "backup chart should explain the shared lock and state PVC requirement"
+
+assert_not_contains "$backup_on_demand_cronjob" "AZURE_STORAGE_CONNECTION_STRING" \
+  "local-PVC-only on-demand Jobs should not reference an Azure Secret"
+assert_contains "$backup_existing_secret_on_demand" "name: hriv-backup-azure-existing" \
+  "Azure on-demand Jobs should reference the explicitly selected external Secret"
+assert_contains "$backup_existing_secret_on_demand" "key: AZURE_STORAGE_CONNECTION_STRING" \
+  "Azure on-demand Jobs should use the production Secret key"
+assert_contains "$backup_vault_on_demand" "name: azure-storage-credentials" \
+  "Vault-backed on-demand Jobs should reference the externally managed target Secret"
+assert_not_contains "$backup_on_demand_cronjob$backup_existing_secret_on_demand$backup_vault_on_demand" \
+  "azureConnectionString" \
+  "on-demand Job templates must never contain a credential value"
+
+backup_on_demand_scheduling_manifest="$(helm template test charts/backup \
+  --set image.repository=registry.example/hriv-backup \
+  --set image.tag=issue-1241 \
+  --set postgresSecretName=production-postgres \
+  --set tmp.sizeLimit=2Gi \
+  --set resources.requests.cpu=250m \
+  --set nodeSelector.disktype=longhorn \
+  --set tolerations[0].key=storage \
+  --set tolerations[0].operator=Equal \
+  --set tolerations[0].value=backup \
+  --set tolerations[0].effect=NoSchedule \
+  --set-json 'affinity={"nodeAffinity":{"preferredDuringSchedulingIgnoredDuringExecution":[{"weight":1,"preference":{"matchExpressions":[{"key":"storage","operator":"In","values":["longhorn"]}]}}]},"podAntiAffinity":{"preferredDuringSchedulingIgnoredDuringExecution":[{"weight":2,"podAffinityTerm":{"labelSelector":{"matchLabels":{"avoid":"busy"}},"topologyKey":"topology.kubernetes.io/zone"}}]},"podAffinity":{"preferredDuringSchedulingIgnoredDuringExecution":[{"weight":3,"podAffinityTerm":{"labelSelector":{"matchLabels":{"prefer":"source"}},"topologyKey":"kubernetes.io/hostname"}}],"requiredDuringSchedulingIgnoredDuringExecution":[{"labelSelector":{"matchLabels":{"custom-required":"true"}},"topologyKey":"topology.kubernetes.io/zone"}]}}')"
+backup_scheduling_deployment="$(extract_yaml_doc \
+  "$backup_on_demand_scheduling_manifest" "Deployment" "test-hriv-backup")"
+backup_scheduling_on_demand="$(extract_yaml_doc \
+  "$backup_on_demand_scheduling_manifest" "CronJob" "test-hriv-backup-on-demand")"
+for workload in "$backup_scheduling_deployment" "$backup_scheduling_on_demand"; do
+  assert_contains "$workload" 'image: "registry.example/hriv-backup:issue-1241"' \
+    "Deployment and on-demand Job should use the configured production image"
+  assert_contains "$workload" "name: production-postgres" \
+    "Deployment and on-demand Job should use the configured PostgreSQL Secret"
+  assert_contains "$workload" "sizeLimit: 2Gi" \
+    "Deployment and on-demand Job should use the configured tmp emptyDir"
+  assert_contains "$workload" "cpu: 250m" \
+    "Deployment and on-demand Job should use the configured resources"
+  assert_contains "$workload" "disktype: longhorn" \
+    "Deployment and on-demand Job should use the configured node selector"
+  assert_contains "$workload" "key: storage" \
+    "Deployment and on-demand Job should use the configured tolerations"
+done
+assert_occurrences "$backup_scheduling_deployment" "podAffinity:" 1 \
+  "Deployment affinity should render one merged podAffinity key"
+assert_occurrences "$backup_scheduling_deployment" "requiredDuringSchedulingIgnoredDuringExecution:" 1 \
+  "Deployment affinity should render one merged required pod-affinity list"
+assert_contains "$backup_scheduling_deployment" "custom-required: \"true\"" \
+  "Deployment affinity should preserve required custom pod affinity"
+assert_occurrences "$backup_scheduling_on_demand" "podAffinity:" 1 \
+  "on-demand affinity should render one merged podAffinity key"
+assert_occurrences "$backup_scheduling_on_demand" "requiredDuringSchedulingIgnoredDuringExecution:" 1 \
+  "on-demand affinity should render one merged required pod-affinity list"
+assert_contains "$backup_scheduling_on_demand" "nodeAffinity:" \
+  "on-demand affinity should preserve custom node affinity"
+assert_contains "$backup_scheduling_on_demand" "podAntiAffinity:" \
+  "on-demand affinity should preserve custom pod anti-affinity"
+assert_contains "$backup_scheduling_on_demand" "prefer: source" \
+  "on-demand affinity should preserve preferred pod affinity"
+assert_contains "$backup_scheduling_on_demand" "custom-required: \"true\"" \
+  "on-demand affinity should preserve required custom pod affinity"
+assert_contains "$backup_scheduling_on_demand" "app.kubernetes.io/name: hriv-backup" \
+  "on-demand affinity should select the backup Deployment app name"
+assert_contains "$backup_scheduling_on_demand" "app.kubernetes.io/instance: test" \
+  "on-demand affinity should select the backup Deployment release instance"
+assert_contains "$backup_scheduling_on_demand" "topologyKey: kubernetes.io/hostname" \
+  "on-demand affinity should require the Deployment node for the RWO backup PVC"
+
+backup_shared_source_on_demand="$(extract_yaml_doc \
+  "$(helm template test charts/backup \
+    --set persistence.sourceImages.existingClaim=hriv-backend-source-images)" \
+  "CronJob" "test-hriv-backup-on-demand")"
+assert_contains "$backup_shared_source_on_demand" "app.kubernetes.io/name: hriv-backend" \
+  "on-demand affinity should retain the Deployment's shared source-PVC colocation constraint"
+assert_contains "$backup_shared_source_on_demand" "app.kubernetes.io/instance: test" \
+  "on-demand affinity should also require the backup Deployment instance"
 
 assert_not_contains "$backup_default_manifest" "kind: Secret" \
   "backup chart must not render a Secret for a default standalone install"

@@ -33,7 +33,54 @@ normative [`recovery-set-contract.md`](recovery-set-contract.md).
        sh -c 'echo "$AZURE_STORAGE_CONTAINER $AZURE_BLOB_PREFIX"'
      ```
 
-## 2) Restore a specific backup from Azure
+## 2) Start and monitor an on-demand backup
+
+Use the chart-owned suspended CronJob template. Substitute the Helm release name
+used in the namespace; do not unsuspend or edit the template:
+
+```bash
+namespace=hriv
+cronjob=hriv-backup-on-demand
+job="hriv-backup-manual-$(date -u +%Y%m%d%H%M%S)"
+kubectl -n "$namespace" create job \
+  --from="cronjob/$cronjob" "$job"
+echo "$job"
+```
+
+`kubectl create job` returns as soon as the server stores the Job. The backup
+continues after terminal closure, SSH loss, or operator logout. Save the printed
+name, then monitor from any later session:
+
+```bash
+kubectl -n "$namespace" get job "$job" -o wide
+kubectl -n "$namespace" get pods -l "job-name=$job" -o wide
+kubectl -n "$namespace" logs "job/$job" --follow
+kubectl -n "$namespace" wait --for=condition=complete --timeout=6h "job/$job"
+kubectl -n "$namespace" get job "$job" -o yaml
+```
+
+If another scheduled or on-demand backup owns the shared lock, this Job is
+expected to fail without retry (`backoffLimit: 0`). Inspect its logs and the
+durable `BACKUP_STATE.json` attempt history; the active run's publication and
+last-success state remain intact. Jobs have no automatic deletion TTL. Capture
+logs, status, backup state, and any incident evidence before manual cleanup:
+
+```bash
+kubectl -n "$namespace" delete job "$job"
+```
+
+Do **not** run a long backup with
+`kubectl exec deploy/... -- python backup.py backup`; that process can die with
+the exec connection. The short `list` and `status` commands above, and deliberate
+restore commands below, may remain exec-based.
+
+The on-demand pod must share the Deployment's ReadWriteOnce backup PVC, so its
+required hostname pod affinity selects the running backup Deployment by app name
+and release instance. A stopped or unschedulable Deployment leaves the Job
+Pending. Custom affinity, node selectors, and tolerations still apply; confirm
+the Deployment pod and candidate node before changing scheduling policy.
+
+## 3) Restore a specific backup from Azure
 
 1. List snapshots and choose the one you want:
 

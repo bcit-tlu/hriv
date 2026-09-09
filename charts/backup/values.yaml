@@ -32,6 +32,16 @@ azureSecretName: azure-storage-credentials
 colocateWithSourcePod: true
 colocateWithPodLabel: hriv-backend
 
+# Suspended server-side template for disconnect-safe manual backups. The schedule
+# is intentionally impossible and is never evaluated while suspend remains true.
+onDemandBackup:
+  enabled: true
+  schedule: '0 0 31 2 *'
+  activeDeadlineSeconds: 21600
+  backoffLimit: 0
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+
 env:
   DATA_DIR: /data
   BACKUP_CRON_SCHEDULE: '0 10 * * *'

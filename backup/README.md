@@ -172,6 +172,61 @@ Pre-existing Secrets not owned by the release and Vault-managed Secrets are not
 adopted. After transferring ownership, remove the Helm ownership annotations;
 the keep policy protects the Secret when a later upgrade omits it.
 
+### Kubernetes on-demand backups
+
+The chart installs a suspended `batch/v1` CronJob named
+`<chart fullname>-on-demand` (`hriv-backup-on-demand` in the organization
+deployment) by default. It is a server-side Job template,
+not a second schedule: `suspend: true` is fixed and its default
+`onDemandBackup.schedule` is the inert but syntactically valid `0 0 31 2 *`.
+The long-running Deployment continues to run `backup.py cron` with
+`BACKUP_CRON_SCHEDULE=0 10 * * *` in UTC.
+
+Create a uniquely named one-shot Job and return immediately after the API server
+accepts it:
+
+```bash
+namespace=hriv
+cronjob=hriv-backup-on-demand
+job="hriv-backup-manual-$(date -u +%Y%m%d%H%M%S)"
+kubectl -n "$namespace" create job \
+  --from="cronjob/$cronjob" "$job"
+echo "$job"
+```
+
+The Job runs independently of the terminal and survives logout or disconnect.
+Reconnect and inspect it with:
+
+```bash
+kubectl -n "$namespace" get job "$job" -o wide
+kubectl -n "$namespace" get pods -l "job-name=$job" -o wide
+kubectl -n "$namespace" logs "job/$job" --follow
+kubectl -n "$namespace" wait --for=condition=complete --timeout=6h "job/$job"
+kubectl -n "$namespace" get job "$job" -o yaml
+```
+
+A concurrent scheduled or manual backup is expected to fail immediately on the
+shared execution lock. The template uses `backoffLimit: 0`, so Kubernetes does
+not retry that rejection; durable `BACKUP_STATE.json` attempt history and the
+Job status/logs provide the evidence while the active backup continues. The
+chart sets no automatic Job TTL. Capture logs, terminal status, and relevant
+state before manually cleaning up with
+`kubectl -n "$namespace" delete job "$job"`.
+
+Do **not** use `kubectl exec deploy/... -- python backup.py backup` for a
+multi-hour backup: that process is attached to the exec session and a disconnect
+can terminate it. Short `list`, `status`, and operator-controlled restore
+commands may remain exec-based.
+
+The Job mounts exactly the Deployment's source and backup PVCs, configuration,
+Secrets, security settings, resources, and scheduling constraints. Because the
+backup PVC is ReadWriteOnce and already mounted by the Deployment, the Job adds
+required pod affinity for the Deployment's app-name and release-instance labels
+on `kubernetes.io/hostname`. The Deployment must be running and schedulable; its
+node must also satisfy any custom node affinity, pod affinity/anti-affinity,
+node selector, and tolerations. Disabling `persistence.backups.enabled` therefore
+requires explicitly disabling `onDemandBackup.enabled` as well.
+
 ## Observability markers
 
 The backup service writes two small JSON marker files alongside the retained
