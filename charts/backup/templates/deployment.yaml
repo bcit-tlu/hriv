@@ -1,8 +1,9 @@
 {{- if not .Values.postgresSecretName }}
 {{- fail "postgresSecretName is required — set it to the name of the K8s Secret containing the database URI (key: uri)" }}
 {{- end }}
-{{- if not .Values.azureSecretName }}
-{{- fail "azureSecretName is required — set it to the name of the K8s Secret containing AZURE_STORAGE_CONNECTION_STRING" }}
+{{- $azureEnabled := ne (trim .Values.env.AZURE_STORAGE_CONTAINER) "" -}}
+{{- if and $azureEnabled (not .Values.azureSecretName) }}
+{{- fail "azureSecretName is required when AZURE_STORAGE_CONTAINER enables Azure backups; this chart does not create Azure credentials. Set it to a pre-existing Secret (or Vault Secrets Operator target) containing key AZURE_STORAGE_CONNECTION_STRING" }}
 {{- end }}
 {{- $legacyData := .Values.persistence.data | default dict -}}
 {{- $sourceImagesEnabled := .Values.persistence.sourceImages.enabled -}}
@@ -17,7 +18,6 @@
 {{- $colocateWithSourcePod := and .Values.colocateWithSourcePod $sourceImagesExistingClaim -}}
 {{- $backupsEnabled := .Values.persistence.backups.enabled -}}
 {{- $restoreTargetClaim := .Values.restoreTarget.existingClaim -}}
-{{- $hasDataVolumes := or $sourceImagesEnabled $tilesEnabled $backupsEnabled $restoreTargetClaim -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -36,12 +36,27 @@ spec:
       labels:
         {{- include "hriv-backup.selectorLabels" . | nindent 8 }}
     spec:
+      automountServiceAccountToken: {{ .Values.automountServiceAccountToken }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: backup
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args: ["cron"]
+          {{- with .Values.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           env:
+            - name: HOME
+              value: /tmp
+            - name: TMPDIR
+              value: /tmp
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -84,11 +99,13 @@ spec:
             - name: BACKUP_STAGING_DIR
               value: {{ . | quote }}
             {{- end }}
+            {{- if $azureEnabled }}
             - name: AZURE_STORAGE_CONNECTION_STRING
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.azureSecretName }}
                   key: AZURE_STORAGE_CONNECTION_STRING
+            {{- end }}
             - name: AZURE_STORAGE_CONTAINER
               value: {{ .Values.env.AZURE_STORAGE_CONTAINER | quote }}
             - name: AZURE_BLOB_PREFIX
@@ -111,8 +128,9 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- if $hasDataVolumes }}
           volumeMounts:
+            - name: tmp
+              mountPath: /tmp
             {{- if $sourceImagesEnabled }}
             - name: source-images
               mountPath: /data
@@ -129,9 +147,10 @@ spec:
             - name: restore-target
               mountPath: {{ .Values.restoreTarget.mountPath }}
             {{- end }}
-          {{- end }}
-      {{- if $hasDataVolumes }}
       volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ .Values.tmp.sizeLimit }}
         {{- if $sourceImagesEnabled }}
         - name: source-images
           persistentVolumeClaim:
@@ -152,7 +171,6 @@ spec:
           persistentVolumeClaim:
             claimName: {{ $restoreTargetClaim }}
         {{- end }}
-      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

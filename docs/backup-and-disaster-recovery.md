@@ -40,6 +40,52 @@ Runtime paths are unchanged from the single-PVC era (`SOURCE_IMAGES_DIR=/data/so
 `TILES_DIR=/data/tiles`), so existing `stored_path` values and tile URLs remain valid
 after the split. See [deploy/README.md](../deploy/README.md) for the cutover procedure.
 
+### Backup chart credentials and pod security
+
+The backup chart does not render Azure credential data or accept a
+connection-string value in Helm values. A non-empty
+`env.AZURE_STORAGE_CONTAINER` enables Azure-backed mode, where
+`azureSecretName` must identify a pre-existing Secret with key
+`AZURE_STORAGE_CONNECTION_STRING`. Its default, `azure-storage-credentials`,
+preserves existing externally managed installs. Vault-enabled Flux
+configuration must arrange for the Vault Secrets Operator to create that target;
+a standalone Azure install must precreate it. Leaving the name empty in
+Azure-backed mode fails Helm rendering rather than deploying a placeholder
+credential. An empty container selects local-PVC-only mode and renders no Azure
+Secret reference, so backup-free frontend/backend installs and non-Azure backup
+installs remain supported.
+
+A vault-disabled upgrade may encounter a Secret owned by the previous chart,
+including one whose original placeholder was replaced by an operator. Helm
+`lookup` detects only an object annotated as owned by the same release and keeps
+it as a metadata-only resource with `helm.sh/resource-policy: keep`; credential
+data is not copied into rendered release manifests. Externally owned and
+Vault-managed Secrets are never adopted. Transfer legacy objects to external
+ownership by removing their Helm ownership annotations after the first hardened
+upgrade; the keep policy prevents pruning when the chart subsequently omits the
+resource.
+
+The backup pod runs non-root as UID/GID `10001` by default. Pod security uses
+`fsGroup: 10001`, `fsGroupChangePolicy: OnRootMismatch`, and the runtime-default
+seccomp profile; container security drops all capabilities, blocks privilege
+escalation, and makes the image root filesystem read-only. Service-account
+token automounting is disabled. A `1Gi` `emptyDir` mounted at `/tmp` provides the
+only pod-local writable path (`HOME` and `TMPDIR` point there), while
+`PYTHONDONTWRITEBYTECODE=1` avoids cache writes to the image.
+
+The storage class and CSI driver must provide UID/GID `10001` the required PVC
+access. Longhorn's `ReadWriteOnceWithFSType` CSI policy applies `fsGroup` to the
+RWO backup and normal restore-target volumes, but not the RWX source-images
+volume. The organization deployment therefore separately requires its RWX
+`/data` root to permit creation/removal of `.maintenance` and its source tree to
+remain readable. Latest and stable currently satisfy this with mode `0777` on
+`/data`, mode `0755` on `source_images`, and mode `0644` source files. Validate
+all paths against the real storage class before rollout. `podSecurityContext`
+and `containerSecurityContext` remain operator-overridable for platforms with
+demonstrated ownership or policy incompatibility; record the failed check and
+apply the narrowest override. Do not add a privileged or root init container
+without evidence that storage permissions cannot satisfy the requirement.
+
 ### Recommended Longhorn policies
 
 | Volume                | Snapshot schedule                    | Backup target     | Retention                              |
