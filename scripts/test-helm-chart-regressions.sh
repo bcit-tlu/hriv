@@ -273,10 +273,10 @@ backup_shared_source_on_demand="$(extract_yaml_doc \
   "$(helm template test charts/backup \
     --set persistence.sourceImages.existingClaim=hriv-backend-source-images)" \
   "CronJob" "test-hriv-backup-on-demand")"
-assert_contains "$backup_shared_source_on_demand" "app.kubernetes.io/name: hriv-backend" \
-  "on-demand affinity should retain the Deployment's shared source-PVC colocation constraint"
+assert_not_contains "$backup_shared_source_on_demand" "app.kubernetes.io/name: hriv-backend" \
+  "on-demand affinity should inherit source-PVC colocation through the Deployment rather than adding a redundant required term"
 assert_contains "$backup_shared_source_on_demand" "app.kubernetes.io/instance: test" \
-  "on-demand affinity should also require the backup Deployment instance"
+  "on-demand affinity should require the backup Deployment instance"
 
 assert_not_contains "$backup_default_manifest" "kind: Secret" \
   "backup chart must not render a Secret for a default standalone install"

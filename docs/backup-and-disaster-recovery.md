@@ -166,9 +166,12 @@ The chart rejects on-demand enablement without the backup PVC.
 Because that backup PVC is ReadWriteOnce and mounted by the Deployment, the Job
 adds required hostname pod affinity selecting the Deployment's
 `app.kubernetes.io/name` and `app.kubernetes.io/instance`. This term is appended
-to custom affinity without dropping node affinity, pod anti-affinity, or
-preferred/required pod affinity. The Deployment must remain running and
-schedulable on a node satisfying all of those constraints. The Job's
+to explicit custom affinity without dropping node affinity, pod anti-affinity,
+or preferred/required pod affinity. The Job does not repeat generated
+backend/source-PVC affinity: selecting the already-scheduled Deployment node
+inherits that placement transitively and avoids redundant required terms. The
+Deployment must remain running and schedulable on a node satisfying all of
+those constraints. The Job's
 `backoffLimit: 0` leaves an overlap rejection terminal and inspectable rather
 than retrying; no TTL removes completed or failed Jobs automatically. Restore
 remains a separate operator action; do not run a restore against an active
