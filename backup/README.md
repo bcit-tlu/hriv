@@ -147,15 +147,21 @@ All settings are controlled via environment variables in `docker-compose.yml` or
 
 ### Kubernetes Azure Secret contract
 
-The Helm chart never creates or embeds Azure credentials. `azureSecretName`
-(default `azure-storage-credentials`) must name a pre-existing Kubernetes
+The Helm chart never creates or embeds Azure credentials. A non-empty
+`env.AZURE_STORAGE_CONTAINER` enables Azure-backed mode; `azureSecretName`
+(default `azure-storage-credentials`) must then name a pre-existing Kubernetes
 Secret with the key `AZURE_STORAGE_CONNECTION_STRING`. Flux deployments with
 Vault enabled use the Vault Secrets Operator target name created outside this
-chart; standalone, vault-disabled installs must precreate the Secret before the
-Deployment starts. The default name is retained only for compatibility with
-existing externally managed Secrets. Do not put a connection string in Helm
-values: an empty `azureSecretName` fails rendering with instructions to provide
-the external Secret.
+chart; standalone Azure installs must precreate the Secret before the Deployment
+starts. The default name is retained for compatibility with existing externally
+managed Secrets. Do not put a connection string in Helm values: Azure-backed
+rendering with an empty `azureSecretName` fails with instructions to provide the
+external Secret.
+
+When `env.AZURE_STORAGE_CONTAINER` is empty, the chart uses local-PVC-only mode
+and neither requires nor references an Azure Secret. This keeps the backup chart
+usable without Azure; frontend/backend-only installs remain independent of the
+backup chart.
 
 For upgrade compatibility, a vault-disabled release that already owns the named
 Secret is detected with Helm `lookup`. The chart retains that object as a

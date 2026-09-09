@@ -96,11 +96,16 @@ assert_not_contains "$backup_no_volumes_manifest" "persistentVolumeClaim:" \
 
 backup_default_manifest="$(helm template test charts/backup)"
 backup_deployment="$(extract_yaml_doc "$backup_default_manifest" "Deployment" "test-hriv-backup")"
-backup_vault_manifest="$(helm template test charts/backup --set vault.enabled=true)"
+backup_vault_manifest="$(helm template test charts/backup \
+  --set vault.enabled=true \
+  --set env.AZURE_STORAGE_CONTAINER=hrivbackup)"
 backup_existing_secret_manifest="$(helm template test charts/backup \
-  --set azureSecretName=hriv-backup-azure-existing)"
+  --set azureSecretName=hriv-backup-azure-existing \
+  --set env.AZURE_STORAGE_CONTAINER=hrivbackup)"
 backup_existing_secret_deployment="$(extract_yaml_doc \
   "$backup_existing_secret_manifest" "Deployment" "test-hriv-backup")"
+backup_vault_deployment="$(extract_yaml_doc \
+  "$backup_vault_manifest" "Deployment" "test-hriv-backup")"
 
 assert_not_contains "$backup_default_manifest" "kind: Secret" \
   "backup chart must not render a Secret for a default standalone install"
@@ -112,6 +117,10 @@ assert_contains "$backup_existing_secret_deployment" "name: hriv-backup-azure-ex
   "backup deployment should reference an explicitly selected pre-existing Azure Secret"
 assert_contains "$backup_existing_secret_deployment" "key: AZURE_STORAGE_CONNECTION_STRING" \
   "backup deployment should read the connection string from the required Secret key"
+assert_contains "$backup_vault_deployment" "name: azure-storage-credentials" \
+  "Vault-enabled Azure mode should reference the externally managed target Secret"
+assert_not_contains "$backup_deployment" "AZURE_STORAGE_CONNECTION_STRING" \
+  "local-PVC-only mode should not require or reference an Azure Secret"
 assert_not_contains "$backup_default_manifest$backup_vault_manifest$backup_existing_secret_manifest" \
   "azureConnectionString" \
   "backup chart output must never contain the former placeholder Azure credential"
@@ -128,6 +137,7 @@ assert_not_contains "$backup_secret_template" "azureConnectionString" \
 for vault_enabled in false true; do
   if backup_missing_azure_secret_output="$(helm template test charts/backup \
     --set vault.enabled="$vault_enabled" \
+    --set env.AZURE_STORAGE_CONTAINER=hrivbackup \
     --set-string azureSecretName= 2>&1)"; then
     fail "expected empty azureSecretName to be rejected when vault.enabled=$vault_enabled"
   fi
@@ -136,6 +146,15 @@ for vault_enabled in false true; do
   assert_contains "$backup_missing_azure_secret_output" "pre-existing Secret (or Vault Secrets Operator target)" \
     "backup chart should tell operators how to provide Azure credentials when vault.enabled=$vault_enabled"
 done
+
+backup_local_only_manifest="$(helm template test charts/backup \
+  --set-string azureSecretName=)"
+backup_local_only_deployment="$(extract_yaml_doc \
+  "$backup_local_only_manifest" "Deployment" "test-hriv-backup")"
+assert_not_contains "$backup_local_only_manifest" "kind: Secret" \
+  "local-PVC-only mode should render without a credential Secret"
+assert_not_contains "$backup_local_only_deployment" "AZURE_STORAGE_CONNECTION_STRING" \
+  "local-PVC-only mode should render without an Azure credential reference"
 
 assert_contains "$backup_deployment" "automountServiceAccountToken: false" \
   "backup pod should not automount a service account token"

@@ -20,9 +20,10 @@ versionConfigMap:
 postgresSecretName: postgres-db-credentials
 
 # Name of a pre-existing Kubernetes Secret containing the Azure Storage connection
-# string under key AZURE_STORAGE_CONNECTION_STRING. The chart never creates this
-# Secret. Vault-enabled Flux installs should use the Vault Secrets Operator target
-# name; standalone installs must precreate it.
+# string under key AZURE_STORAGE_CONNECTION_STRING. Required only when
+# env.AZURE_STORAGE_CONTAINER enables Azure-backed mode. The chart never creates
+# credentials. Vault-enabled Flux installs should use the Vault Secrets Operator
+# target name; standalone Azure installs must precreate it.
 azureSecretName: azure-storage-credentials
 
 # Pod label used for pod affinity when sharing the backend's RWO data PVC.
@@ -53,6 +54,7 @@ env:
   #                from source images using the rebuild-tiles admin task.
   # The chart default is production; override to development for local or manual use.
   BACKUP_MODE: 'production'
+  # Leave empty for local-PVC-only backup mode; no Azure Secret is then required.
   AZURE_STORAGE_CONTAINER: ''
   AZURE_BLOB_PREFIX: hriv-backups
 

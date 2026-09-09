@@ -42,14 +42,18 @@ after the split. See [deploy/README.md](../deploy/README.md) for the cutover pro
 
 ### Backup chart credentials and pod security
 
-The backup chart does not render an Azure Secret or accept a connection-string
-value in Helm values. `azureSecretName` must identify a pre-existing Secret with
-key `AZURE_STORAGE_CONNECTION_STRING`. Its default,
-`azure-storage-credentials`, preserves existing externally managed installs.
-Vault-enabled Flux configuration must arrange for the Vault Secrets Operator to
-create that target; a vault-disabled standalone install must precreate it.
-Leaving the name empty fails Helm rendering rather than deploying a placeholder
-credential.
+The backup chart does not render Azure credential data or accept a
+connection-string value in Helm values. A non-empty
+`env.AZURE_STORAGE_CONTAINER` enables Azure-backed mode, where
+`azureSecretName` must identify a pre-existing Secret with key
+`AZURE_STORAGE_CONNECTION_STRING`. Its default, `azure-storage-credentials`,
+preserves existing externally managed installs. Vault-enabled Flux
+configuration must arrange for the Vault Secrets Operator to create that target;
+a standalone Azure install must precreate it. Leaving the name empty in
+Azure-backed mode fails Helm rendering rather than deploying a placeholder
+credential. An empty container selects local-PVC-only mode and renders no Azure
+Secret reference, so backup-free frontend/backend installs and non-Azure backup
+installs remain supported.
 
 A vault-disabled upgrade may encounter a Secret owned by the previous chart,
 including one whose original placeholder was replaced by an operator. Helm
