@@ -268,8 +268,13 @@ describe('PeoplePage', () => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
     })
 
-    // Admin user has last_access set
-    expect(screen.getByText('2/15/2026')).toBeInTheDocument()
+    // Admin user has last_access set. The component renders it with
+    // `toLocaleDateString()` (no fixed locale), so the exact string depends on
+    // the runtime's locale/timezone (e.g. en-US "2/15/2026" vs en-CA
+    // "2026-02-15"). Compute the expectation the same way to keep this test
+    // deterministic across dev machines and CI.
+    const expectedLastAccess = new Date(USERS[0].last_access).toLocaleDateString()
+    expect(screen.getByText(expectedLastAccess)).toBeInTheDocument()
   })
 
   it('renders sortable column headers', async () => {
