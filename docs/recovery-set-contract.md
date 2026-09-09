@@ -7,6 +7,12 @@ restore, validation, retention, and operator tooling must use the same outcomes.
 An implementation is incorrect if it publishes a set that violates this contract,
 even when individual database or filesystem operations succeeded.
 
+[The isolated restore-validation contract](restore-validation.md) consumes this contract without
+changing it: validation selects only the latest fully published set, binds its exact
+`database_recovery.target_lsn` before provisioning, and restores to fresh resources in a
+separate namespace. Restore-validation success also requires application/viewer checks and
+confirmed cleanup; its durable state never writes production recovery-set state.
+
 ## Recovery set
 
 A recoverable HRIV set consists of:

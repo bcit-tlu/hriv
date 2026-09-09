@@ -14,6 +14,12 @@ system.
 > The normative consistency boundary, mismatch outcomes, recovery-set metadata,
 > scheduling constraints, and component-selective restore rules are defined in
 > [the HRIV recovery-set contract](recovery-set-contract.md).
+>
+> The design contract for recurring production-shaped drills is
+> [isolated restore validation](restore-validation.md). It keeps orchestration and Kubernetes
+> API access out of the hardened backup Deployment, restores only to fresh resources in a
+> dedicated namespace, and gates success on validation plus confirmed cleanup. The design does
+> not itself deploy the feature or clear `HRIVRestoreTestFailed`.
 
 ## Data classification
 

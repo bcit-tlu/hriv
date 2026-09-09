@@ -9,6 +9,13 @@ description: Test the HRIV backup service for database and filesystem backup, lo
 
 The backup service (`backup/`) publishes source-image recovery archives and supports component-selective restore. Production binds each source archive to an authoritative CNPG target LSN, commits a narrow WAL fence, waits for that fence to archive, and never runs `pg_dump`; local development retains the legacy logical database plus filesystem archive.
 
+For work on scheduled production-shaped restore testing, read
+[`../../../docs/restore-validation.md`](../../../docs/restore-validation.md). That contract
+requires a separate component/namespace, read-only source access, fresh CNPG/PVC targets, exact
+LSN recovery, no-token child workloads, durable ConfigMap/Lease coordination, application and
+viewer checks, and cleanup before success. Do not add Kubernetes API access to `backup/` or
+interpret the design document as a deployed restore test.
+
 ## Prerequisites
 
 - Docker and Docker Compose
