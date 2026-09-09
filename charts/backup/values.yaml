@@ -19,8 +19,10 @@ versionConfigMap:
 # Defaults to the Secret created by the backend chart.
 postgresSecretName: postgres-db-credentials
 
-# Name of the Kubernetes Secret containing the Azure Storage connection string.
-# Defaults to the Secret created by this chart when vault.enabled is false.
+# Name of a pre-existing Kubernetes Secret containing the Azure Storage connection
+# string under key AZURE_STORAGE_CONNECTION_STRING. The chart never creates this
+# Secret. Vault-enabled Flux installs should use the Vault Secrets Operator target
+# name; standalone installs must precreate it.
 azureSecretName: azure-storage-credentials
 
 # Pod label used for pod affinity when sharing the backend's RWO data PVC.
@@ -77,12 +79,36 @@ observability:
       endpoint: ''
       protocol: 'http/protobuf'
 
-# Vault Secrets Operator integration.
+# Vault Secrets Operator integration metadata retained for Flux compatibility.
+# The operator target is created externally; this chart never renders a Secret.
 # Disabled by default so standalone chart users are not required to use Vault.
 # Override to true in Flux overlays (flux-fleet) for org deployments.
 vault:
   enabled: false
   azureSecretPath: hriv/azure-storage
+
+# Strong restricted-pod defaults. Operators may override these maps only when
+# platform or storage evidence shows that different IDs/settings are required.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  fsGroupChangePolicy: OnRootMismatch
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+
+automountServiceAccountToken: false
+
+tmp:
+  sizeLimit: 1Gi
 
 persistence:
   # Deprecated legacy single-data-PVC keys kept for upgrade compatibility.

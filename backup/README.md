@@ -145,6 +145,18 @@ All settings are controlled via environment variables in `docker-compose.yml` or
 | `AZURE_STORAGE_CONTAINER`          | _(empty)_                                                 | Azure Blob Storage container name                                                         |
 | `AZURE_BLOB_PREFIX`                | `hriv-backups`                                            | Blob name prefix (folder) inside the container                                            |
 
+### Kubernetes Azure Secret contract
+
+The Helm chart never creates or embeds Azure credentials. `azureSecretName`
+(default `azure-storage-credentials`) must name a pre-existing Kubernetes
+Secret with the key `AZURE_STORAGE_CONNECTION_STRING`. Flux deployments with
+Vault enabled use the Vault Secrets Operator target name created outside this
+chart; standalone, vault-disabled installs must precreate the Secret before the
+Deployment starts. The default name is retained only for compatibility with
+existing externally managed Secrets. Do not put a connection string in Helm
+values: an empty `azureSecretName` fails rendering with instructions to provide
+the external Secret.
+
 ## Observability markers
 
 The backup service writes two small JSON marker files alongside the retained
@@ -223,6 +235,32 @@ the service can include tiles in the archive.
 
 The source-images PVC remains the `/data` root so the backup service can still
 share the maintenance-mode flag at `/data/.maintenance` with the backend.
+
+### Pod security and writable paths
+
+The chart defaults the pod to UID/GID `10001`, requires non-root execution, and
+uses `fsGroup: 10001` with `fsGroupChangePolicy: OnRootMismatch` for filesystem
+volumes on which the CSI driver applies group ownership. The container drops
+every Linux capability, disallows privilege escalation, uses the runtime-default
+seccomp profile and a read-only root filesystem, and does not automount a
+service-account token. No privileged or root ownership init container is added.
+
+`/tmp` is an explicit `emptyDir` limited to `1Gi`; `HOME` and `TMPDIR` point
+there and Python bytecode writes are disabled. Persistent writes remain on the
+mounted PVCs: maintenance state under `/data`, locks/staging/state under
+`/backups`, and restore output under the configured restore target.
+
+Longhorn's `ReadWriteOnceWithFSType` CSI policy applies `fsGroup` to the RWO
+backup and normal restore-target volumes, but not to the RWX source-images
+volume. The organization deployment therefore also requires the RWX `/data`
+root to permit UID `10001` to create and remove `.maintenance`, while source
+files and directories remain readable. Latest and stable were verified with a
+root-owned mode-`0777` `/data`, readable mode-`0755` `source_images`, and
+mode-`0644` source files. Validate equivalent permissions before other platform
+rollouts. Operators can override `podSecurityContext` or
+`containerSecurityContext` when platform or PVC evidence requires it, but
+should document the failed ownership/security check and use the narrowest
+change rather than adding a privileged/root init container.
 
 For pre-production migrations, cut over by scaling workloads down, copying
 `/data/source_images` and `/data/tiles` into their new PVCs with a temporary

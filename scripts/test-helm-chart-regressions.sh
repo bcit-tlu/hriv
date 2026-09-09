@@ -87,13 +87,107 @@ backup_no_volumes_manifest="$(helm template test charts/backup \
   --set persistence.tiles.enabled=false \
   --set persistence.backups.enabled=false)"
 
-assert_not_contains "$backup_no_volumes_manifest" "volumeMounts:" \
-  "backup deployment should omit volumeMounts when every backup chart data volume is disabled"
-assert_not_contains "$backup_no_volumes_manifest" "volumes:" \
-  "backup deployment should omit volumes when every backup chart data volume is disabled"
+assert_contains "$backup_no_volumes_manifest" "mountPath: /tmp" \
+  "backup deployment should retain its writable /tmp mount when every data volume is disabled"
+assert_contains "$backup_no_volumes_manifest" "emptyDir:" \
+  "backup deployment should retain its /tmp emptyDir when every data volume is disabled"
+assert_not_contains "$backup_no_volumes_manifest" "persistentVolumeClaim:" \
+  "backup deployment should omit PVC volumes when every backup chart data volume is disabled"
 
 backup_default_manifest="$(helm template test charts/backup)"
 backup_deployment="$(extract_yaml_doc "$backup_default_manifest" "Deployment" "test-hriv-backup")"
+backup_vault_manifest="$(helm template test charts/backup --set vault.enabled=true)"
+backup_existing_secret_manifest="$(helm template test charts/backup \
+  --set azureSecretName=hriv-backup-azure-existing)"
+backup_existing_secret_deployment="$(extract_yaml_doc \
+  "$backup_existing_secret_manifest" "Deployment" "test-hriv-backup")"
+
+assert_not_contains "$backup_default_manifest" "kind: Secret" \
+  "backup chart must not render a Secret for a default standalone install"
+assert_not_contains "$backup_vault_manifest" "kind: Secret" \
+  "backup chart must not render a Secret when Vault integration is enabled"
+assert_not_contains "$backup_existing_secret_manifest" "kind: Secret" \
+  "backup chart must not render a Secret when an explicit pre-existing Azure Secret is selected"
+assert_contains "$backup_existing_secret_deployment" "name: hriv-backup-azure-existing" \
+  "backup deployment should reference an explicitly selected pre-existing Azure Secret"
+assert_contains "$backup_existing_secret_deployment" "key: AZURE_STORAGE_CONNECTION_STRING" \
+  "backup deployment should read the connection string from the required Secret key"
+assert_not_contains "$backup_default_manifest$backup_vault_manifest$backup_existing_secret_manifest" \
+  "azureConnectionString" \
+  "backup chart output must never contain the former placeholder Azure credential"
+
+for vault_enabled in false true; do
+  if backup_missing_azure_secret_output="$(helm template test charts/backup \
+    --set vault.enabled="$vault_enabled" \
+    --set-string azureSecretName= 2>&1)"; then
+    fail "expected empty azureSecretName to be rejected when vault.enabled=$vault_enabled"
+  fi
+  assert_contains "$backup_missing_azure_secret_output" "this chart does not create Azure credentials" \
+    "backup chart should explain its credential ownership when azureSecretName is empty and vault.enabled=$vault_enabled"
+  assert_contains "$backup_missing_azure_secret_output" "pre-existing Secret (or Vault Secrets Operator target)" \
+    "backup chart should tell operators how to provide Azure credentials when vault.enabled=$vault_enabled"
+done
+
+assert_contains "$backup_deployment" "automountServiceAccountToken: false" \
+  "backup pod should not automount a service account token"
+assert_contains "$backup_deployment" "runAsNonRoot: true" \
+  "backup pod should require a non-root UID"
+assert_contains "$backup_deployment" "runAsUser: 10001" \
+  "backup pod should default to UID 10001"
+assert_contains "$backup_deployment" "runAsGroup: 10001" \
+  "backup pod should default to GID 10001"
+assert_contains "$backup_deployment" "fsGroup: 10001" \
+  "backup pod should use fsGroup 10001 for writable PVC ownership"
+assert_contains "$backup_deployment" "fsGroupChangePolicy: OnRootMismatch" \
+  "backup pod should avoid unnecessary recursive PVC ownership changes"
+assert_contains "$backup_deployment" "type: RuntimeDefault" \
+  "backup pod should use the runtime-default seccomp profile"
+assert_contains "$backup_deployment" "allowPrivilegeEscalation: false" \
+  "backup container should disallow privilege escalation"
+assert_contains "$backup_deployment" "readOnlyRootFilesystem: true" \
+  "backup container should use a read-only root filesystem"
+assert_contains "$backup_deployment" "drop:" \
+  "backup container should render a dropped-capabilities list"
+assert_contains "$backup_deployment" "- ALL" \
+  "backup container should drop all Linux capabilities"
+assert_contains "$backup_deployment" "name: HOME" \
+  "backup container should set HOME to its deterministic writable path"
+assert_contains "$backup_deployment" "name: TMPDIR" \
+  "backup container should set TMPDIR to its deterministic writable path"
+assert_contains "$backup_deployment" "name: PYTHONDONTWRITEBYTECODE" \
+  "backup container should disable Python bytecode writes on the root filesystem"
+assert_contains "$backup_deployment" "mountPath: /tmp" \
+  "backup container should mount a writable /tmp"
+assert_contains "$backup_deployment" "emptyDir:" \
+  "backup pod should back /tmp with an emptyDir"
+assert_contains "$backup_deployment" "sizeLimit: 1Gi" \
+  "backup pod should bound the /tmp emptyDir to 1Gi"
+
+backup_security_override_deployment="$(extract_yaml_doc \
+  "$(helm template test charts/backup \
+    --set podSecurityContext.runAsUser=20002 \
+    --set podSecurityContext.runAsGroup=20003 \
+    --set podSecurityContext.fsGroup=20004 \
+    --set podSecurityContext.fsGroupChangePolicy=Always \
+    --set podSecurityContext.seccompProfile.type=Unconfined \
+    --set containerSecurityContext.readOnlyRootFilesystem=false \
+    --set containerSecurityContext.allowPrivilegeEscalation=true)" \
+  "Deployment" "test-hriv-backup")"
+assert_contains "$backup_security_override_deployment" "runAsUser: 20002" \
+  "backup deployment should render a platform-required UID override"
+assert_contains "$backup_security_override_deployment" "runAsGroup: 20003" \
+  "backup deployment should render a platform-required GID override"
+assert_contains "$backup_security_override_deployment" "fsGroup: 20004" \
+  "backup deployment should render a platform-required fsGroup override"
+assert_contains "$backup_security_override_deployment" "fsGroupChangePolicy: Always" \
+  "backup deployment should render an fsGroup policy override"
+assert_contains "$backup_security_override_deployment" "type: Unconfined" \
+  "backup deployment should render a seccomp profile override"
+assert_contains "$backup_security_override_deployment" "readOnlyRootFilesystem: false" \
+  "backup deployment should render a root-filesystem override"
+assert_contains "$backup_security_override_deployment" "allowPrivilegeEscalation: true" \
+  "backup deployment should render a privilege-escalation override"
+
 assert_contains "$backup_deployment" "ephemeral-storage:" \
   "backup deployment should set explicit ephemeral-storage requests and limits so an archive staging fallback to pod-local /tmp fails as a limit error"
 assert_not_contains "$backup_deployment" "BACKUP_STAGING_DIR" \
