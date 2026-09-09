@@ -126,6 +126,49 @@ Use fake or isolated Azure storage and a representative source-image inventory.
    never invoked. Database/all restore against the production archive must fail
    safely and direct the operator to CNPG.
 
+### Test 5: Kubernetes on-demand Job template
+
+1. Run `bash scripts/test-helm-chart-regressions.sh`. It verifies that the chart
+   renders a suspended `<fullname>-on-demand` CronJob with an inert schedule,
+   one-shot `backup` args, no retries/TTL, a bounded deadline, and parity with
+   the Deployment's image, env/Secrets, PVCs, security, resources, and scheduling.
+2. Render with custom node affinity, pod anti-affinity, preferred and required
+   pod affinity, node selector, and tolerations. Confirm all custom terms remain
+   and the Job appends required `kubernetes.io/hostname` affinity for the backup
+   Deployment's app-name and release-instance labels without duplicate YAML keys.
+3. Confirm local-only mode has no Azure credential env, while external-Secret and
+   Vault-target modes reference the configured Secret name/key and never render
+   credential values.
+4. Confirm `persistence.backups.enabled=false` fails while on-demand remains
+   enabled, and succeeds only when `onDemandBackup.enabled=false` is explicit.
+5. In a disposable acceptance namespace, create (do not exec) a timestamped Job:
+
+   ```bash
+   namespace=hriv
+   cronjob=hriv-backup-on-demand
+   job="hriv-backup-manual-$(date -u +%Y%m%d%H%M%S)"
+   kubectl -n "$namespace" create job \
+     --from="cronjob/$cronjob" "$job"
+   kubectl -n "$namespace" get job "$job" -o wide
+   kubectl -n "$namespace" logs "job/$job" --follow
+   kubectl -n "$namespace" wait --for=condition=complete --timeout=6h "job/$job"
+   kubectl -n "$namespace" get job "$job" -o yaml
+   ```
+
+   The create command returns after server-side Job creation; disconnect and
+   reconnect once to prove the run survives the client. Keep the Job until logs,
+   terminal status, state markers, archive/sidecar, and freshness are recorded.
+
+6. Start a second Job while the first holds the lock. It must fail once with
+   `overlapping_backup_run` and no retry, while durable attempt history records
+   the rejection without changing the active publication or last-success fields.
+7. Verify the Job pod is on the Deployment node (required for the shared RWO
+   backup PVC). A missing/unschedulable Deployment should leave it Pending rather
+   than moving the RWO mount to another node.
+8. Delete Jobs manually only after evidence capture. Never validate a multi-hour
+   run with `kubectl exec ... backup`; exec disconnect can terminate that process.
+   Short list/status and controlled restore commands may remain exec-based.
+
 ## Troubleshooting
 
 - If a development logical restore fails with "unrecognized configuration parameter", verify the backup image client matches the local server major version. Production database recovery uses CNPG instead.

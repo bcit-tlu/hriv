@@ -1,0 +1,33 @@
+{{- if .Values.onDemandBackup.enabled }}
+{{- if not .Values.persistence.backups.enabled }}
+{{- fail "onDemandBackup.enabled=true requires persistence.backups.enabled=true because on-demand and scheduled backups coordinate through the shared backup PVC" }}
+{{- end }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "hriv-backup.onDemandName" . }}
+  labels:
+    {{- include "hriv-backup.labels" . | nindent 4 }}
+    app.kubernetes.io/component: on-demand-backup
+spec:
+  schedule: {{ .Values.onDemandBackup.schedule | quote }}
+  suspend: true
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: {{ .Values.onDemandBackup.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.onDemandBackup.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: {{ .Values.onDemandBackup.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: {{ printf "%s-on-demand" (include "hriv-backup.name" .) | trunc 63 | trimSuffix "-" }}
+            app.kubernetes.io/instance: {{ .Release.Name }}
+            app.kubernetes.io/component: on-demand-backup
+        spec:
+          {{- include "hriv-backup.podSpec" (dict "root" . "args" (list "backup")) | nindent 10 }}
+          restartPolicy: Never
+          affinity:
+            {{- include "hriv-backup.onDemandAffinity" . | nindent 12 }}
+{{- end }}

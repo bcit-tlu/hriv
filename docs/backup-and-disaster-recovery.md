@@ -156,13 +156,44 @@ configuration, environment variables, and Docker Compose usage.
 Scheduled and on-demand calls share a non-blocking execution `flock` at
 `/backups/.hriv-backup-run.lock`. If another backup holds it, the new call is
 rejected and logged without disturbing the active run's publication state, and performs no database inventory,
-filesystem read, or archive upload. All supported production scheduled and
-on-demand invocations execute in the single backup Deployment and mount the same
-`hriv-backup-backups` PVC, which makes this flock shared. Any future Job or
-CronJob must mount that same claim or introduce cluster-wide coordination before
-it can be a supported invocation path. Restore remains a separate operator
-action; do not run a restore against an active source volume while backup
-capture is in progress.
+filesystem read, or archive upload. The scheduled call runs inside the
+long-lived backup Deployment; an operator creates a disconnect-safe on-demand
+Job from the chart-owned suspended `<chart fullname>-on-demand` CronJob.
+Both pod templates share the same image, environment and Secret references,
+source/backup PVCs, security contexts, resources, and scheduling configuration.
+The chart rejects on-demand enablement without the backup PVC.
+
+Because that backup PVC is ReadWriteOnce and mounted by the Deployment, the Job
+adds required hostname pod affinity selecting the Deployment's
+`app.kubernetes.io/name` and `app.kubernetes.io/instance`. This term is appended
+to custom affinity without dropping node affinity, pod anti-affinity, or
+preferred/required pod affinity. The Deployment must remain running and
+schedulable on a node satisfying all of those constraints. The Job's
+`backoffLimit: 0` leaves an overlap rejection terminal and inspectable rather
+than retrying; no TTL removes completed or failed Jobs automatically. Restore
+remains a separate operator action; do not run a restore against an active
+source volume while backup capture is in progress.
+
+Create and observe an on-demand backup without attaching its lifetime to the
+operator terminal:
+
+```bash
+namespace=hriv
+cronjob=hriv-backup-on-demand
+job="hriv-backup-manual-$(date -u +%Y%m%d%H%M%S)"
+kubectl -n "$namespace" create job \
+  --from="cronjob/$cronjob" "$job"
+kubectl -n "$namespace" get job "$job" -o wide
+kubectl -n "$namespace" logs "job/$job" --follow
+kubectl -n "$namespace" wait --for=condition=complete --timeout=6h "job/$job"
+kubectl -n "$namespace" get job "$job" -o yaml
+```
+
+The create request returns immediately after server-side persistence and the Job
+survives disconnect. Capture logs, final status, and backup state before manual
+`kubectl delete job`; retained Jobs are operational evidence. Never use
+`kubectl exec ... backup` for a multi-hour backup, although short list/status and
+controlled restore operations may remain exec-based.
 
 State-document coordination is separate from the execution lock. Local JSON
 updates use `/backups/.hriv-backup-state.lock`, while Azure markers use ETag

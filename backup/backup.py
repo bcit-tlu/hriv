@@ -325,8 +325,8 @@ def _atomic_write_bytes(path: Path, payload: bytes) -> None:
 # Shared observability state: coordination and ordering-aware merges
 #
 # Several backup or restore runs can be in flight at once (the cron loop plus
-# an on-demand ``kubectl exec`` invocation, or two containers sharing the
-# /backups volume). Every shared JSON document is therefore updated with a
+# an on-demand Kubernetes Job, or two containers sharing the /backups volume).
+# Every shared JSON document is therefore updated with a
 # read -> merge -> write cycle instead of a blind overwrite:
 #
 #   * local files are serialised with an advisory flock on a sidecar lock file

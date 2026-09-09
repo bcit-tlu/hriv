@@ -209,6 +209,16 @@ or nonexistent DST-local times; deployments may choose another explicitly
 approved non-peak window. Kubernetes orchestration must
 prevent overlapping scheduled and on-demand runs.
 
+A production Kubernetes on-demand backup is a server-side Job instantiated from
+a chart-owned suspended CronJob template. The template must never schedule
+itself, must use the same runtime configuration and shared execution-lock/state
+PVC as the scheduled Deployment, and must not retry lock rejection. Where that
+PVC is ReadWriteOnce and mounted by the Deployment, the Job requires same-node
+affinity to that Deployment while preserving all operator scheduling
+constraints. Job completion/failure status and logs remain retained until an
+operator captures evidence and manually deletes the Job; client disconnect is
+not a cancellation mechanism.
+
 API request handlers must not perform checksum, compression, archive transfer,
 or extraction work on the event loop. Status and failure reasons remain durable
 when a Job or pod restarts.
