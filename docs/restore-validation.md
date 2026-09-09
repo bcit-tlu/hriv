@@ -266,14 +266,18 @@ or retrying behind the holder. That CAS MUST preserve `active_run`, the full `la
 stages, resources, and heartbeat, and `last_complete_success`; an overlap is a rejected trigger, not
 an owning validation run.
 
-The Lease holder identity is the orchestrator Job UID plus its DNS-safe run ID. Normal renewal
-continues until terminal state has been persisted. On every normal terminal path, including
+The Lease ownership tuple is unambiguous and bounded: `holderIdentity` is the versioned encoding
+`v1|<job-uid>|<run-id>|<acquired-rfc3339>|<renewed-rfc3339>`. Its timestamps MUST exactly equal Lease
+`acquireTime` and `renewTime`, and every renewal CAS updates both the encoded renewal timestamp and
+`renewTime`; `leaseDurationSeconds` encodes expiry. Normal renewal continues until terminal state
+has been persisted. On every normal terminal path, including
 `SUCCEEDED` and `FAILED_RETAIN`, the holder MUST then compare-and-set the Lease to clear
 `holderIdentity` (and its acquisition/renewal fields as the Lease schema permits), so the next run
 can start immediately rather than waiting for expiry. If a holder failed to clear but its durable
 attempt is already terminal, a contender MAY immediately compare-and-set acquisition of the
-still-held Lease without waiting for expiry and without writing `INTERRUPTED_STALE_HOLDER`; this is
-terminal-holder recovery, not stale takeover.
+still-held Lease without waiting for expiry and without writing `INTERRUPTED_STALE_HOLDER`, but only
+after confirming a failed/retained run has its exact `retained_runs` transfer (or a clean success has
+no children). This is terminal-holder recovery, not stale takeover.
 
 A contender MUST NOT take a merely expired Lease whose durable holder remains within a valid
 nonterminal run. Stale takeover applies only to a holder whose
@@ -281,9 +285,46 @@ durable attempt is still nonterminal, whose Lease is expired, and whose run has 
 runtime, and only when:
 
 1. the holder Job is confirmed absent or terminal in the validation namespace;
-2. the contender records a bounded interrupted outcome for the old attempt with
-   `INTERRUPTED_STALE_HOLDER`; and
-3. compare-and-set on the Lease succeeds.
+2. the contender records a bounded interrupted outcome for the old accepted run with
+   `INTERRUPTED_STALE_HOLDER`;
+3. any old child ownership is atomically transferred to an exact `retained_runs` record before the
+   old `latest_run` can be replaced; and
+4. compare-and-set on the Lease succeeds.
+
+#### Post-Lease/pre-state initialization recovery
+
+Before owning state exists, writes are limited to resourceVersion-CAS coordination: Lease fields,
+bounded trigger/history disposition, and the initial owning pointers. No source selection, self
+Job/Pod run-label patch, child/result creation, provisioning, or other run side effect is allowed
+until one ConfigMap CAS has installed matching `active_run` and `latest_run`. If the Lease exists
+without matching owning state, the same live Job UID encoded in `holderIdentity` MAY repair that
+initial CAS idempotently, using the encoded run ID, only when no other active/latest owner exists and
+an exact all-kind run-label query confirms zero children.
+
+A later contender may recover an abandoned initialization only after Lease expiry **plus** a
+bounded initialization grace (default 60 seconds, configurable no higher than 300 seconds). It MUST
+parse one unambiguous Job UID/run ID ownership tuple, list/get the holder Job and verify by the
+encoded UID that it is absent or terminal, and query every allowed child kind using the exact run label. That query MUST
+return no child Job/Pod, Deployment, Service, result ConfigMap, PVC, or CNPG Cluster; the holder's
+own Job/Pod evidence is explicitly excluded. A live holder Job, an unexpired Lease, an elapsed time
+within grace, any child, malformed identity, UID/name disagreement, or ambiguous query result fails
+closed: the contender records/reports `OVERLAP_ACTIVE` where state permits and MUST NOT clear or
+take the Lease.
+
+After all guards pass, the contender compare-and-sets the Lease by `resourceVersion` to replace the
+orphan holder with a bounded recovery-only holder that encodes the contender Job UID/run ID and the
+abandoned tuple; it is not an accepted run and permits no run side effects. This prevents another
+contender from entering between Lease recovery and evidence persistence. It then field-aware-CAS
+upserts a bounded `rejected_trigger` history summary for the abandoned trigger, deriving its stable
+trigger key from the encoded Job UID and run ID timestamp, with outcome `rejected` and
+`LEASE_STATE_INITIALIZATION_LOST`; `latest_trigger` changes only if normal trigger ordering selects
+that summary, and `active_run`, `latest_run`, `retained_runs`, and `last_complete_success` remain
+byte-for-byte ownership-equivalent. Only after that record succeeds may the same contender use a
+normal resourceVersion CAS to convert the recovery holder into its regular Lease acquisition and
+run the initial-state protocol for its own trigger. A crash while recovery-only is held is governed
+by the same expiry, grace, UID, and zero-child rules. This abandoned
+initialization never becomes an accepted `latest_run` and never receives stale-holder
+`INTERRUPTED_STALE_HOLDER`.
 
 A rejected trigger is durable trigger history, not an accepted validation run, validation failure,
 or replacement for the active/latest owning run. All scheduled, on-demand, and reaper Jobs MUST use
@@ -296,13 +337,13 @@ semantic or observation retry policy to Job Pod recreation.
 A run ID MUST combine a UTC timestamp and cryptographically random suffix, be lowercase and
 DNS-label safe, and remain independent of archive or recovery-set IDs. For example, its shape
 may be `rv-20260115t100000z-a1b2c3d4`; the random portion, not an archive identity, prevents
-collisions. Each invocation also derives a bounded stable `trigger_id` from its UTC trigger time and
-Job UID before Lease acquisition. That key exists only for trigger summary/history merge and never
+collisions. Each invocation also derives a bounded stable `trigger_id` from its candidate run ID's
+UTC timestamp and Job UID before Lease acquisition. That key exists only for trigger summary/history merge and never
 appears in metric labels. A rejected trigger does not make its candidate run ID an owning run.
 
-The CronJob template MUST place the fixed component ownership label on the orchestrator Job/Pod;
-after generating its run ID, the orchestrator MUST patch its own Job and Pod with the run label and
-bounded expiry/evidence annotations. Every child resource MUST carry all of:
+The CronJob template MUST place the fixed component ownership label on the orchestrator Job/Pod.
+Only after Lease acquisition and the matching initial owning-state CAS may the orchestrator patch
+its own Job and Pod with the run label and bounded expiry/evidence annotations. Every child resource MUST carry all of:
 
 ```yaml
 metadata:
@@ -335,8 +376,8 @@ orchestrator or read-only selection child MUST verify:
   staging or upload artifact is selected;
 - archive size, source-image counts and bytes, per-file sizes, and SHA-256 checksums are valid
   and internally coherent;
-- missing/orphan/excluded lists, counts, digests, and acceptance state obey the source-state
-  policy below;
+- missing/orphan lists and validator-derived canonical counts/digest, separately allowlisted
+  exclusions, and acceptance state obey the source-state policy below;
 - CNPG provider, source cluster, WAL fence metadata, versions, and checksums are supported; and
 - `database_recovery.target_lsn` and a 24-hex-character `wal_fence_file` are present and
   syntactically valid.
@@ -361,7 +402,8 @@ NOT request `latest`. `target_time` remains audit evidence only.
 Before any provisioning, the controller MUST append a run record that binds the selected
 recovery-set identity, archive/sidecar versions and checksums, exact target LSN and derived
 timeline, declared bytes, source-profile ID/version/database/owner/server/`ObjectStore`, and
-source-state-policy version/digest. Those binding fields become immutable for that attempt. A
+validator-derived source-state digest plus source-state-policy version/recomputed digest. Those
+binding fields become immutable for that attempt. A
 restarted controller resumes the same binding or fails; it never silently advances to a newer set.
 
 ### Source-state drift policy
@@ -371,14 +413,67 @@ preserved; orphan files remain excluded and are never restored, created as rows,
 `manifest.validation.accepted` is necessary publication evidence, not proof of zero drift and not
 sufficient for restore-validation success. No backup-code or manifest-schema change is required.
 
+### Canonical source-state document and digest
+
+The validator derives a canonical source-state document from the existing format-2
+`validation.missing_sources` and `validation.orphan_sources` lists; this requires no manifest field
+or backup-code change. Before canonicalization, each list is limited to 256 entries, `row_id` to 19
+ASCII digits, and every other string to 512 UTF-8 bytes. Overflow, truncation, a non-string field,
+an unknown or missing key, invalid UTF-8, or a duplicate fails `SOURCE_STATE_DIGEST_INVALID`.
+
+Each missing entry has exactly `row_id`, `status`, `stored_path`, and `reason`. `row_id` MUST match
+`[1-9][0-9]{0,18}` and is retained as that canonical base-10 string; `reason` is one of
+`missing_source|unsafe_or_out_of_root|duplicate_source_reference`. Each orphan entry has exactly
+`path`, `reason=no_database_row`, and `policy=quarantined_by_policy`. Strings are Unicode NFC. Path normalization rejects NUL, backslash,
+`.`/`..` traversal, and paths outside the source root; it accepts a rootless relative path or
+strips exactly `/data/source_images/`, `data/source_images/`, or `source_images/`, then emits
+`data/source_images/<relative-posix-path>`. Duplicate missing `row_id` or normalized orphan `path`
+is invalid. Missing entries sort by numeric `row_id`, then lexical `status`, `stored_path`, and
+`reason`; orphan entries sort lexically by `path`, `reason`, then `policy`.
+
+The canonical object has exactly this shape:
+
+```json
+{
+  "missing_sources": [
+    {
+      "reason": "missing_source",
+      "row_id": "42",
+      "status": "ready",
+      "stored_path": "data/source_images/42.tif"
+    }
+  ],
+  "orphan_sources": [
+    {
+      "path": "data/source_images/orphan.tif",
+      "policy": "quarantined_by_policy",
+      "reason": "no_database_row"
+    }
+  ]
+}
+```
+
+Serialization is UTF-8 JSON with recursively sorted object keys, separators exactly `,` and `:`,
+`ensure_ascii=false`, and no trailing newline. Its digest is SHA-256 encoded as 64 lowercase hex
+characters. Missing and orphan counts are derived only from the canonical list lengths, never
+trusted from another manifest field.
+
 The Flux-owned, versioned `source-state-policy` ConfigMap defaults to allowing exactly zero
-missing and zero orphan entries. A nonzero set can pass consistency only when its canonical,
-bounded IDs/paths, separate counts, and list digest exactly match one operator-reviewed Git policy
-entry for the current #1240 condition. Unknown or newly observed entries, truncation, duplicate or
-unsafe paths, count/digest disagreement, or any policy mismatch fails
+missing and zero orphan entries. Its reviewed entry has one `source_state` object with exactly
+`missing_sources`, `orphan_sources`, `missing_count`, `orphan_count`, and `sha256`. For #1240 those
+lists MUST equal the exact canonical lists, the counts are separately derived, and `sha256` is the
+canonical digest. The
+validator applies the same bounds, key/type/path validation, sorting, serialization, and hashing to
+the policy lists, requires declared `sha256` to match `^[0-9a-f]{64}$`, rejects declared counts or
+digest that do not match recomputed values with `SOURCE_STATE_DIGEST_INVALID`, and uses a constant-time comparison for the recomputed
+manifest and policy digests. Passing a digest comparison is necessary but not sufficient: exact
+canonical lists and counts must also match. A valid but unknown, new, or mismatched state fails
 `SOURCE_STATE_UNAPPROVED`/`SOURCE_STATE_DRIFT`. Policy values never cause a skipped file to be
-restored. Every `excluded_incomplete_artifacts` entry must independently match this normative, versioned
-allowlist; an approved missing/orphan set does not approve arbitrary exclusions:
+restored.
+
+`excluded_incomplete_artifacts` is not part of this source-state document or digest. Every excluded
+entry must independently match this normative, versioned allowlist; an approved missing/orphan set
+does not approve arbitrary exclusions:
 
 - reason `incomplete_or_non_authoritative` only beneath `data/source_images/` for a symlink, the
   maintenance marker, a path segment exactly in the backup contract's
@@ -402,17 +497,29 @@ requests/limits, `persistentvolumeclaims`, and explicit Job, Pod, Service, Confi
 object counts. Every container has requests and limits, and every temporary PVC has an explicit
 storage request.
 
-During `PREFLIGHT`, the controller uses only its own namespace API to calculate:
+`retained_runs` has a configured maximum of 2 and deployment configuration MUST NOT raise it above 2. `ADMISSION_PREFLIGHT` reads the retained count and namespace quota for one declared run plus its
+failure-transfer envelope; the initial accepted-run state CAS rechecks that retained count is still
+below the maximum before installing ownership. If the retained bound is full, capacity is insufficient, or quota
+status is unavailable, the trigger is rejected with `RETAINED_RUN_LIMIT`, `CAPACITY_INSUFFICIENT`,
+or `QUOTA_UNAVAILABLE`; the Lease is released, and no `active_run`/`latest_run` or child is created.
+This guarantees an accepted active run always has one available retained ownership slot if it later
+fails.
 
-- active runs and failed runs retained for diagnosis;
-- bound child objects and declared PVC requests for each run;
+The accepted run's full `PREFLIGHT` then uses only its own namespace API and durable state to
+calculate:
+
+- the exact `retained_runs` count, aggregate remaining children, and declared PVC requests in each
+  retained ownership record;
+- active-run declared objects and requests;
 - the new source PVC requirement derived from manifest bytes plus configured headroom;
 - configured CNPG database storage, tile scratch, and temporary-workspace requests; and
-- remaining namespace quota and configured maximum retained-run count.
+- remaining namespace quota and configured retained-run maximum.
 
 The preflight fails before provisioning when declared namespace quota cannot fit, quota status is
-unavailable, or retained-run bounds are already reached. It reports `CAPACITY_INSUFFICIENT`,
-`QUOTA_UNAVAILABLE`, or `RETAINED_RUN_LIMIT` and leaves the selected binding inspectable. This
+unavailable, or the retained reservation is no longer valid. It reports `CAPACITY_INSUFFICIENT`,
+`QUOTA_UNAVAILABLE`, or `RETAINED_RUN_LIMIT` and leaves the accepted binding inspectable. Any
+transition to `FAILED_RETAIN`, including an empty pre-provision failure, consumes the reserved slot
+and transfers an exact record whose child list may be empty. This
 proves only declared namespace quota and LimitRange compliance—not node, volume, or storage-system
 physical capacity. It does not query nodes, StorageClasses, Longhorn resources, or production
 PVCs and does not guess unreported physical capacity. A later unschedulable Pod, unbound PVC, or
@@ -422,25 +529,31 @@ evidence.
 ## State machine
 
 ```text
-SELECT -> PREFLIGHT -> PROVISION -> WAIT_CNPG -> VALIDATE_DB -> INIT_SYNTHETIC_CREDENTIAL
-  -> RESTORE_FILES -> VALIDATE_CONSISTENCY -> START_APP -> REBUILD_TILE -> VALIDATE_APP
-  -> CLEANUP -> SUCCEEDED -> RELEASE_LEASE -> ORCHESTRATOR_EXIT
+ACQUIRE_LEASE -> ADMISSION_PREFLIGHT -> INIT_OWNING_STATE -> SELECT -> PREFLIGHT -> PROVISION -> WAIT_CNPG
+  -> VALIDATE_DB -> INIT_SYNTHETIC_CREDENTIAL -> RESTORE_FILES -> VALIDATE_CONSISTENCY
+  -> START_APP -> REBUILD_TILE -> VALIDATE_APP -> CLEANUP -> SUCCEEDED
+  -> RELEASE_LEASE -> CLEAR_ACTIVE -> ORCHESTRATOR_EXIT
 
-Any stage through VALIDATE_APP --terminal failure--> FAILED_RETAIN -> RELEASE_LEASE -> EXIT
-CLEANUP --incomplete cleanup-------------> FAILED_RETAIN -> RELEASE_LEASE -> EXIT
-FAILED_RETAIN --expiry/approved request--> REAP_FAILED_CHILDREN -> FAILED_RETAIN(cleaned)
+Any stage through VALIDATE_APP --terminal failure--> TRANSFER_RETAINED -> FAILED_RETAIN
+  -> RELEASE_LEASE -> CLEAR_ACTIVE -> EXIT
+CLEANUP --incomplete--> TRANSFER_RETAINED -> FAILED_RETAIN -> RELEASE_LEASE -> CLEAR_ACTIVE -> EXIT
+retained_runs expiry/approved request --> REAP_FAILED_CHILDREN --> remove retained entry when empty
 terminal orchestrator Job --evidence window-------> STATIC_JOB_REAPER
 
 Success-path `CLEANUP` reaches `SUCCEEDED` only after every bound child run resource is confirmed
 absent. The orchestrator Job and Pod remain as evidence, are not part of that gate, and cannot be
 absent before their own successful exit. After persisting `SUCCEEDED`, the orchestrator clears the
-Lease by CAS and exits; the static reaper later removes its terminal Job/Pod.
+Lease by CAS, conditionally clears its matching `active_run`, and exits; the static reaper later
+removes its terminal Job/Pod.
 ```
 
 The stages are ordered gates:
 
 | Stage                       | Required result                                                                                                                                                                                           |
 | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ACQUIRE_LEASE`             | Acquire by CAS or perform only guarded terminal/stale/abandoned-initialization recovery.                                                                                                                  |
+| `ADMISSION_PREFLIGHT`       | Before accepted state, prove retained count is below 2 and quota reserves one run plus its failure-transfer slot; reject and release otherwise.                                                           |
+| `INIT_OWNING_STATE`         | Install matching `active_run`/`latest_run` before every non-coordination side effect.                                                                                                                     |
 | `SELECT`                    | Verify and immutably bind the latest fully published set and exact LSN.                                                                                                                                   |
 | `PREFLIGHT`                 | Prove declared namespace quota plus run/retention bounds without claiming physical capacity.                                                                                                              |
 | `PROVISION`                 | Create fresh labelled PVCs, CNPG Cluster, and validation-only support objects.                                                                                                                            |
@@ -454,7 +567,8 @@ The stages are ordered gates:
 | `VALIDATE_APP`              | Use the existing synthetic image to prove local login, category/image browsing, metadata, DZI, dimensions/content evidence, and a representative tile.                                                    |
 | `CLEANUP`                   | Remove all and only bound child run resources, then list/get to confirm those children are absent; exclude the orchestrator Job/Pod.                                                                      |
 | `SUCCEEDED`                 | Persist only after every prior gate and child cleanup confirmation succeeds; then clear the Lease and exit.                                                                                               |
-| `FAILED_RETAIN`             | Persist failure, stop mutation, set bounded expiry, clear the Lease, and leave labelled child targets for diagnosis until reaping.                                                                        |
+| `TRANSFER_RETAINED`         | Atomically upsert the exact full child ownership record in `retained_runs` before replacing `latest_run` or releasing the Lease.                                                                          |
+| `FAILED_RETAIN`             | Persist failure, stop mutation, set bounded expiry, and leave only state-bound child targets for diagnosis until exact-record reaping.                                                                    |
 
 Each stage has a configured deadline bounded by the maximum runtime. Retryable observations use
 bounded exponential backoff with jitter. Semantic validation failures, unsupported inputs,
@@ -465,8 +579,12 @@ overlap, authorization denial, and capacity failures are not retried within an a
 ```text
 Trigger       Orchestrator       State/Lease       Kubernetes/CNPG/children        Static reaper
    |                |                  |                         |                       |
-   |--------------->| acquire Lease CAS; state CAS sets active_run/latest_run/trigger ->|
-   | overlap trigger|-- reject; CAS latest_trigger/history only -->|                    |
+   |--------------->| acquire Lease CAS; retention/quota admission preflight             |
+   |                | state CAS sets active_run/latest_run/latest_trigger --------------->|
+   |                | [no run side effects before that state CAS]                        |
+   | orphan recovery| expiry+grace; absent/terminal UID; zero children; CAS recovery holder>|
+   |                | record initialization-lost history; acquire/init normally -------->|
+   | overlap trigger|-- reject; CAS latest_trigger/history only -->|                     |
    |                | select/bind ---->|--- read-only source --->|                       |
    |                | persist binding->|                         |                       |
    |                | preflight/create ------------------------->|                       |
@@ -476,7 +594,8 @@ Trigger       Orchestrator       State/Lease       Kubernetes/CNPG/children     
    |                |<-----------------|------- machine-readable bounded outcomes       |
    |                | delete all bound children ---------------->|                      |
    |                | confirm child absence -------------------->|                      |
-   |                | persist terminal latest_run/conditional last success ------------>|
+   | failure path   | CAS latest_run + full retained_runs transfer ->|                  |
+   | success path   | persist terminal latest_run/conditional last success ------------>|
    |                | clear holder CAS -->|                       |                      |
    |                | CAS active_run=null if still self -------->|                      |
    |                | exit; Job becomes terminal ----------------|                      |
@@ -496,7 +615,8 @@ identity, update with the observed version, and re-read/re-merge on conflict.
 The document separates three views that MUST NOT alias: `active_run` is a bounded pointer/summary
 for the current Lease holder and is `null` when none; `latest_run` is the full record for the newest
 accepted owning validation run; and `latest_trigger` is a bounded summary of the newest among all
-scheduled/on-demand invocations, including an overlap rejection. `attempt_history` retains bounded
+scheduled/on-demand invocations, including an overlap rejection. `retained_runs` is the sole full
+cleanup-ownership index for failed accepted runs; `attempt_history` retains only bounded reporting
 summaries for accepted runs and rejected triggers, while `last_complete_success` remains separate.
 Detailed inventories and free text remain in structured logs or run evidence; durable state stores
 bounded codes and summaries. It contains no credentials, SAS URLs, connection strings, tokens, or
@@ -508,7 +628,7 @@ A representative `state.json` value is:
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "generation": 44,
   "updated_at": "2026-01-15T13:12:00Z",
   "active_run": null,
@@ -541,8 +661,9 @@ A representative `state.json` value is:
       "source_total_bytes": 123456789,
       "source_profile_id": "production-pg-core",
       "source_profile_version": 1,
+      "source_state_sha256": "<validator-derived digest>",
       "source_state_policy_version": 1,
-      "source_state_policy_sha256": "<digest>",
+      "source_state_policy_sha256": "<recomputed policy digest>",
       "database": "app",
       "owner": "app",
       "server_identity": "<bounded expected identity>",
@@ -555,7 +676,7 @@ A representative `state.json` value is:
     },
     "child_resources": [
       {
-        "api_version": "v1",
+        "apiVersion": "v1",
         "kind": "PersistentVolumeClaim",
         "name": "rv-a1b2c3d4-source",
         "uid": "00000000-0000-0000-0000-000000000001"
@@ -576,17 +697,41 @@ A representative `state.json` value is:
         "failure_code": "VIEWER_TILE_INVALID"
       }
     },
-    "outcome": "failed",
+    "outcome": "retained",
     "failure_stage": "VALIDATE_APP",
     "failure_code": "VIEWER_TILE_INVALID",
     "cleanup": {
       "outcome": "retained",
       "requested_at": null,
       "completed_at": null,
-      "remaining_resource_count": 4,
+      "remaining_resource_count": 1,
       "failure_code": null
     }
   },
+  "retained_runs": [
+    {
+      "run_id": "rv-20260115t100000z-a1b2c3d4",
+      "outcome": "retained",
+      "failure_stage": "VALIDATE_APP",
+      "failure_code": "VIEWER_TILE_INVALID",
+      "expires_at": "2026-01-16T12:41:00Z",
+      "cleanup": {
+        "outcome": "retained",
+        "requested_at": null,
+        "completed_at": null,
+        "remaining_resource_count": 1,
+        "failure_code": null
+      },
+      "child_resources": [
+        {
+          "apiVersion": "v1",
+          "kind": "PersistentVolumeClaim",
+          "name": "rv-a1b2c3d4-source",
+          "uid": "00000000-0000-0000-0000-000000000001"
+        }
+      ]
+    }
+  ],
   "last_complete_success": {
     "run_id": "rv-20260108t100000z-11223344",
     "recovery_set_id": "<bounded recovery-set identity>",
@@ -601,11 +746,11 @@ A representative `state.json` value is:
       "entry_kind": "accepted_run",
       "run_id": "rv-20260115t100000z-a1b2c3d4",
       "trigger": "scheduled",
-      "outcome": "failed",
+      "outcome": "retained",
       "failure_stage": "VALIDATE_APP",
       "failure_code": "VIEWER_TILE_INVALID",
       "cleanup_outcome": "retained",
-      "remaining_resource_count": 4,
+      "remaining_resource_count": 1,
       "started_at": "2026-01-15T10:00:00Z",
       "completed_at": "2026-01-15T12:41:00Z"
     },
@@ -634,7 +779,9 @@ Required invariants are:
   never the accepted run's completion time.
 - an overlap CAS changes only `latest_trigger`, its identity-keyed rejected-trigger history summary,
   `generation`, and `updated_at`. It MUST NOT replace or alter `active_run`, `latest_run`,
-  `last_complete_success`, or any holder-owned sequence, stage, resource, cleanup, or heartbeat.
+  `retained_runs`, `last_complete_success`, or any holder-owned sequence, stage, resource, cleanup,
+  or heartbeat. Other pre-accept trigger rejections have the same field-isolation rule and only a
+  bounded trigger failure code differs.
 - after successful Lease CAS and before provisioning, one ConfigMap CAS sets `active_run` to the
   new holder summary, sets the full `latest_run` to that accepted run, records the accepted
   `latest_trigger`, and upserts its accepted-run history summary.
@@ -646,8 +793,16 @@ Required invariants are:
   leave a stage started but not completed until reconciliation closes it.
 - a terminal accepted run first persists terminal `latest_run` and its completed history summary,
   conditionally advances `last_complete_success` only after clean `CLEANUP`, and leaves the matching
-  `active_run` in place. It then releases the Lease and CAS-clears `active_run` only if it still
-  names that run/Job UID; it MUST NOT clear a concurrently installed successor.
+  `active_run` in place. A `FAILED_RETAIN` transition MUST in that same CAS upsert/transfer a full
+  `retained_runs` record containing terminal code/stage, expiry, cleanup status, and every exact
+  child API version/kind/name/UID before Lease release. Only after that transfer may a later accepted
+  run replace `latest_run`.
+- `retained_runs` is identity-merged by `run_id`, never exceeds the configured maximum of 2, and may
+  temporarily duplicate the current terminal `latest_run`; duplicate identity does not count twice
+  or create a second ownership record. `attempt_history` is never cleanup authority.
+- after the terminal state/retention transfer, the holder releases the Lease and CAS-clears
+  `active_run` only if it still names that run/Job UID; it MUST NOT clear a concurrently installed
+  successor.
 - `attempt_history` upserts by stable identity (`run_id` for `accepted_run`, `trigger_id` for
   `rejected_trigger`) and retains both kinds. Its canonical newest-first order is descending
   `(coalesce(completed_at, started_at), started_at, entry_kind, identity)` with UTC timestamps and lexical
@@ -663,21 +818,24 @@ Required invariants are:
 - unknown schema versions fail closed and do not replace known last-success state.
 
 The serialized `state.json` value MUST be at most 512 KiB, with one full `latest_run`, at most one
-`active_run` summary, one `latest_trigger` summary, at most 10 total `attempt_history` summaries
-across accepted runs and rejected triggers, 64 bound child resources in the full run, and 32 stage
-records. Every string and enum has a schema maximum; arbitrary free text is rejected. Before
+`active_run` summary, one `latest_trigger` summary, at most 10 total `attempt_history` summaries,
+and at most 2 `retained_runs`. The full latest run and each retained record have at most 64 exact
+child resources; the latest/retained duplicate is counted in byte sizing even though identity merge
+deduplicates ownership. A full run has at most 32 stage records. Every string and enum has a schema maximum; arbitrary free text is rejected. Before
 crossing a count bound, the holder fails closed with `STATE_SIZE_EXCEEDED` and creates no
 untrackable child.
 
 On byte pressure the CAS merge first unions concurrent identity-keyed history updates, then removes
-only the oldest canonical history entries while preserving summaries referenced by `active_run`,
-`latest_run`, `latest_trigger`, the newest completed accepted run, and `last_complete_success`. It
+only the oldest canonical history entries while preserving `active_run`, full `latest_run`, every
+`retained_runs` ownership record, `latest_trigger`, the newest completed accepted summary, and
+`last_complete_success`. It
 may then truncate only explicitly truncatable diagnostic summaries with a `truncated: true` marker.
 It MUST NOT truncate the three pointers/summaries, immutable source bindings, holder sequence/stage/
-heartbeat, child name/UID ownership, outcomes, or last-success evidence. Holder writes MUST reserve
-enough of the 512 KiB envelope for one maximum-size `latest_trigger` and rejected-trigger history
-summary, so an overlap can always perform its required bounded merge after trimming the oldest
-eligible history entry. If a holder transition would consume that reserve, the owning run is closed
+heartbeat, retained ownership, child name/UID ownership, outcomes, or last-success evidence.
+Holder writes MUST reserve enough of the 512 KiB envelope for both one maximum-size
+`latest_trigger`/rejected-trigger history summary and transfer of the active run's maximum 64-child
+retained record. Thus overlap and `FAILED_RETAIN` transfer can complete after trimming oldest
+eligible reporting history. If a holder transition would consume that reserve, the owning run is closed
 as `STATE_SIZE_EXCEEDED` using a bounded minimal terminal record before accepting more child state;
 an overlap never closes or truncates the owning run to make room.
 
@@ -688,7 +846,7 @@ On restart, the Lease holder requires `active_run` to identify itself and recons
 `latest_run`'s immutable binding, sequence, bound child-resource name/UID list, separate
 orchestrator evidence, and observed namespace objects. The sole exception is idempotent recovery of
 an interruption between successful Lease CAS and the initial state CAS: the same Job UID may install
-its initial accepted pointers only when no different `active_run`/`latest_run` owner exists. Other
+its initial accepted pointers only when no different nonterminal `active_run`/`latest_run` owner exists. Other
 Lease/pointer disagreement fails closed or uses only the explicit terminal/stale-holder protocol;
 the reconciler never adopts `latest_trigger` as run ownership. Create operations use deterministic run-scoped names and treat
 an existing exact-owned object as the prior result. An object with the same name but different UID
@@ -696,7 +854,10 @@ or ownership causes `OWNERSHIP_CONFLICT`.
 
 On every ConfigMap conflict, all writers re-read and perform a field-aware merge: trigger writers
 upsert only `latest_trigger`/rejected history, while the holder updates only its matching
-`active_run`/`latest_run` and accepted history plus conditional success. Neither writer serializes
+`active_run`/`latest_run`, accepted history, conditional success, and its identity-keyed retained
+transfer. The failed-child reaper updates only identity-matched `retained_runs` cleanup records and
+may mirror their cleanup summary into a same-ID terminal `latest_run`; it never sources ownership
+from `latest_run`. No writer serializes
 an earlier whole-document snapshot over the other writer's identity-keyed history additions.
 
 Reconciliation repeats safe observations and cleanup, but never repeats source selection for a
@@ -708,8 +869,9 @@ is not inferred as success from Pod exit alone.
 After an orchestrator interruption, the current or stale-takeover reconciler updates the accepted
 `latest_run`/history with `INTERRUPTED`, determines whether the current stage is safely resumable,
 and either resumes it or transitions to `FAILED_RETAIN`. It preserves any newer `latest_trigger`
-and rejected-trigger history. Timeouts transition deterministically, release the Lease, and
-conditionally clear the matching `active_run` so no run remains permanently active.
+and rejected-trigger history. Before Lease release, every interrupted/timeout failure transfers
+its full exact child ownership into `retained_runs`; then it releases the Lease and conditionally
+clears matching `active_run` so no run remains permanently active.
 
 ## Validation details
 
@@ -808,14 +970,22 @@ last complete success. It then clears `holderIdentity` by Lease CAS and exits. I
 are lifecycle evidence, not children; they remain through completion and are excluded from the
 success absence gate.
 
-Failed child targets enter `FAILED_RETAIN` for 24 hours by default. The window is configurable but
-bounded, as are retained-run count and quota use. The Flux-owned cleanup/reaper path follows the
-same ownership and compare-and-set rules, reconciles child expiration after controller restarts,
-and records cleanup on the existing failed attempt without ever converting it to success; cleanup
-failure remains failed/alerting. Separately, the static terminal-Job reaper
-removes only terminal orchestrator Jobs (and their owned Pods) after the configured evidence and
-attempt-history window, using exact component labels and terminal status; it cannot remove active
-Jobs or child targets. An approved early-cleanup workflow may request the same guarded child
+Failed child targets enter `FAILED_RETAIN` for 24 hours by default. Before Lease release, the holder
+atomically transfers the exact cleanup inventory into its `retained_runs[run_id]` record. The window
+is configurable but bounded, retained count is at most 2, and preflight reserves quota/one retained
+slot for the active run.
+
+The Flux-owned failed-child reaper operates only from full `retained_runs` records, never
+`attempt_history`, labels alone, or the possibly replaced `latest_run`. For each expired or approved
+entry it verifies every API version/kind/name/UID and ownership label, deletes only exact matches,
+and CAS-updates that entry's cleanup status and remaining count. It removes the retained entry only
+after every listed child is confirmed absent; UID/label mismatch remains failed and alerting. A
+record that duplicates terminal `latest_run` is merged by run ID and cleaned once; the same CAS may
+mirror only cleanup outcome/count into matching `latest_run` evidence, without changing its failure
+outcome or using it as ownership. Separately, the static terminal-Job reaper removes only
+terminal orchestrator Jobs (and their owned Pods) after the configured evidence and attempt-history
+window, using exact component labels and terminal status; it cannot remove active Jobs or child
+targets. An approved early-cleanup workflow may request the same guarded child
 reconciliation; during manual acceptance testing, child removal remains a deliberate, explicit
 operator step until automated exact-label and UID guards have been proven.
 
@@ -830,9 +1000,9 @@ Cleanup MUST NOT remove:
 - production resources, production PVCs, or objects in another namespace; or
 - any recovery archive, the production backup state, or the last known-good recovery set.
 
-Partial cleanup records each remaining object and `CLEANUP_INCOMPLETE`; it never rewrites the
-validation as success. Reconciliation retries bounded cleanup safely and continues alerting
-until absence is confirmed.
+Partial cleanup preserves each remaining exact object in its `retained_runs` record and writes
+`CLEANUP_INCOMPLETE`; it never rewrites validation as success. Reconciliation retries bounded
+cleanup safely and continues alerting until absence is confirmed and the retained entry is removed.
 
 ## Telemetry, metrics, and alerts
 
@@ -849,37 +1019,55 @@ recovery-set IDs, run IDs, resource names, LSNs, and free-text errors MUST NOT b
 The exporter MUST expose exactly this restore-validation metric surface (all are Prometheus
 gauges; timestamps/durations/ages are seconds):
 
-| Metric                                                     | Labels (complete allowlist)          | Value                                                                                         |
-| ---------------------------------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------------- |
-| `hriv_restore_validation_last_success_timestamp_seconds`   | none                                 | `last_complete_success`, or `0`                                                               |
-| `hriv_restore_validation_last_success_age_seconds`         | none                                 | Exporter time minus last complete success, or `+Inf`                                          |
-| `hriv_restore_validation_latest_trigger_timestamp_seconds` | `event` (`started`,`completed`)      | `latest_trigger` timestamp, including rejected overlap, or `0`                                |
-| `hriv_restore_validation_latest_trigger_info`              | `trigger`, `outcome`, `failure_code` | Exactly one `latest_trigger` sample with value `1`; rejected/`OVERLAP_ACTIVE` exposes overlap |
-| `hriv_restore_validation_latest_run_timestamp_seconds`     | `event` (`started`,`completed`)      | Newest accepted `latest_run` timestamp, or `0`                                                |
-| `hriv_restore_validation_latest_run_info`                  | `trigger`, `outcome`                 | Exactly one newest accepted-run sample with value `1`                                         |
-| `hriv_restore_validation_latest_run_duration_seconds`      | none                                 | Completed or elapsed duration of `latest_run`                                                 |
-| `hriv_restore_validation_active`                           | none                                 | `1` only when `active_run` identifies the current nonterminal Lease holder                    |
-| `hriv_restore_validation_stage_info`                       | `stage`, `outcome`                   | Bounded stages from accepted `latest_run`, never `latest_trigger`                             |
-| `hriv_restore_validation_heartbeat_timestamp_seconds`      | `stage`                              | Matching `active_run`/`latest_run` holder heartbeat; no active holder yields `0`              |
-| `hriv_restore_validation_heartbeat_age_seconds`            | `stage`                              | Exporter time minus that active-holder heartbeat; no active holder yields `+Inf`              |
-| `hriv_restore_validation_stage_duration_seconds`           | `stage`, `outcome`                   | Completed/elapsed stage duration from accepted `latest_run`                                   |
-| `hriv_restore_validation_failure_info`                     | `stage`, `failure_code`              | `1` for the newest completed accepted-run failure; rejected triggers never contribute         |
-| `hriv_restore_validation_cleanup_remaining_resources`      | none                                 | Remaining child count from the newest completed accepted-run summary                          |
-| `hriv_restore_validation_cleanup_info`                     | `outcome`, `failure_code`            | Exactly one newest completed accepted-run cleanup sample with value `1`                       |
-| `hriv_restore_validation_exporter_parse_success`           | none                                 | `1` only when latest projected state parsed and validated                                     |
-| `hriv_restore_validation_state_projection_age_seconds`     | none                                 | Exporter time minus projected state's `updated_at`, or `+Inf`                                 |
+| Metric                                                     | Labels (complete allowlist)          | Value                                                                                                        |
+| ---------------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `hriv_restore_validation_last_success_timestamp_seconds`   | none                                 | `last_complete_success`, or `0`                                                                              |
+| `hriv_restore_validation_last_success_age_seconds`         | none                                 | Exporter time minus last complete success, or `+Inf`                                                         |
+| `hriv_restore_validation_latest_trigger_timestamp_seconds` | `event` (`started`,`completed`)      | `latest_trigger` timestamp, including rejected overlap, or `0`                                               |
+| `hriv_restore_validation_latest_trigger_info`              | `trigger`, `outcome`, `failure_code` | Exactly one `latest_trigger` sample with value `1`; bounded rejection code exposes overlap/admission outcome |
+| `hriv_restore_validation_latest_run_timestamp_seconds`     | `event` (`started`,`completed`)      | Newest accepted `latest_run` timestamp, or `0`                                                               |
+| `hriv_restore_validation_latest_run_info`                  | `trigger`, `outcome`                 | Exactly one newest accepted-run sample with value `1`                                                        |
+| `hriv_restore_validation_latest_run_duration_seconds`      | none                                 | Completed or elapsed duration of `latest_run`                                                                |
+| `hriv_restore_validation_active`                           | none                                 | `1` only when `active_run` identifies the current nonterminal Lease holder                                   |
+| `hriv_restore_validation_stage_info`                       | `stage`, `outcome`                   | Bounded stages from accepted `latest_run`, never `latest_trigger`                                            |
+| `hriv_restore_validation_heartbeat_timestamp_seconds`      | `stage`                              | Matching `active_run`/`latest_run` holder heartbeat; no active holder yields `0`                             |
+| `hriv_restore_validation_heartbeat_age_seconds`            | `stage`                              | Exporter time minus that active-holder heartbeat; no active holder yields `+Inf`                             |
+| `hriv_restore_validation_stage_duration_seconds`           | `stage`, `outcome`                   | Completed/elapsed stage duration from accepted `latest_run`                                                  |
+| `hriv_restore_validation_failure_info`                     | `stage`, `failure_code`              | `1` for the newest completed accepted-run failure; rejected triggers never contribute                        |
+| `hriv_restore_validation_cleanup_remaining_resources`      | none                                 | Remaining child count from accepted `latest_run` cleanup or identity-matched retained record                 |
+| `hriv_restore_validation_cleanup_info`                     | `outcome`, `failure_code`            | Exactly one sample from that accepted-run/latest-retained cleanup record                                     |
+| `hriv_restore_validation_retained_run_count`               | none                                 | Exact number of `retained_runs` entries, from 0 through 2                                                    |
+| `hriv_restore_validation_retained_expired_run_count`       | none                                 | Number of retained entries past `expires_at`, from 0 through 2                                               |
+| `hriv_restore_validation_retained_remaining_resources`     | none                                 | Aggregate `remaining_resource_count` across deduplicated `retained_runs`                                     |
+| `hriv_restore_validation_retained_cleanup_runs`            | `outcome`, `failure_code`            | Count of retained entries for each bounded cleanup outcome/code                                              |
+| `hriv_restore_validation_exporter_parse_success`           | none                                 | `1` only when latest projected state parsed and validated                                                    |
+| `hriv_restore_validation_state_projection_age_seconds`     | none                                 | Exporter time minus projected state's `updated_at`, or `+Inf`                                                |
 
-Allowed label values come only from versioned enums: `event={started,completed}`;
-`trigger={scheduled,on_demand}`;
-`outcome={accepted,rejected,pending,running,succeeded,failed,interrupted,retained,not_started,none}`;
-`stage` is one of the at most 32 state-machine stages named in this contract; and `failure_code` is
-one of the versioned taxonomy codes below plus `none`/`INTERNAL_ERROR`. `latest_trigger_info` uses
-only `accepted|rejected` and `none|OVERLAP_ACTIVE`; empty/non-applicable run or cleanup failure uses
-`none`. No other labels are permitted; specifically archive/recovery-set/run/trigger IDs,
-Job/resource names, LSNs, paths, emails, and free text never appear in labels. The exporter selects
-the newest completed accepted-run history summary using the canonical state ordering for failure
-and cleanup metrics; active, heartbeat, and stuck inputs come only from the matching
-`active_run`/`latest_run`. It never interprets `latest_trigger` as an owning run. The exporter polls the projected file (rather than assuming
+Metric label domains are exact and disjoint by metric:
+
+- both info metrics use `trigger={scheduled,on_demand}` and timestamp metrics use
+  `event={started,completed}`;
+- `latest_trigger_info.outcome={accepted,rejected}` only. Accepted uses `failure_code=none`;
+  rejected uses exactly one of
+  `failure_code={OVERLAP_ACTIVE,RETAINED_RUN_LIMIT,CAPACITY_INSUFFICIENT,QUOTA_UNAVAILABLE,LEASE_STATE_INITIALIZATION_LOST}`;
+- `latest_run_info.outcome={running,succeeded,failed,interrupted,retained}` only—never
+  `accepted`, `rejected`, or `pending`;
+- `stage_info` and `stage_duration` use an enumerated contract `stage` and
+  `outcome={running,succeeded,failed}` only;
+- `cleanup_info` and `retained_cleanup_runs` use
+  `outcome={not_started,running,succeeded,retained,failed}` and `failure_code` equal to `none` or a
+  cleanup taxonomy code; and
+- `failure_info.failure_code` is an accepted-run failure taxonomy code or `INTERNAL_ERROR`, never a
+  trigger-only rejection code.
+
+No other label values or labels are permitted. Archive/recovery-set/run/trigger IDs, Job/resource
+names, LSNs, paths, emails, and free text never appear in labels. The exporter selects
+the newest completed accepted-run summary using canonical accepted-run ordering for failure
+metrics. Cleanup comes from the accepted `latest_run` or its identity-matched `retained_runs`
+record after transfer; retained count/expired/remaining/cleanup-outcome metrics come only from
+deduplicated retained records. Active, stage, heartbeat, and stuck inputs come only from matching
+`active_run`/`latest_run`. The exporter never interprets `latest_trigger` as an owning run or emits
+trigger rejection under accepted-run metric enums. The exporter polls the projected file (rather than assuming
 an inotify event), retains the last valid state on malformed input, sets parse success to `0`, and
 detects a stale/kubelet-stalled projection using projection age even while its own process and
 scrape endpoint remain healthy.
@@ -893,10 +1081,10 @@ Alert rules MUST distinguish:
 | Alert condition    | Required signal                                                                                                                |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
 | Validation failed  | Newest completed **accepted run** failed, including selection, capacity, restore, validation, interruption, or cleanup failure |
-| Trigger rejected   | `latest_trigger` is `rejected`/`OVERLAP_ACTIVE`; informational or separately routed and never a validation failure             |
+| Trigger rejected   | `latest_trigger` is `rejected` with a bounded trigger code; overlap remains separately visible as `OVERLAP_ACTIVE`             |
 | Validation overdue | No complete success for more than 14 days                                                                                      |
-| Validation stuck   | Matching `active_run` holder heartbeat/stage exceeds its stage or maximum-runtime threshold                                    |
-| Cleanup failed     | Applicable accepted-run child resources remain or cleanup outcome is failed/incomplete                                         |
+| Validation stuck   | Matching `active_run`/`latest_run` holder heartbeat or stage exceeds its deadline                                              |
+| Cleanup failed     | Retained expired-count is nonzero, retained cleanup outcome is failed, or aggregate children remain after cleanup completion   |
 | Metrics missing    | Exporter scrape missing or durable-state read/parse health invalid for the configured window                                   |
 
 A rejected overlap never suppresses active/stuck monitoring and never replaces the accepted-run
@@ -905,22 +1093,23 @@ fresh. No alert is silenced merely because a Job emitted OTLP or reached `Comple
 
 ## Failure taxonomy and deterministic handling
 
-| Failure class              | Example codes                                                                                                                                    | Deterministic handling                                                                                              |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| Trigger/overlap            | `OVERLAP_ACTIVE`                                                                                                                                 | Update only `latest_trigger` plus rejected history; preserve owning run, success, failure, stuck, and cleanup state |
-| Source selection/policy    | `NO_PUBLISHED_SET`, `STATE_MARKER_MISMATCH`, `UNSUPPORTED_FORMAT`, `SOURCE_CHECKSUM_INVALID`, `SOURCE_STATE_UNAPPROVED`, `SOURCE_STATE_DRIFT`    | Provision nothing; manifest acceptance is insufficient; preserve prior success                                      |
-| Capacity/preflight         | `CAPACITY_INSUFFICIENT`, `RETAINED_RUN_LIMIT`, `QUOTA_UNAVAILABLE`                                                                               | Proves quota only; provision nothing; preserve prior success                                                        |
-| Provisioning/authorization | `PROVISION_FAILED`, `RBAC_DENIED`, `OWNERSHIP_CONFLICT`, `EGRESS_POLICY_UNAVAILABLE`                                                             | Includes physical scheduling/storage provision failure; stop creating children and retain exact evidence            |
-| CNPG recovery              | `CNPG_TIMEOUT`, `CNPG_RECOVERY_FAILED`, `TARGET_LSN_MISMATCH`, `DB_PROFILE_MISMATCH`, `WAL_FENCE_UNSUPPORTED`, `TIMELINE_MISMATCH`               | Do not restore files/start app; never fall back to latest timeline                                                  |
-| Database/credential        | `DB_INVENTORY_MISMATCH`, `ROLE_INVENTORY_MISMATCH`, `SCHEMA_MISMATCH`, `ROW_INVARIANT_FAILED`, `SYNTHETIC_ROW_INVALID`, `CREDENTIAL_INIT_FAILED` | Fail closed; never invent a row; only the controlled one-row hash mutation is allowed after fidelity                |
-| Filesystem restore         | `ARCHIVE_READ_FAILED`, `FILESYSTEM_TIMEOUT`, `PATH_INVALID`, `FILE_CHECKSUM_MISMATCH`                                                            | Stop before app; preserve bounded diagnostic target                                                                 |
-| DB/file consistency        | `SOURCE_STATE_UNAPPROVED`, `SOURCE_STATE_DRIFT`, `COUNT_MISMATCH`, `FILE_MUTATED`, `EXCLUDED_ARTIFACT_UNAPPROVED`                                | Preserve missing rows/orphans; exact reviewed exception only; no row/file changes                                   |
-| Application/tile/viewer    | `APP_START_FAILED`, `TILE_REBUILD_FAILED`, `AUTH_FAILED`, `BROWSE_FAILED`, `DZI_INVALID`, `VIEWER_TILE_INVALID`                                  | Stop validation; retain isolated resources until expiry                                                             |
-| State/timeout/interruption | `STATE_SIZE_EXCEEDED`, `STAGE_TIMEOUT`, `MAX_RUNTIME_EXCEEDED`, `INTERRUPTED`, `INTERRUPTED_STALE_HOLDER`                                        | Reject untrackable state; close through CAS; resume only idempotent work                                            |
-| Cleanup/reaping            | `CLEANUP_INCOMPLETE`, `CLEANUP_AUTHORIZATION_FAILED`, `REAPER_FAILED`                                                                            | Child leaks block success; terminal-Job reaper failure alerts without claiming the active Job should be absent      |
+| Failure class              | Example codes                                                                                                                                                                | Deterministic handling                                                                                                                                              |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Trigger/Lease admission    | `OVERLAP_ACTIVE`, `RETAINED_RUN_LIMIT`, `CAPACITY_INSUFFICIENT`, `QUOTA_UNAVAILABLE`, `LEASE_STATE_INITIALIZATION_LOST`                                                      | Reject without accepted `latest_run`; orphan initialization needs expiry+grace, absent/terminal UID, zero children, Lease CAS, and trigger/history-only state merge |
+| Source selection/policy    | `NO_PUBLISHED_SET`, `STATE_MARKER_MISMATCH`, `UNSUPPORTED_FORMAT`, `SOURCE_CHECKSUM_INVALID`, `SOURCE_STATE_DIGEST_INVALID`, `SOURCE_STATE_UNAPPROVED`, `SOURCE_STATE_DRIFT` | Provision nothing; manifest acceptance is insufficient; preserve prior success                                                                                      |
+| Capacity/preflight         | `CAPACITY_INSUFFICIENT`, `RETAINED_RUN_LIMIT`, `QUOTA_UNAVAILABLE`                                                                                                           | Proves quota only; provision nothing; preserve prior success                                                                                                        |
+| Provisioning/authorization | `PROVISION_FAILED`, `RBAC_DENIED`, `OWNERSHIP_CONFLICT`, `EGRESS_POLICY_UNAVAILABLE`                                                                                         | Includes physical scheduling/storage provision failure; stop creating children and retain exact evidence                                                            |
+| CNPG recovery              | `CNPG_TIMEOUT`, `CNPG_RECOVERY_FAILED`, `TARGET_LSN_MISMATCH`, `DB_PROFILE_MISMATCH`, `WAL_FENCE_UNSUPPORTED`, `TIMELINE_MISMATCH`                                           | Do not restore files/start app; never fall back to latest timeline                                                                                                  |
+| Database/credential        | `DB_INVENTORY_MISMATCH`, `ROLE_INVENTORY_MISMATCH`, `SCHEMA_MISMATCH`, `ROW_INVARIANT_FAILED`, `SYNTHETIC_ROW_INVALID`, `CREDENTIAL_INIT_FAILED`                             | Fail closed; never invent a row; only the controlled one-row hash mutation is allowed after fidelity                                                                |
+| Filesystem restore         | `ARCHIVE_READ_FAILED`, `FILESYSTEM_TIMEOUT`, `PATH_INVALID`, `FILE_CHECKSUM_MISMATCH`                                                                                        | Stop before app; preserve bounded diagnostic target                                                                                                                 |
+| DB/file consistency        | `SOURCE_STATE_UNAPPROVED`, `SOURCE_STATE_DRIFT`, `COUNT_MISMATCH`, `FILE_MUTATED`, `EXCLUDED_ARTIFACT_UNAPPROVED`                                                            | Preserve missing rows/orphans; exact reviewed exception only; no row/file changes                                                                                   |
+| Application/tile/viewer    | `APP_START_FAILED`, `TILE_REBUILD_FAILED`, `AUTH_FAILED`, `BROWSE_FAILED`, `DZI_INVALID`, `VIEWER_TILE_INVALID`                                                              | Stop validation; retain isolated resources until expiry                                                                                                             |
+| State/timeout/interruption | `STATE_SIZE_EXCEEDED`, `STAGE_TIMEOUT`, `MAX_RUNTIME_EXCEEDED`, `INTERRUPTED`, `INTERRUPTED_STALE_HOLDER`                                                                    | Reject untrackable state; close through CAS; resume only idempotent work                                                                                            |
+| Cleanup/reaping            | `CLEANUP_INCOMPLETE`, `CLEANUP_AUTHORIZATION_FAILED`, `REAPER_FAILED`                                                                                                        | Success-path leaks block success; failed-run reaper preserves exact retained ownership until all children are absent; terminal-Job evidence is separate             |
 
-Failure codes form a versioned bounded enum. `OVERLAP_ACTIVE` is a trigger-rejection code only and
-MUST NOT become an accepted-run failure. Unknown internal exceptions map to `INTERNAL_ERROR`, with
+Failure codes form a versioned bounded enum. `OVERLAP_ACTIVE` and
+`LEASE_STATE_INITIALIZATION_LOST` are trigger-rejection/history codes only and MUST NOT become an
+accepted-run failure. Unknown internal exceptions map to `INTERNAL_ERROR`, with
 detail in structured evidence rather than metric labels or state fields.
 
 ## Threat model
@@ -942,6 +1131,10 @@ detail in structured evidence rather than metric labels or state fields.
 | High-cardinality telemetry/state overloads            | Exact metric allowlist; IDs/names/LSNs/free text excluded; 512 KiB and count bounds fail closed                                 |
 | Restart repeats or skips unsafe work                  | CAS state sequence, immutable binding, deterministic names, machine-readable child outcomes, idempotent reconciliation          |
 | Concurrent overlap erases owning-run state            | Separate trigger/run pointers, identity-keyed history union, field-aware CAS merge, holder-only stages/resources/heartbeat      |
+| Orphan Lease is stolen after pre-state crash          | Encoded UID/run/times, expiry plus grace, absent/terminal UID, zero-child all-kind query, resourceVersion CAS, ambiguity deny   |
+| New run overwrites failed cleanup ownership           | `FAILED_RETAIN` transfers full exact inventory to max-2 `retained_runs` before release/replacement; reaper never uses history   |
+| Source-state digest hides semantic drift              | Exact typed keys/path normalization/sorts/JSON bytes, recomputed policy digest, constant-time digest plus structural comparison |
+| Rejected trigger contaminates run monitoring          | Disjoint metric enums and sources; active/stage/stuck/failure/cleanup/success never derive from `latest_trigger`                |
 | GitOps reconciliation resets state or an active lock  | Helm always omits runtime fields; three-way merge preserves controller additions; keep/prune policy and active/completed tests  |
 | CronJob GC deletes lifecycle evidence early           | No finished-Job TTL; history threshold exceeds Job quota/window; terminal-Job reaper is the sole deletion path                  |
 | Job lifecycle is mistaken for child leakage           | Child absence gates success; own Job/Pod remain evidence until exit and static terminal-Job reaping                             |
@@ -949,24 +1142,24 @@ detail in structured evidence rather than metric labels or state fields.
 
 ## Test matrix for #1229
 
-| #1229 requirement               | Test level and evidence                                                                                                                                                                                                                                                                                                                            |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Same scheduled/on-demand path   | Helm tests compare image, entrypoint, policy, Lease/state references, security, resources, `restartPolicy: Never`, `backoffLimit: 0`, absent TTL, non-triggering history limits, and suspended on-demand template; acceptance runs both paths                                                                                                      |
-| Latest set/source-state binding | Fake-Azure tests cover publication/coherence/checksums plus zero-drift default, exact reviewed #1240 IDs/paths/counts/digest, new/mismatched drift, manifest accepted-but-unapproved, and exclusions allowlist                                                                                                                                     |
-| Source profile/timeline         | ConfigMap schema tests bind profile ID/version, `app`/`app`/server/`ObjectStore`; reject manifest-profile conflict and malformed/missing/inconsistent fence; derive `00000007` as 7 and render explicit targetLSN/targetTimeline                                                                                                                   |
-| Static templates and targets    | Mount versioned child templates/image digests and synthetic `BASE_URL`/category path/image name read-only; mutate recovery metadata with workload/target values and prove it cannot alter rendered children or journey targets                                                                                                                     |
-| Fresh CNPG and PVC targets      | Fake-Kubernetes reconciliation and Helm tests prove deterministic run-labelled resources; physical binding/scheduling failures map to `PROVISION_FAILED`; acceptance observes new UIDs every run                                                                                                                                                   |
-| No production writes/isolation  | RBAC tests allow named source-profile/policy gets and exact run-kind verbs, deny Secret/arbitrary ConfigMap gets, inspect no-token children, reject arbitrary Secret mounts/template/image/target injection, and test exact network paths                                                                                                          |
-| CNPG/database fidelity          | Production-shaped recovery verifies bound profile, exact LSN/timeline, all DBs, system identity, roles, schema, counts, fence, exact one synthetic row, and no `db.sql`                                                                                                                                                                            |
-| Synthetic credential mutation   | Require recovered row fidelity/email match; reject zero/multiple rows and non-`$2b$12$`/invalid/mismatched hashes; assert one hash-only update, no migration/production connection, and Secret-vs-target-ConfigMap field isolation                                                                                                                 |
-| Filesystem and consistency      | Failure injection covers partial reads, interruption, path/checksum/count/version errors, allowed/unapproved missing/orphan policy, excluded-artifact allowlist, and mutation/disappearance                                                                                                                                                        |
-| Application, tile, and viewer   | Acceptance proves migrations/OIDC/workers/ARQ disabled, one-shot idempotent CLI invokes existing serial primitive for one recovered image on validation-only targets, emits machine output, then login/browse/DZI/tile succeeds                                                                                                                    |
-| Overlap and interruption        | CAS races assert overlap changes only `latest_trigger`/rejected history; holder stages/resources/heartbeat and success survive; holder completion unions rather than erases overlap; accepted acquisition installs `active_run`/`latest_run`; post-Lease initial-state recovery is same-UID only; terminal ordering conditionally clears only self |
-| Quota and retention             | Tests cover explicit `requests.storage` and PVC/object quota counts, declared sizing/headroom, quota unavailable, physical-capacity non-claims, expiry, and bounded reaping without Longhorn access                                                                                                                                                |
-| Durable state and telemetry     | Schema/property tests cover separate nullable `active_run`, full `latest_run`, every-trigger `latest_trigger`, mixed identity-keyed history ordering/trim, 512 KiB/count bounds, exact trigger-vs-run metrics without IDs, and prior Helm omission/upgrade guarantees                                                                              |
-| Cleanup gates success           | Cover every concrete child kind and changed UID/labels; own Job/Pod remain until exit; no TTL/history GC can preempt evidence; terminal reaper waits the window and cannot remove active/static/foreign objects                                                                                                                                    |
-| Alert behavior                  | Rule tests prove validation-failed follows newest completed accepted run, trigger-rejected exposes overlap separately, active/stuck survives concurrent rejection, plus overdue, cleanup, metrics-missing, and clean recovery                                                                                                                      |
-| Production rollout              | Run latest first, inspect evidence and guarded cleanup, then run stable with the same production-shaped criteria; keep target removal explicitly manual until ownership guards pass acceptance                                                                                                                                                     |
+| #1229 requirement               | Test level and evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Same scheduled/on-demand path   | Helm tests compare image, entrypoint, policy, Lease/state references, security, resources, `restartPolicy: Never`, `backoffLimit: 0`, absent TTL, non-triggering history limits, and suspended on-demand template; acceptance runs both paths                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Latest set/source-state binding | Fake-Azure/golden tests cover exact missing/orphan keys/types/bounds, base-10 IDs, path normalization, duplicate rejection, numeric/lexical sorting, UTF-8 sorted-key compact JSON bytes/no newline, SHA-256 lowercase digest, policy recomputation/counts, constant-time digest plus structural match, zero default versus exact reviewed nonzero/new drift, manifest-accepted-but-unapproved, `SOURCE_STATE_DIGEST_INVALID`, and separate exclusions                                                                                                                                                                                           |
+| Source profile/timeline         | ConfigMap schema tests bind profile ID/version, `app`/`app`/server/`ObjectStore`; reject manifest-profile conflict and malformed/missing/inconsistent fence; derive `00000007` as 7 and render explicit targetLSN/targetTimeline                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Static templates and targets    | Mount versioned child templates/image digests and synthetic `BASE_URL`/category path/image name read-only; mutate recovery metadata with workload/target values and prove it cannot alter rendered children or journey targets                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Fresh CNPG and PVC targets      | Fake-Kubernetes reconciliation and Helm tests prove deterministic run-labelled resources; physical binding/scheduling failures map to `PROVISION_FAILED`; acceptance observes new UIDs every run                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| No production writes/isolation  | RBAC tests allow named source-profile/policy gets and exact run-kind verbs, deny Secret/arbitrary ConfigMap gets, inspect no-token children, reject arbitrary Secret mounts/template/image/target injection, and test exact network paths                                                                                                                                                                                                                                                                                                                                                                                                        |
+| CNPG/database fidelity          | Production-shaped recovery verifies bound profile, exact LSN/timeline, all DBs, system identity, roles, schema, counts, fence, exact one synthetic row, and no `db.sql`                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Synthetic credential mutation   | Require recovered row fidelity/email match; reject zero/multiple rows and non-`$2b$12$`/invalid/mismatched hashes; assert one hash-only update, no migration/production connection, and Secret-vs-target-ConfigMap field isolation                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Filesystem and consistency      | Failure injection covers partial reads, interruption, path/checksum/count/version errors, allowed/unapproved missing/orphan policy, excluded-artifact allowlist, and mutation/disappearance                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Application, tile, and viewer   | Acceptance proves migrations/OIDC/workers/ARQ disabled, one-shot idempotent CLI invokes existing serial primitive for one recovered image on validation-only targets, emits machine output, then login/browse/DZI/tile succeeds                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Overlap and interruption        | Crash/CAS tests cover every point after Lease acquisition and before initial state: no side effects, same-live-UID repair, active/grace rejection, and later recovery only after expiry+grace with exact absent/terminal UID and zero children across every kind; child/ambiguous identity denies takeover; Lease conflicts and recovery-only-holder crashes retry under the same guards; `LEASE_STATE_INITIALIZATION_LOST` affects trigger/history only; normal overlap and holder completion preserve owning state/history; retain normal terminal clear/immediate-terminal recovery and expired over-runtime nonterminal stale-takeover tests |
+| Quota and retention             | Tests cover pre-accept max-2 retained admission/reserved failure slot, exact PVC/object quota, atomic full-inventory transfer before Lease release/latest replacement, duplicate identity merge, expiry, and physical-capacity non-claims without Longhorn                                                                                                                                                                                                                                                                                                                                                                                       |
+| Durable state and telemetry     | Schema/property tests cover active/latest/trigger plus max-2 retained records, 64-child exact inventories, transfer/trigger byte reserves, identity merge/trim, and Helm guarantees; metric goldens assert disjoint trigger/run/stage/cleanup enums, retained count/expired/aggregate/outcome metrics, owning-only heartbeat/stuck, and no IDs                                                                                                                                                                                                                                                                                                   |
+| Cleanup gates success           | For each retained child kind inject absent, changed UID/label, partial deletion, and CAS conflict; prove reaper uses only retained full records, preserves remaining entries, removes record only at zero, mirrors only same-ID latest cleanup evidence, never sources ownership from history/latest labels, and keeps orchestrator evidence separate                                                                                                                                                                                                                                                                                            |
+| Alert behavior                  | Rule tests prove accepted-run validation failure, owning active/stuck, retained cleanup/count/aggregate, and last success ignore trigger rejection; trigger-rejected covers each bounded trigger code separately; include overdue, metrics missing, and clean recovery                                                                                                                                                                                                                                                                                                                                                                           |
+| Production rollout              | Run latest first, inspect evidence and guarded cleanup, then run stable with the same production-shaped criteria; keep target removal explicitly manual until ownership guards pass acceptance                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
 Unit tests use fake Kubernetes and fake Azure clients without live credentials. Helm tests include
 lint, render/schema validation, omitted ConfigMap/Lease runtime fields, keep/prune policy,
@@ -985,12 +1178,12 @@ MUST use approved non-production validation targets and must not weaken producti
 
 The child issues define implementation boundaries; later phases MUST preserve this contract:
 
-| Phase                         | Issue                                                 | Boundary                                                                                                                                                                                                                                                                                    |
-| ----------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Read-only restore primitive   | [#1250](https://github.com/bcit-tlu/hriv/issues/1250) | Container-scoped read-only SAS selection and stateless source-filesystem restore with machine-readable output, preserved missing/orphan semantics, and no backup-state writes                                                                                                               |
-| Core orchestration            | [#1251](https://github.com/bcit-tlu/hriv/issues/1251) | Controller/chart; runtime-only CAS state/Lease fields omitted by Helm; separate active/latest-run/latest-trigger state and overlap-safe history merge; terminal-holder acquisition; concrete RBAC/run kinds; child/evidence ownership; fixed templates/digests; exact LSN/timeline recovery |
-| Application/viewer validation | [#1252](https://github.com/bcit-tlu/hriv/issues/1252) | Recovered synthetic email/row fidelity then `$2b$12$`-compatible one-row credential-init; Flux target config; isolated app/Redis; one-shot serial tile CLI; login/browse/DZI/tile; no ARQ/production routes                                                                                 |
-| Operations and rollout        | [#1253](https://github.com/bcit-tlu/hriv/issues/1253) | UTC schedule/on-demand/reapers with Never/zero retry, no TTL and non-triggering history GC; exact metrics/alerts; cleanup/evidence retention; approved egress/policies; quota; Flux/Vault wiring; rollout/runbook                                                                           |
+| Phase                         | Issue                                                 | Boundary                                                                                                                                                                                                                                         |
+| ----------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Read-only restore primitive   | [#1250](https://github.com/bcit-tlu/hriv/issues/1250) | Container-scoped read-only SAS selection, canonical format-2 source-state document/digest validation, and stateless filesystem restore with machine output, preserved missing/orphan semantics, and no backup-state writes                       |
+| Core orchestration            | [#1251](https://github.com/bcit-tlu/hriv/issues/1251) | Controller/chart; CAS state/Lease fields omitted by Helm; guarded post-Lease initialization recovery; active/latest/trigger plus max-2 retained ownership state; overlap-safe merge; concrete RBAC; fixed templates; exact LSN/timeline recovery |
+| Application/viewer validation | [#1252](https://github.com/bcit-tlu/hriv/issues/1252) | Recovered synthetic email/row fidelity then `$2b$12$`-compatible one-row credential-init; Flux target config; isolated app/Redis; one-shot serial tile CLI; login/browse/DZI/tile; no ARQ/production routes                                      |
+| Operations and rollout        | [#1253](https://github.com/bcit-tlu/hriv/issues/1253) | UTC schedule/on-demand/reapers with Never/zero retry, no TTL/history GC; disjoint trigger/run and retained metrics/alerts; exact-record retained cleanup/evidence; approved egress/policies; quota; Flux/Vault wiring; rollout/runbook           |
 
 Unresolved deployment blockers include the exact flux-fleet resource paths/ownership and
 versioned #241 source profile; an operator-reviewed #1240 source-state policy or repaired zero
@@ -998,9 +1191,9 @@ state; Vault policies/VSO destinations for read-only Azure and the email plus ma
 `$2b$12$` credential fields; CNPG-I Barman Cloud plugin read-credential/`ObjectStore` wiring;
 approved and tested Azure FQDN/proxy or service-tag egress enforcement; concrete
 API/DNS/Prometheus/CNPG policy selectors; versioned child-template/image allowlist and synthetic
-target values; admission control for fixed child templates; quota and non-triggering CronJob
-history-limit values; stage/max-runtime/evidence windows; representative synthetic invariants; and
-Prometheus/alert routing. In particular, no deployment
+target values; admission control for fixed child templates; quota, retained-run maximum/reserve,
+and non-triggering CronJob history-limit values; initialization grace and stage/max-runtime/evidence
+windows; representative synthetic invariants; and Prometheus/alert routing. In particular, no deployment
 may substitute broad TCP 443 egress or claim physical capacity from namespace quota. These are
 configuration work for #1250–#1253; they do not reopen the baseline choices of read-only SAS,
 dedicated component/namespace, `app`/`app`, exact LSN and fence-derived timeline, local synthetic
