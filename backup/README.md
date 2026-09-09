@@ -222,9 +222,11 @@ The Job mounts exactly the Deployment's source and backup PVCs, configuration,
 Secrets, security settings, resources, and scheduling constraints. Because the
 backup PVC is ReadWriteOnce and already mounted by the Deployment, the Job adds
 required pod affinity for the Deployment's app-name and release-instance labels
-on `kubernetes.io/hostname`. The Deployment must be running and schedulable; its
-node must also satisfy any custom node affinity, pod affinity/anti-affinity,
-node selector, and tolerations. Disabling `persistence.backups.enabled` therefore
+on `kubernetes.io/hostname`. Generated backend/source-PVC affinity is not
+repeated on the Job: selecting the already-scheduled Deployment node inherits
+that placement transitively and avoids redundant required terms. The Deployment
+must be running and schedulable; its node must also satisfy any explicit custom
+node affinity, pod affinity/anti-affinity, node selector, and tolerations. Disabling `persistence.backups.enabled` therefore
 requires explicitly disabling `onDemandBackup.enabled` as well.
 
 ## Observability markers

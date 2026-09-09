@@ -274,13 +274,6 @@ podAffinity:
 
 {{/* Preserve configured affinity while requiring on-demand pods on the Deployment's node. */}}
 {{- define "hriv-backup.onDemandAffinity" -}}
-{{- $legacyData := .Values.persistence.data | default dict -}}
-{{- $sourceImagesExistingClaim := .Values.persistence.sourceImages.existingClaim -}}
-{{- if and (hasKey $legacyData "existingClaim") (not $sourceImagesExistingClaim) -}}
-  {{- $sourceImagesExistingClaim = $legacyData.existingClaim -}}
-{{- end -}}
-{{- $tilesEnabled := eq (include "hriv-backup.tilesEnabled" .) "true" -}}
-{{- $colocateWithSourcePod := and .Values.colocateWithSourcePod $sourceImagesExistingClaim -}}
 {{- $affinity := .Values.affinity | default dict -}}
 {{- $podAffinity := get $affinity "podAffinity" | default dict -}}
 {{- $configuredRequired := get $podAffinity "requiredDuringSchedulingIgnoredDuringExecution" | default list -}}
@@ -294,12 +287,6 @@ podAffinity:
   requiredDuringSchedulingIgnoredDuringExecution:
     {{- with $configuredRequired }}
     {{- toYaml . | nindent 4 }}
-    {{- end }}
-    {{- if or $colocateWithSourcePod (and $tilesEnabled .Values.persistence.tiles.existingClaim) }}
-    - labelSelector:
-        matchLabels:
-          app.kubernetes.io/name: {{ .Values.colocateWithPodLabel }}
-      topologyKey: kubernetes.io/hostname
     {{- end }}
     - labelSelector:
         matchLabels:
