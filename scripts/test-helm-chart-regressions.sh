@@ -50,6 +50,15 @@ extract_yaml_doc() {
   ' <<<"$manifest"
 }
 
+extract_kind_name() {
+  local manifest="$1"
+  local kind="$2"
+  awk -v kind="$kind" '
+    $0 == "kind: " kind { found=1; next }
+    found && /^  name: / { print $2; exit }
+  ' <<<"$manifest"
+}
+
 backend_legacy_manifest="$(helm template test charts/backend \
   --set persistence.enabled=true \
   --set persistence.accessModes[0]=ReadWriteMany \
@@ -110,12 +119,18 @@ assert_not_contains "$backup_no_volumes_manifest" "persistentVolumeClaim:" \
 backup_default_manifest="$(helm template test charts/backup)"
 backup_deployment="$(extract_yaml_doc "$backup_default_manifest" "Deployment" "test-hriv-backup")"
 backup_on_demand_cronjob="$(extract_yaml_doc "$backup_default_manifest" "CronJob" "test-hriv-backup-on-demand")"
-backup_long_name_manifest="$(helm template test charts/backup \
-  --set fullnameOverride=abcdefghijklmnopqrstuvwxyz-abcdefghijklmnopqrstuvwxyz)"
-backup_long_name_cronjob="$(extract_yaml_doc \
-  "$backup_long_name_manifest" "CronJob" "abcdefghijklmnopqrstuvwxyz-abcdefghijklmno-on-demand")"
-assert_contains "$backup_long_name_cronjob" "name: abcdefghijklmnopqrstuvwxyz-abcdefghijklmno-on-demand" \
-  "on-demand CronJob should retain its suffix within the 52-character CronJob name limit"
+backup_long_name_a_manifest="$(helm template test charts/backup \
+  --set fullnameOverride=abcdefghijklmnopqrstuvwxyz-abcdefghijklmnopqrstuvwxyza)"
+backup_long_name_b_manifest="$(helm template test charts/backup \
+  --set fullnameOverride=abcdefghijklmnopqrstuvwxyz-abcdefghijklmnopqrstuvwxyzb)"
+backup_long_name_a="$(extract_kind_name "$backup_long_name_a_manifest" "CronJob")"
+backup_long_name_b="$(extract_kind_name "$backup_long_name_b_manifest" "CronJob")"
+[[ ${#backup_long_name_a} -le 52 && "$backup_long_name_a" == *-on-demand ]] || \
+  fail "on-demand CronJob A should retain its suffix within the 52-character limit"
+[[ ${#backup_long_name_b} -le 52 && "$backup_long_name_b" == *-on-demand ]] || \
+  fail "on-demand CronJob B should retain its suffix within the 52-character limit"
+[[ "$backup_long_name_a" != "$backup_long_name_b" ]] || \
+  fail "distinct long fullnames with a shared prefix should produce distinct on-demand CronJob names"
 
 backup_vault_manifest="$(helm template test charts/backup \
   --set vault.enabled=true \

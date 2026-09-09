@@ -29,8 +29,14 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
 {{- define "hriv-backup.onDemandName" -}}
-{{- $base := include "hriv-backup.fullname" . | trunc 42 | trimSuffix "-" -}}
-{{- printf "%s-on-demand" $base -}}
+{{- $fullname := include "hriv-backup.fullname" . -}}
+{{- if le (len $fullname) 42 -}}
+{{- printf "%s-on-demand" $fullname -}}
+{{- else -}}
+{{- $prefix := $fullname | trunc 31 | trimSuffix "-" -}}
+{{- $hash := sha256sum $fullname | trunc 10 -}}
+{{- printf "%s-%s-on-demand" $prefix $hash -}}
+{{- end -}}
 {{- end -}}
 
 {{/*
