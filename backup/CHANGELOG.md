@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.14.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.13.1...backup-v0.14.0) (2026-09-09)
+
+
+### Features
+
+* **backup:** add server-side on-demand jobs ([#1244](https://github.com/bcit-tlu/hriv/issues/1244)) ([228e04d](https://github.com/bcit-tlu/hriv/commit/228e04d9b517175f6a2edacd3c47e933b4f12d94))
+
+
+### Bug Fixes
+
+* **backup:** schedule on-demand jobs with deployment ([#1247](https://github.com/bcit-tlu/hriv/issues/1247)) ([b7d6ee6](https://github.com/bcit-tlu/hriv/commit/b7d6ee634db6c17a142dcf4c0b2b13e0be1e4f36))
+
 ## [0.13.1](https://github.com/bcit-tlu/hriv/compare/backup-v0.13.0...backup-v0.13.1) (2026-09-09)
 
 
