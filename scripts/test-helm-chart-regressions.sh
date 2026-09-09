@@ -110,6 +110,13 @@ assert_not_contains "$backup_no_volumes_manifest" "persistentVolumeClaim:" \
 backup_default_manifest="$(helm template test charts/backup)"
 backup_deployment="$(extract_yaml_doc "$backup_default_manifest" "Deployment" "test-hriv-backup")"
 backup_on_demand_cronjob="$(extract_yaml_doc "$backup_default_manifest" "CronJob" "test-hriv-backup-on-demand")"
+backup_long_name_manifest="$(helm template test charts/backup \
+  --set fullnameOverride=abcdefghijklmnopqrstuvwxyz-abcdefghijklmnopqrstuvwxyz)"
+backup_long_name_cronjob="$(extract_yaml_doc \
+  "$backup_long_name_manifest" "CronJob" "abcdefghijklmnopqrstuvwxyz-abcdefghijklmno-on-demand")"
+assert_contains "$backup_long_name_cronjob" "name: abcdefghijklmnopqrstuvwxyz-abcdefghijklmno-on-demand" \
+  "on-demand CronJob should retain its suffix within the 52-character CronJob name limit"
+
 backup_vault_manifest="$(helm template test charts/backup \
   --set vault.enabled=true \
   --set env.AZURE_STORAGE_CONTAINER=hrivbackup)"

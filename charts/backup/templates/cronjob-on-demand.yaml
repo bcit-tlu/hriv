@@ -5,7 +5,7 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: {{ include "hriv-backup.fullname" . }}-on-demand
+  name: {{ include "hriv-backup.onDemandName" . }}
   labels:
     {{- include "hriv-backup.labels" . | nindent 4 }}
     app.kubernetes.io/component: on-demand-backup
@@ -17,7 +17,7 @@ spec:
   failedJobsHistoryLimit: {{ .Values.onDemandBackup.failedJobsHistoryLimit }}
   jobTemplate:
     spec:
-      backoffLimit: {{ .Values.onDemandBackup.backoffLimit }}
+      backoffLimit: 0
       activeDeadlineSeconds: {{ .Values.onDemandBackup.activeDeadlineSeconds }}
       template:
         metadata:

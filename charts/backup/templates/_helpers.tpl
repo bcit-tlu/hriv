@@ -28,6 +28,11 @@ app.kubernetes.io/name: {{ include "hriv-backup.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
+{{- define "hriv-backup.onDemandName" -}}
+{{- $base := include "hriv-backup.fullname" . | trunc 42 | trimSuffix "-" -}}
+{{- printf "%s-on-demand" $base -}}
+{{- end -}}
+
 {{/*
 Runtime display version published via version-configmap and mounted by
 the backend for /api/admin/version.
