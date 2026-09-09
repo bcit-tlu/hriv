@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.1](https://github.com/bcit-tlu/hriv/compare/backup-v0.13.0...backup-v0.13.1) (2026-09-09)
+
+
+### Bug Fixes
+
+* **backup:** harden chart credentials and runtime ([#1242](https://github.com/bcit-tlu/hriv/issues/1242)) ([f8bc93b](https://github.com/bcit-tlu/hriv/commit/f8bc93b0b6d8c50d04e16656fbe13acad3210b93))
+
 ## [0.13.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.12.3...backup-v0.13.0) (2026-09-08)
 
 
