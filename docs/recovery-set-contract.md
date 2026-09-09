@@ -7,6 +7,12 @@ restore, validation, retention, and operator tooling must use the same outcomes.
 An implementation is incorrect if it publishes a set that violates this contract,
 even when individual database or filesystem operations succeeded.
 
+[The isolated restore-validation contract](restore-validation.md) consumes this contract without
+changing it: validation selects only the latest fully published set, binds its exact
+`database_recovery.target_lsn` before provisioning, and restores to fresh resources in a
+separate namespace. Restore-validation success also requires application/viewer checks and
+confirmed cleanup; its durable state never writes production recovery-set state.
+
 ## Recovery set
 
 A recoverable HRIV set consists of:
@@ -105,6 +111,7 @@ A successful manifest is versioned and records at least:
   "capture_boundary_lsn": "<PostgreSQL LSN>",
   "completed_at": "<UTC timestamp>",
   "backup_mode": "production",
+  "database_name": "hriv",
   "database_recovery": {
     "provider": "cloudnative-pg",
     "cluster": "pg-core",
@@ -139,6 +146,12 @@ A successful manifest is versioned and records at least:
   }
 }
 ```
+
+The top-level format-2 `database_name` is the application connection database inventoried at the
+snapshot boundary (`hriv` for HRIV). It is not a CNPG bootstrap/recovery database name, database
+owner, or restore-validation source profile; those recovery settings are independently controlled
+and cross-checked. Existing format-2 manifests already emit `database_name`, so this is a contract
+documentation correction and requires no manifest-schema or backup-code change.
 
 Implementations may add fields but cannot change the meaning of existing fields
 without a format-version change. These WAL-fence fields are additive-compatible

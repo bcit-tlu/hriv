@@ -79,6 +79,12 @@ Each snapshot is a `.tar.gz` archive containing:
 > restore order, and the DR runbook.
 >
 > **Quick operator checklist:** [`docs/backup-restore-runbook.md`](../docs/backup-restore-runbook.md).
+>
+> **Automated restore-validation design:**
+> [`docs/restore-validation.md`](../docs/restore-validation.md) defines the future, isolated
+> `hriv-restore-validation` component. It uses read-only backup sources and fresh CNPG/PVC
+> targets in a dedicated namespace; it does not add Kubernetes API access to this hardened
+> backup Deployment or make restore-validation implementation claims.
 
 In production deployments, the Python backup service protects authoritative source images. Its supported role is:
 
