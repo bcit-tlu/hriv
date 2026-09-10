@@ -46,6 +46,7 @@ import uuid
 from collections.abc import Callable, Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import NoReturn
 from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -2991,7 +2992,7 @@ def _validation_blob_properties(container, blob_name: str, stage: str):
         _raise_validation_storage_failure(exc, stage)
 
 
-def _raise_validation_storage_failure(exc: Exception, stage: str) -> None:
+def _raise_validation_storage_failure(exc: Exception, stage: str) -> NoReturn:
     name = type(exc).__name__.lower()
     if "authentication" in name or "authorization" in name:
         code = "AZURE_AUTH_FAILED"
