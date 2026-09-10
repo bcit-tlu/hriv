@@ -1462,27 +1462,37 @@ class _ReadBlobItem(_ReadBlobProperties, Protocol):
 
 
 class _ReadDownloader(Protocol):
-    def readall(self) -> bytes: ...
+    def readall(self) -> bytes:
+        raise NotImplementedError
 
-    def chunks(self) -> Iterator[bytes]: ...
+    def chunks(self) -> Iterator[bytes]:
+        raise NotImplementedError
 
 
 class _ReadBlobClient(Protocol):
-    def get_blob_properties(self) -> _ReadBlobProperties: ...
+    def get_blob_properties(self) -> _ReadBlobProperties:
+        raise NotImplementedError
 
 
 class _ReadContainer(Protocol):
-    def list_blobs(self, *, name_starts_with: str, include: list[str]) -> Iterable[_ReadBlobItem]: ...
+    def list_blobs(
+        self, *, name_starts_with: str, include: list[str]
+    ) -> Iterable[_ReadBlobItem]:
+        raise NotImplementedError
 
-    def get_blob_client(self, blob_name: str) -> _ReadBlobClient: ...
+    def get_blob_client(self, blob_name: str) -> _ReadBlobClient:
+        raise NotImplementedError
 
-    def download_blob(self, blob_name: str, **kwargs: object) -> _ReadDownloader: ...
+    def download_blob(self, blob_name: str, **kwargs: object) -> _ReadDownloader:
+        raise NotImplementedError
 
 
 class _StatelessArchiveStream(Protocol):
-    def read(self, size: int = -1) -> bytes: ...
+    def read(self, size: int = -1) -> bytes:
+        raise NotImplementedError
 
-    def validate_eof(self) -> None: ...
+    def validate_eof(self) -> None:
+        raise NotImplementedError
 
 
 def _validation_min_sas_validity_seconds() -> float:
@@ -3058,6 +3068,7 @@ def _validation_blob_properties(
         raise ValidationFailure(f"{stage.upper()}_MISSING", stage) from None
     except Exception as exc:
         _raise_validation_storage_failure(exc, stage)
+        raise AssertionError("validation storage failure helper returned")
 
 
 def _raise_validation_storage_failure(exc: Exception, stage: str) -> NoReturn:
