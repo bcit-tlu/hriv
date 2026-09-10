@@ -80,11 +80,11 @@ Each snapshot is a `.tar.gz` archive containing:
 >
 > **Quick operator checklist:** [`docs/backup-restore-runbook.md`](../docs/backup-restore-runbook.md).
 >
-> **Automated restore-validation design:**
+> **Automated restore-validation contract:**
 > [`docs/restore-validation.md`](../docs/restore-validation.md) defines the future, isolated
-> `hriv-restore-validation` component. It uses read-only backup sources and fresh CNPG/PVC
-> targets in a dedicated namespace; it does not add Kubernetes API access to this hardened
-> backup Deployment or make restore-validation implementation claims.
+> `hriv-restore-validation` component. Issue #1250 implements only its backup-service read-only
+> selection and stateless filesystem primitives. Kubernetes orchestration, deployment, and the
+> end-to-end validation component remain future work; no Kubernetes API access is added here.
 
 In production deployments, the Python backup service protects authoritative source images. Its supported role is:
 
@@ -132,24 +132,70 @@ For Longhorn-backed Kubernetes deployments, protect each volume according to its
 
 All settings are controlled via environment variables in `docker-compose.yml` or the Helm chart:
 
-| Variable                           | Default                                                   | Description                                                                               |
-| ---------------------------------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `DATABASE_URL`                     | `postgresql://hriv:hriv@db:5432/hriv`                     | PostgreSQL connection string                                                              |
-| `DATA_DIR`                         | `/data`                                                   | Path to the image data volume                                                             |
-| `BACKUP_CRON_SCHEDULE`             | `0 10 * * *`                                              | Cron expression for scheduled backups                                                     |
-| `BACKUP_TIMEZONE`                  | `UTC`                                                     | IANA timezone used to evaluate the schedule; UTC avoids DST gaps                          |
-| `BACKUP_MUTATION_DRAIN_SECONDS`    | `5`                                                       | Brief write-drain interval before the finalized source-image inventory is captured        |
-| `BACKUP_INVENTORY_TIMEOUT_SECONDS` | `120`                                                     | DB lock/COPY deadline; the client aborts five seconds later if PostgreSQL does not return |
-| `BACKUP_WAL_FENCE_TIMEOUT_SECONDS` | `600`                                                     | Fail-closed archive wait; PostgreSQL `archive_timeout` must be positive and lower         |
-| `BACKUP_WAL_FENCE_POLL_SECONDS`    | `5`                                                       | Poll interval while waiting for `pg_stat_archiver` to reach the fence on its timeline     |
-| `CNPG_CLUSTER_NAME`                | `pg-core`                                                 | CNPG cluster bound into production recovery-set metadata                                  |
-| `BACKUP_RETENTION_COUNT`           | `30`                                                      | Number of snapshots to keep (older ones are deleted)                                      |
-| `BACKUP_STAGING_DIR`               | `/backups/.staging`                                       | Bounded state/development scratch; Azure production archives bypass full local staging    |
-| `BACKUP_STALE_HOURS`               | `26`                                                      | Freshness threshold for the `status` command before a backup is considered stale          |
-| `BACKUP_MODE`                      | `development` (docker-compose), `production` (Helm chart) | `development` = logical DB + full data; `production` = CNPG binding + source images only  |
-| `AZURE_STORAGE_CONNECTION_STRING`  | _(empty)_                                                 | Azure Blob Storage connection string                                                      |
-| `AZURE_STORAGE_CONTAINER`          | _(empty)_                                                 | Azure Blob Storage container name                                                         |
-| `AZURE_BLOB_PREFIX`                | `hriv-backups`                                            | Blob name prefix (folder) inside the container                                            |
+| Variable                              | Default                                                   | Description                                                                                |
+| ------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `DATABASE_URL`                        | `postgresql://hriv:hriv@db:5432/hriv`                     | PostgreSQL connection string                                                               |
+| `DATA_DIR`                            | `/data`                                                   | Path to the image data volume                                                              |
+| `BACKUP_CRON_SCHEDULE`                | `0 10 * * *`                                              | Cron expression for scheduled backups                                                      |
+| `BACKUP_TIMEZONE`                     | `UTC`                                                     | IANA timezone used to evaluate the schedule; UTC avoids DST gaps                           |
+| `BACKUP_MUTATION_DRAIN_SECONDS`       | `5`                                                       | Brief write-drain interval before the finalized source-image inventory is captured         |
+| `BACKUP_INVENTORY_TIMEOUT_SECONDS`    | `120`                                                     | DB lock/COPY deadline; the client aborts five seconds later if PostgreSQL does not return  |
+| `BACKUP_WAL_FENCE_TIMEOUT_SECONDS`    | `600`                                                     | Fail-closed archive wait; PostgreSQL `archive_timeout` must be positive and lower          |
+| `BACKUP_WAL_FENCE_POLL_SECONDS`       | `5`                                                       | Poll interval while waiting for `pg_stat_archiver` to reach the fence on its timeline      |
+| `CNPG_CLUSTER_NAME`                   | `pg-core`                                                 | CNPG cluster bound into production recovery-set metadata                                   |
+| `BACKUP_RETENTION_COUNT`              | `30`                                                      | Number of snapshots to keep (older ones are deleted)                                       |
+| `BACKUP_STAGING_DIR`                  | `/backups/.staging`                                       | Bounded state/development scratch; Azure production archives bypass full local staging     |
+| `BACKUP_STALE_HOURS`                  | `26`                                                      | Freshness threshold for the `status` command before a backup is considered stale           |
+| `BACKUP_MODE`                         | `development` (docker-compose), `production` (Helm chart) | `development` = logical DB + full data; `production` = CNPG binding + source images only   |
+| `AZURE_STORAGE_CONNECTION_STRING`     | _(empty)_                                                 | Azure Blob Storage connection string used only by backup/publication and operator commands |
+| `AZURE_STORAGE_CONTAINER`             | _(empty)_                                                 | Azure Blob Storage container name for write-backed backup/operator commands                |
+| `AZURE_READ_SAS_URL`                  | _(empty)_                                                 | HTTPS container SAS for validation commands; permissions must be exactly read and list     |
+| `VALIDATION_MIN_SAS_VALIDITY_SECONDS` | `21600`                                                   | Minimum remaining SAS lifetime accepted by validation; finite, positive, and at most 86400 |
+| `AZURE_BLOB_PREFIX`                   | `hriv-backups`                                            | Blob name prefix (folder) inside the container                                             |
+
+### Read-only validation primitives
+
+Issue #1250 adds two machine-oriented commands for an isolated validation child:
+
+```bash
+python backup.py validation-list
+python backup.py validation-select [EXACT_SNAPSHOT]
+python backup.py restore-filesystem-stateless EXACT_SNAPSHOT \
+  --data-dir /mounted-validation-pvc/fresh-run \
+  --expected-recovery-set-id EXACT_RECOVERY_SET_ID \
+  --expected-manifest-sha256 LOWERCASE_SHA256
+```
+
+Both commands require `AZURE_READ_SAS_URL`. The URL is validated without being logged: it must be
+an unexpired HTTPS container URL whose SAS resource is `c`, whose permissions contain only
+read/list, and whose remaining lifetime is at least `VALIDATION_MIN_SAS_VALIDITY_SECONDS` (six
+hours by default), measured from the later of current time and an optional SAS start. A valid token
+below that threshold fails with `READ_SAS_EXPIRING` before Azure reads begin. #1251's fixed
+validation-child configuration owns any override: it must choose a
+finite positive value no greater than 86400 seconds that covers the maximum source restore time
+and mint/mount a SAS whose expiry exceeds that value at child startup. The child must not derive
+this setting from recovery metadata. `validation-list` boundedly lists at most 1000 exact published
+archive candidates from metadata only, newest first; it ignores candidate, unknown, and legacy
+metadata and does not download sidecars. The list is discovery output, not recovery-set authority.
+`validation-select` follows `LAST_SUCCESS.json` and verifies the coherent `BACKUP_STATE.json`,
+published archive metadata, absent publication journal, immutable format-2
+manifest sidecar, production component rules, source indexes/checksums/counts, and CNPG LSN/WAL
+fence. It never chooses by blob modification time. Each command writes exactly one bounded JSON
+result to stdout and exits nonzero with a bounded code/stage on failure. The manifest sidecar is
+limited to 16 MiB; public `source_state` missing/orphan lists and the exact excluded-artifact list
+are each limited to 256 entries with bounded fields. Machine output deliberately omits the
+high-volume manifest file list and all internal handles and credentials.
+
+The stateless restore accepts only a supplied absent or empty safe target, streams only
+`data/source_images`, verifies the embedded manifest against the selected sidecar and checks every
+file before promoting `source_images`. It never restores `db.sql` or tiles and never reads or writes
+`RESTORE_STATE.json`, backup publication state, maintenance state, or `/backups` scratch. Existing
+`backup`, `list`, `status`, and operator restore behavior remains connection-string backed; when
+both credentials exist, validation uses the SAS and publication/writes use the connection string.
+
+The normal backup Deployment intentionally does **not** receive `AZURE_READ_SAS_URL`. The fixed
+validation child template in #1251 is responsible for mounting the isolated read credential. These
+primitives do not create Kubernetes resources and do not mean #1229 is deployed.
 
 ### Kubernetes Azure Secret contract
 
