@@ -4597,7 +4597,7 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
             "name": "hriv-backups/hriv-backup-20260101-020000-11111111.tar.gz",
             "metadata": {"hriv_publication_state": "published"},
             "size": 1,
-            "etag": '"safe-etag"',
+            "etag": "0x8DF0E2716DD645B",
             "last_modified": datetime(2026, 1, 1, tzinfo=timezone.utc),
         }
         invalid_overrides = (
@@ -4607,7 +4607,7 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
             {"size": 0},
             {"size": True},
             {"size": 2**63},
-            {"etag": "unsafe"},
+            {"etag": "unsafe value"},
             {"last_modified": datetime(2026, 1, 1)},
             {
                 "last_modified": datetime(
@@ -4812,7 +4812,7 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
                     raise backup.ResourceNotFoundError("missing")
                 defaults = {
                     "size": len(blobs[self.name]),
-                    "etag": '"safe-etag"',
+                    "etag": "0x8DF0E2716DD645B",
                     "metadata": (
                         {"hriv_publication_state": "published"}
                         if self.name == archive_blob
@@ -4889,7 +4889,7 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
         self.assertEqual(kwargs["hriv-backups/LAST_SUCCESS.json"]["length"], 1024 * 1024 + 1)
         self.assertEqual(kwargs["hriv-backups/BACKUP_STATE.json"]["length"], 4 * 1024 * 1024 + 1)
         sidecar_kwargs = kwargs[f"hriv-backups/{snapshot}.manifest.json"]
-        self.assertEqual(sidecar_kwargs["etag"], '"safe-etag"')
+        self.assertEqual(sidecar_kwargs["etag"], "0x8DF0E2716DD645B")
         self.assertEqual(sidecar_kwargs["match_condition"], backup.MatchConditions.IfNotModified)
         with self.assertRaises(backup.ValidationFailure) as raised:
             backup.validation_select(snapshot + "x", container=container)
@@ -5417,7 +5417,7 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
             self.assertFalse((target / "tiles").exists())
             archive_kwargs = container.download_kwargs[-1][1]
             self.assertEqual(archive_kwargs["length"], result["archive_size"] + 1)
-            self.assertEqual(archive_kwargs["etag"], '"safe-etag"')
+            self.assertEqual(archive_kwargs["etag"], "0x8DF0E2716DD645B")
             self.assertEqual(
                 archive_kwargs["match_condition"], backup.MatchConditions.IfNotModified
             )

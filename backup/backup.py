@@ -1423,7 +1423,9 @@ class ValidationFailure(RuntimeError):
 
 _READ_SAS_CLOCK_SKEW = timedelta(minutes=5)
 _MAX_MANIFEST_BYTES = 16 * 1024 * 1024
-_SAFE_ETAG_RE = re.compile(r'^(?:W/)?"[A-Za-z0-9._:-]{1,128}"$')
+_SAFE_ETAG_RE = re.compile(
+    r'^(?:W/)?(?:[A-Za-z0-9._:-]{1,128}|"[A-Za-z0-9._:-]{1,128}")$'
+)
 _AZURE_ACCOUNT_HOST_RE = re.compile(
     r"^[a-z0-9]{3,24}\.blob\.core\.windows\.net$"
 )
