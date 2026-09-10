@@ -1423,12 +1423,8 @@ class ValidationFailure(RuntimeError):
 
 _READ_SAS_CLOCK_SKEW = timedelta(minutes=5)
 _MAX_MANIFEST_BYTES = 16 * 1024 * 1024
-_SAFE_ETAG_RE = re.compile(
-    r'^(?:W/)?(?:[A-Za-z0-9._:-]{1,128}|"[A-Za-z0-9._:-]{1,128}")$'
-)
-_AZURE_ACCOUNT_HOST_RE = re.compile(
-    r"^[a-z0-9]{3,24}\.blob\.core\.windows\.net$"
-)
+_SAFE_AZURE_ETAG_TOKEN_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+_AZURE_ACCOUNT_HOST_RE = re.compile(r"^[a-z0-9]{3,24}\.blob\.core\.windows\.net$")
 _AZURE_CONTAINER_RE = re.compile(r"^[a-z0-9](?:[a-z0-9]|-(?!-)){1,61}[a-z0-9]$")
 _STRICT_UTC_RE = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|\+00:00)$"
@@ -1450,6 +1446,21 @@ _READ_SAS_OPTIONAL_FIELDS = {
     "ses",
 }
 _MAX_READ_SAS_FIELD_BYTES = 1024
+
+
+def _canonical_azure_etag(value: object, code: str, stage: str) -> str:
+    """Validate a strong Azure ETag and return exactly one quoted form."""
+    if not isinstance(value, str):
+        raise ValidationFailure(code, stage)
+    if value.startswith('"') or value.endswith('"'):
+        if len(value) < 2 or not (value.startswith('"') and value.endswith('"')):
+            raise ValidationFailure(code, stage)
+        token = value[1:-1]
+    else:
+        token = value
+    if _SAFE_AZURE_ETAG_TOKEN_RE.fullmatch(token) is None:
+        raise ValidationFailure(code, stage)
+    return f'"{token}"'
 
 
 class _ReadBlobProperties(Protocol):
@@ -3535,15 +3546,14 @@ def validation_list(*, container: _ReadContainer | None = None) -> dict:
                 or isinstance(size, bool)
                 or size <= 0
                 or size > _MAX_ARCHIVE_SIZE_BYTES
-                or not isinstance(etag, str)
-                or _SAFE_ETAG_RE.fullmatch(etag) is None
                 or not isinstance(last_modified, datetime)
                 or last_modified.tzinfo is None
                 or last_modified.utcoffset() != timedelta(0)
             ):
-                raise ValidationFailure(
-                    "SNAPSHOT_LIST_ENTRY_INVALID", "snapshot-list"
-                )
+                raise ValidationFailure("SNAPSHOT_LIST_ENTRY_INVALID", "snapshot-list")
+            etag = _canonical_azure_etag(
+                etag, "SNAPSHOT_LIST_ENTRY_INVALID", "snapshot-list"
+            )
             modified_utc = last_modified.astimezone(timezone.utc).isoformat()
             if _parse_strict_utc(modified_utc) is None:
                 raise ValidationFailure(
@@ -3708,10 +3718,11 @@ def validation_select(
         not isinstance(archive_size, int)
         or isinstance(archive_size, bool)
         or archive_size <= 0
-        or not isinstance(archive_etag, str)
-        or _SAFE_ETAG_RE.fullmatch(archive_etag) is None
     ):
         raise ValidationFailure("ARCHIVE_PROPERTIES_INVALID", "archive")
+    archive_etag = _canonical_azure_etag(
+        archive_etag, "ARCHIVE_PROPERTIES_INVALID", "archive"
+    )
     sidecar_properties = _validation_blob_properties(
         read_container, sidecar_blob, "sidecar"
     )
@@ -3724,10 +3735,9 @@ def validation_select(
         not isinstance(sidecar_size, int)
         or isinstance(sidecar_size, bool)
         or sidecar_size < 1
-        or not isinstance(sidecar_etag, str)
-        or _SAFE_ETAG_RE.fullmatch(sidecar_etag) is None
     ):
         raise ValidationFailure("SIDECAR_INVALID", "sidecar")
+    sidecar_etag = _canonical_azure_etag(sidecar_etag, "SIDECAR_INVALID", "sidecar")
     if sidecar_size > _MAX_MANIFEST_BYTES:
         raise ValidationFailure("SIDECAR_TOO_LARGE", "sidecar")
     sidecar_payload = _validation_download(

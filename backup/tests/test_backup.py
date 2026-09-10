@@ -4527,6 +4527,39 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
 
         return ReadContainer(), calls
 
+    def test_azure_etag_canonicalization_accepts_only_strong_safe_tokens(self):
+        for value, expected in (
+            ("0x8DF0E2716DD645B", '"0x8DF0E2716DD645B"'),
+            ("safe-token_1.2:3", '"safe-token_1.2:3"'),
+            ('"0x8DF0E2716DD645B"', '"0x8DF0E2716DD645B"'),
+        ):
+            with self.subTest(value=value):
+                self.assertEqual(
+                    backup._canonical_azure_etag(value, "ETAG_INVALID", "etag"),
+                    expected,
+                )
+        for value in (
+            'W/"0x8DF0E2716DD645B"',
+            "W/0x8DF0E2716DD645B",
+            '"0x8DF0E2716DD645B',
+            '0x8DF0E2716DD645B"',
+            '""0x8DF0E2716DD645B""',
+            "unsafe value",
+            "unsafe\nvalue",
+            "x" * 129,
+            "",
+            None,
+        ):
+            with (
+                self.subTest(value=value),
+                self.assertRaises(backup.ValidationFailure) as raised,
+            ):
+                backup._canonical_azure_etag(value, "ETAG_INVALID", "etag")
+            self.assertEqual(
+                (raised.exception.code, raised.exception.stage),
+                ("ETAG_INVALID", "etag"),
+            )
+
     def test_validation_list_returns_only_published_exact_snapshots_newest_first(self):
         modified = datetime(2026, 1, 3, tzinfo=timezone.utc)
         names = (
@@ -4539,7 +4572,7 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
                 name=f"hriv-backups/{name}.tar.gz",
                 metadata={"hriv_publication_state": "published", "harmless": "value"},
                 size=index + 1,
-                etag=f'"etag-{index}"',
+                etag=f"etag-{index}",
                 last_modified=modified - timedelta(days=index),
             )
             for index, name in enumerate(names)
@@ -4571,6 +4604,10 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
             [names[1], names[2], names[0]],
         )
         self.assertEqual(
+            [entry["archive_etag"] for entry in result["snapshots"]],
+            ['"etag-1"', '"etag-2"', '"etag-0"'],
+        )
+        self.assertEqual(
             set(result), {"schema_version", "operation", "success", "snapshots"}
         )
         self.assertEqual(result["operation"], "validation-list")
@@ -4587,8 +4624,12 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
         self.assertIsNotNone(
             backup._parse_strict_utc(result["snapshots"][0]["last_modified"])
         )
-        self.assertEqual(calls, [{"name_starts_with": "hriv-backups/", "include": ["metadata"]}])
-        self.assertFalse(any(hasattr(container, name) for name in ("upload_blob", "delete_blob")))
+        self.assertEqual(
+            calls, [{"name_starts_with": "hriv-backups/", "include": ["metadata"]}]
+        )
+        self.assertFalse(
+            any(hasattr(container, name) for name in ("upload_blob", "delete_blob"))
+        )
         with self.assertRaises(AttributeError):
             container.upload_blob = lambda: None
 
@@ -4607,7 +4648,11 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
             {"size": 0},
             {"size": True},
             {"size": 2**63},
+            {"etag": 'W/"0x8DF0E2716DD645B"'},
+            {"etag": '"0x8DF0E2716DD645B'},
+            {"etag": '0x8DF0E2716DD645B"'},
             {"etag": "unsafe value"},
+            {"etag": "x" * 129},
             {"last_modified": datetime(2026, 1, 1)},
             {
                 "last_modified": datetime(
@@ -4880,22 +4925,97 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
         result = backup.validation_select(snapshot, container=container)
         self.assertTrue(result["success"])
         self.assertEqual(result["manifest_sha256"], hashlib.sha256(sidecar).hexdigest())
+        self.assertEqual(result["archive_etag"], '"0x8DF0E2716DD645B"')
         self.assertEqual(result["target_timeline"], 1)
-        self.assertEqual(result["source_state"], {"missing_sources": [], "orphan_sources": []})
+        self.assertEqual(
+            result["source_state"], {"missing_sources": [], "orphan_sources": []}
+        )
         self.assertEqual(result["excluded_artifacts"], [])
         self.assertNotIn("source_files", result)
-        self.assertTrue(all(operation in {"get", "head", "download"} for operation, _ in calls))
+        self.assertTrue(
+            all(operation in {"get", "head", "download"} for operation, _ in calls)
+        )
         kwargs = dict(container.download_kwargs)
-        self.assertEqual(kwargs["hriv-backups/LAST_SUCCESS.json"]["length"], 1024 * 1024 + 1)
-        self.assertEqual(kwargs["hriv-backups/BACKUP_STATE.json"]["length"], 4 * 1024 * 1024 + 1)
+        self.assertEqual(
+            kwargs["hriv-backups/LAST_SUCCESS.json"]["length"], 1024 * 1024 + 1
+        )
+        self.assertEqual(
+            kwargs["hriv-backups/BACKUP_STATE.json"]["length"], 4 * 1024 * 1024 + 1
+        )
         sidecar_kwargs = kwargs[f"hriv-backups/{snapshot}.manifest.json"]
-        self.assertEqual(sidecar_kwargs["etag"], "0x8DF0E2716DD645B")
-        self.assertEqual(sidecar_kwargs["match_condition"], backup.MatchConditions.IfNotModified)
+        self.assertEqual(sidecar_kwargs["etag"], '"0x8DF0E2716DD645B"')
+        self.assertEqual(
+            sidecar_kwargs["match_condition"], backup.MatchConditions.IfNotModified
+        )
         with self.assertRaises(backup.ValidationFailure) as raised:
             backup.validation_select(snapshot + "x", container=container)
         self.assertEqual(raised.exception.code, "SNAPSHOT_MISMATCH")
 
-    def test_strict_select_accepts_independent_component_starts_and_binds_each_one(self):
+    def test_strict_select_preserves_quoted_property_etags(self):
+        snapshot, _manifest, _sidecar, _blobs, container, _calls = self._fixture()
+        quoted = '"0x8DF0E2716DD645B"'
+        for name in (
+            f"hriv-backups/{snapshot}.tar.gz",
+            f"hriv-backups/{snapshot}.manifest.json",
+        ):
+            container.property_overrides[name] = {"etag": quoted}
+
+        result = backup.validation_select(snapshot, container=container)
+
+        self.assertEqual(result["archive_etag"], quoted)
+        sidecar_kwargs = dict(container.download_kwargs)[
+            f"hriv-backups/{snapshot}.manifest.json"
+        ]
+        self.assertEqual(sidecar_kwargs["etag"], quoted)
+
+    def test_azure_sdk_emits_quoted_if_match_header(self):
+        from azure.core.pipeline.transport import HttpTransport
+
+        class RequestCaptured(Exception):
+            pass
+
+        class CapturingTransport(HttpTransport):
+            def __init__(self):
+                self.request = None
+
+            def open(self):
+                pass
+
+            def close(self):
+                pass
+
+            def __exit__(self, *_args):
+                self.close()
+
+            def send(self, request, **_kwargs):
+                self.request = request
+                raise RequestCaptured
+
+        transport = CapturingTransport()
+        client = backup.ContainerClient(
+            account_url="http://127.0.0.1:10000/localaccount",
+            container_name="test-container",
+            credential="sv=local-test&sig=fake-local-token",
+            transport=transport,
+            retry_total=0,
+        )
+        canonical = backup._canonical_azure_etag(
+            "0x8DF0E2716DD645B", "ETAG_INVALID", "etag"
+        )
+
+        with self.assertRaises(RequestCaptured):
+            client.download_blob(
+                "archive.tar.gz",
+                etag=canonical,
+                match_condition=backup.MatchConditions.IfNotModified,
+            )
+
+        self.assertIsNotNone(transport.request)
+        self.assertEqual(transport.request.headers.get("If-Match"), canonical)
+
+    def test_strict_select_accepts_independent_component_starts_and_binds_each_one(
+        self,
+    ):
         snapshot, manifest, _sidecar, blobs, container, _calls = self._fixture()
         marker_name = "hriv-backups/LAST_SUCCESS.json"
         state_name = "hriv-backups/BACKUP_STATE.json"
@@ -5165,14 +5285,31 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
         container.property_overrides[archive_name] = {
             "metadata": {"hriv_publication_state": "published", "harmless": "value"}
         }
-        self.assertTrue(backup.validation_select(snapshot, container=container)["success"])
-        for suffix, expected in ((".tar.gz", "ARCHIVE_PROPERTIES_INVALID"), (".manifest.json", "SIDECAR_INVALID")):
-            snapshot, _manifest, _sidecar, blobs, container, _calls = self._fixture()
-            name = next(name for name in blobs if name.endswith(suffix))
-            container.property_overrides[name] = {"etag": 'unsafe\n"'}
-            with self.subTest(name=name), self.assertRaises(backup.ValidationFailure) as raised:
-                backup.validation_select(snapshot, container=container)
-            self.assertEqual(raised.exception.code, expected)
+        self.assertTrue(
+            backup.validation_select(snapshot, container=container)["success"]
+        )
+        for suffix, expected in (
+            (".tar.gz", "ARCHIVE_PROPERTIES_INVALID"),
+            (".manifest.json", "SIDECAR_INVALID"),
+        ):
+            for malformed in (
+                'W/"0x8DF0E2716DD645B"',
+                '"0x8DF0E2716DD645B',
+                '0x8DF0E2716DD645B"',
+                'unsafe\n"',
+                "x" * 129,
+            ):
+                snapshot, _manifest, _sidecar, blobs, container, _calls = (
+                    self._fixture()
+                )
+                name = next(name for name in blobs if name.endswith(suffix))
+                container.property_overrides[name] = {"etag": malformed}
+                with (
+                    self.subTest(name=name, etag=malformed),
+                    self.assertRaises(backup.ValidationFailure) as raised,
+                ):
+                    backup.validation_select(snapshot, container=container)
+                self.assertEqual(raised.exception.code, expected)
 
     def test_azure_auth_and_service_errors_are_bounded(self):
         class AuthenticationError(Exception):
@@ -5417,7 +5554,7 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
             self.assertFalse((target / "tiles").exists())
             archive_kwargs = container.download_kwargs[-1][1]
             self.assertEqual(archive_kwargs["length"], result["archive_size"] + 1)
-            self.assertEqual(archive_kwargs["etag"], "0x8DF0E2716DD645B")
+            self.assertEqual(archive_kwargs["etag"], '"0x8DF0E2716DD645B"')
             self.assertEqual(
                 archive_kwargs["match_condition"], backup.MatchConditions.IfNotModified
             )
