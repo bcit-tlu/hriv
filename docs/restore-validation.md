@@ -9,10 +9,12 @@ This document is the normative design contract for issue
 without touching production. The recovery-set publication and consistency rules remain
 normative in [the recovery-set contract](recovery-set-contract.md).
 
-This is a design only. It does not claim that the controller, chart, Flux resources, Vault
-wiring, schedule, metrics, or alerts exist. In particular, merging this document does **not**
-clear `HRIVRestoreTestFailed`; that alert may clear only after a deployed implementation has
-completed every validation and cleanup gate described here.
+This remains the design contract for the complete component. Issue #1250 implements only the
+backup-service read-only selection and stateless source-filesystem restore primitives described
+here; it does not implement the controller, chart, Flux resources, Vault wiring, schedule,
+metrics, alerts, CNPG orchestration, or synthetic checks. In particular, merging those primitives
+does **not** claim #1229 is deployed or clear `HRIVRestoreTestFailed`; that alert may clear only
+after a deployed implementation has completed every validation and cleanup gate described here.
 
 The keywords **MUST**, **MUST NOT**, **SHOULD**, and **MAY** state implementation requirements.
 
@@ -172,6 +174,24 @@ metrics, Job arguments, or generated resource names.
 | Barman object-store credential | Read the existing CNPG recovery source                                                                                      | CNPG operator/recovery Pods                                                        | Referenced by validation-only `ObjectStore`; no archive write destination                                                                                  |
 | Synthetic credential           | Recovered production synthetic-row email plus validation-only plaintext password and matching backend-helper-generated hash | Credential-init receives all fields; synthetic child receives only email/plaintext | Email selects the row; password/hash are never production/OIDC credentials; hash is bound to the digest-pinned backend version; app child receives neither |
 | Restored database app identity | Connect to the fresh CNPG Cluster                                                                                           | `psql` and isolated application children                                           | Validation-local Secret generated/reconciled for the restored Cluster; never inferred as proof of source fidelity                                          |
+
+The #1251 fixed child template MUST set `VALIDATION_MIN_SAS_VALIDITY_SECONDS` only when the
+six-hour (`21600`) primitive default does not cover its reviewed maximum source-restore duration.
+The override MUST be finite, positive, no greater than 86400 seconds, fixed independently of
+recovery metadata, and paired with a SAS whose remaining lifetime at child startup meets the
+configured minimum measured from the later of child startup and an optional SAS start. A
+syntactically valid but shorter-lived SAS fails closed with `READ_SAS_EXPIRING`; a start up to five
+minutes in the future remains allowed for clock skew, but does not count toward usable lifetime.
+The primitive stores this setting as raw configuration and parses it only after machine logging is
+isolated; malformed, nonfinite, nonpositive, or greater-than-86400 values produce exactly one
+bounded `VALIDATION_CONFIG_INVALID` stdout document for every machine command. Unrelated backup and
+operator commands do not parse or reject this validation-only setting.
+
+The container read SAS allowlist requires `sv`, `se`, `sr`, `sp`, and `sig`; it permits only `st`,
+`spr`, `sip`, `skoid`, `sktid`, `skt`, `ske`, `sks`, `skv`, `saoid`, `suoid`, `scid`, and `ses` in
+addition. Unknown keys, account-SAS `ss`/`srt`, response overrides, stored-policy identifiers, blank
+or oversized values, and a `spr` value other than exactly `https` fail
+`READ_SAS_FIELDS_INVALID`. Failure output never includes a query field or value.
 
 Selection may read Azure archive metadata, sidecars, `BACKUP_STATE.json`, and
 `LAST_SUCCESS.json`. CNPG recovery may read its Barman source. Those are the complete explicit
@@ -395,6 +415,13 @@ match on both ownership labels and the bound resource name/UID. A label alone is
 
 ## Source selection and immutable binding
 
+The #1250 `validation-list` discovery primitive uses only the read SAS and returns at most 1000
+exact archive candidates whose metadata explicitly says `published`, sorted by snapshot chronology
+newest first. Candidate, unknown, and legacy metadata are omitted; malformed published entries or
+an excessive candidate set fail closed. Listing performs no sidecar download and grants no
+selection authority. The orchestrator MUST still bind through `validation-select` and its complete
+coherence checks.
+
 `SELECT` MUST choose the newest **fully published** production recovery set according to the
 recovery-set contract, never the newest blob by modification time. Before accepting a set, the
 orchestrator or read-only selection child MUST verify:
@@ -403,7 +430,14 @@ orchestrator or read-only selection child MUST verify:
   rejected, failed, or cancelled;
 - the archive and immutable manifest sidecar both exist and identify each other;
 - `BACKUP_STATE.json` and `LAST_SUCCESS.json` are readable and coherent with the published
-  archive, sidecar, run identity, component outcomes, and completion timestamp;
+  archive, sidecar, marker run identity, and each component's `last_success_*` timestamps,
+  duration, size, and archive key. State's top-level and current-attempt run/snapshot/outcome fields
+  may describe a newer pending or failed attempt and MUST NOT be treated as the marker run. Because
+  state has no `last_success_run_id`, the immutable marker run ID/snapshot and top-level
+  `created_at` equal to canonical manifest `capture_started_at` bind the manifest. Each marker type's
+  independently recorded `created_at` equals only that component's `last_success_started_at`—the
+  database and filesystem starts need not equal each other or top-level marker creation—while marker
+  component identity plus last-success timestamps/sizes/archive keys bind state;
 - manifest/schema/archive versions are supported and production mode is declared;
 - expected components are present, `db.sql` and generated tiles are absent, and no incomplete
   staging or upload artifact is selected;
@@ -421,8 +455,11 @@ profile ID/version binds expected source cluster/provider, application database 
 The controller MUST use that profile—not manifest `database_name`, which identifies the inventoried
 HRIV connection database `hriv`—to configure and validate `app`/`app`, and MUST cross-check manifest
 cluster/provider/WAL metadata against it. `ObjectStore` is the actual CRD provided by the deployed
-CNPG-I Barman Cloud plugin, not a generic substitute. This requires no backup-manifest schema
-change.
+CNPG-I Barman Cloud plugin, not a generic substitute. The #1251 fixed selection/restore child MUST
+set `CNPG_CLUSTER_NAME` from that bound Flux source profile (`pg-core` currently); relying on an
+unbound runtime value is forbidden, even though the primitive default remains `pg-core`. Strict
+selection rejects a manifest whose `database_recovery.cluster` differs from the configured profile
+with `CNPG_METADATA_INVALID`. This requires no backup-manifest schema change.
 
 The exact `database_recovery.target_lsn`, not `target_time`, becomes the CNPG
 `recoveryTarget.targetLSN`. The controller MUST derive the timeline from exactly the first eight
@@ -990,8 +1027,20 @@ email/plaintext password—not the hash and never a reused production credential
 
 The restore child uses the stateless, read-only source-filesystem path from #1250 and writes only
 to the supplied fresh target. It verifies exact recovery-set identity, safe member paths,
-archive and manifest versions, all selected file sizes/checksums, and final counts. It cannot
-update production or validation backup publication state.
+archive and manifest versions, all selected file sizes/checksums, and final counts. Before
+extraction it opens the verified parent and target with directory file descriptors and no-follow
+semantics where available, changes cwd to the pinned target inode, and performs temporary staging
+and final relative promotion there. It restores cwd before checking that the original absolute
+path still names the same directory device/inode. The pinned target must remain empty before work,
+contain only the current temporary workspace before promotion, only that workspace plus promoted
+`source_images` immediately afterward, and exactly `source_images` before success. Any concurrent
+unrelated entry fails closed. A missing, renamed, replaced, or symlinked target fails
+`TARGET_CHANGED`; writes and cleanup never follow the replacement path.
+
+`fchdir` changes cwd process-wide. Therefore #1251 MUST run this stateless primitive only in an
+isolated, single-command, single-thread restore child. It MUST NOT colocate or combine the primitive
+with a scheduler, backup publication, operator command, or another concurrent restore in one
+process. It cannot update production or validation backup publication state.
 
 Consistency preserves the recovery-set outcomes and then applies the bound source-state policy:
 

@@ -176,6 +176,53 @@ Use fake or isolated Azure storage and a representative source-image inventory.
    run with `kubectl exec ... backup`; exec disconnect can terminate that process.
    Short list/status and controlled restore commands may remain exec-based.
 
+### Test 6: Read-only stateless validation primitives
+
+No live Azure account is required for unit coverage; fake container/blob clients must expose only
+head/download/get/list/exists-style reads and tests must fail if upload, delete, metadata, block
+commit, publication reconciliation, local backup state, restore state, maintenance, or database
+restore is reached.
+
+```bash
+cd backup
+poetry run python -m unittest tests.test_backup
+poetry run python -m py_compile backup.py tests/test_backup.py
+```
+
+Cover SAS acceptance and fail-closed cases (missing, malformed, expired, insufficient usable
+lifetime measured from the later of now/start, future start, wrong resource, missing read/list, and
+extra write/delete permissions) without asserting or logging the secret URL. Include `sv` in every
+valid fixture; cover service and user-delegation shapes, the fixed optional-field allowlist,
+unknown/account-SAS/response-override rejection, and exact-HTTPS `spr`. Invalid raw minimum-lifetime
+configuration must import successfully, produce one bounded `VALIDATION_CONFIG_INVALID` document
+for all machine commands, and remain irrelevant to non-machine commands. Exercise
+`validation-list` with read-only fakes: exact published entries sort newest first, candidate/unknown/
+legacy entries are ignored, malformed published entries and more than 1000 candidates fail boundedly,
+and no sidecar or mutation method is reached. Selection fixtures must bind `LAST_SUCCESS.json`,
+`BACKUP_STATE.json`, published
+archive properties, absent journal, and exact sidecar bytes; mutate each identity, component,
+size/key/count/checksum, format, CNPG, LSN, fence, and timestamp field independently and require a
+bounded JSON failure. Prove a marker for successful attempt A still selects A while top-level/current
+state records pending or permanently failed attempt B; corrupting any component `last_success_*`
+field must fail. Component start/completion timestamps must be ordered and their serialized duration
+must match the microsecond-precision delta. Override `CNPG_CLUSTER_NAME` away from the bound source
+profile and require `CNPG_METADATA_INVALID`. Read fakes use slots/spec-conforming read-only interfaces and forbid adding or
+calling mutation capabilities. Never select by blob mtime or ambiguous prefix.
+
+For stateless restore, use an exact snapshot/recovery-set/digest and an absent or empty temporary
+target. Prove source files restore, `db.sql`/tiles do not, and checksum, path/type, embedded-manifest,
+version, identity, interruption, and stream errors leave no promoted `source_images`. Unsafe,
+production, `/backups`-overlapping, and nonempty targets must fail before archive download. Add a
+deterministic rename-plus-symlink race proving extraction/promotion stay on the pinned target inode,
+the replacement destination remains untouched, cleanup does not follow the absolute replacement,
+and the operation fails `TARGET_CHANGED`. Inject unrelated target entries before pinned yield,
+during extraction, and around promotion; no path may report success unless the pinned target ends
+with exactly `source_images`. Run the `fchdir` path only as an isolated single-thread test process.
+Exercise `main()` for all three machine commands and parse
+stdout as exactly one JSON document. The production
+backup Deployment must not gain `AZURE_READ_SAS_URL`; #1251's isolated fixed child template mounts
+it.
+
 ## Troubleshooting
 
 - If a development logical restore fails with "unrecognized configuration parameter", verify the backup image client matches the local server major version. Production database recovery uses CNPG instead.

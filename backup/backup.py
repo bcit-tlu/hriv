@@ -12,6 +12,10 @@ Usage:
     python backup.py restore-test               # Restore into the configured test target
     python backup.py list                       # List available snapshots
     python backup.py status                     # Show the last-success heartbeat
+    python backup.py validation-list            # List published recovery candidates (JSON)
+    python backup.py validation-select [name]   # Select a published recovery set (JSON)
+    python backup.py restore-filesystem-stateless <name> --data-dir <path>
+                                                # Restore selected source files (JSON)
     python backup.py cron                       # Start the cron scheduler (default)
 """
 
@@ -23,6 +27,7 @@ import copy
 import csv
 import fcntl
 import hashlib
+import hmac
 import io
 import json
 import logging
@@ -31,16 +36,19 @@ import os
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tarfile
 import tempfile
 import time
+import unicodedata
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from urllib.parse import urlparse
+from typing import NoReturn, Protocol
+from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from azure.core import MatchConditions
@@ -111,7 +119,11 @@ DATA_DIR: str = _env("DATA_DIR", "/data")
 # Azure Blob Storage
 AZURE_STORAGE_CONNECTION_STRING: str = _env("AZURE_STORAGE_CONNECTION_STRING", "")
 AZURE_STORAGE_CONTAINER: str = _env("AZURE_STORAGE_CONTAINER", "")
+AZURE_READ_SAS_URL: str = _env("AZURE_READ_SAS_URL", "")
 AZURE_BLOB_PREFIX: str = _env("AZURE_BLOB_PREFIX", "hriv-backups")
+VALIDATION_MIN_SAS_VALIDITY_SECONDS: str = _env(
+    "VALIDATION_MIN_SAS_VALIDITY_SECONDS", "21600"
+)
 
 # Schedule & retention
 BACKUP_CRON_SCHEDULE: str = _env("BACKUP_CRON_SCHEDULE", "0 10 * * *")
@@ -1398,6 +1410,181 @@ def _blob_container_client() -> ContainerClient:
 
 def _azure_configured() -> bool:
     return bool(AZURE_STORAGE_CONNECTION_STRING and AZURE_STORAGE_CONTAINER)
+
+
+class ValidationFailure(RuntimeError):
+    """Bounded validation failure safe for machine output."""
+
+    def __init__(self, code: str, stage: str):
+        super().__init__(code)
+        self.code = code
+        self.stage = stage
+
+
+_READ_SAS_CLOCK_SKEW = timedelta(minutes=5)
+_MAX_MANIFEST_BYTES = 16 * 1024 * 1024
+_SAFE_ETAG_RE = re.compile(r'^(?:W/)?"[A-Za-z0-9._:-]{1,128}"$')
+_AZURE_ACCOUNT_HOST_RE = re.compile(
+    r"^[a-z0-9]{3,24}\.blob\.core\.windows\.net$"
+)
+_AZURE_CONTAINER_RE = re.compile(r"^[a-z0-9](?:[a-z0-9]|-(?!-)){1,61}[a-z0-9]$")
+_STRICT_UTC_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|\+00:00)$"
+)
+_READ_SAS_REQUIRED_FIELDS = {"sv", "se", "sr", "sp", "sig"}
+_READ_SAS_OPTIONAL_FIELDS = {
+    "st",
+    "spr",
+    "sip",
+    "skoid",
+    "sktid",
+    "skt",
+    "ske",
+    "sks",
+    "skv",
+    "saoid",
+    "suoid",
+    "scid",
+    "ses",
+}
+_MAX_READ_SAS_FIELD_BYTES = 1024
+
+
+class _ReadBlobProperties(Protocol):
+    size: int
+    etag: str
+    metadata: dict[str, str]
+
+
+class _ReadBlobItem(_ReadBlobProperties, Protocol):
+    name: str
+    last_modified: datetime
+
+
+class _ReadDownloader(Protocol):
+    def readall(self) -> bytes:
+        raise NotImplementedError
+
+    def chunks(self) -> Iterator[bytes]:
+        raise NotImplementedError
+
+
+class _ReadBlobClient(Protocol):
+    def get_blob_properties(self) -> _ReadBlobProperties:
+        raise NotImplementedError
+
+
+class _ReadContainer(Protocol):
+    def list_blobs(
+        self, *, name_starts_with: str, include: list[str]
+    ) -> Iterable[_ReadBlobItem]:
+        raise NotImplementedError
+
+    def get_blob_client(self, blob_name: str) -> _ReadBlobClient:
+        raise NotImplementedError
+
+    def download_blob(self, blob_name: str, **kwargs: object) -> _ReadDownloader:
+        raise NotImplementedError
+
+
+class _StatelessArchiveStream(Protocol):
+    def read(self, size: int = -1) -> bytes:
+        raise NotImplementedError
+
+    def validate_eof(self) -> None:
+        raise NotImplementedError
+
+
+def _validation_min_sas_validity_seconds() -> float:
+    try:
+        value = float(VALIDATION_MIN_SAS_VALIDITY_SECONDS)
+    except (TypeError, ValueError):
+        raise ValidationFailure("VALIDATION_CONFIG_INVALID", "configuration") from None
+    if not math.isfinite(value) or value <= 0 or value > 86400:
+        raise ValidationFailure("VALIDATION_CONFIG_INVALID", "configuration")
+    return value
+
+
+def _parse_strict_utc(value: object) -> datetime | None:
+    if not isinstance(value, str) or _STRICT_UTC_RE.fullmatch(value) is None:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo == timezone.utc else None
+
+
+def _validate_read_sas_url(value: str | None = None) -> str:
+    """Validate a container-scoped, read/list-only Azure SAS without exposing it."""
+    sas_url = AZURE_READ_SAS_URL if value is None else value
+    if not sas_url:
+        raise ValidationFailure("READ_SAS_MISSING", "configuration")
+    try:
+        parsed = urlparse(sas_url)
+        query = parse_qs(parsed.query, keep_blank_values=True, strict_parsing=True)
+        port = parsed.port
+    except (TypeError, ValueError):
+        raise ValidationFailure("READ_SAS_MALFORMED", "configuration") from None
+    path_match = re.fullmatch(r"/([^/%]+)", parsed.path)
+    container_name = path_match.group(1) if path_match else ""
+    if (
+        parsed.scheme != "https"
+        or parsed.username is not None
+        or parsed.password is not None
+        or port is not None
+        or parsed.fragment
+        or parsed.params
+        or parsed.hostname is None
+        or parsed.netloc != parsed.hostname
+        or _AZURE_ACCOUNT_HOST_RE.fullmatch(parsed.hostname) is None
+        or _AZURE_CONTAINER_RE.fullmatch(container_name) is None
+        or (AZURE_STORAGE_CONTAINER and container_name != AZURE_STORAGE_CONTAINER)
+    ):
+        raise ValidationFailure("READ_SAS_SCOPE_INVALID", "configuration")
+    if any(len(values) != 1 for values in query.values()):
+        raise ValidationFailure("READ_SAS_MALFORMED", "configuration")
+    if set(query) - (_READ_SAS_REQUIRED_FIELDS | _READ_SAS_OPTIONAL_FIELDS) or not (
+        _READ_SAS_REQUIRED_FIELDS <= set(query)
+    ):
+        raise ValidationFailure("READ_SAS_FIELDS_INVALID", "configuration")
+    if any(
+        not values[0]
+        or len(values[0].encode("utf-8")) > _MAX_READ_SAS_FIELD_BYTES
+        for values in query.values()
+    ):
+        raise ValidationFailure("READ_SAS_FIELDS_INVALID", "configuration")
+    if query["sr"] != ["c"]:
+        raise ValidationFailure("READ_SAS_SCOPE_INVALID", "configuration")
+    if "spr" in query and query["spr"] != ["https"]:
+        raise ValidationFailure("READ_SAS_FIELDS_INVALID", "configuration")
+    permissions = query["sp"][0]
+    if permissions not in ("rl", "lr"):
+        raise ValidationFailure("READ_SAS_PERMISSIONS_INVALID", "configuration")
+
+    now = datetime.now(timezone.utc)
+    expiry = _parse_strict_utc(query.get("se", [""])[0])
+    if expiry is None:
+        raise ValidationFailure("READ_SAS_EXPIRY_INVALID", "configuration")
+    if expiry <= now:
+        raise ValidationFailure("READ_SAS_EXPIRED", "configuration")
+    start_value = query.get("st", [""])[0]
+    start = now
+    if start_value:
+        parsed_start = _parse_strict_utc(start_value)
+        if parsed_start is None:
+            raise ValidationFailure("READ_SAS_START_INVALID", "configuration")
+        if parsed_start > now + _READ_SAS_CLOCK_SKEW:
+            raise ValidationFailure("READ_SAS_NOT_YET_VALID", "configuration")
+        start = max(now, parsed_start)
+    if expiry - start < timedelta(seconds=_validation_min_sas_validity_seconds()):
+        raise ValidationFailure("READ_SAS_EXPIRING", "configuration")
+    return sas_url
+
+
+def _read_blob_container_client() -> _ReadContainer:
+    """Create the validation-only client from the container SAS URL."""
+    return ContainerClient.from_container_url(_validate_read_sas_url())
 
 
 # ---------------------------------------------------------------------------
@@ -2868,6 +3055,1141 @@ def run_status() -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Read-only validation selection
+# ---------------------------------------------------------------------------
+
+
+def _validation_blob_properties(
+    container: _ReadContainer, blob_name: str, stage: str
+) -> _ReadBlobProperties:
+    try:
+        return container.get_blob_client(blob_name).get_blob_properties()
+    except ResourceNotFoundError:
+        raise ValidationFailure(f"{stage.upper()}_MISSING", stage) from None
+    except Exception as exc:
+        _raise_validation_storage_failure(exc, stage)
+        raise AssertionError("validation storage failure helper returned")
+
+
+def _raise_validation_storage_failure(exc: Exception, stage: str) -> NoReturn:
+    name = type(exc).__name__.lower()
+    if "authentication" in name or "authorization" in name:
+        code = "AZURE_AUTH_FAILED"
+    elif "timeout" in name or "service" in name or "http" in name:
+        code = "AZURE_READ_FAILED"
+    else:
+        code = "AZURE_READ_FAILED"
+    raise ValidationFailure(code, stage) from None
+
+
+def _validation_download(
+    container: _ReadContainer,
+    blob_name: str,
+    stage: str,
+    limit: int,
+    *,
+    etag: str | None = None,
+) -> bytes:
+    kwargs: dict[str, object] = {"length": limit + 1}
+    if etag is not None:
+        kwargs.update(etag=etag, match_condition=MatchConditions.IfNotModified)
+    try:
+        downloader = container.download_blob(blob_name, **kwargs)
+        payload = downloader.readall()
+    except ResourceNotFoundError:
+        raise ValidationFailure(f"{stage.upper()}_MISSING", stage) from None
+    except ResourceModifiedError:
+        raise ValidationFailure("SOURCE_CHANGED", stage) from None
+    except Exception as exc:
+        _raise_validation_storage_failure(exc, stage)
+    if not isinstance(payload, bytes) or len(payload) > limit:
+        raise ValidationFailure(f"{stage.upper()}_TOO_LARGE", stage)
+    return payload
+
+
+def _reject_json_constant(_value: str) -> None:
+    raise ValueError("non-finite JSON number")
+
+
+def _strict_json_object(pairs: list[tuple[str, object]]) -> dict:
+    document: dict = {}
+    for key, value in pairs:
+        if key in document:
+            raise ValueError("duplicate JSON key")
+        document[key] = value
+    return document
+
+
+def _validation_json(payload: bytes, stage: str) -> dict:
+    try:
+        document = json.loads(
+            payload.decode("utf-8"),
+            object_pairs_hook=_strict_json_object,
+            parse_constant=_reject_json_constant,
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        raise ValidationFailure(f"{stage.upper()}_INVALID", stage) from None
+    if not isinstance(document, dict):
+        raise ValidationFailure(f"{stage.upper()}_INVALID", stage)
+    return document
+
+
+def _strict_utc_timestamp(value: object, code: str) -> datetime:
+    parsed = _parse_strict_utc(value)
+    if parsed is None:
+        raise ValidationFailure(code, "manifest")
+    return parsed
+
+
+def _canonical_source_path(value: object) -> str:
+    if not isinstance(value, str) or not value or len(value.encode("utf-8")) > 512:
+        raise ValidationFailure("SOURCE_STATE_DIGEST_INVALID", "manifest")
+    normalized = unicodedata.normalize("NFC", value)
+    if "\x00" in normalized or "\\" in normalized:
+        raise ValidationFailure("SOURCE_STATE_DIGEST_INVALID", "manifest")
+    for prefix in ("/data/source_images/", "data/source_images/", "source_images/"):
+        if normalized.startswith(prefix):
+            normalized = normalized[len(prefix) :]
+            break
+    path = Path(normalized)
+    if path.is_absolute() or not path.parts or any(part in ("", ".", "..") for part in path.parts):
+        raise ValidationFailure("SOURCE_STATE_DIGEST_INVALID", "manifest")
+    canonical = f"data/source_images/{path.as_posix()}"
+    if len(canonical.encode("utf-8")) > 512:
+        raise ValidationFailure("SOURCE_STATE_DIGEST_INVALID", "manifest")
+    return canonical
+
+
+def _canonical_source_state(missing: list, orphans: list) -> tuple[dict, str]:
+    if len(missing) > 256 or len(orphans) > 256:
+        raise ValidationFailure("SOURCE_STATE_DIGEST_INVALID", "manifest")
+    canonical_missing = []
+    row_ids: set[str] = set()
+    for entry in missing:
+        if not isinstance(entry, dict) or set(entry) != {"row_id", "status", "stored_path", "reason"}:
+            raise ValidationFailure("SOURCE_STATE_DIGEST_INVALID", "manifest")
+        row_id = entry["row_id"]
+        if not isinstance(row_id, str) or re.fullmatch(r"[1-9][0-9]{0,18}", row_id) is None or row_id in row_ids:
+            raise ValidationFailure("SOURCE_STATE_DIGEST_INVALID", "manifest")
+        row_ids.add(row_id)
+        if entry["reason"] not in {
+            "missing_source",
+            "unsafe_or_out_of_root",
+            "duplicate_source_reference",
+        }:
+            raise ValidationFailure("SOURCE_STATE_DIGEST_INVALID", "manifest")
+        for key in ("status", "stored_path", "reason"):
+            if not isinstance(entry[key], str) or len(entry[key].encode("utf-8")) > 512:
+                raise ValidationFailure("SOURCE_STATE_DIGEST_INVALID", "manifest")
+        canonical_missing.append(
+            {
+                "row_id": row_id,
+                "status": unicodedata.normalize("NFC", entry["status"]),
+                "stored_path": _canonical_source_path(entry["stored_path"]),
+                "reason": entry["reason"],
+            }
+        )
+    canonical_orphans = []
+    orphan_paths: set[str] = set()
+    for entry in orphans:
+        if not isinstance(entry, dict) or set(entry) != {"path", "reason", "policy"}:
+            raise ValidationFailure("SOURCE_STATE_DIGEST_INVALID", "manifest")
+        path = _canonical_source_path(entry["path"])
+        if (
+            path in orphan_paths
+            or entry["reason"] != "no_database_row"
+            or entry["policy"] != "quarantined_by_policy"
+        ):
+            raise ValidationFailure("SOURCE_STATE_DIGEST_INVALID", "manifest")
+        orphan_paths.add(path)
+        canonical_orphans.append(
+            {"path": path, "reason": entry["reason"], "policy": entry["policy"]}
+        )
+    canonical_missing.sort(
+        key=lambda item: (
+            int(item["row_id"]),
+            item["status"],
+            item["stored_path"],
+            item["reason"],
+        )
+    )
+    canonical_orphans.sort(key=lambda item: (item["path"], item["reason"], item["policy"]))
+    document = {
+        "missing_sources": canonical_missing,
+        "orphan_sources": canonical_orphans,
+    }
+    payload = json.dumps(
+        document, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode()
+    return document, hashlib.sha256(payload).hexdigest()
+
+
+def _validate_excluded_artifacts(excluded: list) -> list[dict]:
+    if len(excluded) > 256:
+        raise ValidationFailure("EXCLUDED_ARTIFACT_UNAPPROVED", "manifest")
+    canonical: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for entry in excluded:
+        if not isinstance(entry, dict) or set(entry) != {"path", "reason"}:
+            raise ValidationFailure("EXCLUDED_ARTIFACT_UNAPPROVED", "manifest")
+        path = entry["path"]
+        if (
+            not isinstance(path, str)
+            or not path
+            or len(path.encode("utf-8")) > 512
+            or "\\" in path
+            or path.startswith("/")
+            or any(part in ("", ".", "..") for part in path.split("/"))
+        ):
+            raise ValidationFailure("EXCLUDED_ARTIFACT_UNAPPROVED", "manifest")
+        reason = entry["reason"]
+        if reason == "non_authoritative_production_data":
+            parts = Path(path).parts
+            accepted = len(parts) == 2 and parts[0] == "data" and parts[1] != "source_images"
+        elif reason == "incomplete_or_non_authoritative":
+            parts = Path(path).parts
+            source_parts = parts[2:]
+            accepted = path.startswith("data/source_images/") and (
+                any(
+                    segment.lower().lstrip(".") in _INCOMPLETE_NAMES
+                    for segment in source_parts
+                )
+                or Path(path).name.lower().endswith(_INCOMPLETE_SUFFIXES)
+            )
+        else:
+            accepted = False
+        if not accepted or (path, reason) in seen:
+            raise ValidationFailure("EXCLUDED_ARTIFACT_UNAPPROVED", "manifest")
+        seen.add((path, reason))
+        canonical.append({"path": path, "reason": reason})
+    return sorted(canonical, key=lambda item: (item["path"], item["reason"]))
+
+
+def _validation_manifest_summary(manifest: dict) -> dict:
+    try:
+        version, files = _validate_manifest_document(manifest)
+    except (TypeError, ValueError):
+        raise ValidationFailure("MANIFEST_INVALID", "manifest") from None
+    if version != RECOVERY_MANIFEST_SCHEMA_VERSION:
+        raise ValidationFailure("MANIFEST_VERSION_UNSUPPORTED", "manifest")
+    if manifest.get("format_version") != RECOVERY_MANIFEST_SCHEMA_VERSION or (
+        manifest.get("schema_version") != RECOVERY_MANIFEST_SCHEMA_VERSION
+    ):
+        raise ValidationFailure("MANIFEST_VERSION_UNSUPPORTED", "manifest")
+    if manifest.get("backup_mode") != "production" or (
+        manifest.get("tiles_excluded") is not True
+    ):
+        raise ValidationFailure("MANIFEST_NOT_PRODUCTION", "manifest")
+    if manifest.get("selection") != "source_images":
+        raise ValidationFailure("MANIFEST_SELECTION_INVALID", "manifest")
+    if any(
+        path == "db.sql"
+        or not path.startswith("data/source_images/")
+        or "\\" in path
+        or path.startswith("/")
+        or any(part in ("", ".", "..") for part in path.split("/"))
+        or len(path.encode("utf-8")) > 512
+        or set(metadata) != {"size", "sha256"}
+        or isinstance(metadata.get("size"), bool)
+        for path, metadata in files.items()
+    ):
+        raise ValidationFailure("MANIFEST_COMPONENT_INVALID", "manifest")
+    versions = manifest.get("versions")
+    if (
+        not isinstance(versions, dict)
+        or versions.get("archive_format") != 2
+        or any(
+            not isinstance(versions.get(key), str)
+            or not versions[key]
+            or len(versions[key].encode("utf-8")) > 128
+            for key in ("hriv", "backup")
+        )
+    ):
+        raise ValidationFailure("MANIFEST_VERSION_UNSUPPORTED", "manifest")
+    snapshot_name = manifest.get("snapshot_name")
+    recovery_set_id = manifest.get("recovery_set_id")
+    run_id = manifest.get("run_id")
+    if (
+        not isinstance(snapshot_name, str)
+        or re.fullmatch(r"hriv-backup-\d{8}-\d{6}(?:-[0-9a-f]{8})?", snapshot_name)
+        is None
+        or recovery_set_id != snapshot_name
+        or not isinstance(run_id, str)
+        or re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", run_id) is None
+        or manifest.get("database_name") != "hriv"
+    ):
+        raise ValidationFailure("MANIFEST_IDENTITY_INVALID", "manifest")
+    capture_started = _strict_utc_timestamp(
+        manifest.get("capture_started_at"), "MANIFEST_TIMESTAMP_INVALID"
+    )
+    capture_boundary = _strict_utc_timestamp(
+        manifest.get("capture_boundary_at"), "MANIFEST_TIMESTAMP_INVALID"
+    )
+    if capture_boundary < capture_started:
+        raise ValidationFailure("MANIFEST_TIMESTAMP_INVALID", "manifest")
+
+    source = manifest.get("source_images")
+    if not isinstance(source, dict) or source.get("files") != files:
+        raise ValidationFailure("SOURCE_INDEX_INVALID", "manifest")
+    file_count = len(files)
+    total_bytes = sum(metadata["size"] for metadata in files.values())
+    if (
+        manifest.get("file_count") != file_count
+        or manifest.get("total_bytes") != total_bytes
+        or source.get("file_count") != file_count
+        or source.get("included_file_count") != file_count
+        or source.get("total_bytes") != total_bytes
+    ):
+        raise ValidationFailure("SOURCE_COUNTS_INVALID", "manifest")
+    for key in (
+        "database_row_count",
+        "included_row_count",
+        "missing_or_skipped_count",
+        "orphan_count",
+    ):
+        if not isinstance(source.get(key), int) or isinstance(source.get(key), bool) or source[key] < 0:
+            raise ValidationFailure("SOURCE_COUNTS_INVALID", "manifest")
+    if (
+        source["included_row_count"] != file_count
+        or source["database_row_count"]
+        != source["included_row_count"] + source["missing_or_skipped_count"]
+    ):
+        raise ValidationFailure("SOURCE_COUNTS_INVALID", "manifest")
+
+    validation = manifest.get("validation")
+    if not isinstance(validation, dict) or validation.get("accepted") is not True:
+        raise ValidationFailure("VALIDATION_NOT_ACCEPTED", "manifest")
+    missing = validation.get("missing_sources")
+    orphans = validation.get("orphan_sources")
+    excluded = manifest.get("excluded_incomplete_artifacts")
+    if (
+        not isinstance(missing, list)
+        or not isinstance(orphans, list)
+        or not isinstance(excluded, list)
+        or validation.get("excluded_incomplete_artifacts") != excluded
+        or len(missing) != source["missing_or_skipped_count"]
+        or len(orphans) != source["orphan_count"]
+    ):
+        raise ValidationFailure("SOURCE_COUNTS_INVALID", "manifest")
+    source_state, source_state_sha256 = _canonical_source_state(missing, orphans)
+    canonical_excluded = _validate_excluded_artifacts(excluded)
+
+    recovery = manifest.get("database_recovery")
+    if not isinstance(recovery, dict):
+        raise ValidationFailure("CNPG_METADATA_INVALID", "manifest")
+    if (
+        recovery.get("provider") != "cloudnative-pg"
+        or recovery.get("cluster") != CNPG_CLUSTER_NAME
+        or recovery.get("logical_dump_role") != "not-included"
+    ):
+        raise ValidationFailure("CNPG_METADATA_INVALID", "manifest")
+    target_lsn = recovery.get("target_lsn")
+    if (
+        not isinstance(target_lsn, str)
+        or re.fullmatch(r"[0-9A-Fa-f]{1,8}/[0-9A-Fa-f]{1,8}", target_lsn) is None
+        or manifest.get("capture_boundary_lsn") != target_lsn
+        or manifest.get("capture_boundary_at") != recovery.get("target_time")
+    ):
+        raise ValidationFailure("TARGET_LSN_INVALID", "manifest")
+    fence = recovery.get("wal_fence_file")
+    if not isinstance(fence, str) or re.fullmatch(r"[0-9A-Fa-f]{24}", fence) is None:
+        raise ValidationFailure("WAL_FENCE_UNSUPPORTED", "manifest")
+    timeline = int(fence[:8], 16)
+    if timeline == 0:
+        raise ValidationFailure("WAL_FENCE_UNSUPPORTED", "manifest")
+    timeout = recovery.get("archive_timeout_seconds")
+    if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or not math.isfinite(timeout) or timeout <= 0:
+        raise ValidationFailure("CNPG_METADATA_INVALID", "manifest")
+    target_time = _strict_utc_timestamp(
+        recovery.get("target_time"), "CNPG_METADATA_INVALID"
+    )
+    committed = _strict_utc_timestamp(
+        recovery.get("wal_fence_committed_at"), "WAL_FENCE_TIMESTAMP_INVALID"
+    )
+    archived = _strict_utc_timestamp(
+        recovery.get("wal_fence_archived_at"), "WAL_FENCE_TIMESTAMP_INVALID"
+    )
+    completed = _strict_utc_timestamp(
+        manifest.get("completed_at"), "MANIFEST_COMPLETION_INVALID"
+    )
+    if committed < target_time or archived < committed or completed < archived:
+        raise ValidationFailure("WAL_FENCE_TIMESTAMP_INVALID", "manifest")
+    return {
+        "files": files,
+        "file_count": file_count,
+        "total_bytes": total_bytes,
+        "target_lsn": target_lsn,
+        "target_timeline": timeline,
+        "database_row_count": source["database_row_count"],
+        "missing_count": len(missing),
+        "orphan_count": len(orphans),
+        "exclusion_count": len(excluded),
+        "source_state": source_state,
+        "source_state_sha256": source_state_sha256,
+        "excluded_artifacts": canonical_excluded,
+        "capture_started_at": capture_started.isoformat(),
+        "completed_at": manifest["completed_at"],
+    }
+
+
+_MAX_VALIDATION_SNAPSHOTS = 1000
+_MAX_ARCHIVE_SIZE_BYTES = (1 << 63) - 1
+_EXACT_SNAPSHOT_RE = re.compile(
+    r"hriv-backup-(?P<stamp>\d{8}-\d{6})(?:-[0-9a-f]{8})?"
+)
+
+
+def _validation_snapshot_chronology(snapshot_name: str) -> datetime | None:
+    match = _EXACT_SNAPSHOT_RE.fullmatch(snapshot_name)
+    if match is None:
+        return None
+    try:
+        return datetime.strptime(match.group("stamp"), "%Y%m%d-%H%M%S").replace(
+            tzinfo=timezone.utc
+        )
+    except ValueError:
+        return None
+
+
+def _validation_blob_prefix() -> str:
+    if (
+        not isinstance(AZURE_BLOB_PREFIX, str)
+        or AZURE_BLOB_PREFIX != AZURE_BLOB_PREFIX.strip()
+        or len(AZURE_BLOB_PREFIX.encode("utf-8")) > 512
+        or "\\" in AZURE_BLOB_PREFIX
+        or AZURE_BLOB_PREFIX.startswith("/")
+        or AZURE_BLOB_PREFIX.endswith("/")
+        or (
+            AZURE_BLOB_PREFIX
+            and any(part in ("", ".", "..") for part in AZURE_BLOB_PREFIX.split("/"))
+        )
+    ):
+        raise ValidationFailure("ARCHIVE_PREFIX_INVALID", "configuration")
+    return f"{AZURE_BLOB_PREFIX}/" if AZURE_BLOB_PREFIX else ""
+
+
+def validation_list(*, container: _ReadContainer | None = None) -> dict:
+    """Boundedly list published archive candidates using only the read SAS client."""
+    prefix = _validation_blob_prefix()
+    read_container = container if container is not None else _read_blob_container_client()
+    snapshots: list[dict] = []
+    matching_candidates = 0
+    try:
+        blobs = read_container.list_blobs(
+            name_starts_with=prefix, include=["metadata"]
+        )
+        for blob in blobs:
+            try:
+                name = blob.name
+                metadata = blob.metadata
+            except AttributeError:
+                raise ValidationFailure(
+                    "SNAPSHOT_LIST_ENTRY_INVALID", "snapshot-list"
+                ) from None
+            publication_state = (
+                metadata.get("hriv_publication_state")
+                if isinstance(metadata, dict)
+                else None
+            )
+            if not isinstance(name, str):
+                if publication_state == "published":
+                    raise ValidationFailure(
+                        "SNAPSHOT_LIST_ENTRY_INVALID", "snapshot-list"
+                    )
+                continue
+            if not name.endswith(".tar.gz"):
+                continue
+            archive_name = name[len(prefix) :] if name.startswith(prefix) else ""
+            snapshot_name = archive_name.removesuffix(".tar.gz")
+            exact_pattern = (
+                name == f"{prefix}{archive_name}"
+                and "/" not in archive_name
+                and _EXACT_SNAPSHOT_RE.fullmatch(snapshot_name) is not None
+            )
+            chronology = (
+                _validation_snapshot_chronology(snapshot_name)
+                if exact_pattern
+                else None
+            )
+            if exact_pattern:
+                matching_candidates += 1
+                if matching_candidates > _MAX_VALIDATION_SNAPSHOTS:
+                    raise ValidationFailure(
+                        "SNAPSHOT_LIST_TOO_LARGE", "snapshot-list"
+                    )
+            if publication_state != "published":
+                continue
+            try:
+                size = blob.size
+                etag = blob.etag
+                last_modified = blob.last_modified
+            except AttributeError:
+                raise ValidationFailure(
+                    "SNAPSHOT_LIST_ENTRY_INVALID", "snapshot-list"
+                ) from None
+            if (
+                chronology is None
+                or not isinstance(size, int)
+                or isinstance(size, bool)
+                or size <= 0
+                or size > _MAX_ARCHIVE_SIZE_BYTES
+                or not isinstance(etag, str)
+                or _SAFE_ETAG_RE.fullmatch(etag) is None
+                or not isinstance(last_modified, datetime)
+                or last_modified.tzinfo is None
+                or last_modified.utcoffset() != timedelta(0)
+            ):
+                raise ValidationFailure(
+                    "SNAPSHOT_LIST_ENTRY_INVALID", "snapshot-list"
+                )
+            modified_utc = last_modified.astimezone(timezone.utc).isoformat()
+            if _parse_strict_utc(modified_utc) is None:
+                raise ValidationFailure(
+                    "SNAPSHOT_LIST_ENTRY_INVALID", "snapshot-list"
+                )
+            snapshots.append(
+                {
+                    "snapshot_name": snapshot_name,
+                    "archive_blob": name,
+                    "archive_size": size,
+                    "archive_etag": etag,
+                    "last_modified": modified_utc,
+                }
+            )
+    except ValidationFailure:
+        raise
+    except Exception as exc:
+        _raise_validation_storage_failure(exc, "snapshot-list")
+    snapshots.sort(
+        key=lambda snapshot: _snapshot_sort_key(snapshot["snapshot_name"]),
+        reverse=True,
+    )
+    return {
+        "schema_version": 1,
+        "operation": "validation-list",
+        "success": True,
+        "snapshots": snapshots,
+    }
+
+
+def validation_select(
+    snapshot_name: str | None = None, *, container: _ReadContainer | None = None
+) -> dict:
+    """Select and bind the marker-owned published recovery set using only SAS reads."""
+    _validation_blob_prefix()
+    read_container = container if container is not None else _read_blob_container_client()
+    marker_payload = _validation_download(
+        read_container, _last_success_marker_blob_name(), "marker", 1024 * 1024
+    )
+    marker = _validation_json(marker_payload, "marker")
+    selected = marker.get("snapshot_name")
+    if not isinstance(selected, str) or not re.fullmatch(
+        r"hriv-backup-\d{8}-\d{6}(?:-[0-9a-f]{8})?", selected
+    ):
+        raise ValidationFailure("MARKER_INVALID", "marker")
+    if snapshot_name is not None and snapshot_name != selected:
+        raise ValidationFailure("SNAPSHOT_MISMATCH", "selection")
+
+    state = _validation_json(
+        _validation_download(
+            read_container, _backup_state_blob_name(), "state", 4 * 1024 * 1024
+        ),
+        "state",
+    )
+    marker_keys = {
+        "snapshot_name",
+        "created_at",
+        "completed_at",
+        "archive_size",
+        "backup_mode",
+        "tiles_excluded",
+        "run_id",
+        "types",
+    }
+    state_core_keys = {
+        "schema_version",
+        "run_id",
+        "snapshot_name",
+        "backup_mode",
+        "tiles_excluded",
+        "storage_prefix",
+        "database",
+        "filesystem",
+    }
+    state_optional_keys = {"updated_at", "attempts", "failure_reason"}
+    state_section_keys = {
+        "run_id",
+        "started_at",
+        "completed_at",
+        "success",
+        "duration_seconds",
+        "size_bytes",
+        "archive_key",
+        "last_success_started_at",
+        "last_success_completed_at",
+        "last_success_duration_seconds",
+        "last_success_size_bytes",
+        "last_success_archive_key",
+    }
+    marker_section_keys = {
+        "run_id",
+        "snapshot_name",
+        "created_at",
+        "completed_at",
+        "size_bytes",
+        "archive_key",
+    }
+    state_keys = set(state)
+    attempts = state.get("attempts")
+    failure_reason = state.get("failure_reason")
+    if (
+        set(marker) != marker_keys
+        or not state_core_keys.issubset(state_keys)
+        or not state_keys.issubset(state_core_keys | state_optional_keys)
+        or (
+            "attempts" in state
+            and (
+                not isinstance(attempts, list)
+                or len(attempts) > 10
+                or any(not isinstance(attempt, dict) for attempt in attempts)
+            )
+        )
+        or (
+            "failure_reason" in state
+            and (
+                failure_reason is not None
+                and (
+                    not isinstance(failure_reason, str)
+                    or len(failure_reason.encode("utf-8")) > 1024
+                )
+            )
+        )
+        or not isinstance(marker.get("types"), dict)
+        or set(marker["types"]) != {"database", "filesystem"}
+        or any(
+            not isinstance(state.get(component), dict)
+            or set(state[component]) != state_section_keys
+            or not isinstance(marker["types"].get(component), dict)
+            or set(marker["types"][component]) != marker_section_keys
+            for component in ("database", "filesystem")
+        )
+    ):
+        raise ValidationFailure("STATE_DOCUMENT_INVALID", "coherence")
+    archive_name = f"{selected}.tar.gz"
+    archive_blob = _archive_blob_name(archive_name)
+    sidecar_blob = _manifest_sidecar_blob_name(selected)
+    expected_prefix = f"{AZURE_BLOB_PREFIX}/" if AZURE_BLOB_PREFIX else ""
+    if not archive_blob.startswith(expected_prefix) or archive_blob != f"{expected_prefix}{archive_name}":
+        raise ValidationFailure("ARCHIVE_PREFIX_INVALID", "selection")
+
+    try:
+        read_container.get_blob_client(_publication_journal_blob_name(selected)).get_blob_properties()
+    except ResourceNotFoundError:
+        pass
+    except Exception as exc:
+        _raise_validation_storage_failure(exc, "journal")
+    else:
+        raise ValidationFailure("PUBLICATION_INCOMPLETE", "journal")
+
+    archive_properties = _validation_blob_properties(
+        read_container, archive_blob, "archive"
+    )
+    try:
+        metadata = archive_properties.metadata
+        archive_size = archive_properties.size
+        archive_etag = archive_properties.etag
+    except AttributeError:
+        raise ValidationFailure("ARCHIVE_PROPERTIES_INVALID", "archive") from None
+    if not isinstance(metadata, dict) or metadata.get("hriv_publication_state") != "published":
+        raise ValidationFailure("ARCHIVE_NOT_PUBLISHED", "archive")
+    if (
+        not isinstance(archive_size, int)
+        or isinstance(archive_size, bool)
+        or archive_size <= 0
+        or not isinstance(archive_etag, str)
+        or _SAFE_ETAG_RE.fullmatch(archive_etag) is None
+    ):
+        raise ValidationFailure("ARCHIVE_PROPERTIES_INVALID", "archive")
+    sidecar_properties = _validation_blob_properties(
+        read_container, sidecar_blob, "sidecar"
+    )
+    try:
+        sidecar_size = sidecar_properties.size
+        sidecar_etag = sidecar_properties.etag
+    except AttributeError:
+        raise ValidationFailure("SIDECAR_INVALID", "sidecar") from None
+    if (
+        not isinstance(sidecar_size, int)
+        or isinstance(sidecar_size, bool)
+        or sidecar_size < 1
+        or not isinstance(sidecar_etag, str)
+        or _SAFE_ETAG_RE.fullmatch(sidecar_etag) is None
+    ):
+        raise ValidationFailure("SIDECAR_INVALID", "sidecar")
+    if sidecar_size > _MAX_MANIFEST_BYTES:
+        raise ValidationFailure("SIDECAR_TOO_LARGE", "sidecar")
+    sidecar_payload = _validation_download(
+        read_container,
+        sidecar_blob,
+        "sidecar",
+        _MAX_MANIFEST_BYTES,
+        etag=sidecar_etag,
+    )
+    if len(sidecar_payload) != sidecar_size:
+        raise ValidationFailure("SIDECAR_SIZE_MISMATCH", "sidecar")
+    manifest = _validation_json(sidecar_payload, "sidecar")
+    summary = _validation_manifest_summary(manifest)
+
+    run_id = manifest.get("run_id")
+    recovery_set_id = manifest.get("recovery_set_id")
+    if (
+        manifest.get("snapshot_name") != selected
+        or recovery_set_id != selected
+        or not isinstance(run_id, str)
+        or not run_id
+        or marker.get("snapshot_name") != selected
+        or marker.get("run_id") != run_id
+        or marker.get("backup_mode") != "production"
+        or marker.get("tiles_excluded") is not True
+        or marker.get("archive_size") != archive_size
+        or marker.get("created_at") != summary["capture_started_at"]
+        or state.get("schema_version") != BACKUP_STATE_SCHEMA_VERSION
+        or state.get("backup_mode") != "production"
+        or state.get("tiles_excluded") is not True
+        or state.get("storage_prefix") != AZURE_BLOB_PREFIX
+    ):
+        raise ValidationFailure("RECOVERY_SET_INCOHERENT", "coherence")
+    marker_created = _parse_strict_utc(marker.get("created_at"))
+    marker_completed = _parse_strict_utc(marker.get("completed_at"))
+    manifest_completed = _parse_strict_utc(summary["completed_at"])
+    if (
+        marker_created is None
+        or marker_completed is None
+        or manifest_completed is None
+        or marker_created > marker_completed
+        or marker_completed < manifest_completed
+    ):
+        raise ValidationFailure("RECOVERY_SET_INCOHERENT", "coherence")
+    types = marker["types"]
+    for component in ("database", "filesystem"):
+        section = state[component]
+        marker_section = types[component]
+        duration = section.get("last_success_duration_seconds")
+        started = _parse_strict_utc(section.get("last_success_started_at"))
+        completed = _parse_strict_utc(section.get("last_success_completed_at"))
+        expected_duration = (
+            max((completed - started).total_seconds(), 0.0)
+            if started is not None and completed is not None
+            else None
+        )
+        if (
+            marker_section.get("run_id") != run_id
+            or marker_section.get("snapshot_name") != selected
+            or marker_section.get("created_at") != section.get("last_success_started_at")
+            or marker_section.get("completed_at") != section.get("last_success_completed_at")
+            or marker_section.get("completed_at") != marker.get("completed_at")
+            or marker_section.get("size_bytes") != section.get("last_success_size_bytes")
+            or marker_section.get("archive_key") != section.get("last_success_archive_key")
+            or started is None
+            or completed is None
+            or completed < started
+            or not isinstance(duration, (int, float))
+            or isinstance(duration, bool)
+            or not math.isfinite(duration)
+            or duration < 0
+            or expected_duration is None
+            or not math.isclose(
+                duration, expected_duration, rel_tol=0.0, abs_tol=1e-6
+            )
+        ):
+            raise ValidationFailure("COMPONENT_INCOHERENT", "coherence")
+    filesystem = state["filesystem"]
+    database = state["database"]
+    if (
+        filesystem.get("last_success_archive_key") != archive_blob
+        or filesystem.get("last_success_size_bytes") != summary["total_bytes"]
+        or marker["types"]["filesystem"].get("size_bytes") != summary["total_bytes"]
+        or database.get("last_success_size_bytes") is not None
+        or marker["types"]["database"].get("size_bytes") is not None
+        or database.get("last_success_archive_key") != (
+            f"cnpg://{manifest['database_recovery']['cluster']}?target_time="
+            f"{manifest['database_recovery'].get('target_time')}"
+            f"&target_lsn={summary['target_lsn']}"
+        )
+    ):
+        raise ValidationFailure("COMPONENT_INCOHERENT", "coherence")
+
+    digest = hashlib.sha256(sidecar_payload).hexdigest()
+    result = {
+        "schema_version": 1,
+        "operation": "validation-select",
+        "success": True,
+        "snapshot_name": selected,
+        "recovery_set_id": recovery_set_id,
+        "run_id": run_id,
+        "manifest_sha256": digest,
+        "archive_blob": archive_blob,
+        "archive_size": archive_size,
+        "archive_etag": archive_etag,
+        "target_lsn": summary["target_lsn"],
+        "target_timeline": summary["target_timeline"],
+        "source_file_count": summary["file_count"],
+        "source_total_bytes": summary["total_bytes"],
+        "database_row_count": summary["database_row_count"],
+        "missing_count": summary["missing_count"],
+        "orphan_count": summary["orphan_count"],
+        "exclusion_count": summary["exclusion_count"],
+        "source_state": summary["source_state"],
+        "source_state_sha256": summary["source_state_sha256"],
+        "excluded_artifacts": summary["excluded_artifacts"],
+        "completed_at": summary["completed_at"],
+        "_manifest": manifest,
+        "_manifest_bytes": sidecar_payload,
+        "_container": read_container,
+    }
+    return result
+
+
+def _public_validation_result(result: dict) -> dict:
+    return {key: value for key, value in result.items() if not key.startswith("_")}
+
+
+def _validation_failure_result(operation: str, failure: ValidationFailure) -> dict:
+    return {
+        "schema_version": 1,
+        "operation": operation,
+        "success": False,
+        "failure_code": failure.code,
+        "failure_stage": failure.stage,
+    }
+
+
+def _stateless_target_preflight(data_dir: str) -> Path:
+    if (
+        not isinstance(data_dir, str)
+        or not data_dir
+        or data_dir != data_dir.strip()
+        or not Path(data_dir).is_absolute()
+        or os.path.normpath(data_dir) != data_dir
+    ):
+        raise ValidationFailure("TARGET_UNSAFE", "target-preflight")
+    requested = Path(data_dir)
+    for path in (requested, *requested.parents):
+        try:
+            if path.is_symlink():
+                raise ValidationFailure("TARGET_UNSAFE", "target-preflight")
+        except OSError:
+            raise ValidationFailure("TARGET_UNSAFE", "target-preflight") from None
+    protected = {
+        Path("/data").resolve(strict=False),
+        Path("/backups").resolve(strict=False),
+        Path(DATA_DIR).resolve(strict=False),
+    }
+    unresolved_target = requested.resolve(strict=False)
+    if unresolved_target == Path("/") or any(
+        unresolved_target == root
+        or unresolved_target.is_relative_to(root)
+        or root.is_relative_to(unresolved_target)
+        for root in protected
+    ):
+        raise ValidationFailure("TARGET_UNSAFE", "target-preflight")
+    parent = requested.parent
+    if not parent.exists() or not parent.is_dir():
+        raise ValidationFailure("TARGET_PARENT_INVALID", "target-preflight")
+    try:
+        real_parent = parent.resolve(strict=True)
+        target = requested.resolve(strict=True) if requested.exists() else real_parent / requested.name
+    except OSError:
+        raise ValidationFailure("TARGET_PARENT_INVALID", "target-preflight") from None
+    if target.exists() and (not target.is_dir() or any(target.iterdir())):
+        raise ValidationFailure("TARGET_NOT_EMPTY", "target-preflight")
+    return requested
+
+
+def _stateless_directory_entries(directory: int | Path) -> set[str]:
+    try:
+        return set(os.listdir(directory))
+    except OSError:
+        raise ValidationFailure("TARGET_CHANGED", "target-verification") from None
+
+
+@contextlib.contextmanager
+def _pinned_stateless_target(data_dir: str) -> Iterator[Path]:
+    target = _stateless_target_preflight(data_dir)
+    open_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    parent_fd = target_fd = cwd_fd = -1
+    body_completed = False
+    verification_failure: ValidationFailure | None = None
+    try:
+        parent_stat = target.parent.stat(follow_symlinks=False)
+        target_existed = target.exists()
+        target_stat = target.stat(follow_symlinks=False) if target_existed else None
+        parent_fd = os.open(target.parent, open_flags)
+        opened_parent_stat = os.fstat(parent_fd)
+        if (opened_parent_stat.st_dev, opened_parent_stat.st_ino) != (
+            parent_stat.st_dev,
+            parent_stat.st_ino,
+        ):
+            raise ValidationFailure("TARGET_CHANGED", "target-preflight")
+        if target_existed:
+            relative_target_stat = os.stat(
+                target.name, dir_fd=parent_fd, follow_symlinks=False
+            )
+            if (
+                relative_target_stat.st_dev,
+                relative_target_stat.st_ino,
+            ) != (target_stat.st_dev, target_stat.st_ino):
+                raise ValidationFailure("TARGET_CHANGED", "target-preflight")
+        else:
+            os.mkdir(target.name, mode=0o700, dir_fd=parent_fd)
+            target_stat = os.stat(
+                target.name, dir_fd=parent_fd, follow_symlinks=False
+            )
+        target_fd = os.open(target.name, open_flags, dir_fd=parent_fd)
+        opened_target_stat = os.fstat(target_fd)
+        if not stat.S_ISDIR(opened_target_stat.st_mode) or (
+            opened_target_stat.st_dev,
+            opened_target_stat.st_ino,
+        ) != (target_stat.st_dev, target_stat.st_ino):
+            raise ValidationFailure("TARGET_CHANGED", "target-preflight")
+        cwd_fd = os.open(".", os.O_RDONLY | os.O_DIRECTORY)
+        os.fchdir(target_fd)
+        if _stateless_directory_entries(target_fd):
+            raise ValidationFailure("TARGET_NOT_EMPTY", "target-preflight")
+        yield target
+        body_completed = True
+    except ValidationFailure:
+        raise
+    except OSError:
+        raise ValidationFailure("TARGET_CHANGED", "target-preflight") from None
+    finally:
+        if body_completed and target_fd >= 0:
+            try:
+                if _stateless_directory_entries(target_fd) != {"source_images"}:
+                    verification_failure = ValidationFailure(
+                        "TARGET_CHANGED", "target-verification"
+                    )
+            except ValidationFailure as failure:
+                verification_failure = failure
+        if cwd_fd >= 0:
+            try:
+                os.fchdir(cwd_fd)
+            except OSError:
+                if body_completed and verification_failure is None:
+                    verification_failure = ValidationFailure(
+                        "TARGET_CHANGED", "target-verification"
+                    )
+            os.close(cwd_fd)
+        if target_fd >= 0:
+            os.close(target_fd)
+        if parent_fd >= 0:
+            os.close(parent_fd)
+        if body_completed and verification_failure is None and target_fd >= 0:
+            try:
+                current = target.stat(follow_symlinks=False)
+            except OSError:
+                verification_failure = ValidationFailure(
+                    "TARGET_CHANGED", "target-verification"
+                )
+            else:
+                if not stat.S_ISDIR(current.st_mode) or (
+                    current.st_dev,
+                    current.st_ino,
+                ) != (target_stat.st_dev, target_stat.st_ino):
+                    verification_failure = ValidationFailure(
+                        "TARGET_CHANGED", "target-verification"
+                    )
+        if body_completed and verification_failure is not None:
+            raise verification_failure
+
+
+def _stateless_restore_stream(
+    stream: _StatelessArchiveStream,
+    selection: dict,
+    target: Path,
+    *,
+    validate_eof: bool = False,
+) -> tuple[int, int]:
+    manifest_bytes = selection["_manifest_bytes"]
+    expected_files = selection["_manifest"]["files"]
+    snapshot_name = selection["snapshot_name"]
+    allowed_directories = {
+        snapshot_name,
+        f"{snapshot_name}/data",
+        f"{snapshot_name}/data/source_images",
+    }
+    for rel in expected_files:
+        parent = Path(f"{snapshot_name}/{rel}").parent
+        while parent.as_posix() != snapshot_name:
+            allowed_directories.add(parent.as_posix())
+            parent = parent.parent
+    actual: dict[str, dict] = {}
+    embedded_manifest: bytes | None = None
+    seen_members: set[str] = set()
+    with tempfile.TemporaryDirectory(prefix=_RESTORE_PREFIX, dir=str(target)) as tmpdir:
+        workspace = Path(tmpdir)
+        staged_source = workspace / "source_images"
+        try:
+            with tarfile.open(fileobj=stream, mode="r|gz") as tar:
+                for member in tar:
+                    raw_name = member.name[:-1] if member.isdir() and member.name.endswith("/") else member.name
+                    raw_parts = raw_name.split("/")
+                    if (
+                        not raw_name
+                        or raw_name.startswith("/")
+                        or "\\" in raw_name
+                        or any(part in ("", ".", "..") for part in raw_parts)
+                        or member.issym()
+                        or member.islnk()
+                        or not (member.isfile() or member.isdir())
+                    ):
+                        raise ValidationFailure("ARCHIVE_MEMBER_UNSAFE", "archive-stream")
+                    if raw_name in seen_members:
+                        raise ValidationFailure("ARCHIVE_MEMBER_DUPLICATE", "archive-stream")
+                    seen_members.add(raw_name)
+                    if raw_parts[0] != snapshot_name:
+                        raise ValidationFailure("ARCHIVE_ROOT_MISMATCH", "archive-stream")
+                    rel = "/".join(raw_parts[1:])
+                    if member.isdir():
+                        if raw_name not in allowed_directories:
+                            raise ValidationFailure("ARCHIVE_COMPONENT_INVALID", "archive-stream")
+                        continue
+                    fileobj = tar.extractfile(member)
+                    if fileobj is None:
+                        raise ValidationFailure("ARCHIVE_MEMBER_INVALID", "archive-stream")
+                    if rel == "manifest.json":
+                        if embedded_manifest is not None:
+                            raise ValidationFailure("ARCHIVE_MEMBER_DUPLICATE", "archive-stream")
+                        if member.size != len(manifest_bytes) or member.size > _MAX_MANIFEST_BYTES:
+                            raise ValidationFailure("EMBEDDED_MANIFEST_MISMATCH", "archive-validation")
+                        embedded_manifest = fileobj.read(len(manifest_bytes) + 1)
+                        continue
+                    if not rel.startswith("data/source_images/"):
+                        raise ValidationFailure("ARCHIVE_COMPONENT_INVALID", "archive-stream")
+                    expected = expected_files.get(rel)
+                    if expected is None or member.size != expected["size"] or rel in actual:
+                        raise ValidationFailure("ARCHIVE_FILE_MISMATCH", "archive-stream")
+                    relative = Path(rel).relative_to("data/source_images")
+                    destination = staged_source / relative
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    digest = hashlib.sha256()
+                    size = 0
+                    try:
+                        with open(destination, "xb") as output:
+                            for chunk in iter(lambda: fileobj.read(1 << 20), b""):
+                                size += len(chunk)
+                                if size > expected["size"]:
+                                    raise ValidationFailure(
+                                        "ARCHIVE_FILE_MISMATCH", "archive-stream"
+                                    )
+                                output.write(chunk)
+                                digest.update(chunk)
+                    except ValidationFailure:
+                        raise
+                    except OSError:
+                        raise ValidationFailure("ARCHIVE_FILE_MISMATCH", "archive-stream") from None
+                    actual[rel] = {"size": size, "sha256": digest.hexdigest()}
+            if validate_eof:
+                try:
+                    stream.validate_eof()
+                except AttributeError:
+                    raise ValidationFailure(
+                        "ARCHIVE_STREAM_INVALID", "archive-stream"
+                    ) from None
+        except ValidationFailure:
+            raise
+        except (tarfile.TarError, EOFError, OSError):
+            raise ValidationFailure("ARCHIVE_STREAM_INVALID", "archive-stream") from None
+        except Exception:
+            raise ValidationFailure("ARCHIVE_STREAM_INVALID", "archive-stream") from None
+
+        if embedded_manifest is None or not hmac.compare_digest(
+            embedded_manifest, manifest_bytes
+        ):
+            raise ValidationFailure("EMBEDDED_MANIFEST_MISMATCH", "archive-validation")
+        if actual != expected_files:
+            raise ValidationFailure("ARCHIVE_FILE_MISMATCH", "archive-validation")
+        staged_source.mkdir(parents=True, exist_ok=True)
+        if _stateless_directory_entries(target) != {workspace.name}:
+            raise ValidationFailure("TARGET_CHANGED", "target-verification")
+        os.replace(str(staged_source), str(target / "source_images"))
+        if _stateless_directory_entries(target) != {workspace.name, "source_images"}:
+            raise ValidationFailure("TARGET_CHANGED", "target-verification")
+    return len(actual), sum(item["size"] for item in actual.values())
+
+
+def restore_filesystem_stateless(
+    snapshot_name: str,
+    *,
+    data_dir: str,
+    expected_recovery_set_id: str,
+    expected_manifest_sha256: str,
+    container: _ReadContainer | None = None,
+) -> dict:
+    """Restore a strictly selected source tree without shared or persistent state."""
+    total_started = time.monotonic()
+    with _pinned_stateless_target(data_dir) as target:
+        select_started = time.monotonic()
+        selection = validation_select(snapshot_name, container=container)
+        select_duration = time.monotonic() - select_started
+        if expected_recovery_set_id != selection["recovery_set_id"]:
+            raise ValidationFailure("RECOVERY_SET_ID_MISMATCH", "identity")
+        if re.fullmatch(r"[0-9a-f]{64}", expected_manifest_sha256 or "") is None or not hmac.compare_digest(
+            expected_manifest_sha256, selection["manifest_sha256"]
+        ):
+            raise ValidationFailure("MANIFEST_DIGEST_MISMATCH", "identity")
+        restore_started = time.monotonic()
+        try:
+            downloader = selection["_container"].download_blob(
+                selection["archive_blob"],
+                etag=selection["archive_etag"],
+                match_condition=MatchConditions.IfNotModified,
+                length=selection["archive_size"] + 1,
+            )
+        except ResourceNotFoundError:
+            raise ValidationFailure("ARCHIVE_MISSING", "archive-download") from None
+        except ResourceModifiedError:
+            raise ValidationFailure("SOURCE_CHANGED", "archive-download") from None
+        except AttributeError:
+            raise ValidationFailure("ARCHIVE_STREAM_INVALID", "archive-download") from None
+        except Exception as exc:
+            _raise_validation_storage_failure(exc, "archive-download")
+        restored_files, restored_bytes = _stateless_restore_stream(
+            _AzureChunkReader(downloader, expected_size=selection["archive_size"]),
+            selection,
+            Path("."),
+            validate_eof=True,
+        )
+    result = _public_validation_result(selection)
+    result.update(
+        {
+            "operation": "restore-filesystem-stateless",
+            "target_data_dir": str(target),
+            "restored_file_count": restored_files,
+            "restored_total_bytes": restored_bytes,
+            "selection_duration_seconds": round(select_duration, 6),
+            "restore_duration_seconds": round(time.monotonic() - restore_started, 6),
+            "duration_seconds": round(time.monotonic() - total_started, 6),
+            "outcome": "restored",
+        }
+    )
+    return result
+
+
+def _machine_json(document: dict) -> None:
+    print(json.dumps(document, sort_keys=True, separators=(",", ":")))
+
+
+def _configure_machine_logging() -> None:
+    """Reserve stdout for the single machine result document."""
+    for handler in logging.getLogger().handlers:
+        if isinstance(handler, logging.StreamHandler) and not type(
+            handler
+        ).__module__.startswith("opentelemetry"):
+            handler.setStream(sys.stderr)
+
+
+# ---------------------------------------------------------------------------
 # Maintenance flag
 # ---------------------------------------------------------------------------
 
@@ -3143,30 +4465,52 @@ def _resolve_snapshot_name(requested: str, available: list[str]) -> str | None:
 class _AzureChunkReader:
     """Minimal sequential reader over StorageStreamDownloader chunks."""
 
-    def __init__(self, downloader):
+    def __init__(
+        self, downloader: _ReadDownloader, expected_size: int | None = None
+    ):
         self.chunks = iter(downloader.chunks())
         self.buffer = bytearray()
         self.eof = False
+        self.expected_size = expected_size
+        self.fetched = 0
+        self.consumed = 0
+
+    def _fetch(self) -> None:
+        try:
+            chunk = next(self.chunks)
+        except StopIteration:
+            self.eof = True
+            return
+        if not isinstance(chunk, bytes) or not chunk:
+            self.eof = True
+            return
+        self.fetched += len(chunk)
+        if self.expected_size is not None and self.fetched > self.expected_size:
+            raise ValidationFailure("ARCHIVE_SIZE_MISMATCH", "archive-stream")
+        self.buffer.extend(chunk)
 
     def read(self, size: int = -1) -> bytes:
         if size < 0:
-            payload = bytes(self.buffer) + b"".join(self.chunks)
+            while not self.eof:
+                self._fetch()
+            payload = bytes(self.buffer)
             self.buffer.clear()
-            self.eof = True
-            return payload
-        while len(self.buffer) < size and not self.eof:
-            try:
-                chunk = next(self.chunks)
-            except StopIteration:
-                self.eof = True
-                continue
-            if not chunk:
-                self.eof = True
-                continue
-            self.buffer.extend(chunk)
-        payload = bytes(self.buffer[:size])
-        del self.buffer[:size]
+        else:
+            while len(self.buffer) < size and not self.eof:
+                self._fetch()
+            payload = bytes(self.buffer[:size])
+            del self.buffer[:size]
+        self.consumed += len(payload)
+        if self.expected_size is not None and self.consumed > self.expected_size:
+            raise ValidationFailure("ARCHIVE_SIZE_MISMATCH", "archive-stream")
         return payload
+
+    def validate_eof(self) -> None:
+        """Drain the bounded response and verify its immutable selected size."""
+        while not self.eof:
+            self._fetch()
+        if self.expected_size is not None and self.fetched != self.expected_size:
+            raise ValidationFailure("ARCHIVE_SIZE_MISMATCH", "archive-stream")
 
 
 def _restore_database_dump(dump_path: Path, database_url: str) -> bool:
@@ -3927,10 +5271,128 @@ def run_cron() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _machine_options(args: list[str], required: tuple[str, ...]) -> tuple[list[str], dict[str, str]]:
+    positional: list[str] = []
+    options: dict[str, str] = {}
+    index = 0
+    while index < len(args):
+        value = args[index]
+        if not value or value != value.strip():
+            raise ValidationFailure("ARGUMENTS_INVALID", "arguments")
+        if value.startswith("--"):
+            if "=" in value:
+                key, option_value = value.split("=", 1)
+            else:
+                key = value
+                index += 1
+                if index >= len(args):
+                    raise ValidationFailure("ARGUMENTS_INVALID", "arguments")
+                option_value = args[index]
+            if (
+                key not in required
+                or key in options
+                or not option_value
+                or option_value != option_value.strip()
+                or option_value.startswith("--")
+            ):
+                raise ValidationFailure("ARGUMENTS_INVALID", "arguments")
+            options[key] = option_value
+        else:
+            if value.startswith("-"):
+                raise ValidationFailure("ARGUMENTS_INVALID", "arguments")
+            positional.append(value)
+        index += 1
+    if set(options) != set(required):
+        raise ValidationFailure("ARGUMENTS_INVALID", "arguments")
+    return positional, options
+
+
+def _exact_validation_snapshot(value: str) -> str:
+    if re.fullmatch(r"hriv-backup-\d{8}-\d{6}(?:-[0-9a-f]{8})?", value) is None:
+        raise ValidationFailure("ARGUMENTS_INVALID", "arguments")
+    return value
+
+
 def main() -> None:
     command = sys.argv[1] if len(sys.argv) > 1 else "cron"
 
-    if command == "backup":
+    if command == "validation-list":
+        _configure_machine_logging()
+        try:
+            _validation_min_sas_validity_seconds()
+            positional, _options = _machine_options(sys.argv[2:], ())
+            if positional:
+                raise ValidationFailure("ARGUMENTS_INVALID", "arguments")
+            _machine_json(validation_list())
+            sys.exit(0)
+        except ValidationFailure as failure:
+            _machine_json(_validation_failure_result(command, failure))
+            sys.exit(1)
+        except Exception:
+            _machine_json(
+                _validation_failure_result(
+                    command, ValidationFailure("INTERNAL_FAILURE", "internal")
+                )
+            )
+            sys.exit(1)
+
+    elif command == "validation-select":
+        _configure_machine_logging()
+        try:
+            _validation_min_sas_validity_seconds()
+            positional, _options = _machine_options(sys.argv[2:], ())
+            if len(positional) > 1:
+                raise ValidationFailure("ARGUMENTS_INVALID", "arguments")
+            result = validation_select(
+                _exact_validation_snapshot(positional[0]) if positional else None
+            )
+            _machine_json(_public_validation_result(result))
+            sys.exit(0)
+        except ValidationFailure as failure:
+            _machine_json(_validation_failure_result(command, failure))
+            sys.exit(1)
+        except Exception:
+            _machine_json(
+                _validation_failure_result(
+                    command, ValidationFailure("INTERNAL_FAILURE", "internal")
+                )
+            )
+            sys.exit(1)
+
+    elif command == "restore-filesystem-stateless":
+        _configure_machine_logging()
+        try:
+            _validation_min_sas_validity_seconds()
+            positional, options = _machine_options(
+                sys.argv[2:],
+                (
+                    "--data-dir",
+                    "--expected-recovery-set-id",
+                    "--expected-manifest-sha256",
+                ),
+            )
+            if len(positional) != 1:
+                raise ValidationFailure("ARGUMENTS_INVALID", "arguments")
+            result = restore_filesystem_stateless(
+                _exact_validation_snapshot(positional[0]),
+                data_dir=options["--data-dir"],
+                expected_recovery_set_id=options["--expected-recovery-set-id"],
+                expected_manifest_sha256=options["--expected-manifest-sha256"],
+            )
+            _machine_json(result)
+            sys.exit(0)
+        except ValidationFailure as failure:
+            _machine_json(_validation_failure_result(command, failure))
+            sys.exit(1)
+        except Exception:
+            _machine_json(
+                _validation_failure_result(
+                    command, ValidationFailure("INTERNAL_FAILURE", "internal")
+                )
+            )
+            sys.exit(1)
+
+    elif command == "backup":
         result = run_backup()
         sys.exit(0 if result else 1)
 

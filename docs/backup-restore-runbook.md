@@ -112,6 +112,14 @@ the Deployment pod and candidate node before changing scheduling policy.
    newer CNPG recovery because it also attempts `db.sql`. Current production
    archives reject that combined path before invoking `psql`.
 
+   The isolated validation workflow does not use this operator command. Its #1250 child first runs
+   `validation-select`, then runs `restore-filesystem-stateless` with the exact selected snapshot,
+   recovery-set ID, manifest SHA-256, and a dedicated absent/empty subdirectory on a validation
+   PVC. Those commands require only `AZURE_READ_SAS_URL`, emit one bounded JSON document, and cannot
+   update backup/restore state or maintenance. The normal backup Deployment is deliberately not
+   given that SAS; #1251's fixed child template owns credential mounting. This primitive does not
+   provision the child or claim that #1229 is deployed.
+
    `<SNAPSHOT_NAME>` may be the full archive name
    (`hriv-backup-20260101-020000-9f3c1ab2.tar.gz`), the name without the
    `.tar.gz` suffix, or an unambiguous prefix such as the bare timestamp
