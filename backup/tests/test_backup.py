@@ -4936,6 +4936,7 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
             all(operation in {"get", "head", "download"} for operation, _ in calls)
         )
         kwargs = dict(container.download_kwargs)
+        self.assertTrue(all(options["offset"] == 0 for options in kwargs.values()))
         self.assertEqual(
             kwargs["hriv-backups/LAST_SUCCESS.json"]["length"], 1024 * 1024 + 1
         )
@@ -5006,12 +5007,15 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
         with self.assertRaises(RequestCaptured):
             client.download_blob(
                 "archive.tar.gz",
+                offset=0,
+                length=2,
                 etag=canonical,
                 match_condition=backup.MatchConditions.IfNotModified,
             )
 
         self.assertIsNotNone(transport.request)
         self.assertEqual(transport.request.headers.get("If-Match"), canonical)
+        self.assertEqual(transport.request.headers.get("x-ms-range"), "bytes=0-1")
 
     def test_strict_select_accepts_independent_component_starts_and_binds_each_one(
         self,
@@ -5553,6 +5557,7 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
             self.assertFalse((target / "db.sql").exists())
             self.assertFalse((target / "tiles").exists())
             archive_kwargs = container.download_kwargs[-1][1]
+            self.assertEqual(archive_kwargs["offset"], 0)
             self.assertEqual(archive_kwargs["length"], result["archive_size"] + 1)
             self.assertEqual(archive_kwargs["etag"], '"0x8DF0E2716DD645B"')
             self.assertEqual(

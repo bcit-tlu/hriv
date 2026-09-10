@@ -3103,7 +3103,7 @@ def _validation_download(
     *,
     etag: str | None = None,
 ) -> bytes:
-    kwargs: dict[str, object] = {"length": limit + 1}
+    kwargs: dict[str, object] = {"offset": 0, "length": limit + 1}
     if etag is not None:
         kwargs.update(etag=etag, match_condition=MatchConditions.IfNotModified)
     try:
@@ -4156,6 +4156,7 @@ def restore_filesystem_stateless(
                 selection["archive_blob"],
                 etag=selection["archive_etag"],
                 match_condition=MatchConditions.IfNotModified,
+                offset=0,
                 length=selection["archive_size"] + 1,
             )
         except ResourceNotFoundError:
