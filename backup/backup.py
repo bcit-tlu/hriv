@@ -36,6 +36,7 @@ import os
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tarfile
@@ -43,10 +44,10 @@ import tempfile
 import time
 import unicodedata
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import NoReturn
+from typing import NoReturn, Protocol
 from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -120,7 +121,7 @@ AZURE_STORAGE_CONNECTION_STRING: str = _env("AZURE_STORAGE_CONNECTION_STRING", "
 AZURE_STORAGE_CONTAINER: str = _env("AZURE_STORAGE_CONTAINER", "")
 AZURE_READ_SAS_URL: str = _env("AZURE_READ_SAS_URL", "")
 AZURE_BLOB_PREFIX: str = _env("AZURE_BLOB_PREFIX", "hriv-backups")
-VALIDATION_MIN_SAS_VALIDITY_SECONDS: float = _float_env(
+VALIDATION_MIN_SAS_VALIDITY_SECONDS: str = _env(
     "VALIDATION_MIN_SAS_VALIDITY_SECONDS", "21600"
 )
 
@@ -153,15 +154,6 @@ if BACKUP_MODE not in ("development", "production"):
     sys.exit(1)
 if BACKUP_MUTATION_DRAIN_SECONDS < 0:
     log.error("BACKUP_MUTATION_DRAIN_SECONDS must not be negative")
-    sys.exit(1)
-if (
-    not math.isfinite(VALIDATION_MIN_SAS_VALIDITY_SECONDS)
-    or VALIDATION_MIN_SAS_VALIDITY_SECONDS <= 0
-    or VALIDATION_MIN_SAS_VALIDITY_SECONDS > 86400
-):
-    log.error(
-        "VALIDATION_MIN_SAS_VALIDITY_SECONDS must be finite, positive, and at most 86400"
-    )
     sys.exit(1)
 if not math.isfinite(BACKUP_INVENTORY_TIMEOUT_SECONDS) or (
     BACKUP_INVENTORY_TIMEOUT_SECONDS <= 0
@@ -1439,6 +1431,68 @@ _AZURE_CONTAINER_RE = re.compile(r"^[a-z0-9](?:[a-z0-9]|-(?!-)){1,61}[a-z0-9]$")
 _STRICT_UTC_RE = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|\+00:00)$"
 )
+_READ_SAS_REQUIRED_FIELDS = {"sv", "se", "sr", "sp", "sig"}
+_READ_SAS_OPTIONAL_FIELDS = {
+    "st",
+    "spr",
+    "sip",
+    "skoid",
+    "sktid",
+    "skt",
+    "ske",
+    "sks",
+    "skv",
+    "saoid",
+    "suoid",
+    "scid",
+    "ses",
+}
+_MAX_READ_SAS_FIELD_BYTES = 1024
+
+
+class _ReadBlobProperties(Protocol):
+    size: int
+    etag: str
+    metadata: dict[str, str]
+
+
+class _ReadBlobItem(_ReadBlobProperties, Protocol):
+    name: str
+    last_modified: datetime
+
+
+class _ReadDownloader(Protocol):
+    def readall(self) -> bytes: ...
+
+    def chunks(self) -> Iterator[bytes]: ...
+
+
+class _ReadBlobClient(Protocol):
+    def get_blob_properties(self) -> _ReadBlobProperties: ...
+
+
+class _ReadContainer(Protocol):
+    def list_blobs(self, *, name_starts_with: str, include: list[str]) -> Iterable[_ReadBlobItem]: ...
+
+    def get_blob_client(self, blob_name: str) -> _ReadBlobClient: ...
+
+    def download_blob(self, blob_name: str, **kwargs: object) -> _ReadDownloader: ...
+
+
+class _StatelessArchiveStream(Protocol):
+    def read(self, size: int = -1) -> bytes: ...
+
+    def validate_eof(self) -> None: ...
+
+
+def _validation_min_sas_validity_seconds() -> float:
+    try:
+        value = float(VALIDATION_MIN_SAS_VALIDITY_SECONDS)
+    except (TypeError, ValueError):
+        raise ValidationFailure("VALIDATION_CONFIG_INVALID", "configuration") from None
+    if not math.isfinite(value) or value <= 0 or value > 86400:
+        raise ValidationFailure("VALIDATION_CONFIG_INVALID", "configuration")
+    return value
 
 
 def _parse_strict_utc(value: object) -> datetime | None:
@@ -1480,9 +1534,21 @@ def _validate_read_sas_url(value: str | None = None) -> str:
         raise ValidationFailure("READ_SAS_SCOPE_INVALID", "configuration")
     if any(len(values) != 1 for values in query.values()):
         raise ValidationFailure("READ_SAS_MALFORMED", "configuration")
-    if query.get("sr") != ["c"] or not query.get("sig", [""])[0]:
+    if set(query) - (_READ_SAS_REQUIRED_FIELDS | _READ_SAS_OPTIONAL_FIELDS) or not (
+        _READ_SAS_REQUIRED_FIELDS <= set(query)
+    ):
+        raise ValidationFailure("READ_SAS_FIELDS_INVALID", "configuration")
+    if any(
+        not values[0]
+        or len(values[0].encode("utf-8")) > _MAX_READ_SAS_FIELD_BYTES
+        for values in query.values()
+    ):
+        raise ValidationFailure("READ_SAS_FIELDS_INVALID", "configuration")
+    if query["sr"] != ["c"]:
         raise ValidationFailure("READ_SAS_SCOPE_INVALID", "configuration")
-    permissions = query.get("sp", [""])[0]
+    if "spr" in query and query["spr"] != ["https"]:
+        raise ValidationFailure("READ_SAS_FIELDS_INVALID", "configuration")
+    permissions = query["sp"][0]
     if permissions not in ("rl", "lr"):
         raise ValidationFailure("READ_SAS_PERMISSIONS_INVALID", "configuration")
 
@@ -1501,12 +1567,12 @@ def _validate_read_sas_url(value: str | None = None) -> str:
         if parsed_start > now + _READ_SAS_CLOCK_SKEW:
             raise ValidationFailure("READ_SAS_NOT_YET_VALID", "configuration")
         start = max(now, parsed_start)
-    if expiry - start < timedelta(seconds=VALIDATION_MIN_SAS_VALIDITY_SECONDS):
+    if expiry - start < timedelta(seconds=_validation_min_sas_validity_seconds()):
         raise ValidationFailure("READ_SAS_EXPIRING", "configuration")
     return sas_url
 
 
-def _read_blob_container_client() -> ContainerClient:
+def _read_blob_container_client() -> _ReadContainer:
     """Create the validation-only client from the container SAS URL."""
     return ContainerClient.from_container_url(_validate_read_sas_url())
 
@@ -2983,7 +3049,9 @@ def run_status() -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _validation_blob_properties(container, blob_name: str, stage: str):
+def _validation_blob_properties(
+    container: _ReadContainer, blob_name: str, stage: str
+) -> _ReadBlobProperties:
     try:
         return container.get_blob_client(blob_name).get_blob_properties()
     except ResourceNotFoundError:
@@ -3004,7 +3072,7 @@ def _raise_validation_storage_failure(exc: Exception, stage: str) -> NoReturn:
 
 
 def _validation_download(
-    container,
+    container: _ReadContainer,
     blob_name: str,
     stage: str,
     limit: int,
@@ -3168,14 +3236,14 @@ def _validate_excluded_artifacts(excluded: list) -> list[dict]:
             parts = Path(path).parts
             accepted = len(parts) == 2 and parts[0] == "data" and parts[1] != "source_images"
         elif reason == "incomplete_or_non_authoritative":
+            parts = Path(path).parts
+            source_parts = parts[2:]
             accepted = path.startswith("data/source_images/") and (
-                Path(path).name == _MAINTENANCE_FILENAME
-                or any(
-                    segment.lstrip(".")
-                    in {"admin", "scratch", "maintenance", "staging", "incomplete"}
-                    for segment in Path(path).parts[2:]
+                any(
+                    segment.lower().lstrip(".") in _INCOMPLETE_NAMES
+                    for segment in source_parts
                 )
-                or Path(path).name.endswith((".part", ".partial", ".tmp", ".uploading"))
+                or Path(path).name.lower().endswith(_INCOMPLETE_SUFFIXES)
             )
         else:
             accepted = False
@@ -3348,6 +3416,7 @@ def _validation_manifest_summary(manifest: dict) -> dict:
         "source_state": source_state,
         "source_state_sha256": source_state_sha256,
         "excluded_artifacts": canonical_excluded,
+        "capture_started_at": capture_started.isoformat(),
         "completed_at": manifest["completed_at"],
     }
 
@@ -3388,7 +3457,7 @@ def _validation_blob_prefix() -> str:
     return f"{AZURE_BLOB_PREFIX}/" if AZURE_BLOB_PREFIX else ""
 
 
-def validation_list(*, container=None) -> dict:
+def validation_list(*, container: _ReadContainer | None = None) -> dict:
     """Boundedly list published archive candidates using only the read SAS client."""
     prefix = _validation_blob_prefix()
     read_container = container if container is not None else _read_blob_container_client()
@@ -3399,8 +3468,13 @@ def validation_list(*, container=None) -> dict:
             name_starts_with=prefix, include=["metadata"]
         )
         for blob in blobs:
-            name = getattr(blob, "name", None)
-            metadata = getattr(blob, "metadata", None)
+            try:
+                name = blob.name
+                metadata = blob.metadata
+            except AttributeError:
+                raise ValidationFailure(
+                    "SNAPSHOT_LIST_ENTRY_INVALID", "snapshot-list"
+                ) from None
             publication_state = (
                 metadata.get("hriv_publication_state")
                 if isinstance(metadata, dict)
@@ -3434,9 +3508,14 @@ def validation_list(*, container=None) -> dict:
                     )
             if publication_state != "published":
                 continue
-            size = getattr(blob, "size", None)
-            etag = getattr(blob, "etag", None)
-            last_modified = getattr(blob, "last_modified", None)
+            try:
+                size = blob.size
+                etag = blob.etag
+                last_modified = blob.last_modified
+            except AttributeError:
+                raise ValidationFailure(
+                    "SNAPSHOT_LIST_ENTRY_INVALID", "snapshot-list"
+                ) from None
             if (
                 chronology is None
                 or not isinstance(size, int)
@@ -3482,7 +3561,9 @@ def validation_list(*, container=None) -> dict:
     }
 
 
-def validation_select(snapshot_name: str | None = None, *, container=None) -> dict:
+def validation_select(
+    snapshot_name: str | None = None, *, container: _ReadContainer | None = None
+) -> dict:
     """Select and bind the marker-owned published recovery set using only SAS reads."""
     _validation_blob_prefix()
     read_container = container if container is not None else _read_blob_container_client()
@@ -3602,11 +3683,14 @@ def validation_select(snapshot_name: str | None = None, *, container=None) -> di
     archive_properties = _validation_blob_properties(
         read_container, archive_blob, "archive"
     )
-    metadata = getattr(archive_properties, "metadata", None)
+    try:
+        metadata = archive_properties.metadata
+        archive_size = archive_properties.size
+        archive_etag = archive_properties.etag
+    except AttributeError:
+        raise ValidationFailure("ARCHIVE_PROPERTIES_INVALID", "archive") from None
     if not isinstance(metadata, dict) or metadata.get("hriv_publication_state") != "published":
         raise ValidationFailure("ARCHIVE_NOT_PUBLISHED", "archive")
-    archive_size = getattr(archive_properties, "size", None)
-    archive_etag = getattr(archive_properties, "etag", None)
     if (
         not isinstance(archive_size, int)
         or isinstance(archive_size, bool)
@@ -3618,8 +3702,11 @@ def validation_select(snapshot_name: str | None = None, *, container=None) -> di
     sidecar_properties = _validation_blob_properties(
         read_container, sidecar_blob, "sidecar"
     )
-    sidecar_size = getattr(sidecar_properties, "size", None)
-    sidecar_etag = getattr(sidecar_properties, "etag", None)
+    try:
+        sidecar_size = sidecar_properties.size
+        sidecar_etag = sidecar_properties.etag
+    except AttributeError:
+        raise ValidationFailure("SIDECAR_INVALID", "sidecar") from None
     if (
         not isinstance(sidecar_size, int)
         or isinstance(sidecar_size, bool)
@@ -3654,9 +3741,8 @@ def validation_select(snapshot_name: str | None = None, *, container=None) -> di
         or marker.get("backup_mode") != "production"
         or marker.get("tiles_excluded") is not True
         or marker.get("archive_size") != archive_size
+        or marker.get("created_at") != summary["capture_started_at"]
         or state.get("schema_version") != BACKUP_STATE_SCHEMA_VERSION
-        or state.get("snapshot_name") != selected
-        or state.get("run_id") != run_id
         or state.get("backup_mode") != "production"
         or state.get("tiles_excluded") is not True
         or state.get("storage_prefix") != AZURE_BLOB_PREFIX
@@ -3665,50 +3751,44 @@ def validation_select(snapshot_name: str | None = None, *, container=None) -> di
     marker_created = _parse_strict_utc(marker.get("created_at"))
     marker_completed = _parse_strict_utc(marker.get("completed_at"))
     manifest_completed = _parse_strict_utc(summary["completed_at"])
-    state_updated = (
-        _parse_strict_utc(state.get("updated_at")) if "updated_at" in state else marker_completed
-    )
     if (
         marker_created is None
         or marker_completed is None
         or manifest_completed is None
-        or state_updated is None
         or marker_created > marker_completed
         or marker_completed < manifest_completed
-        or state_updated < marker_completed
     ):
         raise ValidationFailure("RECOVERY_SET_INCOHERENT", "coherence")
-    types = marker.get("types")
+    types = marker["types"]
     for component in ("database", "filesystem"):
-        section = state.get(component)
-        marker_section = types.get(component) if isinstance(types, dict) else None
+        section = state[component]
+        marker_section = types[component]
+        duration = section.get("last_success_duration_seconds")
         if (
-            not isinstance(section, dict)
-            or not isinstance(marker_section, dict)
-            or section.get("run_id") != run_id
-            or section.get("success") is not True
-            or section.get("completed_at") != marker.get("completed_at")
-            or section.get("started_at") != marker_section.get("created_at")
-            or _parse_strict_utc(section.get("started_at")) is None
-            or marker_section.get("run_id") != run_id
+            marker_section.get("run_id") != run_id
             or marker_section.get("snapshot_name") != selected
+            or marker_section.get("created_at") != section.get("last_success_started_at")
+            or marker_section.get("completed_at") != section.get("last_success_completed_at")
             or marker_section.get("completed_at") != marker.get("completed_at")
-            or marker_section.get("archive_key") != section.get("archive_key")
-            or not isinstance(section.get("duration_seconds"), (int, float))
-            or isinstance(section.get("duration_seconds"), bool)
-            or not math.isfinite(section["duration_seconds"])
-            or section["duration_seconds"] < 0
-            or section.get("last_success_completed_at") != section.get("completed_at")
-            or section.get("last_success_archive_key") != section.get("archive_key")
+            or marker_section.get("size_bytes") != section.get("last_success_size_bytes")
+            or marker_section.get("archive_key") != section.get("last_success_archive_key")
+            or _parse_strict_utc(section.get("last_success_started_at")) is None
+            or _parse_strict_utc(section.get("last_success_completed_at")) is None
+            or not isinstance(duration, (int, float))
+            or isinstance(duration, bool)
+            or not math.isfinite(duration)
+            or duration < 0
         ):
             raise ValidationFailure("COMPONENT_INCOHERENT", "coherence")
     filesystem = state["filesystem"]
     database = state["database"]
     if (
-        filesystem.get("archive_key") != archive_blob
-        or filesystem.get("size_bytes") != summary["total_bytes"]
+        filesystem.get("last_success_archive_key") != archive_blob
+        or filesystem.get("last_success_size_bytes") != summary["total_bytes"]
         or marker["types"]["filesystem"].get("size_bytes") != summary["total_bytes"]
-        or database.get("archive_key") != (
+        or database.get("last_success_size_bytes") is not None
+        or marker["types"]["database"].get("size_bytes") is not None
+        or database.get("last_success_archive_key") != (
             f"cnpg://{manifest['database_recovery']['cluster']}?target_time="
             f"{manifest['database_recovery'].get('target_time')}"
             f"&target_lsn={summary['target_lsn']}"
@@ -3798,18 +3878,82 @@ def _stateless_target_preflight(data_dir: str) -> Path:
         target = requested.resolve(strict=True) if requested.exists() else real_parent / requested.name
     except OSError:
         raise ValidationFailure("TARGET_PARENT_INVALID", "target-preflight") from None
-    if target.exists():
-        if not target.is_dir() or any(target.iterdir()):
-            raise ValidationFailure("TARGET_NOT_EMPTY", "target-preflight")
-    else:
-        try:
-            target.mkdir(mode=0o700)
-        except OSError:
-            raise ValidationFailure("TARGET_PARENT_INVALID", "target-preflight") from None
-    return target
+    if target.exists() and (not target.is_dir() or any(target.iterdir())):
+        raise ValidationFailure("TARGET_NOT_EMPTY", "target-preflight")
+    return requested
 
 
-def _stateless_restore_stream(stream, selection: dict, target: Path) -> tuple[int, int]:
+@contextlib.contextmanager
+def _pinned_stateless_target(data_dir: str) -> Iterator[Path]:
+    target = _stateless_target_preflight(data_dir)
+    open_flags = os.O_RDONLY | os.__dict__.get("O_DIRECTORY", 0) | os.__dict__.get("O_NOFOLLOW", 0)
+    parent_fd = target_fd = cwd_fd = -1
+    try:
+        parent_stat = target.parent.stat(follow_symlinks=False)
+        target_existed = target.exists()
+        target_stat = target.stat(follow_symlinks=False) if target_existed else None
+        parent_fd = os.open(target.parent, open_flags)
+        opened_parent_stat = os.fstat(parent_fd)
+        if (opened_parent_stat.st_dev, opened_parent_stat.st_ino) != (
+            parent_stat.st_dev,
+            parent_stat.st_ino,
+        ):
+            raise ValidationFailure("TARGET_CHANGED", "target-preflight")
+        if target_existed:
+            relative_target_stat = os.stat(
+                target.name, dir_fd=parent_fd, follow_symlinks=False
+            )
+            if (
+                relative_target_stat.st_dev,
+                relative_target_stat.st_ino,
+            ) != (target_stat.st_dev, target_stat.st_ino):
+                raise ValidationFailure("TARGET_CHANGED", "target-preflight")
+        else:
+            os.mkdir(target.name, mode=0o700, dir_fd=parent_fd)
+            target_stat = os.stat(
+                target.name, dir_fd=parent_fd, follow_symlinks=False
+            )
+        target_fd = os.open(target.name, open_flags, dir_fd=parent_fd)
+        opened_target_stat = os.fstat(target_fd)
+        if not stat.S_ISDIR(opened_target_stat.st_mode) or (
+            opened_target_stat.st_dev,
+            opened_target_stat.st_ino,
+        ) != (target_stat.st_dev, target_stat.st_ino):
+            raise ValidationFailure("TARGET_CHANGED", "target-preflight")
+        cwd_fd = os.open(".", os.O_RDONLY | os.__dict__.get("O_DIRECTORY", 0))
+        os.fchdir(target_fd)
+        yield target
+    except ValidationFailure:
+        raise
+    except OSError:
+        raise ValidationFailure("TARGET_CHANGED", "target-preflight") from None
+    finally:
+        if cwd_fd >= 0:
+            os.fchdir(cwd_fd)
+            os.close(cwd_fd)
+        if target_fd >= 0:
+            os.close(target_fd)
+        if parent_fd >= 0:
+            os.close(parent_fd)
+        if target_fd >= 0:
+            try:
+                current = target.stat(follow_symlinks=False)
+            except OSError:
+                raise ValidationFailure("TARGET_CHANGED", "target-verification") from None
+            if not stat.S_ISDIR(current.st_mode) or (current.st_dev, current.st_ino) != (
+                target_stat.st_dev,
+                target_stat.st_ino,
+            ):
+                raise ValidationFailure("TARGET_CHANGED", "target-verification")
+
+
+def _stateless_restore_stream(
+    stream: _StatelessArchiveStream,
+    selection: dict,
+    target: Path,
+    *,
+    validate_eof: bool = False,
+) -> tuple[int, int]:
     manifest_bytes = selection["_manifest_bytes"]
     expected_files = selection["_manifest"]["files"]
     snapshot_name = selection["snapshot_name"]
@@ -3889,8 +4033,13 @@ def _stateless_restore_stream(stream, selection: dict, target: Path) -> tuple[in
                     except OSError:
                         raise ValidationFailure("ARCHIVE_FILE_MISMATCH", "archive-stream") from None
                     actual[rel] = {"size": size, "sha256": digest.hexdigest()}
-            if hasattr(stream, "validate_eof"):
-                stream.validate_eof()
+            if validate_eof:
+                try:
+                    stream.validate_eof()
+                except AttributeError:
+                    raise ValidationFailure(
+                        "ARCHIVE_STREAM_INVALID", "archive-stream"
+                    ) from None
         except ValidationFailure:
             raise
         except (tarfile.TarError, EOFError, OSError):
@@ -3915,39 +4064,42 @@ def restore_filesystem_stateless(
     data_dir: str,
     expected_recovery_set_id: str,
     expected_manifest_sha256: str,
-    container=None,
+    container: _ReadContainer | None = None,
 ) -> dict:
     """Restore a strictly selected source tree without shared or persistent state."""
     total_started = time.monotonic()
-    target = _stateless_target_preflight(data_dir)
-    select_started = time.monotonic()
-    selection = validation_select(snapshot_name, container=container)
-    select_duration = time.monotonic() - select_started
-    if expected_recovery_set_id != selection["recovery_set_id"]:
-        raise ValidationFailure("RECOVERY_SET_ID_MISMATCH", "identity")
-    if re.fullmatch(r"[0-9a-f]{64}", expected_manifest_sha256 or "") is None or not hmac.compare_digest(
-        expected_manifest_sha256, selection["manifest_sha256"]
-    ):
-        raise ValidationFailure("MANIFEST_DIGEST_MISMATCH", "identity")
-    restore_started = time.monotonic()
-    try:
-        downloader = selection["_container"].download_blob(
-            selection["archive_blob"],
-            etag=selection["archive_etag"],
-            match_condition=MatchConditions.IfNotModified,
-            length=selection["archive_size"] + 1,
+    with _pinned_stateless_target(data_dir) as target:
+        select_started = time.monotonic()
+        selection = validation_select(snapshot_name, container=container)
+        select_duration = time.monotonic() - select_started
+        if expected_recovery_set_id != selection["recovery_set_id"]:
+            raise ValidationFailure("RECOVERY_SET_ID_MISMATCH", "identity")
+        if re.fullmatch(r"[0-9a-f]{64}", expected_manifest_sha256 or "") is None or not hmac.compare_digest(
+            expected_manifest_sha256, selection["manifest_sha256"]
+        ):
+            raise ValidationFailure("MANIFEST_DIGEST_MISMATCH", "identity")
+        restore_started = time.monotonic()
+        try:
+            downloader = selection["_container"].download_blob(
+                selection["archive_blob"],
+                etag=selection["archive_etag"],
+                match_condition=MatchConditions.IfNotModified,
+                length=selection["archive_size"] + 1,
+            )
+        except ResourceNotFoundError:
+            raise ValidationFailure("ARCHIVE_MISSING", "archive-download") from None
+        except ResourceModifiedError:
+            raise ValidationFailure("SOURCE_CHANGED", "archive-download") from None
+        except AttributeError:
+            raise ValidationFailure("ARCHIVE_STREAM_INVALID", "archive-download") from None
+        except Exception as exc:
+            _raise_validation_storage_failure(exc, "archive-download")
+        restored_files, restored_bytes = _stateless_restore_stream(
+            _AzureChunkReader(downloader, expected_size=selection["archive_size"]),
+            selection,
+            Path("."),
+            validate_eof=True,
         )
-    except ResourceNotFoundError:
-        raise ValidationFailure("ARCHIVE_MISSING", "archive-download") from None
-    except ResourceModifiedError:
-        raise ValidationFailure("SOURCE_CHANGED", "archive-download") from None
-    except Exception as exc:
-        _raise_validation_storage_failure(exc, "archive-download")
-    restored_files, restored_bytes = _stateless_restore_stream(
-        _AzureChunkReader(downloader, expected_size=selection["archive_size"]),
-        selection,
-        target,
-    )
     result = _public_validation_result(selection)
     result.update(
         {
@@ -4253,7 +4405,9 @@ def _resolve_snapshot_name(requested: str, available: list[str]) -> str | None:
 class _AzureChunkReader:
     """Minimal sequential reader over StorageStreamDownloader chunks."""
 
-    def __init__(self, downloader, expected_size: int | None = None):
+    def __init__(
+        self, downloader: _ReadDownloader, expected_size: int | None = None
+    ):
         self.chunks = iter(downloader.chunks())
         self.buffer = bytearray()
         self.eof = False
@@ -5105,6 +5259,7 @@ def main() -> None:
     if command == "validation-list":
         _configure_machine_logging()
         try:
+            _validation_min_sas_validity_seconds()
             positional, _options = _machine_options(sys.argv[2:], ())
             if positional:
                 raise ValidationFailure("ARGUMENTS_INVALID", "arguments")
@@ -5124,6 +5279,7 @@ def main() -> None:
     elif command == "validation-select":
         _configure_machine_logging()
         try:
+            _validation_min_sas_validity_seconds()
             positional, _options = _machine_options(sys.argv[2:], ())
             if len(positional) > 1:
                 raise ValidationFailure("ARGUMENTS_INVALID", "arguments")
@@ -5146,6 +5302,7 @@ def main() -> None:
     elif command == "restore-filesystem-stateless":
         _configure_machine_logging()
         try:
+            _validation_min_sas_validity_seconds()
             positional, options = _machine_options(
                 sys.argv[2:],
                 (

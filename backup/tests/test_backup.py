@@ -1991,6 +1991,11 @@ class AzurePublicationTestCase(_BackupTestCase):
         orphan.write_bytes(b"orphan")
         incomplete = self.data_dir / "source_images" / "upload.part"
         incomplete.write_bytes(b"partial")
+        mixed_suffix = self.data_dir / "source_images" / "mixed.PaRt"
+        mixed_suffix.write_bytes(b"partial")
+        mixed_segment = self.data_dir / "source_images" / ".StAgInG" / "file.jpg"
+        mixed_segment.parent.mkdir()
+        mixed_segment.write_bytes(b"partial")
         pending = self.data_dir / "source_images" / "pending.jpg"
         pending.write_bytes(b"pending")
         rows = [
@@ -2058,11 +2063,17 @@ class AzurePublicationTestCase(_BackupTestCase):
                 }
             ],
         )
-        self.assertTrue(
-            any(
-                entry["path"] == "data/source_images/upload.part"
+        self.assertEqual(
+            {
+                entry["path"]
                 for entry in manifest["validation"]["excluded_incomplete_artifacts"]
-            )
+            },
+            {
+                "data/source_images/.StAgInG/file.jpg",
+                "data/source_images/mixed.PaRt",
+                "data/source_images/upload.part",
+                "data/tiles",
+            },
         )
         self.assertTrue(manifest["validation"]["accepted"])
         self.assertTrue(orphan.exists())
@@ -4270,9 +4281,38 @@ class AzureStateCommitTestCase(_BackupTestCase):
         self.assertEqual(self._stored()["run_id"], "existing")
 
 
+class _ReadBlobItemFake:
+    __slots__ = ("name", "metadata", "size", "etag", "last_modified")
+
+    def __init__(
+        self,
+        *,
+        name,
+        metadata,
+        size=None,
+        etag=None,
+        last_modified=None,
+    ):
+        self.name = name
+        self.metadata = metadata
+        self.size = size
+        self.etag = etag
+        self.last_modified = last_modified
+
+
+class _ReadBlobPropertiesFake:
+    __slots__ = ("size", "etag", "metadata")
+
+    def __init__(self, *, size, etag, metadata):
+        self.size = size
+        self.etag = etag
+        self.metadata = metadata
+
+
 class ReadOnlyValidationTestCase(_BackupTestCase):
     def _sas(self, **overrides):
         values = {
+            "sv": "2023-11-03",
             "sr": "c",
             "sp": "rl",
             "sig": "secret-signature",
@@ -4292,7 +4332,7 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
             ("READ_SAS_SCOPE_INVALID", self._sas().replace("/backups?", "/a/b?")),
             ("READ_SAS_SCOPE_INVALID", self._sas().replace("/backups?", "/Bad_Name?")),
             ("READ_SAS_SCOPE_INVALID", self._sas(sr="b")),
-            ("READ_SAS_SCOPE_INVALID", self._sas(sig="")),
+            ("READ_SAS_FIELDS_INVALID", self._sas(sig="")),
             ("READ_SAS_SCOPE_INVALID", self._sas().replace("https://", "http://")),
             (
                 "READ_SAS_SCOPE_INVALID",
@@ -4310,6 +4350,10 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
             ("READ_SAS_PERMISSIONS_INVALID", self._sas(sp="rrll")),
             ("READ_SAS_PERMISSIONS_INVALID", self._sas(sp="rlw")),
             ("READ_SAS_MALFORMED", self._sas() + "&sp=rl"),
+            ("READ_SAS_FIELDS_INVALID", self._sas(unknown="value")),
+            ("READ_SAS_FIELDS_INVALID", self._sas(ss="b", srt="co")),
+            ("READ_SAS_FIELDS_INVALID", self._sas(spr="https,http")),
+            ("READ_SAS_FIELDS_INVALID", self._sas(spr="http")),
             ("READ_SAS_EXPIRY_INVALID", self._sas(se="2026-01-01 00:00:00Z")),
             ("READ_SAS_EXPIRY_INVALID", self._sas(se="2026-01-01T00:00:00+01:00")),
             (
@@ -4327,6 +4371,18 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
                 backup._validate_read_sas_url(value)
             self.assertEqual(raised.exception.code, expected)
             self.assertNotIn("secret-signature", str(raised.exception))
+        service_sas = self._sas(spr="https", sip="10.0.0.1")
+        self.assertEqual(backup._validate_read_sas_url(service_sas), service_sas)
+        user_delegation = self._sas(
+            skoid="11111111-1111-1111-1111-111111111111",
+            sktid="22222222-2222-2222-2222-222222222222",
+            skt="2026-01-01T00:00:00Z",
+            ske="2027-01-01T00:00:00Z",
+            sks="b",
+            skv="2023-11-03",
+            suoid="33333333-3333-3333-3333-333333333333",
+        )
+        self.assertEqual(backup._validate_read_sas_url(user_delegation), user_delegation)
 
     def test_read_sas_requires_enough_remaining_restore_time(self):
         with self.assertRaises(backup.ValidationFailure) as raised:
@@ -4338,7 +4394,7 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
                 )
             )
         self.assertEqual(raised.exception.code, "READ_SAS_EXPIRING")
-        with patch.object(backup, "VALIDATION_MIN_SAS_VALIDITY_SECONDS", 60.0):
+        with patch.object(backup, "VALIDATION_MIN_SAS_VALIDITY_SECONDS", "60"):
             value = self._sas(
                 se=(datetime.now(timezone.utc) + timedelta(minutes=2))
                 .isoformat()
@@ -4349,7 +4405,7 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
     def test_read_sas_minimum_lifetime_starts_at_future_start_boundary(self):
         now = _FrozenDatetime._now
         start = now + timedelta(minutes=5)
-        minimum = timedelta(seconds=backup.VALIDATION_MIN_SAS_VALIDITY_SECONDS)
+        minimum = timedelta(seconds=backup._validation_min_sas_validity_seconds())
         with patch.object(backup, "datetime", _FrozenDatetime):
             accepted = self._sas(
                 st=start.isoformat().replace("+00:00", "Z"),
@@ -4367,12 +4423,16 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
                 )
         self.assertEqual(raised.exception.code, "READ_SAS_EXPIRING")
 
-    def test_minimum_sas_validity_configuration_is_finite_positive_and_bounded(self):
+    def test_minimum_sas_validity_configuration_is_lazy_finite_positive_and_bounded(self):
         self._reload({})
-        self.assertEqual(backup.VALIDATION_MIN_SAS_VALIDITY_SECONDS, 21600.0)
-        for value in ("0", "-1", "nan", "inf", "86401"):
-            with self.subTest(value=value), self.assertRaises(SystemExit):
+        self.assertEqual(backup.VALIDATION_MIN_SAS_VALIDITY_SECONDS, "21600")
+        self.assertEqual(backup._validation_min_sas_validity_seconds(), 21600.0)
+        for value in ("bad", "0", "-1", "nan", "inf", "86401"):
+            with self.subTest(value=value):
                 self._reload({"VALIDATION_MIN_SAS_VALIDITY_SECONDS": value})
+                with self.assertRaises(backup.ValidationFailure) as raised:
+                    backup._validation_min_sas_validity_seconds()
+                self.assertEqual(raised.exception.code, "VALIDATION_CONFIG_INVALID")
 
     def test_read_client_uses_sas_while_write_client_keeps_connection_string(self):
         self._reload(
@@ -4456,6 +4516,8 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
         calls = []
 
         class ReadContainer:
+            __slots__ = ()
+
             def list_blobs(self, **kwargs):
                 calls.append(kwargs)
                 if error is not None:
@@ -4472,7 +4534,7 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
             "hriv-backup-20260102-020000-22222222",
         )
         blobs = [
-            SimpleNamespace(
+            _ReadBlobItemFake(
                 name=f"hriv-backups/{name}.tar.gz",
                 metadata={"hriv_publication_state": "published", "harmless": "value"},
                 size=index + 1,
@@ -4483,19 +4545,19 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
         ]
         blobs.extend(
             [
-                SimpleNamespace(
+                _ReadBlobItemFake(
                     name="hriv-backups/hriv-backup-20260104-020000-44444444.tar.gz",
                     metadata={"hriv_publication_state": "candidate"},
                 ),
-                SimpleNamespace(
+                _ReadBlobItemFake(
                     name="hriv-backups/hriv-backup-20260105-020000-55555555.tar.gz",
                     metadata={"hriv_publication_state": "unknown"},
                 ),
-                SimpleNamespace(
+                _ReadBlobItemFake(
                     name="hriv-backups/hriv-backup-20260106-020000-66666666.tar.gz",
                     metadata={},
                 ),
-                SimpleNamespace(
+                _ReadBlobItemFake(
                     name="hriv-backups/hriv-backup-20260107-020000-77777777.tar.gz",
                     metadata=None,
                 ),
@@ -4526,6 +4588,8 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
         )
         self.assertEqual(calls, [{"name_starts_with": "hriv-backups/", "include": ["metadata"]}])
         self.assertFalse(any(hasattr(container, name) for name in ("upload_blob", "delete_blob")))
+        with self.assertRaises(AttributeError):
+            container.upload_blob = lambda: None
 
     def test_validation_list_rejects_malformed_published_entries(self):
         valid = {
@@ -4555,7 +4619,7 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
             properties = dict(valid)
             properties.update(override)
             container, _calls = self._validation_list_container(
-                [SimpleNamespace(**properties)]
+                [_ReadBlobItemFake(**properties)]
             )
             with self.subTest(override=override), self.assertRaises(
                 backup.ValidationFailure
@@ -4565,7 +4629,7 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
 
     def test_validation_list_is_bounded_and_maps_configuration_and_storage_errors(self):
         blobs = [
-            SimpleNamespace(
+            _ReadBlobItemFake(
                 name=f"hriv-backups/hriv-backup-20260101-020000-{index:08x}.tar.gz",
                 metadata={"hriv_publication_state": "candidate"},
             )
@@ -4600,6 +4664,9 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
         payload = b"source"
         metadata = {"size": len(payload), "sha256": hashlib.sha256(payload).hexdigest()}
         target_lsn = "1A/2B"
+        capture_started = "2026-01-01T01:59:00+00:00"
+        database_started = "2026-01-01T01:59:10+00:00"
+        filesystem_started = "2026-01-01T01:59:20+00:00"
         target_time = "2026-01-01T02:00:00+00:00"
         manifest = {
             "format_version": 2,
@@ -4608,7 +4675,7 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
             "snapshot_name": snapshot,
             "run_id": run_id,
             "completed_at": manifest_completed,
-            "capture_started_at": "2026-01-01T01:59:00+00:00",
+            "capture_started_at": capture_started,
             "capture_boundary_at": target_time,
             "capture_boundary_lsn": target_lsn,
             "database_name": "hriv",
@@ -4676,9 +4743,9 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
                 "completed_at": completed,
                 "archive_key": database_key,
                 "size_bytes": None,
-                "started_at": target_time,
+                "started_at": database_started,
                 "duration_seconds": 120.0,
-                "last_success_started_at": target_time,
+                "last_success_started_at": database_started,
                 "last_success_completed_at": completed,
                 "last_success_duration_seconds": 120.0,
                 "last_success_size_bytes": None,
@@ -4690,9 +4757,9 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
                 "completed_at": completed,
                 "archive_key": archive_blob,
                 "size_bytes": len(payload),
-                "started_at": target_time,
+                "started_at": filesystem_started,
                 "duration_seconds": 120.0,
-                "last_success_started_at": target_time,
+                "last_success_started_at": filesystem_started,
                 "last_success_completed_at": completed,
                 "last_success_duration_seconds": 120.0,
                 "last_success_size_bytes": len(payload),
@@ -4702,7 +4769,7 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
         marker = {
             "snapshot_name": snapshot,
             "run_id": run_id,
-            "created_at": "2026-01-01T02:00:00+00:00",
+            "created_at": capture_started,
             "completed_at": completed,
             "backup_mode": "production",
             "tiles_excluded": True,
@@ -4733,6 +4800,8 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
         property_overrides = {}
 
         class Blob:
+            __slots__ = ("name",)
+
             def __init__(self, name):
                 self.name = name
 
@@ -4750,9 +4819,11 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
                     ),
                 }
                 defaults.update(property_overrides.get(self.name, {}))
-                return SimpleNamespace(**defaults)
+                return _ReadBlobPropertiesFake(**defaults)
 
         class Download:
+            __slots__ = ("value",)
+
             def __init__(self, value):
                 self.value = value
 
@@ -4763,9 +4834,16 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
                 yield self.value
 
         class Container:
+            __slots__ = (
+                "download_kwargs",
+                "property_overrides",
+                "download_error_suffix",
+            )
+
             def __init__(self):
                 self.download_kwargs = []
                 self.property_overrides = property_overrides
+                self.download_error_suffix = None
 
             def get_blob_client(self, name):
                 calls.append(("get", name))
@@ -4774,6 +4852,8 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
             def download_blob(self, name, **kwargs):
                 calls.append(("download", name))
                 self.download_kwargs.append((name, kwargs))
+                if self.download_error_suffix and name.endswith(self.download_error_suffix):
+                    raise backup.ResourceModifiedError("changed")
                 if name not in blobs:
                     raise backup.ResourceNotFoundError("missing")
                 return Download(blobs[name][: kwargs.get("length")])
@@ -4813,6 +4893,131 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
         with self.assertRaises(backup.ValidationFailure) as raised:
             backup.validation_select(snapshot + "x", container=container)
         self.assertEqual(raised.exception.code, "SNAPSHOT_MISMATCH")
+
+    def test_strict_select_accepts_independent_component_starts_and_binds_each_one(self):
+        snapshot, manifest, _sidecar, blobs, container, _calls = self._fixture()
+        marker_name = "hriv-backups/LAST_SUCCESS.json"
+        state_name = "hriv-backups/BACKUP_STATE.json"
+        marker = json.loads(blobs[marker_name])
+        state = json.loads(blobs[state_name])
+        database_started = state["database"]["last_success_started_at"]
+        filesystem_started = state["filesystem"]["last_success_started_at"]
+        self.assertEqual(marker["created_at"], manifest["capture_started_at"])
+        canonical_manifest = copy.deepcopy(manifest)
+        canonical_manifest["capture_started_at"] = "2026-01-01T01:59:00Z"
+        self.assertEqual(
+            backup._validation_manifest_summary(canonical_manifest)["capture_started_at"],
+            "2026-01-01T01:59:00+00:00",
+        )
+        self.assertNotEqual(database_started, marker["created_at"])
+        self.assertNotEqual(filesystem_started, marker["created_at"])
+        self.assertNotEqual(database_started, filesystem_started)
+        self.assertTrue(backup.validation_select(snapshot, container=container)["success"])
+
+        for corruption in ("swap", "single"):
+            snapshot, _manifest, _sidecar, blobs, container, _calls = self._fixture()
+            marker = json.loads(blobs[marker_name])
+            if corruption == "swap":
+                database_created = marker["types"]["database"]["created_at"]
+                marker["types"]["database"]["created_at"] = marker["types"][
+                    "filesystem"
+                ]["created_at"]
+                marker["types"]["filesystem"]["created_at"] = database_created
+            else:
+                marker["types"]["database"]["created_at"] = (
+                    "2026-01-01T01:59:11+00:00"
+                )
+            blobs[marker_name] = json.dumps(marker).encode()
+            with self.subTest(corruption=corruption), self.assertRaises(
+                backup.ValidationFailure
+            ) as raised:
+                backup.validation_select(snapshot, container=container)
+            self.assertEqual(raised.exception.code, "COMPONENT_INCOHERENT")
+
+    def test_marker_top_created_at_must_match_manifest_capture_start(self):
+        snapshot, _manifest, _sidecar, blobs, container, _calls = self._fixture()
+        marker_name = "hriv-backups/LAST_SUCCESS.json"
+        marker = json.loads(blobs[marker_name])
+        marker["created_at"] = "2026-01-01T01:59:01+00:00"
+        blobs[marker_name] = json.dumps(marker).encode()
+        with self.assertRaises(backup.ValidationFailure) as raised:
+            backup.validation_select(snapshot, container=container)
+        self.assertEqual(raised.exception.code, "RECOVERY_SET_INCOHERENT")
+
+    def test_read_only_selection_fake_forbids_mutation_capabilities(self):
+        _snapshot, _manifest, _sidecar, blobs, container, _calls = self._fixture()
+        marker_name = "hriv-backups/LAST_SUCCESS.json"
+        read_objects = (
+            container,
+            container.get_blob_client(marker_name),
+            container.download_blob(marker_name),
+            _ReadBlobItemFake(name=marker_name, metadata={}),
+            _ReadBlobPropertiesFake(size=len(blobs[marker_name]), etag='"etag"', metadata={}),
+        )
+        for read_object in read_objects:
+            for name in (
+                "upload_blob",
+                "delete_blob",
+                "set_container_metadata",
+                "stage_block",
+                "commit_block_list",
+            ):
+                with self.subTest(type=type(read_object).__name__, name=name):
+                    self.assertFalse(hasattr(read_object, name))
+                    with self.assertRaises(AttributeError):
+                        setattr(read_object, name, lambda: None)
+
+    def test_strict_select_uses_last_success_when_newer_attempt_is_pending_or_failed(self):
+        for attempt_success in (None, False):
+            snapshot, _manifest, _sidecar, blobs, container, _calls = self._fixture()
+            state_name = "hriv-backups/BACKUP_STATE.json"
+            state = json.loads(blobs[state_name])
+            state.update(
+                run_id="run-2",
+                snapshot_name="hriv-backup-20260102-020000-87654321",
+                updated_at="2026-01-02T02:03:00+00:00",
+                failure_reason="permanent failure" if attempt_success is False else None,
+            )
+            for section in (state["database"], state["filesystem"]):
+                section.update(
+                    run_id="run-2",
+                    started_at="2026-01-02T02:00:00+00:00",
+                    completed_at=(
+                        "2026-01-02T02:02:00+00:00"
+                        if attempt_success is False
+                        else None
+                    ),
+                    success=attempt_success,
+                    duration_seconds=120.0 if attempt_success is False else None,
+                    size_bytes=None,
+                    archive_key=None,
+                )
+            blobs[state_name] = json.dumps(state).encode()
+            with self.subTest(attempt_success=attempt_success):
+                result = backup.validation_select(snapshot, container=container)
+            self.assertEqual(result["run_id"], "run-1")
+            self.assertEqual(result["snapshot_name"], snapshot)
+
+    def test_strict_select_rejects_corrupt_component_last_success_fields(self):
+        corruptions = {
+            "last_success_started_at": "2026-01-01T02:00:01+00:00",
+            "last_success_completed_at": "2026-01-01T02:02:01+00:00",
+            "last_success_duration_seconds": -1,
+            "last_success_size_bytes": 999,
+            "last_success_archive_key": "wrong-key",
+        }
+        for component in ("database", "filesystem"):
+            for field, value in corruptions.items():
+                snapshot, _manifest, _sidecar, blobs, container, _calls = self._fixture()
+                state_name = "hriv-backups/BACKUP_STATE.json"
+                state = json.loads(blobs[state_name])
+                state[component][field] = value
+                blobs[state_name] = json.dumps(state).encode()
+                with self.subTest(component=component, field=field), self.assertRaises(
+                    backup.ValidationFailure
+                ) as raised:
+                    backup.validation_select(snapshot, container=container)
+                self.assertEqual(raised.exception.code, "COMPONENT_INCOHERENT")
 
     def test_strict_select_rejects_candidate_journal_and_incoherence(self):
         snapshot, manifest, _sidecar, blobs, container, _calls = self._fixture()
@@ -4929,8 +5134,17 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
         class ServiceError(Exception):
             pass
 
+        class ErrorContainer:
+            __slots__ = ("error",)
+
+            def __init__(self, error):
+                self.error = error
+
+            def download_blob(self, _name, **_kwargs):
+                raise self.error
+
         for error, code in ((AuthenticationError("secret URL"), "AZURE_AUTH_FAILED"), (ServiceError("secret URL"), "AZURE_READ_FAILED")):
-            container = SimpleNamespace(download_blob=MagicMock(side_effect=error))
+            container = ErrorContainer(error)
             with self.subTest(code=code), self.assertRaises(backup.ValidationFailure) as raised:
                 backup._validation_download(container, "marker", "marker", 10)
             self.assertEqual(raised.exception.code, code)
@@ -4938,27 +5152,13 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
 
     def test_conditional_sidecar_and_archive_mutation_are_rejected(self):
         snapshot, _manifest, sidecar, _blobs, container, _calls = self._fixture()
-        original = container.download_blob
-
-        def changed_sidecar(name, **kwargs):
-            if name.endswith(".manifest.json"):
-                raise backup.ResourceModifiedError("changed")
-            return original(name, **kwargs)
-
-        container.download_blob = changed_sidecar
+        container.download_error_suffix = ".manifest.json"
         with self.assertRaises(backup.ValidationFailure) as raised:
             backup.validation_select(snapshot, container=container)
         self.assertEqual((raised.exception.code, raised.exception.stage), ("SOURCE_CHANGED", "sidecar"))
 
         snapshot, _manifest, sidecar, _blobs, container, _calls = self._fixture()
-        original = container.download_blob
-
-        def changed_archive(name, **kwargs):
-            if name.endswith(".tar.gz"):
-                raise backup.ResourceModifiedError("changed")
-            return original(name, **kwargs)
-
-        container.download_blob = changed_archive
+        container.download_error_suffix = ".tar.gz"
         with tempfile.TemporaryDirectory() as directory, self.assertRaises(
             backup.ValidationFailure
         ) as raised:
@@ -5013,8 +5213,38 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
         with self.assertRaises(backup.ValidationFailure):
             backup._canonical_source_path(too_long_after_prefix)
 
+    def test_excluded_artifacts_match_incomplete_segments_and_suffixes_case_insensitively(self):
+        _snapshot, manifest, _sidecar, _blobs, _container, _calls = self._fixture()
+        paths = [
+            "data/source_images/MiXeD/.StAgInG/file.jpg",
+            "data/source_images/MiXeD/photo.PaRt",
+            "data/source_images/AdMiN/file.jpg",
+        ]
+        excluded = [
+            {"path": path, "reason": "incomplete_or_non_authoritative"}
+            for path in paths
+        ]
+        manifest["excluded_incomplete_artifacts"] = excluded
+        manifest["validation"]["excluded_incomplete_artifacts"] = excluded
+        summary = backup._validation_manifest_summary(manifest)
+        self.assertEqual(
+            [entry["path"] for entry in summary["excluded_artifacts"]], sorted(paths)
+        )
+        invalid = copy.deepcopy(manifest)
+        invalid["excluded_incomplete_artifacts"][0]["path"] = (
+            "data/source_images/MiXeD/staging-file.jpg"
+        )
+        invalid["validation"]["excluded_incomplete_artifacts"] = invalid[
+            "excluded_incomplete_artifacts"
+        ]
+        with self.assertRaises(backup.ValidationFailure) as raised:
+            backup._validation_manifest_summary(invalid)
+        self.assertEqual(raised.exception.code, "EXCLUDED_ARTIFACT_UNAPPROVED")
+
     def test_bounded_reader_rejects_under_over_and_interrupted_streams(self):
         class Download:
+            __slots__ = ("_chunks",)
+
             def __init__(self, chunks):
                 self._chunks = chunks
 
@@ -5032,6 +5262,8 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
         self.assertEqual(raised.exception.code, "ARCHIVE_SIZE_MISMATCH")
 
         class Interrupted:
+            __slots__ = ()
+
             def chunks(self):
                 yield b"1"
                 raise RuntimeError("service interrupted")
@@ -5133,6 +5365,7 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
                 (target / "source_images" / "image.jpg").read_bytes(), b"source"
             )
             self.assertEqual(result["restored_file_count"], 1)
+            self.assertEqual(result["target_data_dir"], str(target))
             self.assertFalse((target / "db.sql").exists())
             self.assertFalse((target / "tiles").exists())
             archive_kwargs = container.download_kwargs[-1][1]
@@ -5141,6 +5374,63 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
             self.assertEqual(
                 archive_kwargs["match_condition"], backup.MatchConditions.IfNotModified
             )
+
+    def test_stateless_restore_stays_on_pinned_inode_and_reports_target_replacement(self):
+        snapshot, _manifest, sidecar, _blobs, container, _calls = self._fixture()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            target = root / "target"
+            moved = root / "pinned-original"
+            escape = root / "escape"
+            escape.mkdir()
+            original_restore = backup._stateless_restore_stream
+
+            def replace_target(stream, selection, relative_target, **kwargs):
+                target.rename(moved)
+                target.symlink_to(escape, target_is_directory=True)
+                return original_restore(stream, selection, relative_target, **kwargs)
+
+            with patch.object(
+                backup, "_stateless_restore_stream", side_effect=replace_target
+            ), self.assertRaises(backup.ValidationFailure) as raised:
+                backup.restore_filesystem_stateless(
+                    snapshot,
+                    data_dir=str(target),
+                    expected_recovery_set_id=snapshot,
+                    expected_manifest_sha256=hashlib.sha256(sidecar).hexdigest(),
+                    container=container,
+                )
+            self.assertEqual(raised.exception.code, "TARGET_CHANGED")
+            self.assertEqual(
+                (moved / "source_images" / "image.jpg").read_bytes(), b"source"
+            )
+            self.assertEqual(list(escape.iterdir()), [])
+
+    def test_pinned_target_open_rejects_pre_open_symlink_swap(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            target = root / "target"
+            target.mkdir()
+            moved = root / "original"
+            escape = root / "escape"
+            escape.mkdir()
+            original_open = os.open
+            swapped = False
+
+            def swap_before_target_open(path, flags, *args, **kwargs):
+                nonlocal swapped
+                if path == target.name and kwargs.get("dir_fd") is not None and not swapped:
+                    swapped = True
+                    target.rename(moved)
+                    target.symlink_to(escape, target_is_directory=True)
+                return original_open(path, flags, *args, **kwargs)
+
+            with patch.object(os, "open", side_effect=swap_before_target_open):
+                with self.assertRaises(backup.ValidationFailure) as raised:
+                    with backup._pinned_stateless_target(str(target)):
+                        self.fail("symlink target must not open")
+            self.assertEqual(raised.exception.code, "TARGET_CHANGED")
+            self.assertEqual(list(escape.iterdir()), [])
 
     def test_stateless_preflight_rejects_nonempty_before_archive_download(self):
         snapshot, _manifest, sidecar, _blobs, container, calls = self._fixture()
@@ -5190,6 +5480,42 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
             lines = stdout.getvalue().splitlines()
             self.assertEqual(len(lines), 1)
             self.assertIsInstance(json.loads(lines[0]), dict)
+
+    def test_machine_cli_invalid_validation_config_is_one_bounded_document(self):
+        script = Path(backup.__file__).resolve()
+        env = os.environ.copy()
+        env["VALIDATION_MIN_SAS_VALIDITY_SECONDS"] = "not-a-number"
+        cases = (
+            ["validation-list"],
+            ["validation-select"],
+            ["restore-filesystem-stateless"],
+        )
+        for args in cases:
+            completed = subprocess.run(
+                [sys.executable, str(script), *args],
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            with self.subTest(command=args[0]):
+                self.assertEqual(completed.returncode, 1)
+                lines = completed.stdout.splitlines()
+                self.assertEqual(len(lines), 1)
+                document = json.loads(lines[0])
+                self.assertEqual(document["operation"], args[0])
+                self.assertEqual(document["failure_code"], "VALIDATION_CONFIG_INVALID")
+                self.assertNotIn("not-a-number", completed.stdout)
+
+        completed = subprocess.run(
+            [sys.executable, str(script), "list"],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0)
+        self.assertNotIn("VALIDATION_CONFIG_INVALID", completed.stdout)
 
     def test_validation_list_cli_prints_exactly_one_json_document(self):
         success = {

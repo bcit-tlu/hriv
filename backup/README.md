@@ -155,7 +155,7 @@ All settings are controlled via environment variables in `docker-compose.yml` or
 
 ### Read-only validation primitives
 
-Issue #1250 adds two machine-oriented commands for an isolated validation child:
+Issue #1250 adds three machine-oriented commands for an isolated validation child:
 
 ```bash
 python backup.py validation-list
@@ -170,15 +170,27 @@ Both commands require `AZURE_READ_SAS_URL`. The URL is validated without being l
 an unexpired HTTPS container URL whose SAS resource is `c`, whose permissions contain only
 read/list, and whose remaining lifetime is at least `VALIDATION_MIN_SAS_VALIDITY_SECONDS` (six
 hours by default), measured from the later of current time and an optional SAS start. A valid token
-below that threshold fails with `READ_SAS_EXPIRING` before Azure reads begin. #1251's fixed
-validation-child configuration owns any override: it must choose a
-finite positive value no greater than 86400 seconds that covers the maximum source restore time
-and mint/mount a SAS whose expiry exceeds that value at child startup. The child must not derive
-this setting from recovery metadata. `validation-list` boundedly lists at most 1000 exact published
+below that threshold fails with `READ_SAS_EXPIRING` before Azure reads begin. Only `sv`, `se`, `sr`,
+`sp`, and `sig` are required; `st`, `spr`, `sip`, `skoid`, `sktid`, `skt`, `ske`, `sks`, `skv`,
+`saoid`, `suoid`, `scid`, and `ses` are allowed when Azure emits them. Unknown fields, account-SAS
+`ss`/`srt`, policy/response-override fields, blank or oversized values, and any `spr` other than
+exactly `https` fail with `READ_SAS_FIELDS_INVALID` without exposing names or values in output.
+#1251's fixed validation-child configuration owns any override: it must choose a finite positive
+value no greater than 86400 seconds that covers the maximum source restore time and mint/mount a
+SAS whose expiry exceeds that value at child startup. The child must not derive this setting from
+recovery metadata. The raw configuration is parsed only inside machine-command validation; invalid
+configuration produces one `VALIDATION_CONFIG_INVALID` JSON document for each machine command and
+is ignored by unrelated backup/operator commands. `validation-list` boundedly lists at most 1000 exact published
 archive candidates from metadata only, newest first; it ignores candidate, unknown, and legacy
 metadata and does not download sidecars. The list is discovery output, not recovery-set authority.
 `validation-select` follows `LAST_SUCCESS.json` and verifies the coherent `BACKUP_STATE.json`,
-published archive metadata, absent publication journal, immutable format-2
+but intentionally binds marker identity to each component's `last_success_*` fields rather than
+state's top-level/current attempt. A newer pending or failed attempt may own those current fields
+without invalidating the previously published marker; the marker's immutable run ID/snapshot plus
+last-success timestamps, sizes, and archive keys bind its manifest safely even though state has no
+`last_success_run_id`. Marker top-level `created_at` binds canonical manifest `capture_started_at`;
+each marker type's separate `created_at` binds only its component's `last_success_started_at`, since
+database and filesystem starts are independently timestamped. Selection also verifies published archive metadata, absent publication journal, immutable format-2
 manifest sidecar, production component rules, source indexes/checksums/counts, and CNPG LSN/WAL
 fence. It never chooses by blob modification time. Each command writes exactly one bounded JSON
 result to stdout and exits nonzero with a bounded code/stage on failure. The manifest sidecar is
@@ -188,7 +200,11 @@ high-volume manifest file list and all internal handles and credentials.
 
 The stateless restore accepts only a supplied absent or empty safe target, streams only
 `data/source_images`, verifies the embedded manifest against the selected sidecar and checks every
-file before promoting `source_images`. It never restores `db.sql` or tiles and never reads or writes
+file before promoting `source_images`. Production opens and pins the verified target directory by
+file descriptor, performs temporary extraction and relative promotion while its process cwd is that
+inode, then compares the original absolute path's device/inode before reporting success. A rename,
+replacement, disappearance, or symlink race fails `TARGET_CHANGED`; writes and cleanup remain on
+the pinned inode and never follow the replacement path. It never restores `db.sql` or tiles and never reads or writes
 `RESTORE_STATE.json`, backup publication state, maintenance state, or `/backups` scratch. Existing
 `backup`, `list`, `status`, and operator restore behavior remains connection-string backed; when
 both credentials exist, validation uses the SAS and publication/writes use the connection string.

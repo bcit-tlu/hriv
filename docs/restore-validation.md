@@ -182,6 +182,16 @@ recovery metadata, and paired with a SAS whose remaining lifetime at child start
 configured minimum measured from the later of child startup and an optional SAS start. A
 syntactically valid but shorter-lived SAS fails closed with `READ_SAS_EXPIRING`; a start up to five
 minutes in the future remains allowed for clock skew, but does not count toward usable lifetime.
+The primitive stores this setting as raw configuration and parses it only after machine logging is
+isolated; malformed, nonfinite, nonpositive, or greater-than-86400 values produce exactly one
+bounded `VALIDATION_CONFIG_INVALID` stdout document for every machine command. Unrelated backup and
+operator commands do not parse or reject this validation-only setting.
+
+The container read SAS allowlist requires `sv`, `se`, `sr`, `sp`, and `sig`; it permits only `st`,
+`spr`, `sip`, `skoid`, `sktid`, `skt`, `ske`, `sks`, `skv`, `saoid`, `suoid`, `scid`, and `ses` in
+addition. Unknown keys, account-SAS `ss`/`srt`, response overrides, stored-policy identifiers, blank
+or oversized values, and a `spr` value other than exactly `https` fail
+`READ_SAS_FIELDS_INVALID`. Failure output never includes a query field or value.
 
 Selection may read Azure archive metadata, sidecars, `BACKUP_STATE.json`, and
 `LAST_SUCCESS.json`. CNPG recovery may read its Barman source. Those are the complete explicit
@@ -420,7 +430,14 @@ orchestrator or read-only selection child MUST verify:
   rejected, failed, or cancelled;
 - the archive and immutable manifest sidecar both exist and identify each other;
 - `BACKUP_STATE.json` and `LAST_SUCCESS.json` are readable and coherent with the published
-  archive, sidecar, run identity, component outcomes, and completion timestamp;
+  archive, sidecar, marker run identity, and each component's `last_success_*` timestamps,
+  duration, size, and archive key. State's top-level and current-attempt run/snapshot/outcome fields
+  may describe a newer pending or failed attempt and MUST NOT be treated as the marker run. Because
+  state has no `last_success_run_id`, the immutable marker run ID/snapshot and top-level
+  `created_at` equal to canonical manifest `capture_started_at` bind the manifest. Each marker type's
+  independently recorded `created_at` equals only that component's `last_success_started_at`—the
+  database and filesystem starts need not equal each other or top-level marker creation—while marker
+  component identity plus last-success timestamps/sizes/archive keys bind state;
 - manifest/schema/archive versions are supported and production mode is declared;
 - expected components are present, `db.sql` and generated tiles are absent, and no incomplete
   staging or upload artifact is selected;
@@ -1007,8 +1024,13 @@ email/plaintext password—not the hash and never a reused production credential
 
 The restore child uses the stateless, read-only source-filesystem path from #1250 and writes only
 to the supplied fresh target. It verifies exact recovery-set identity, safe member paths,
-archive and manifest versions, all selected file sizes/checksums, and final counts. It cannot
-update production or validation backup publication state.
+archive and manifest versions, all selected file sizes/checksums, and final counts. Before
+extraction it opens the verified parent and target with directory file descriptors and no-follow
+semantics where available, changes cwd to the pinned target inode, and performs temporary staging
+and final relative promotion there. It restores cwd before checking that the original absolute
+path still names the same directory device/inode. A missing, renamed, replaced, or symlinked target
+fails `TARGET_CHANGED`; writes and cleanup never follow the replacement path. It cannot update
+production or validation backup publication state.
 
 Consistency preserves the recovery-set outcomes and then applies the bound source-state policy:
 

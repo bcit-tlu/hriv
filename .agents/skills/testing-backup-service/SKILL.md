@@ -191,20 +191,30 @@ poetry run python -m py_compile backup.py tests/test_backup.py
 
 Cover SAS acceptance and fail-closed cases (missing, malformed, expired, insufficient usable
 lifetime measured from the later of now/start, future start, wrong resource, missing read/list, and
-extra write/delete permissions) without asserting or logging the secret URL. Exercise
+extra write/delete permissions) without asserting or logging the secret URL. Include `sv` in every
+valid fixture; cover service and user-delegation shapes, the fixed optional-field allowlist,
+unknown/account-SAS/response-override rejection, and exact-HTTPS `spr`. Invalid raw minimum-lifetime
+configuration must import successfully, produce one bounded `VALIDATION_CONFIG_INVALID` document
+for all machine commands, and remain irrelevant to non-machine commands. Exercise
 `validation-list` with read-only fakes: exact published entries sort newest first, candidate/unknown/
 legacy entries are ignored, malformed published entries and more than 1000 candidates fail boundedly,
 and no sidecar or mutation method is reached. Selection fixtures must bind `LAST_SUCCESS.json`,
 `BACKUP_STATE.json`, published
 archive properties, absent journal, and exact sidecar bytes; mutate each identity, component,
 size/key/count/checksum, format, CNPG, LSN, fence, and timestamp field independently and require a
-bounded JSON failure. Never select by blob mtime or ambiguous prefix.
+bounded JSON failure. Prove a marker for successful attempt A still selects A while top-level/current
+state records pending or permanently failed attempt B; corrupting any component `last_success_*`
+field must fail. Read fakes use slots/spec-conforming read-only interfaces and forbid adding or
+calling mutation capabilities. Never select by blob mtime or ambiguous prefix.
 
 For stateless restore, use an exact snapshot/recovery-set/digest and an absent or empty temporary
 target. Prove source files restore, `db.sql`/tiles do not, and checksum, path/type, embedded-manifest,
 version, identity, interruption, and stream errors leave no promoted `source_images`. Unsafe,
-production, `/backups`-overlapping, and nonempty targets must fail before archive download. Exercise
-`main()` for all three machine commands and parse stdout as exactly one JSON document. The production
+production, `/backups`-overlapping, and nonempty targets must fail before archive download. Add a
+deterministic rename-plus-symlink race proving extraction/promotion stay on the pinned target inode,
+the replacement destination remains untouched, cleanup does not follow the absolute replacement,
+and the operation fails `TARGET_CHANGED`. Exercise `main()` for all three machine commands and parse
+stdout as exactly one JSON document. The production
 backup Deployment must not gain `AZURE_READ_SAS_URL`; #1251's isolated fixed child template mounts
 it.
 
