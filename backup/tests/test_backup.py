@@ -3,6 +3,7 @@
 import contextlib
 import copy
 import hashlib
+import hmac
 import io
 import importlib
 import json
@@ -4659,14 +4660,14 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
     def _fixture(self):
         snapshot = "hriv-backup-20260101-020000-1234abcd"
         run_id = "run-1"
-        completed = "2026-01-01T02:02:00+00:00"
+        completed = "2026-01-01T02:02:00.123457+00:00"
         manifest_completed = "2026-01-01T02:01:00+00:00"
         payload = b"source"
         metadata = {"size": len(payload), "sha256": hashlib.sha256(payload).hexdigest()}
         target_lsn = "1A/2B"
         capture_started = "2026-01-01T01:59:00+00:00"
-        database_started = "2026-01-01T01:59:10+00:00"
-        filesystem_started = "2026-01-01T01:59:20+00:00"
+        database_started = "2026-01-01T01:59:10.123456+00:00"
+        filesystem_started = "2026-01-01T01:59:20.654321+00:00"
         target_time = "2026-01-01T02:00:00+00:00"
         manifest = {
             "format_version": 2,
@@ -4744,10 +4745,10 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
                 "archive_key": database_key,
                 "size_bytes": None,
                 "started_at": database_started,
-                "duration_seconds": 120.0,
+                "duration_seconds": 170.000001,
                 "last_success_started_at": database_started,
                 "last_success_completed_at": completed,
-                "last_success_duration_seconds": 120.0,
+                "last_success_duration_seconds": 170.000001,
                 "last_success_size_bytes": None,
                 "last_success_archive_key": database_key,
             },
@@ -4758,10 +4759,10 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
                 "archive_key": archive_blob,
                 "size_bytes": len(payload),
                 "started_at": filesystem_started,
-                "duration_seconds": 120.0,
+                "duration_seconds": 159.469136,
                 "last_success_started_at": filesystem_started,
                 "last_success_completed_at": completed,
-                "last_success_duration_seconds": 120.0,
+                "last_success_duration_seconds": 159.469136,
                 "last_success_size_bytes": len(payload),
                 "last_success_archive_key": archive_blob,
             },
@@ -4934,6 +4935,45 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
                 backup.validation_select(snapshot, container=container)
             self.assertEqual(raised.exception.code, "COMPONENT_INCOHERENT")
 
+    def test_component_duration_matches_timestamp_delta_with_microseconds(self):
+        snapshot, _manifest, _sidecar, blobs, container, _calls = self._fixture()
+        state_name = "hriv-backups/BACKUP_STATE.json"
+        state = json.loads(blobs[state_name])
+        self.assertEqual(
+            state["database"]["last_success_duration_seconds"], 170.000001
+        )
+        self.assertEqual(
+            state["filesystem"]["last_success_duration_seconds"], 159.469136
+        )
+        self.assertTrue(backup.validation_select(snapshot, container=container)["success"])
+
+        for component in ("database", "filesystem"):
+            snapshot, _manifest, _sidecar, blobs, container, _calls = self._fixture()
+            state = json.loads(blobs[state_name])
+            state[component]["last_success_duration_seconds"] += 0.001
+            blobs[state_name] = json.dumps(state).encode()
+            with self.subTest(component=component), self.assertRaises(
+                backup.ValidationFailure
+            ) as raised:
+                backup.validation_select(snapshot, container=container)
+            self.assertEqual(raised.exception.code, "COMPONENT_INCOHERENT")
+
+    def test_component_completion_cannot_precede_start(self):
+        snapshot, _manifest, _sidecar, blobs, container, _calls = self._fixture()
+        marker_name = "hriv-backups/LAST_SUCCESS.json"
+        state_name = "hriv-backups/BACKUP_STATE.json"
+        marker = json.loads(blobs[marker_name])
+        state = json.loads(blobs[state_name])
+        invalid_start = "2026-01-01T02:03:00+00:00"
+        marker["types"]["database"]["created_at"] = invalid_start
+        state["database"]["last_success_started_at"] = invalid_start
+        state["database"]["last_success_duration_seconds"] = 0.0
+        blobs[marker_name] = json.dumps(marker).encode()
+        blobs[state_name] = json.dumps(state).encode()
+        with self.assertRaises(backup.ValidationFailure) as raised:
+            backup.validation_select(snapshot, container=container)
+        self.assertEqual(raised.exception.code, "COMPONENT_INCOHERENT")
+
     def test_marker_top_created_at_must_match_manifest_capture_start(self):
         snapshot, _manifest, _sidecar, blobs, container, _calls = self._fixture()
         marker_name = "hriv-backups/LAST_SUCCESS.json"
@@ -5066,6 +5106,13 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
             ) as raised:
                 backup.validation_select(snapshot, container=container)
             self.assertEqual(raised.exception.code, "STATE_DOCUMENT_INVALID")
+
+    def test_selection_requires_configured_cnpg_cluster_to_match_manifest(self):
+        snapshot, _manifest, _sidecar, _blobs, container, _calls = self._fixture()
+        with patch.object(backup, "CNPG_CLUSTER_NAME", "different-cluster"):
+            with self.assertRaises(backup.ValidationFailure) as raised:
+                backup.validation_select(snapshot, container=container)
+        self.assertEqual(raised.exception.code, "CNPG_METADATA_INVALID")
 
     def test_selection_rejects_invalid_marker_timestamp(self):
         snapshot, _manifest, _sidecar, blobs, container, _calls = self._fixture()
@@ -5374,6 +5421,106 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
             self.assertEqual(
                 archive_kwargs["match_condition"], backup.MatchConditions.IfNotModified
             )
+
+    def test_pinned_target_rejects_entry_added_before_yield_and_restores_cwd(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory).resolve() / "target"
+            target.mkdir()
+            original_cwd = Path.cwd()
+            original_fchdir = os.fchdir
+            injected = False
+
+            def inject_after_target_chdir(fd):
+                nonlocal injected
+                original_fchdir(fd)
+                if not injected:
+                    injected = True
+                    Path("intruder").write_text("concurrent")
+
+            with patch.object(os, "fchdir", side_effect=inject_after_target_chdir):
+                with self.assertRaises(backup.ValidationFailure) as raised:
+                    with backup._pinned_stateless_target(str(target)):
+                        self.fail("nonempty pinned target must not be yielded")
+            self.assertEqual(raised.exception.code, "TARGET_NOT_EMPTY")
+            self.assertEqual(Path.cwd(), original_cwd)
+
+    def test_stateless_stream_rejects_content_added_during_extraction(self):
+        snapshot, _manifest, _sidecar, _blobs, container, _calls = self._fixture()
+        selection = backup.validation_select(snapshot, container=container)
+        archive = container.download_blob(selection["archive_blob"]).readall()
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory).resolve()
+
+            class InjectingStream(io.BytesIO):
+                def __init__(self, payload):
+                    super().__init__(payload)
+                    self.injected = False
+
+                def read(self, size=-1):
+                    if not self.injected:
+                        self.injected = True
+                        (target / "intruder").write_text("concurrent")
+                    return super().read(size)
+
+            with self.assertRaises(backup.ValidationFailure) as raised:
+                backup._stateless_restore_stream(
+                    InjectingStream(archive), selection, target
+                )
+            self.assertEqual(raised.exception.code, "TARGET_CHANGED")
+            self.assertFalse((target / "source_images").exists())
+
+    def test_stateless_stream_rechecks_target_immediately_before_promotion(self):
+        snapshot, _manifest, _sidecar, _blobs, container, _calls = self._fixture()
+        selection = backup.validation_select(snapshot, container=container)
+        archive = container.download_blob(selection["archive_blob"]).readall()
+        original_compare = hmac.compare_digest
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory).resolve()
+
+            def inject_before_promotion(left, right):
+                (target / "intruder").write_text("concurrent")
+                return original_compare(left, right)
+
+            with patch.object(
+                backup.hmac, "compare_digest", side_effect=inject_before_promotion
+            ), self.assertRaises(backup.ValidationFailure) as raised:
+                backup._stateless_restore_stream(io.BytesIO(archive), selection, target)
+            self.assertEqual(raised.exception.code, "TARGET_CHANGED")
+            self.assertFalse((target / "source_images").exists())
+
+    def test_stateless_stream_rechecks_target_after_promotion(self):
+        snapshot, _manifest, _sidecar, _blobs, container, _calls = self._fixture()
+        selection = backup.validation_select(snapshot, container=container)
+        archive = container.download_blob(selection["archive_blob"]).readall()
+        original_replace = os.replace
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory).resolve()
+
+            def inject_after_promotion(source, destination):
+                original_replace(source, destination)
+                (target / "intruder").write_text("concurrent")
+
+            with patch.object(
+                backup.os, "replace", side_effect=inject_after_promotion
+            ), self.assertRaises(backup.ValidationFailure) as raised:
+                backup._stateless_restore_stream(io.BytesIO(archive), selection, target)
+            self.assertEqual(raised.exception.code, "TARGET_CHANGED")
+
+    def test_pinned_context_requires_exact_final_source_images_entry(self):
+        snapshot, _manifest, sidecar, _blobs, container, _calls = self._fixture()
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory).resolve() / "target"
+            with patch.object(
+                backup, "_stateless_restore_stream", return_value=(1, 6)
+            ), self.assertRaises(backup.ValidationFailure) as raised:
+                backup.restore_filesystem_stateless(
+                    snapshot,
+                    data_dir=str(target),
+                    expected_recovery_set_id=snapshot,
+                    expected_manifest_sha256=hashlib.sha256(sidecar).hexdigest(),
+                    container=container,
+                )
+            self.assertEqual(raised.exception.code, "TARGET_CHANGED")
 
     def test_stateless_restore_stays_on_pinned_inode_and_reports_target_replacement(self):
         snapshot, _manifest, sidecar, _blobs, container, _calls = self._fixture()

@@ -3775,6 +3775,13 @@ def validation_select(
         section = state[component]
         marker_section = types[component]
         duration = section.get("last_success_duration_seconds")
+        started = _parse_strict_utc(section.get("last_success_started_at"))
+        completed = _parse_strict_utc(section.get("last_success_completed_at"))
+        expected_duration = (
+            max((completed - started).total_seconds(), 0.0)
+            if started is not None and completed is not None
+            else None
+        )
         if (
             marker_section.get("run_id") != run_id
             or marker_section.get("snapshot_name") != selected
@@ -3783,12 +3790,17 @@ def validation_select(
             or marker_section.get("completed_at") != marker.get("completed_at")
             or marker_section.get("size_bytes") != section.get("last_success_size_bytes")
             or marker_section.get("archive_key") != section.get("last_success_archive_key")
-            or _parse_strict_utc(section.get("last_success_started_at")) is None
-            or _parse_strict_utc(section.get("last_success_completed_at")) is None
+            or started is None
+            or completed is None
+            or completed < started
             or not isinstance(duration, (int, float))
             or isinstance(duration, bool)
             or not math.isfinite(duration)
             or duration < 0
+            or expected_duration is None
+            or not math.isclose(
+                duration, expected_duration, rel_tol=0.0, abs_tol=1e-6
+            )
         ):
             raise ValidationFailure("COMPONENT_INCOHERENT", "coherence")
     filesystem = state["filesystem"]
@@ -3894,11 +3906,20 @@ def _stateless_target_preflight(data_dir: str) -> Path:
     return requested
 
 
+def _stateless_directory_entries(directory: int | Path) -> set[str]:
+    try:
+        return set(os.listdir(directory))
+    except OSError:
+        raise ValidationFailure("TARGET_CHANGED", "target-verification") from None
+
+
 @contextlib.contextmanager
 def _pinned_stateless_target(data_dir: str) -> Iterator[Path]:
     target = _stateless_target_preflight(data_dir)
-    open_flags = os.O_RDONLY | os.__dict__.get("O_DIRECTORY", 0) | os.__dict__.get("O_NOFOLLOW", 0)
+    open_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
     parent_fd = target_fd = cwd_fd = -1
+    body_completed = False
+    verification_failure: ValidationFailure | None = None
     try:
         parent_stat = target.parent.stat(follow_symlinks=False)
         target_existed = target.exists()
@@ -3931,31 +3952,55 @@ def _pinned_stateless_target(data_dir: str) -> Iterator[Path]:
             opened_target_stat.st_ino,
         ) != (target_stat.st_dev, target_stat.st_ino):
             raise ValidationFailure("TARGET_CHANGED", "target-preflight")
-        cwd_fd = os.open(".", os.O_RDONLY | os.__dict__.get("O_DIRECTORY", 0))
+        cwd_fd = os.open(".", os.O_RDONLY | os.O_DIRECTORY)
         os.fchdir(target_fd)
+        if _stateless_directory_entries(target_fd):
+            raise ValidationFailure("TARGET_NOT_EMPTY", "target-preflight")
         yield target
+        body_completed = True
     except ValidationFailure:
         raise
     except OSError:
         raise ValidationFailure("TARGET_CHANGED", "target-preflight") from None
     finally:
+        if body_completed and target_fd >= 0:
+            try:
+                if _stateless_directory_entries(target_fd) != {"source_images"}:
+                    verification_failure = ValidationFailure(
+                        "TARGET_CHANGED", "target-verification"
+                    )
+            except ValidationFailure as failure:
+                verification_failure = failure
         if cwd_fd >= 0:
-            os.fchdir(cwd_fd)
+            try:
+                os.fchdir(cwd_fd)
+            except OSError:
+                if body_completed and verification_failure is None:
+                    verification_failure = ValidationFailure(
+                        "TARGET_CHANGED", "target-verification"
+                    )
             os.close(cwd_fd)
         if target_fd >= 0:
             os.close(target_fd)
         if parent_fd >= 0:
             os.close(parent_fd)
-        if target_fd >= 0:
+        if body_completed and verification_failure is None and target_fd >= 0:
             try:
                 current = target.stat(follow_symlinks=False)
             except OSError:
-                raise ValidationFailure("TARGET_CHANGED", "target-verification") from None
-            if not stat.S_ISDIR(current.st_mode) or (current.st_dev, current.st_ino) != (
-                target_stat.st_dev,
-                target_stat.st_ino,
-            ):
-                raise ValidationFailure("TARGET_CHANGED", "target-verification")
+                verification_failure = ValidationFailure(
+                    "TARGET_CHANGED", "target-verification"
+                )
+            else:
+                if not stat.S_ISDIR(current.st_mode) or (
+                    current.st_dev,
+                    current.st_ino,
+                ) != (target_stat.st_dev, target_stat.st_ino):
+                    verification_failure = ValidationFailure(
+                        "TARGET_CHANGED", "target-verification"
+                    )
+        if body_completed and verification_failure is not None:
+            raise verification_failure
 
 
 def _stateless_restore_stream(
@@ -4065,7 +4110,11 @@ def _stateless_restore_stream(
         if actual != expected_files:
             raise ValidationFailure("ARCHIVE_FILE_MISMATCH", "archive-validation")
         staged_source.mkdir(parents=True, exist_ok=True)
+        if _stateless_directory_entries(target) != {workspace.name}:
+            raise ValidationFailure("TARGET_CHANGED", "target-verification")
         os.replace(str(staged_source), str(target / "source_images"))
+        if _stateless_directory_entries(target) != {workspace.name, "source_images"}:
+            raise ValidationFailure("TARGET_CHANGED", "target-verification")
     return len(actual), sum(item["size"] for item in actual.values())
 
 

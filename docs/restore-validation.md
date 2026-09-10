@@ -455,8 +455,11 @@ profile ID/version binds expected source cluster/provider, application database 
 The controller MUST use that profile—not manifest `database_name`, which identifies the inventoried
 HRIV connection database `hriv`—to configure and validate `app`/`app`, and MUST cross-check manifest
 cluster/provider/WAL metadata against it. `ObjectStore` is the actual CRD provided by the deployed
-CNPG-I Barman Cloud plugin, not a generic substitute. This requires no backup-manifest schema
-change.
+CNPG-I Barman Cloud plugin, not a generic substitute. The #1251 fixed selection/restore child MUST
+set `CNPG_CLUSTER_NAME` from that bound Flux source profile (`pg-core` currently); relying on an
+unbound runtime value is forbidden, even though the primitive default remains `pg-core`. Strict
+selection rejects a manifest whose `database_recovery.cluster` differs from the configured profile
+with `CNPG_METADATA_INVALID`. This requires no backup-manifest schema change.
 
 The exact `database_recovery.target_lsn`, not `target_time`, becomes the CNPG
 `recoveryTarget.targetLSN`. The controller MUST derive the timeline from exactly the first eight
@@ -1028,9 +1031,16 @@ archive and manifest versions, all selected file sizes/checksums, and final coun
 extraction it opens the verified parent and target with directory file descriptors and no-follow
 semantics where available, changes cwd to the pinned target inode, and performs temporary staging
 and final relative promotion there. It restores cwd before checking that the original absolute
-path still names the same directory device/inode. A missing, renamed, replaced, or symlinked target
-fails `TARGET_CHANGED`; writes and cleanup never follow the replacement path. It cannot update
-production or validation backup publication state.
+path still names the same directory device/inode. The pinned target must remain empty before work,
+contain only the current temporary workspace before promotion, only that workspace plus promoted
+`source_images` immediately afterward, and exactly `source_images` before success. Any concurrent
+unrelated entry fails closed. A missing, renamed, replaced, or symlinked target fails
+`TARGET_CHANGED`; writes and cleanup never follow the replacement path.
+
+`fchdir` changes cwd process-wide. Therefore #1251 MUST run this stateless primitive only in an
+isolated, single-command, single-thread restore child. It MUST NOT colocate or combine the primitive
+with a scheduler, backup publication, operator command, or another concurrent restore in one
+process. It cannot update production or validation backup publication state.
 
 Consistency preserves the recovery-set outcomes and then applies the bound source-state policy:
 

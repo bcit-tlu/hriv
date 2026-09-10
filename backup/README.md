@@ -192,7 +192,9 @@ last-success timestamps, sizes, and archive keys bind its manifest safely even t
 each marker type's separate `created_at` binds only its component's `last_success_started_at`, since
 database and filesystem starts are independently timestamped. Selection also verifies published archive metadata, absent publication journal, immutable format-2
 manifest sidecar, production component rules, source indexes/checksums/counts, and CNPG LSN/WAL
-fence. It never chooses by blob modification time. Each command writes exactly one bounded JSON
+fence. #1251's fixed child must set `CNPG_CLUSTER_NAME` from its bound Flux source profile
+(currently `pg-core`); strict selection reports `CNPG_METADATA_INVALID` when the manifest cluster
+and configured profile differ. It never chooses by blob modification time. Each command writes exactly one bounded JSON
 result to stdout and exits nonzero with a bounded code/stage on failure. The manifest sidecar is
 limited to 16 MiB; public `source_state` missing/orphan lists and the exact excluded-artifact list
 are each limited to 256 entries with bounded fields. Machine output deliberately omits the
@@ -204,7 +206,11 @@ file before promoting `source_images`. Production opens and pins the verified ta
 file descriptor, performs temporary extraction and relative promotion while its process cwd is that
 inode, then compares the original absolute path's device/inode before reporting success. A rename,
 replacement, disappearance, or symlink race fails `TARGET_CHANGED`; writes and cleanup remain on
-the pinned inode and never follow the replacement path. It never restores `db.sql` or tiles and never reads or writes
+the pinned inode and never follow the replacement path. The target is rechecked for exact expected
+contents before and after promotion and before success, so unrelated concurrent entries fail closed.
+Because `fchdir` is process-wide, this command must run only as an isolated single-command,
+single-thread validation child; #1251 must not combine it with scheduler, publication, operator, or
+concurrent restore work in one process. It never restores `db.sql` or tiles and never reads or writes
 `RESTORE_STATE.json`, backup publication state, maintenance state, or `/backups` scratch. Existing
 `backup`, `list`, `status`, and operator restore behavior remains connection-string backed; when
 both credentials exist, validation uses the SAS and publication/writes use the connection string.

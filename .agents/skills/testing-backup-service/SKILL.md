@@ -204,7 +204,9 @@ archive properties, absent journal, and exact sidecar bytes; mutate each identit
 size/key/count/checksum, format, CNPG, LSN, fence, and timestamp field independently and require a
 bounded JSON failure. Prove a marker for successful attempt A still selects A while top-level/current
 state records pending or permanently failed attempt B; corrupting any component `last_success_*`
-field must fail. Read fakes use slots/spec-conforming read-only interfaces and forbid adding or
+field must fail. Component start/completion timestamps must be ordered and their serialized duration
+must match the microsecond-precision delta. Override `CNPG_CLUSTER_NAME` away from the bound source
+profile and require `CNPG_METADATA_INVALID`. Read fakes use slots/spec-conforming read-only interfaces and forbid adding or
 calling mutation capabilities. Never select by blob mtime or ambiguous prefix.
 
 For stateless restore, use an exact snapshot/recovery-set/digest and an absent or empty temporary
@@ -213,7 +215,10 @@ version, identity, interruption, and stream errors leave no promoted `source_ima
 production, `/backups`-overlapping, and nonempty targets must fail before archive download. Add a
 deterministic rename-plus-symlink race proving extraction/promotion stay on the pinned target inode,
 the replacement destination remains untouched, cleanup does not follow the absolute replacement,
-and the operation fails `TARGET_CHANGED`. Exercise `main()` for all three machine commands and parse
+and the operation fails `TARGET_CHANGED`. Inject unrelated target entries before pinned yield,
+during extraction, and around promotion; no path may report success unless the pinned target ends
+with exactly `source_images`. Run the `fchdir` path only as an isolated single-thread test process.
+Exercise `main()` for all three machine commands and parse
 stdout as exactly one JSON document. The production
 backup Deployment must not gain `AZURE_READ_SAS_URL`; #1251's isolated fixed child template mounts
 it.
