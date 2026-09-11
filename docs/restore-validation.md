@@ -1484,13 +1484,17 @@ strict parser expectation uses `-v2`. Upgrade creates those immutable ConfigMaps
 `hriv-restore-validation-state` ConfigMap and `hriv-restore-validation` Lease retain their names.
 
 There is one operationally rendered native `monitoring.coreos.com/v1` PrometheusRule and exactly one
-alert, `HRIVCoreRestoreValidationUnhealthy`. Its kube-state-metrics-only expression combines any
-failed Job with weekly/on-demand/cleanup prefix, weekly last success older than eight days, and an
-absent weekly last-success series only after `kube_cronjob_created` is older than eight days. It uses
-`for: 15m`, fixed low-cardinality labels, no run IDs, and links the flux-fleet restore-validation
+alert, `HRIVCoreRestoreValidationUnhealthy`. Its kube-state-metrics-only expression compares the
+latest failed and successful Job start times separately for weekly, on-demand, and cleanup prefixes,
+so a retained failure clears only after a newer success in the same trigger family. It also checks
+weekly last success older than eight days and an absent weekly last-success series only after
+`kube_cronjob_created` is older than eight days. It uses `for: 15m`, fixed low-cardinality labels,
+no run IDs, and links the flux-fleet restore-validation
 observability runbook. Full core success plus confirmed child cleanup is required before a weekly Job
 exits zero. At that point the controller sets `core_succeeded.contract_boundary=simplified1253` and
 atomically advances strict bounded `last_complete_success` containing only run ID, completion time,
 recovery-set ID, source-files digest, and succeeded zero-remaining cleanup evidence. Failures never
-advance it. On-demand success does not rewrite the weekly kube-state-metrics last-success timestamp.
-There is no dashboard, custom metric, exporter, or #1252 dependency.
+advance it. A preserved terminal `1251` success remains readable after upgrade but cannot populate
+`last_complete_success`; the next accepted simplified run replaces it normally. On-demand success
+does not rewrite the weekly kube-state-metrics last-success timestamp. There is no dashboard, custom
+metric, exporter, or #1252 dependency.

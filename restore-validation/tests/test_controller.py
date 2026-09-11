@@ -43,6 +43,35 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual({"stage": "core_succeeded", "completed_at": "2026-01-15T10:00:00Z", "contract_boundary": "simplified1253"}, state["latest_run"]["core_succeeded"])
         self.assertEqual({"run_id": RUN, "completed_at": "2026-01-15T10:00:00Z", "recovery_set_id": selection_document()["recovery_set_id"], "source_files_sha256": "e" * 64, "cleanup": {"outcome": "succeeded", "completed_at": "2026-01-15T10:00:00Z", "remaining_resource_count": 0}}, state["last_complete_success"])
 
+    def test_legacy_1251_success_allows_next_run_without_promotion(self) -> None:
+        fake = gateway(); self.assertEqual("succeeded", drive(controller(fake)))
+        state = json.loads(fake.state_raw)
+        state["latest_run"]["core_succeeded"]["contract_boundary"] = "1251"
+        state["last_complete_success"] = None
+        for resource in state["latest_run"]["child_resources"]:
+            resource.pop("template_sha256", None)
+        fake.state_raw = json.dumps(state)
+        parsed = parse_state(fake.state_raw, NOW)
+        self.assertEqual("1251", parsed["latest_run"]["core_succeeded"]["contract_boundary"])
+        self.assertIsNone(parsed["last_complete_success"])
+        new_run = "rv-20260115t110000z-deadbeef"
+        trigger = type(TRIGGER)("on_demand", "next-orchestrator", "next-job-uid", "next-pod-uid")
+        self.assertEqual("running", Controller(fake, config(), profile(), policy(), templates(), clock=lambda: NOW).run(trigger, new_run))
+        upgraded = parse_state(fake.state_raw, NOW)
+        self.assertEqual(new_run, upgraded["latest_run"]["run_id"])
+        self.assertIsNone(upgraded["last_complete_success"])
+
+    def test_legacy_1251_success_cannot_claim_complete_success(self) -> None:
+        fake = gateway(); self.assertEqual("succeeded", drive(controller(fake)))
+        state = json.loads(fake.state_raw)
+        state["latest_run"]["core_succeeded"]["contract_boundary"] = "1251"
+        with self.assertRaises(ValidationError):
+            parse_state(json.dumps(state), NOW)
+        state["last_complete_success"] = None
+        state["latest_run"]["core_succeeded"]["contract_boundary"] = "unsupported"
+        with self.assertRaises(ValidationError):
+            parse_state(json.dumps(state), NOW)
+
     def test_failure_never_advances_last_complete_success(self) -> None:
         fake = gateway(); self.assertEqual("succeeded", drive(controller(fake)))
         before = copy.deepcopy(parse_state(fake.state_raw, NOW)["last_complete_success"])

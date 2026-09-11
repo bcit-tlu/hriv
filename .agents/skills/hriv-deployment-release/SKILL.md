@@ -49,8 +49,10 @@ operational documentation changes.
   and manual-cleanup Jobs use the seven-day native TTL evidence window; preserve/download evidence
   before expiry or explicitly delete only after review. This TTL is not an application reaper.
 - Keep restore-validation observability to the single kube-state-metrics-only
-  `HRIVCoreRestoreValidationUnhealthy` PrometheusRule alert. Weekly Job success requires full core
-  validation and confirmed cleanup; on-demand success must not affect weekly overdue detection.
+  `HRIVCoreRestoreValidationUnhealthy` PrometheusRule alert. Compare retained failure and success
+  chronology within each weekly/on-demand/cleanup trigger family so recovery clears stale failures.
+  Weekly Job success requires full core validation and confirmed cleanup; on-demand success must not
+  affect weekly failure or overdue detection.
 
 ## Validation
 

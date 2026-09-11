@@ -104,8 +104,12 @@ class ChartTests(unittest.TestCase):
         self.assertEqual(["HRIVCoreRestoreValidationUnhealthy"], [item["alert"] for item in alert_rules])
         self.assertEqual("15m", alert_rules[0]["for"])
         expression = alert_rules[0]["expr"]
-        for metric in ("kube_job_status_failed", "kube_cronjob_status_last_successful_time", "kube_cronjob_created"):
+        for metric in ("kube_job_status_failed", "kube_job_status_succeeded", "kube_job_status_start_time", "kube_cronjob_status_last_successful_time", "kube_cronjob_created"):
             self.assertIn(metric, expression)
+        self.assertIn("max by (namespace, trigger)", expression)
+        self.assertIn("label_replace", expression)
+        self.assertIn("> on(namespace, trigger)", expression)
+        self.assertNotIn("max(kube_job_status_failed", expression)
         self.assertNotIn("run_id", json.dumps(rules))
         self.assertIn("connect_matcher", rendered); self.assertNotIn("domains:\n                            - '*'", rendered)
         self.assertIn("0.0.0.0/0", rendered)

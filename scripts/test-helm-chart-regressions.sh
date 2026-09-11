@@ -919,6 +919,14 @@ assert_contains "$restore_validation_operational_manifest" 'kube_cronjob_status_
   "restore-validation overdue alert must use weekly native success"
 assert_contains "$restore_validation_operational_manifest" 'kube_job_status_failed' \
   "restore-validation alert must cover failed validation and cleanup Jobs"
+assert_contains "$restore_validation_operational_manifest" 'kube_job_status_succeeded' \
+  "restore-validation alert must let a newer same-trigger success clear a retained failure"
+assert_contains "$restore_validation_operational_manifest" 'kube_job_status_start_time' \
+  "restore-validation alert must compare retained Job chronology"
+assert_contains "$restore_validation_operational_manifest" 'max by (namespace, trigger)' \
+  "restore-validation alert must compare failures within each trigger family"
+assert_not_contains "$restore_validation_operational_manifest" 'max(kube_job_status_failed' \
+  "restore-validation alert must not fire forever on any retained failed Job"
 ruby -ryaml -e '
   docs = YAML.load_stream(STDIN.read).compact
   policies = docs.select { |doc| doc["kind"] == "NetworkPolicy" }.to_h { |doc| [doc.dig("metadata", "name"), doc.fetch("spec")] }

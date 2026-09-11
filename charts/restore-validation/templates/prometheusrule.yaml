@@ -12,10 +12,43 @@ spec:
       rules:
         - alert: HRIVCoreRestoreValidationUnhealthy
           expr: |
-            max(kube_job_status_failed{namespace="hriv-restore-validation",job_name=~"hriv-restore-validation-(weekly|on-demand|cleanup)-.*"}) > 0
-            or (time() - kube_cronjob_status_last_successful_time{namespace="hriv-restore-validation",cronjob="hriv-restore-validation-weekly"} > 691200)
-            or ((time() - kube_cronjob_created{namespace="hriv-restore-validation",cronjob="hriv-restore-validation-weekly"} > 691200)
-              unless on(namespace, cronjob) kube_cronjob_status_last_successful_time{namespace="hriv-restore-validation",cronjob="hriv-restore-validation-weekly"})
+            max(
+              (
+                max by (namespace, trigger) (
+                  label_replace(
+                    kube_job_status_start_time{namespace="hriv-restore-validation",job_name=~"hriv-restore-validation-(weekly|on-demand|cleanup)-.+"}
+                    * on(namespace, job_name) group_left()
+                      (kube_job_status_failed{namespace="hriv-restore-validation",job_name=~"hriv-restore-validation-(weekly|on-demand|cleanup)-.+"} > 0),
+                    "trigger", "$1", "job_name", "hriv-restore-validation-(weekly|on-demand|cleanup)-.+"
+                  )
+                )
+                > on(namespace, trigger)
+                (
+                  max by (namespace, trigger) (
+                    label_replace(
+                      kube_job_status_start_time{namespace="hriv-restore-validation",job_name=~"hriv-restore-validation-(weekly|on-demand|cleanup)-.+"}
+                      * on(namespace, job_name) group_left()
+                        (kube_job_status_succeeded{namespace="hriv-restore-validation",job_name=~"hriv-restore-validation-(weekly|on-demand|cleanup)-.+"} > 0),
+                      "trigger", "$1", "job_name", "hriv-restore-validation-(weekly|on-demand|cleanup)-.+"
+                    )
+                  )
+                  or on(namespace, trigger)
+                  (
+                    0 * max by (namespace, trigger) (
+                      label_replace(
+                        kube_job_status_start_time{namespace="hriv-restore-validation",job_name=~"hriv-restore-validation-(weekly|on-demand|cleanup)-.+"}
+                        * on(namespace, job_name) group_left()
+                          (kube_job_status_failed{namespace="hriv-restore-validation",job_name=~"hriv-restore-validation-(weekly|on-demand|cleanup)-.+"} > 0),
+                        "trigger", "$1", "job_name", "hriv-restore-validation-(weekly|on-demand|cleanup)-.+"
+                      )
+                    )
+                  )
+                )
+              )
+              or (time() - kube_cronjob_status_last_successful_time{namespace="hriv-restore-validation",cronjob="hriv-restore-validation-weekly"} > 691200)
+              or ((time() - kube_cronjob_created{namespace="hriv-restore-validation",cronjob="hriv-restore-validation-weekly"} > 691200)
+                unless on(namespace, cronjob) kube_cronjob_status_last_successful_time{namespace="hriv-restore-validation",cronjob="hriv-restore-validation-weekly"})
+            )
           for: 15m
           labels:
             severity: warning

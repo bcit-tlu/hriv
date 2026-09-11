@@ -37,9 +37,10 @@ def parse_state(raw: str | bytes | None, now: datetime) -> dict[str, Any]:
         raise ValidationError("STATE_INVARIANT")
     latest = value["latest_run"]
     active = value["active_run"]
-    if latest is not None:
-        _run(latest)
+    legacy_success = _run(latest) if latest is not None else False
     complete = value["last_complete_success"]
+    if legacy_success and complete is not None:
+        raise ValidationError("STATE_INVARIANT")
     if complete is not None:
         _complete_success(complete)
         if latest is not None and latest["run_id"] == complete["run_id"]:
@@ -77,7 +78,7 @@ def _bounded_tree(value: Any) -> None:
             _bounded_tree(item)
 
 
-def _run(run: dict[str, Any]) -> None:
+def _run(run: dict[str, Any]) -> bool:
     required = {"run_id", "trigger", "job_name", "job_uid", "state", "current_stage", "sequence", "started_at", "heartbeat_at", "selected_source", "child_resources", "stages", "outcome", "failure_stage", "failure_code", "cleanup", "core_succeeded"}
     exact_object(run, required=required, optional={"completed_at", "expires_at", "orchestrator_evidence"})
     state = run["state"]
@@ -93,9 +94,11 @@ def _run(run: dict[str, Any]) -> None:
     if cleanup["outcome"] not in {"pending", "running", "retained", "succeeded"}:
         raise ValidationError("STATE_INVARIANT")
     integer(cleanup["remaining_resource_count"], "remaining_resource_count", 0, MAX_CHILDREN)
+    legacy_success = False
     if state == "SUCCEEDED":
         core = exact_object(run["core_succeeded"], required={"stage", "completed_at", "contract_boundary"})
-        if core != {"stage": "core_succeeded", "completed_at": run.get("completed_at"), "contract_boundary": "simplified1253"} or cleanup["outcome"] != "succeeded" or cleanup["completed_at"] != run.get("completed_at") or cleanup["remaining_resource_count"] != 0 or run["child_resources"] and cleanup["requested_at"] is None:
+        legacy_success = core["contract_boundary"] == "1251"
+        if core not in ({"stage": "core_succeeded", "completed_at": run.get("completed_at"), "contract_boundary": "1251"}, {"stage": "core_succeeded", "completed_at": run.get("completed_at"), "contract_boundary": "simplified1253"}) or cleanup["outcome"] != "succeeded" or cleanup["completed_at"] != run.get("completed_at") or cleanup["remaining_resource_count"] != 0 or run["child_resources"] and cleanup["requested_at"] is None:
             raise ValidationError("STATE_INVARIANT")
     elif run["core_succeeded"] is not None:
         raise ValidationError("STATE_INVARIANT")
@@ -109,6 +112,7 @@ def _run(run: dict[str, Any]) -> None:
         if identity in resources:
             raise ValidationError("STATE_INVARIANT")
         resources.add(identity)
+    return legacy_success
 
 
 def _complete_success(value: Any) -> None:
