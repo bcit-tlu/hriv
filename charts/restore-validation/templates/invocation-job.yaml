@@ -7,6 +7,9 @@ metadata:
 spec:
   backoffLimit: 0
   activeDeadlineSeconds: 21600
+  {{- if .standalone }}
+  ttlSecondsAfterFinished: 604800
+  {{- end }}
   template:
     metadata:
       labels:
@@ -45,10 +48,10 @@ spec:
             - {name: templates, mountPath: /config/templates, readOnly: true}
             - {name: tmp, mountPath: /tmp}
       volumes:
-        - {name: controller, configMap: {name: hriv-restore-validation-controller-v1}}
-        - {name: profile, configMap: {name: hriv-restore-validation-source-profile-v1}}
-        - {name: policy, configMap: {name: hriv-restore-validation-source-state-policy-v1}}
-        - {name: templates, configMap: {name: hriv-restore-validation-child-templates-v1}}
+        - {name: controller, configMap: {name: hriv-restore-validation-controller-v2}}
+        - {name: profile, configMap: {name: hriv-restore-validation-source-profile-v2}}
+        - {name: policy, configMap: {name: hriv-restore-validation-source-state-policy-v2}}
+        - {name: templates, configMap: {name: hriv-restore-validation-child-templates-v2}}
         - {name: tmp, emptyDir: {sizeLimit: 512Mi}}
 {{- end }}
 {{- if .Values.operational.enabled }}
@@ -74,7 +77,7 @@ spec:
   successfulJobsHistoryLimit: 2
   failedJobsHistoryLimit: 1
   jobTemplate:
-    {{- include "hriv-restore-validation.orchestratorJobTemplate" (dict "root" . "trigger" "scheduled") | nindent 4 }}
+    {{- include "hriv-restore-validation.orchestratorJobTemplate" (dict "root" . "trigger" "scheduled" "standalone" false) | nindent 4 }}
 ---
 apiVersion: batch/v1
 kind: CronJob
@@ -93,7 +96,7 @@ spec:
   successfulJobsHistoryLimit: 2
   failedJobsHistoryLimit: 1
   jobTemplate:
-    {{- include "hriv-restore-validation.orchestratorJobTemplate" (dict "root" . "trigger" "on_demand") | nindent 4 }}
+    {{- include "hriv-restore-validation.orchestratorJobTemplate" (dict "root" . "trigger" "on_demand" "standalone" true) | nindent 4 }}
 ---
 apiVersion: batch/v1
 kind: CronJob
@@ -118,6 +121,7 @@ spec:
     spec:
       backoffLimit: 0
       activeDeadlineSeconds: 21600
+      ttlSecondsAfterFinished: 604800
       template:
         metadata:
           labels:
@@ -154,9 +158,9 @@ spec:
                 - {name: templates, mountPath: /config/templates, readOnly: true}
                 - {name: tmp, mountPath: /tmp}
           volumes:
-            - {name: controller, configMap: {name: hriv-restore-validation-controller-v1}}
-            - {name: profile, configMap: {name: hriv-restore-validation-source-profile-v1}}
-            - {name: policy, configMap: {name: hriv-restore-validation-source-state-policy-v1}}
-            - {name: templates, configMap: {name: hriv-restore-validation-child-templates-v1}}
+            - {name: controller, configMap: {name: hriv-restore-validation-controller-v2}}
+            - {name: profile, configMap: {name: hriv-restore-validation-source-profile-v2}}
+            - {name: policy, configMap: {name: hriv-restore-validation-source-state-policy-v2}}
+            - {name: templates, configMap: {name: hriv-restore-validation-child-templates-v2}}
             - {name: tmp, emptyDir: {sizeLimit: 512Mi}}
 {{- end }}

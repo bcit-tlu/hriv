@@ -156,17 +156,34 @@ class Controller:
         if not latest or latest.get("run_id") != run_id or latest.get("state") != "FAILED_RETAIN" or latest.get("child_resources") != retained.get("child_resources"):
             raise ValidationError("CLEANUP_STATE_CHANGED")
         lease = self.gateway.read_lease(self.config.lease_name)
+        refs = [ResourceRef(item["apiVersion"], item["kind"], item["name"], item["uid"], item.get("template_sha256")) for item in retained["child_resources"]]
+        observed = self.gateway.list_run_children(run_id)
+        if not self._observed_children_are_bound(run_id, retained["child_resources"], observed):
+            raise ValidationError("CLEANUP_UNBOUND_CHILD")
         if lease.holder_identity:
             try:
                 uid, held_run, held_acquired, held_renewed = parse_holder(lease.holder_identity)
             except ValidationError as exc:
                 raise ValidationError("CLEANUP_OVERLAP") from exc
-            if (uid, held_run) != (job_uid, run_id) or lease.acquire_time is None or lease.renew_time is None:
+            if held_run != run_id or lease.acquire_time is None or lease.renew_time is None or not lease.duration_seconds:
                 raise ValidationError("CLEANUP_OVERLAP")
             acquired = normalize_lease_time(lease.acquire_time)
             renewed = normalize_lease_time(lease.renew_time)
             if acquired != held_acquired or renewed != held_renewed or renewed > now:
                 raise ValidationError("CLEANUP_OVERLAP")
+            if uid != job_uid:
+                expired = now > renewed + timedelta(seconds=lease.duration_seconds)
+                if not expired or self.gateway.holder_job_status("", uid) not in {"absent", "terminal"}:
+                    raise ValidationError("CLEANUP_OVERLAP")
+                # Validate every still-observed object before replacing an interrupted
+                # cleanup holder. The state and resourceVersion CAS then bind takeover
+                # to the exact retained environment inspected above.
+                for ref in refs:
+                    actual = self.gateway.get_child(ref)
+                    if actual is not None:
+                        role = self._role_for_ref({"run_id": run_id, "child_resources": retained["child_resources"]}, ref, actual)
+                        self._verify_ref(ref, run_id, role)
+                acquired = now
             try:
                 self.gateway.replace_lease(self.config.lease_name, Lease(lease.resource_version, holder_identity(job_uid, run_id, acquired, now), acquired, now, self.config.lease_seconds))
             except self.gateway.conflict_error as exc:
@@ -176,10 +193,6 @@ class Controller:
                 self.gateway.replace_lease(self.config.lease_name, Lease(lease.resource_version, holder_identity(job_uid, run_id, now, now), now, now, self.config.lease_seconds))
             except self.gateway.conflict_error as exc:
                 raise ValidationError("CLEANUP_OVERLAP") from exc
-        refs = [ResourceRef(item["apiVersion"], item["kind"], item["name"], item["uid"], item.get("template_sha256")) for item in retained["child_resources"]]
-        observed = self.gateway.list_run_children(run_id)
-        if not self._observed_children_are_bound(run_id, retained["child_resources"], observed):
-            raise ValidationError("CLEANUP_UNBOUND_CHILD")
         tracked = {(ref.api_version, ref.kind, ref.name, ref.uid) for ref in refs}
         tracked_actual: list[tuple[ResourceRef, dict[str, Any]]] = []
         descendant_actual: list[tuple[ResourceRef, dict[str, Any]]] = []
@@ -668,11 +681,11 @@ class Controller:
             raise ValidationError("RESTORE_RESULT_INVALID")
 
     def _consistency_result(self, raw: str, selected: dict[str, Any]) -> None:
-        required = {"schema_version", "operation", "success", "database_source_count", "restored_file_count", "restored_total_bytes", "source_files_sha256", "missing_sources", "missing_sources_sha256", "unexpected_orphans", "source_state_policy_sha256"}
-        value = exact_object(parse_json(raw, max_bytes=128 * 1024), required=required)
+        required = {"schema_version", "operation", "success", "database_source_count", "restored_file_count", "restored_total_bytes", "source_files_sha256", "missing_count", "missing_sources_sha256", "unexpected_orphan_count", "source_state_policy_sha256"}
+        value = exact_object(parse_json(raw, max_bytes=32 * 1024), required=required)
         selected_missing = selected["source_state"]["missing_sources"]
         missing_digest = hashlib.sha256(canonical_json(selected_missing).encode("utf-8")).hexdigest()
-        expected = {"schema_version": 1, "operation": "validate-consistency", "success": True, "database_source_count": selected["database_row_count"], "restored_file_count": selected["source_file_count"], "restored_total_bytes": selected["source_total_bytes"], "source_files_sha256": selected["source_files_sha256"], "missing_sources": selected_missing, "missing_sources_sha256": missing_digest, "unexpected_orphans": [], "source_state_policy_sha256": self.policy.identity_sha256}
+        expected = {"schema_version": 1, "operation": "validate-consistency", "success": True, "database_source_count": selected["database_row_count"], "restored_file_count": selected["source_file_count"], "restored_total_bytes": selected["source_total_bytes"], "source_files_sha256": selected["source_files_sha256"], "missing_count": len(selected_missing), "missing_sources_sha256": missing_digest, "unexpected_orphan_count": 0, "source_state_policy_sha256": self.policy.identity_sha256}
         if value != expected:
             raise ValidationError("CONSISTENCY_RESULT_INVALID")
 
@@ -744,8 +757,16 @@ class Controller:
             run = self._holder(state, run_id)
             entry = run["stages"]["CLEANUP"]
             entry.update({"outcome": "succeeded", "completed_at": now, "duration_seconds": max(0, int((_date(now) - _date(entry["started_at"])).total_seconds()))})
-            run.update({"state": "SUCCEEDED", "current_stage": None, "sequence": run["sequence"] + 1, "heartbeat_at": now, "completed_at": now, "outcome": "succeeded", "core_succeeded": {"stage": "core_succeeded", "completed_at": now, "contract_boundary": "1251"}})
+            run.update({"state": "SUCCEEDED", "current_stage": None, "sequence": run["sequence"] + 1, "heartbeat_at": now, "completed_at": now, "outcome": "succeeded", "core_succeeded": {"stage": "core_succeeded", "completed_at": now, "contract_boundary": "simplified1253"}})
             run["cleanup"].update({"outcome": "succeeded", "completed_at": now, "remaining_resource_count": 0})
+            selected = run["selected_source"]
+            state["last_complete_success"] = {
+                "run_id": run_id,
+                "completed_at": now,
+                "recovery_set_id": selected["recovery_set_id"],
+                "source_files_sha256": selected["source_files_sha256"],
+                "cleanup": {"outcome": "succeeded", "completed_at": now, "remaining_resource_count": 0},
+            }
             state["active_run"] = self._summary(run)
             self._history_for_run(state, run)
         self.store.update(mutate)

@@ -198,7 +198,8 @@ class ValidatorTests(unittest.TestCase):
             source = Path(raw) / "source_images"; source.mkdir(); creds = Path(raw) / "creds"; creds.mkdir(); credentials(creds)
             connection = Connection([[{"row_id": "10", "stored_path": "a.jpg", "status": "ready"}, {"row_id": "2", "stored_path": "z.jpg", "status": "ready"}]])
             result = validate_consistency(profile(), source_policy, state, "db", source, creds, connect=lambda **kwargs: connection)
-        self.assertEqual(["2", "10"], [item["row_id"] for item in result["missing_sources"]])
+        self.assertEqual(2, result["missing_count"])
+        self.assertNotIn("missing_sources", result)
 
     def test_consistency_preserves_policy_reasons_and_row_order(self):
         missing = [
@@ -212,8 +213,8 @@ class ValidatorTests(unittest.TestCase):
             source = Path(raw) / "source_images"; source.mkdir(); creds = Path(raw) / "creds"; creds.mkdir(); credentials(creds)
             rows = [{"row_id": "10", "stored_path": "a.jpg", "status": "unsafe"}, {"row_id": "2", "stored_path": "z.jpg", "status": "duplicate"}]
             result = validate_consistency(profile(), source_policy, state, "db", source, creds, connect=lambda **kwargs: Connection([rows]))
-        self.assertEqual(["duplicate_source_reference", "unsafe_or_out_of_root"], [item["reason"] for item in result["missing_sources"]])
-        self.assertEqual(["2", "10"], [item["row_id"] for item in result["missing_sources"]])
+        self.assertEqual(2, result["missing_count"])
+        self.assertNotIn("missing_sources", result)
 
     def test_consistency_preserves_inactive_source_rows(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -222,15 +223,30 @@ class ValidatorTests(unittest.TestCase):
             result = validate_consistency(profile(), policy(), EMPTY_SOURCE_STATE, "db", source, creds, connect=lambda **kwargs: connection)
         self.assertEqual(1, result["database_source_count"])
 
-    def test_consistency_reports_recomputed_drift_and_unexpected_orphans(self):
+    def test_consistency_rejects_recomputed_drift_and_unexpected_orphans(self):
         with tempfile.TemporaryDirectory() as raw:
             source = Path(raw) / "source_images"; source.mkdir(); (source / "orphan.jpg").write_bytes(b"x")
             creds = Path(raw) / "creds"; creds.mkdir(); credentials(creds)
             connection = Connection([[{"row_id": "1", "stored_path": "missing.jpg", "status": "ready"}]])
-            result = validate_consistency(profile(), policy(), EMPTY_SOURCE_STATE, "db", source, creds, connect=lambda **kwargs: connection)
-        self.assertEqual("missing_source", result["missing_sources"][0]["reason"])
-        self.assertEqual(["data/source_images/orphan.jpg"], result["unexpected_orphans"])
-        self.assertRegex(result["source_files_sha256"], r"^[0-9a-f]{64}$")
+            with self.assertRaisesRegex(ValidationError, "SOURCE_POLICY_MISMATCH"):
+                validate_consistency(profile(), policy(), EMPTY_SOURCE_STATE, "db", source, creds, connect=lambda **kwargs: connection)
+
+    def test_consistency_maximum_long_missing_state_stays_below_32k(self):
+        missing = [
+            {"row_id": str(index), "status": "s" * 512, "stored_path": f"data/source_images/{index}-" + "x" * 470, "reason": "missing_source"}
+            for index in range(1, 257)
+        ]
+        state = {"missing_sources": missing, "orphan_sources": []}
+        source_policy = policy_for(state)
+        rows = [{"row_id": item["row_id"], "stored_path": item["stored_path"], "status": item["status"]} for item in missing]
+        with tempfile.TemporaryDirectory() as raw:
+            source = Path(raw) / "source_images"; source.mkdir()
+            creds = Path(raw) / "creds"; creds.mkdir(); credentials(creds)
+            result = validate_consistency(profile(), source_policy, state, "db", source, creds, connect=lambda **kwargs: Connection([rows]))
+        self.assertEqual(256, result["missing_count"])
+        self.assertEqual(0, result["unexpected_orphan_count"])
+        self.assertNotIn("missing_sources", result)
+        self.assertLess(len(json.dumps(result, separators=(",", ":"), ensure_ascii=False).encode("utf-8")), 32 * 1024)
 
     def test_consistency_rejects_wrong_root(self):
         with tempfile.TemporaryDirectory() as raw:

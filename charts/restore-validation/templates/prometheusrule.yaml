@@ -1,0 +1,27 @@
+{{- if .Values.operational.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: hriv-restore-validation
+  labels:
+    {{- include "hriv-restore-validation.labels" . | nindent 4 }}
+    app.kubernetes.io/component: monitoring
+spec:
+  groups:
+    - name: hriv-restore-validation
+      rules:
+        - alert: HRIVCoreRestoreValidationUnhealthy
+          expr: |
+            max(kube_job_status_failed{namespace="hriv-restore-validation",job_name=~"hriv-restore-validation-(weekly|on-demand|cleanup)-.*"}) > 0
+            or (time() - kube_cronjob_status_last_successful_time{namespace="hriv-restore-validation",cronjob="hriv-restore-validation-weekly"} > 691200)
+            or ((time() - kube_cronjob_created{namespace="hriv-restore-validation",cronjob="hriv-restore-validation-weekly"} > 691200)
+              unless on(namespace, cronjob) kube_cronjob_status_last_successful_time{namespace="hriv-restore-validation",cronjob="hriv-restore-validation-weekly"})
+          for: 15m
+          labels:
+            severity: warning
+            service: hriv-restore-validation
+          annotations:
+            summary: HRIV core restore validation is unhealthy
+            description: A validation or cleanup Job failed, or the weekly full core-and-cleanup validation is overdue.
+            runbook_url: https://github.com/bcit-tlu/flux-fleet/blob/main/docs/restore-validation.md#observability
+{{- end }}

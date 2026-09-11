@@ -64,9 +64,9 @@ def template_document() -> dict[str, Any]:
                 {"name": "NO_PROXY", "value": ".svc,.cluster.local,10.43.0.1,localhost,127.0.0.1"},
             ])
         if role in {"db", "consistency"}:
-            volumes.extend([{"name": "credentials", "secret": {"secretName": "generated-superuser"}}, {"name": "profile", "configMap": {"name": "hriv-restore-validation-source-profile-v1"}}])
+            volumes.extend([{"name": "credentials", "secret": {"secretName": "generated-superuser"}}, {"name": "profile", "configMap": {"name": "hriv-restore-validation-source-profile-v2"}}])
         if role == "consistency":
-            volumes.append({"name": "policy", "configMap": {"name": "hriv-restore-validation-source-state-policy-v1"}})
+            volumes.append({"name": "policy", "configMap": {"name": "hriv-restore-validation-source-state-policy-v2"}})
         if role in {"restore", "consistency"}:
             volumes.append({"name": "source", "persistentVolumeClaim": {"claimName": "generated-source-pvc"}})
         mounts = [{"name": "tmp", "mountPath": "/tmp"}]
@@ -107,7 +107,7 @@ def restore_result(**changes: Any) -> dict[str, Any]:
 def consistency_result(**changes: Any) -> dict[str, Any]:
     missing = []
     missing_digest = hashlib.sha256(json.dumps(missing, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    value = {"schema_version": 1, "operation": "validate-consistency", "success": True, "database_source_count": 2, "restored_file_count": 2, "restored_total_bytes": 10, "source_files_sha256": "e" * 64, "missing_sources": missing, "missing_sources_sha256": missing_digest, "unexpected_orphans": [], "source_state_policy_sha256": policy().identity_sha256}
+    value = {"schema_version": 1, "operation": "validate-consistency", "success": True, "database_source_count": 2, "restored_file_count": 2, "restored_total_bytes": 10, "source_files_sha256": "e" * 64, "missing_count": len(missing), "missing_sources_sha256": missing_digest, "unexpected_orphan_count": 0, "source_state_policy_sha256": policy().identity_sha256}
     value.update(changes)
     return value
 

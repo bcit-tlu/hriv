@@ -42,6 +42,15 @@ operational documentation changes.
   chart publishing assumptions documented in AGENTS and deploy docs.
 - Backup and DB tooling must keep PostgreSQL client/server major versions
   compatible.
+- Restore-validation runtime ConfigMaps are immutable payload identities. Bump the controller,
+  profile, policy, and child-template names and every mount/reference atomically; never rename the
+  fixed state ConfigMap or Lease, and leave superseded immutable objects for operator cleanup.
+- The weekly restore-validation Job keeps native CronJob history and no TTL. Standalone on-demand
+  and manual-cleanup Jobs use the seven-day native TTL evidence window; preserve/download evidence
+  before expiry or explicitly delete only after review. This TTL is not an application reaper.
+- Keep restore-validation observability to the single kube-state-metrics-only
+  `HRIVCoreRestoreValidationUnhealthy` PrometheusRule alert. Weekly Job success requires full core
+  validation and confirmed cleanup; on-demand success must not affect weekly overdue detection.
 
 ## Validation
 

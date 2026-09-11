@@ -31,17 +31,25 @@ class ChartTests(unittest.TestCase):
 
     def test_default_chart_renders_disabled(self):
         self.assertNotIn("hriv-restore-validation-invoke", self.rendered)
+        self.assertFalse(any(item and item.get("kind") == "PrometheusRule" for item in self.documents))
+
+    def test_runtime_configmaps_are_atomic_v2_identities(self):
+        names = {item["metadata"]["name"] for item in self.documents if item and item.get("kind") == "ConfigMap"}
+        expected = {"hriv-restore-validation-controller-v2", "hriv-restore-validation-source-profile-v2", "hriv-restore-validation-source-state-policy-v2", "hriv-restore-validation-child-templates-v2"}
+        self.assertTrue(expected <= names)
+        self.assertFalse(any(name.endswith("-v1") for name in names))
+        self.assertIn("hriv-restore-validation-state", names)
 
     def test_chart_config_round_trip(self):
-        raw = self._config_map("hriv-restore-validation-controller-v1")["data"]["config.json"]
+        raw = self._config_map("hriv-restore-validation-controller-v2")["data"]["config.json"]
         self.assertEqual("hriv-restore-validation", Config.parse(raw).namespace)
 
     def test_chart_profile_round_trip(self):
-        raw = self._config_map("hriv-restore-validation-source-profile-v1")["data"]["profile.json"]
+        raw = self._config_map("hriv-restore-validation-source-profile-v2")["data"]["profile.json"]
         self.assertEqual("pg-core-source", SourceProfile.parse(raw).external_cluster)
 
     def test_chart_policy_round_trip(self):
-        raw = self._config_map("hriv-restore-validation-source-state-policy-v1")["data"]["policy.json"]
+        raw = self._config_map("hriv-restore-validation-source-state-policy-v2")["data"]["policy.json"]
         self.assertEqual(1, SourcePolicy.parse(raw).policy_version)
 
     def test_chart_current_nonzero_digest_only_policy(self):
@@ -51,14 +59,14 @@ class ChartTests(unittest.TestCase):
             values.flush()
             rendered = subprocess.check_output(["helm", "template", "test", str(CHART), "-f", values.name], text=True)
         documents = list(yaml.safe_load_all(rendered))
-        raw = next(item for item in documents if item and item.get("kind") == "ConfigMap" and item["metadata"]["name"] == "hriv-restore-validation-source-state-policy-v1")["data"]["policy.json"]
+        raw = next(item for item in documents if item and item.get("kind") == "ConfigMap" and item["metadata"]["name"] == "hriv-restore-validation-source-state-policy-v2")["data"]["policy.json"]
         parsed = SourcePolicy.parse(raw)
         self.assertEqual((digest, 39, 3), (parsed.source_state_sha256, parsed.missing_count, parsed.orphan_count))
         self.assertNotIn("source_state", json.loads(raw))
 
     def test_chart_templates_round_trip(self):
-        profile_raw = self._config_map("hriv-restore-validation-source-profile-v1")["data"]["profile.json"]
-        raw = self._config_map("hriv-restore-validation-child-templates-v1")["data"]["templates.yaml"]
+        profile_raw = self._config_map("hriv-restore-validation-source-profile-v2")["data"]["profile.json"]
+        raw = self._config_map("hriv-restore-validation-child-templates-v2")["data"]["templates.yaml"]
         parsed_profile = SourceProfile.parse(profile_raw); parsed = Templates.parse(raw, parsed_profile)
         self.assertEqual("40Gi", parsed.source_pvc["spec"]["resources"]["requests"]["storage"])
 
@@ -80,14 +88,23 @@ class ChartTests(unittest.TestCase):
         self.assertEqual(("0 11 * * 0", "Forbid", 3600, 2, 1), (weekly["spec"]["schedule"], weekly["spec"]["concurrencyPolicy"], weekly["spec"]["startingDeadlineSeconds"], weekly["spec"]["successfulJobsHistoryLimit"], weekly["spec"]["failedJobsHistoryLimit"]))
         weekly_template = weekly["spec"]["jobTemplate"]
         demand_template = on_demand["spec"]["jobTemplate"]
-        weekly_template["spec"]["template"]["spec"]["containers"][0]["env"][0]["value"] = "trigger"
-        demand_template["spec"]["template"]["spec"]["containers"][0]["env"][0]["value"] = "trigger"
-        self.assertEqual(weekly_template, demand_template)
         self.assertEqual((0, 21600, "Never"), (weekly_template["spec"]["backoffLimit"], weekly_template["spec"]["activeDeadlineSeconds"], weekly_template["spec"]["template"]["spec"]["restartPolicy"]))
+        self.assertNotIn("ttlSecondsAfterFinished", weekly_template["spec"])
+        self.assertEqual(604800, demand_template["spec"]["ttlSecondsAfterFinished"])
         self.assertTrue(on_demand["spec"]["suspend"])
-        self.assertNotIn("ttlSecondsAfterFinished", rendered)
-        cleanup_args = cronjobs["hriv-restore-validation-cleanup"]["spec"]["jobTemplate"]["spec"]["template"]["spec"]["containers"][0]["args"]
+        cleanup_template = cronjobs["hriv-restore-validation-cleanup"]["spec"]["jobTemplate"]
+        self.assertEqual(604800, cleanup_template["spec"]["ttlSecondsAfterFinished"])
+        cleanup_args = cleanup_template["spec"]["template"]["spec"]["containers"][0]["args"]
         self.assertEqual(["cleanup-retained"], cleanup_args)
+        rules = [item for item in docs if item.get("kind") == "PrometheusRule"]
+        self.assertEqual(1, len(rules))
+        alert_rules = rules[0]["spec"]["groups"][0]["rules"]
+        self.assertEqual(["HRIVCoreRestoreValidationUnhealthy"], [item["alert"] for item in alert_rules])
+        self.assertEqual("15m", alert_rules[0]["for"])
+        expression = alert_rules[0]["expr"]
+        for metric in ("kube_job_status_failed", "kube_cronjob_status_last_successful_time", "kube_cronjob_created"):
+            self.assertIn(metric, expression)
+        self.assertNotIn("run_id", json.dumps(rules))
         self.assertIn("connect_matcher", rendered); self.assertNotIn("domains:\n                            - '*'", rendered)
         self.assertIn("0.0.0.0/0", rendered)
         self.assertIn("10.43.0.1/32", rendered)
@@ -98,7 +115,7 @@ class ChartTests(unittest.TestCase):
         self.assertFalse(proxy_pod["automountServiceAccountToken"])
         self.assertTrue(proxy_pod["securityContext"]["runAsNonRoot"])
         self.assertTrue(proxy_pod["containers"][0]["securityContext"]["readOnlyRootFilesystem"])
-        child_config = next(item for item in docs if item.get("kind") == "ConfigMap" and item["metadata"]["name"] == "hriv-restore-validation-child-templates-v1")
+        child_config = next(item for item in docs if item.get("kind") == "ConfigMap" and item["metadata"]["name"] == "hriv-restore-validation-child-templates-v2")
         children = yaml.safe_load(child_config["data"]["templates.yaml"])
         for job_name in ("selection_job", "source_restore_job"):
             names = {item["name"] for item in children[job_name]["spec"]["template"]["spec"]["containers"][0]["env"]}

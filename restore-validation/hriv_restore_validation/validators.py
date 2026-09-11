@@ -189,11 +189,16 @@ def validate_consistency(profile: SourceProfile, policy: SourcePolicy, selected_
     missing.sort(key=lambda item: (int(item["row_id"]), item["status"], item["stored_path"], item["reason"]))
     db_paths = {path for path, _ in db_rows}
     unexpected_orphans = [path for path in sorted(files) if path not in db_paths]
+    # The selected canonical state is the reviewed expectation, not data to echo.
+    # Validate every absent row's complete identity/status/path/reason internally and
+    # expose only bounded counts and digests to the controller.
+    if missing != selected["missing_sources"] or unexpected_orphans:
+        raise ValidationError("SOURCE_POLICY_MISMATCH")
     source_files_sha256 = hashlib.sha256(
         json.dumps(files, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     ).hexdigest()
     missing_sources_sha256 = hashlib.sha256(canonical_json(missing).encode("utf-8")).hexdigest()
-    result = {"schema_version": 1, "operation": "validate-consistency", "success": True, "database_source_count": len(rows), "restored_file_count": len(files), "restored_total_bytes": sum(item["size"] for item in files.values()), "source_files_sha256": source_files_sha256, "missing_sources": missing, "missing_sources_sha256": missing_sources_sha256, "unexpected_orphans": unexpected_orphans, "source_state_policy_sha256": policy.identity_sha256}
+    result = {"schema_version": 1, "operation": "validate-consistency", "success": True, "database_source_count": len(rows), "restored_file_count": len(files), "restored_total_bytes": sum(item["size"] for item in files.values()), "source_files_sha256": source_files_sha256, "missing_count": len(missing), "missing_sources_sha256": missing_sources_sha256, "unexpected_orphan_count": 0, "source_state_policy_sha256": policy.identity_sha256}
     _bounded_result(result)
     return result
 

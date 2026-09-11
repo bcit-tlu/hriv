@@ -40,8 +40,29 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual("succeeded", drive(controller(fake)))
         state = parse_state(fake.state_raw, NOW)
         self.assertEqual("SUCCEEDED", state["latest_run"]["state"])
-        self.assertEqual("core_succeeded", state["latest_run"]["core_succeeded"]["stage"])
-        self.assertIsNone(state["last_complete_success"])
+        self.assertEqual({"stage": "core_succeeded", "completed_at": "2026-01-15T10:00:00Z", "contract_boundary": "simplified1253"}, state["latest_run"]["core_succeeded"])
+        self.assertEqual({"run_id": RUN, "completed_at": "2026-01-15T10:00:00Z", "recovery_set_id": selection_document()["recovery_set_id"], "source_files_sha256": "e" * 64, "cleanup": {"outcome": "succeeded", "completed_at": "2026-01-15T10:00:00Z", "remaining_resource_count": 0}}, state["last_complete_success"])
+
+    def test_failure_never_advances_last_complete_success(self) -> None:
+        fake = gateway(); self.assertEqual("succeeded", drive(controller(fake)))
+        before = copy.deepcopy(parse_state(fake.state_raw, NOW)["last_complete_success"])
+        failed_run = "rv-20260115t110000z-deadbeef"
+        failed_trigger = type(TRIGGER)("scheduled", "weekly", "failed-job-uid")
+        fake.results["selection"] = json.dumps({"schema_version": 1, "operation": "validation-select", "success": False, "failure_code": "STATE_MISSING", "failure_stage": "selection"})
+        fake.phases["selection"] = "Failed"
+        self.assertEqual("retained", Controller(fake, config(), profile(), policy(), templates(), clock=lambda: NOW).run(failed_trigger, failed_run))
+        self.assertEqual(before, parse_state(fake.state_raw, NOW)["last_complete_success"])
+
+    def test_complete_success_schema_rejects_extra_or_failed_cleanup(self) -> None:
+        fake = gateway(); drive(controller(fake)); state = json.loads(fake.state_raw)
+        for mutate in (
+            lambda evidence: evidence.__setitem__("extra", True),
+            lambda evidence: evidence["cleanup"].__setitem__("outcome", "failed"),
+            lambda evidence: evidence.__setitem__("source_files_sha256", "bad"),
+        ):
+            altered = copy.deepcopy(state); mutate(altered["last_complete_success"])
+            with self.assertRaises(ValidationError):
+                parse_state(json.dumps(altered), NOW)
 
     def test_cnpg_uses_target_tli(self) -> None:
         fake = gateway(); drive(controller(fake))
@@ -304,7 +325,7 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual("retained", drive(controller(fake)))
 
     def test_consistency_policy_mismatch(self) -> None:
-        fake = gateway(); fake.results["consistency"] = json.dumps(consistency_result(unexpected_orphans=["data/source_images/x"]))
+        fake = gateway(); fake.results["consistency"] = json.dumps(consistency_result(unexpected_orphan_count=1))
         self.assertEqual("retained", drive(controller(fake)))
 
     def test_consistency_same_size_digest_mismatch_is_retained(self) -> None:
@@ -535,6 +556,33 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual("running", instance.cleanup_retained("cleanup-job-uid"))
         fake.finish_deletes(); fake.conflicts = 1
         self.assertEqual("succeeded", instance.cleanup_retained("cleanup-job-uid"))
+
+    def test_manual_cleanup_expired_stale_holder_takeover_continues_partial_cleanup(self) -> None:
+        fake, first = self._retained(); fake.async_deletes = True
+        self.assertEqual("running", first.cleanup_retained("old-cleanup-uid"))
+        takeover_time = NOW + timedelta(seconds=31)
+        replacement = Controller(fake, config(), profile(), policy(), templates(), clock=lambda: takeover_time)
+        self.assertEqual("running", replacement.cleanup_retained("replacement-cleanup-uid"))
+        self.assertEqual("replacement-cleanup-uid", fake.lease.holder_identity.split("|")[1])
+        fake.finish_deletes()
+        self.assertEqual("succeeded", replacement.cleanup_retained("replacement-cleanup-uid"))
+
+    def test_manual_cleanup_stale_takeover_rejects_unexpired_live_and_different_run(self) -> None:
+        for case in ("unexpired", "live", "different-run"):
+            with self.subTest(case=case):
+                fake, first = self._retained(); fake.async_deletes = True
+                self.assertEqual("running", first.cleanup_retained("old-cleanup-uid"))
+                clock = NOW + timedelta(seconds=31)
+                if case == "unexpired":
+                    clock = NOW + timedelta(seconds=30)
+                elif case == "live":
+                    fake.jobs[("", "old-cleanup-uid")] = "active"
+                else:
+                    acquired = fake.lease.acquire_time
+                    fake.lease = Lease(fake.lease.resource_version, holder_identity("old-cleanup-uid", "rv-20260115t090000z-deadbeef", acquired, acquired), acquired, acquired, 30)
+                replacement = Controller(fake, config(), profile(), policy(), templates(), clock=lambda: clock)
+                with self.assertRaisesRegex(ValidationError, "CLEANUP_OVERLAP"):
+                    replacement.cleanup_retained("replacement-cleanup-uid")
 
     def test_terminal_report_is_bounded_and_omits_sensitive_archive_identity(self) -> None:
         fake = gateway(); instance = controller(fake); outcome = drive(instance)

@@ -768,11 +768,11 @@ restore_validation_state="$(extract_top_level_yaml_doc \
 restore_validation_lease="$(extract_top_level_yaml_doc \
   "$restore_validation_manifest" "Lease" "hriv-restore-validation")"
 restore_validation_children="$(extract_top_level_yaml_doc \
-  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-child-templates-v1")"
+  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-child-templates-v2")"
 restore_validation_profile="$(extract_top_level_yaml_doc \
-  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-source-profile-v1")"
+  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-source-profile-v2")"
 restore_validation_policy="$(extract_top_level_yaml_doc \
-  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-source-state-policy-v1")"
+  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-source-state-policy-v2")"
 restore_validation_role="$(extract_top_level_yaml_doc \
   "$restore_validation_manifest" "Role" "hriv-restore-validation-orchestrator")"
 restore_validation_default_deny="$(extract_top_level_yaml_doc \
@@ -781,15 +781,23 @@ restore_validation_quota="$(extract_top_level_yaml_doc \
   "$restore_validation_manifest" "ResourceQuota" "hriv-restore-validation")"
 restore_validation_limits="$(extract_top_level_yaml_doc \
   "$restore_validation_manifest" "LimitRange" "hriv-restore-validation")"
+assert_not_contains "$restore_validation_manifest" 'hriv-restore-validation-controller-v1' \
+  "v1 controller ConfigMap must be unreferenced after the atomic v2 upgrade"
+assert_not_contains "$restore_validation_manifest" 'hriv-restore-validation-source-profile-v1' \
+  "v1 profile ConfigMap must be unreferenced after the atomic v2 upgrade"
+assert_not_contains "$restore_validation_manifest" 'hriv-restore-validation-source-state-policy-v1' \
+  "v1 policy ConfigMap must be unreferenced after the atomic v2 upgrade"
+assert_not_contains "$restore_validation_manifest" 'hriv-restore-validation-child-templates-v1' \
+  "v1 templates ConfigMap must be unreferenced after the atomic v2 upgrade"
 
 # Parse the outer manifests and all embedded profile/policy/template documents with
 # real YAML/JSON parsers rather than treating indentation or quoting as sufficient.
 ruby -ryaml -rjson -e '
   docs = YAML.load_stream(STDIN.read).compact
   by_name = docs.to_h { |doc| [[doc["kind"], doc.dig("metadata", "name")], doc] }
-  profile = JSON.parse(by_name.fetch(["ConfigMap", "hriv-restore-validation-source-profile-v1"]).fetch("data").fetch("profile.json"))
-  policy = JSON.parse(by_name.fetch(["ConfigMap", "hriv-restore-validation-source-state-policy-v1"]).fetch("data").fetch("policy.json"))
-  templates = YAML.safe_load(by_name.fetch(["ConfigMap", "hriv-restore-validation-child-templates-v1"]).fetch("data").fetch("templates.yaml"), aliases: true)
+  profile = JSON.parse(by_name.fetch(["ConfigMap", "hriv-restore-validation-source-profile-v2"]).fetch("data").fetch("profile.json"))
+  policy = JSON.parse(by_name.fetch(["ConfigMap", "hriv-restore-validation-source-state-policy-v2"]).fetch("data").fetch("policy.json"))
+  templates = YAML.safe_load(by_name.fetch(["ConfigMap", "hriv-restore-validation-child-templates-v2"]).fetch("data").fetch("templates.yaml"), aliases: true)
   raise "profile identity drift" unless profile.values_at("source_cluster", "external_cluster", "database", "owner", "server_name", "object_store") == ["pg-core", "pg-core-source", "app", "app", "pg-core", "hriv-restore-validation-pg-core"]
   raise "policy structure drift" unless policy == {"missing_count" => 39, "orphan_count" => 3, "policy_version" => 1, "source_state_sha256" => "958b1dc2dca298c56fd96dd80b6c694144905e22c00c4b3ca9d2c59c3b666083"}
   target = templates.dig("cnpg_cluster", "spec", "bootstrap", "recovery", "recoveryTarget")
@@ -805,9 +813,9 @@ import sys, yaml
 from hriv_restore_validation.models import SourcePolicy, SourceProfile, Templates
 docs = [item for item in yaml.safe_load_all(sys.stdin.read()) if item]
 config_maps = {item["metadata"]["name"]: item["data"] for item in docs if item.get("kind") == "ConfigMap"}
-profile = SourceProfile.parse(config_maps["hriv-restore-validation-source-profile-v1"]["profile.json"])
-SourcePolicy.parse(config_maps["hriv-restore-validation-source-state-policy-v1"]["policy.json"])
-Templates.parse(config_maps["hriv-restore-validation-child-templates-v1"]["templates.yaml"], profile)
+profile = SourceProfile.parse(config_maps["hriv-restore-validation-source-profile-v2"]["profile.json"])
+SourcePolicy.parse(config_maps["hriv-restore-validation-source-state-policy-v2"]["policy.json"])
+Templates.parse(config_maps["hriv-restore-validation-child-templates-v2"]["templates.yaml"], profile)
 ' <<<"$restore_validation_manifest"
 fi
 
@@ -887,8 +895,24 @@ assert_contains "$restore_validation_on_demand" 'suspend: true' \
   "on-demand restore validation must remain suspended"
 assert_contains "$restore_validation_cleanup" 'args: [cleanup-retained]' \
   "manual cleanup must expose only the fixed retained-state command"
-assert_not_contains "$restore_validation_operational_manifest" 'ttlSecondsAfterFinished' \
-  "orchestrator evidence must not use TTL deletion"
+assert_not_contains "$restore_validation_weekly" 'ttlSecondsAfterFinished' \
+  "weekly evidence must use CronJob history rather than TTL deletion"
+assert_contains "$restore_validation_on_demand" 'ttlSecondsAfterFinished: 604800' \
+  "standalone on-demand Jobs must keep a seven-day native evidence TTL"
+assert_contains "$restore_validation_cleanup" 'ttlSecondsAfterFinished: 604800' \
+  "standalone cleanup Jobs must keep a seven-day native evidence TTL"
+assert_contains "$restore_validation_operational_manifest" 'kind: PrometheusRule' \
+  "operational restore validation must render its one native alert rule"
+assert_occurrences "$restore_validation_operational_manifest" 'alert: HRIVCoreRestoreValidationUnhealthy' 1 \
+  "operational restore validation must render exactly one fixed alert"
+assert_contains "$restore_validation_operational_manifest" 'for: 15m' \
+  "restore-validation alert must wait fifteen minutes"
+assert_contains "$restore_validation_operational_manifest" 'kube_cronjob_created' \
+  "restore-validation never-successful alert must use CronJob age"
+assert_contains "$restore_validation_operational_manifest" 'kube_cronjob_status_last_successful_time' \
+  "restore-validation overdue alert must use weekly native success"
+assert_contains "$restore_validation_operational_manifest" 'kube_job_status_failed' \
+  "restore-validation alert must cover failed validation and cleanup Jobs"
 ruby -ryaml -e '
   docs = YAML.load_stream(STDIN.read).compact
   policies = docs.select { |doc| doc["kind"] == "NetworkPolicy" }.to_h { |doc| [doc.dig("metadata", "name"), doc.fetch("spec")] }
