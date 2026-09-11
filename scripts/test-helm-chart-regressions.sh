@@ -722,6 +722,20 @@ assert_contains "$frontend_default_manifest" "location = /api/health/storage {" 
 frontend_health_storage_location="$(grep -F -A2 "location = /api/health/storage {" <<<"$frontend_default_manifest")"
 assert_contains "$frontend_health_storage_location" "return 404;" \
   "frontend nginx should block the backend storage probe endpoint"
+assert_contains "$frontend_default_manifest" "location = /runtime-config.js {" \
+  "frontend nginx should serve the runtime configuration script"
+assert_contains "$frontend_default_manifest" 'otelEndpointBase64:"${OTEL_BROWSER_TRACE_ENDPOINT_B64}"' \
+  "frontend nginx runtime config should substitute the base64 trace endpoint env var"
+frontend_default_otel_env="$(grep -F -A1 'name: OTEL_BROWSER_TRACE_ENDPOINT_B64' <<<"$frontend_default_deployment")"
+assert_contains "$frontend_default_otel_env" 'value: ""' \
+  "frontend deployment should leave browser trace export disabled by default"
+
+frontend_otel_manifest="$(helm template test charts/frontend \
+  --set observability.browserTraceEndpoint=https://telemetry.example.test)"
+frontend_otel_deployment="$(extract_yaml_doc "$frontend_otel_manifest" "Deployment" "test-hriv-frontend")"
+frontend_otel_env="$(grep -F -A1 'name: OTEL_BROWSER_TRACE_ENDPOINT_B64' <<<"$frontend_otel_deployment")"
+assert_contains "$frontend_otel_env" 'value: "aHR0cHM6Ly90ZWxlbWV0cnkuZXhhbXBsZS50ZXN0"' \
+  "frontend deployment should base64-encode observability.browserTraceEndpoint into OTEL_BROWSER_TRACE_ENDPOINT_B64"
 
 frontend_override_manifest="$(helm template test charts/frontend \
   --set scheduling.zoneAntiAffinity.enabled=true \

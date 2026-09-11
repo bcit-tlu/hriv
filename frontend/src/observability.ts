@@ -172,7 +172,7 @@ function runtimeTraceEndpoint(): string | undefined {
 
 function traceEndpoint(): string | undefined {
   const configuredEndpoint = runtimeTraceEndpoint()
-  if (configuredEndpoint?.trim()) return configuredEndpoint.replace(/\/$/, '')
+  if (configuredEndpoint?.trim()) return configuredEndpoint.trim().replace(/\/$/, '')
 
   // Local development keeps its optional collector default. Production tracing
   // is deliberately opt-in through the Helm/Flux runtime configuration.

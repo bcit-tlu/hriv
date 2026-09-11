@@ -156,6 +156,19 @@ describe('observability', () => {
     })
   })
 
+  it('trims whitespace around the deployment-provided OTLP endpoint', async () => {
+    runtimeWindow.__HRIV_RUNTIME_CONFIG__ = {
+      otelEndpointBase64: btoa('  https://telemetry.example.test/  '),
+    }
+    const { initObservability } = await import('../src/observability')
+
+    initObservability()
+
+    expect(mocks.traceExporter).toHaveBeenCalledWith({
+      url: 'https://telemetry.example.test/v1/traces',
+    })
+  })
+
   it('initializes once and flushes pending events on pagehide', async () => {
     window.history.replaceState({}, '', '/?synthetic=1')
     const { emitEvent, initObservability } = await import('../src/observability')
