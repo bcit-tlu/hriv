@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import re
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -62,7 +63,9 @@ def _bounded_tree(value: Any) -> None:
         for item in value.values():
             _bounded_tree(item)
     elif isinstance(value, list):
-        if len(value) > 64:
+        # Selected source-state evidence is bounded independently to 256 missing and
+        # orphan entries; the serialized state byte limit remains the outer bound.
+        if len(value) > 256:
             raise ValidationError("STATE_INVARIANT")
         for item in value:
             _bounded_tree(item)
@@ -82,9 +85,11 @@ def _run(run: dict[str, Any]) -> None:
         raise ValidationError("STATE_INVARIANT")
     resources: set[tuple[str, str, str]] = set()
     for item in run["child_resources"]:
-        exact_object(item, required={"apiVersion", "kind", "name", "uid"})
+        exact_object(item, required={"apiVersion", "kind", "name", "uid"}, optional={"template_sha256"})
         identity = (bounded_string(item["apiVersion"], "apiVersion", 64), bounded_string(item["kind"], "kind", 64), bounded_string(item["name"], "name", 253))
         bounded_string(item["uid"], "uid", 128)
+        if "template_sha256" in item:
+            bounded_string(item["template_sha256"], "template_sha256", 64, re.compile(r"[0-9a-f]{64}"))
         if identity in resources:
             raise ValidationError("STATE_INVARIANT")
         resources.add(identity)

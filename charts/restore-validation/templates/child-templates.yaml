@@ -40,6 +40,8 @@ data:
                   - {name: HOME, value: /tmp}
                   - {name: TMPDIR, value: /tmp}
                   - {name: PYTHONDONTWRITEBYTECODE, value: "1"}
+                  - {name: HTTPS_PROXY, value: "http://hriv-restore-validation-egress-proxy:10000"}
+                  - {name: NO_PROXY, value: ".svc,.cluster.local,10.43.0.1,localhost,127.0.0.1"}
                 securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
                 resources: {requests: {cpu: 100m, memory: 128Mi}, limits: {cpu: "1", memory: 512Mi}}
                 volumeMounts: [{name: tmp, mountPath: /tmp}]
@@ -60,6 +62,9 @@ data:
         instances: 1
         imageName: {{ .Values.images.postgresql | quote }}
         enableSuperuserAccess: true
+        env:
+          - {name: HTTPS_PROXY, value: "http://hriv-restore-validation-egress-proxy:10000"}
+          - {name: NO_PROXY, value: ".svc,.cluster.local,10.43.0.1,localhost,127.0.0.1"}
         bootstrap:
           recovery:
             source: pg-core-source
@@ -132,6 +137,8 @@ data:
                   - {name: HOME, value: /tmp}
                   - {name: TMPDIR, value: /tmp}
                   - {name: PYTHONDONTWRITEBYTECODE, value: "1"}
+                  - {name: HTTPS_PROXY, value: "http://hriv-restore-validation-egress-proxy:10000"}
+                  - {name: NO_PROXY, value: ".svc,.cluster.local,10.43.0.1,localhost,127.0.0.1"}
                 securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
                 resources: {requests: {cpu: 250m, memory: 256Mi}, limits: {cpu: "2", memory: 1Gi}}
                 volumeMounts:

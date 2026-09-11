@@ -9,7 +9,7 @@ from hriv_restore_validation.controller import Controller, child_name, holder_id
 from hriv_restore_validation.gateway import Lease, Observation
 from hriv_restore_validation.state import parse_state
 from hriv_restore_validation.strict import ValidationError
-from fixtures import NOW, RUN, TRIGGER, config, consistency_result, controller, database_result, drive, gateway as fixture_gateway, policy, profile, restore_result as fixture_restore_result, selection_document as fixture_selection_document, templates
+from fixtures import NOW, RUN, TRIGGER, config, consistency_result, controller, database_result, drive, gateway as fixture_gateway, policy, profile, restore_result as fixture_restore_result, selection_document as fixture_selection_document, template_document, templates
 
 
 def selection_document(**changes: object) -> dict[str, object]:
@@ -285,12 +285,26 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual("retained", drive(controller(fake)))
         self.assertEqual("CAPACITY_INSUFFICIENT", parse_state(fake.state_raw, NOW)["latest_run"]["failure_code"])
 
+    def test_stable_160gi_source_capacity_covers_corrected_source_with_margin(self) -> None:
+        import yaml
+        from hriv_restore_validation.models import Templates
+
+        raw_templates = template_document()
+        raw_templates["source_pvc"]["spec"]["resources"]["requests"]["storage"] = "160Gi"
+        configured = Templates.parse(yaml.safe_dump(raw_templates), profile())
+        fake = gateway()
+        fake.results["selection"] = json.dumps(selection_document(source_total_bytes=128_986_771_498))
+        fake.results["source-restore"] = json.dumps(restore_result(source_total_bytes=128_986_771_498, restored_total_bytes=128_986_771_498))
+        fake.results["consistency"] = json.dumps(consistency_result(restored_total_bytes=128_986_771_498))
+        instance = Controller(fake, config(), profile(), policy(), configured, clock=lambda: NOW)
+        self.assertEqual("succeeded", drive(instance))
+
     def test_restore_count_mismatch(self) -> None:
         fake = gateway(); fake.results["source-restore"] = json.dumps(restore_result(restored_file_count=1))
         self.assertEqual("retained", drive(controller(fake)))
 
     def test_consistency_policy_mismatch(self) -> None:
-        fake = gateway(); fake.results["consistency"] = json.dumps(consistency_result(orphan_sources=[{"stored_path": "x"}]))
+        fake = gateway(); fake.results["consistency"] = json.dumps(consistency_result(unexpected_orphans=["data/source_images/x"]))
         self.assertEqual("retained", drive(controller(fake)))
 
     def test_consistency_same_size_digest_mismatch_is_retained(self) -> None:
@@ -450,6 +464,84 @@ class ControllerTests(unittest.TestCase):
 
     def test_run_and_child_names_deterministic(self) -> None:
         self.assertEqual(RUN, make_run_id(NOW, "a1b2c3d4")); self.assertEqual("rv-a1b2c3d4-pg", child_name(RUN, "cnpg"))
+
+    def _retained(self):
+        fake = gateway(); fake.results["db-validation"] = json.dumps(database_result(system_identifier="wrong"))
+        instance = controller(fake)
+        self.assertEqual("retained", drive(instance))
+        return fake, instance
+
+    def test_manual_cleanup_removes_exact_sole_retained_run(self) -> None:
+        fake, instance = self._retained()
+        self.assertEqual("succeeded", instance.cleanup_retained("cleanup-job-uid"))
+        state = parse_state(fake.state_raw, NOW)
+        self.assertEqual([], state["retained_runs"])
+        self.assertEqual("succeeded", state["latest_run"]["cleanup"]["outcome"])
+        self.assertIsNone(fake.lease.holder_identity)
+        self.assertEqual("succeeded", instance.cleanup_retained("cleanup-job-uid"))
+
+    def test_manual_cleanup_rejects_zero_and_multiple_retained(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "CLEANUP_NO_RETAINED_RUN"):
+            controller(gateway()).cleanup_retained("cleanup-job-uid")
+        fake, instance = self._retained()
+        state = parse_state(fake.state_raw, NOW)
+        second = copy.deepcopy(state["retained_runs"][0]); second["run_id"] = "rv-20260115t090000z-deadbeef"
+        state["retained_runs"].append(second)
+        fake.state_raw = json.dumps(state)
+        with self.assertRaisesRegex(ValidationError, "CLEANUP_RETAINED_COUNT_INVALID"):
+            instance.cleanup_retained("cleanup-job-uid")
+
+    def test_manual_cleanup_rejects_active_altered_and_unbound_children(self) -> None:
+        fake, instance = self._retained(); state = parse_state(fake.state_raw, NOW)
+        state["active_run"] = instance._summary(state["latest_run"]); fake.state_raw = json.dumps(state)
+        with self.assertRaisesRegex(ValidationError, "CLEANUP_ACTIVE_RUN"):
+            instance.cleanup_retained("cleanup-job-uid")
+        state["active_run"] = None; fake.state_raw = json.dumps(state)
+        key, (ref, manifest, observation) = next(iter(fake.children.items()))
+        manifest["metadata"]["labels"]["hriv.bcit.ca/restore-validation-role"] = "altered"
+        fake.children[key] = (ref, manifest, observation)
+        with self.assertRaises(ValidationError): instance.cleanup_retained("cleanup-job-uid")
+
+    def test_manual_cleanup_deletes_legitimate_cnpg_pod_and_service_descendants(self) -> None:
+        fake, instance = self._retained()
+        state = parse_state(fake.state_raw, NOW)
+        cluster = next(item for item in state["retained_runs"][0]["child_resources"] if item["kind"] == "Cluster")
+        labels = {"app.kubernetes.io/managed-by": "hriv-restore-validation", "hriv.bcit.ca/restore-validation-run-id": RUN, "hriv.bcit.ca/restore-validation-role": "cnpg"}
+        for kind, name in (("Pod", "generated-pg-1"), ("Service", "generated-pg-rw")):
+            fake.create_child({"apiVersion": "v1", "kind": kind, "metadata": {"name": name, "labels": labels, "ownerReferences": [{"apiVersion": "postgresql.cnpg.io/v1", "kind": "Cluster", "uid": cluster["uid"], "controller": True}]}})
+        self.assertEqual("succeeded", instance.cleanup_retained("cleanup-job-uid"))
+        self.assertFalse(fake.list_run_children(RUN))
+
+    def test_manual_cleanup_rejects_unbound_labelled_descendant(self) -> None:
+        fake, instance = self._retained()
+        labels = {"app.kubernetes.io/managed-by": "hriv-restore-validation", "hriv.bcit.ca/restore-validation-run-id": RUN, "hriv.bcit.ca/restore-validation-role": "cnpg"}
+        fake.create_child({"apiVersion": "v1", "kind": "Service", "metadata": {"name": "unbound", "labels": labels, "ownerReferences": [{"kind": "Cluster", "uid": "not-bound", "controller": True}]}})
+        with self.assertRaisesRegex(ValidationError, "CLEANUP_UNBOUND_CHILD"):
+            instance.cleanup_retained("cleanup-job-uid")
+
+    def test_manual_cleanup_rejects_changed_bound_template_identity(self) -> None:
+        fake, instance = self._retained()
+        key, (ref, manifest, observation) = next(
+            (item for item in fake.children.items() if item[1][1]["kind"] != "Pod")
+        )
+        manifest["metadata"]["annotations"]["hriv.bcit.ca/restore-validation-template-sha256"] = "0" * 64
+        fake.children[key] = (ref, manifest, observation)
+        with self.assertRaisesRegex(ValidationError, "OWNERSHIP_CONFLICT"):
+            instance.cleanup_retained("cleanup-job-uid")
+        self.assertEqual([], fake.deleted)
+
+    def test_manual_cleanup_waits_for_partial_delete_and_survives_cas_conflict(self) -> None:
+        fake, instance = self._retained(); fake.async_deletes = True
+        self.assertEqual("running", instance.cleanup_retained("cleanup-job-uid"))
+        fake.finish_deletes(); fake.conflicts = 1
+        self.assertEqual("succeeded", instance.cleanup_retained("cleanup-job-uid"))
+
+    def test_terminal_report_is_bounded_and_omits_sensitive_archive_identity(self) -> None:
+        fake = gateway(); instance = controller(fake); outcome = drive(instance)
+        report = instance.terminal_report(TRIGGER, RUN, outcome)
+        self.assertTrue(report["success"]); self.assertIn("source_files_sha256", report)
+        self.assertNotIn("archive_blob", json.dumps(report)); self.assertNotIn("archive_etag", json.dumps(report))
+        self.assertLess(len(json.dumps(report)), 32768)
 
 
 if __name__ == "__main__": unittest.main()

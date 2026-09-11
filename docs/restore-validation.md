@@ -558,18 +558,20 @@ Serialization is UTF-8 JSON with recursively sorted object keys, separators exac
 characters. Missing and orphan counts are derived only from the canonical list lengths, never
 trusted from another manifest field.
 
-The Flux-owned, versioned `source-state-policy` ConfigMap defaults to allowing exactly zero
-missing and zero orphan entries. Its reviewed entry has one `source_state` object with exactly
-`missing_sources`, `orphan_sources`, `missing_count`, `orphan_count`, and `sha256`. For #1240 those
-lists MUST equal the exact canonical lists, the counts are separately derived, and `sha256` is the
-canonical digest. The
-validator applies the same bounds, key/type/path validation, sorting, serialization, and hashing to
-the policy lists, requires declared `sha256` to match `^[0-9a-f]{64}$`, rejects declared counts or
-digest that do not match recomputed values with `SOURCE_STATE_DIGEST_INVALID`, and uses a constant-time comparison for the recomputed
-manifest and policy digests. Passing a digest comparison is necessary but not sufficient: exact
-canonical lists and counts must also match. A valid but unknown, new, or mismatched state fails
-`SOURCE_STATE_UNAPPROVED`/`SOURCE_STATE_DRIFT`. Policy values never cause a skipped file to be
-restored.
+The Flux-owned, versioned `source-state-policy` ConfigMap is digest-only. It has exactly
+`policy_version=1`, `source_state_sha256` (64 lowercase hex), `missing_count` (0..256), and
+`orphan_count` (0..256); chart values expose only `sha256`, `missingCount`, and `orphanCount`.
+The safe chart default is the empty-state digest with zero counts. The currently reviewed
+deployment evidence is digest `958b1dc2dca298c56fd96dd80b6c694144905e22c00c4b3ca9d2c59c3b666083`
+with counts 39/3. Full path lists MUST NOT be copied into chart or Flux policy values.
+
+Selection still applies all bounds, key/type/path validation, sorting, serialization, and hashing
+to the complete backup-emitted state. It persists that canonical state as immutable run evidence,
+requires its digest and independently derived list lengths to equal the mounted policy, and binds
+the computed digest of the exact policy document as reviewed policy identity. Passing a digest
+comparison is necessary but not sufficient: counts and the complete canonical selected evidence
+must also agree. A valid but unknown, new, or mismatched state fails closed. Policy values never
+cause a skipped file to be restored.
 
 `excluded_incomplete_artifacts` is not part of this source-state document or digest. Every excluded
 entry must independently match this normative, versioned allowlist; an approved missing/orphan set
@@ -1083,6 +1085,16 @@ Consistency preserves the recovery-set outcomes and then applies the bound sourc
   match may pass restore validation without changing this recovery outcome;
 - a source file without a database row remains an excluded orphan; it is never restored, created
   as a row, or deleted. Zero is accepted by default; a nonzero exact #1240 policy match may pass;
+- the consistency child receives the selected run evidence, not static full policy lists. It
+  recomputes canonical missing rows from recovered `row_id`/`status`/path identities versus restored
+  files and reports every restored file absent from the DB as an unexpected orphan. It emits the
+  full lowercase `source_files_sha256` and a canonical missing-list digest;
+- `missing_source` is emitted only when absence is independently derivable. For selected
+  `unsafe_or_out_of_root` or `duplicate_source_reference`, exact reasons are preserved only after
+  exact row/status/canonical-path identity match; the validator never invents those reasons;
+- the controller requires recomputed missing evidence to equal selected missing evidence and zero
+  unexpected restored orphans. The selected orphan list remains immutable publication evidence
+  that source restore excluded those files; and
 - any unapproved/new/mismatched missing or orphan evidence, checksum, identity, count,
   mutation/disappearance, or version mismatch fails closed; and
 - incomplete uploads and staging artifacts are excluded only when every item matches the
@@ -1379,3 +1391,84 @@ auth, or one serial tile rebuild.
 
 Until every phase is deployed and a full clean run updates durable last-success state,
 `HRIVRestoreTestFailed` remains valid and actionable.
+
+## Simplified #1253 operational contract (supersedes prior level-5 sections)
+
+This section is the current contract for #1253. It **supersedes** every earlier statement in this
+document that requires #1252, application/viewer validation, credential-init, Redis, tile rebuild,
+OIDC, a status exporter, dashboard, autonomous failed-child/Job reaper, multiple retained runs, or
+exact whole-cluster database/role equality. Those older level-5 passages remain only as design
+history and are not implementation or rollout requirements.
+
+The deployed drill consists only of the #1251 core controller, fixed state ConfigMap and Lease,
+weekly and suspended on-demand orchestrator CronJobs, one suspended manual-cleanup CronJob, the
+validation-local ObjectStore, fixed Envoy egress proxy, RBAC/quota, and fixed NetworkPolicies. The
+weekly CronJob is exactly `hriv-restore-validation-weekly`, runs `0 11 * * 0` in UTC, forbids
+concurrency, has a 3600-second starting deadline, zero Job retries, `Never` restart, a 21600-second
+active deadline, two successful and one failed Job histories, and no TTL. The on-demand template is
+`hriv-restore-validation-on-demand`; operators trigger it server-side with:
+
+```bash
+kubectl -n hriv-restore-validation create job --from=cronjob/hriv-restore-validation-on-demand \
+  hriv-restore-validation-on-demand-$(date -u +%Y%m%d%H%M%S)
+```
+
+Its Job template is identical to the weekly template except for trigger identity. A retained failure
+is a terminal nonzero Job and rejects later runs until cleanup. Every accepted `run` writes exactly
+one bounded final JSON report after diagnostics. It includes Job/run identity, recovery point, stage
+outcomes and durations, bounded counts/bytes, `source_files_sha256`, failure, and cleanup evidence;
+it excludes source-file inventories, secrets, URLs, and archive ETags. Scheduled retained failures
+and retained-overlap rejection are nonzero so native Job failure is observable.
+
+### Simplified source profile fidelity
+
+`database_row_count` from the immutable selected recovery set is the sole expected recovered
+`source_images` count. The controller passes that value as a fixed `validate-database` argument; the
+profile contains no static source-image count. `requiredDatabaseInventory` and
+`requiredStaticRoleInventory` are required subsets: every configured name and its configured
+owner/connection flag or complete attributes/memberships must match exactly, while unrelated
+shared-cluster databases and static roles are allowed. Duplicate configured names remain invalid,
+and configured dynamic Vault role prefixes are filtered before matching. Alembic migration remains
+exact. `minimumRowCounts` are lower bounds and observed counts are reported. Synthetic identity is
+only `{id,email_sha256}`; the validator lowercases the recovered email, hashes it with SHA-256, and
+never emits the email.
+
+### One retained environment and audited cleanup
+
+Operational values require `maxRetainedRuns: 1`. Cleanup is never autonomous. After diagnosis, an
+operator starts the fixed template without a run-id argument:
+
+```bash
+kubectl -n hriv-restore-validation create job --from=cronjob/hriv-restore-validation-cleanup \
+  hriv-restore-validation-cleanup-$(date -u +%Y%m%d%H%M%S)
+```
+
+`cleanup-retained` acquires the same Lease with its Job UID and rejects an active run, zero retained
+records, multiple records, altered UID/labels/template identity, or any unbound child. It reconciles
+UID-preconditioned foreground deletion only for the one state-bound run in the validation namespace,
+waits until all bound and run-labelled children are absent, then CAS-removes that retained record,
+updates matching latest-run cleanup evidence, and releases the Lease. A restart resumes safely; it
+never accepts arbitrary run IDs or deletes static, orchestrator-evidence, or production resources.
+After cleanup completes, confirm PVC capacity is recovered, review the failed Job logs/evidence,
+then trigger the suspended on-demand CronJob before waiting for the next weekly run.
+
+### Fixed egress and native alert contract
+
+Azure-reading selection/source-restore/CNPG workloads use only `HTTPS_PROXY` pointing to
+`hriv-restore-validation-egress-proxy:10000`; `NO_PROXY` is exactly
+`.svc,.cluster.local,10.43.0.1,localhost,127.0.0.1`. Database/consistency/controller containers do
+not receive an internet proxy. Default deny remains. DNS is selector-limited to CoreDNS;
+orchestrator/cleanup may reach only API `10.43.0.1/32:443`; validation traffic stays in the namespace;
+Azure readers reach only the proxy; and only the proxy receives TCP/443 internet egress. NetworkPolicy
+cannot enforce hostnames: the Envoy v1.39 CONNECT virtual-host ACL is the hostname enforcement layer
+and allows only one-to-four exact reviewed `<account>.blob.core.windows.net:443` authorities represented
+as literal domains—there is no wildcard route/domain. The operational value pins `envoyproxy/envoy:v1.39.1` to
+`sha256:57e14a549d7bd43c8d3f6d03e8cfa653e037d4b38e133acd9b54f38c524401b4`.
+
+The environment overlay must keep source-state-policy digest `958b1dc2dca298c56fd96dd80b6c694144905e22c00c4b3ca9d2c59c3b666083`; it is deployment evidence and intentionally is not the chart default. The chart's 200Gi per-PVC LimitRange permits stable's required 160Gi source PVC for 128,986,771,498 bytes plus controller margin; latest remains 40Gi and namespace quota remains 320Gi under the one-active-or-one-retained rule.
+
+There is one native alert contract, `HRIVCoreRestoreValidationUnhealthy`: its single expression uses
+kube-state-metrics CronJob/Job ownership signals to fire when the scheduled Job fails or the weekly
+CronJob has no successful completion inside the approved overdue window. Full core success plus
+confirmed child cleanup is required for Job success. On-demand success does not rewrite weekly
+last-success. There is no custom metric exporter and no #1252 dependency.
