@@ -1,3 +1,4 @@
+# yaml-language-server: disable
 apiVersion: v1
 kind: ResourceQuota
 metadata:
