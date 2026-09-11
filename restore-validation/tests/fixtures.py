@@ -84,7 +84,7 @@ def templates() -> Templates:
 
 
 def selection_document(**changes: Any) -> dict[str, Any]:
-    value = {"schema_version": 1, "operation": "validation-select", "success": True, "snapshot_name": "hriv-backup-20260115-090000-abcdef12", "recovery_set_id": "set-1", "run_id": "backup-run", "manifest_sha256": "d" * 64, "archive_blob": "archive.tar.gz", "archive_size": 10, "archive_etag": "etag", "target_lsn": "A/1234", "target_timeline": 7, "source_file_count": 2, "source_total_bytes": 10, "database_row_count": 2, "missing_count": 0, "orphan_count": 0, "exclusion_count": 0, "source_state": {"missing_sources": [], "orphan_sources": []}, "source_state_sha256": policy().sha256, "excluded_artifacts": [], "capture_started_at": "2026-01-15T09:00:00Z", "wal_fence_file": "000000070000000000000001", "wal_fence_committed_at": "2026-01-15T09:01:00Z", "wal_fence_archived_at": "2026-01-15T09:02:00Z", "completed_at": "2026-01-15T09:30:00Z"}
+    value = {"schema_version": 1, "operation": "validation-select", "success": True, "snapshot_name": "hriv-backup-20260115-090000-abcdef12", "recovery_set_id": "set-1", "run_id": "backup-run", "manifest_sha256": "d" * 64, "archive_blob": "archive.tar.gz", "archive_size": 10, "archive_etag": "etag", "target_lsn": "A/1234", "target_timeline": 7, "source_file_count": 2, "source_total_bytes": 10, "source_files_sha256": "e" * 64, "database_row_count": 2, "missing_count": 0, "orphan_count": 0, "exclusion_count": 0, "source_state": {"missing_sources": [], "orphan_sources": []}, "source_state_sha256": policy().sha256, "excluded_artifacts": [], "capture_started_at": "2026-01-15T09:00:00Z", "wal_fence_file": "000000070000000000000001", "wal_fence_committed_at": "2026-01-15T09:01:00Z", "wal_fence_archived_at": "2026-01-15T09:02:00Z", "completed_at": "2026-01-15T09:30:00Z"}
     value.update(changes)
     return value
 
@@ -103,7 +103,7 @@ def restore_result(**changes: Any) -> dict[str, Any]:
 
 
 def consistency_result(**changes: Any) -> dict[str, Any]:
-    value = {"schema_version": 1, "operation": "validate-consistency", "success": True, "database_source_count": 2, "restored_file_count": 2, "restored_total_bytes": 10, "missing_sources": [], "orphan_sources": [], "source_state_policy_sha256": policy().sha256}
+    value = {"schema_version": 1, "operation": "validate-consistency", "success": True, "database_source_count": 2, "restored_file_count": 2, "restored_total_bytes": 10, "source_files_sha256": "e" * 64, "missing_sources": [], "orphan_sources": [], "source_state_policy_sha256": policy().sha256}
     value.update(changes)
     return value
 

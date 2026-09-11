@@ -7,7 +7,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
-from .gateway import Gateway, Lease
+from .gateway import Gateway, Lease, TEMPLATE_IDENTITY_ANNOTATION, template_identity
 from .models import Config, ResourceRef, SourcePolicy, SourceProfile, Templates, Trigger, _quantity_bytes
 from .state import MAX_RETAINED, StateStore, merge_history, utc
 from .strict import LSN_RE, RFC3339_RE, UID_RE, ValidationError, bounded_string, exact_object, integer, parse_json
@@ -15,11 +15,11 @@ from .strict import LSN_RE, RFC3339_RE, UID_RE, ValidationError, bounded_string,
 MANAGED_BY = "hriv-restore-validation"
 RUN_LABEL = "hriv.bcit.ca/restore-validation-run-id"
 ROLE_LABEL = "hriv.bcit.ca/restore-validation-role"
-SELECTION_FIELDS = {"schema_version", "operation", "success", "snapshot_name", "recovery_set_id", "run_id", "manifest_sha256", "archive_blob", "archive_size", "archive_etag", "target_lsn", "target_timeline", "source_file_count", "source_total_bytes", "database_row_count", "missing_count", "orphan_count", "exclusion_count", "source_state", "source_state_sha256", "excluded_artifacts", "capture_started_at", "wal_fence_file", "wal_fence_committed_at", "wal_fence_archived_at", "completed_at"}
+SELECTION_FIELDS = {"schema_version", "operation", "success", "snapshot_name", "recovery_set_id", "run_id", "manifest_sha256", "archive_blob", "archive_size", "archive_etag", "target_lsn", "target_timeline", "source_file_count", "source_total_bytes", "source_files_sha256", "database_row_count", "missing_count", "orphan_count", "exclusion_count", "source_state", "source_state_sha256", "excluded_artifacts", "capture_started_at", "wal_fence_file", "wal_fence_committed_at", "wal_fence_archived_at", "completed_at"}
 SELECTED_SOURCE_FIELDS = {
     "selection_schema_version", "selection_operation", "backup_run_id", "snapshot_name", "recovery_set_id",
     "manifest_sha256", "archive_blob", "archive_size", "archive_etag", "completed_at", "target_lsn",
-    "target_timeline", "source_file_count", "source_total_bytes", "database_row_count", "missing_count",
+    "target_timeline", "source_file_count", "source_total_bytes", "source_files_sha256", "database_row_count", "missing_count",
     "orphan_count", "exclusion_count", "source_state", "source_state_sha256", "excluded_artifacts",
     "capture_started_at", "wal_fence_file", "wal_fence_committed_at", "wal_fence_archived_at",
     "source_profile_id", "source_profile_version", "source_profile_sha256", "source_state_policy_version",
@@ -208,6 +208,12 @@ class Controller:
         except ValidationError as exc:
             self._retain(run_id, exc.code, run["current_stage"])
             return self._finish_terminal(trigger, run_id, "retained")
+        except Exception:
+            # Unexpected implementation/API failures have one stable public code. Never
+            # persist or print exception text, which may contain URLs or credentials.
+            current_refs = self._current_child_ownership(run_id)
+            self._retain(run_id, "INTERNAL_ERROR", run["current_stage"], current_refs)
+            return self._finish_terminal(trigger, run_id, "retained")
 
     def _execute_stage(self, trigger: Trigger, run_id: str, run: dict[str, Any]) -> str:
         stage = run["current_stage"]
@@ -301,7 +307,8 @@ class Controller:
 
     def _preflight(self, run: dict[str, Any]) -> None:
         usage = self.gateway.namespace_usage()
-        if len(self.store.read()[0]["retained_runs"]) >= self.config.max_retained_runs or usage.get("jobs", 0) + 3 > self.config.max_jobs or usage.get("pvcs", 0) + 2 > self.config.max_pvcs or len(run["child_resources"]) > self.config.max_child_resources:
+        fixed_child_maximum = 10  # four Jobs, four Job Pods, one source PVC, one CNPG Cluster
+        if len(self.store.read()[0]["retained_runs"]) >= self.config.max_retained_runs or usage.get("jobs", 0) + 3 > self.config.max_jobs or usage.get("pvcs", 0) + 2 > self.config.max_pvcs or fixed_child_maximum > self.config.max_child_resources:
             raise ValidationError("CAPACITY_INSUFFICIENT")
 
     def _database_manifest(self, run_id: str, template: dict[str, Any]) -> dict[str, Any]:
@@ -333,6 +340,7 @@ class Controller:
         result["metadata"] = {"name": child_name(run_id, role), "namespace": self.config.namespace, "labels": labels, "annotations": annotations}
         if result["kind"] == "Job":
             result["spec"]["template"]["metadata"] = {"labels": labels, "annotations": annotations}
+        result["metadata"]["annotations"][TEMPLATE_IDENTITY_ANNOTATION] = template_identity(result)
         return result
 
     def _resource(self, run_id: str, role: str, template: dict[str, Any]) -> ResourceRef:
@@ -456,7 +464,7 @@ class Controller:
             recovery_set = bounded_string(value["recovery_set_id"], "recovery_set_id", 128, SNAPSHOT_RE)
             if snapshot != recovery_set:
                 raise ValidationError("IMMUTABLE_BINDING_INVALID")
-            for name in ("manifest_sha256", "source_state_sha256", "source_profile_sha256", "source_state_policy_sha256"):
+            for name in ("manifest_sha256", "source_files_sha256", "source_state_sha256", "source_profile_sha256", "source_state_policy_sha256"):
                 bounded_string(value[name], name, 64, SHA256_RE)
             archive_blob = bounded_string(value["archive_blob"], "archive_blob", 256)
             if archive_blob != f"{self.profile.source_prefix}/{snapshot}.tar.gz":
@@ -511,7 +519,7 @@ class Controller:
             "snapshot_name": value["snapshot_name"], "recovery_set_id": value["recovery_set_id"], "manifest_sha256": value["manifest_sha256"],
             "archive_blob": value["archive_blob"], "archive_size": value["archive_size"], "archive_etag": self._canonical_archive_etag(value["archive_etag"]),
             "completed_at": value["completed_at"], "target_lsn": value["target_lsn"], "target_timeline": value["target_timeline"],
-            "source_file_count": value["source_file_count"], "source_total_bytes": value["source_total_bytes"], "database_row_count": value["database_row_count"],
+            "source_file_count": value["source_file_count"], "source_total_bytes": value["source_total_bytes"], "source_files_sha256": value["source_files_sha256"], "database_row_count": value["database_row_count"],
             "missing_count": value["missing_count"], "orphan_count": value["orphan_count"], "exclusion_count": value["exclusion_count"],
             "source_state": copy.deepcopy(value["source_state"]), "source_state_sha256": value["source_state_sha256"], "excluded_artifacts": copy.deepcopy(value["excluded_artifacts"]),
             "capture_started_at": value["capture_started_at"], "wal_fence_file": value["wal_fence_file"], "wal_fence_committed_at": value["wal_fence_committed_at"], "wal_fence_archived_at": value["wal_fence_archived_at"],
@@ -530,20 +538,21 @@ class Controller:
         _, fence_committed = _strict_utc(selected["wal_fence_committed_at"], "wal_fence_committed_at")
         expected = {"schema_version": 1, "operation": "validate-database", "success": True, "system_identifier": self.profile.expected_system_identifier, "timeline": selected["target_timeline"], "recovery_complete": True, "database_inventory": [dict(item) for item in self.profile.expected_database_inventory], "static_role_inventory": [dict(item) for item in self.profile.expected_static_role_inventory], "migration_version": self.profile.expected_migration_version, "row_counts": self.profile.expected_row_counts, "source_image_count": self.profile.expected_source_image_count, "synthetic_row": self.profile.synthetic_row, "current_lsn": value.get("current_lsn"), "target_lsn": selected["target_lsn"], "fence_generation": value.get("fence_generation"), "fence_fenced_at": fenced_text}
         generation = value.get("fence_generation")
-        if value != expected or LSN_RE.fullmatch(str(value.get("current_lsn", ""))) is None or not isinstance(generation, int) or isinstance(generation, bool) or generation <= 0 or not capture_started <= fenced_at <= fence_committed:
+        fenced_comparison = fenced_at.replace(microsecond=0) if fence_committed.microsecond == 0 else fenced_at
+        if value != expected or LSN_RE.fullmatch(str(value.get("current_lsn", ""))) is None or not isinstance(generation, int) or isinstance(generation, bool) or generation <= 0 or not capture_started <= fenced_comparison <= fence_committed:
             raise ValidationError("DB_VALIDATION_INVALID")
 
     def _restore_result(self, raw: str, selected: dict[str, Any]) -> None:
         required = SELECTION_FIELDS | {"target_data_dir", "restored_file_count", "restored_total_bytes", "selection_duration_seconds", "restore_duration_seconds", "duration_seconds", "outcome"}
         value = exact_object(parse_json(raw, max_bytes=128 * 1024), required=required)
         durations = [value[name] for name in ("selection_duration_seconds", "restore_duration_seconds", "duration_seconds")]
-        if value["schema_version"] != 1 or value["operation"] != "restore-filesystem-stateless" or value["success"] is not True or value["snapshot_name"] != selected["snapshot_name"] or value["recovery_set_id"] != selected["recovery_set_id"] or value["manifest_sha256"] != selected["manifest_sha256"] or value["outcome"] != "restored" or value["target_data_dir"] != "/restore/data" or value["restored_file_count"] != selected["source_file_count"] or value["restored_total_bytes"] != selected["source_total_bytes"] or any(isinstance(item, bool) or not isinstance(item, (int, float)) or item < 0 for item in durations):
+        if value["schema_version"] != 1 or value["operation"] != "restore-filesystem-stateless" or value["success"] is not True or value["snapshot_name"] != selected["snapshot_name"] or value["recovery_set_id"] != selected["recovery_set_id"] or value["manifest_sha256"] != selected["manifest_sha256"] or value["outcome"] != "restored" or value["target_data_dir"] != "/restore/data" or value["restored_file_count"] != selected["source_file_count"] or value["restored_total_bytes"] != selected["source_total_bytes"] or value["source_files_sha256"] != selected["source_files_sha256"] or any(isinstance(item, bool) or not isinstance(item, (int, float)) or item < 0 for item in durations):
             raise ValidationError("RESTORE_RESULT_INVALID")
 
     def _consistency_result(self, raw: str, selected: dict[str, Any]) -> None:
-        required = {"schema_version", "operation", "success", "database_source_count", "restored_file_count", "restored_total_bytes", "missing_sources", "orphan_sources", "source_state_policy_sha256"}
+        required = {"schema_version", "operation", "success", "database_source_count", "restored_file_count", "restored_total_bytes", "source_files_sha256", "missing_sources", "orphan_sources", "source_state_policy_sha256"}
         value = exact_object(parse_json(raw, max_bytes=128 * 1024), required=required)
-        expected = {"schema_version": 1, "operation": "validate-consistency", "success": True, "database_source_count": selected["database_row_count"], "restored_file_count": selected["source_file_count"], "restored_total_bytes": selected["source_total_bytes"], "missing_sources": self.policy.document()["missing_sources"], "orphan_sources": self.policy.document()["orphan_sources"], "source_state_policy_sha256": self.policy.sha256}
+        expected = {"schema_version": 1, "operation": "validate-consistency", "success": True, "database_source_count": selected["database_row_count"], "restored_file_count": selected["source_file_count"], "restored_total_bytes": selected["source_total_bytes"], "source_files_sha256": selected["source_files_sha256"], "missing_sources": self.policy.document()["missing_sources"], "orphan_sources": self.policy.document()["orphan_sources"], "source_state_policy_sha256": self.policy.sha256}
         if value != expected:
             raise ValidationError("CONSISTENCY_RESULT_INVALID")
 
@@ -621,10 +630,33 @@ class Controller:
             self._history_for_run(state, run)
         self.store.update(mutate)
 
-    def _retain(self, run_id: str, code: str, failure_stage: str | None) -> None:
+    def _current_child_ownership(self, run_id: str) -> list[ResourceRef]:
+        try:
+            candidates = self.gateway.list_run_children(run_id)
+            captured: list[ResourceRef] = []
+            for ref in candidates:
+                actual = self.gateway.get_child(ref)
+                metadata = (actual or {}).get("metadata", {})
+                labels = metadata.get("labels", {})
+                role = labels.get(ROLE_LABEL)
+                expected = {"app.kubernetes.io/managed-by": MANAGED_BY, RUN_LABEL: run_id, ROLE_LABEL: role}
+                if role not in {"selection", "source-pvc", "cnpg", "db-validation", "source-restore", "consistency"} or ref.name != child_name(run_id, role) or UID_RE.fullmatch(ref.uid) is None or str(metadata.get("uid")) != ref.uid or any(labels.get(key) != value for key, value in expected.items()):
+                    continue
+                captured.append(ref)
+            return captured
+        except Exception:
+            return []
+
+    def _retain(self, run_id: str, code: str, failure_stage: str | None, current_refs: list[ResourceRef] | None = None) -> None:
         now = utc(self.clock())
         def mutate(state: dict[str, Any]) -> None:
             run = self._holder(state, run_id)
+            for ref in current_refs or []:
+                if not any(item["apiVersion"] == ref.api_version and item["kind"] == ref.kind and item["name"] == ref.name for item in run["child_resources"]):
+                    if len(run["child_resources"]) >= self.config.max_child_resources:
+                        raise ValidationError("STATE_SIZE_EXCEEDED")
+                    run["child_resources"].append(ref.document())
+            run["cleanup"]["remaining_resource_count"] = len(run["child_resources"])
             run.update({"state": "FAILED_RETAIN", "current_stage": None, "sequence": run["sequence"] + 1, "heartbeat_at": now, "completed_at": now, "expires_at": utc(self.clock() + timedelta(seconds=self.config.retained_seconds)), "outcome": "retained", "failure_stage": failure_stage, "failure_code": code})
             if failure_stage and failure_stage in run["stages"]:
                 run["stages"][failure_stage].update({"outcome": "failed", "completed_at": now, "failure_code": code})

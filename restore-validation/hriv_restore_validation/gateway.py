@@ -1,12 +1,87 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
 from .models import ResourceRef
-from .strict import ValidationError
+from .strict import UID_RE, ValidationError, canonical_json
+
+MANAGED_BY_LABEL = "app.kubernetes.io/managed-by"
+RUN_LABEL = "hriv.bcit.ca/restore-validation-run-id"
+ROLE_LABEL = "hriv.bcit.ca/restore-validation-role"
+TEMPLATE_IDENTITY_ANNOTATION = "hriv.bcit.ca/restore-validation-template-sha256"
+_REQUIRED_LABELS = (MANAGED_BY_LABEL, RUN_LABEL, ROLE_LABEL)
+_VOLATILE_ANNOTATIONS = {"hriv.bcit.ca/created-at", "hriv.bcit.ca/expires-at", TEMPLATE_IDENTITY_ANNOTATION}
+
+
+def _fixed_spec(value: Any) -> Any:
+    if isinstance(value, dict):
+        result = {key: _fixed_spec(item) for key, item in value.items()}
+        annotations = result.get("annotations")
+        if isinstance(annotations, dict):
+            result["annotations"] = {key: item for key, item in annotations.items() if key not in _VOLATILE_ANNOTATIONS}
+        return result
+    if isinstance(value, list):
+        return [_fixed_spec(item) for item in value]
+    return copy.deepcopy(value)
+
+
+def _contains_fixed(actual: Any, desired: Any) -> bool:
+    if isinstance(desired, dict):
+        return isinstance(actual, dict) and all(
+            key in actual and _contains_fixed(actual[key], value) for key, value in desired.items()
+        )
+    if isinstance(desired, list):
+        return isinstance(actual, list) and len(actual) == len(desired) and all(
+            _contains_fixed(actual_item, desired_item)
+            for actual_item, desired_item in zip(actual, desired, strict=True)
+        )
+    return actual == desired
+
+
+def template_identity(manifest: dict[str, Any]) -> str:
+    metadata = manifest.get("metadata", {})
+    labels = metadata.get("labels", {})
+    document = {
+        "apiVersion": manifest.get("apiVersion"),
+        "kind": manifest.get("kind"),
+        "name": metadata.get("name"),
+        "labels": {key: labels.get(key) for key in _REQUIRED_LABELS},
+        "spec": _fixed_spec(manifest.get("spec")),
+    }
+    return hashlib.sha256(canonical_json(document).encode("utf-8")).hexdigest()
+
+
+def adopted_ref(desired: dict[str, Any], actual: dict[str, Any]) -> ResourceRef:
+    desired_metadata = desired.get("metadata", {})
+    actual_metadata = actual.get("metadata", {})
+    labels = actual_metadata.get("labels", {})
+    desired_labels = desired_metadata.get("labels", {})
+    annotations = actual_metadata.get("annotations", {})
+    desired_digest = desired_metadata.get("annotations", {}).get(TEMPLATE_IDENTITY_ANNOTATION)
+    uid = str(actual_metadata.get("uid", ""))
+    exact_identity = (
+        actual.get("apiVersion") == desired.get("apiVersion")
+        and actual.get("kind") == desired.get("kind")
+        and actual_metadata.get("name") == desired_metadata.get("name")
+    )
+    if (
+        not exact_identity
+        or desired_labels.get(MANAGED_BY_LABEL) != "hriv-restore-validation"
+        or any(not isinstance(desired_labels.get(key), str) or not desired_labels[key] or labels.get(key) != desired_labels[key] for key in _REQUIRED_LABELS)
+        or not isinstance(desired_digest, str)
+        or desired_digest != template_identity(desired)
+        or annotations.get(TEMPLATE_IDENTITY_ANNOTATION) != desired_digest
+        or not _contains_fixed(
+            _fixed_spec(actual.get("spec")), _fixed_spec(desired.get("spec"))
+        )
+        or UID_RE.fullmatch(uid) is None
+    ):
+        raise ValidationError("OWNERSHIP_CONFLICT")
+    return ResourceRef(desired["apiVersion"], desired["kind"], desired_metadata["name"], uid)
 
 
 class Conflict(RuntimeError):
@@ -32,17 +107,38 @@ class Observation:
 class Gateway(Protocol):
     conflict_error: type[Exception]
 
-    def read_state(self, name: str) -> tuple[str | None, str]: ...
-    def replace_state(self, name: str, raw: str, resource_version: str) -> None: ...
-    def read_lease(self, name: str) -> Lease: ...
-    def replace_lease(self, name: str, lease: Lease) -> Lease: ...
-    def holder_job_status(self, name: str, uid: str) -> str: ...
-    def list_run_children(self, run_id: str) -> list[ResourceRef]: ...
-    def create_child(self, manifest: dict[str, Any]) -> ResourceRef: ...
-    def get_child(self, ref: ResourceRef) -> dict[str, Any] | None: ...
-    def observe_child(self, ref: ResourceRef) -> Observation: ...
-    def delete_child(self, ref: ResourceRef) -> None: ...
-    def namespace_usage(self) -> dict[str, int]: ...
+    def read_state(self, name: str) -> tuple[str | None, str]:
+        raise NotImplementedError
+
+    def replace_state(self, name: str, raw: str, resource_version: str) -> None:
+        raise NotImplementedError
+
+    def read_lease(self, name: str) -> Lease:
+        raise NotImplementedError
+
+    def replace_lease(self, name: str, lease: Lease) -> Lease:
+        raise NotImplementedError
+
+    def holder_job_status(self, name: str, uid: str) -> str:
+        raise NotImplementedError
+
+    def list_run_children(self, run_id: str) -> list[ResourceRef]:
+        raise NotImplementedError
+
+    def create_child(self, manifest: dict[str, Any]) -> ResourceRef:
+        raise NotImplementedError
+
+    def get_child(self, ref: ResourceRef) -> dict[str, Any] | None:
+        raise NotImplementedError
+
+    def observe_child(self, ref: ResourceRef) -> Observation:
+        raise NotImplementedError
+
+    def delete_child(self, ref: ResourceRef) -> None:
+        raise NotImplementedError
+
+    def namespace_usage(self) -> dict[str, int]:
+        raise NotImplementedError
 
 
 class FakeGateway:
@@ -107,7 +203,10 @@ class FakeGateway:
         metadata = manifest["metadata"]
         key = (manifest["apiVersion"], manifest["kind"], metadata["name"])
         if key in self.children:
-            raise ValidationError("OWNERSHIP_CONFLICT")
+            actual_ref, actual_manifest, _ = self.children[key]
+            actual = copy.deepcopy(actual_manifest)
+            actual["metadata"] = copy.deepcopy(actual_manifest["metadata"]) | {"uid": actual_ref.uid}
+            return adopted_ref(manifest, actual)
         uid = f"uid-{len(self.children) + 1}"
         ref = ResourceRef(manifest["apiVersion"], manifest["kind"], metadata["name"], uid)
         role = metadata.get("labels", {}).get("hriv.bcit.ca/restore-validation-role", "")

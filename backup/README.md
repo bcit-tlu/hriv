@@ -198,7 +198,7 @@ and configured profile differ. It never chooses by blob modification time. Succe
 result to stdout and exits nonzero with an exact `{schema_version,operation,success:false,failure_code,failure_stage}` document on failure. The manifest sidecar is
 limited to 16 MiB; public `source_state` missing/orphan lists and the exact excluded-artifact list
 are each limited to 256 entries with bounded fields. Machine output deliberately omits the
-high-volume manifest file list and all internal handles and credentials. The #1251 consistency gate compares every recovered `source_images` row regardless of active/inactive status; status is evidence for missing-source policy, never a filter that discards rows.
+high-volume manifest file list and all internal handles and credentials. Instead, successful selection and stateless restore additively emit `source_files_sha256`: the lowercase SHA-256 of canonical JSON for the exact sorted manifest mapping `{path:{size,sha256}}`. This compact binding detects same-size source corruption without copying the inventory into machine output or controller state. The #1251 consistency gate streams and hashes every restored regular file, rebuilds that mapping with canonical `data/source_images/...` paths, and requires its digest to match the selected manifest. It compares every recovered `source_images` row regardless of active/inactive status; status is evidence for missing-source policy, never a filter that discards rows.
 
 The stateless restore accepts only a supplied absent or empty safe target, streams only
 `data/source_images`, verifies the embedded manifest against the selected sidecar and checks every

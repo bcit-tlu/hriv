@@ -237,7 +237,7 @@
         "retainedSeconds": { "type": "integer", "minimum": 3600, "maximum": 172800 },
         "casRetries": { "type": "integer", "minimum": 1, "maximum": 20 },
         "maxRetainedRuns": { "type": "integer", "minimum": 0, "maximum": 2 },
-        "maxChildResources": { "type": "integer", "minimum": 6, "maximum": 64 },
+        "maxChildResources": { "type": "integer", "minimum": 10, "maximum": 64 },
         "maxJobs": { "type": "integer", "minimum": 4, "maximum": 32 },
         "maxPvcs": { "type": "integer", "minimum": 1, "maximum": 8 }
       }

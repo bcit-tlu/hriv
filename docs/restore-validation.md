@@ -129,6 +129,10 @@ it creates from those fixed templates. The orchestrator Job/Pod are never childr
 excluded from the success-path cleanup absence gate. The static reaper, not the running orchestrator, removes a
 terminal orchestrator Job and its Pod only after the configured evidence/history window.
 
+Every directly controller-created child carries a deterministic template-identity annotation: SHA-256 over canonical fixed `apiVersion`, `kind`, name, required managed/run/role labels, and desired `spec`, excluding changing timestamps and server fields. This closes the crash gap between Kubernetes create and the state CAS. On create conflict, the gateway may recover only the exact deterministic name after reading it and matching API identity, all required labels, the template digest, and a safe server UID; it never compares API-defaulted mutable spec. Missing or drifted identity is `OWNERSHIP_CONFLICT`. The resumed controller persists the exact returned UID before observing or mutating the child.
+
+At `PREFLIGHT`, capacity reserves the full success-path bound of ten core children: four Jobs, their four Pods, one source PVC, and one CNPG Cluster, accounting for the already-recorded selection Job/Pod. Unexpected ordinary stage exceptions map only to `INTERNAL_ERROR`; the controller atomically retains its exact current child references when state remains writable, then follows terminal Lease/active release. Exception messages, URLs, and credentials are never persisted or emitted. If that retention state CAS cannot be written, the exception is re-raised so stale-holder takeover remains possible.
+
 ## Least privilege
 
 Only namespace-scoped Roles are allowed. A `ClusterRole`, cluster-scoped binding, wildcard API
@@ -462,6 +466,8 @@ orchestrator or read-only selection child MUST verify:
 - `database_recovery.target_lsn` and a 24-hex-character `wal_fence_file` are present and
   syntactically valid.
 
+Selection also binds lowercase `source_files_sha256`, computed over canonical JSON for the exact sorted manifest source-file mapping `{path:{size,sha256}}`. Stateless restore returns the same compact binding, and consistency validation streams every restored regular file, rebuilds the mapping with `data/source_images/...` paths, and must return an exact digest match. Counts and byte totals remain independent checks. The full high-volume inventory is never copied into public machine output or durable controller state.
+
 Flux MUST provide a versioned static source-profile ConfigMap for flux-fleet #241. Its immutable
 profile ID/version binds expected source cluster/provider, application database `app`, owner
 `app`, server/system identity, and the deployed Barman Cloud plugin `ObjectStore` name/version.
@@ -489,7 +495,7 @@ that recovery completed on the bound timeline and reached the exact target LSN. 
 binds canonical UTC `capture_started_at`, uppercase `wal_fence_file`, and canonical UTC
 `wal_fence_committed_at`/`wal_fence_archived_at`. The database child MUST observe exactly one fence row at the target, require that row's dynamic
 generation to be positive, and require its timezone-aware `fenced_at` to fall inclusively between
-the bound capture start and fence-commit timestamps. The exact LSN and fence-derived decimal TLI
+the bound capture start and fence-commit timestamps. When the bound committed timestamp has zero fractional precision, comparison uses the database timestamp at whole-second precision so a database microsecond cannot falsely exceed a whole-second backup boundary; when the bound timestamp is fractional, comparison is exact. Output always preserves the original canonical database `fenced_at` precision. The exact LSN and fence-derived decimal TLI
 bind the recovery boundary; the positive singleton fence row is target-observed evidence, not an
 `expectedFenceGeneration` profile field or any other static profile constant.
 

@@ -29,7 +29,9 @@ def build() -> str:
                 try:
                     texts.append(Path(dist.locate_file(file)).read_text(encoding="utf-8").replace("\r\n", "\n").rstrip())
                 except (OSError, UnicodeDecodeError):
-                    pass
+                    safe_package = re.sub(r"[^A-Za-z0-9._-]", "?", package)[:128]
+                    safe_file = re.sub(r"[^A-Za-z0-9._/+-]", "?", str(file))[:512]
+                    print(f"warning: skipped license file for {safe_package}: {safe_file}", file=sys.stderr)
         records.append(f"{'=' * 80}\n{meta['Name']}@{meta['Version']}\nLicense: {license_id}\n{'=' * 80}\n\n" + ("\n\n".join(texts) or "(No license file shipped in the package.)") + "\n")
     output = f"hriv-restore-validation — Third-Party Software Notices\n{'=' * 80}\n\nHRIV itself is licensed under the Mozilla Public License 2.0 (see ../LICENSE).\nThis generated file covers locked runtime Python dependencies.\n\nTotal packages: {len(records)}\n\n" + "\n".join(records)
     return "\n".join(line.rstrip() for line in output.splitlines()) + "\n"

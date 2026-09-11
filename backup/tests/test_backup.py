@@ -4957,6 +4957,25 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
             backup.validation_select(snapshot + "x", container=container)
         self.assertEqual(raised.exception.code, "SNAPSHOT_MISMATCH")
 
+    def test_selection_emits_canonical_source_files_digest_without_inventory(self):
+        snapshot, manifest, _sidecar, _blobs, container, _calls = self._fixture()
+        expected_files = {
+            path: {"size": metadata["size"], "sha256": metadata["sha256"]}
+            for path, metadata in sorted(manifest["files"].items())
+        }
+        expected = hashlib.sha256(json.dumps(expected_files, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+        summary = backup._validation_manifest_summary(manifest)
+        result = backup.validation_select(snapshot, container=container)
+        self.assertEqual(expected, summary["source_files_sha256"])
+        self.assertEqual(expected, result["source_files_sha256"])
+        self.assertNotIn("files", backup._public_validation_result(result))
+
+    def test_manifest_summary_rejects_non_lowercase_source_sha(self):
+        _snapshot, manifest, _sidecar, _blobs, _container, _calls = self._fixture()
+        manifest["files"][next(iter(manifest["files"]))]["sha256"] = "A" * 64
+        with self.assertRaises(backup.ValidationFailure):
+            backup._validation_manifest_summary(manifest)
+
     def test_strict_select_preserves_quoted_property_etags(self):
         snapshot, _manifest, _sidecar, _blobs, container, _calls = self._fixture()
         quoted = '"0x8DF0E2716DD645B"'

@@ -100,6 +100,18 @@ class ChartTests(unittest.TestCase):
         self.assertNotIn("0.0.0.0/0", self.rendered); self.assertNotIn("::/0", self.rendered)
 
 
+class ReleaseConfigTests(unittest.TestCase):
+    def test_initial_feat_release_is_minor(self):
+        config = json.loads((ROOT / "release-please-config.json").read_text())
+        manifest = json.loads((ROOT / ".release-please-manifest.json").read_text())
+        self.assertEqual("0.0.0", manifest["restore-validation"])
+        self.assertTrue(config["bump-minor-pre-major"])
+        self.assertEqual("python", config["packages"]["restore-validation"]["release-type"])
+        # Release Please's conventional-commit rule maps feat to minor; from 0.0.0 this is 0.1.0.
+        current = tuple(map(int, manifest["restore-validation"].split(".")))
+        self.assertEqual((0, 1, 0), (current[0], current[1] + 1, 0))
+
+
 class CliTests(unittest.TestCase):
     def test_run_command(self): self.assertEqual("run", parser().parse_args(["run"]).command)
     def test_database_command(self): self.assertEqual(7, parser().parse_args(["validate-database", "--host", "db", "--capture-started-at", "2026-01-15T09:00:00Z", "--wal-fence-committed-at", "2026-01-15T09:01:00Z", "--target-lsn", "A/1", "--target-tli", "7"]).target_tli)

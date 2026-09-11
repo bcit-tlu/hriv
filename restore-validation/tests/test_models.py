@@ -33,6 +33,10 @@ class ParsingTests(unittest.TestCase):
         value = config().__dict__ | {"schema_version": 1, "max_retained_runs": 3}
         with self.assertRaises(ValidationError): Config.parse(json.dumps(value))
 
+    def test_config_requires_ten_child_capacity(self):
+        value = config().__dict__ | {"schema_version": 1, "max_child_resources": 9}
+        with self.assertRaises(ValidationError): Config.parse(json.dumps(value))
+
     def test_profile_round_trip(self):
         self.assertEqual("pg-core-source", profile().external_cluster)
 

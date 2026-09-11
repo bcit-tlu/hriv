@@ -116,7 +116,7 @@ Use fake or isolated Azure storage and a representative source-image inventory.
    `db.sql`, tiles, incomplete uploads, and orphan files are absent.
 5. Confirm manifest format 2 records one snapshot's UTC target time and target
    LSN, `archive_timeout_seconds`, the fence WAL/commit/archive timestamps,
-   checksums, counts, missing-source rows, and orphan-file reports.
+   checksums, counts, missing-source rows, and orphan-file reports. Verify `validation-select` and stateless restore expose lowercase `source_files_sha256` for the canonical sorted `{path:{size,sha256}}` mapping without exposing the full inventory, and that consistency hashing rejects a same-size byte mutation.
 6. Verify archive-timeout query → `BEGIN` → local lock/statement deadlines →
    source-table SHARE lock → inventory `COPY` → `COMMIT` → filesystem matching →
    committed singleton-row UPDATE fence occurs in order while maintenance exists. Archive polling follows maintenance;

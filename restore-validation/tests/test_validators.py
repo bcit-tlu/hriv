@@ -73,7 +73,14 @@ class ValidatorTests(unittest.TestCase):
             root = Path(raw); credentials(root)
             fence = {"generation": 9, "fenced_at": datetime(2026, 1, 15, 9, 1, 0, 999999, tzinfo=timezone.utc)}
             result = validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, root, connect=database_factory(fence=fence))
-        self.assertEqual("2026-01-15T09:01:00Z", result["fence_fenced_at"])
+        self.assertEqual("2026-01-15T09:01:00.999999Z", result["fence_fenced_at"])
+
+    def test_database_fence_fractional_commit_uses_exact_precision(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw); credentials(root)
+            fence = {"generation": 9, "fenced_at": datetime(2026, 1, 15, 9, 1, 0, 900000, tzinfo=timezone.utc)}
+            with self.assertRaises(ValidationError):
+                validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00.100000Z", "A/1234", 7, root, connect=database_factory(fence=fence))
 
     def test_database_fence_outside_bound_window(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -118,7 +125,41 @@ class ValidatorTests(unittest.TestCase):
             creds = Path(raw) / "creds"; creds.mkdir(); credentials(creds)
             connection = Connection([[{"row_id": "1", "stored_path": "a.jpg", "status": "ready"}, {"row_id": "2", "stored_path": "b.jpg", "status": "ready"}]])
             result = validate_consistency(profile(), policy(), "db", source, creds, connect=lambda **kwargs: connection)
+        expected_files = {
+            "data/source_images/a.jpg": {"size": 3, "sha256": hashlib.sha256(b"123").hexdigest()},
+            "data/source_images/b.jpg": {"size": 7, "sha256": hashlib.sha256(b"1234567").hexdigest()},
+        }
+        expected_digest = hashlib.sha256(json.dumps(expected_files, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         self.assertEqual(2, result["restored_file_count"]); self.assertEqual(10, result["restored_total_bytes"])
+        self.assertEqual(expected_digest, result["source_files_sha256"])
+
+    def test_consistency_digest_uses_utf8_canonical_paths(self):
+        with tempfile.TemporaryDirectory() as raw:
+            source = Path(raw) / "source_images"; source.mkdir(); (source / "é.jpg").write_bytes(b"image")
+            creds = Path(raw) / "creds"; creds.mkdir(); credentials(creds)
+            rows = [[{"row_id": "1", "stored_path": "é.jpg", "status": "ready"}]]
+            result = validate_consistency(profile(), policy(), "db", source, creds, connect=lambda **kwargs: Connection(rows))
+        files = {
+            "data/source_images/é.jpg": {
+                "size": 5,
+                "sha256": hashlib.sha256(b"image").hexdigest(),
+            }
+        }
+        expected = hashlib.sha256(
+            json.dumps(files, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+        ).hexdigest()
+        self.assertEqual(expected, result["source_files_sha256"])
+
+    def test_consistency_digest_detects_same_size_mutation(self):
+        with tempfile.TemporaryDirectory() as raw:
+            source = Path(raw) / "source_images"; source.mkdir(); path = source / "a.jpg"; path.write_bytes(b"abc")
+            creds = Path(raw) / "creds"; creds.mkdir(); credentials(creds)
+            rows = lambda: [[{"row_id": "1", "stored_path": "a.jpg", "status": "ready"}]]
+            first = validate_consistency(profile(), policy(), "db", source, creds, connect=lambda **kwargs: Connection(rows()))
+            path.write_bytes(b"xyz")
+            second = validate_consistency(profile(), policy(), "db", source, creds, connect=lambda **kwargs: Connection(rows()))
+        self.assertEqual(first["restored_total_bytes"], second["restored_total_bytes"])
+        self.assertNotEqual(first["source_files_sha256"], second["source_files_sha256"])
 
     def test_consistency_missing_order_is_numeric_row_id(self):
         missing = [{"row_id": "2", "status": "ready", "stored_path": "data/source_images/z.jpg", "reason": "missing_source"}, {"row_id": "10", "status": "ready", "stored_path": "data/source_images/a.jpg", "reason": "missing_source"}]

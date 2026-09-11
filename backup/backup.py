@@ -3308,6 +3308,8 @@ def _validation_manifest_summary(manifest: dict) -> dict:
         or len(path.encode("utf-8")) > 512
         or set(metadata) != {"size", "sha256"}
         or isinstance(metadata.get("size"), bool)
+        or not isinstance(metadata.get("sha256"), str)
+        or re.fullmatch(r"[0-9a-f]{64}", metadata["sha256"]) is None
         for path, metadata in files.items()
     ):
         raise ValidationFailure("MANIFEST_COMPONENT_INVALID", "manifest")
@@ -3348,6 +3350,13 @@ def _validation_manifest_summary(manifest: dict) -> dict:
     source = manifest.get("source_images")
     if not isinstance(source, dict) or source.get("files") != files:
         raise ValidationFailure("SOURCE_INDEX_INVALID", "manifest")
+    source_files = {
+        path: {"size": files[path]["size"], "sha256": files[path]["sha256"]}
+        for path in sorted(files)
+    }
+    source_files_sha256 = hashlib.sha256(
+        json.dumps(source_files, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
     file_count = len(files)
     total_bytes = sum(metadata["size"] for metadata in files.values())
     if (
@@ -3435,6 +3444,7 @@ def _validation_manifest_summary(manifest: dict) -> dict:
         "files": files,
         "file_count": file_count,
         "total_bytes": total_bytes,
+        "source_files_sha256": source_files_sha256,
         "target_lsn": target_lsn,
         "target_timeline": timeline,
         "database_row_count": source["database_row_count"],
@@ -3854,6 +3864,7 @@ def validation_select(
         "target_timeline": summary["target_timeline"],
         "source_file_count": summary["file_count"],
         "source_total_bytes": summary["total_bytes"],
+        "source_files_sha256": summary["source_files_sha256"],
         "database_row_count": summary["database_row_count"],
         "missing_count": summary["missing_count"],
         "orphan_count": summary["orphan_count"],

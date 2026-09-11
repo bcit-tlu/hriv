@@ -6,7 +6,7 @@ from typing import Any, Callable
 from kubernetes import client, config
 from kubernetes.client import ApiException
 
-from .gateway import Conflict, Lease, Observation
+from .gateway import Conflict, Lease, Observation, adopted_ref
 from .models import ResourceRef
 from .strict import ValidationError, parse_json
 
@@ -102,11 +102,15 @@ class KubernetesGateway:
         try:
             obj = self._create(api, kind, manifest)
         except ApiException as exc:
-            if exc.status == 409:
-                raise ValidationError("OWNERSHIP_CONFLICT") from exc
-            raise
-        metadata = _metadata(obj)
-        return ResourceRef(api, kind, metadata["name"], str(metadata["uid"]))
+            if exc.status != 409:
+                raise
+            try:
+                existing = self._read(api, kind, manifest["metadata"]["name"])
+            except ApiException as read_exc:
+                raise ValidationError("OWNERSHIP_CONFLICT") from read_exc
+            serialized = _serialized_identity(existing)
+            return adopted_ref(manifest, serialized)
+        return adopted_ref(manifest, _serialized_identity(obj))
 
     def get_child(self, ref: ResourceRef) -> dict[str, Any] | None:
         try:
@@ -277,6 +281,16 @@ def _validate_lease_identity(holder: str | None, acquired: datetime | None, rene
     )
     if tuple(parts[-2:]) != expected:
         raise ValidationError("LEASE_IDENTITY_INVALID")
+
+
+def _serialized_identity(obj: Any) -> dict[str, Any]:
+    serialized = client.ApiClient().sanitize_for_serialization(obj)
+    if not isinstance(serialized, dict):
+        raise ValidationError("OWNERSHIP_CONFLICT")
+    if not isinstance(obj, dict):
+        serialized["apiVersion"] = getattr(obj, "api_version", None)
+        serialized["kind"] = getattr(obj, "kind", None)
+    return serialized
 
 
 def _metadata(obj: Any) -> dict[str, Any]:

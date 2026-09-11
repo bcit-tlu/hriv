@@ -97,6 +97,17 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual("2026-01-15T09:00:00Z", args[args.index("--capture-started-at") + 1])
         self.assertEqual("2026-01-15T09:01:00Z", args[args.index("--wal-fence-committed-at") + 1])
 
+    def test_database_result_whole_second_bound_accepts_original_fractional_fence(self) -> None:
+        fake = gateway(); fake.results["db-validation"] = json.dumps(database_result(fence_fenced_at="2026-01-15T09:01:00.900000Z"))
+        self.assertEqual("succeeded", drive(controller(fake)))
+
+    def test_database_result_fractional_bound_rejects_later_fraction(self) -> None:
+        fake = gateway()
+        fake.results["selection"] = json.dumps(selection_document(wal_fence_committed_at="2026-01-15T09:01:00.100000Z"))
+        fake.results["db-validation"] = json.dumps(database_result(fence_fenced_at="2026-01-15T09:01:00.900000Z"))
+        self.assertEqual("retained", drive(controller(fake)))
+        self.assertEqual("DB_VALIDATION_INVALID", parse_state(fake.state_raw, NOW)["latest_run"]["failure_code"])
+
     def test_restore_exact_args_and_parent_mount(self) -> None:
         fake = gateway(); drive(controller(fake))
         job = next(item for item in fake.created if item["metadata"]["labels"].get("hriv.bcit.ca/restore-validation-role") == "source-restore")
@@ -142,6 +153,7 @@ class ControllerTests(unittest.TestCase):
             "target timeline": ("target_timeline", 8, "IMMUTABLE_BINDING_INVALID"),
             "file count": ("source_file_count", 1, "IMMUTABLE_BINDING_INVALID"),
             "source bytes": ("source_total_bytes", -1, "IMMUTABLE_BINDING_INVALID"),
+            "source files hash": ("source_files_sha256", "E" * 64, "IMMUTABLE_BINDING_INVALID"),
             "database rows": ("database_row_count", 3, "IMMUTABLE_BINDING_INVALID"),
             "missing count": ("missing_count", 1, "IMMUTABLE_BINDING_INVALID"),
             "orphan count": ("orphan_count", 1, "SOURCE_POLICY_MISMATCH"),
@@ -236,6 +248,17 @@ class ControllerTests(unittest.TestCase):
         instance = Controller(fake, config(stage_timeout_seconds=30), profile(), policy(), templates(), clock=lambda: current[0]); instance.run(TRIGGER, RUN); current[0] += timedelta(seconds=31)
         self.assertEqual("retained", instance.run(TRIGGER, RUN))
 
+    def test_preflight_reserves_full_ten_child_bound(self) -> None:
+        fake = gateway(); instance = controller(fake, max_child_resources=9)
+        instance.run(TRIGGER, RUN)
+        self.assertEqual("retained", instance.run(TRIGGER, RUN))
+        self.assertEqual("CAPACITY_INSUFFICIENT", parse_state(fake.state_raw, NOW)["latest_run"]["failure_code"])
+
+    def test_preflight_accepts_exact_ten_child_bound(self) -> None:
+        fake = gateway(); instance = controller(fake, max_child_resources=10)
+        instance.run(TRIGGER, RUN); self.assertEqual("running", instance.run(TRIGGER, RUN))
+        self.assertEqual("PROVISION", parse_state(fake.state_raw, NOW)["latest_run"]["state"])
+
     def test_preflight_job_quota(self) -> None:
         fake = gateway(); fake.create_child({"apiVersion": "batch/v1", "kind": "Job", "metadata": {"name": "unrelated", "labels": {}}})
         instance = controller(fake, max_jobs=4); instance.run(TRIGGER, RUN)
@@ -270,11 +293,16 @@ class ControllerTests(unittest.TestCase):
         fake = gateway(); fake.results["consistency"] = json.dumps(consistency_result(orphan_sources=[{"stored_path": "x"}]))
         self.assertEqual("retained", drive(controller(fake)))
 
+    def test_consistency_same_size_digest_mismatch_is_retained(self) -> None:
+        fake = gateway(); fake.results["consistency"] = json.dumps(consistency_result(source_files_sha256="f" * 64))
+        self.assertEqual("retained", drive(controller(fake)))
+        self.assertEqual("CONSISTENCY_RESULT_INVALID", parse_state(fake.state_raw, NOW)["latest_run"]["failure_code"])
+
     def test_selection_binding_preserves_machine_evidence_and_local_digests(self) -> None:
         fake = gateway(); fake.results["selection"] = json.dumps(selection_document(exclusion_count=1, excluded_artifacts=[{"path": "data/admin", "reason": "non_authoritative_production_data"}]))
         controller(fake).run(TRIGGER, RUN)
         selected = parse_state(fake.state_raw, NOW)["latest_run"]["selected_source"]
-        for field in ("backup_run_id", "manifest_sha256", "archive_blob", "archive_size", "archive_etag", "completed_at", "target_lsn", "target_timeline", "source_file_count", "source_total_bytes", "database_row_count", "missing_count", "orphan_count", "exclusion_count", "source_state", "source_state_sha256", "excluded_artifacts", "source_profile_id", "source_profile_sha256", "source_state_policy_version", "source_state_policy_sha256"):
+        for field in ("backup_run_id", "manifest_sha256", "archive_blob", "archive_size", "archive_etag", "completed_at", "target_lsn", "target_timeline", "source_file_count", "source_total_bytes", "source_files_sha256", "database_row_count", "missing_count", "orphan_count", "exclusion_count", "source_state", "source_state_sha256", "excluded_artifacts", "source_profile_id", "source_profile_sha256", "source_state_policy_version", "source_state_policy_sha256"):
             self.assertIn(field, selected)
         self.assertEqual([{"path": "data/admin", "reason": "non_authoritative_production_data"}], selected["excluded_artifacts"])
 
@@ -289,7 +317,7 @@ class ControllerTests(unittest.TestCase):
     def test_async_cleanup_waits(self) -> None:
         fake = gateway(); fake.async_deletes = True; instance = controller(fake)
         for _ in range(20):
-            outcome = instance.run(TRIGGER, RUN)
+            instance.run(TRIGGER, RUN)
             if parse_state(fake.state_raw, NOW)["latest_run"]["state"] == "CLEANUP": break
         self.assertEqual("running", instance.run(TRIGGER, RUN))
         deleted = len(fake.deleted); self.assertGreater(deleted, 0)
@@ -300,6 +328,88 @@ class ControllerTests(unittest.TestCase):
         fake = gateway()
         fake.create_child({"apiVersion": "batch/v1", "kind": "Job", "metadata": {"name": child_name(RUN, "selection"), "labels": {}}})
         self.assertEqual("retained", controller(fake).run(TRIGGER, RUN))
+
+    def test_crash_after_create_recovers_every_child_role_without_leaks(self) -> None:
+        class SimulatedCrash(BaseException):
+            pass
+
+        for target_role in ("selection", "source-pvc", "cnpg", "db-validation", "source-restore", "consistency"):
+            with self.subTest(role=target_role):
+                fake = gateway()
+                original_create = fake.create_child
+                original_replace = fake.replace_state
+                crash_pending = [False]
+
+                def create(manifest):
+                    ref = original_create(manifest)
+                    if manifest["metadata"]["labels"].get("hriv.bcit.ca/restore-validation-role") == target_role:
+                        crash_pending[0] = True
+                    return ref
+
+                def replace(name, raw, version):
+                    if crash_pending[0]:
+                        crash_pending[0] = False
+                        raise SimulatedCrash()
+                    return original_replace(name, raw, version)
+
+                fake.create_child = create
+                fake.replace_state = replace
+                first = controller(fake)
+                for _ in range(30):
+                    try:
+                        first.run(TRIGGER, RUN)
+                    except SimulatedCrash:
+                        break
+                else:
+                    self.fail(f"did not inject crash for {target_role}")
+                fake.create_child = original_create
+                fake.replace_state = original_replace
+                created_ref = next(ref for ref, manifest, _ in fake.children.values() if manifest["metadata"]["labels"].get("hriv.bcit.ca/restore-validation-role") == target_role)
+                state = parse_state(fake.state_raw, NOW)["latest_run"]
+                self.assertFalse(any(item["uid"] == created_ref.uid for item in state["child_resources"]))
+                fresh = Controller(fake, config(), profile(), policy(), templates(), clock=lambda: NOW)
+                fresh.run(TRIGGER, RUN)
+                state = parse_state(fake.state_raw, NOW)["latest_run"]
+                self.assertTrue(any(item["uid"] == created_ref.uid for item in state["child_resources"]))
+                self.assertEqual("succeeded", drive(fresh))
+                self.assertEqual([], fake.list_run_children(RUN))
+
+    def test_unexpected_stage_exceptions_retain_without_exception_text(self) -> None:
+        secret = "https://secret.example/?sig=do-not-persist"
+        cases = ("SELECT", "PROVISION", "observe", "delete")
+        for case in cases:
+            with self.subTest(case=case):
+                fake = gateway(); instance = controller(fake)
+                if case == "PROVISION":
+                    instance.run(TRIGGER, RUN); instance.run(TRIGGER, RUN)
+                    fake.create_child = lambda manifest: (_ for _ in ()).throw(RuntimeError(secret))
+                elif case == "observe":
+                    fake.observe_child = lambda ref: (_ for _ in ()).throw(RuntimeError(secret))
+                elif case == "delete":
+                    for _ in range(30):
+                        instance.run(TRIGGER, RUN)
+                        if parse_state(fake.state_raw, NOW)["latest_run"]["state"] == "CLEANUP":
+                            break
+                    fake.delete_child = lambda ref: (_ for _ in ()).throw(RuntimeError(secret))
+                else:
+                    fake.create_child = lambda manifest: (_ for _ in ()).throw(RuntimeError(secret))
+                self.assertEqual("retained", instance.run(TRIGGER, RUN))
+                raw = fake.state_raw or ""
+                run = parse_state(raw, NOW)["latest_run"]
+                self.assertEqual("INTERNAL_ERROR", run["failure_code"])
+                self.assertEqual({"SELECT": "SELECT", "observe": "SELECT", "PROVISION": "PROVISION", "delete": "CLEANUP"}[case], run["failure_stage"])
+                self.assertNotIn(secret, raw)
+                self.assertIsNone(parse_state(raw, NOW)["active_run"])
+                self.assertIsNone(fake.lease.holder_identity)
+
+    def test_unexpected_exception_reraises_when_retention_state_write_fails(self) -> None:
+        fake = gateway(); instance = controller(fake)
+        instance.run(TRIGGER, RUN)
+        fake.observe_child = lambda ref: (_ for _ in ()).throw(RuntimeError("stage failure"))
+        fake.replace_state = lambda name, raw, version: (_ for _ in ()).throw(RuntimeError("state unavailable"))
+        with self.assertRaises(RuntimeError):
+            instance.run(TRIGGER, RUN)
+        self.assertIsNotNone(fake.lease.holder_identity)
 
     def test_lease_microseconds_normalized_on_acquire(self) -> None:
         fake = gateway(); clock = datetime(2026, 1, 15, 10, 0, 0, 987654, tzinfo=timezone.utc)

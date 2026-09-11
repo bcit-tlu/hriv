@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import unittest
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -7,7 +8,7 @@ from unittest.mock import Mock
 
 from kubernetes.client import ApiException
 
-from hriv_restore_validation.gateway import FakeGateway, Lease, Observation
+from hriv_restore_validation.gateway import FakeGateway, Lease, Observation, TEMPLATE_IDENTITY_ANNOTATION, template_identity
 from hriv_restore_validation.kubernetes_gateway import KubernetesGateway, _time
 from hriv_restore_validation.models import ResourceRef
 from hriv_restore_validation.strict import ValidationError
@@ -29,9 +30,30 @@ class GatewayTests(unittest.TestCase):
         body = gateway.coordination.patch_namespaced_lease.call_args.args[2]
         self.assertEqual(normalized, body["spec"]["acquireTime"]); self.assertEqual(normalized, stored.renew_time)
 
-    def test_fake_create_conflict(self):
-        fake = FakeGateway(); manifest = {"apiVersion": "v1", "kind": "PersistentVolumeClaim", "metadata": {"name": "x", "labels": {}}}; fake.create_child(manifest)
-        with self.assertRaises(ValidationError): fake.create_child(manifest)
+    @staticmethod
+    def _manifest():
+        manifest = {"apiVersion": "v1", "kind": "PersistentVolumeClaim", "metadata": {"name": "x", "labels": {"app.kubernetes.io/managed-by": "hriv-restore-validation", "hriv.bcit.ca/restore-validation-run-id": "run", "hriv.bcit.ca/restore-validation-role": "source-pvc"}, "annotations": {}}, "spec": {"accessModes": ["ReadWriteOnce"]}}
+        manifest["metadata"]["annotations"][TEMPLATE_IDENTITY_ANNOTATION] = template_identity(manifest)
+        return manifest
+
+    def test_fake_create_conflict_adopts_exact_identity(self):
+        fake = FakeGateway(); manifest = self._manifest(); expected = fake.create_child(manifest)
+        self.assertEqual(expected, fake.create_child(manifest))
+
+    def test_fake_create_conflict_rejects_spoofed_binding(self):
+        for mutation in ("label", "digest", "spec"):
+            with self.subTest(mutation=mutation):
+                fake = FakeGateway(); manifest = self._manifest(); fake.create_child(manifest)
+                retry = self._manifest()
+                if mutation == "label":
+                    retry["metadata"]["labels"]["hriv.bcit.ca/restore-validation-run-id"] = "other"
+                elif mutation == "digest":
+                    retry["metadata"]["annotations"][TEMPLATE_IDENTITY_ANNOTATION] = "0" * 64
+                else:
+                    retry["spec"]["accessModes"] = ["ReadOnlyMany"]
+                    retry["metadata"]["annotations"][TEMPLATE_IDENTITY_ANNOTATION] = template_identity(retry)
+                with self.assertRaises(ValidationError):
+                    fake.create_child(retry)
 
     def test_fake_async_delete(self):
         fake = FakeGateway(); ref = fake.create_child({"apiVersion": "v1", "kind": "PersistentVolumeClaim", "metadata": {"name": "x", "labels": {"app.kubernetes.io/managed-by": "hriv-restore-validation"}}}); fake.async_deletes = True; fake.delete_child(ref)
@@ -106,9 +128,21 @@ class GatewayTests(unittest.TestCase):
         gateway, ref = self._successful(); gateway.get_child.return_value["metadata"]["labels"]["operator-added"] = "yes"; gateway.core.list_namespaced_pod.return_value.items[0].metadata.labels["batch.kubernetes.io/controller-uid"] = "job-uid"
         self.assertEqual("Succeeded", gateway.observe_child(ref).phase)
 
-    def test_create_409_never_adopts(self):
-        gateway = self._gateway(); gateway._create = Mock(side_effect=ApiException(status=409))
-        with self.assertRaises(ValidationError): gateway.create_child({"apiVersion": "v1", "kind": "PersistentVolumeClaim", "metadata": {"name": "x"}})
+    def test_create_409_adopts_only_exact_deterministic_resource(self):
+        desired = self._manifest()
+        existing = copy.deepcopy(desired)
+        existing["metadata"]["uid"] = "uid-existing"
+        gateway = self._gateway(); gateway._create = Mock(side_effect=ApiException(status=409)); gateway._read = Mock(return_value=existing)
+        self.assertEqual("uid-existing", gateway.create_child(desired).uid)
+        for field, value in (("uid", "unsafe uid"), ("name", "other")):
+            with self.subTest(field=field):
+                drifted = copy.deepcopy(existing); drifted["metadata"][field] = value; gateway._read.return_value = drifted
+                with self.assertRaises(ValidationError): gateway.create_child(desired)
+        drifted = copy.deepcopy(existing)
+        drifted["spec"]["accessModes"] = ["ReadOnlyMany"]
+        gateway._read.return_value = drifted
+        with self.assertRaises(ValidationError):
+            gateway.create_child(desired)
 
     def test_no_secret_api_usage(self):
         import inspect, hriv_restore_validation.kubernetes_gateway as module

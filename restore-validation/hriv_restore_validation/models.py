@@ -90,7 +90,7 @@ class Config:
             integer(value["retained_seconds"], "retained_seconds", 3600, 172800),
             integer(value["cas_retries"], "cas_retries", 1, 20),
             integer(value["max_retained_runs"], "max_retained_runs", 0, 2),
-            integer(value["max_child_resources"], "max_child_resources", 6, 64),
+            integer(value["max_child_resources"], "max_child_resources", 10, 64),
             integer(value["max_jobs"], "max_jobs", 4, 32),
             integer(value["max_pvcs"], "max_pvcs", 1, 8),
             integer(value["state_max_bytes"], "state_max_bytes", 65536, 512 * 1024),

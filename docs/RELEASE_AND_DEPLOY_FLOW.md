@@ -60,6 +60,10 @@ all component gates; `helm-lint` remains a required, unconditional check.
 Skipped component jobs satisfy their required check status, while the
 corresponding reusable OCI build is skipped as well.
 
+### Initial restore-validation release
+
+`restore-validation` intentionally remains at `0.0.0` until its first release; there is no version bump in feature PRs. Manifest mode plus `bump-minor-pre-major: true` means a conventional `feat:` commit affecting that component produces the intended first release proposal `0.1.0` (and tag `restore-validation-v0.1.0`). A repository test locks the manifest seed, Python release type, and pre-major minor-bump setting together.
+
 ## Tag and version formats
 
 | Thing                      | Format                                                 | Example                            | Notes                                                                                                                                         |

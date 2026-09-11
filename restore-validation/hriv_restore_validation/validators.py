@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import time
 import unicodedata
@@ -94,8 +96,9 @@ def validate_database(profile: SourceProfile, host: str, capture_started_at: str
         raise ValidationError("DATABASE_FIDELITY_MISMATCH")
     fence = fences[0]
     fenced_at = fence.get("fenced_at")
-    if isinstance(fenced_at, datetime):
-        fenced_at = fenced_at.replace(microsecond=0)
+    fenced_comparison = fenced_at
+    if isinstance(fenced_at, datetime) and fence_committed.microsecond == 0:
+        fenced_comparison = fenced_at.replace(microsecond=0)
     valid = (
         identity.get("system_identifier") == profile.expected_system_identifier
         and recovery == {"in_recovery": False, "timeline": target_tli}
@@ -112,7 +115,8 @@ def validate_database(profile: SourceProfile, host: str, capture_started_at: str
         and isinstance(fenced_at, datetime)
         and fenced_at.tzinfo is not None
         and fenced_at.utcoffset() is not None
-        and capture_started <= fenced_at.astimezone(timezone.utc) <= fence_committed
+        and isinstance(fenced_comparison, datetime)
+        and capture_started <= fenced_comparison.astimezone(timezone.utc) <= fence_committed
     )
     if not valid:
         raise ValidationError("DATABASE_FIDELITY_MISMATCH")
@@ -145,13 +149,19 @@ def validate_consistency(profile: SourceProfile, policy: SourcePolicy, host: str
         if not exact or re.fullmatch(r"[1-9][0-9]{0,18}", row_id) is None or len(status.encode("utf-8")) > 512:
             raise ValidationError("DATABASE_RESULT_INVALID")
         db_rows.append((_canonical_source_path(str(row["stored_path"])), {"row_id": row_id, "status": status}))
-    files: dict[str, int] = {}
+    files: dict[str, dict[str, Any]] = {}
     for path in sorted(source.rglob("*")):
         if path.is_symlink():
             raise ValidationError("SOURCE_SYMLINK_FORBIDDEN")
         if path.is_file():
             relative = "data/source_images/" + path.relative_to(source).as_posix()
-            files[relative] = path.stat().st_size
+            digest = hashlib.sha256()
+            size = 0
+            with path.open("rb") as stream:
+                while chunk := stream.read(1024 * 1024):
+                    size += len(chunk)
+                    digest.update(chunk)
+            files[relative] = {"size": size, "sha256": digest.hexdigest()}
     policy_by_identity = {(item["row_id"], item["status"], item["stored_path"]): item for item in policy.missing_sources}
     missing = []
     for path, row in db_rows:
@@ -167,7 +177,10 @@ def validate_consistency(profile: SourceProfile, policy: SourcePolicy, host: str
     unexpected_orphans = [path for path in sorted(files) if path not in db_paths]
     if unexpected_orphans or missing != list(policy.missing_sources):
         raise ValidationError("SOURCE_POLICY_MISMATCH")
-    result = {"schema_version": 1, "operation": "validate-consistency", "success": True, "database_source_count": len(rows), "restored_file_count": len(files), "restored_total_bytes": sum(files.values()), "missing_sources": missing, "orphan_sources": list(policy.orphan_sources), "source_state_policy_sha256": policy.sha256}
+    source_files_sha256 = hashlib.sha256(
+        json.dumps(files, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+    result = {"schema_version": 1, "operation": "validate-consistency", "success": True, "database_source_count": len(rows), "restored_file_count": len(files), "restored_total_bytes": sum(item["size"] for item in files.values()), "source_files_sha256": source_files_sha256, "missing_sources": missing, "orphan_sources": list(policy.orphan_sources), "source_state_policy_sha256": policy.sha256}
     _bounded_result(result)
     return result
 
