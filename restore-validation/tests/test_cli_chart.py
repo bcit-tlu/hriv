@@ -6,6 +6,7 @@ import json
 import shutil
 import subprocess
 import tempfile
+import tomllib
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -140,15 +141,18 @@ class ChartTests(unittest.TestCase):
 
 
 class ReleaseConfigTests(unittest.TestCase):
-    def test_initial_feat_release_is_minor(self):
+    def test_restore_release_versions_are_consistent(self):
         config = json.loads((ROOT / "release-please-config.json").read_text())
         manifest = json.loads((ROOT / ".release-please-manifest.json").read_text())
-        self.assertEqual("0.0.0", manifest["restore-validation"])
+        package = tomllib.loads((ROOT / "restore-validation" / "pyproject.toml").read_text())
+        chart = yaml.safe_load((ROOT / "charts" / "restore-validation" / "Chart.yaml").read_text())
+        version = manifest["restore-validation"]
+        self.assertRegex(version, r"^\d+\.\d+\.\d+$")
+        self.assertEqual(version, package["tool"]["poetry"]["version"])
+        self.assertEqual(version, chart["version"])
+        self.assertEqual(version, chart["appVersion"])
         self.assertTrue(config["bump-minor-pre-major"])
         self.assertEqual("python", config["packages"]["restore-validation"]["release-type"])
-        # Release Please's conventional-commit rule maps feat to minor; from 0.0.0 this is 0.1.0.
-        current = tuple(map(int, manifest["restore-validation"].split(".")))
-        self.assertEqual((0, 1, 0), (current[0], current[1] + 1, 0))
 
 
 class CliTests(unittest.TestCase):
