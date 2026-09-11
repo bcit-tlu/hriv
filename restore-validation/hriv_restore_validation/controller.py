@@ -259,7 +259,10 @@ class Controller:
             expired = now > renewed + timedelta(seconds=lease.duration_seconds)
             if terminal:
                 retained = any(item["run_id"] == held_run for item in state["retained_runs"])
-                if (latest["state"] == "FAILED_RETAIN" and (not retained or not self._ownership_intact(latest))) or (latest["state"] == "SUCCEEDED" and self.gateway.list_run_children(held_run)):
+                # Only the terminal run's own orchestrator lease is releasable here. A
+                # different holder is a cleanup Job; clearing it would leave live
+                # deletion unprotected, so only cleanup takeover may replace it.
+                if uid != latest["job_uid"] or (latest["state"] == "FAILED_RETAIN" and (not retained or not self._ownership_intact(latest))) or (latest["state"] == "SUCCEEDED" and self.gateway.list_run_children(held_run)):
                     return self._reject(trigger, trigger_id, now, "OVERLAP_ACTIVE")
                 self.gateway.replace_lease(self.config.lease_name, Lease(lease.resource_version, None, None, None, None))
             elif latest is None:

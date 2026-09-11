@@ -345,8 +345,11 @@ has been persisted. On every normal terminal path, including
 can start immediately rather than waiting for expiry. If a holder failed to clear but its durable
 attempt is already terminal, a contender MAY immediately compare-and-set acquisition of the
 still-held Lease without waiting for expiry and without writing `INTERRUPTED_STALE_HOLDER`, but only
-after confirming a failed/retained run has its exact `retained_runs` transfer (or a clean success has
-no children). This is terminal-holder recovery, not stale takeover.
+when the still-held Job UID equals the terminal run's recorded orchestrator `job_uid` and after
+confirming a failed/retained run has its exact `retained_runs` transfer (or a clean success has
+no children). A different holder UID on a terminal run's Lease is a cleanup Job: a run contender
+MUST reject `OVERLAP_ACTIVE` without clearing it, leaving replacement to the guarded cleanup
+takeover path. This is terminal-holder recovery, not stale takeover.
 
 A contender MUST NOT take a merely expired Lease whose durable holder remains within a valid
 nonterminal run. Stale takeover applies only to a holder whose

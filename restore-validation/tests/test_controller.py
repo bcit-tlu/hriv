@@ -613,6 +613,41 @@ class ControllerTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValidationError, "CLEANUP_OVERLAP"):
                     replacement.cleanup_retained("replacement-cleanup-uid")
 
+    def test_run_trigger_cannot_displace_live_cleanup_lease(self) -> None:
+        fake, instance = self._retained(); fake.async_deletes = True
+        self.assertEqual("running", instance.cleanup_retained("cleanup-a-uid"))
+        trigger = type(TRIGGER)("scheduled", "weekly", "weekly-job-uid")
+        self.assertEqual("rejected", instance.run(trigger, "rv-20260115t110000z-deadbeef"))
+        self.assertEqual("cleanup-a-uid", fake.lease.holder_identity.split("|")[1])
+        state = parse_state(fake.state_raw, NOW)
+        self.assertEqual(RUN, state["latest_run"]["run_id"])
+        self.assertEqual(1, len(state["retained_runs"]))
+        with self.assertRaisesRegex(ValidationError, "CLEANUP_OVERLAP"):
+            instance.cleanup_retained("cleanup-b-uid")
+        fake.finish_deletes()
+        self.assertEqual("succeeded", instance.cleanup_retained("cleanup-a-uid"))
+
+    def test_run_trigger_cannot_displace_expired_cleanup_lease(self) -> None:
+        fake, first = self._retained(); fake.async_deletes = True
+        self.assertEqual("running", first.cleanup_retained("cleanup-a-uid"))
+        later = NOW + timedelta(seconds=31)
+        instance = Controller(fake, config(), profile(), policy(), templates(), clock=lambda: later)
+        trigger = type(TRIGGER)("scheduled", "weekly", "weekly-job-uid")
+        self.assertEqual("rejected", instance.run(trigger, "rv-20260115t110000z-deadbeef"))
+        self.assertEqual("cleanup-a-uid", fake.lease.holder_identity.split("|")[1])
+        self.assertEqual("running", instance.cleanup_retained("cleanup-b-uid"))
+        self.assertEqual("cleanup-b-uid", fake.lease.holder_identity.split("|")[1])
+        fake.finish_deletes()
+        self.assertEqual("succeeded", instance.cleanup_retained("cleanup-b-uid"))
+
+    def test_terminal_run_own_stale_lease_still_clears(self) -> None:
+        fake, instance = self._retained()
+        acquired = NOW - timedelta(minutes=3)
+        fake.lease = Lease("4", holder_identity(TRIGGER.job_uid, RUN, acquired, acquired), acquired, acquired, 30)
+        trigger = type(TRIGGER)("scheduled", "weekly", "weekly-job-uid")
+        self.assertEqual("running", instance.run(trigger, "rv-20260115t110000z-deadbeef"))
+        self.assertEqual("weekly-job-uid", fake.lease.holder_identity.split("|")[1])
+
     def test_terminal_report_is_bounded_and_omits_sensitive_archive_identity(self) -> None:
         fake = gateway(); instance = controller(fake); outcome = drive(instance)
         report = instance.terminal_report(TRIGGER, RUN, outcome)
