@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        component: [frontend, backend, backup]
+        component: [frontend, backend, backup, restore-validation]
 
     steps:
       - name: Parse release tag

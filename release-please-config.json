@@ -39,6 +39,18 @@
         }
       ]
     },
+    "restore-validation": {
+      "path": "restore-validation",
+      "component": "restore-validation",
+      "release-type": "python",
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "/charts/restore-validation/Chart.yaml",
+          "glob": true
+        }
+      ]
+    },
     "synthetic-monitoring": {
       "path": "synthetic-monitoring",
       "component": "synthetic-monitoring",

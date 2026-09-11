@@ -3154,6 +3154,10 @@ def _strict_utc_timestamp(value: object, code: str) -> datetime:
     return parsed
 
 
+def _utc_rfc3339(value: datetime) -> str:
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
 def _canonical_source_path(value: object) -> str:
     if not isinstance(value, str) or not value or len(value.encode("utf-8")) > 512:
         raise ValidationFailure("SOURCE_STATE_DIGEST_INVALID", "manifest")
@@ -3304,6 +3308,8 @@ def _validation_manifest_summary(manifest: dict) -> dict:
         or len(path.encode("utf-8")) > 512
         or set(metadata) != {"size", "sha256"}
         or isinstance(metadata.get("size"), bool)
+        or not isinstance(metadata.get("sha256"), str)
+        or re.fullmatch(r"[0-9a-f]{64}", metadata["sha256"]) is None
         for path, metadata in files.items()
     ):
         raise ValidationFailure("MANIFEST_COMPONENT_INVALID", "manifest")
@@ -3344,6 +3350,13 @@ def _validation_manifest_summary(manifest: dict) -> dict:
     source = manifest.get("source_images")
     if not isinstance(source, dict) or source.get("files") != files:
         raise ValidationFailure("SOURCE_INDEX_INVALID", "manifest")
+    source_files = {
+        path: {"size": files[path]["size"], "sha256": files[path]["sha256"]}
+        for path in sorted(files)
+    }
+    source_files_sha256 = hashlib.sha256(
+        json.dumps(source_files, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
     file_count = len(files)
     total_bytes = sum(metadata["size"] for metadata in files.values())
     if (
@@ -3405,7 +3418,7 @@ def _validation_manifest_summary(manifest: dict) -> dict:
     ):
         raise ValidationFailure("TARGET_LSN_INVALID", "manifest")
     fence = recovery.get("wal_fence_file")
-    if not isinstance(fence, str) or re.fullmatch(r"[0-9A-Fa-f]{24}", fence) is None:
+    if not isinstance(fence, str) or re.fullmatch(r"[0-9A-F]{24}", fence) is None:
         raise ValidationFailure("WAL_FENCE_UNSUPPORTED", "manifest")
     timeline = int(fence[:8], 16)
     if timeline == 0:
@@ -3431,6 +3444,7 @@ def _validation_manifest_summary(manifest: dict) -> dict:
         "files": files,
         "file_count": file_count,
         "total_bytes": total_bytes,
+        "source_files_sha256": source_files_sha256,
         "target_lsn": target_lsn,
         "target_timeline": timeline,
         "database_row_count": source["database_row_count"],
@@ -3440,8 +3454,11 @@ def _validation_manifest_summary(manifest: dict) -> dict:
         "source_state": source_state,
         "source_state_sha256": source_state_sha256,
         "excluded_artifacts": canonical_excluded,
-        "capture_started_at": capture_started.isoformat(),
-        "completed_at": manifest["completed_at"],
+        "capture_started_at": _utc_rfc3339(capture_started),
+        "wal_fence_file": fence,
+        "wal_fence_committed_at": _utc_rfc3339(committed),
+        "wal_fence_archived_at": _utc_rfc3339(archived),
+        "completed_at": _utc_rfc3339(completed),
     }
 
 
@@ -3764,7 +3781,7 @@ def validation_select(
         or marker.get("backup_mode") != "production"
         or marker.get("tiles_excluded") is not True
         or marker.get("archive_size") != archive_size
-        or marker.get("created_at") != summary["capture_started_at"]
+        or _parse_strict_utc(marker.get("created_at")) != _parse_strict_utc(summary["capture_started_at"])
         or state.get("schema_version") != BACKUP_STATE_SCHEMA_VERSION
         or state.get("backup_mode") != "production"
         or state.get("tiles_excluded") is not True
@@ -3847,6 +3864,7 @@ def validation_select(
         "target_timeline": summary["target_timeline"],
         "source_file_count": summary["file_count"],
         "source_total_bytes": summary["total_bytes"],
+        "source_files_sha256": summary["source_files_sha256"],
         "database_row_count": summary["database_row_count"],
         "missing_count": summary["missing_count"],
         "orphan_count": summary["orphan_count"],
@@ -3854,6 +3872,10 @@ def validation_select(
         "source_state": summary["source_state"],
         "source_state_sha256": summary["source_state_sha256"],
         "excluded_artifacts": summary["excluded_artifacts"],
+        "capture_started_at": summary["capture_started_at"],
+        "wal_fence_file": summary["wal_fence_file"],
+        "wal_fence_committed_at": summary["wal_fence_committed_at"],
+        "wal_fence_archived_at": summary["wal_fence_archived_at"],
         "completed_at": summary["completed_at"],
         "_manifest": manifest,
         "_manifest_bytes": sidecar_payload,

@@ -1,0 +1,54 @@
+{{- if .Values.invocation.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hriv-restore-validation-invoke
+  labels:
+    {{- include "hriv-restore-validation.labels" . | nindent 4 }}
+    app.kubernetes.io/component: orchestrator
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ .Values.invocation.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/managed-by: hriv-restore-validation
+        app.kubernetes.io/component: orchestrator
+    spec:
+      serviceAccountName: hriv-restore-validation-orchestrator
+      automountServiceAccountToken: true
+      restartPolicy: Never
+      securityContext:
+        {{- include "hriv-restore-validation.childPodSecurityContext" . | nindent 8 }}
+      containers:
+        - name: orchestrator
+          image: {{ .Values.images.orchestrator }}
+          args: [run]
+          env:
+            - {name: TRIGGER, value: {{ .Values.invocation.trigger | quote }}}
+            - {name: RESTORE_VALIDATION_CONFIG, value: /config/controller/config.json}
+            - {name: RESTORE_VALIDATION_PROFILE, value: /config/profile/profile.json}
+            - {name: RESTORE_VALIDATION_POLICY, value: /config/policy/policy.json}
+            - {name: RESTORE_VALIDATION_TEMPLATES, value: /config/templates/templates.yaml}
+            - name: JOB_NAME
+              valueFrom: {fieldRef: {fieldPath: "metadata.labels['job-name']"}}
+            - name: JOB_UID
+              valueFrom: {fieldRef: {fieldPath: "metadata.labels['batch.kubernetes.io/controller-uid']"}}
+            - name: POD_UID
+              valueFrom: {fieldRef: {fieldPath: metadata.uid}}
+          securityContext:
+            {{- include "hriv-restore-validation.containerSecurityContext" . | nindent 12 }}
+          resources: {requests: {cpu: 100m, memory: 256Mi}, limits: {cpu: "1", memory: 1Gi}}
+          volumeMounts:
+            - {name: controller, mountPath: /config/controller, readOnly: true}
+            - {name: profile, mountPath: /config/profile, readOnly: true}
+            - {name: policy, mountPath: /config/policy, readOnly: true}
+            - {name: templates, mountPath: /config/templates, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: controller, configMap: {name: hriv-restore-validation-controller-v1}}
+        - {name: profile, configMap: {name: hriv-restore-validation-source-profile-v1}}
+        - {name: policy, configMap: {name: hriv-restore-validation-source-state-policy-v1}}
+        - {name: templates, configMap: {name: hriv-restore-validation-child-templates-v1}}
+        - {name: tmp, emptyDir: {sizeLimit: 512Mi}}
+{{- end }}

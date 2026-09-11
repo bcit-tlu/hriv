@@ -116,7 +116,7 @@ Use fake or isolated Azure storage and a representative source-image inventory.
    `db.sql`, tiles, incomplete uploads, and orphan files are absent.
 5. Confirm manifest format 2 records one snapshot's UTC target time and target
    LSN, `archive_timeout_seconds`, the fence WAL/commit/archive timestamps,
-   checksums, counts, missing-source rows, and orphan-file reports.
+   checksums, counts, missing-source rows, and orphan-file reports. Verify `validation-select` and stateless restore expose lowercase `source_files_sha256` for the canonical sorted `{path:{size,sha256}}` mapping without exposing the full inventory, and that consistency hashing rejects a same-size byte mutation.
 6. Verify archive-timeout query → `BEGIN` → local lock/statement deadlines →
    source-table SHARE lock → inventory `COPY` → `COMMIT` → filesystem matching →
    committed singleton-row UPDATE fence occurs in order while maintenance exists. Archive polling follows maintenance;
@@ -207,7 +207,9 @@ state records pending or permanently failed attempt B; corrupting any component 
 field must fail. Component start/completion timestamps must be ordered and their serialized duration
 must match the microsecond-precision delta. Override `CNPG_CLUSTER_NAME` away from the bound source
 profile and require `CNPG_METADATA_INVALID`. Read fakes use slots/spec-conforming read-only interfaces and forbid adding or
-calling mutation capabilities. Never select by blob mtime or ambiguous prefix.
+calling mutation capabilities. Never select by blob mtime or ambiguous prefix. Assert that successful selection and stateless restore both emit canonical UTC `capture_started_at`, uppercase 24-hex `wal_fence_file`, `wal_fence_committed_at`, and `wal_fence_archived_at`, and that the first eight fence hex digits equal `target_timeline`. Failed machine commands must emit exactly `schema_version`, `operation`, `success:false`, and bounded `failure_code` so the #1251 controller can preserve the child code.
+
+The #1251 consistency query must preserve every recovered `source_images` row, including inactive/non-active statuses; status participates in canonical missing-source evidence and is never a row filter.
 
 For stateless restore, use an exact snapshot/recovery-set/digest and an absent or empty temporary
 target. Prove source files restore, `db.sql`/tiles do not, and checksum, path/type, embedded-manifest,
@@ -222,6 +224,22 @@ Exercise `main()` for all three machine commands and parse
 stdout as exactly one JSON document. The production
 backup Deployment must not gain `AZURE_READ_SAS_URL`; #1251's isolated fixed child template mounts
 it.
+
+### Test 7: Restore-validation component and chart
+
+Keep restore validation as the separate `restore-validation/` Python release component; do not move orchestration or Kubernetes API permissions into `backup/`. Run:
+
+```bash
+cd restore-validation
+poetry install --with dev
+poetry run python -m unittest discover tests
+poetry run python -m compileall -q hriv_restore_validation tests
+cd ..
+helm lint charts/restore-validation
+bash scripts/test-helm-chart-regressions.sh
+```
+
+The #1251 chart regression block is the minimum static safety gate. It verifies strict schema-valid reviewed inventories/policies, production-parser acceptance of rendered profile/policy/templates when the component environment is installed, empty retained state coordination objects, no chart-created Secret or unrelated CronJob/exporter/reaper surface, render-blocked invocation, mandatory digest-pinned images, token-free fixed child templates, retained Job evidence with no TTL and zero retries, and namespace-scoped non-wildcard RBAC without Secret verbs or production namespace references. It also binds exact CNPG `recoveryTarget.targetLSN` and decimal `recoveryTarget.targetTLI` (derived from the first eight `wal_fence_file` hex characters), exact source/ObjectStore/server names, fixed `app` database/owner, controller-side restore identity arguments and `/restore/data`, and absence of `db.sql`. Fence generation is dynamic target evidence, never static profile configuration. #1251 renders default-deny only and cannot enable invocation; #1253 owns fixed reviewed Azure/API/DNS/CNPG egress and admission enforcement. Also retain unit coverage for fail-closed strict parsing, bounded state, source selection, and exact recovery binding described in [`../../../docs/restore-validation.md`](../../../docs/restore-validation.md).
 
 ## Troubleshooting
 

@@ -27,8 +27,12 @@ operational documentation changes.
 
 ## Operational Rules
 
-- Release Please uses manifest mode with separate frontend, backend, and backup
-  components; do not switch it to `GITHUB_TOKEN`.
+- Release Please uses manifest mode with separate frontend, backend, backup,
+  restore-validation, and synthetic-monitoring components; do not switch it to
+  `GITHUB_TOKEN`.
+- The restore-validation seed remains `0.0.0`; with
+  `bump-minor-pre-major: true`, its first conventional `feat:` release is
+  `0.1.0`.
 - Keep `.release-please-manifest.json`, component changelogs, and chart
   `# x-release-please-version` annotations consistent when release tooling
   changes.

@@ -152,11 +152,12 @@ Third-party open-source software distributed with HRIV is acknowledged in
 per-component `THIRD-PARTY-LICENSES.txt` files, generated from each component's
 production/runtime dependency tree:
 
-| Component | Notices file                                                                           | Regenerate                                                                 |
-| --------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Frontend  | [`frontend/public/THIRD-PARTY-LICENSES.txt`](frontend/public/THIRD-PARTY-LICENSES.txt) | `cd frontend && npm run licenses:generate`                                 |
-| Backend   | [`backend/THIRD-PARTY-LICENSES.txt`](backend/THIRD-PARTY-LICENSES.txt)                 | `cd backend && poetry run python scripts/generate_third_party_licenses.py` |
-| Backup    | [`backup/THIRD-PARTY-LICENSES.txt`](backup/THIRD-PARTY-LICENSES.txt)                   | `cd backup && poetry run python scripts/generate_third_party_licenses.py`  |
+| Component          | Notices file                                                                                 | Regenerate                                                                            |
+| ------------------ | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Frontend           | [`frontend/public/THIRD-PARTY-LICENSES.txt`](frontend/public/THIRD-PARTY-LICENSES.txt)       | `cd frontend && npm run licenses:generate`                                            |
+| Backend            | [`backend/THIRD-PARTY-LICENSES.txt`](backend/THIRD-PARTY-LICENSES.txt)                       | `cd backend && poetry run python scripts/generate_third_party_licenses.py`            |
+| Backup             | [`backup/THIRD-PARTY-LICENSES.txt`](backup/THIRD-PARTY-LICENSES.txt)                         | `cd backup && poetry run python scripts/generate_third_party_licenses.py`             |
+| Restore validation | [`restore-validation/THIRD-PARTY-LICENSES.txt`](restore-validation/THIRD-PARTY-LICENSES.txt) | `cd restore-validation && poetry run python scripts/generate_third_party_licenses.py` |
 
 The frontend file is bundled into the production image and served at
 `/THIRD-PARTY-LICENSES.txt` (linked from the in-app About dialog); the backend

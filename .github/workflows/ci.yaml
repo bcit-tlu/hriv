@@ -36,6 +36,8 @@ jobs:
       backup: ${{ steps.filter.outputs.backup }}
       backup-image: ${{ steps.filter.outputs.backup-image }}
       frontend: ${{ steps.filter.outputs.frontend }}
+      restore-validation: ${{ steps.filter.outputs.restore-validation }}
+      restore-validation-image: ${{ steps.filter.outputs.restore-validation-image }}
       synthetic: ${{ steps.filter.outputs.synthetic }}
     steps:
       - uses: actions/checkout@v6
@@ -61,6 +63,14 @@ jobs:
             frontend:
               - 'frontend/**'
               - 'charts/frontend/files/**'
+              - '.github/workflows/ci.yaml'
+            restore-validation:
+              - 'restore-validation/**'
+              - 'charts/restore-validation/**'
+              - '.github/workflows/ci.yaml'
+            restore-validation-image:
+              - 'restore-validation/**'
+              - 'charts/restore-validation/**'
               - '.github/workflows/ci.yaml'
             synthetic:
               - 'synthetic-monitoring/**'
@@ -155,6 +165,42 @@ jobs:
 
       - name: Run backup tests
         run: poetry run python -m unittest discover tests
+
+  restore-validation-tests:
+    needs: [changes]
+    if: needs.changes.outputs.restore-validation == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: restore-validation
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - uses: azure/setup-helm@v5
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Configure in-project virtualenv
+        run: poetry config virtualenvs.in-project true
+
+      - uses: actions/cache@v5
+        with:
+          path: restore-validation/.venv
+          key: restore-validation-venv-py3.13-${{ hashFiles('restore-validation/poetry.lock') }}
+          restore-keys: restore-validation-venv-py3.13-
+
+      - name: Install dependencies
+        run: poetry install --with dev
+
+      - name: Run restore-validation tests
+        run: |
+          poetry run coverage run -m unittest discover tests
+          poetry run coverage report --fail-under=80
 
   frontend-checks:
     needs: [changes]
@@ -338,6 +384,27 @@ jobs:
       trivyignore: .trivyignore
     secrets: inherit
 
+  build-restore-validation:
+    needs: [changes, restore-validation-tests]
+    if: >-
+      always() && needs.changes.outputs.restore-validation-image == 'true' &&
+      needs.restore-validation-tests.result == 'success'
+    uses: bcit-tlu/.github/.github/workflows/oci-build.yaml@main
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      security-events: write
+      actions: read
+    with:
+      component: restore-validation
+      image_name: hriv-restore-validation
+      context: ./restore-validation
+      target: stable
+      extra_watch_paths: ./charts/restore-validation
+      trivyignore: .trivyignore
+    secrets: inherit
+
   build-synthetic-monitoring:
     needs: [changes, synthetic-checks]
     if: >-
@@ -362,7 +429,7 @@ jobs:
   # the publish loop below.
 
   helm-publish:
-    needs: [helm-lint, build-frontend, build-backend, build-backup]
+    needs: [helm-lint, build-frontend, build-backend, build-backup, build-restore-validation]
     if: >-
       always() && github.event_name != 'pull_request' &&
       needs.helm-lint.result == 'success' &&
@@ -372,9 +439,12 @@ jobs:
       needs.build-backend.result == 'skipped') &&
       (needs.build-backup.result == 'success' ||
       needs.build-backup.result == 'skipped') &&
+      (needs.build-restore-validation.result == 'success' ||
+      needs.build-restore-validation.result == 'skipped') &&
       (needs.build-frontend.outputs.changed == 'true' ||
       needs.build-backend.outputs.changed == 'true' ||
-      needs.build-backup.outputs.changed == 'true')
+      needs.build-backup.outputs.changed == 'true' ||
+      needs.build-restore-validation.outputs.changed == 'true')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -417,6 +487,7 @@ jobs:
           FRONTEND_VERSION: ${{ needs.build-frontend.outputs.rc_version }}
           BACKEND_VERSION: ${{ needs.build-backend.outputs.rc_version }}
           BACKUP_VERSION: ${{ needs.build-backup.outputs.rc_version }}
+          RESTORE_VALIDATION_VERSION: ${{ needs.build-restore-validation.outputs.rc_version }}
           OCI_BASE: oci://${{ env.REGISTRY }}/${{ github.repository }}/charts
           IMAGE_BASE: ${{ env.REGISTRY }}/${{ github.repository }}/charts
         run: |
@@ -426,9 +497,10 @@ jobs:
             [frontend]="${FRONTEND_VERSION}"
             [backend]="${BACKEND_VERSION}"
             [backup]="${BACKUP_VERSION}"
+            [restore-validation]="${RESTORE_VALIDATION_VERSION}"
           )
 
-          for component in frontend backend backup; do
+          for component in frontend backend backup restore-validation; do
             VERSION="${VERSIONS[$component]}"
             if [[ -z "${VERSION}" ]]; then
               echo "No RC version for ${component} (no changes); skipping."

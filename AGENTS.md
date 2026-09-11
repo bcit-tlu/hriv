@@ -22,6 +22,13 @@
 - Apply DB migrations: `cd backend && DATABASE_URL=... poetry run python -m app.migrations_bootstrap`
 - Create a new migration: `cd backend && DATABASE_URL=... poetry run alembic revision --autogenerate -m "<message>"`
 
+### Restore validation
+
+- Install dependencies: `cd restore-validation && poetry install --with dev`
+- Run tests with `helm` already on `PATH`: `cd restore-validation && poetry run python -m unittest discover tests`; a `helm unavailable` skip is not acceptable chart coverage (use `nix-shell -p kubernetes-helm` when needed).
+- Compile-check the package and tests: `cd restore-validation && poetry run python -m compileall -q hriv_restore_validation tests`
+- The component is isolated from `backup/`; its chart must remain non-runnable by default and requires reviewed, digest-pinned images and environment-specific source inputs. #1251 renders default-deny only; #1253 owns fixed reviewed Azure/API/DNS/CNPG egress, admission enforcement, and rollout.
+
 ### Helm Charts
 
 - Lint all charts: `for chart in charts/*/; do helm lint "$chart"; done`
@@ -90,7 +97,8 @@
 - `/backend/app` — Backend application code
 - `/backend/tests` — Backend test files
 - `/backup` — Backup service (scheduled DB and filesystem snapshots)
-- `/charts/frontend/`, `/charts/backend/`, `/charts/backup/` — Helm charts for Kubernetes deployment
+- `/restore-validation` — Isolated Python restore-validation orchestrator
+- `/charts/frontend/`, `/charts/backend/`, `/charts/backup/`, `/charts/restore-validation/` — Helm charts for Kubernetes deployment
 - `/.github/workflows/` — CI/CD pipelines
 - `/docs` — Documentation
 - `/scripts` — Utility scripts (e.g. CLI upload helper)
@@ -139,11 +147,11 @@ lives, and the [domain model](docs/domain-model.md) for schema details.
 ## CI/CD
 
 - CI uses shared `bcit-tlu/.github` OCI build reusable workflow
-- `helm-lint` validates all three Helm charts on every push and PR
+- `helm-lint` validates all four Helm charts on every push and PR
 - `release-please` manages versioning via conventional commits (manifest mode, separate PRs per component); uses a GitHub App token (`RELEASE_PLEASE_APP_ID` / `RELEASE_PLEASE_APP_PRIVATE_KEY`) so PR pushes trigger CI — do NOT switch to `GITHUB_TOKEN` (its anti-recursion guard prevents CI from running on the PR)
-- Component release types: `node` (frontend), `python` (backend, backup)
+- Component release types: `node` (frontend), `python` (backend, backup, restore-validation)
 - Version is tracked in `.release-please-manifest.json` and `charts/*/Chart.yaml` (`# x-release-please-version` annotations)
-- Images are published to `ghcr.io/bcit-tlu/hriv/hriv-{frontend,backend,backup}`
+- Images are published to `ghcr.io/bcit-tlu/hriv/hriv-{frontend,backend,backup,restore-validation}`
 - Charts are published to `oci://ghcr.io/bcit-tlu/hriv/charts`
 - `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true` is set in all workflows
 
