@@ -71,6 +71,7 @@ metadata:
     hriv.bcit.ca/restore-validation-trigger: scheduled
 spec:
   schedule: {{ .Values.operational.schedule | quote }}
+  suspend: {{ .Values.operational.weeklySuspend }}
   timeZone: Etc/UTC
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600

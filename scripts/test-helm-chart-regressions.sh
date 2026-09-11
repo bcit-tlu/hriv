@@ -877,6 +877,8 @@ restore_validation_cleanup="$(extract_top_level_yaml_doc \
   "$restore_validation_operational_manifest" "CronJob" "hriv-restore-validation-cleanup")"
 assert_contains "$restore_validation_weekly" 'schedule: "0 11 * * 0"' \
   "weekly restore validation must use the reviewed UTC schedule"
+assert_contains "$restore_validation_weekly" 'suspend: true' \
+  "weekly restore validation must begin suspended for latest-first acceptance"
 assert_contains "$restore_validation_weekly" 'concurrencyPolicy: Forbid' \
   "weekly restore validation must forbid concurrency"
 assert_contains "$restore_validation_operational_manifest" 'image: "envoyproxy/envoy:v1.39.1@sha256:57e14a549d7bd43c8d3f6d03e8cfa653e037d4b38e133acd9b54f38c524401b4"' \

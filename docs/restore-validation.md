@@ -1401,9 +1401,9 @@ exact whole-cluster database/role equality. Those older level-5 passages remain 
 history and are not implementation or rollout requirements.
 
 The deployed drill consists only of the #1251 core controller, fixed state ConfigMap and Lease,
-weekly and suspended on-demand orchestrator CronJobs, one suspended manual-cleanup CronJob, the
+initially suspended weekly and suspended on-demand orchestrator CronJobs, one suspended manual-cleanup CronJob, the
 validation-local ObjectStore, fixed Envoy egress proxy, RBAC/quota, and fixed NetworkPolicies. The
-weekly CronJob is exactly `hriv-restore-validation-weekly`, runs `0 11 * * 0` in UTC, forbids
+weekly schedule is unsuspended only after the latest on-demand acceptance run passes; stable remains suspended until latest evidence is reviewed. The weekly CronJob is exactly `hriv-restore-validation-weekly`, runs `0 11 * * 0` in UTC, forbids
 concurrency, has a 3600-second starting deadline, zero Job retries, `Never` restart, a 21600-second
 active deadline, two successful and one failed Job histories, and no TTL. The on-demand template is
 `hriv-restore-validation-on-demand`; its standalone Job template sets native

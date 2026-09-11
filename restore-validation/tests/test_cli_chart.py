@@ -86,6 +86,7 @@ class ChartTests(unittest.TestCase):
         weekly = cronjobs["hriv-restore-validation-weekly"]
         on_demand = cronjobs["hriv-restore-validation-on-demand"]
         self.assertEqual(("0 11 * * 0", "Forbid", 3600, 2, 1), (weekly["spec"]["schedule"], weekly["spec"]["concurrencyPolicy"], weekly["spec"]["startingDeadlineSeconds"], weekly["spec"]["successfulJobsHistoryLimit"], weekly["spec"]["failedJobsHistoryLimit"]))
+        self.assertTrue(weekly["spec"]["suspend"])
         weekly_template = weekly["spec"]["jobTemplate"]
         demand_template = on_demand["spec"]["jobTemplate"]
         self.assertEqual((0, 21600, "Never"), (weekly_template["spec"]["backoffLimit"], weekly_template["spec"]["activeDeadlineSeconds"], weekly_template["spec"]["template"]["spec"]["restartPolicy"]))

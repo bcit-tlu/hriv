@@ -208,9 +208,10 @@
     "operational": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["enabled", "schedule", "egressProxy"],
+      "required": ["enabled", "weeklySuspend", "schedule", "egressProxy"],
       "properties": {
         "enabled": { "type": "boolean" },
+        "weeklySuspend": { "type": "boolean" },
         "schedule": { "const": "0 11 * * 0" },
         "egressProxy": {
           "type": "object",
