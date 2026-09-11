@@ -1,0 +1,265 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "images",
+    "sourceArchive",
+    "sourceProfile",
+    "sourceStatePolicy",
+    "controller",
+    "objectStore",
+    "invocation"
+  ],
+  "definitions": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z_][a-z0-9_-]{0,62}$"
+    },
+    "sourcePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "databaseInventoryEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "owner", "allow_connections"],
+      "properties": {
+        "name": { "$ref": "#/definitions/identifier" },
+        "owner": { "$ref": "#/definitions/identifier" },
+        "allow_connections": { "const": true }
+      }
+    },
+    "roleAttributes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "superuser",
+        "inherit",
+        "createrole",
+        "createdb",
+        "canlogin",
+        "replication",
+        "bypassrls"
+      ],
+      "properties": {
+        "superuser": { "type": "boolean" },
+        "inherit": { "type": "boolean" },
+        "createrole": { "type": "boolean" },
+        "createdb": { "type": "boolean" },
+        "canlogin": { "type": "boolean" },
+        "replication": { "type": "boolean" },
+        "bypassrls": { "type": "boolean" }
+      }
+    },
+    "roleInventoryEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "attributes", "memberships"],
+      "properties": {
+        "name": { "$ref": "#/definitions/identifier" },
+        "attributes": { "$ref": "#/definitions/roleAttributes" },
+        "memberships": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/identifier" }
+        }
+      }
+    },
+    "missingSourceEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["row_id", "status", "stored_path", "reason"],
+      "properties": {
+        "row_id": { "type": "string", "pattern": "^[1-9][0-9]{0,18}$" },
+        "status": { "type": "string", "maxLength": 512 },
+        "stored_path": { "$ref": "#/definitions/sourcePath" },
+        "reason": {
+          "enum": ["missing_source", "unsafe_or_out_of_root", "duplicate_source_reference"]
+        }
+      }
+    },
+    "orphanSourceEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "reason", "policy"],
+      "properties": {
+        "path": { "$ref": "#/definitions/sourcePath" },
+        "reason": { "const": "no_database_row" },
+        "policy": { "const": "quarantined_by_policy" }
+      }
+    }
+  },
+  "properties": {
+    "images": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["orchestrator", "backupChild", "postgresql"],
+      "properties": {
+        "orchestrator": { "type": "string", "pattern": "^[^ @]+@sha256:[0-9a-f]{64}$" },
+        "backupChild": { "type": "string", "pattern": "^[^ @]+@sha256:[0-9a-f]{64}$" },
+        "postgresql": { "type": "string", "pattern": "^[^ @]+@sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "sourceArchive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["container", "prefix"],
+      "properties": {
+        "container": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
+        },
+        "prefix": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    },
+    "sourceProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedSystemIdentifier",
+        "postgresqlStorageSize",
+        "sourcePvcSize",
+        "expectedDatabaseInventory",
+        "expectedStaticRoleInventory",
+        "dynamicRolePrefixes",
+        "expectedMigrationVersion",
+        "expectedRowCounts",
+        "expectedSourceImageCount",
+        "syntheticRow"
+      ],
+      "properties": {
+        "expectedSystemIdentifier": { "type": "string", "pattern": "^[1-9][0-9]{0,31}$" },
+        "postgresqlStorageSize": {
+          "type": "string",
+          "pattern": "^([4-9][0-9]|[1-9][0-9]{2,})Gi$|^[1-9][0-9]*Ti$"
+        },
+        "sourcePvcSize": {
+          "type": "string",
+          "pattern": "^([4-9][0-9]|[1-9][0-9]{2,})Gi$|^[1-9][0-9]*Ti$"
+        },
+        "expectedDatabaseInventory": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/databaseInventoryEntry" }
+        },
+        "expectedStaticRoleInventory": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/roleInventoryEntry" }
+        },
+        "dynamicRolePrefixes": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 63 }
+        },
+        "expectedMigrationVersion": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "expectedRowCounts": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 32,
+          "propertyNames": { "$ref": "#/definitions/identifier" },
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9223372036854775807
+          }
+        },
+        "expectedSourceImageCount": { "type": "integer", "minimum": 0, "maximum": 10000000 },
+        "syntheticRow": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "email"],
+          "properties": {
+            "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "email": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 320,
+              "pattern": "^[^ @]+@[^ @]+$"
+            }
+          }
+        }
+      }
+    },
+    "sourceStatePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "missingSources", "orphanSources", "sha256"],
+      "properties": {
+        "version": { "const": 1 },
+        "missingSources": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/missingSourceEntry" }
+        },
+        "orphanSources": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/orphanSourceEntry" }
+        },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "controller": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "leaseSeconds",
+        "initializationGraceSeconds",
+        "maxRuntimeSeconds",
+        "stageTimeoutSeconds",
+        "retainedSeconds",
+        "casRetries",
+        "maxRetainedRuns",
+        "maxChildResources",
+        "maxJobs",
+        "maxPvcs"
+      ],
+      "properties": {
+        "leaseSeconds": { "type": "integer", "minimum": 10, "maximum": 300 },
+        "initializationGraceSeconds": { "type": "integer", "minimum": 0, "maximum": 300 },
+        "maxRuntimeSeconds": { "type": "integer", "minimum": 60, "maximum": 21600 },
+        "stageTimeoutSeconds": { "type": "integer", "minimum": 30, "maximum": 7200 },
+        "retainedSeconds": { "type": "integer", "minimum": 3600, "maximum": 172800 },
+        "casRetries": { "type": "integer", "minimum": 1, "maximum": 20 },
+        "maxRetainedRuns": { "type": "integer", "minimum": 0, "maximum": 2 },
+        "maxChildResources": { "type": "integer", "minimum": 6, "maximum": 64 },
+        "maxJobs": { "type": "integer", "minimum": 4, "maximum": 32 },
+        "maxPvcs": { "type": "integer", "minimum": 1, "maximum": 8 }
+      }
+    },
+    "objectStore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "destinationPath"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "destinationPath": { "type": "string", "maxLength": 2048 }
+      }
+    },
+    "invocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "activeDeadlineSeconds", "trigger"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "activeDeadlineSeconds": { "type": "integer", "minimum": 1, "maximum": 21600 },
+        "trigger": { "enum": ["scheduled", "on_demand"] }
+      }
+    }
+  }
+}

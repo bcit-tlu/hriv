@@ -74,7 +74,7 @@ jobs:
           fi
 
           # Component directories (from release-please-config.json)
-          components=("frontend" "backend" "backup")
+          components=("frontend" "backend" "backup" "restore-validation")
 
           # Get changed files via GitHub API
           files=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \

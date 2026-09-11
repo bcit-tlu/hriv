@@ -1,0 +1,18 @@
+{{- if .Values.objectStore.enabled }}
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: hriv-restore-validation-pg-core
+  labels:
+    {{- include "hriv-restore-validation.labels" . | nindent 4 }}
+spec:
+  configuration:
+    destinationPath: {{ .Values.objectStore.destinationPath | quote }}
+    azureCredentials:
+      storageAccount:
+        name: hriv-restore-validation-barman-read
+        key: storage_account_name
+      storageSasToken:
+        name: hriv-restore-validation-barman-read
+        key: storage_sas_token
+{{- end }}

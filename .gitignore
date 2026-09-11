@@ -102,6 +102,11 @@ backend/tests/**/*.pyc
 # Re-ignore build artifacts inside the re-included backup/tests tree.
 backup/tests/**/__pycache__/
 backup/tests/**/*.pyc
+!restore-validation/tests/
+!restore-validation/tests/**
+# Re-ignore build artifacts inside the re-included restore-validation/tests tree.
+restore-validation/tests/**/__pycache__/
+restore-validation/tests/**/*.pyc
 database/
 dump.rdb
 src/git_ignored_folder

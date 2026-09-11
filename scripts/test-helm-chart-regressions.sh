@@ -50,6 +50,16 @@ extract_yaml_doc() {
   ' <<<"$manifest"
 }
 
+extract_top_level_yaml_doc() {
+  local manifest="$1"
+  local kind="$2"
+  local name="$3"
+  awk -v kind="$kind" -v name="$name" '
+    BEGIN { RS="---"; ORS="" }
+    $0 ~ ("(^|\n)kind: " kind "\n") && $0 ~ ("(^|\n)  name: " name "\n") { print; exit }
+  ' <<<"$manifest"
+}
+
 extract_kind_name() {
   local manifest="$1"
   local kind="$2"
@@ -725,5 +735,231 @@ assert_not_contains "$frontend_override_deployment" "type: RollingUpdate" \
   "frontend deployment should not render RollingUpdate when updateStrategy explicitly requests Recreate"
 assert_not_contains "$frontend_override_deployment" "maxSurge:" \
   "frontend deployment should not render rollingUpdate settings when updateStrategy explicitly requests Recreate"
+
+# #1251: the restore-validation core chart is deliberately static and
+# non-runnable until #1253 supplies fixed, reviewed egress and rollout resources.
+# These are schema-valid representative reviewed values, not deployable defaults.
+restore_validation_helm_args=(
+  --namespace hriv-restore-validation
+  --set-string images.orchestrator=registry.example/hriv-restore-validation@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  --set-string images.backupChild=registry.example/hriv-backup@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  --set-string images.postgresql=registry.example/postgresql@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+  --set-string sourceArchive.container=hriv-backup
+  --set-string sourceArchive.prefix=published/
+  --set-string sourceProfile.expectedSystemIdentifier=1234567890
+  --set-json 'sourceProfile.expectedDatabaseInventory=[{"name":"app","owner":"app","allow_connections":true},{"name":"hriv","owner":"app","allow_connections":true}]'
+  --set-json 'sourceProfile.expectedStaticRoleInventory=[{"name":"app","attributes":{"superuser":false,"inherit":true,"createrole":false,"createdb":false,"canlogin":true,"replication":false,"bypassrls":false},"memberships":[]}]'
+  --set-string sourceProfile.expectedMigrationVersion=head
+  --set-json 'sourceProfile.expectedRowCounts={"categories":1,"images":1,"source_images":1,"users":1}'
+  --set sourceProfile.expectedSourceImageCount=1
+  --set-json 'sourceProfile.syntheticRow={"id":"1","email":"restore-validation@example.invalid"}'
+  --set objectStore.enabled=true
+  --set-string objectStore.destinationPath=https://example.invalid/hriv-backup
+)
+
+# Lint with both defaults and a complete schema-valid reviewed profile.
+helm lint charts/restore-validation >/dev/null
+helm lint charts/restore-validation "${restore_validation_helm_args[@]}" >/dev/null
+restore_validation_manifest="$(helm template test charts/restore-validation \
+  "${restore_validation_helm_args[@]}")"
+restore_validation_state="$(extract_top_level_yaml_doc \
+  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-state")"
+restore_validation_lease="$(extract_top_level_yaml_doc \
+  "$restore_validation_manifest" "Lease" "hriv-restore-validation")"
+restore_validation_children="$(extract_top_level_yaml_doc \
+  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-child-templates-v1")"
+restore_validation_profile="$(extract_top_level_yaml_doc \
+  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-source-profile-v1")"
+restore_validation_policy="$(extract_top_level_yaml_doc \
+  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-source-state-policy-v1")"
+restore_validation_role="$(extract_top_level_yaml_doc \
+  "$restore_validation_manifest" "Role" "hriv-restore-validation-orchestrator")"
+restore_validation_default_deny="$(extract_top_level_yaml_doc \
+  "$restore_validation_manifest" "NetworkPolicy" "hriv-restore-validation-default-deny")"
+restore_validation_quota="$(extract_top_level_yaml_doc \
+  "$restore_validation_manifest" "ResourceQuota" "hriv-restore-validation")"
+restore_validation_limits="$(extract_top_level_yaml_doc \
+  "$restore_validation_manifest" "LimitRange" "hriv-restore-validation")"
+
+# Parse the outer manifests and all embedded profile/policy/template documents with
+# real YAML/JSON parsers rather than treating indentation or quoting as sufficient.
+ruby -ryaml -rjson -e '
+  docs = YAML.load_stream(STDIN.read).compact
+  by_name = docs.to_h { |doc| [[doc["kind"], doc.dig("metadata", "name")], doc] }
+  profile = JSON.parse(by_name.fetch(["ConfigMap", "hriv-restore-validation-source-profile-v1"]).fetch("data").fetch("profile.json"))
+  policy = JSON.parse(by_name.fetch(["ConfigMap", "hriv-restore-validation-source-state-policy-v1"]).fetch("data").fetch("policy.json"))
+  templates = YAML.safe_load(by_name.fetch(["ConfigMap", "hriv-restore-validation-child-templates-v1"]).fetch("data").fetch("templates.yaml"), aliases: true)
+  raise "profile identity drift" unless profile.values_at("source_cluster", "external_cluster", "database", "owner", "server_name", "object_store") == ["pg-core", "pg-core-source", "app", "app", "pg-core", "hriv-restore-validation-pg-core"]
+  raise "policy structure drift" unless policy.keys.sort == %w[policy_version schema_version sha256 source_state] && policy.fetch("source_state").keys.sort == %w[missing_sources orphan_sources]
+  target = templates.dig("cnpg_cluster", "spec", "bootstrap", "recovery", "recoveryTarget")
+  raise "CNPG target drift" unless target == {"targetLSN" => "CONTROLLER_BOUND_TARGET_LSN", "targetTLI" => "CONTROLLER_BOUND_TARGET_TLI"}
+' <<<"$restore_validation_manifest"
+
+# When the restore-validation environment is installed, additionally run the
+# component's own strict parsers over exactly the rendered documents.
+if [[ -x restore-validation/.venv/bin/python ]] && \
+    restore-validation/.venv/bin/python -c 'import yaml' >/dev/null 2>&1; then
+  PYTHONPATH=restore-validation restore-validation/.venv/bin/python -c '
+import sys, yaml
+from hriv_restore_validation.models import SourcePolicy, SourceProfile, Templates
+docs = [item for item in yaml.safe_load_all(sys.stdin.read()) if item]
+config_maps = {item["metadata"]["name"]: item["data"] for item in docs if item.get("kind") == "ConfigMap"}
+profile = SourceProfile.parse(config_maps["hriv-restore-validation-source-profile-v1"]["profile.json"])
+SourcePolicy.parse(config_maps["hriv-restore-validation-source-state-policy-v1"]["policy.json"])
+Templates.parse(config_maps["hriv-restore-validation-child-templates-v1"]["templates.yaml"], profile)
+' <<<"$restore_validation_manifest"
+fi
+
+if grep -Eq '^data:' <<<"$restore_validation_state"; then
+  fail "restore-validation state ConfigMap must start without runtime data"
+fi
+assert_contains "$restore_validation_state" "helm.sh/resource-policy: keep" \
+  "restore-validation state ConfigMap must survive Helm pruning"
+assert_contains "$restore_validation_state" "kustomize.toolkit.fluxcd.io/prune: disabled" \
+  "restore-validation state ConfigMap must survive Flux pruning"
+assert_contains "$restore_validation_lease" "spec: {}" \
+  "restore-validation Lease must start without coordination fields"
+assert_contains "$restore_validation_lease" "helm.sh/resource-policy: keep" \
+  "restore-validation Lease must survive Helm pruning"
+assert_contains "$restore_validation_lease" "kustomize.toolkit.fluxcd.io/prune: disabled" \
+  "restore-validation Lease must survive Flux pruning"
+assert_contains "$restore_validation_quota" 'count/jobs.batch: "32"' \
+  "restore-validation must enforce the bounded Job quota"
+assert_contains "$restore_validation_quota" 'count/persistentvolumeclaims: "8"' \
+  "restore-validation must enforce the bounded PVC quota"
+assert_contains "$restore_validation_quota" 'requests.storage: 320Gi' \
+  "restore-validation must reserve bounded recovery storage"
+assert_contains "$restore_validation_limits" 'type: PersistentVolumeClaim' \
+  "restore-validation must bound individual recovery PVCs"
+assert_contains "$restore_validation_limits" 'storage: 80Gi' \
+  "restore-validation must cap individual recovery PVC capacity"
+if grep -Eq '^kind: Secret$' <<<"$restore_validation_manifest"; then
+  fail "restore-validation chart must never create a Secret"
+fi
+if grep -Eq '^kind: CronJob$' <<<"$restore_validation_manifest"; then
+  fail "#1251 restore-validation chart must not render scheduling CronJobs"
+fi
+assert_not_contains "$restore_validation_manifest" "status-exporter" \
+  "#1251 restore-validation chart must not render the later status exporter"
+assert_not_contains "$restore_validation_manifest" "reaper" \
+  "#1251 restore-validation chart must not render later cleanup/reaper workloads"
+assert_not_contains "$restore_validation_manifest" "name: hriv-restore-validation-invoke" \
+  "restore-validation invocation Job must remain disabled by default"
+assert_contains "$restore_validation_default_deny" "podSelector: {}" \
+  "restore-validation must render namespace-wide default deny"
+assert_contains "$restore_validation_default_deny" "policyTypes: [Ingress, Egress]" \
+  "restore-validation default deny must cover ingress and egress"
+assert_not_contains "$restore_validation_manifest" "approved-egress" \
+  "#1251 must not render an arbitrary generic egress escape"
+assert_not_contains "$restore_validation_manifest" "0.0.0.0/0" \
+  "restore-validation must never render global IPv4 egress"
+assert_not_contains "$restore_validation_manifest" "::/0" \
+  "restore-validation must never render global IPv6 egress"
+
+for image_value in images.orchestrator images.backupChild images.postgresql; do
+  if restore_validation_bad_image_output="$(helm template test charts/restore-validation \
+    "${restore_validation_helm_args[@]}" \
+    --set-string "${image_value}=registry.example/unpinned:latest" 2>&1)"; then
+    fail "expected ${image_value} without a sha256 digest to be rejected"
+  fi
+  if ! grep -Eq 'must be digest-pinned|does not match (the )?pattern|doesn.t match (the )?pattern' <<<"$restore_validation_bad_image_output"; then
+    fail "restore-validation chart should explain the digest requirement for ${image_value}"
+  fi
+done
+
+restore_validation_strict_schema_cases=(
+  'sourceProfile.expectedDatabaseInventory=[{"name":"app","owner":"app","allow_connections":true,"unexpected":true}]'
+  'sourceProfile.expectedStaticRoleInventory=[{"name":"app","attributes":{"superuser":false,"inherit":true,"createrole":false,"createdb":false,"canlogin":true,"replication":false,"bypassrls":false,"unexpected":true},"memberships":[]}]'
+  'sourceStatePolicy.missingSources=[{"row_id":"1","status":"active","stored_path":"source_images/1.jpg","reason":"missing_source","unexpected":true}]'
+  'sourceProfile.syntheticRow={"id":"1","email":"restore-validation@example.invalid","unexpected":true}'
+)
+for override in "${restore_validation_strict_schema_cases[@]}"; do
+  if helm template test charts/restore-validation \
+    "${restore_validation_helm_args[@]}" --set-json "$override" >/dev/null 2>&1; then
+    fail "restore-validation schema must reject unknown nested inventory/policy/profile keys: $override"
+  fi
+done
+
+restore_validation_child_job_count="$(grep -Fc -- "kind: Job" <<<"$restore_validation_children")"
+restore_validation_child_no_token_count="$(grep -Fc -- "automountServiceAccountToken: false" <<<"$restore_validation_children")"
+restore_validation_child_backoff_count="$(grep -Fc -- "backoffLimit: 0" <<<"$restore_validation_children")"
+[[ "$restore_validation_child_job_count" -gt 0 ]] || \
+  fail "#1251 fixed child ConfigMap must contain at least one Job template"
+[[ "$restore_validation_child_no_token_count" -eq "$restore_validation_child_job_count" ]] || \
+  fail "every #1251 fixed child Job template must disable service-account token automount"
+assert_not_contains "$restore_validation_children" "automountServiceAccountToken: true" \
+  "no fixed restore-validation child template may mount a Kubernetes API token"
+assert_not_contains "$restore_validation_children" "ttlSecondsAfterFinished" \
+  "restore-validation child Jobs must retain evidence instead of using TTL cleanup"
+[[ "$restore_validation_child_backoff_count" -eq "$restore_validation_child_job_count" ]] || \
+  fail "every #1251 fixed child Job template must set backoffLimit: 0"
+assert_contains "$restore_validation_children" "targetLSN: CONTROLLER_BOUND_TARGET_LSN" \
+  "CNPG child template must reserve the controller-bound exact target LSN"
+assert_contains "$restore_validation_children" "targetTLI: CONTROLLER_BOUND_TARGET_TLI" \
+  "CNPG child template must reserve the controller-bound derived decimal timeline"
+assert_not_contains "$restore_validation_children" "targetTimeline" \
+  "CNPG CRD uses recoveryTarget.targetTLI, never targetTimeline"
+assert_contains "$restore_validation_children" "source: pg-core-source" \
+  "CNPG recovery must use the exact external source name"
+assert_contains "$restore_validation_children" "name: pg-core-source" \
+  "CNPG externalClusters must use the exact source name"
+assert_contains "$restore_validation_children" "barmanObjectName: hriv-restore-validation-pg-core" \
+  "CNPG external source must use the exact ObjectStore name"
+assert_contains "$restore_validation_children" "serverName: pg-core" \
+  "CNPG external source must use the exact Barman server name"
+assert_contains "$restore_validation_children" "storageClassName: longhorn" \
+  "source restore PVC must bind the approved Longhorn storage class"
+assert_contains "$restore_validation_children" "storageClass: longhorn" \
+  "recovered CNPG storage must bind the approved Longhorn storage class"
+assert_contains "$restore_validation_children" 'bcit.ca/longhorn-storage: "true"' \
+  "recovered CNPG must schedule only on approved storage-labelled nodes"
+assert_occurrences "$restore_validation_children" "name: AZURE_READ_SAS_URL" 2 \
+  "selection and restore children must receive the fixed read-SAS environment variable"
+assert_occurrences "$restore_validation_children" "key: azureReadSasUrl" 2 \
+  "selection and restore children must use the exact external Secret key"
+assert_contains "$restore_validation_profile" '"database": "app"' \
+  "restore-validation source profile must fix the CNPG bootstrap database to app"
+assert_contains "$restore_validation_profile" '"owner": "app"' \
+  "restore-validation source profile must fix the CNPG bootstrap owner to app"
+assert_not_contains "$restore_validation_profile" "expectedFenceGeneration" \
+  "dynamic fence generation must not be static profile evidence"
+assert_not_contains "$restore_validation_manifest" "db.sql" \
+  "restore-validation must use physical CNPG recovery and never db.sql"
+
+restore_validation_controller_source="$(< restore-validation/hriv_restore_validation/controller.py)"
+assert_contains "$restore_validation_controller_source" '["restore-filesystem-stateless", selected["snapshot_name"], "--data-dir", "/restore/data", "--expected-recovery-set-id", selected["recovery_set_id"], "--expected-manifest-sha256", selected["manifest_sha256"]]' \
+  "controller must bind the exact snapshot, recovery-set, manifest digest, and /restore/data target"
+
+if grep -Eq '^kind: ClusterRole$' <<<"$restore_validation_manifest"; then
+  fail "restore-validation chart must use namespace-scoped Roles only"
+fi
+if grep -Eq '^kind: ClusterRoleBinding$' <<<"$restore_validation_manifest"; then
+  fail "restore-validation chart must not create cluster-scoped bindings"
+fi
+assert_not_contains "$restore_validation_role" '"*"' \
+  "restore-validation RBAC must not use wildcard API groups, resources, or verbs"
+if grep -Eqi 'secrets|nodes|namespaces|longhorn|namespace: (hriv|postgres)$' <<<"$restore_validation_role"; then
+  fail "restore-validation RBAC must not grant Secret, cluster inventory, Longhorn, or production access"
+fi
+assert_contains "$restore_validation_role" "resources: [services]" \
+  "controller must be able to track CNPG-generated Services"
+assert_contains "$restore_validation_role" "verbs: [get, list, delete]" \
+  "dynamic CNPG Service tracking must be limited to get/list/delete"
+
+if restore_validation_missing_object_store="$(helm template test charts/restore-validation \
+  "${restore_validation_helm_args[@]}" \
+  --set objectStore.enabled=false \
+  --set invocation.enabled=true 2>&1)"; then
+  fail "enabled invocation without objectStore.enabled must be rejected"
+fi
+assert_contains "$restore_validation_missing_object_store" "requires objectStore.enabled=true" \
+  "enabled invocation must explicitly require the Barman ObjectStore"
+if restore_validation_invocation_output="$(helm template test charts/restore-validation \
+  "${restore_validation_helm_args[@]}" \
+  --set invocation.enabled=true 2>&1)"; then
+  fail "#1251 invocation must remain non-runnable before #1253 egress resources exist"
+fi
+assert_contains "$restore_validation_invocation_output" "#1253 adds fixed reviewed Azure, Kubernetes API, DNS, and CNPG egress resources" \
+  "disabled invocation must explain the #1253 egress boundary"
 
 echo "Helm chart regression checks passed."

@@ -1,0 +1,56 @@
+images:
+  # Safe, non-runnable placeholders keep default lint/render deterministic.
+  orchestrator: example.invalid/hriv-restore-validation@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  backupChild: example.invalid/hriv-backup@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  postgresql: example.invalid/postgresql:17@sha256:0000000000000000000000000000000000000000000000000000000000000000
+sourceArchive:
+  container: recovery
+  prefix: hriv-backups
+sourceProfile:
+  expectedSystemIdentifier: '1'
+  postgresqlStorageSize: 40Gi
+  sourcePvcSize: 40Gi
+  expectedDatabaseInventory:
+    - { name: app, owner: app, allow_connections: true }
+    - { name: hriv, owner: app, allow_connections: true }
+  expectedStaticRoleInventory:
+    - name: app
+      attributes:
+        {
+          superuser: false,
+          inherit: true,
+          createrole: false,
+          createdb: false,
+          canlogin: true,
+          replication: false,
+          bypassrls: false,
+        }
+      memberships: []
+  dynamicRolePrefixes: ['v-']
+  expectedMigrationVersion: unconfigured
+  expectedRowCounts: { categories: 0, images: 0, source_images: 0, users: 0 }
+  expectedSourceImageCount: 0
+  syntheticRow: { id: '1', email: synthetic@example.invalid }
+sourceStatePolicy:
+  version: 1
+  missingSources: []
+  orphanSources: []
+  sha256: fa74bc4476a39c432aabe1de9d3be773d898bd5d85ffd816a7ca6a54a39aa891
+controller:
+  leaseSeconds: 30
+  initializationGraceSeconds: 60
+  maxRuntimeSeconds: 21600
+  stageTimeoutSeconds: 7200
+  retainedSeconds: 86400
+  casRetries: 8
+  maxRetainedRuns: 2
+  maxChildResources: 16
+  maxJobs: 32
+  maxPvcs: 8
+objectStore:
+  enabled: false
+  destinationPath: ''
+invocation:
+  enabled: false
+  activeDeadlineSeconds: 21600
+  trigger: on_demand

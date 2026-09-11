@@ -2,16 +2,18 @@
 
 ## Files
 
-| Concern               | Files                                                                                                                                    |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Local stack           | `docker-compose.yml`, `backend/.env`, service Dockerfiles                                                                                |
-| Frontend image/chart  | `frontend/Dockerfile`, `charts/frontend/`                                                                                                |
-| Backend image/chart   | `backend/Dockerfile`, `charts/backend/`                                                                                                  |
-| Backup image/chart    | `backup/Dockerfile`, `charts/backup/`                                                                                                    |
-| Backup implementation | `backup/backup.py`, `backup/README.md`                                                                                                   |
-| Release tooling       | `.release-please-manifest.json`, `.github/workflows/`, component changelogs                                                              |
-| Deploy docs           | `deploy/README.md`, `docs/RELEASE_AND_DEPLOY_FLOW.md`                                                                                    |
-| Observability         | `docs/observability-conventions.md`, `docs/observability-operations.md`, `docs/observability-runbooks.md`, backend tracing/logging files |
+| Concern                           | Files                                                                                                                                    |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Local stack                       | `docker-compose.yml`, `backend/.env`, service Dockerfiles                                                                                |
+| Frontend image/chart              | `frontend/Dockerfile`, `charts/frontend/`                                                                                                |
+| Backend image/chart               | `backend/Dockerfile`, `charts/backend/`                                                                                                  |
+| Backup image/chart                | `backup/Dockerfile`, `charts/backup/`                                                                                                    |
+| Restore-validation image/chart    | `restore-validation/Dockerfile`, `charts/restore-validation/`                                                                            |
+| Backup implementation             | `backup/backup.py`, `backup/README.md`                                                                                                   |
+| Restore-validation implementation | `restore-validation/`, `docs/restore-validation.md`                                                                                      |
+| Release tooling                   | `.release-please-manifest.json`, `.github/workflows/`, component changelogs                                                              |
+| Deploy docs                       | `deploy/README.md`, `docs/RELEASE_AND_DEPLOY_FLOW.md`                                                                                    |
+| Observability                     | `docs/observability-conventions.md`, `docs/observability-operations.md`, `docs/observability-runbooks.md`, backend tracing/logging files |
 
 ## Release Components
 
@@ -21,6 +23,8 @@
   `ghcr.io/bcit-tlu/hriv/hriv-backend`.
 - Backup: Release Please type `python`; image
   `ghcr.io/bcit-tlu/hriv/hriv-backup`.
+- Restore validation: Release Please type `python`; image
+  `ghcr.io/bcit-tlu/hriv/hriv-restore-validation`; its #1251 chart is non-runnable by default, renders default-deny only, and requires reviewed digest-pinned images and source inputs. #1253 owns fixed Azure/API/DNS/CNPG egress, admission enforcement, and Flux rollout; do not create an arbitrary values-driven egress escape.
 - Charts publish to `oci://ghcr.io/bcit-tlu/hriv/charts`.
 
 ## Helm Validation

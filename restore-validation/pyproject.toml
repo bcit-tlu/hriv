@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "hriv-restore-validation"
+version = "0.0.0"
+description = "Isolated HRIV restore-validation controller"
+authors = ["BCIT TLU"]
+license = "MPL-2.0"
+packages = [{include = "hriv_restore_validation"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+kubernetes = "32.0.1"
+PyYAML = "6.0.2"
+opentelemetry-distro = "0.57b0"
+opentelemetry-exporter-otlp = "1.36.0"
+psycopg = {version = "3.2.9", extras = ["binary"]}
+
+[tool.poetry.group.dev.dependencies]
+coverage = "7.8.2"
+
+[tool.poetry.scripts]
+hriv-restore-validation = "hriv_restore_validation.cli:main"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

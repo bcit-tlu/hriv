@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hriv-restore-validation-controller-v1
+  labels:
+    {{- include "hriv-restore-validation.labels" . | nindent 4 }}
+    hriv.bcit.ca/config-version: "1"
+immutable: true
+data:
+  config.json: |
+    {{- dict "schema_version" 1 "namespace" "hriv-restore-validation" "state_config_map" "hriv-restore-validation-state" "lease_name" "hriv-restore-validation" "lease_seconds" .Values.controller.leaseSeconds "initialization_grace_seconds" .Values.controller.initializationGraceSeconds "max_runtime_seconds" .Values.controller.maxRuntimeSeconds "stage_timeout_seconds" .Values.controller.stageTimeoutSeconds "retained_seconds" .Values.controller.retainedSeconds "cas_retries" .Values.controller.casRetries "max_retained_runs" .Values.controller.maxRetainedRuns "max_child_resources" .Values.controller.maxChildResources "max_jobs" .Values.controller.maxJobs "max_pvcs" .Values.controller.maxPvcs "state_max_bytes" 524288 | toPrettyJson | nindent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hriv-restore-validation-source-profile-v1
+  labels:
+    {{- include "hriv-restore-validation.labels" . | nindent 4 }}
+    hriv.bcit.ca/config-version: "1"
+immutable: true
+data:
+  profile.json: |
+    {{- dict "schema_version" 1 "profile_id" "production-pg-core" "profile_version" 1 "provider" "cloudnative-pg" "source_cluster" "pg-core" "external_cluster" "pg-core-source" "database" "app" "owner" "app" "application_database" "hriv" "server_name" "pg-core" "expected_system_identifier" .Values.sourceProfile.expectedSystemIdentifier "object_store" "hriv-restore-validation-pg-core" "object_store_api_version" "barmancloud.cnpg.io/v1" "postgresql_major" 17 "postgresql_image" .Values.images.postgresql "postgresql_storage_size" .Values.sourceProfile.postgresqlStorageSize "expected_database_inventory" .Values.sourceProfile.expectedDatabaseInventory "expected_static_role_inventory" .Values.sourceProfile.expectedStaticRoleInventory "dynamic_role_prefixes" .Values.sourceProfile.dynamicRolePrefixes "expected_migration_version" .Values.sourceProfile.expectedMigrationVersion "expected_row_counts" .Values.sourceProfile.expectedRowCounts "expected_source_image_count" .Values.sourceProfile.expectedSourceImageCount "synthetic_row" .Values.sourceProfile.syntheticRow "controller_image" .Values.images.orchestrator "backup_image" .Values.images.backupChild "source_container" .Values.sourceArchive.container "source_prefix" .Values.sourceArchive.prefix | toPrettyJson | nindent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hriv-restore-validation-source-state-policy-v1
+  labels:
+    {{- include "hriv-restore-validation.labels" . | nindent 4 }}
+    hriv.bcit.ca/config-version: "1"
+immutable: true
+data:
+  policy.json: |
+    {{- dict "schema_version" 1 "policy_version" .Values.sourceStatePolicy.version "source_state" (dict "missing_sources" .Values.sourceStatePolicy.missingSources "orphan_sources" .Values.sourceStatePolicy.orphanSources) "sha256" .Values.sourceStatePolicy.sha256 | toPrettyJson | nindent 4 }}

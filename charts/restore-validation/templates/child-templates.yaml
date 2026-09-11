@@ -1,0 +1,174 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hriv-restore-validation-child-templates-v1
+  labels:
+    {{- include "hriv-restore-validation.labels" . | nindent 4 }}
+    hriv.bcit.ca/config-version: "1"
+immutable: true
+data:
+  templates.yaml: |
+    schema_version: 1
+    image_allowlist:
+      - {{ .Values.images.orchestrator | quote }}
+      - {{ .Values.images.backupChild | quote }}
+      - {{ .Values.images.postgresql | quote }}
+    selection_job:
+      apiVersion: batch/v1
+      kind: Job
+      metadata: {}
+      spec:
+        backoffLimit: 0
+        activeDeadlineSeconds: 900
+        template:
+          metadata: {}
+          spec:
+            serviceAccountName: hriv-restore-validation-no-permission
+            automountServiceAccountToken: false
+            restartPolicy: Never
+            securityContext: {runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, seccompProfile: {type: RuntimeDefault}}
+            containers:
+              - name: selection
+                image: {{ .Values.images.backupChild | quote }}
+                args: [validation-select]
+                env:
+                  - {name: CNPG_CLUSTER_NAME, value: pg-core}
+                  - {name: AZURE_STORAGE_CONTAINER, value: {{ .Values.sourceArchive.container | quote }}}
+                  - {name: AZURE_BLOB_PREFIX, value: {{ .Values.sourceArchive.prefix | quote }}}
+                  - name: AZURE_READ_SAS_URL
+                    valueFrom: {secretKeyRef: {name: hriv-restore-validation-azure-read, key: azureReadSasUrl}}
+                  - {name: HOME, value: /tmp}
+                  - {name: TMPDIR, value: /tmp}
+                  - {name: PYTHONDONTWRITEBYTECODE, value: "1"}
+                securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                resources: {requests: {cpu: 100m, memory: 128Mi}, limits: {cpu: "1", memory: 512Mi}}
+                volumeMounts: [{name: tmp, mountPath: /tmp}]
+            volumes: [{name: tmp, emptyDir: {sizeLimit: 512Mi}}]
+    source_pvc:
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata: {}
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: longhorn
+        resources: {requests: {storage: {{ .Values.sourceProfile.sourcePvcSize | quote }}}}
+    cnpg_cluster:
+      apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      metadata: {}
+      spec:
+        instances: 1
+        imageName: {{ .Values.images.postgresql | quote }}
+        enableSuperuserAccess: true
+        bootstrap:
+          recovery:
+            source: pg-core-source
+            database: app
+            owner: app
+            recoveryTarget:
+              targetLSN: CONTROLLER_BOUND_TARGET_LSN
+              targetTLI: CONTROLLER_BOUND_TARGET_TLI
+        externalClusters:
+          - name: pg-core-source
+            plugin:
+              name: barman-cloud.cloudnative-pg.io
+              parameters: {barmanObjectName: hriv-restore-validation-pg-core, serverName: pg-core}
+        storage: {size: {{ .Values.sourceProfile.postgresqlStorageSize | quote }}, storageClass: longhorn}
+        affinity:
+          nodeSelector: {bcit.ca/longhorn-storage: "true"}
+        resources: {requests: {cpu: 250m, memory: 512Mi}, limits: {cpu: "2", memory: 2Gi}}
+    db_validation_job:
+      apiVersion: batch/v1
+      kind: Job
+      metadata: {}
+      spec:
+        backoffLimit: 0
+        activeDeadlineSeconds: 1800
+        template:
+          metadata: {}
+          spec:
+            serviceAccountName: hriv-restore-validation-no-permission
+            automountServiceAccountToken: false
+            restartPolicy: Never
+            securityContext: {runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, seccompProfile: {type: RuntimeDefault}}
+            containers:
+              - name: database-validation
+                image: {{ .Values.images.orchestrator | quote }}
+                args: [validate-database]
+                securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                resources: {requests: {cpu: 100m, memory: 128Mi}, limits: {cpu: "1", memory: 512Mi}}
+                volumeMounts:
+                  - {name: profile, mountPath: /etc/hriv/profile.json, subPath: profile.json, readOnly: true}
+                  - {name: credentials, mountPath: /credentials, readOnly: true}
+                  - {name: tmp, mountPath: /tmp}
+            volumes:
+              - {name: profile, configMap: {name: hriv-restore-validation-source-profile-v1}}
+              - {name: credentials, secret: {secretName: generated-superuser}}
+              - {name: tmp, emptyDir: {sizeLimit: 256Mi}}
+    source_restore_job:
+      apiVersion: batch/v1
+      kind: Job
+      metadata: {}
+      spec:
+        backoffLimit: 0
+        activeDeadlineSeconds: 7200
+        template:
+          metadata: {}
+          spec:
+            serviceAccountName: hriv-restore-validation-no-permission
+            automountServiceAccountToken: false
+            restartPolicy: Never
+            securityContext: {runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, fsGroup: 65532, seccompProfile: {type: RuntimeDefault}}
+            containers:
+              - name: source-restore
+                image: {{ .Values.images.backupChild | quote }}
+                args: [restore-filesystem-stateless]
+                env:
+                  - {name: CNPG_CLUSTER_NAME, value: pg-core}
+                  - {name: AZURE_STORAGE_CONTAINER, value: {{ .Values.sourceArchive.container | quote }}}
+                  - {name: AZURE_BLOB_PREFIX, value: {{ .Values.sourceArchive.prefix | quote }}}
+                  - name: AZURE_READ_SAS_URL
+                    valueFrom: {secretKeyRef: {name: hriv-restore-validation-azure-read, key: azureReadSasUrl}}
+                  - {name: HOME, value: /tmp}
+                  - {name: TMPDIR, value: /tmp}
+                  - {name: PYTHONDONTWRITEBYTECODE, value: "1"}
+                securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                resources: {requests: {cpu: 250m, memory: 256Mi}, limits: {cpu: "2", memory: 1Gi}}
+                volumeMounts:
+                  - {name: source, mountPath: /restore, readOnly: false}
+                  - {name: tmp, mountPath: /tmp}
+            volumes:
+              - {name: source, persistentVolumeClaim: {claimName: generated-source-pvc}}
+              - {name: tmp, emptyDir: {sizeLimit: 1Gi}}
+    consistency_job:
+      apiVersion: batch/v1
+      kind: Job
+      metadata: {}
+      spec:
+        backoffLimit: 0
+        activeDeadlineSeconds: 1800
+        template:
+          metadata: {}
+          spec:
+            serviceAccountName: hriv-restore-validation-no-permission
+            automountServiceAccountToken: false
+            restartPolicy: Never
+            securityContext: {runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, fsGroup: 65532, seccompProfile: {type: RuntimeDefault}}
+            containers:
+              - name: consistency
+                image: {{ .Values.images.orchestrator | quote }}
+                args: [validate-consistency]
+                securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+                resources: {requests: {cpu: 100m, memory: 256Mi}, limits: {cpu: "1", memory: 1Gi}}
+                volumeMounts:
+                  - {name: profile, mountPath: /etc/hriv/profile.json, subPath: profile.json, readOnly: true}
+                  - {name: policy, mountPath: /etc/hriv/policy.json, subPath: policy.json, readOnly: true}
+                  - {name: credentials, mountPath: /credentials, readOnly: true}
+                  - {name: source, mountPath: /restore, readOnly: true}
+                  - {name: tmp, mountPath: /tmp}
+            volumes:
+              - {name: profile, configMap: {name: hriv-restore-validation-source-profile-v1}}
+              - {name: policy, configMap: {name: hriv-restore-validation-source-state-policy-v1}}
+              - {name: credentials, secret: {secretName: generated-superuser}}
+              - {name: source, persistentVolumeClaim: {claimName: generated-source-pvc}}
+              - {name: tmp, emptyDir: {sizeLimit: 256Mi}}

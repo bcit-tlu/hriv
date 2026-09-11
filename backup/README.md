@@ -194,11 +194,11 @@ database and filesystem starts are independently timestamped. Selection also ver
 manifest sidecar, production component rules, source indexes/checksums/counts, and CNPG LSN/WAL
 fence. #1251's fixed child must set `CNPG_CLUSTER_NAME` from its bound Flux source profile
 (currently `pg-core`); strict selection reports `CNPG_METADATA_INVALID` when the manifest cluster
-and configured profile differ. It never chooses by blob modification time. Each command writes exactly one bounded JSON
-result to stdout and exits nonzero with a bounded code/stage on failure. The manifest sidecar is
+and configured profile differ. It never chooses by blob modification time. Successful selection and stateless restore output additively bind canonical UTC `capture_started_at`, uppercase 24-hex `wal_fence_file`, and canonical UTC `wal_fence_committed_at`/`wal_fence_archived_at`; the fence prefix is the selected timeline. Each command writes exactly one bounded JSON
+result to stdout and exits nonzero with an exact `{schema_version,operation,success:false,failure_code,failure_stage}` document on failure. The manifest sidecar is
 limited to 16 MiB; public `source_state` missing/orphan lists and the exact excluded-artifact list
 are each limited to 256 entries with bounded fields. Machine output deliberately omits the
-high-volume manifest file list and all internal handles and credentials.
+high-volume manifest file list and all internal handles and credentials. The #1251 consistency gate compares every recovered `source_images` row regardless of active/inactive status; status is evidence for missing-source policy, never a filter that discards rows.
 
 The stateless restore accepts only a supplied absent or empty safe target, streams only
 `data/source_images`, verifies the embedded manifest against the selected sidecar and checks every

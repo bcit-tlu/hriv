@@ -137,6 +137,15 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
 
 - skill: [`.agents/skills/testing-backup-service/SKILL.md`](../.agents/skills/testing-backup-service/SKILL.md)
 
+### Changed restore-validation controller or chart
+
+- prerequisite: ensure `helm` is on `PATH` **before** running the Python suite (`nix-shell -p kubernetes-helm` if needed). `tests/test_cli_chart.py` intentionally uses the real Helm executable; a reported `helm unavailable` skip is not acceptable chart coverage.
+- chart: `helm lint charts/restore-validation` and `bash scripts/test-helm-chart-regressions.sh`; the regression also lints schema-valid representative values and parses rendered profile/policy/templates with production parsers where available.
+- Python (with Helm still on `PATH`): `cd restore-validation && poetry install --with dev && poetry run python -m unittest discover tests`; verify the summary contains no `helm unavailable` skip.
+- compile: `cd restore-validation && poetry run python -m compileall -q hriv_restore_validation tests`
+- Treat `docs/restore-validation.md` as the normative isolation and least-privilege contract. Keep invocation render-blocked until #1253 adds fixed reviewed egress/admission resources; test required digest pins, exact `recoveryTarget.targetLSN` and derived decimal `recoveryTarget.targetTLI`, fixed `app`/`app` source profile, token-free child templates, and restricted namespace-scoped RBAC.
+- skill: [`.agents/skills/testing-backup-service/SKILL.md`](../.agents/skills/testing-backup-service/SKILL.md) (restore-validation section)
+
 ## Notes
 
 - Vitest patterns match by path substring, so `npm test -- api.test` runs

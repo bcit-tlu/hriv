@@ -4931,6 +4931,11 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
             result["source_state"], {"missing_sources": [], "orphan_sources": []}
         )
         self.assertEqual(result["excluded_artifacts"], [])
+        self.assertEqual(result["capture_started_at"], "2026-01-01T01:59:00Z")
+        self.assertEqual(result["wal_fence_file"], "000000010000000000000001")
+        self.assertEqual(result["wal_fence_committed_at"], "2026-01-01T02:00:10Z")
+        self.assertEqual(result["wal_fence_archived_at"], "2026-01-01T02:00:20Z")
+        self.assertEqual(result["completed_at"], "2026-01-01T02:01:00Z")
         self.assertNotIn("source_files", result)
         self.assertTrue(
             all(operation in {"get", "head", "download"} for operation, _ in calls)
@@ -5032,7 +5037,7 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
         canonical_manifest["capture_started_at"] = "2026-01-01T01:59:00Z"
         self.assertEqual(
             backup._validation_manifest_summary(canonical_manifest)["capture_started_at"],
-            "2026-01-01T01:59:00+00:00",
+            "2026-01-01T01:59:00Z",
         )
         self.assertNotEqual(database_started, marker["created_at"])
         self.assertNotEqual(filesystem_started, marker["created_at"])
@@ -5389,6 +5394,9 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
         candidate["database_recovery"]["wal_fence_file"] = "0" * 24
         invalid.append(candidate)
         candidate = copy.deepcopy(manifest)
+        candidate["database_recovery"]["wal_fence_file"] = "0000000a0000000000000001"
+        invalid.append(candidate)
+        candidate = copy.deepcopy(manifest)
         candidate["source_images"]["file_count"] = 2
         invalid.append(candidate)
         candidate = copy.deepcopy(manifest)
@@ -5554,6 +5562,10 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
             )
             self.assertEqual(result["restored_file_count"], 1)
             self.assertEqual(result["target_data_dir"], str(target))
+            self.assertEqual(result["capture_started_at"], "2026-01-01T01:59:00Z")
+            self.assertEqual(result["wal_fence_file"], "000000010000000000000001")
+            self.assertEqual(result["wal_fence_committed_at"], "2026-01-01T02:00:10Z")
+            self.assertEqual(result["wal_fence_archived_at"], "2026-01-01T02:00:20Z")
             self.assertFalse((target / "db.sql").exists())
             self.assertFalse((target / "tiles").exists())
             archive_kwargs = container.download_kwargs[-1][1]
@@ -5768,7 +5780,10 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
             self.assertEqual(raised.exception.code, expected_code)
             lines = stdout.getvalue().splitlines()
             self.assertEqual(len(lines), 1)
-            self.assertIsInstance(json.loads(lines[0]), dict)
+            document = json.loads(lines[0])
+            self.assertIsInstance(document, dict)
+            if expected_code == 1:
+                self.assertEqual(document, {"schema_version": 1, "operation": "validation-select", "success": False, "failure_code": "MARKER_MISSING", "failure_stage": "marker"})
 
     def test_machine_cli_invalid_validation_config_is_one_bounded_document(self):
         script = Path(backup.__file__).resolve()
