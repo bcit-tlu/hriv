@@ -23,8 +23,6 @@ FROM deps AS build
 COPY . .
 ARG VITE_API_URL
 ENV VITE_API_URL=${VITE_API_URL}
-ARG VITE_OTEL_ENDPOINT
-ENV VITE_OTEL_ENDPOINT=${VITE_OTEL_ENDPOINT}
 # ``VITE_APP_VERSION`` is deliberately **not** a build-time ARG anymore.
 # Vite would bake its value into the bundled JS as an ``import.meta.env``
 # compile-time constant, which survives intact when
@@ -92,4 +90,5 @@ ENV TILE_SERVER_URL=http://backend:8000
 # ``os.environ.get("APP_VERSION", "dev")`` fallback so ad-hoc runs
 # surface a consistent "not in a managed deploy" signal across all
 # three components.
-ENV APP_VERSION=dev
+ENV APP_VERSION=dev \
+    OTEL_BROWSER_TRACE_ENDPOINT_B64=

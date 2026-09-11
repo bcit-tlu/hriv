@@ -25,7 +25,8 @@ contract.
 Backend configuration uses `OTEL_*` environment variables set in the Helm chart
 values. When all backend exporters are `"none"`, the SDK stays in no-op mode
 with zero runtime overhead. Browser trace export is configured separately at
-frontend build time through `VITE_OTEL_ENDPOINT`.
+frontend deployment time through the frontend chart's
+`observability.browserTraceEndpoint` value.
 
 ## Canonical Resource Attributes
 
@@ -564,12 +565,15 @@ Consistent with the login limiter, the limiter is **fail-open**: if Redis is
 unavailable the request is allowed rather than rejected.
 
 Browser trace spans are a separate signal and are exported directly to the
-OTLP/HTTP gateway configured by `VITE_OTEL_ENDPOINT`. Production builds use the
-standard BCIT gateway as a fallback; non-standard deployments should override
-it at build time. Because this endpoint accepts browser traffic, the gateway
-must enforce CORS, request-size limits, and rate limits, and downstream systems
-must not trust browser-supplied identity attributes. Structured usage events
-never use this direct path.
+OTLP/HTTP gateway configured by the frontend chart's
+`observability.browserTraceEndpoint`. The chart injects it at container startup
+through `/runtime-config.js`, allowing Flux environment values to configure an
+existing image digest without rebuilding it. Its default is empty, which
+intentionally disables browser trace export in production; local development
+continues to use `http://localhost:4318`. Because this endpoint accepts browser
+traffic, the gateway must enforce CORS, request-size limits, and rate limits,
+and downstream systems must not trust browser-supplied identity attributes.
+Structured usage events never use this direct path.
 
 ### Frontend event contract
 
