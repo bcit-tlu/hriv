@@ -838,6 +838,10 @@ assert_contains "$restore_validation_quota" 'count/persistentvolumeclaims: "8"' 
   "restore-validation must enforce the bounded PVC quota"
 assert_contains "$restore_validation_quota" 'requests.storage: 320Gi' \
   "restore-validation must reserve bounded recovery storage"
+assert_contains "$restore_validation_quota" 'requests.memory: 6Gi' \
+  "restore-validation requests must fit the namespace memory guardrail"
+assert_contains "$restore_validation_quota" 'limits.memory: 8Gi' \
+  "restore-validation must align with the namespace memory ceiling"
 assert_contains "$restore_validation_limits" 'type: PersistentVolumeClaim' \
   "restore-validation must bound individual recovery PVCs"
 assert_contains "$restore_validation_limits" 'storage: 200Gi' \
