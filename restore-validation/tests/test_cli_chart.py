@@ -36,7 +36,7 @@ class ChartTests(unittest.TestCase):
     def test_runtime_configmaps_are_atomic_v2_identities(self):
         names = {item["metadata"]["name"] for item in self.documents if item and item.get("kind") == "ConfigMap"}
         expected = {"hriv-restore-validation-controller-v2", "hriv-restore-validation-source-profile-v2", "hriv-restore-validation-source-state-policy-v2", "hriv-restore-validation-child-templates-v2"}
-        self.assertTrue(expected <= names)
+        self.assertLessEqual(expected, names)
         self.assertFalse(any(name.endswith("-v1") for name in names))
         self.assertIn("hriv-restore-validation-state", names)
 
