@@ -9,7 +9,7 @@ import yaml
 
 from hriv_restore_validation.models import Config, SourcePolicy, SourceProfile, Templates
 from hriv_restore_validation.strict import ValidationError, canonical_json, parse_json
-from fixtures import BACKUP_IMAGE, CONTROLLER_IMAGE, POSTGRES_IMAGE, config, policy_document, profile, profile_document, template_document
+from fixtures import BACKUP_IMAGE, config, policy_document, profile, profile_document, template_document
 
 
 class ParsingTests(unittest.TestCase):

@@ -4,7 +4,6 @@ import hashlib
 import inspect
 import io
 import json
-import os
 import shutil
 import subprocess
 import tempfile
@@ -17,7 +16,6 @@ import yaml
 
 from hriv_restore_validation.cli import main, parser
 from hriv_restore_validation.models import Config, SourcePolicy, SourceProfile, Templates
-from fixtures import profile
 
 ROOT = Path(__file__).resolve().parents[2]
 CHART = ROOT / "charts" / "restore-validation"

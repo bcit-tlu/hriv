@@ -8,8 +8,8 @@ from unittest.mock import Mock
 
 from kubernetes.client import ApiException
 
-from hriv_restore_validation.gateway import FakeGateway, Lease, Observation, TEMPLATE_IDENTITY_ANNOTATION, template_identity
-from hriv_restore_validation.kubernetes_gateway import KubernetesGateway, _time
+import hriv_restore_validation.kubernetes_gateway as kubernetes_gateway
+from hriv_restore_validation.gateway import FakeGateway, Lease, TEMPLATE_IDENTITY_ANNOTATION, template_identity
 from hriv_restore_validation.models import ResourceRef
 from hriv_restore_validation.strict import ValidationError
 
@@ -17,7 +17,7 @@ from hriv_restore_validation.strict import ValidationError
 class GatewayTests(unittest.TestCase):
     def test_lease_api_time_roundtrip_normalizes(self):
         value = datetime(2026, 1, 15, 2, 0, 0, 999999, tzinfo=timezone(timedelta(hours=-8)))
-        self.assertEqual(datetime(2026, 1, 15, 10, 0, tzinfo=timezone.utc), _time(value))
+        self.assertEqual(datetime(2026, 1, 15, 10, 0, tzinfo=timezone.utc), kubernetes_gateway._time(value))
 
     def test_lease_write_microsecond_roundtrip_is_exact_utc_seconds(self):
         gateway = self._gateway(); gateway.coordination = Mock()
@@ -60,7 +60,7 @@ class GatewayTests(unittest.TestCase):
         self.assertIsNotNone(fake.get_child(ref)); fake.finish_deletes(); self.assertIsNone(fake.get_child(ref))
 
     def _gateway(self):
-        gateway = object.__new__(KubernetesGateway); gateway.namespace = "ns"; gateway.core = Mock(); gateway.batch = Mock(); gateway.custom = Mock(); gateway.apps = Mock(); return gateway
+        gateway = object.__new__(kubernetes_gateway.KubernetesGateway); gateway.namespace = "ns"; gateway.core = Mock(); gateway.batch = Mock(); gateway.custom = Mock(); gateway.apps = Mock(); return gateway
 
     def _successful(self, log='diagnostic\n{"schema_version":1}\n', *, failed=False, exit_code=0):
         gateway = self._gateway(); ref = ResourceRef("batch/v1", "Job", "job", "job-uid")
@@ -145,8 +145,8 @@ class GatewayTests(unittest.TestCase):
             gateway.create_child(desired)
 
     def test_no_secret_api_usage(self):
-        import inspect, hriv_restore_validation.kubernetes_gateway as module
-        self.assertNotIn("read_namespaced_secret", inspect.getsource(module)); self.assertNotIn("list_namespaced_secret", inspect.getsource(module))
+        import inspect
+        self.assertNotIn("read_namespaced_secret", inspect.getsource(kubernetes_gateway)); self.assertNotIn("list_namespaced_secret", inspect.getsource(kubernetes_gateway))
 
 
 if __name__ == "__main__": unittest.main()

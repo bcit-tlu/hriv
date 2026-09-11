@@ -9,7 +9,7 @@ from typing import Any, Callable
 
 from .gateway import Gateway, Lease, TEMPLATE_IDENTITY_ANNOTATION, template_identity
 from .models import Config, ResourceRef, SourcePolicy, SourceProfile, Templates, Trigger, _quantity_bytes
-from .state import MAX_RETAINED, StateStore, merge_history, utc
+from .state import StateStore, merge_history, utc
 from .strict import LSN_RE, RFC3339_RE, UID_RE, ValidationError, bounded_string, exact_object, integer, parse_json
 
 MANAGED_BY = "hriv-restore-validation"
