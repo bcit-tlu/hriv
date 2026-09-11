@@ -4,8 +4,8 @@
 #   docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
 #
 # This adds Prometheus, Loki, Tempo, Grafana, and an OpenTelemetry collector.
-# The frontend is already configured to send OTLP/HTTP logs/traces to
-# http://localhost:4318 (see docker-compose.yml -> frontend -> VITE_OTEL_ENDPOINT).
+# In development, the frontend's generic trace-export default targets
+# http://localhost:4318.
 # Add the backend OTEL variables below to have the backend/worker contribute
 # metrics, traces, and logs as well.
 

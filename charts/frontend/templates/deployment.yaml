@@ -65,6 +65,11 @@ spec:
             # main-build ``-rc.<short>`` identity.
             - name: APP_VERSION
               value: {{ include "hriv-frontend.displayVersion" . | quote }}
+            # nginx serves this base64 value to the browser through
+            # /runtime-config.js. Base64 keeps the generated JavaScript safe
+            # when a deployment-provided URL contains URL-legal punctuation.
+            - name: OTEL_BROWSER_TRACE_ENDPOINT_B64
+              value: {{ .Values.observability.browserTraceEndpoint | default "" | b64enc | quote }}
           livenessProbe:
             httpGet:
               path: /
