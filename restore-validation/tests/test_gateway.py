@@ -19,7 +19,7 @@ class GatewayTests(unittest.TestCase):
         value = datetime(2026, 1, 15, 2, 0, 0, 999999, tzinfo=timezone(timedelta(hours=-8)))
         self.assertEqual(datetime(2026, 1, 15, 10, 0, tzinfo=timezone.utc), kubernetes_gateway._time(value))
 
-    def test_lease_write_microsecond_roundtrip_is_exact_utc_seconds(self):
+    def test_lease_write_uses_kubernetes_microtime_and_read_normalizes(self):
         gateway = self._gateway(); gateway.coordination = Mock()
         raw = datetime(2026, 1, 15, 2, 0, 0, 999999, tzinfo=timezone(timedelta(hours=-8)))
         normalized = datetime(2026, 1, 15, 10, 0, tzinfo=timezone.utc)
@@ -28,7 +28,7 @@ class GatewayTests(unittest.TestCase):
         gateway.coordination.patch_namespaced_lease.return_value = SimpleNamespace(metadata=SimpleNamespace(resource_version="8"), spec=response_spec)
         stored = gateway.replace_lease("lease", Lease("7", holder, raw, raw, 30))
         body = gateway.coordination.patch_namespaced_lease.call_args.args[2]
-        self.assertEqual(normalized, body["spec"]["acquireTime"]); self.assertEqual(normalized, stored.renew_time)
+        self.assertEqual("2026-01-15T10:00:00.000000Z", body["spec"]["acquireTime"]); self.assertEqual("2026-01-15T10:00:00.000000Z", body["spec"]["renewTime"]); self.assertEqual(normalized, stored.renew_time)
 
     @staticmethod
     def _manifest():

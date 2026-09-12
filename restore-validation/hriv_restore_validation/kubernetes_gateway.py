@@ -48,7 +48,7 @@ class KubernetesGateway:
         _validate_lease_identity(lease.holder_identity, acquire_time, renew_time)
         body = {
             "metadata": {"resourceVersion": lease.resource_version},
-            "spec": {"holderIdentity": lease.holder_identity, "acquireTime": acquire_time, "renewTime": renew_time, "leaseDurationSeconds": lease.duration_seconds},
+            "spec": {"holderIdentity": lease.holder_identity, "acquireTime": _microtime(acquire_time), "renewTime": _microtime(renew_time), "leaseDurationSeconds": lease.duration_seconds},
         }
         try:
             obj = self.coordination.patch_namespaced_lease(name, self.namespace, body)
@@ -265,6 +265,12 @@ def _time(value: Any) -> datetime | None:
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise ValidationError("LEASE_TIMESTAMP_INVALID")
     return parsed.astimezone(timezone.utc).replace(microsecond=0)
+
+
+def _microtime(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return value.astimezone(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
 def _validate_lease_identity(holder: str | None, acquired: datetime | None, renewed: datetime | None) -> None:
