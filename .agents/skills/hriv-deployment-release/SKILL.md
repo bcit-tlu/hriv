@@ -18,8 +18,8 @@ operational documentation changes.
 4. Read `../../../docs/observability-operations.md` when the change affects
    alerting, runbooks, or operator validation.
 5. Read `../../../docs/restore-validation.md` before changing restore-validation charts,
-   Flux/Vault/CNPG wiring, RBAC, NetworkPolicies, scheduling, retention, exporter metrics, or
-   alerts. Keep it a separate component and namespace; never grant Kubernetes API access to the
+   Flux/Vault/CNPG wiring, RBAC, fixed proxy NetworkPolicies, weekly/manual scheduling, sole-retained cleanup, or
+   the one native alert. The simplified contract excludes exporter metrics, dashboards, autonomous reapers, and #1252. Keep it a separate component and namespace; never grant Kubernetes API access to the
    hardened backup Deployment.
 6. Use `$testing-backup-service` for backup service verification.
 7. Use `$hriv-admin-operations` when deployment changes affect admin import,
@@ -42,6 +42,17 @@ operational documentation changes.
   chart publishing assumptions documented in AGENTS and deploy docs.
 - Backup and DB tooling must keep PostgreSQL client/server major versions
   compatible.
+- Restore-validation runtime ConfigMaps are immutable payload identities. Bump the controller,
+  profile, policy, and child-template names and every mount/reference atomically; never rename the
+  fixed state ConfigMap or Lease, and leave superseded immutable objects for operator cleanup.
+- The weekly restore-validation Job keeps native CronJob history and no TTL. Standalone on-demand
+  and manual-cleanup Jobs use the seven-day native TTL evidence window; preserve/download evidence
+  before expiry or explicitly delete only after review. This TTL is not an application reaper.
+- Keep restore-validation observability to the single kube-state-metrics-only
+  `HRIVCoreRestoreValidationUnhealthy` PrometheusRule alert. Compare retained failure and success
+  chronology within each weekly/on-demand/cleanup trigger family so recovery clears stale failures.
+  Weekly Job success requires full core validation and confirmed cleanup; on-demand success must not
+  affect weekly failure or overdue detection.
 
 ## Validation
 

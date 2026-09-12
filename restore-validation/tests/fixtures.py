@@ -26,7 +26,7 @@ def config(**changes: Any) -> Config:
 
 
 def profile_document(**changes: Any) -> dict[str, Any]:
-    value = {"schema_version": 1, "profile_id": "production-pg-core", "profile_version": 1, "provider": "cloudnative-pg", "source_cluster": "pg-core", "external_cluster": "pg-core-source", "database": "app", "owner": "app", "application_database": "hriv", "server_name": "pg-core", "expected_system_identifier": "777777", "object_store": "hriv-restore-validation-pg-core", "object_store_api_version": "barmancloud.cnpg.io/v1", "postgresql_major": 17, "postgresql_image": POSTGRES_IMAGE, "postgresql_storage_size": "40Gi", "expected_database_inventory": [{"name": "app", "owner": "app", "allow_connections": True}, {"name": "hriv", "owner": "app", "allow_connections": True}], "expected_static_role_inventory": [{"name": "app", "attributes": ROLE_ATTRS, "memberships": []}], "dynamic_role_prefixes": ["v-"], "expected_migration_version": "abc123", "expected_row_counts": {"categories": 1, "images": 1, "source_images": 2, "users": 1}, "expected_source_image_count": 2, "synthetic_row": {"id": "1", "email": "synthetic@example.invalid"}, "controller_image": CONTROLLER_IMAGE, "backup_image": BACKUP_IMAGE, "source_container": "recovery", "source_prefix": "hriv-backups"}
+    value = {"schema_version": 1, "profile_id": "production-pg-core", "profile_version": 1, "provider": "cloudnative-pg", "source_cluster": "pg-core", "external_cluster": "pg-core-source", "database": "app", "owner": "app", "application_database": "hriv", "server_name": "pg-core", "expected_system_identifier": "777777", "object_store": "hriv-restore-validation-pg-core", "object_store_api_version": "barmancloud.cnpg.io/v1", "postgresql_major": 17, "postgresql_image": POSTGRES_IMAGE, "postgresql_storage_size": "40Gi", "required_database_inventory": [{"name": "app", "owner": "app", "allow_connections": True}, {"name": "hriv", "owner": "app", "allow_connections": True}], "required_static_role_inventory": [{"name": "app", "attributes": ROLE_ATTRS, "memberships": []}], "dynamic_role_prefixes": ["v-"], "expected_migration_version": "abc123", "minimum_row_counts": {"categories": 1, "images": 1, "source_images": 2, "users": 1}, "synthetic_row": {"id": "1", "email_sha256": "faa296d58b7dcae9eec26d1991a5e3cc322ea91f0e668c0a720642817d7b0469"}, "controller_image": CONTROLLER_IMAGE, "backup_image": BACKUP_IMAGE, "source_container": "recovery", "source_prefix": "hriv-backups"}
     value = copy.deepcopy(value)
     value.update(changes)
     return value
@@ -36,10 +36,10 @@ def profile() -> SourceProfile:
     return SourceProfile.parse(json.dumps(profile_document()))
 
 
-def policy_document(missing: list[dict[str, Any]] | None = None, orphan: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-    state = {"missing_sources": missing or [], "orphan_sources": orphan or []}
-    digest = hashlib.sha256(json.dumps(state, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    return {"schema_version": 1, "policy_version": 1, "source_state": state, "sha256": digest}
+def policy_document(missing_count: int = 0, orphan_count: int = 0, sha256: str | None = None) -> dict[str, Any]:
+    empty_state = {"missing_sources": [], "orphan_sources": []}
+    digest = sha256 or hashlib.sha256(json.dumps(empty_state, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    return {"policy_version": 1, "source_state_sha256": digest, "missing_count": missing_count, "orphan_count": orphan_count}
 
 
 def policy() -> SourcePolicy:
@@ -60,11 +60,13 @@ def template_document() -> dict[str, Any]:
                 {"name": "HOME", "value": "/tmp"},
                 {"name": "TMPDIR", "value": "/tmp"},
                 {"name": "PYTHONDONTWRITEBYTECODE", "value": "1"},
+                {"name": "HTTPS_PROXY", "value": "http://hriv-restore-validation-egress-proxy:10000"},
+                {"name": "NO_PROXY", "value": ".svc,.cluster.local,10.43.0.1,localhost,127.0.0.1"},
             ])
         if role in {"db", "consistency"}:
-            volumes.extend([{"name": "credentials", "secret": {"secretName": "generated-superuser"}}, {"name": "profile", "configMap": {"name": "hriv-restore-validation-source-profile-v1"}}])
+            volumes.extend([{"name": "credentials", "secret": {"secretName": "generated-superuser"}}, {"name": "profile", "configMap": {"name": "hriv-restore-validation-source-profile-v2"}}])
         if role == "consistency":
-            volumes.append({"name": "policy", "configMap": {"name": "hriv-restore-validation-source-state-policy-v1"}})
+            volumes.append({"name": "policy", "configMap": {"name": "hriv-restore-validation-source-state-policy-v2"}})
         if role in {"restore", "consistency"}:
             volumes.append({"name": "source", "persistentVolumeClaim": {"claimName": "generated-source-pvc"}})
         mounts = [{"name": "tmp", "mountPath": "/tmp"}]
@@ -84,14 +86,14 @@ def templates() -> Templates:
 
 
 def selection_document(**changes: Any) -> dict[str, Any]:
-    value = {"schema_version": 1, "operation": "validation-select", "success": True, "snapshot_name": "hriv-backup-20260115-090000-abcdef12", "recovery_set_id": "set-1", "run_id": "backup-run", "manifest_sha256": "d" * 64, "archive_blob": "archive.tar.gz", "archive_size": 10, "archive_etag": "etag", "target_lsn": "A/1234", "target_timeline": 7, "source_file_count": 2, "source_total_bytes": 10, "source_files_sha256": "e" * 64, "database_row_count": 2, "missing_count": 0, "orphan_count": 0, "exclusion_count": 0, "source_state": {"missing_sources": [], "orphan_sources": []}, "source_state_sha256": policy().sha256, "excluded_artifacts": [], "capture_started_at": "2026-01-15T09:00:00Z", "wal_fence_file": "000000070000000000000001", "wal_fence_committed_at": "2026-01-15T09:01:00Z", "wal_fence_archived_at": "2026-01-15T09:02:00Z", "completed_at": "2026-01-15T09:30:00Z"}
+    value = {"schema_version": 1, "operation": "validation-select", "success": True, "snapshot_name": "hriv-backup-20260115-090000-abcdef12", "recovery_set_id": "set-1", "run_id": "backup-run", "manifest_sha256": "d" * 64, "archive_blob": "archive.tar.gz", "archive_size": 10, "archive_etag": "etag", "target_lsn": "A/1234", "target_timeline": 7, "source_file_count": 2, "source_total_bytes": 10, "source_files_sha256": "e" * 64, "database_row_count": 2, "missing_count": 0, "orphan_count": 0, "exclusion_count": 0, "source_state": {"missing_sources": [], "orphan_sources": []}, "source_state_sha256": policy().source_state_sha256, "excluded_artifacts": [], "capture_started_at": "2026-01-15T09:00:00Z", "wal_fence_file": "000000070000000000000001", "wal_fence_committed_at": "2026-01-15T09:01:00Z", "wal_fence_archived_at": "2026-01-15T09:02:00Z", "completed_at": "2026-01-15T09:30:00Z"}
     value.update(changes)
     return value
 
 
 def database_result(**changes: Any) -> dict[str, Any]:
     p = profile()
-    value = {"schema_version": 1, "operation": "validate-database", "success": True, "system_identifier": p.expected_system_identifier, "timeline": 7, "recovery_complete": True, "database_inventory": [dict(item) for item in p.expected_database_inventory], "static_role_inventory": [dict(item) for item in p.expected_static_role_inventory], "migration_version": p.expected_migration_version, "row_counts": p.expected_row_counts, "source_image_count": 2, "synthetic_row": p.synthetic_row, "current_lsn": "A/1234", "target_lsn": "A/1234", "fence_generation": 9, "fence_fenced_at": "2026-01-15T09:00:30Z"}
+    value = {"schema_version": 1, "operation": "validate-database", "success": True, "system_identifier": p.expected_system_identifier, "timeline": 7, "recovery_complete": True, "required_database_inventory": [dict(item) for item in p.required_database_inventory], "required_static_role_inventory": [dict(item) for item in p.required_static_role_inventory], "migration_version": p.expected_migration_version, "observed_row_counts": p.minimum_row_counts, "source_image_count": 2, "synthetic_row": p.synthetic_row, "current_lsn": "A/1234", "target_lsn": "A/1234", "fence_generation": 9, "fence_fenced_at": "2026-01-15T09:00:30Z"}
     value.update(changes)
     return value
 
@@ -103,7 +105,9 @@ def restore_result(**changes: Any) -> dict[str, Any]:
 
 
 def consistency_result(**changes: Any) -> dict[str, Any]:
-    value = {"schema_version": 1, "operation": "validate-consistency", "success": True, "database_source_count": 2, "restored_file_count": 2, "restored_total_bytes": 10, "source_files_sha256": "e" * 64, "missing_sources": [], "orphan_sources": [], "source_state_policy_sha256": policy().sha256}
+    missing = []
+    missing_digest = hashlib.sha256(json.dumps(missing, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    value = {"schema_version": 1, "operation": "validate-consistency", "success": True, "database_source_count": 2, "restored_file_count": 2, "restored_total_bytes": 10, "source_files_sha256": "e" * 64, "missing_count": len(missing), "missing_sources_sha256": missing_digest, "unexpected_orphan_count": 0, "source_state_policy_sha256": policy().identity_sha256}
     value.update(changes)
     return value
 

@@ -1,0 +1,97 @@
+{{- if .Values.operational.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hriv-restore-validation-egress-proxy
+  labels:
+    {{- include "hriv-restore-validation.labels" . | nindent 4 }}
+    app.kubernetes.io/component: egress-proxy
+data:
+  envoy.yaml: |
+    static_resources:
+      listeners:
+        - name: connect_proxy
+          address:
+            socket_address: {address: 0.0.0.0, port_value: 10000}
+          filter_chains:
+            - filters:
+                - name: envoy.filters.network.http_connection_manager
+                  typed_config:
+                    "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                    stat_prefix: connect_proxy
+                    route_config:
+                      name: exact_azure_connect
+                      virtual_hosts:
+                        - name: allowed_azure_storage
+                          domains:
+                            {{- range .Values.operational.egressProxy.allowedConnectHosts }}
+                            - {{ . | quote }}
+                            {{- end }}
+                          routes:
+                            - match: {connect_matcher: {}}
+                              route:
+                                cluster: dynamic_forward_proxy
+                                upgrade_configs:
+                                  - upgrade_type: CONNECT
+                                    connect_config: {}
+                    http_filters:
+                      - name: envoy.filters.http.dynamic_forward_proxy
+                        typed_config:
+                          "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_forward_proxy.v3.FilterConfig
+                          dns_cache_config: {name: azure_storage, dns_lookup_family: V4_ONLY}
+                      - name: envoy.filters.http.router
+                        typed_config:
+                          "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+      clusters:
+        - name: dynamic_forward_proxy
+          connect_timeout: 10s
+          lb_policy: CLUSTER_PROVIDED
+          cluster_type:
+            name: envoy.clusters.dynamic_forward_proxy
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.clusters.dynamic_forward_proxy.v3.ClusterConfig
+              dns_cache_config: {name: azure_storage, dns_lookup_family: V4_ONLY}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hriv-restore-validation-egress-proxy
+  labels:
+    {{- include "hriv-restore-validation.labels" . | nindent 4 }}
+    app.kubernetes.io/component: egress-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: hriv-restore-validation, app.kubernetes.io/component: egress-proxy}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: hriv-restore-validation, app.kubernetes.io/component: egress-proxy}
+    spec:
+      serviceAccountName: hriv-restore-validation-no-permission
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: envoy
+          image: {{ .Values.operational.egressProxy.image | quote }}
+          args: [-c, /etc/envoy/envoy.yaml]
+          ports: [{name: proxy, containerPort: 10000}]
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {cpu: 500m, memory: 256Mi}}
+          volumeMounts:
+            - {name: config, mountPath: /etc/envoy, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: config, configMap: {name: hriv-restore-validation-egress-proxy}}
+        - {name: tmp, emptyDir: {sizeLimit: 64Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hriv-restore-validation-egress-proxy
+  labels:
+    {{- include "hriv-restore-validation.labels" . | nindent 4 }}
+    app.kubernetes.io/component: egress-proxy
+spec:
+  selector: {app.kubernetes.io/name: hriv-restore-validation, app.kubernetes.io/component: egress-proxy}
+  ports: [{name: proxy, port: 10000, targetPort: proxy}]
+{{- end }}

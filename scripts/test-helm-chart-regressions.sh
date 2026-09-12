@@ -750,9 +750,8 @@ assert_not_contains "$frontend_override_deployment" "type: RollingUpdate" \
 assert_not_contains "$frontend_override_deployment" "maxSurge:" \
   "frontend deployment should not render rollingUpdate settings when updateStrategy explicitly requests Recreate"
 
-# #1251: the restore-validation core chart is deliberately static and
-# non-runnable until #1253 supplies fixed, reviewed egress and rollout resources.
-# These are schema-valid representative reviewed values, not deployable defaults.
+# #1251 core plus simplified #1253 operational scheduling and fixed egress.
+# These are schema-valid representative reviewed values; operational mode is tested separately.
 restore_validation_helm_args=(
   --namespace hriv-restore-validation
   --set-string images.orchestrator=registry.example/hriv-restore-validation@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -761,12 +760,14 @@ restore_validation_helm_args=(
   --set-string sourceArchive.container=hriv-backup
   --set-string sourceArchive.prefix=published/
   --set-string sourceProfile.expectedSystemIdentifier=1234567890
-  --set-json 'sourceProfile.expectedDatabaseInventory=[{"name":"app","owner":"app","allow_connections":true},{"name":"hriv","owner":"app","allow_connections":true}]'
-  --set-json 'sourceProfile.expectedStaticRoleInventory=[{"name":"app","attributes":{"superuser":false,"inherit":true,"createrole":false,"createdb":false,"canlogin":true,"replication":false,"bypassrls":false},"memberships":[]}]'
+  --set-json 'sourceProfile.requiredDatabaseInventory=[{"name":"app","owner":"app","allow_connections":true},{"name":"hriv","owner":"app","allow_connections":true}]'
+  --set-json 'sourceProfile.requiredStaticRoleInventory=[{"name":"app","attributes":{"superuser":false,"inherit":true,"createrole":false,"createdb":false,"canlogin":true,"replication":false,"bypassrls":false},"memberships":[]}]'
   --set-string sourceProfile.expectedMigrationVersion=head
-  --set-json 'sourceProfile.expectedRowCounts={"categories":1,"images":1,"source_images":1,"users":1}'
-  --set sourceProfile.expectedSourceImageCount=1
-  --set-json 'sourceProfile.syntheticRow={"id":"1","email":"restore-validation@example.invalid"}'
+  --set-json 'sourceProfile.minimumRowCounts={"categories":1,"images":1,"source_images":1,"users":1}'
+  --set-json 'sourceProfile.syntheticRow={"id":"1","email_sha256":"faa296d58b7dcae9eec26d1991a5e3cc322ea91f0e668c0a720642817d7b0469"}'
+  --set sourceStatePolicy.missingCount=39
+  --set sourceStatePolicy.orphanCount=3
+  --set-string sourceStatePolicy.sha256=958b1dc2dca298c56fd96dd80b6c694144905e22c00c4b3ca9d2c59c3b666083
   --set objectStore.enabled=true
   --set-string objectStore.destinationPath=https://example.invalid/hriv-backup
 )
@@ -781,11 +782,11 @@ restore_validation_state="$(extract_top_level_yaml_doc \
 restore_validation_lease="$(extract_top_level_yaml_doc \
   "$restore_validation_manifest" "Lease" "hriv-restore-validation")"
 restore_validation_children="$(extract_top_level_yaml_doc \
-  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-child-templates-v1")"
+  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-child-templates-v2")"
 restore_validation_profile="$(extract_top_level_yaml_doc \
-  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-source-profile-v1")"
+  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-source-profile-v2")"
 restore_validation_policy="$(extract_top_level_yaml_doc \
-  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-source-state-policy-v1")"
+  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-source-state-policy-v2")"
 restore_validation_role="$(extract_top_level_yaml_doc \
   "$restore_validation_manifest" "Role" "hriv-restore-validation-orchestrator")"
 restore_validation_default_deny="$(extract_top_level_yaml_doc \
@@ -794,17 +795,25 @@ restore_validation_quota="$(extract_top_level_yaml_doc \
   "$restore_validation_manifest" "ResourceQuota" "hriv-restore-validation")"
 restore_validation_limits="$(extract_top_level_yaml_doc \
   "$restore_validation_manifest" "LimitRange" "hriv-restore-validation")"
+assert_not_contains "$restore_validation_manifest" 'hriv-restore-validation-controller-v1' \
+  "v1 controller ConfigMap must be unreferenced after the atomic v2 upgrade"
+assert_not_contains "$restore_validation_manifest" 'hriv-restore-validation-source-profile-v1' \
+  "v1 profile ConfigMap must be unreferenced after the atomic v2 upgrade"
+assert_not_contains "$restore_validation_manifest" 'hriv-restore-validation-source-state-policy-v1' \
+  "v1 policy ConfigMap must be unreferenced after the atomic v2 upgrade"
+assert_not_contains "$restore_validation_manifest" 'hriv-restore-validation-child-templates-v1' \
+  "v1 templates ConfigMap must be unreferenced after the atomic v2 upgrade"
 
 # Parse the outer manifests and all embedded profile/policy/template documents with
 # real YAML/JSON parsers rather than treating indentation or quoting as sufficient.
 ruby -ryaml -rjson -e '
   docs = YAML.load_stream(STDIN.read).compact
   by_name = docs.to_h { |doc| [[doc["kind"], doc.dig("metadata", "name")], doc] }
-  profile = JSON.parse(by_name.fetch(["ConfigMap", "hriv-restore-validation-source-profile-v1"]).fetch("data").fetch("profile.json"))
-  policy = JSON.parse(by_name.fetch(["ConfigMap", "hriv-restore-validation-source-state-policy-v1"]).fetch("data").fetch("policy.json"))
-  templates = YAML.safe_load(by_name.fetch(["ConfigMap", "hriv-restore-validation-child-templates-v1"]).fetch("data").fetch("templates.yaml"), aliases: true)
+  profile = JSON.parse(by_name.fetch(["ConfigMap", "hriv-restore-validation-source-profile-v2"]).fetch("data").fetch("profile.json"))
+  policy = JSON.parse(by_name.fetch(["ConfigMap", "hriv-restore-validation-source-state-policy-v2"]).fetch("data").fetch("policy.json"))
+  templates = YAML.safe_load(by_name.fetch(["ConfigMap", "hriv-restore-validation-child-templates-v2"]).fetch("data").fetch("templates.yaml"), aliases: true)
   raise "profile identity drift" unless profile.values_at("source_cluster", "external_cluster", "database", "owner", "server_name", "object_store") == ["pg-core", "pg-core-source", "app", "app", "pg-core", "hriv-restore-validation-pg-core"]
-  raise "policy structure drift" unless policy.keys.sort == %w[policy_version schema_version sha256 source_state] && policy.fetch("source_state").keys.sort == %w[missing_sources orphan_sources]
+  raise "policy structure drift" unless policy == {"missing_count" => 39, "orphan_count" => 3, "policy_version" => 1, "source_state_sha256" => "958b1dc2dca298c56fd96dd80b6c694144905e22c00c4b3ca9d2c59c3b666083"}
   target = templates.dig("cnpg_cluster", "spec", "bootstrap", "recovery", "recoveryTarget")
   raise "CNPG target drift" unless target == {"targetLSN" => "CONTROLLER_BOUND_TARGET_LSN", "targetTLI" => "CONTROLLER_BOUND_TARGET_TLI"}
 ' <<<"$restore_validation_manifest"
@@ -818,9 +827,9 @@ import sys, yaml
 from hriv_restore_validation.models import SourcePolicy, SourceProfile, Templates
 docs = [item for item in yaml.safe_load_all(sys.stdin.read()) if item]
 config_maps = {item["metadata"]["name"]: item["data"] for item in docs if item.get("kind") == "ConfigMap"}
-profile = SourceProfile.parse(config_maps["hriv-restore-validation-source-profile-v1"]["profile.json"])
-SourcePolicy.parse(config_maps["hriv-restore-validation-source-state-policy-v1"]["policy.json"])
-Templates.parse(config_maps["hriv-restore-validation-child-templates-v1"]["templates.yaml"], profile)
+profile = SourceProfile.parse(config_maps["hriv-restore-validation-source-profile-v2"]["profile.json"])
+SourcePolicy.parse(config_maps["hriv-restore-validation-source-state-policy-v2"]["policy.json"])
+Templates.parse(config_maps["hriv-restore-validation-child-templates-v2"]["templates.yaml"], profile)
 ' <<<"$restore_validation_manifest"
 fi
 
@@ -843,10 +852,14 @@ assert_contains "$restore_validation_quota" 'count/persistentvolumeclaims: "8"' 
   "restore-validation must enforce the bounded PVC quota"
 assert_contains "$restore_validation_quota" 'requests.storage: 320Gi' \
   "restore-validation must reserve bounded recovery storage"
+assert_contains "$restore_validation_quota" 'requests.memory: 6Gi' \
+  "restore-validation requests must fit the namespace memory guardrail"
+assert_contains "$restore_validation_quota" 'limits.memory: 8Gi' \
+  "restore-validation must align with the namespace memory ceiling"
 assert_contains "$restore_validation_limits" 'type: PersistentVolumeClaim' \
   "restore-validation must bound individual recovery PVCs"
-assert_contains "$restore_validation_limits" 'storage: 80Gi' \
-  "restore-validation must cap individual recovery PVC capacity"
+assert_contains "$restore_validation_limits" 'storage: 200Gi' \
+  "restore-validation must permit the reviewed 160Gi stable source PVC while retaining a bounded cap"
 if grep -Eq '^kind: Secret$' <<<"$restore_validation_manifest"; then
   fail "restore-validation chart must never create a Secret"
 fi
@@ -868,7 +881,87 @@ assert_not_contains "$restore_validation_manifest" "approved-egress" \
 assert_not_contains "$restore_validation_manifest" "0.0.0.0/0" \
   "restore-validation must never render global IPv4 egress"
 assert_not_contains "$restore_validation_manifest" "::/0" \
-  "restore-validation must never render global IPv6 egress"
+  "disabled restore-validation defaults must never render global IPv6 egress"
+
+restore_validation_operational_manifest="$(helm template test charts/restore-validation \
+  "${restore_validation_helm_args[@]}" \
+  --set operational.enabled=true \
+  --set-string operational.egressProxy.allowedConnectHosts[0]=reviewedaccount.blob.core.windows.net:443)"
+restore_validation_weekly="$(extract_top_level_yaml_doc \
+  "$restore_validation_operational_manifest" "CronJob" "hriv-restore-validation-weekly")"
+restore_validation_on_demand="$(extract_top_level_yaml_doc \
+  "$restore_validation_operational_manifest" "CronJob" "hriv-restore-validation-on-demand")"
+restore_validation_cleanup="$(extract_top_level_yaml_doc \
+  "$restore_validation_operational_manifest" "CronJob" "hriv-restore-validation-cleanup")"
+assert_contains "$restore_validation_weekly" 'schedule: "0 11 * * 0"' \
+  "weekly restore validation must use the reviewed UTC schedule"
+assert_contains "$restore_validation_weekly" 'suspend: true' \
+  "weekly restore validation must begin suspended for latest-first acceptance"
+assert_contains "$restore_validation_weekly" 'concurrencyPolicy: Forbid' \
+  "weekly restore validation must forbid concurrency"
+assert_contains "$restore_validation_operational_manifest" 'image: "envoyproxy/envoy:v1.39.1@sha256:57e14a549d7bd43c8d3f6d03e8cfa653e037d4b38e133acd9b54f38c524401b4"' \
+  "operational restore validation must pin the reviewed Envoy digest"
+assert_contains "$restore_validation_operational_manifest" 'reviewedaccount.blob.core.windows.net:443' \
+  "Envoy must contain the exact reviewed Azure CONNECT authority"
+assert_not_contains "$restore_validation_operational_manifest" 'domains: ["*"]' \
+  "Envoy must not contain a wildcard virtual host"
+assert_not_contains "$restore_validation_operational_manifest" 'name: HTTP_PROXY' \
+  "Azure readers and CNPG must use HTTPS_PROXY only"
+assert_contains "$restore_validation_operational_manifest" 'cidr: 10.43.0.1/32' \
+  "orchestrator and cleanup API egress must use the fixed service IP"
+assert_contains "$restore_validation_operational_manifest" 'cidr: 0.0.0.0/0' \
+  "only the selected Envoy proxy policy may receive broad TCP/443 egress"
+assert_contains "$restore_validation_on_demand" 'suspend: true' \
+  "on-demand restore validation must remain suspended"
+assert_contains "$restore_validation_cleanup" 'args: [cleanup-retained]' \
+  "manual cleanup must expose only the fixed retained-state command"
+assert_not_contains "$restore_validation_weekly" 'ttlSecondsAfterFinished' \
+  "weekly evidence must use CronJob history rather than TTL deletion"
+assert_contains "$restore_validation_on_demand" 'ttlSecondsAfterFinished: 604800' \
+  "standalone on-demand Jobs must keep a seven-day native evidence TTL"
+assert_contains "$restore_validation_cleanup" 'ttlSecondsAfterFinished: 604800' \
+  "standalone cleanup Jobs must keep a seven-day native evidence TTL"
+assert_contains "$restore_validation_operational_manifest" 'kind: PrometheusRule' \
+  "operational restore validation must render its one native alert rule"
+assert_occurrences "$restore_validation_operational_manifest" 'alert: HRIVCoreRestoreValidationUnhealthy' 1 \
+  "operational restore validation must render exactly one fixed alert"
+assert_contains "$restore_validation_operational_manifest" 'for: 15m' \
+  "restore-validation alert must wait fifteen minutes"
+assert_contains "$restore_validation_operational_manifest" 'kube_cronjob_created' \
+  "restore-validation never-successful alert must use CronJob age"
+assert_contains "$restore_validation_operational_manifest" 'kube_cronjob_status_last_successful_time' \
+  "restore-validation overdue alert must use weekly native success"
+assert_contains "$restore_validation_operational_manifest" 'kube_job_status_failed' \
+  "restore-validation alert must cover failed validation and cleanup Jobs"
+assert_contains "$restore_validation_operational_manifest" 'kube_job_status_succeeded' \
+  "restore-validation alert must let a newer same-trigger success clear a retained failure"
+assert_contains "$restore_validation_operational_manifest" 'kube_job_status_start_time' \
+  "restore-validation alert must compare retained Job chronology"
+assert_contains "$restore_validation_operational_manifest" 'max by (namespace, trigger)' \
+  "restore-validation alert must compare failures within each trigger family"
+assert_not_contains "$restore_validation_operational_manifest" 'max(kube_job_status_failed' \
+  "restore-validation alert must not fire forever on any retained failed Job"
+ruby -ryaml -e '
+  docs = YAML.load_stream(STDIN.read).compact
+  policies = docs.select { |doc| doc["kind"] == "NetworkPolicy" }.to_h { |doc| [doc.dig("metadata", "name"), doc.fetch("spec")] }
+  roles = ->(name, direction) { policies.fetch(name).fetch(direction).flat_map { |rule| rule.fetch(direction == "egress" ? "to" : "from", []) }.map { |peer| peer.dig("podSelector", "matchExpressions", 0, "values") }.compact.flatten.sort }
+  raise "database clients widened" unless roles.call("hriv-restore-validation-database-clients", "egress") == [] && policies.fetch("hriv-restore-validation-database-clients").dig("podSelector", "matchExpressions", 0, "values").sort == %w[consistency db-validation]
+  raise "Azure reader proxy access widened" unless policies.fetch("hriv-restore-validation-azure-readers").dig("podSelector", "matchExpressions", 0, "values").sort == %w[cnpg selection source-restore]
+  raise "proxy ingress widened" unless roles.call("hriv-restore-validation-proxy-ingress", "ingress") == %w[cnpg selection source-restore]
+  raise "CNPG database ingress widened" unless roles.call("hriv-restore-validation-database-ingress", "ingress") == %w[consistency db-validation]
+  api_values = policies.fetch("hriv-restore-validation-api").dig("podSelector", "matchExpressions", 0, "values").sort
+  raise "orchestrator API selector drift" unless api_values == %w[cleanup orchestrator]
+  broad = policies.select { |_name, spec| spec.fetch("egress", []).any? { |rule| rule.fetch("to", []).any? { |peer| peer.dig("ipBlock", "cidr") == "0.0.0.0/0" } } }.keys
+  raise "blanket namespace egress" unless broad == ["hriv-restore-validation-proxy-egress"]
+' <<<"$restore_validation_operational_manifest"
+ruby -ryaml -e '
+  outer = YAML.safe_load(STDIN.read)
+  templates = YAML.safe_load(outer.fetch("data").fetch("templates.yaml"), aliases: true)
+  %w[db_validation_job consistency_job].each do |name|
+    env = templates.dig(name, "spec", "template", "spec", "containers", 0, "env") || []
+    raise "#{name} must not use proxy" if env.any? { |item| %w[HTTP_PROXY HTTPS_PROXY].include?(item["name"]) }
+  end
+' <<<"$restore_validation_children"
 
 for image_value in images.orchestrator images.backupChild images.postgresql; do
   if restore_validation_bad_image_output="$(helm template test charts/restore-validation \
@@ -882,10 +975,10 @@ for image_value in images.orchestrator images.backupChild images.postgresql; do
 done
 
 restore_validation_strict_schema_cases=(
-  'sourceProfile.expectedDatabaseInventory=[{"name":"app","owner":"app","allow_connections":true,"unexpected":true}]'
-  'sourceProfile.expectedStaticRoleInventory=[{"name":"app","attributes":{"superuser":false,"inherit":true,"createrole":false,"createdb":false,"canlogin":true,"replication":false,"bypassrls":false,"unexpected":true},"memberships":[]}]'
-  'sourceStatePolicy.missingSources=[{"row_id":"1","status":"active","stored_path":"source_images/1.jpg","reason":"missing_source","unexpected":true}]'
-  'sourceProfile.syntheticRow={"id":"1","email":"restore-validation@example.invalid","unexpected":true}'
+  'sourceProfile.requiredDatabaseInventory=[{"name":"app","owner":"app","allow_connections":true,"unexpected":true}]'
+  'sourceProfile.requiredStaticRoleInventory=[{"name":"app","attributes":{"superuser":false,"inherit":true,"createrole":false,"createdb":false,"canlogin":true,"replication":false,"bypassrls":false,"unexpected":true},"memberships":[]}]'
+  'sourceStatePolicy={"missingCount":39,"orphanCount":3,"sha256":"958b1dc2dca298c56fd96dd80b6c694144905e22c00c4b3ca9d2c59c3b666083","unexpected":true}'
+  'sourceProfile.syntheticRow={"id":"1","email_sha256":"faa296d58b7dcae9eec26d1991a5e3cc322ea91f0e668c0a720642817d7b0469","unexpected":true}'
 )
 for override in "${restore_validation_strict_schema_cases[@]}"; do
   if helm template test charts/restore-validation \
@@ -963,17 +1056,23 @@ assert_contains "$restore_validation_role" "verbs: [get, list, delete]" \
 if restore_validation_missing_object_store="$(helm template test charts/restore-validation \
   "${restore_validation_helm_args[@]}" \
   --set objectStore.enabled=false \
-  --set invocation.enabled=true 2>&1)"; then
-  fail "enabled invocation without objectStore.enabled must be rejected"
+  --set operational.enabled=true \
+  --set-string operational.egressProxy.allowedConnectHosts[0]=reviewedaccount.blob.core.windows.net:443 2>&1)"; then
+  fail "operational mode without objectStore.enabled must be rejected"
 fi
 assert_contains "$restore_validation_missing_object_store" "requires objectStore.enabled=true" \
-  "enabled invocation must explicitly require the Barman ObjectStore"
-if restore_validation_invocation_output="$(helm template test charts/restore-validation \
+  "operational mode must explicitly require the Barman ObjectStore"
+if helm template test charts/restore-validation \
   "${restore_validation_helm_args[@]}" \
-  --set invocation.enabled=true 2>&1)"; then
-  fail "#1251 invocation must remain non-runnable before #1253 egress resources exist"
+  --set operational.enabled=true >/dev/null 2>&1; then
+  fail "operational mode without an exact Azure CONNECT host must be rejected"
 fi
-assert_contains "$restore_validation_invocation_output" "#1253 adds fixed reviewed Azure, Kubernetes API, DNS, and CNPG egress resources" \
-  "disabled invocation must explain the #1253 egress boundary"
+if helm template test charts/restore-validation \
+  "${restore_validation_helm_args[@]}" \
+  --set controller.maxRetainedRuns=2 \
+  --set operational.enabled=true \
+  --set-string operational.egressProxy.allowedConnectHosts[0]=reviewedaccount.blob.core.windows.net:443 >/dev/null 2>&1; then
+  fail "operational mode must require maxRetainedRuns exactly one"
+fi
 
 echo "Helm chart regression checks passed."

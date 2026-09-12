@@ -7,7 +7,7 @@ import unittest
 
 import yaml
 
-from hriv_restore_validation.models import Config, SourcePolicy, SourceProfile, Templates
+from hriv_restore_validation.models import Config, SourcePolicy, SourceProfile, Templates, canonical_source_state
 from hriv_restore_validation.strict import ValidationError, canonical_json, parse_json
 from fixtures import BACKUP_IMAGE, config, policy_document, profile, profile_document, template_document
 
@@ -56,51 +56,63 @@ class ParsingTests(unittest.TestCase):
         with self.assertRaises(ValidationError): SourceProfile.parse(json.dumps(profile_document(postgresql_storage_size="40GB")))
 
     def test_profile_role_attributes_exact(self):
-        value = profile_document(); del value["expected_static_role_inventory"][0]["attributes"]["bypassrls"]
+        value = profile_document(); del value["required_static_role_inventory"][0]["attributes"]["bypassrls"]
         with self.assertRaises(ValidationError): SourceProfile.parse(json.dumps(value))
+
+    def test_profile_rejects_plain_email_and_duplicate_required_names(self):
+        plain = profile_document()
+        plain["synthetic_row"] = {"id": "1", "email": "synthetic@example.invalid"}
+        with self.assertRaises(ValidationError):
+            SourceProfile.parse(json.dumps(plain))
+        for field in ("required_database_inventory", "required_static_role_inventory"):
+            with self.subTest(field=field):
+                duplicate = profile_document()
+                duplicate[field].append(copy.deepcopy(duplicate[field][0]))
+                with self.assertRaises(ValidationError):
+                    SourceProfile.parse(json.dumps(duplicate))
 
     def test_profile_accepts_pg_core_hyphenated_names(self):
         value = profile_document()
-        value["expected_database_inventory"].append(
+        value["required_database_inventory"].append(
             {"name": "course-intelligence", "owner": "postgres", "allow_connections": True}
         )
-        value["expected_static_role_inventory"].append(
+        value["required_static_role_inventory"].append(
             {
                 "name": "qcon-api",
-                "attributes": copy.deepcopy(value["expected_static_role_inventory"][0]["attributes"]),
+                "attributes": copy.deepcopy(value["required_static_role_inventory"][0]["attributes"]),
                 "memberships": ["course-intelligence"],
             }
         )
         parsed = SourceProfile.parse(json.dumps(value))
-        self.assertIn("course-intelligence", {item["name"] for item in parsed.expected_database_inventory})
-        self.assertIn("qcon-api", {item["name"] for item in parsed.expected_static_role_inventory})
+        self.assertIn("course-intelligence", {item["name"] for item in parsed.required_database_inventory})
+        self.assertIn("qcon-api", {item["name"] for item in parsed.required_static_role_inventory})
 
-    def test_policy_round_trip(self):
-        self.assertEqual([], list(SourcePolicy.parse(json.dumps(policy_document())).missing_sources))
+    def test_policy_round_trip_and_identity(self):
+        parsed = SourcePolicy.parse(json.dumps(policy_document(39, 3, "958b1dc2dca298c56fd96dd80b6c694144905e22c00c4b3ca9d2c59c3b666083")))
+        self.assertEqual((1, 39, 3), (parsed.policy_version, parsed.missing_count, parsed.orphan_count))
+        self.assertRegex(parsed.identity_sha256, r"^[0-9a-f]{64}$")
 
-    def test_policy_canonical_numeric_and_orphan_order(self):
+    def test_source_state_canonical_numeric_and_orphan_order(self):
         missing = [{"row_id": "10", "status": "z", "stored_path": "source_images/z.jpg", "reason": "missing_source"}, {"row_id": "2", "status": "a", "stored_path": "/data/source_images/a.jpg", "reason": "missing_source"}]
         orphans = [{"path": "source_images/z.jpg", "reason": "no_database_row", "policy": "quarantined_by_policy"}, {"path": "data/source_images/a.jpg", "reason": "no_database_row", "policy": "quarantined_by_policy"}]
-        canonical = {"missing_sources": [{"row_id": "2", "status": "a", "stored_path": "data/source_images/a.jpg", "reason": "missing_source"}, {"row_id": "10", "status": "z", "stored_path": "data/source_images/z.jpg", "reason": "missing_source"}], "orphan_sources": [{"path": "data/source_images/a.jpg", "reason": "no_database_row", "policy": "quarantined_by_policy"}, {"path": "data/source_images/z.jpg", "reason": "no_database_row", "policy": "quarantined_by_policy"}]}
-        digest = hashlib.sha256(json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-        parsed = SourcePolicy.parse(json.dumps({"schema_version": 1, "policy_version": 1, "source_state": {"missing_sources": missing, "orphan_sources": orphans}, "sha256": digest}))
-        self.assertEqual(["2", "10"], [item["row_id"] for item in parsed.missing_sources])
-        self.assertEqual(["data/source_images/a.jpg", "data/source_images/z.jpg"], [item["path"] for item in parsed.orphan_sources])
+        canonical, digest = canonical_source_state({"missing_sources": missing, "orphan_sources": orphans})
+        self.assertEqual(["2", "10"], [item["row_id"] for item in canonical["missing_sources"]])
+        self.assertEqual(["data/source_images/a.jpg", "data/source_images/z.jpg"], [item["path"] for item in canonical["orphan_sources"]])
+        self.assertEqual(digest, hashlib.sha256(json.dumps(canonical, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest())
 
-    def test_policy_matches_backup_empty_status_and_numeric_canonical_digest(self):
+    def test_source_state_matches_backup_empty_status(self):
         state = {"missing_sources": [{"row_id": "2", "status": "", "stored_path": "x.jpg", "reason": "unsafe_or_out_of_root"}], "orphan_sources": []}
-        canonical = {"missing_sources": [{"row_id": "2", "status": "", "stored_path": "data/source_images/x.jpg", "reason": "unsafe_or_out_of_root"}], "orphan_sources": []}
-        digest = hashlib.sha256(json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-        parsed = SourcePolicy.parse(json.dumps({"schema_version": 1, "policy_version": 1, "source_state": state, "sha256": digest}))
-        self.assertEqual("", parsed.missing_sources[0]["status"])
+        canonical, _ = canonical_source_state(state)
+        self.assertEqual("", canonical["missing_sources"][0]["status"])
 
-    def test_policy_rejects_utf8_path_over_byte_bound(self):
-        value = policy_document(missing=[{"row_id": "1", "status": "ready", "stored_path": "é" * 300, "reason": "missing_source"}])
-        with self.assertRaises(ValidationError): SourcePolicy.parse(json.dumps(value))
+    def test_source_state_rejects_utf8_path_over_byte_bound(self):
+        state = {"missing_sources": [{"row_id": "1", "status": "ready", "stored_path": "é" * 300, "reason": "missing_source"}], "orphan_sources": []}
+        with self.assertRaises(ValidationError): canonical_source_state(state)
 
-    def test_policy_bad_digest(self):
-        value = policy_document(); value["sha256"] = "0" * 64
-        with self.assertRaises(ValidationError): SourcePolicy.parse(json.dumps(value))
+    def test_policy_bad_digest_and_count_bounds(self):
+        for value in (policy_document(sha256="A" * 64), policy_document(257, 0), policy_document(0, 257)):
+            with self.subTest(value=value):
+                with self.assertRaises(ValidationError): SourcePolicy.parse(json.dumps(value))
 
     def test_policy_unknown_field(self):
         value = policy_document() | {"extra": 1}

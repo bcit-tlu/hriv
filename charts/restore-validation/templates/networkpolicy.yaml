@@ -7,3 +7,113 @@ metadata:
 spec:
   podSelector: {}
   policyTypes: [Ingress, Egress]
+{{- if .Values.operational.enabled }}
+---
+# DNS is selected by both namespace and pod labels; no IP-wide UDP/TCP escape is granted.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: hriv-restore-validation-dns}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+          podSelector: {matchLabels: {k8s-app: kube-dns}}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: hriv-restore-validation-api}
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/component, operator: In, values: [orchestrator, cleanup]}
+  policyTypes: [Egress]
+  egress:
+    - to: [{ipBlock: {cidr: 10.43.0.1/32}}]
+      ports: [{protocol: TCP, port: 443}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: hriv-restore-validation-database-ingress}
+spec:
+  podSelector:
+    matchLabels: {hriv.bcit.ca/restore-validation-role: cnpg}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - {key: hriv.bcit.ca/restore-validation-role, operator: In, values: [db-validation, consistency]}
+      ports: [{protocol: TCP, port: 5432}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: hriv-restore-validation-database-clients}
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: hriv.bcit.ca/restore-validation-role, operator: In, values: [db-validation, consistency]}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector: {matchLabels: {hriv.bcit.ca/restore-validation-role: cnpg}}
+      ports: [{protocol: TCP, port: 5432}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: hriv-restore-validation-cnpg-api}
+spec:
+  podSelector: {matchLabels: {hriv.bcit.ca/restore-validation-role: cnpg}}
+  policyTypes: [Egress]
+  egress:
+    - to: [{ipBlock: {cidr: 10.43.0.1/32}}]
+      ports: [{protocol: TCP, port: 443}]
+---
+# NetworkPolicy limits Azure readers to this proxy. The exact Envoy CONNECT virtual-host ACL
+# performs hostname enforcement; NetworkPolicy alone cannot authorize DNS names.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: hriv-restore-validation-azure-readers}
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: hriv.bcit.ca/restore-validation-role, operator: In, values: [selection, source-restore, cnpg]}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: hriv-restore-validation, app.kubernetes.io/component: egress-proxy}}
+      ports: [{protocol: TCP, port: 10000}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: hriv-restore-validation-proxy-ingress}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: hriv-restore-validation, app.kubernetes.io/component: egress-proxy}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - {key: hriv.bcit.ca/restore-validation-role, operator: In, values: [selection, source-restore, cnpg]}
+      ports: [{protocol: TCP, port: 10000}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: hriv-restore-validation-proxy-egress}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: hriv-restore-validation, app.kubernetes.io/component: egress-proxy}}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+          podSelector: {matchLabels: {k8s-app: kube-dns}}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to: [{ipBlock: {cidr: 0.0.0.0/0}}]
+      ports: [{protocol: TCP, port: 443}]
+{{- end }}

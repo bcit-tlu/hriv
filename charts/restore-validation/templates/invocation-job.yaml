@@ -1,17 +1,19 @@
-{{- if .Values.invocation.enabled }}
-apiVersion: batch/v1
-kind: Job
+{{- define "hriv-restore-validation.orchestratorJobTemplate" -}}
 metadata:
-  name: hriv-restore-validation-invoke
   labels:
-    {{- include "hriv-restore-validation.labels" . | nindent 4 }}
+    app.kubernetes.io/name: hriv-restore-validation
+    app.kubernetes.io/managed-by: hriv-restore-validation
     app.kubernetes.io/component: orchestrator
 spec:
   backoffLimit: 0
-  activeDeadlineSeconds: {{ .Values.invocation.activeDeadlineSeconds }}
+  activeDeadlineSeconds: 21600
+  {{- if .standalone }}
+  ttlSecondsAfterFinished: 604800
+  {{- end }}
   template:
     metadata:
       labels:
+        app.kubernetes.io/name: hriv-restore-validation
         app.kubernetes.io/managed-by: hriv-restore-validation
         app.kubernetes.io/component: orchestrator
     spec:
@@ -19,13 +21,13 @@ spec:
       automountServiceAccountToken: true
       restartPolicy: Never
       securityContext:
-        {{- include "hriv-restore-validation.childPodSecurityContext" . | nindent 8 }}
+        {{- include "hriv-restore-validation.childPodSecurityContext" .root | nindent 8 }}
       containers:
         - name: orchestrator
-          image: {{ .Values.images.orchestrator }}
+          image: {{ .root.Values.images.orchestrator }}
           args: [run]
           env:
-            - {name: TRIGGER, value: {{ .Values.invocation.trigger | quote }}}
+            - {name: TRIGGER, value: {{ .trigger | quote }}}
             - {name: RESTORE_VALIDATION_CONFIG, value: /config/controller/config.json}
             - {name: RESTORE_VALIDATION_PROFILE, value: /config/profile/profile.json}
             - {name: RESTORE_VALIDATION_POLICY, value: /config/policy/policy.json}
@@ -37,7 +39,7 @@ spec:
             - name: POD_UID
               valueFrom: {fieldRef: {fieldPath: metadata.uid}}
           securityContext:
-            {{- include "hriv-restore-validation.containerSecurityContext" . | nindent 12 }}
+            {{- include "hriv-restore-validation.containerSecurityContext" .root | nindent 12 }}
           resources: {requests: {cpu: 100m, memory: 256Mi}, limits: {cpu: "1", memory: 1Gi}}
           volumeMounts:
             - {name: controller, mountPath: /config/controller, readOnly: true}
@@ -46,9 +48,120 @@ spec:
             - {name: templates, mountPath: /config/templates, readOnly: true}
             - {name: tmp, mountPath: /tmp}
       volumes:
-        - {name: controller, configMap: {name: hriv-restore-validation-controller-v1}}
-        - {name: profile, configMap: {name: hriv-restore-validation-source-profile-v1}}
-        - {name: policy, configMap: {name: hriv-restore-validation-source-state-policy-v1}}
-        - {name: templates, configMap: {name: hriv-restore-validation-child-templates-v1}}
+        - {name: controller, configMap: {name: hriv-restore-validation-controller-v2}}
+        - {name: profile, configMap: {name: hriv-restore-validation-source-profile-v2}}
+        - {name: policy, configMap: {name: hriv-restore-validation-source-state-policy-v2}}
+        - {name: templates, configMap: {name: hriv-restore-validation-child-templates-v2}}
         - {name: tmp, emptyDir: {sizeLimit: 512Mi}}
+{{- end }}
+{{- if .Values.operational.enabled }}
+{{- if ne .Release.Namespace "hriv-restore-validation" }}{{ fail "operational restore validation requires namespace hriv-restore-validation" }}{{ end }}
+{{- if ne (int .Values.controller.maxRetainedRuns) 1 }}{{ fail "operational restore validation requires maxRetainedRuns exactly 1" }}{{ end }}
+{{- if or (not .Values.objectStore.enabled) (not .Values.objectStore.destinationPath) }}{{ fail "operational restore validation requires configured objectStore" }}{{ end }}
+{{- range $name, $image := .Values.images }}{{- if contains "example.invalid/" $image }}{{ fail (printf "operational image %s must be real and digest-pinned" $name) }}{{ end }}{{- end }}
+{{- if contains "example.invalid/" .Values.operational.egressProxy.image }}{{ fail "operational Envoy image must be real and digest-pinned" }}{{ end }}
+{{- if or (lt (len .Values.operational.egressProxy.allowedConnectHosts) 1) (gt (len .Values.operational.egressProxy.allowedConnectHosts) 4) }}{{ fail "operational egress proxy requires one to four exact Azure CONNECT hosts" }}{{ end }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: hriv-restore-validation-weekly
+  labels:
+    {{- include "hriv-restore-validation.labels" . | nindent 4 }}
+    app.kubernetes.io/component: orchestrator
+    hriv.bcit.ca/restore-validation-trigger: scheduled
+spec:
+  schedule: {{ .Values.operational.schedule | quote }}
+  suspend: {{ .Values.operational.weeklySuspend }}
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    {{- include "hriv-restore-validation.orchestratorJobTemplate" (dict "root" . "trigger" "scheduled" "standalone" false) | nindent 4 }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: hriv-restore-validation-on-demand
+  labels:
+    {{- include "hriv-restore-validation.labels" . | nindent 4 }}
+    app.kubernetes.io/component: orchestrator
+    hriv.bcit.ca/restore-validation-trigger: on-demand
+spec:
+  suspend: true
+  schedule: "0 0 31 2 *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    {{- include "hriv-restore-validation.orchestratorJobTemplate" (dict "root" . "trigger" "on_demand" "standalone" true) | nindent 4 }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: hriv-restore-validation-cleanup
+  labels:
+    {{- include "hriv-restore-validation.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cleanup
+spec:
+  suspend: true
+  schedule: "0 0 31 2 *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hriv-restore-validation
+        app.kubernetes.io/managed-by: hriv-restore-validation
+        app.kubernetes.io/component: cleanup
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 21600
+      ttlSecondsAfterFinished: 604800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: hriv-restore-validation
+            app.kubernetes.io/managed-by: hriv-restore-validation
+            app.kubernetes.io/component: cleanup
+        spec:
+          serviceAccountName: hriv-restore-validation-orchestrator
+          automountServiceAccountToken: true
+          restartPolicy: Never
+          securityContext:
+            {{- include "hriv-restore-validation.childPodSecurityContext" . | nindent 12 }}
+          containers:
+            - name: cleanup
+              image: {{ .Values.images.orchestrator }}
+              args: [cleanup-retained]
+              env:
+                - {name: TRIGGER, value: cleanup}
+                - {name: RESTORE_VALIDATION_CONFIG, value: /config/controller/config.json}
+                - {name: RESTORE_VALIDATION_PROFILE, value: /config/profile/profile.json}
+                - {name: RESTORE_VALIDATION_POLICY, value: /config/policy/policy.json}
+                - {name: RESTORE_VALIDATION_TEMPLATES, value: /config/templates/templates.yaml}
+                - name: JOB_NAME
+                  valueFrom: {fieldRef: {fieldPath: "metadata.labels['job-name']"}}
+                - name: JOB_UID
+                  valueFrom: {fieldRef: {fieldPath: "metadata.labels['batch.kubernetes.io/controller-uid']"}}
+              securityContext:
+                {{- include "hriv-restore-validation.containerSecurityContext" . | nindent 16 }}
+              resources: {requests: {cpu: 100m, memory: 128Mi}, limits: {cpu: "1", memory: 512Mi}}
+              volumeMounts:
+                - {name: controller, mountPath: /config/controller, readOnly: true}
+                - {name: profile, mountPath: /config/profile, readOnly: true}
+                - {name: policy, mountPath: /config/policy, readOnly: true}
+                - {name: templates, mountPath: /config/templates, readOnly: true}
+                - {name: tmp, mountPath: /tmp}
+          volumes:
+            - {name: controller, configMap: {name: hriv-restore-validation-controller-v2}}
+            - {name: profile, configMap: {name: hriv-restore-validation-source-profile-v2}}
+            - {name: policy, configMap: {name: hriv-restore-validation-source-state-policy-v2}}
+            - {name: templates, configMap: {name: hriv-restore-validation-child-templates-v2}}
+            - {name: tmp, emptyDir: {sizeLimit: 512Mi}}
 {{- end }}
