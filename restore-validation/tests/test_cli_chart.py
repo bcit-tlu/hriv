@@ -34,6 +34,19 @@ class ChartTests(unittest.TestCase):
         self.assertNotIn("hriv-restore-validation-invoke", self.rendered)
         self.assertFalse(any(item and item.get("kind") == "PrometheusRule" for item in self.documents))
 
+    def test_rc_chart_label_is_kubernetes_label_safe(self):
+        with tempfile.TemporaryDirectory() as directory:
+            chart_dir = Path(directory) / "chart"
+            shutil.copytree(CHART, chart_dir)
+            chart_path = chart_dir / "Chart.yaml"
+            chart = yaml.safe_load(chart_path.read_text())
+            chart["version"] = "0.1.1-rc.20260912010743.gbc34069+0550278e4a04"
+            chart_path.write_text(yaml.safe_dump(chart, sort_keys=False))
+            rendered = subprocess.check_output(["helm", "template", "test", str(chart_dir)], text=True)
+        for document in yaml.safe_load_all(rendered):
+            if document:
+                self.assertLessEqual(len(document["metadata"]["labels"]["helm.sh/chart"]), 63)
+
     def test_runtime_configmaps_are_atomic_v2_identities(self):
         names = {item["metadata"]["name"] for item in self.documents if item and item.get("kind") == "ConfigMap"}
         expected = {"hriv-restore-validation-controller-v2", "hriv-restore-validation-source-profile-v2", "hriv-restore-validation-source-state-policy-v2", "hriv-restore-validation-child-templates-v2"}
