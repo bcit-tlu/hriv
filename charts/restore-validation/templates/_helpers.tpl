@@ -14,11 +14,12 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- $_ := include "hriv-restore-validation.digestImage" (dict "name" "images.backupChild" "value" .Values.images.backupChild) -}}
 {{- $_ := include "hriv-restore-validation.digestImage" (dict "name" "images.postgresql" "value" .Values.images.postgresql) -}}
 {{- if .Values.objectStore.enabled -}}{{- $_ := required "objectStore.destinationPath is required when enabled" .Values.objectStore.destinationPath -}}{{- if ne .Release.Namespace "hriv-restore-validation" -}}{{- fail "enabled ObjectStore requires namespace hriv-restore-validation" -}}{{- end -}}{{- end -}}
-{{- if .Values.invocation.enabled -}}
-{{- if ne .Release.Namespace "hriv-restore-validation" -}}{{- fail "enabled invocation requires namespace hriv-restore-validation" -}}{{- end -}}
-{{- if or (contains "example.invalid" .Values.images.orchestrator) (contains "example.invalid" .Values.images.backupChild) (contains "example.invalid" .Values.images.postgresql) -}}{{- fail "enabled invocation requires reviewed non-placeholder images" -}}{{- end -}}
-{{- if not .Values.objectStore.enabled -}}{{- fail "enabled invocation requires objectStore.enabled=true" -}}{{- end -}}
-{{- fail "invocation remains non-runnable until #1253 adds fixed reviewed Azure, Kubernetes API, DNS, and CNPG egress resources" -}}
+{{- $_ := include "hriv-restore-validation.digestImage" (dict "name" "operational.egressProxy.image" "value" .Values.operational.egressProxy.image) -}}
+{{- if .Values.operational.enabled -}}
+{{- if ne .Release.Namespace "hriv-restore-validation" -}}{{- fail "operational mode requires namespace hriv-restore-validation" -}}{{- end -}}
+{{- if or (contains "example.invalid" .Values.images.orchestrator) (contains "example.invalid" .Values.images.backupChild) (contains "example.invalid" .Values.images.postgresql) -}}{{- fail "operational mode requires reviewed non-placeholder images" -}}{{- end -}}
+{{- if not .Values.objectStore.enabled -}}{{- fail "operational mode requires objectStore.enabled=true" -}}{{- end -}}
+{{- if ne .Values.operational.egressProxy.image "envoyproxy/envoy:v1.39.1@sha256:57e14a549d7bd43c8d3f6d03e8cfa653e037d4b38e133acd9b54f38c524401b4" -}}{{- fail "operational mode requires the reviewed Envoy v1.39.1 digest" -}}{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- define "hriv-restore-validation.childPodSecurityContext" -}}

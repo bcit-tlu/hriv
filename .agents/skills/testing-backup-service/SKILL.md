@@ -12,8 +12,8 @@ The backup service (`backup/`) publishes source-image recovery archives and supp
 For work on scheduled production-shaped restore testing, read
 [`../../../docs/restore-validation.md`](../../../docs/restore-validation.md). That contract
 requires a separate component/namespace, read-only source access, fresh CNPG/PVC targets, exact
-LSN recovery, no-token child workloads, durable ConfigMap/Lease coordination, application and
-viewer checks, and cleanup before success. Do not add Kubernetes API access to `backup/` or
+LSN recovery, no-token child workloads, durable ConfigMap/Lease coordination, core DB/file checks,
+and confirmed exact-owned cleanup before success. #1252 application/viewer checks are excluded. Do not add Kubernetes API access to `backup/` or
 interpret the design document as a deployed restore test.
 
 ## Prerequisites
@@ -239,7 +239,7 @@ helm lint charts/restore-validation
 bash scripts/test-helm-chart-regressions.sh
 ```
 
-The #1251 chart regression block is the minimum static safety gate. It verifies strict schema-valid reviewed inventories/policies, production-parser acceptance of rendered profile/policy/templates when the component environment is installed, empty retained state coordination objects, no chart-created Secret or unrelated CronJob/exporter/reaper surface, render-blocked invocation, mandatory digest-pinned images, token-free fixed child templates, retained Job evidence with no TTL and zero retries, and namespace-scoped non-wildcard RBAC without Secret verbs or production namespace references. It also binds exact CNPG `recoveryTarget.targetLSN` and decimal `recoveryTarget.targetTLI` (derived from the first eight `wal_fence_file` hex characters), exact source/ObjectStore/server names, fixed `app` database/owner, controller-side restore identity arguments and `/restore/data`, and absence of `db.sql`. Fence generation is dynamic target evidence, never static profile configuration. #1251 renders default-deny only and cannot enable invocation; #1253 owns fixed reviewed Azure/API/DNS/CNPG egress and admission enforcement. Also retain unit coverage for fail-closed strict parsing, bounded state, source selection, and exact recovery binding described in [`../../../docs/restore-validation.md`](../../../docs/restore-validation.md).
+The #1251/#1253 chart regression block is the minimum static safety gate. It verifies strict required-subset inventories, minimum row counts, hash-only synthetic identity, production-parser acceptance of rendered profile/policy/templates, empty retained state, no chart-created Secret/exporter/reaper surface, digest-pinned images, token-free child templates, no TTL/zero retries, and namespace-scoped non-wildcard RBAC. Operational rendering must add exactly the weekly, suspended on-demand, and suspended manual-cleanup CronJobs; identical run Job templates; `maxRetainedRuns: 1`; the exact Envoy v1.39.1 digest and literal Azure CONNECT authorities; fixed DNS/API/same-namespace/proxy policies; and `HTTPS_PROXY` only on Azure readers/CNPG. It also binds exact CNPG `targetLSN`/decimal `targetTLI`, source/ObjectStore/server names, restore identity and `/restore/data`, excludes `db.sql`/#1252, keeps quota 320Gi, and permits the reviewed 160Gi stable source PVC under a 200Gi cap. Retain unit coverage for Lease/CAS/idempotent sole-record cleanup, bounded final evidence, fail-closed parsing, source selection, and exact recovery binding described in [`../../../docs/restore-validation.md`](../../../docs/restore-validation.md).
 
 ## Troubleshooting
 

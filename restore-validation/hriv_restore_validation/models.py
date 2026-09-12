@@ -111,12 +111,11 @@ class SourceProfile:
     object_store: str
     postgresql_image: str
     postgresql_storage_size: str
-    expected_database_inventory: tuple[dict[str, Any], ...]
-    expected_static_role_inventory: tuple[dict[str, Any], ...]
+    required_database_inventory: tuple[dict[str, Any], ...]
+    required_static_role_inventory: tuple[dict[str, Any], ...]
     dynamic_role_prefixes: tuple[str, ...]
     expected_migration_version: str
-    expected_row_counts: dict[str, int]
-    expected_source_image_count: int
+    minimum_row_counts: dict[str, int]
     synthetic_row: dict[str, str]
     controller_image: str
     backup_image: str
@@ -134,7 +133,7 @@ class SourceProfile:
 
     @classmethod
     def parse(cls, raw: str | bytes) -> "SourceProfile":
-        required = {"schema_version", "profile_id", "profile_version", "provider", "source_cluster", "external_cluster", "database", "owner", "application_database", "server_name", "expected_system_identifier", "object_store", "object_store_api_version", "postgresql_major", "postgresql_image", "postgresql_storage_size", "expected_database_inventory", "expected_static_role_inventory", "dynamic_role_prefixes", "expected_migration_version", "expected_row_counts", "expected_source_image_count", "synthetic_row", "controller_image", "backup_image", "source_container", "source_prefix"}
+        required = {"schema_version", "profile_id", "profile_version", "provider", "source_cluster", "external_cluster", "database", "owner", "application_database", "server_name", "expected_system_identifier", "object_store", "object_store_api_version", "postgresql_major", "postgresql_image", "postgresql_storage_size", "required_database_inventory", "required_static_role_inventory", "dynamic_role_prefixes", "expected_migration_version", "minimum_row_counts", "synthetic_row", "controller_image", "backup_image", "source_container", "source_prefix"}
         value = exact_object(parse_json(raw, max_bytes=64 * 1024), required=required)
         if value["schema_version"] != 1:
             raise ValidationError("PROFILE_SCHEMA_UNSUPPORTED")
@@ -142,10 +141,10 @@ class SourceProfile:
         if fixed != ("cloudnative-pg", "pg-core", "pg-core-source", "app", "app", "hriv", "pg-core", "hriv-restore-validation-pg-core", "barmancloud.cnpg.io/v1", 17):
             raise ValidationError("PROFILE_NOT_APPROVED")
         images = [bounded_string(value[name], name, 512, IMAGE_RE) for name in ("postgresql_image", "controller_image", "backup_image")]
-        databases = cls._databases(value["expected_database_inventory"])
-        roles = cls._roles(value["expected_static_role_inventory"])
-        row_counts = cls._row_counts(value["expected_row_counts"])
-        synthetic = exact_object(value["synthetic_row"], required={"id", "email"})
+        databases = cls._databases(value["required_database_inventory"])
+        roles = cls._roles(value["required_static_role_inventory"])
+        row_counts = cls._row_counts(value["minimum_row_counts"])
+        synthetic = exact_object(value["synthetic_row"], required={"id", "email_sha256"})
         storage = bounded_string(value["postgresql_storage_size"], "postgresql_storage_size", 16)
         _quantity_bytes(storage)
         profile_digest = hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
@@ -156,15 +155,14 @@ class SourceProfile:
             "hriv-restore-validation-pg-core", images[0], storage, databases, roles,
             _strings(value["dynamic_role_prefixes"], "dynamic_role_prefixes", 16),
             bounded_string(value["expected_migration_version"], "expected_migration_version", 128), row_counts,
-            integer(value["expected_source_image_count"], "expected_source_image_count", 0, 10_000_000),
-            {"id": bounded_string(synthetic["id"], "synthetic.id", 128), "email": bounded_string(synthetic["email"], "synthetic.email", 320)},
+            {"id": bounded_string(synthetic["id"], "synthetic.id", 128), "email_sha256": bounded_string(synthetic["email_sha256"], "synthetic.email_sha256", 64, re.compile(r"[0-9a-f]{64}"))},
             images[1], images[2], bounded_string(value["source_container"], "source_container", 63, DNS_RE), bounded_string(value["source_prefix"], "source_prefix", 256), profile_digest,
         )
 
     @staticmethod
     def _databases(value: Any) -> tuple[dict[str, Any], ...]:
         if not isinstance(value, list) or not value or len(value) > 32:
-            raise ValidationError("SCHEMA_INVALID", "expected_database_inventory")
+            raise ValidationError("SCHEMA_INVALID", "required_database_inventory")
         result = []
         for item in value:
             obj = exact_object(item, required={"name", "owner", "allow_connections"})
@@ -172,13 +170,13 @@ class SourceProfile:
                 raise ValidationError("SCHEMA_INVALID", "allow_connections")
             result.append({"name": bounded_string(obj["name"], "database", 63, PG_NAME_RE), "owner": bounded_string(obj["owner"], "owner", 63, PG_NAME_RE), "allow_connections": obj["allow_connections"]})
         if len({item["name"] for item in result}) != len(result):
-            raise ValidationError("SCHEMA_INVALID", "expected_database_inventory")
+            raise ValidationError("SCHEMA_INVALID", "required_database_inventory")
         return tuple(sorted(result, key=lambda item: item["name"]))
 
     @staticmethod
     def _roles(value: Any) -> tuple[dict[str, Any], ...]:
         if not isinstance(value, list) or not value or len(value) > 64:
-            raise ValidationError("SCHEMA_INVALID", "expected_static_role_inventory")
+            raise ValidationError("SCHEMA_INVALID", "required_static_role_inventory")
         result = []
         for item in value:
             obj = exact_object(item, required={"name", "attributes", "memberships"})
@@ -186,59 +184,69 @@ class SourceProfile:
             if any(not isinstance(flag, bool) for flag in attrs.values()):
                 raise ValidationError("SCHEMA_INVALID", "role.attributes")
             result.append({"name": bounded_string(obj["name"], "role", 63, PG_NAME_RE), "attributes": dict(sorted(attrs.items())), "memberships": [bounded_string(item, "membership", 63, PG_NAME_RE) for item in _strings(obj["memberships"], "memberships", 32)]})
+        if len({item["name"] for item in result}) != len(result):
+            raise ValidationError("SCHEMA_INVALID", "required_static_role_inventory")
         return tuple(sorted(result, key=lambda item: item["name"]))
 
     @staticmethod
     def _row_counts(value: Any) -> dict[str, int]:
         if not isinstance(value, dict) or not value or len(value) > 32:
-            raise ValidationError("SCHEMA_INVALID", "expected_row_counts")
+            raise ValidationError("SCHEMA_INVALID", "minimum_row_counts")
         return {bounded_string(name, "table", 63, IDENT_RE): integer(count, name, 0, 2**63 - 1) for name, count in sorted(value.items())}
+
+
+def canonical_source_state(value: Any) -> tuple[dict[str, Any], str]:
+    state = exact_object(value, required={"missing_sources", "orphan_sources"})
+    for name in ("missing_sources", "orphan_sources"):
+        if not isinstance(state[name], list) or len(state[name]) > 256 or any(not isinstance(item, dict) for item in state[name]):
+            raise ValidationError("SOURCE_STATE_INVALID")
+    missing = []
+    for item in state["missing_sources"]:
+        obj = exact_object(item, required={"row_id", "status", "stored_path", "reason"})
+        if not isinstance(obj["row_id"], str) or re.fullmatch(r"[1-9][0-9]{0,18}", obj["row_id"]) is None or obj["reason"] not in {"missing_source", "unsafe_or_out_of_root", "duplicate_source_reference"}:
+            raise ValidationError("SOURCE_STATE_INVALID")
+        status = obj["status"]
+        if not isinstance(status, str) or len(status.encode("utf-8")) > 512:
+            raise ValidationError("SOURCE_STATE_INVALID")
+        missing.append({"row_id": obj["row_id"], "status": unicodedata.normalize("NFC", status), "stored_path": _canonical_source_path(obj["stored_path"]), "reason": obj["reason"]})
+    orphans = []
+    for item in state["orphan_sources"]:
+        obj = exact_object(item, required={"path", "reason", "policy"})
+        if obj["reason"] != "no_database_row" or obj["policy"] != "quarantined_by_policy":
+            raise ValidationError("SOURCE_STATE_INVALID")
+        orphans.append({"path": _canonical_source_path(obj["path"]), "reason": obj["reason"], "policy": obj["policy"]})
+    if len({item["row_id"] for item in missing}) != len(missing) or len({item["path"] for item in orphans}) != len(orphans):
+        raise ValidationError("SOURCE_STATE_INVALID")
+    missing.sort(key=lambda item: (int(item["row_id"]), item["status"], item["stored_path"], item["reason"]))
+    orphans.sort(key=lambda item: (item["path"], item["reason"], item["policy"]))
+    document = {"missing_sources": missing, "orphan_sources": orphans}
+    payload = json.dumps(document, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return document, hashlib.sha256(payload).hexdigest()
 
 
 @dataclass(frozen=True)
 class SourcePolicy:
     policy_version: int
-    missing_sources: tuple[dict[str, Any], ...]
-    orphan_sources: tuple[dict[str, Any], ...]
-    sha256: str
+    source_state_sha256: str
+    missing_count: int
+    orphan_count: int
 
     @classmethod
     def parse(cls, raw: str | bytes) -> "SourcePolicy":
-        value = exact_object(parse_json(raw, max_bytes=128 * 1024), required={"schema_version", "policy_version", "source_state", "sha256"})
-        if value["schema_version"] != 1 or value["policy_version"] != 1:
+        value = exact_object(parse_json(raw, max_bytes=4096), required={"policy_version", "source_state_sha256", "missing_count", "orphan_count"})
+        if value["policy_version"] != 1:
             raise ValidationError("POLICY_SCHEMA_UNSUPPORTED")
-        state = exact_object(value["source_state"], required={"missing_sources", "orphan_sources"})
-        for name in ("missing_sources", "orphan_sources"):
-            if not isinstance(state[name], list) or len(state[name]) > 256 or any(not isinstance(item, dict) for item in state[name]):
-                raise ValidationError("POLICY_INVALID")
-        missing = []
-        for item in state["missing_sources"]:
-            obj = exact_object(item, required={"row_id", "status", "stored_path", "reason"})
-            if not isinstance(obj["row_id"], str) or re.fullmatch(r"[1-9][0-9]{0,18}", obj["row_id"]) is None or obj["reason"] not in {"missing_source", "unsafe_or_out_of_root", "duplicate_source_reference"}:
-                raise ValidationError("POLICY_INVALID")
-            status = obj["status"]
-            if not isinstance(status, str) or len(status.encode("utf-8")) > 512:
-                raise ValidationError("POLICY_INVALID")
-            missing.append({"row_id": obj["row_id"], "status": unicodedata.normalize("NFC", status), "stored_path": _canonical_source_path(obj["stored_path"]), "reason": obj["reason"]})
-        orphans = []
-        for item in state["orphan_sources"]:
-            obj = exact_object(item, required={"path", "reason", "policy"})
-            if obj["reason"] != "no_database_row" or obj["policy"] != "quarantined_by_policy":
-                raise ValidationError("POLICY_INVALID")
-            orphans.append({"path": _canonical_source_path(obj["path"]), "reason": obj["reason"], "policy": obj["policy"]})
-        if len({item["row_id"] for item in missing}) != len(missing) or len({item["path"] for item in orphans}) != len(orphans):
-            raise ValidationError("POLICY_INVALID")
-        missing.sort(key=lambda item: (int(item["row_id"]), item["status"], item["stored_path"], item["reason"]))
-        orphans.sort(key=lambda item: (item["path"], item["reason"], item["policy"]))
-        canonical_state = {"missing_sources": missing, "orphan_sources": orphans}
-        canonical = json.dumps(canonical_state, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-        digest = bounded_string(value["sha256"], "sha256", 64, re.compile(r"[0-9a-f]{64}"))
-        if hashlib.sha256(canonical.encode()).hexdigest() != digest:
-            raise ValidationError("POLICY_DIGEST_INVALID")
-        return cls(1, tuple(missing), tuple(orphans), digest)
+        digest = bounded_string(value["source_state_sha256"], "source_state_sha256", 64, re.compile(r"[0-9a-f]{64}"))
+        missing = integer(value["missing_count"], "missing_count", 0, 256)
+        orphan = integer(value["orphan_count"], "orphan_count", 0, 256)
+        return cls(1, digest, missing, orphan)
 
     def document(self) -> dict[str, Any]:
-        return {"missing_sources": list(self.missing_sources), "orphan_sources": list(self.orphan_sources)}
+        return {"policy_version": self.policy_version, "source_state_sha256": self.source_state_sha256, "missing_count": self.missing_count, "orphan_count": self.orphan_count}
+
+    @property
+    def identity_sha256(self) -> str:
+        return hashlib.sha256(json.dumps(self.document(), sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
 class UniqueKeyLoader(yaml.SafeLoader):
@@ -390,6 +398,8 @@ class Templates:
             "HOME": {"name": "HOME", "value": "/tmp"},
             "TMPDIR": {"name": "TMPDIR", "value": "/tmp"},
             "PYTHONDONTWRITEBYTECODE": {"name": "PYTHONDONTWRITEBYTECODE", "value": "1"},
+            "HTTPS_PROXY": {"name": "HTTPS_PROXY", "value": "http://hriv-restore-validation-egress-proxy:10000"},
+            "NO_PROXY": {"name": "NO_PROXY", "value": ".svc,.cluster.local,10.43.0.1,localhost,127.0.0.1"},
         }
         for container in (selection, restore):
             entries = container.get("env", [])
@@ -402,7 +412,7 @@ class Templates:
             raise ValidationError("TEMPLATE_PVC_REFERENCE_INVALID")
         if database_volumes.get("credentials", {}).get("secret", {}).get("secretName") != "generated-superuser" or consistency_volumes.get("credentials", {}).get("secret", {}).get("secretName") != "generated-superuser":
             raise ValidationError("TEMPLATE_SECRET_INVALID")
-        expected_maps = {"profile": "hriv-restore-validation-source-profile-v1", "policy": "hriv-restore-validation-source-state-policy-v1"}
+        expected_maps = {"profile": "hriv-restore-validation-source-profile-v2", "policy": "hriv-restore-validation-source-state-policy-v2"}
         if database_volumes.get("profile", {}).get("configMap", {}).get("name") != expected_maps["profile"] or consistency_volumes.get("profile", {}).get("configMap", {}).get("name") != expected_maps["profile"] or consistency_volumes.get("policy", {}).get("configMap", {}).get("name") != expected_maps["policy"]:
             raise ValidationError("TEMPLATE_CONFIG_REFERENCE_INVALID")
         tmp = {"name": "tmp", "mountPath": "/tmp"}
@@ -437,6 +447,10 @@ class ResourceRef:
     kind: str
     name: str
     uid: str
+    template_sha256: str | None = None
 
     def document(self) -> dict[str, str]:
-        return {"apiVersion": self.api_version, "kind": self.kind, "name": self.name, "uid": self.uid}
+        result = {"apiVersion": self.api_version, "kind": self.kind, "name": self.name, "uid": self.uid}
+        if self.template_sha256 is not None:
+            result["template_sha256"] = self.template_sha256
+        return result

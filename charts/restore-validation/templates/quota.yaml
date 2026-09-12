@@ -1,3 +1,4 @@
+# yaml-language-server: disable
 apiVersion: v1
 kind: ResourceQuota
 metadata:
@@ -13,10 +14,10 @@ spec:
     count/persistentvolumeclaims: "8"
     count/clusters.postgresql.cnpg.io: "3"
     requests.cpu: "12"
-    requests.memory: 24Gi
+    requests.memory: 6Gi
     requests.storage: 320Gi
     limits.cpu: "24"
-    limits.memory: 48Gi
+    limits.memory: 8Gi
 ---
 apiVersion: v1
 kind: LimitRange
@@ -37,4 +38,4 @@ spec:
       min:
         storage: 1Gi
       max:
-        storage: 80Gi
+        storage: 200Gi

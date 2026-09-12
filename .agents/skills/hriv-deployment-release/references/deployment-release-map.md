@@ -24,7 +24,7 @@
 - Backup: Release Please type `python`; image
   `ghcr.io/bcit-tlu/hriv/hriv-backup`.
 - Restore validation: Release Please type `python`; image
-  `ghcr.io/bcit-tlu/hriv/hriv-restore-validation`; its #1251 chart is non-runnable by default, renders default-deny only, and requires reviewed digest-pinned images and source inputs. #1253 owns fixed Azure/API/DNS/CNPG egress, admission enforcement, and Flux rollout; do not create an arbitrary values-driven egress escape.
+  `ghcr.io/bcit-tlu/hriv/hriv-restore-validation`; its chart is non-runnable by default and requires reviewed digest-pinned images/source inputs. Simplified #1253 operational mode adds fixed weekly/on-demand/manual-cleanup CronJobs and an exact-host Envoy CONNECT proxy with fixed Azure/API/DNS/same-namespace policies; only the proxy may receive broad TCP/443 egress. It excludes #1252, exporters, dashboards, custom metrics, and autonomous reapers.
 - Charts publish to `oci://ghcr.io/bcit-tlu/hriv/charts`.
 
 ## Helm Validation

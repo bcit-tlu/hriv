@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import re
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -36,8 +37,15 @@ def parse_state(raw: str | bytes | None, now: datetime) -> dict[str, Any]:
         raise ValidationError("STATE_INVARIANT")
     latest = value["latest_run"]
     active = value["active_run"]
-    if latest is not None:
-        _run(latest)
+    legacy_success = _run(latest) if latest is not None else False
+    complete = value["last_complete_success"]
+    if legacy_success and complete is not None:
+        raise ValidationError("STATE_INVARIANT")
+    if complete is not None:
+        _complete_success(complete)
+        if latest is not None and latest["run_id"] == complete["run_id"]:
+            if latest["state"] != "SUCCEEDED" or latest.get("completed_at") != complete["completed_at"] or latest.get("selected_source", {}).get("recovery_set_id") != complete["recovery_set_id"] or latest.get("selected_source", {}).get("source_files_sha256") != complete["source_files_sha256"] or latest["cleanup"].get("outcome") != "succeeded":
+                raise ValidationError("STATE_INVARIANT")
     if active is not None:
         exact_object(active, required={"run_id", "job_name", "job_uid", "state", "current_stage", "sequence", "started_at", "heartbeat_at"})
         if latest is None or any(active[k] != latest[k] for k in ("run_id", "job_name", "job_uid", "state", "current_stage", "sequence")):
@@ -62,13 +70,15 @@ def _bounded_tree(value: Any) -> None:
         for item in value.values():
             _bounded_tree(item)
     elif isinstance(value, list):
-        if len(value) > 64:
+        # Selected source-state evidence is bounded independently to 256 missing and
+        # orphan entries; the serialized state byte limit remains the outer bound.
+        if len(value) > 256:
             raise ValidationError("STATE_INVARIANT")
         for item in value:
             _bounded_tree(item)
 
 
-def _run(run: dict[str, Any]) -> None:
+def _run(run: dict[str, Any]) -> bool:
     required = {"run_id", "trigger", "job_name", "job_uid", "state", "current_stage", "sequence", "started_at", "heartbeat_at", "selected_source", "child_resources", "stages", "outcome", "failure_stage", "failure_code", "cleanup", "core_succeeded"}
     exact_object(run, required=required, optional={"completed_at", "expires_at", "orchestrator_evidence"})
     state = run["state"]
@@ -80,14 +90,40 @@ def _run(run: dict[str, Any]) -> None:
     integer(run["sequence"], "sequence", 1, 2**63 - 1)
     if not isinstance(run["child_resources"], list) or len(run["child_resources"]) > MAX_CHILDREN or not isinstance(run["stages"], dict) or len(run["stages"]) > 32:
         raise ValidationError("STATE_INVARIANT")
+    cleanup = exact_object(run["cleanup"], required={"outcome", "requested_at", "completed_at", "remaining_resource_count", "failure_code"}, optional={"job_uid"})
+    if cleanup["outcome"] not in {"pending", "running", "retained", "succeeded"}:
+        raise ValidationError("STATE_INVARIANT")
+    integer(cleanup["remaining_resource_count"], "remaining_resource_count", 0, MAX_CHILDREN)
+    legacy_success = False
+    if state == "SUCCEEDED":
+        core = exact_object(run["core_succeeded"], required={"stage", "completed_at", "contract_boundary"})
+        legacy_success = core["contract_boundary"] == "1251"
+        if core not in ({"stage": "core_succeeded", "completed_at": run.get("completed_at"), "contract_boundary": "1251"}, {"stage": "core_succeeded", "completed_at": run.get("completed_at"), "contract_boundary": "simplified1253"}) or cleanup["outcome"] != "succeeded" or cleanup["completed_at"] != run.get("completed_at") or cleanup["remaining_resource_count"] != 0 or run["child_resources"] and cleanup["requested_at"] is None:
+            raise ValidationError("STATE_INVARIANT")
+    elif run["core_succeeded"] is not None:
+        raise ValidationError("STATE_INVARIANT")
     resources: set[tuple[str, str, str]] = set()
     for item in run["child_resources"]:
-        exact_object(item, required={"apiVersion", "kind", "name", "uid"})
+        exact_object(item, required={"apiVersion", "kind", "name", "uid"}, optional={"template_sha256"})
         identity = (bounded_string(item["apiVersion"], "apiVersion", 64), bounded_string(item["kind"], "kind", 64), bounded_string(item["name"], "name", 253))
         bounded_string(item["uid"], "uid", 128)
+        if "template_sha256" in item:
+            bounded_string(item["template_sha256"], "template_sha256", 64, re.compile(r"[0-9a-f]{64}"))
         if identity in resources:
             raise ValidationError("STATE_INVARIANT")
         resources.add(identity)
+    return legacy_success
+
+
+def _complete_success(value: Any) -> None:
+    evidence = exact_object(value, required={"run_id", "completed_at", "recovery_set_id", "source_files_sha256", "cleanup"})
+    bounded_string(evidence["run_id"], "run_id", 63, re.compile(r"rv-\d{8}t\d{6}z-[0-9a-f]{8}"))
+    bounded_string(evidence["completed_at"], "completed_at", 32, RFC3339_RE)
+    bounded_string(evidence["recovery_set_id"], "recovery_set_id", 128, re.compile(r"hriv-backup-\d{8}-\d{6}(?:-[0-9a-f]{8})?"))
+    bounded_string(evidence["source_files_sha256"], "source_files_sha256", 64, re.compile(r"[0-9a-f]{64}"))
+    cleanup = exact_object(evidence["cleanup"], required={"outcome", "completed_at", "remaining_resource_count"})
+    if cleanup != {"outcome": "succeeded", "completed_at": evidence["completed_at"], "remaining_resource_count": 0}:
+        raise ValidationError("STATE_INVARIANT")
 
 
 def history_key(entry: dict[str, Any]) -> tuple[str, str]:

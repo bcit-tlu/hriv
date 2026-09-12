@@ -13,7 +13,7 @@ import psycopg
 from psycopg import sql
 from psycopg.rows import dict_row
 
-from .models import SourcePolicy, SourceProfile
+from .models import SourcePolicy, SourceProfile, canonical_source_state
 from .strict import LSN_RE, ValidationError, bounded_string, canonical_json
 
 MAX_RESULT_BYTES = 32 * 1024
@@ -65,11 +65,11 @@ def _all(connection: Any, query: Any, params: tuple[Any, ...] = ()) -> list[dict
     return rows
 
 
-def validate_database(profile: SourceProfile, host: str, capture_started_at: str, wal_fence_committed_at: str, target_lsn: str, target_tli: int, credentials: Path, *, connect: Callable[..., Any] = psycopg.connect, recovery_attempts: int = 12, sleeper: Callable[[float], None] = time.sleep) -> dict[str, Any]:
+def validate_database(profile: SourceProfile, host: str, capture_started_at: str, wal_fence_committed_at: str, target_lsn: str, target_tli: int, expected_source_image_count: int, credentials: Path, *, connect: Callable[..., Any] = psycopg.connect, recovery_attempts: int = 12, sleeper: Callable[[float], None] = time.sleep) -> dict[str, Any]:
     bounded_string(host, "host", 253)
     capture_started = _strict_utc(capture_started_at)
     fence_committed = _strict_utc(wal_fence_committed_at)
-    if capture_started > fence_committed or LSN_RE.fullmatch(target_lsn) is None or target_lsn.lower() == "latest" or target_tli < 1 or isinstance(recovery_attempts, bool) or not 1 <= recovery_attempts <= 12:
+    if capture_started > fence_committed or LSN_RE.fullmatch(target_lsn) is None or target_lsn.lower() == "latest" or target_tli < 1 or isinstance(expected_source_image_count, bool) or not isinstance(expected_source_image_count, int) or not 0 <= expected_source_image_count <= 10_000_000 or isinstance(recovery_attempts, bool) or not 1 <= recovery_attempts <= 12:
         raise ValidationError("RECOVERY_TARGET_INVALID")
     with _connect(connect, host, "postgres", credentials) as cluster:
         identity = _one(cluster, "SELECT system_identifier::text AS system_identifier FROM pg_control_system()")
@@ -83,14 +83,19 @@ def validate_database(profile: SourceProfile, host: str, capture_started_at: str
         roles = _all(cluster, "SELECT r.rolname AS name, jsonb_build_object('superuser',r.rolsuper,'inherit',r.rolinherit,'createrole',r.rolcreaterole,'createdb',r.rolcreatedb,'canlogin',r.rolcanlogin,'replication',r.rolreplication,'bypassrls',r.rolbypassrls) AS attributes, COALESCE((SELECT jsonb_agg(parent.rolname ORDER BY parent.rolname) FROM pg_auth_members m JOIN pg_roles parent ON parent.oid=m.roleid WHERE m.member=r.oid),'[]'::jsonb) AS memberships FROM pg_roles r WHERE r.rolname !~ '^pg_' ORDER BY r.rolname")
         reached = _one(cluster, "SELECT pg_current_wal_insert_lsn() >= %s::pg_lsn AS reached, pg_current_wal_insert_lsn()::text AS current_lsn", (target_lsn,))
     roles = [row for row in roles if not any(row["name"].startswith(prefix) for prefix in profile.dynamic_role_prefixes)]
-    expected_roles = [dict(item) for item in profile.expected_static_role_inventory]
+    required_databases = [dict(item) for item in profile.required_database_inventory]
+    required_roles = [dict(item) for item in profile.required_static_role_inventory]
+    databases_by_name = {row.get("name"): row for row in databases}
+    roles_by_name = {row.get("name"): row for row in roles}
+    observed_required_databases = [databases_by_name.get(item["name"]) for item in required_databases]
+    observed_required_roles = [roles_by_name.get(item["name"]) for item in required_roles]
     with _connect(connect, host, profile.application_database, credentials) as app:
         migration = _one(app, "SELECT version_num FROM public.alembic_version")
         row_counts: dict[str, int] = {}
-        for table in profile.expected_row_counts:
+        for table in profile.minimum_row_counts:
             row_counts[table] = int(_one(app, sql.SQL("SELECT count(*)::bigint AS count FROM public.{}").format(sql.Identifier(table)))["count"])
         source_count = int(_one(app, "SELECT count(*)::bigint AS count FROM public.source_images")["count"])
-        synthetic = _all(app, "SELECT id::text AS id, email FROM public.users WHERE metadata->>'synthetic'='true' ORDER BY id")
+        synthetic_rows = _all(app, "SELECT id::text AS id, email FROM public.users WHERE metadata->>'synthetic'='true' ORDER BY id")
         fences = _all(app, "SELECT generation::bigint AS generation, fenced_at FROM public.backup_recovery_wal_fence WHERE singleton IS TRUE ORDER BY generation")
     if len(fences) != 1:
         raise ValidationError("DATABASE_FIDELITY_MISMATCH")
@@ -99,14 +104,20 @@ def validate_database(profile: SourceProfile, host: str, capture_started_at: str
     fenced_comparison = fenced_at
     if isinstance(fenced_at, datetime) and fence_committed.microsecond == 0:
         fenced_comparison = fenced_at.replace(microsecond=0)
+    synthetic = []
+    for row in synthetic_rows:
+        email = row.get("email")
+        if set(row) != {"id", "email"} or not isinstance(email, str):
+            raise ValidationError("DATABASE_RESULT_INVALID")
+        synthetic.append({"id": row.get("id"), "email_sha256": hashlib.sha256(email.lower().encode("utf-8")).hexdigest()})
     valid = (
         identity.get("system_identifier") == profile.expected_system_identifier
         and recovery == {"in_recovery": False, "timeline": target_tli}
-        and databases == [dict(item) for item in profile.expected_database_inventory]
-        and roles == expected_roles
+        and observed_required_databases == required_databases
+        and observed_required_roles == required_roles
         and migration.get("version_num") == profile.expected_migration_version
-        and row_counts == profile.expected_row_counts
-        and source_count == profile.expected_source_image_count
+        and all(row_counts[name] >= minimum for name, minimum in profile.minimum_row_counts.items())
+        and source_count == expected_source_image_count
         and synthetic == [profile.synthetic_row]
         and reached.get("reached") is True
         and isinstance(fence.get("generation"), int)
@@ -120,7 +131,7 @@ def validate_database(profile: SourceProfile, host: str, capture_started_at: str
     )
     if not valid:
         raise ValidationError("DATABASE_FIDELITY_MISMATCH")
-    result = {"schema_version": 1, "operation": "validate-database", "success": True, "system_identifier": identity["system_identifier"], "timeline": target_tli, "recovery_complete": True, "database_inventory": databases, "static_role_inventory": roles, "migration_version": migration["version_num"], "row_counts": row_counts, "source_image_count": source_count, "synthetic_row": synthetic[0], "current_lsn": reached["current_lsn"], "target_lsn": target_lsn, "fence_generation": fence["generation"], "fence_fenced_at": _utc_text(fenced_at)}
+    result = {"schema_version": 1, "operation": "validate-database", "success": True, "required_database_inventory": observed_required_databases, "required_static_role_inventory": observed_required_roles, "system_identifier": identity["system_identifier"], "timeline": target_tli, "recovery_complete": True, "migration_version": migration["version_num"], "observed_row_counts": row_counts, "source_image_count": source_count, "synthetic_row": synthetic[0], "current_lsn": reached["current_lsn"], "target_lsn": target_lsn, "fence_generation": fence["generation"], "fence_fenced_at": _utc_text(fenced_at)}
     _bounded_result(result)
     return result
 
@@ -137,7 +148,10 @@ def _canonical_source_path(value: str) -> str:
     return "data/source_images/" + "/".join(parts)
 
 
-def validate_consistency(profile: SourceProfile, policy: SourcePolicy, host: str, source: Path, credentials: Path, *, connect: Callable[..., Any] = psycopg.connect) -> dict[str, Any]:
+def validate_consistency(profile: SourceProfile, policy: SourcePolicy, selected_source_state: Any, host: str, source: Path, credentials: Path, *, connect: Callable[..., Any] = psycopg.connect) -> dict[str, Any]:
+    selected, selected_digest = canonical_source_state(selected_source_state)
+    if selected_digest != policy.source_state_sha256 or len(selected["missing_sources"]) != policy.missing_count or len(selected["orphan_sources"]) != policy.orphan_count:
+        raise ValidationError("SOURCE_POLICY_MISMATCH")
     if source.name != "source_images" or source.is_symlink() or not source.is_dir():
         raise ValidationError("SOURCE_ROOT_INVALID")
     with _connect(connect, host, profile.application_database, credentials) as app:
@@ -162,25 +176,29 @@ def validate_consistency(profile: SourceProfile, policy: SourcePolicy, host: str
                     size += len(chunk)
                     digest.update(chunk)
             files[relative] = {"size": size, "sha256": digest.hexdigest()}
-    policy_by_identity = {(item["row_id"], item["status"], item["stored_path"]): item for item in policy.missing_sources}
+    selected_by_identity = {(item["row_id"], item["status"], item["stored_path"]): item for item in selected["missing_sources"]}
     missing = []
     for path, row in db_rows:
-        if path in files:
-            continue
         identity = (row["row_id"], row["status"], path)
-        policy_item = policy_by_identity.get(identity)
-        if policy_item is None:
-            raise ValidationError("SOURCE_POLICY_MISMATCH")
-        missing.append(dict(policy_item))
+        reviewed = selected_by_identity.get(identity)
+        if reviewed is not None and reviewed["reason"] in {"unsafe_or_out_of_root", "duplicate_source_reference"}:
+            missing.append(dict(reviewed))
+        elif path not in files:
+            derived = {"row_id": row["row_id"], "status": row["status"], "stored_path": path, "reason": "missing_source"}
+            missing.append(dict(reviewed) if reviewed is not None and reviewed["reason"] == "missing_source" else derived)
     missing.sort(key=lambda item: (int(item["row_id"]), item["status"], item["stored_path"], item["reason"]))
     db_paths = {path for path, _ in db_rows}
     unexpected_orphans = [path for path in sorted(files) if path not in db_paths]
-    if unexpected_orphans or missing != list(policy.missing_sources):
+    # The selected canonical state is the reviewed expectation, not data to echo.
+    # Validate every absent row's complete identity/status/path/reason internally and
+    # expose only bounded counts and digests to the controller.
+    if missing != selected["missing_sources"] or unexpected_orphans:
         raise ValidationError("SOURCE_POLICY_MISMATCH")
     source_files_sha256 = hashlib.sha256(
         json.dumps(files, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     ).hexdigest()
-    result = {"schema_version": 1, "operation": "validate-consistency", "success": True, "database_source_count": len(rows), "restored_file_count": len(files), "restored_total_bytes": sum(item["size"] for item in files.values()), "source_files_sha256": source_files_sha256, "missing_sources": missing, "orphan_sources": list(policy.orphan_sources), "source_state_policy_sha256": policy.sha256}
+    missing_sources_sha256 = hashlib.sha256(canonical_json(missing).encode("utf-8")).hexdigest()
+    result = {"schema_version": 1, "operation": "validate-consistency", "success": True, "database_source_count": len(rows), "restored_file_count": len(files), "restored_total_bytes": sum(item["size"] for item in files.values()), "source_files_sha256": source_files_sha256, "missing_count": len(missing), "missing_sources_sha256": missing_sources_sha256, "unexpected_orphan_count": 0, "source_state_policy_sha256": policy.identity_sha256}
     _bounded_result(result)
     return result
 

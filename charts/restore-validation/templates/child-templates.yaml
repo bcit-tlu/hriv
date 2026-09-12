@@ -1,10 +1,13 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: hriv-restore-validation-child-templates-v1
+  name: hriv-restore-validation-child-templates-v2
+  annotations:
+    helm.sh/resource-policy: keep
+    kustomize.toolkit.fluxcd.io/prune: disabled
   labels:
     {{- include "hriv-restore-validation.labels" . | nindent 4 }}
-    hriv.bcit.ca/config-version: "1"
+    hriv.bcit.ca/config-version: "2"
 immutable: true
 data:
   templates.yaml: |
@@ -40,6 +43,8 @@ data:
                   - {name: HOME, value: /tmp}
                   - {name: TMPDIR, value: /tmp}
                   - {name: PYTHONDONTWRITEBYTECODE, value: "1"}
+                  - {name: HTTPS_PROXY, value: "http://hriv-restore-validation-egress-proxy:10000"}
+                  - {name: NO_PROXY, value: ".svc,.cluster.local,10.43.0.1,localhost,127.0.0.1"}
                 securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
                 resources: {requests: {cpu: 100m, memory: 128Mi}, limits: {cpu: "1", memory: 512Mi}}
                 volumeMounts: [{name: tmp, mountPath: /tmp}]
@@ -60,6 +65,9 @@ data:
         instances: 1
         imageName: {{ .Values.images.postgresql | quote }}
         enableSuperuserAccess: true
+        env:
+          - {name: HTTPS_PROXY, value: "http://hriv-restore-validation-egress-proxy:10000"}
+          - {name: NO_PROXY, value: ".svc,.cluster.local,10.43.0.1,localhost,127.0.0.1"}
         bootstrap:
           recovery:
             source: pg-core-source
@@ -102,7 +110,7 @@ data:
                   - {name: credentials, mountPath: /credentials, readOnly: true}
                   - {name: tmp, mountPath: /tmp}
             volumes:
-              - {name: profile, configMap: {name: hriv-restore-validation-source-profile-v1}}
+              - {name: profile, configMap: {name: hriv-restore-validation-source-profile-v2}}
               - {name: credentials, secret: {secretName: generated-superuser}}
               - {name: tmp, emptyDir: {sizeLimit: 256Mi}}
     source_restore_job:
@@ -132,6 +140,8 @@ data:
                   - {name: HOME, value: /tmp}
                   - {name: TMPDIR, value: /tmp}
                   - {name: PYTHONDONTWRITEBYTECODE, value: "1"}
+                  - {name: HTTPS_PROXY, value: "http://hriv-restore-validation-egress-proxy:10000"}
+                  - {name: NO_PROXY, value: ".svc,.cluster.local,10.43.0.1,localhost,127.0.0.1"}
                 securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
                 resources: {requests: {cpu: 250m, memory: 256Mi}, limits: {cpu: "2", memory: 1Gi}}
                 volumeMounts:
@@ -167,8 +177,8 @@ data:
                   - {name: source, mountPath: /restore, readOnly: true}
                   - {name: tmp, mountPath: /tmp}
             volumes:
-              - {name: profile, configMap: {name: hriv-restore-validation-source-profile-v1}}
-              - {name: policy, configMap: {name: hriv-restore-validation-source-state-policy-v1}}
+              - {name: profile, configMap: {name: hriv-restore-validation-source-profile-v2}}
+              - {name: policy, configMap: {name: hriv-restore-validation-source-state-policy-v2}}
               - {name: credentials, secret: {secretName: generated-superuser}}
               - {name: source, persistentVolumeClaim: {claimName: generated-source-pvc}}
               - {name: tmp, emptyDir: {sizeLimit: 256Mi}}
