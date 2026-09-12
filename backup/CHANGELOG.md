@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.15.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.14.0...backup-v0.15.0) (2026-09-12)
+
+
+### Features
+
+* **backup:** add read-only stateless restore ([#1256](https://github.com/bcit-tlu/hriv/issues/1256)) ([7d31d1c](https://github.com/bcit-tlu/hriv/commit/7d31d1c9d3d2fc0b319894a1a435a15853000342))
+* **restore:** orchestrate isolated core recovery ([#1259](https://github.com/bcit-tlu/hriv/issues/1259)) ([08bd4ee](https://github.com/bcit-tlu/hriv/commit/08bd4ee2dc066ddb371726b31a45ba2f093a08dc))
+
+
+### Bug Fixes
+
+* **backup:** accept Azure list ETag format ([#1257](https://github.com/bcit-tlu/hriv/issues/1257)) ([2a53917](https://github.com/bcit-tlu/hriv/commit/2a539178e3977f09667058e9baf812f0222fabf6))
+* **backup:** anchor bounded Azure reads ([#1258](https://github.com/bcit-tlu/hriv/issues/1258)) ([2a31e42](https://github.com/bcit-tlu/hriv/commit/2a31e42ddd7d8476ec171d042e52df3cab6590de))
+
+
+### Documentation
+
+* **restore:** define isolated validation contract ([#1254](https://github.com/bcit-tlu/hriv/issues/1254)) ([086b8f1](https://github.com/bcit-tlu/hriv/commit/086b8f1bd36969cabd55dc7bf764edaa176ae1fa))
+
 ## [0.14.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.13.1...backup-v0.14.0) (2026-09-09)
 
 
