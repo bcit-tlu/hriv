@@ -1479,11 +1479,11 @@ as literal domains—there is no wildcard route/domain. The operational value pi
 
 The environment overlay must keep source-state-policy digest `958b1dc2dca298c56fd96dd80b6c694144905e22c00c4b3ca9d2c59c3b666083`; it is deployment evidence and intentionally is not the chart default. Consistency validates every selected canonical absent row's exact ID/status/path/reason and requires zero unexpected restored orphans internally. Its result omits the full list and contains only `missing_count`, SHA-256 of the actual canonical UTF-8 missing list, `unexpected_orphan_count=0`, source file digest, counts/bytes, and policy digest; the controller independently computes and exactly compares expected count/digest. Maximum 256-entry output remains below 32 KiB. The chart's 200Gi per-PVC LimitRange permits stable's required 160Gi source PVC for 128,986,771,498 bytes plus controller margin; latest remains 40Gi and namespace quota remains 320Gi under the one-active-or-one-retained rule.
 
-The current changed runtime payload identities are atomically `hriv-restore-validation-controller-v4`,
-`hriv-restore-validation-source-profile-v4`, `hriv-restore-validation-source-state-policy-v4`, and
-`hriv-restore-validation-child-templates-v4`. Every orchestrator, cleanup, embedded child mount, and
-strict parser expectation uses `-v4`. Upgrade creates those immutable ConfigMaps rather than patching
-`-v1` or `-v2`; no workload references the older generations, which remain until explicit
+The current changed runtime payload identities are atomically `hriv-restore-validation-controller-v5`,
+`hriv-restore-validation-source-profile-v5`, `hriv-restore-validation-source-state-policy-v5`, and
+`hriv-restore-validation-child-templates-v5`. Every orchestrator, cleanup, embedded child mount, and
+strict parser expectation uses `-v5`. Upgrade creates those immutable ConfigMaps rather than patching
+prior generations; no workload references the older generations, which remain until explicit
 operator-managed cleanup. The fixed
 `hriv-restore-validation-state` ConfigMap and `hriv-restore-validation` Lease retain their names.
 
