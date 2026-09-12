@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "hriv-restore-validation"
-version = "0.1.0"
+version = "0.1.1"
 description = "Isolated HRIV restore-validation controller"
 authors = ["BCIT TLU"]
 license = "MPL-2.0"
