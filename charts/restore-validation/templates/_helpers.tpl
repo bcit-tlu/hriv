@@ -10,7 +10,7 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- if not (regexMatch "^[^[:space:]@]+@sha256:[0-9a-f]{64}$" .value) -}}{{- fail (printf "%s must be digest-pinned" .name) -}}{{- end -}}{{ .value }}
 {{- end -}}
 {{- define "hriv-restore-validation.taggedDigestImage" -}}
-{{- if not (regexMatch "^[^[:space:]@]+:[^[:space:]@/]+@sha256:[0-9a-f]{64}$" .value) -}}{{- fail (printf "%s must use a tag plus sha256 digest" .name) -}}{{- end -}}{{ .value }}
+{{- if not (regexMatch "^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]+)?/([a-z0-9]+([._-][a-z0-9]+)*/)*[a-z0-9]+([._-][a-z0-9]+)*:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}@sha256:[0-9a-f]{64}$" .value) -}}{{- fail (printf "%s must use a tag plus sha256 digest" .name) -}}{{- end -}}{{ .value }}
 {{- end -}}
 {{- define "hriv-restore-validation.validate" -}}
 {{- $_ := include "hriv-restore-validation.digestImage" (dict "name" "images.orchestrator" "value" .Values.images.orchestrator) -}}
