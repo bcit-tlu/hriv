@@ -13,6 +13,7 @@ import yaml
 from .strict import DNS_RE, ValidationError, bounded_string, exact_object, integer, parse_json
 
 IMAGE_RE = re.compile(r"[^\s@]+@sha256:[0-9a-f]{64}")
+TAGGED_IMAGE_RE = re.compile(r"[^\s@]+:[^\s@/]+@sha256:[0-9a-f]{64}")
 IDENT_RE = re.compile(r"[a-z_][a-z0-9_]{0,62}")
 PG_NAME_RE = re.compile(r"[a-z_][a-z0-9_-]{0,62}")
 NO_PERMISSION_SA = "hriv-restore-validation-no-permission"
@@ -140,7 +141,11 @@ class SourceProfile:
         fixed = (value["provider"], value["source_cluster"], value["external_cluster"], value["database"], value["owner"], value["application_database"], value["server_name"], value["object_store"], value["object_store_api_version"], value["postgresql_major"])
         if fixed != ("cloudnative-pg", "pg-core", "pg-core-source", "app", "app", "hriv", "pg-core", "hriv-restore-validation-pg-core", "barmancloud.cnpg.io/v1", 17):
             raise ValidationError("PROFILE_NOT_APPROVED")
-        images = [bounded_string(value[name], name, 512, IMAGE_RE) for name in ("postgresql_image", "controller_image", "backup_image")]
+        images = [
+            bounded_string(value["postgresql_image"], "postgresql_image", 512, TAGGED_IMAGE_RE),
+            bounded_string(value["controller_image"], "controller_image", 512, IMAGE_RE),
+            bounded_string(value["backup_image"], "backup_image", 512, IMAGE_RE),
+        ]
         databases = cls._databases(value["required_database_inventory"])
         roles = cls._roles(value["required_static_role_inventory"])
         row_counts = cls._row_counts(value["minimum_row_counts"])
@@ -314,7 +319,7 @@ class Templates:
         target = recovery.get("recoveryTarget", {})
         external = cluster.get("externalClusters", [])
         if (
-            cluster.get("imageName") not in allowed_images
+            cluster.get("imageName") != profile.postgresql_image
             or cluster.get("storage")
             != {"size": profile.postgresql_storage_size, "storageClass": "longhorn"}
             or cluster.get("affinity")
@@ -412,7 +417,7 @@ class Templates:
             raise ValidationError("TEMPLATE_PVC_REFERENCE_INVALID")
         if database_volumes.get("credentials", {}).get("secret", {}).get("secretName") != "generated-superuser" or consistency_volumes.get("credentials", {}).get("secret", {}).get("secretName") != "generated-superuser":
             raise ValidationError("TEMPLATE_SECRET_INVALID")
-        expected_maps = {"profile": "hriv-restore-validation-source-profile-v5", "policy": "hriv-restore-validation-source-state-policy-v5"}
+        expected_maps = {"profile": "hriv-restore-validation-source-profile-v6", "policy": "hriv-restore-validation-source-state-policy-v6"}
         if database_volumes.get("profile", {}).get("configMap", {}).get("name") != expected_maps["profile"] or consistency_volumes.get("profile", {}).get("configMap", {}).get("name") != expected_maps["profile"] or consistency_volumes.get("policy", {}).get("configMap", {}).get("name") != expected_maps["policy"]:
             raise ValidationError("TEMPLATE_CONFIG_REFERENCE_INVALID")
         tmp = {"name": "tmp", "mountPath": "/tmp"}

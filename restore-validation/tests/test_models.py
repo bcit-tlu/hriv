@@ -52,6 +52,10 @@ class ParsingTests(unittest.TestCase):
     def test_profile_unpinned_image(self):
         with self.assertRaises(ValidationError): SourceProfile.parse(json.dumps(profile_document(controller_image="image:latest")))
 
+    def test_profile_postgresql_requires_tagged_digest(self):
+        digest_only = f"registry/postgres@sha256:{'c' * 64}"
+        with self.assertRaises(ValidationError): SourceProfile.parse(json.dumps(profile_document(postgresql_image=digest_only)))
+
     def test_profile_storage_minimum_syntax(self):
         with self.assertRaises(ValidationError): SourceProfile.parse(json.dumps(profile_document(postgresql_storage_size="40GB")))
 
@@ -181,6 +185,10 @@ class ParsingTests(unittest.TestCase):
 
     def test_templates_reject_small_pvc(self):
         value = template_document(); value["source_pvc"]["spec"]["resources"]["requests"]["storage"] = "20Gi"
+        with self.assertRaises(ValidationError): Templates.parse(yaml.safe_dump(value), profile())
+
+    def test_templates_require_profile_postgresql_image(self):
+        value = template_document(); value["cnpg_cluster"]["spec"]["imageName"] = BACKUP_IMAGE
         with self.assertRaises(ValidationError): Templates.parse(yaml.safe_dump(value), profile())
 
     def test_templates_require_longhorn_storage_targets(self):
