@@ -1739,6 +1739,9 @@ _MAX_DB_INVENTORY_BYTES = 64 * 1024 * 1024
 _MAX_DB_INVENTORY_ROWS = 1_000_000
 _MAX_VALIDATION_VALUE_LENGTH = 512
 _POSTGRES_LSN_RE = re.compile(r"^[0-9A-F]+/[0-9A-F]+$")
+_POSTGRES_LSN_VALUE_RE = re.compile(r"^[0-9A-Fa-f]+/[0-9A-Fa-f]+$")
+_POSTGRES_LSN_PART_MAX = 0xFFFFFFFF
+_WAL_SEGMENT_SIZE = 16 * 1024 * 1024
 _WAL_FILE_RE = re.compile(r"^[0-9A-F]{24}$")
 _ARCHIVED_WAL_FILE_RE = re.compile(r"^([0-9A-F]{24})(?:\.partial)?$")
 _WAL_TIMELINE_PREFIX_RE = re.compile(r"^([0-9A-F]{8})")
@@ -1913,6 +1916,52 @@ def _single_csv_row(payload: str, columns: list[str], label: str) -> dict[str, s
     return rows[0]
 
 
+def _postgres_lsn_value(value: str) -> int | None:
+    parts = value.upper().split("/", 1)
+    if (
+        len(parts) != 2
+        or not _POSTGRES_LSN_VALUE_RE.fullmatch(value)
+        or any(
+            len(part) > 8 or int(part, 16) > _POSTGRES_LSN_PART_MAX
+            for part in parts
+        )
+    ):
+        return None
+    return (int(parts[0], 16) << 32) + int(parts[1], 16)
+
+
+def _postgres_wal_file(value: int, timeline: int) -> str | None:
+    if value <= 0 or timeline <= 0 or timeline > 0xFFFFFFFF:
+        return None
+    segment = (value - 1) // _WAL_SEGMENT_SIZE
+    log, segment_in_log = divmod(
+        segment, (1 << 32) // _WAL_SEGMENT_SIZE
+    )
+    if log > 0xFFFFFFFF:
+        return None
+    return f"{timeline:08X}{log:08X}{segment_in_log:08X}"
+
+
+def _validate_recovery_boundary(
+    boundary_lsn: str | None,
+    target_lsn: str | None,
+    wal_fence_file: str | None,
+) -> None:
+    boundary_value = (
+        _postgres_lsn_value(boundary_lsn) if isinstance(boundary_lsn, str) else None
+    )
+    target_value = (
+        _postgres_lsn_value(target_lsn) if isinstance(target_lsn, str) else None
+    )
+    if boundary_value is None or target_value is None or target_value <= boundary_value:
+        raise RuntimeError("backup WAL fence target LSN does not follow the inventory boundary")
+    if not isinstance(wal_fence_file, str) or _WAL_FILE_RE.fullmatch(wal_fence_file) is None:
+        raise RuntimeError("backup WAL fence file is invalid")
+    timeline = int(wal_fence_file[:8], 16)
+    if timeline == 0 or _postgres_wal_file(target_value, timeline) != wal_fence_file:
+        raise RuntimeError("backup WAL fence file does not match the target LSN and timeline")
+
+
 def _query_archive_timeout_seconds(db: dict[str, str]) -> int:
     payload = _run_psql_text(
         db,
@@ -1944,8 +1993,8 @@ def _query_archive_timeout_seconds(db: dict[str, str]) -> int:
     return archive_timeout_seconds
 
 
-def _emit_wal_fence(db: dict[str, str]) -> tuple[str, datetime]:
-    """Commit the sole production backup write, then identify its WAL file."""
+def _emit_wal_fence(db: dict[str, str]) -> tuple[str, str, datetime]:
+    """Commit the sole production backup write, then bind its post-commit LSN."""
     update_payload = _run_psql_text(
         db,
         "COPY (WITH fence AS (UPDATE public.backup_recovery_wal_fence "
@@ -1972,21 +2021,28 @@ def _emit_wal_fence(db: dict[str, str]) -> tuple[str, datetime]:
 
     payload = _run_psql_text(
         db,
-        "COPY (SELECT pg_walfile_name(pg_current_wal_lsn() - 1) AS wal_fence_file, "
+        "COPY (WITH boundary AS (SELECT pg_current_wal_lsn() AS fence_lsn, "
         f"to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC', '{_UTC_SQL_FORMAT}') "
-        "AS wal_fence_committed_at) TO STDOUT WITH (FORMAT csv, HEADER true)",
+        "AS committed_at) SELECT fence_lsn::text AS wal_fence_lsn, "
+        "pg_walfile_name(fence_lsn - 1) AS wal_fence_file, committed_at AS "
+        "wal_fence_committed_at FROM boundary) TO STDOUT WITH (FORMAT csv, HEADER true)",
         "backup WAL fence boundary query",
     )
     row = _single_csv_row(
         payload,
-        ["wal_fence_file", "wal_fence_committed_at"],
+        ["wal_fence_lsn", "wal_fence_file", "wal_fence_committed_at"],
         "backup WAL fence boundary query",
     )
+    wal_fence_lsn = row["wal_fence_lsn"]
     wal_file = row["wal_fence_file"]
     committed_at = _parse_utc_sql_timestamp(row["wal_fence_committed_at"])
-    if not _WAL_FILE_RE.fullmatch(wal_file) or committed_at is None:
+    if (
+        not _POSTGRES_LSN_RE.fullmatch(wal_fence_lsn)
+        or not _WAL_FILE_RE.fullmatch(wal_file)
+        or committed_at is None
+    ):
         raise RuntimeError("backup WAL fence boundary query returned invalid values")
-    return wal_file, committed_at
+    return wal_fence_lsn, wal_file, committed_at
 
 
 def _query_last_archived_wal(
@@ -2329,7 +2385,7 @@ def _run_backup_inner() -> Path | None:
                 orphan_sources: list[dict] = []
                 if BACKUP_MODE == "production":
                     archive_timeout_seconds = _query_archive_timeout_seconds(db)
-                    captured_at, target_lsn, rows = _query_source_image_rows(
+                    captured_at, boundary_lsn, rows = _query_source_image_rows(
                         db, Path(tmpdir) / "source-images.csv"
                     )
                     inventory, excluded = _inventory_data_files(data_src)
@@ -2339,10 +2395,16 @@ def _run_backup_inner() -> Path | None:
                     # This committed singleton-row update is the only production write.
                     # Maintenance remains enabled so new source mutations cannot begin
                     # until the snapshot boundary has been fenced into later WAL.
-                    wal_fence_file, wal_fence_committed_at = _emit_wal_fence(db)
+                    target_lsn, wal_fence_file, wal_fence_committed_at = (
+                        _emit_wal_fence(db)
+                    )
+                    _validate_recovery_boundary(
+                        boundary_lsn, target_lsn, wal_fence_file
+                    )
                 else:
                     inventory, excluded = _inventory_data_files(data_src)
                     captured_at = datetime.now(timezone.utc)
+                    boundary_lsn = None
                     target_lsn = None
                     archive_timeout_seconds = None
                     wal_fence_file = None
@@ -2398,7 +2460,7 @@ def _run_backup_inner() -> Path | None:
                 "run_id": run_id,
                 "capture_started_at": created_at.isoformat(),
                 "capture_boundary_at": target_time,
-                "capture_boundary_lsn": target_lsn,
+                "capture_boundary_lsn": boundary_lsn,
                 "completed_at": None,
                 "database_url_host": db["host"],
                 "database_name": db["dbname"],
@@ -3410,10 +3472,17 @@ def _validation_manifest_summary(manifest: dict) -> dict:
     ):
         raise ValidationFailure("CNPG_METADATA_INVALID", "manifest")
     target_lsn = recovery.get("target_lsn")
+    boundary_lsn = manifest.get("capture_boundary_lsn")
+    target_lsn_value = (
+        _postgres_lsn_value(target_lsn) if isinstance(target_lsn, str) else None
+    )
+    boundary_lsn_value = (
+        _postgres_lsn_value(boundary_lsn) if isinstance(boundary_lsn, str) else None
+    )
     if (
-        not isinstance(target_lsn, str)
-        or re.fullmatch(r"[0-9A-Fa-f]{1,8}/[0-9A-Fa-f]{1,8}", target_lsn) is None
-        or manifest.get("capture_boundary_lsn") != target_lsn
+        target_lsn_value is None
+        or boundary_lsn_value is None
+        or target_lsn_value <= boundary_lsn_value
         or manifest.get("capture_boundary_at") != recovery.get("target_time")
     ):
         raise ValidationFailure("TARGET_LSN_INVALID", "manifest")
@@ -3421,7 +3490,7 @@ def _validation_manifest_summary(manifest: dict) -> dict:
     if not isinstance(fence, str) or re.fullmatch(r"[0-9A-F]{24}", fence) is None:
         raise ValidationFailure("WAL_FENCE_UNSUPPORTED", "manifest")
     timeline = int(fence[:8], 16)
-    if timeline == 0:
+    if timeline == 0 or _postgres_wal_file(target_lsn_value, timeline) != fence:
         raise ValidationFailure("WAL_FENCE_UNSUPPORTED", "manifest")
     timeout = recovery.get("archive_timeout_seconds")
     if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or not math.isfinite(timeout) or timeout <= 0:

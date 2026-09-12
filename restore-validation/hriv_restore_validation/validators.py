@@ -69,13 +69,14 @@ def validate_database(profile: SourceProfile, host: str, capture_started_at: str
     bounded_string(host, "host", 253)
     capture_started = _strict_utc(capture_started_at)
     fence_committed = _strict_utc(wal_fence_committed_at)
-    if capture_started > fence_committed or LSN_RE.fullmatch(target_lsn) is None or target_lsn.lower() == "latest" or target_tli < 1 or isinstance(expected_source_image_count, bool) or not isinstance(expected_source_image_count, int) or not 0 <= expected_source_image_count <= 10_000_000 or isinstance(recovery_attempts, bool) or not 1 <= recovery_attempts <= 12:
+    if capture_started > fence_committed or LSN_RE.fullmatch(target_lsn) is None or target_lsn.lower() == "latest" or not isinstance(target_tli, int) or isinstance(target_tli, bool) or not 1 <= target_tli <= 0xFFFFFFFF or isinstance(expected_source_image_count, bool) or not isinstance(expected_source_image_count, int) or not 0 <= expected_source_image_count <= 10_000_000 or isinstance(recovery_attempts, bool) or not 1 <= recovery_attempts <= 12:
         raise ValidationError("RECOVERY_TARGET_INVALID")
+    promoted_tli = target_tli + 1
     with _connect(connect, host, "postgres", credentials) as cluster:
         identity = _one(cluster, "SELECT system_identifier::text AS system_identifier FROM pg_control_system()")
         for attempt in range(recovery_attempts):
             recovery = _one(cluster, "SELECT pg_is_in_recovery() AS in_recovery, timeline_id::bigint AS timeline FROM pg_control_checkpoint()")
-            if recovery == {"in_recovery": False, "timeline": target_tli}:
+            if recovery == {"in_recovery": False, "timeline": promoted_tli}:
                 break
             if attempt + 1 < recovery_attempts:
                 sleeper(5.0)
@@ -112,7 +113,7 @@ def validate_database(profile: SourceProfile, host: str, capture_started_at: str
         synthetic.append({"id": row.get("id"), "email_sha256": hashlib.sha256(email.lower().encode("utf-8")).hexdigest()})
     valid = (
         identity.get("system_identifier") == profile.expected_system_identifier
-        and recovery == {"in_recovery": False, "timeline": target_tli}
+        and recovery == {"in_recovery": False, "timeline": promoted_tli}
         and observed_required_databases == required_databases
         and observed_required_roles == required_roles
         and migration.get("version_num") == profile.expected_migration_version
@@ -131,7 +132,7 @@ def validate_database(profile: SourceProfile, host: str, capture_started_at: str
     )
     if not valid:
         raise ValidationError("DATABASE_FIDELITY_MISMATCH")
-    result = {"schema_version": 1, "operation": "validate-database", "success": True, "required_database_inventory": observed_required_databases, "required_static_role_inventory": observed_required_roles, "system_identifier": identity["system_identifier"], "timeline": target_tli, "recovery_complete": True, "migration_version": migration["version_num"], "observed_row_counts": row_counts, "source_image_count": source_count, "synthetic_row": synthetic[0], "current_lsn": reached["current_lsn"], "target_lsn": target_lsn, "fence_generation": fence["generation"], "fence_fenced_at": _utc_text(fenced_at)}
+    result = {"schema_version": 1, "operation": "validate-database", "success": True, "required_database_inventory": observed_required_databases, "required_static_role_inventory": observed_required_roles, "system_identifier": identity["system_identifier"], "timeline": promoted_tli, "target_tli": target_tli, "recovery_complete": True, "migration_version": migration["version_num"], "observed_row_counts": row_counts, "source_image_count": source_count, "synthetic_row": synthetic[0], "current_lsn": reached["current_lsn"], "target_lsn": target_lsn, "fence_generation": fence["generation"], "fence_fenced_at": _utc_text(fenced_at)}
     _bounded_result(result)
     return result
 
