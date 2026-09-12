@@ -978,14 +978,23 @@ for image_value in images.orchestrator images.backupChild images.postgresql; do
   fi
 done
 
-if restore_validation_digest_only_postgres_output="$(helm template test charts/restore-validation \
-  "${restore_validation_helm_args[@]}" \
-  --set-string "images.postgresql=registry.example/postgresql@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" 2>&1)"; then
-  fail "expected images.postgresql without a tag to be rejected"
-fi
-if ! grep -Eq 'tag plus sha256 digest|does not match (the )?pattern|doesn.t match (the )?pattern' <<<"$restore_validation_digest_only_postgres_output"; then
-  fail "restore-validation chart should explain the PostgreSQL tag requirement"
-fi
+restore_validation_long_tag="$(printf 'a%.0s' {1..129})"
+restore_validation_bad_postgres_images=(
+  "registry.example/postgresql@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  "registry.example/postgresql::@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  "registry.example/postgresql:-17@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  "registry.example/postgresql:${restore_validation_long_tag}@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+)
+for bad_postgres_image in "${restore_validation_bad_postgres_images[@]}"; do
+  if restore_validation_bad_postgres_output="$(helm template test charts/restore-validation \
+    "${restore_validation_helm_args[@]}" \
+    --set-string "images.postgresql=${bad_postgres_image}" 2>&1)"; then
+    fail "expected invalid images.postgresql to be rejected: ${bad_postgres_image}"
+  fi
+  if ! grep -Eq 'tag plus sha256 digest|does not match (the )?pattern|doesn.t match (the )?pattern' <<<"$restore_validation_bad_postgres_output"; then
+    fail "restore-validation chart should explain the PostgreSQL tag requirement"
+  fi
+done
 
 restore_validation_strict_schema_cases=(
   'sourceProfile.requiredDatabaseInventory=[{"name":"app","owner":"app","allow_connections":true,"unexpected":true}]'

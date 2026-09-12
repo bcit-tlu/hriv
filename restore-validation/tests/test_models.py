@@ -53,8 +53,18 @@ class ParsingTests(unittest.TestCase):
         with self.assertRaises(ValidationError): SourceProfile.parse(json.dumps(profile_document(controller_image="image:latest")))
 
     def test_profile_postgresql_requires_tagged_digest(self):
-        digest_only = f"registry/postgres@sha256:{'c' * 64}"
-        with self.assertRaises(ValidationError): SourceProfile.parse(json.dumps(profile_document(postgresql_image=digest_only)))
+        digest = "c" * 64
+        invalid = [
+            f"registry/postgres@sha256:{digest}",
+            f"registry/postgres::@sha256:{digest}",
+            f"registry/postgres:-17@sha256:{digest}",
+            f"registry/postgres:{'a' * 129}@sha256:{digest}",
+        ]
+        for image in invalid:
+            with self.subTest(image=image), self.assertRaises(ValidationError):
+                SourceProfile.parse(json.dumps(profile_document(postgresql_image=image)))
+        valid = f"registry/postgres:{'a' * 128}@sha256:{digest}"
+        self.assertEqual(valid, SourceProfile.parse(json.dumps(profile_document(postgresql_image=valid))).postgresql_image)
 
     def test_profile_storage_minimum_syntax(self):
         with self.assertRaises(ValidationError): SourceProfile.parse(json.dumps(profile_document(postgresql_storage_size="40GB")))

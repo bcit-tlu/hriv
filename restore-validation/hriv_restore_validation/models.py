@@ -13,7 +13,7 @@ import yaml
 from .strict import DNS_RE, ValidationError, bounded_string, exact_object, integer, parse_json
 
 IMAGE_RE = re.compile(r"[^\s@]+@sha256:[0-9a-f]{64}")
-TAGGED_IMAGE_RE = re.compile(r"[^\s@]+:[^\s@/]+@sha256:[0-9a-f]{64}")
+TAGGED_IMAGE_RE = re.compile(r"[^\s@]+:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}@sha256:[0-9a-f]{64}")
 IDENT_RE = re.compile(r"[a-z_][a-z0-9_]{0,62}")
 PG_NAME_RE = re.compile(r"[a-z_][a-z0-9_-]{0,62}")
 NO_PERMISSION_SA = "hriv-restore-validation-no-permission"
