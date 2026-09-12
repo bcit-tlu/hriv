@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.1](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.0...restore-validation-v0.1.1) (2026-09-12)
+
+
+### Bug Fixes
+
+* **restore-validation:** serialize lease times as MicroTime ([#1266](https://github.com/bcit-tlu/hriv/issues/1266)) ([b603405](https://github.com/bcit-tlu/hriv/commit/b6034053f9d1a5151fc00a36f8493da4f920446d))
+* **restore:** bound Helm chart label ([#1264](https://github.com/bcit-tlu/hriv/issues/1264)) ([f307323](https://github.com/bcit-tlu/hriv/commit/f307323bb019ced1a0662e734c68f1e7544df929))
+
 ## 0.1.0 (2026-09-12)
 
 
