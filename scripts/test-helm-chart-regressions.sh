@@ -850,6 +850,8 @@ assert_contains "$restore_validation_lease" "kustomize.toolkit.fluxcd.io/prune: 
   "restore-validation Lease must survive Flux pruning"
 assert_contains "$restore_validation_quota" 'count/jobs.batch: "32"' \
   "restore-validation must enforce the bounded Job quota"
+assert_contains "$restore_validation_quota" 'count/configmaps: "32"' \
+  "restore-validation must retain bounded immutable ConfigMap generations"
 assert_contains "$restore_validation_quota" 'count/persistentvolumeclaims: "8"' \
   "restore-validation must enforce the bounded PVC quota"
 assert_contains "$restore_validation_quota" 'requests.storage: 320Gi' \
