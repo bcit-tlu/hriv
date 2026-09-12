@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.2...restore-validation-v0.1.3) (2026-09-12)
+
+
+### Bug Fixes
+
+* **restore-validation:** rotate immutable ConfigMaps to v5 ([#1271](https://github.com/bcit-tlu/hriv/issues/1271)) ([2967e24](https://github.com/bcit-tlu/hriv/commit/2967e24b55ef42e21d8ab4b35e84c83dd28b7367))
+
 ## [0.1.2](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.1...restore-validation-v0.1.2) (2026-09-12)
 
 
