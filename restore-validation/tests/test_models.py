@@ -9,7 +9,7 @@ import yaml
 
 from hriv_restore_validation.models import Config, SourcePolicy, SourceProfile, Templates, canonical_source_state
 from hriv_restore_validation.strict import ValidationError, canonical_json, parse_json
-from fixtures import BACKUP_IMAGE, config, policy_document, profile, profile_document, template_document
+from fixtures import BACKUP_IMAGE, POSTGRES_IMAGE, config, policy_document, profile, profile_document, template_document
 
 
 class ParsingTests(unittest.TestCase):
@@ -163,6 +163,20 @@ class ParsingTests(unittest.TestCase):
 
     def test_templates_reject_allowlist_drift(self):
         value = template_document(); value["image_allowlist"].remove(BACKUP_IMAGE)
+        with self.assertRaises(ValidationError): Templates.parse(yaml.safe_dump(value), profile())
+
+    def test_templates_allow_long_digest_pinned_controller_image(self):
+        long_controller = "ghcr.io/bcit-tlu/hriv/hriv-restore-validation:0.1.2-rc.20260912040709.g42e22ad@sha256:" + "d" * 64
+        assert len(long_controller) > 128
+        long_profile = SourceProfile.parse(json.dumps(profile_document(controller_image=long_controller)))
+        value = template_document()
+        value["image_allowlist"] = [long_controller, BACKUP_IMAGE, POSTGRES_IMAGE]
+        for key in ("db_validation_job", "consistency_job"):
+            value[key]["spec"]["template"]["spec"]["containers"][0]["image"] = long_controller
+        Templates.parse(yaml.safe_dump(value), long_profile)
+
+    def test_templates_reject_unpinned_allowlist_reference(self):
+        value = template_document(); value["image_allowlist"][0] = "registry/controller:latest"
         with self.assertRaises(ValidationError): Templates.parse(yaml.safe_dump(value), profile())
 
     def test_templates_reject_small_pvc(self):
