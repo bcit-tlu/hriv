@@ -58,7 +58,6 @@ export const TELEMETRY_EVENT_NAMES = [
 
 export type TelemetryEventName = (typeof TELEMETRY_EVENT_NAMES)[number]
 const TELEMETRY_EVENT_VERSION = 1
-const DEFAULT_OTEL_TRACE_ENDPOINT_PROD = 'https://telemetry.ltc.bcit.ca'
 const DEFAULT_OTEL_TRACE_ENDPOINT_DEV = 'http://localhost:4318'
 const SESSION_STARTED_STORAGE_KEY = `hriv.telemetry.${SESSION_ID}.session_started`
 const ERROR_DEDUPE_TTL_MS = 30_000
@@ -160,13 +159,24 @@ let _clsScore = 0
 const _pendingEvents: TelemetryPayload[] = []
 const _errorDedupe = new Map<string, number>()
 
-function defaultTraceEndpoint(): string {
-  const mode = import.meta.env.MODE ?? 'development'
-  return mode === 'production' ? DEFAULT_OTEL_TRACE_ENDPOINT_PROD : DEFAULT_OTEL_TRACE_ENDPOINT_DEV
+function runtimeTraceEndpoint(): string | undefined {
+  const encodedEndpoint = window.__HRIV_RUNTIME_CONFIG__?.otelEndpointBase64
+  if (!encodedEndpoint) return undefined
+
+  try {
+    return atob(encodedEndpoint)
+  } catch {
+    return undefined
+  }
 }
 
-function traceEndpoint(): string {
-  return import.meta.env.VITE_OTEL_ENDPOINT?.replace(/\/$/, '') ?? defaultTraceEndpoint()
+function traceEndpoint(): string | undefined {
+  const configuredEndpoint = runtimeTraceEndpoint()
+  if (configuredEndpoint?.trim()) return configuredEndpoint.trim().replace(/\/$/, '')
+
+  // Local development keeps its optional collector default. Production tracing
+  // is deliberately opt-in through the Helm/Flux runtime configuration.
+  return import.meta.env.MODE === 'production' ? undefined : DEFAULT_OTEL_TRACE_ENDPOINT_DEV
 }
 
 function apiUrl(): string {
@@ -516,28 +526,32 @@ export function initObservability(): void {
     'browser.tab.session_id': SESSION_ID,
   })
 
-  const traceExporter = new OTLPTraceExporter({
-    url: `${traceEndpoint()}/v1/traces`,
-  })
-  _tracerProvider = new WebTracerProvider({
-    resource,
-    spanProcessors: [new BatchSpanProcessor(traceExporter)],
-  })
-  _tracerProvider.register({
-    propagator: new W3CTraceContextPropagator(),
-  })
+  const endpoint = traceEndpoint()
+  if (endpoint) {
+    const traceExporter = new OTLPTraceExporter({
+      url: `${endpoint}/v1/traces`,
+    })
+    _tracerProvider = new WebTracerProvider({
+      resource,
+      spanProcessors: [new BatchSpanProcessor(traceExporter)],
+    })
+    _tracerProvider.register({
+      propagator: new W3CTraceContextPropagator(),
+    })
 
-  const fetchConfig: { clearTimingResources: boolean; propagateTraceHeaderCorsUrls?: RegExp[] } = {
-    clearTimingResources: true,
-  }
-  const baseUrl = apiUrl()
-  if (baseUrl) {
-    fetchConfig.propagateTraceHeaderCorsUrls = [new RegExp(`^${escapeRegExp(baseUrl)}`)]
-  }
+    const fetchConfig: { clearTimingResources: boolean; propagateTraceHeaderCorsUrls?: RegExp[] } =
+      {
+        clearTimingResources: true,
+      }
+    const baseUrl = apiUrl()
+    if (baseUrl) {
+      fetchConfig.propagateTraceHeaderCorsUrls = [new RegExp(`^${escapeRegExp(baseUrl)}`)]
+    }
 
-  registerInstrumentations({
-    instrumentations: [new FetchInstrumentation(fetchConfig)],
-  })
+    registerInstrumentations({
+      instrumentations: [new FetchInstrumentation(fetchConfig)],
+    })
+  }
 
   registerApplicationLoadMetric()
   registerPerformanceObservers()

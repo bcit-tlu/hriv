@@ -112,6 +112,10 @@ vi.mock('../src/api', () => ({
   setApiFailureObserver: mocks.setApiFailureObserver,
 }))
 
+const runtimeWindow = window as typeof window & {
+  __HRIV_RUNTIME_CONFIG__?: { otelEndpointBase64?: string }
+}
+
 describe('observability', () => {
   beforeEach(() => {
     vi.resetModules()
@@ -120,6 +124,7 @@ describe('observability', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }))
     vi.stubGlobal('performance', { getEntriesByType: vi.fn(() => []) })
     window.history.replaceState({}, '', '/')
+    delete runtimeWindow.__HRIV_RUNTIME_CONFIG__
     mocks.startActiveSpan.mockImplementation(
       (_name: string, callback: (span: typeof mocks.span) => unknown) => callback(mocks.span),
     )
@@ -136,6 +141,32 @@ describe('observability', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
+  })
+
+  it('uses the deployment-provided OTLP endpoint', async () => {
+    runtimeWindow.__HRIV_RUNTIME_CONFIG__ = {
+      otelEndpointBase64: btoa('https://telemetry.example.test/'),
+    }
+    const { initObservability } = await import('../src/observability')
+
+    initObservability()
+
+    expect(mocks.traceExporter).toHaveBeenCalledWith({
+      url: 'https://telemetry.example.test/v1/traces',
+    })
+  })
+
+  it('trims whitespace around the deployment-provided OTLP endpoint', async () => {
+    runtimeWindow.__HRIV_RUNTIME_CONFIG__ = {
+      otelEndpointBase64: btoa('  https://telemetry.example.test/  '),
+    }
+    const { initObservability } = await import('../src/observability')
+
+    initObservability()
+
+    expect(mocks.traceExporter).toHaveBeenCalledWith({
+      url: 'https://telemetry.example.test/v1/traces',
+    })
   })
 
   it('initializes once and flushes pending events on pagehide', async () => {

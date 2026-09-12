@@ -180,6 +180,21 @@ server {
         proxy_connect_timeout 60s;
     }
 
+    # ── Runtime-injected browser configuration ───────────
+    #
+    # The Vite bundle reads this script before it starts. The endpoint value is
+    # base64-encoded by the Helm deployment so a deployment-provided URL cannot
+    # alter this generated JavaScript. An empty value leaves browser tracing
+    # disabled; Flux environment values opt in by setting
+    # observability.browserTraceEndpoint.
+    location = /runtime-config.js {
+        default_type application/javascript;
+        add_header   Cache-Control            "no-cache, no-store, must-revalidate" always;
+        add_header   X-Frame-Options          "SAMEORIGIN" always;
+        add_header   X-Content-Type-Options   "nosniff"    always;
+        return 200 'window.__HRIV_RUNTIME_CONFIG__={otelEndpointBase64:"${OTEL_BROWSER_TRACE_ENDPOINT_B64}"};';
+    }
+
     # ── Runtime-injected frontend version ────────────────
     #
     # Serves the deployed frontend image's display version so the

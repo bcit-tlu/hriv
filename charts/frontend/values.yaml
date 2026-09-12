@@ -38,6 +38,13 @@ tileServer:
 env:
   BACKEND_URL: ''
 
+# Browser OpenTelemetry tracing is disabled unless an OTLP/HTTP gateway origin
+# is supplied by the deployment (for example, in Flux environment values).
+# This runtime value is served through /runtime-config.js, so promoting an
+# existing image digest between environments does not require a rebuild.
+observability:
+  browserTraceEndpoint: ''
+
 versionConfigMap:
   enabled: true
   name: hriv-frontend-version

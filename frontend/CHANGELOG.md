@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.53.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.52.0...frontend-v0.53.0) (2026-09-11)
+
+
+### Features
+
+* stream coordinated recovery archives ([#1234](https://github.com/bcit-tlu/hriv/issues/1234)) ([7fc893d](https://github.com/bcit-tlu/hriv/commit/7fc893d0447819755b21f7254f62b6021c94580d))
+
+
+### Bug Fixes
+
+* **frontend:** inject OTLP endpoint at deployment time ([#1262](https://github.com/bcit-tlu/hriv/issues/1262)) ([a6f9692](https://github.com/bcit-tlu/hriv/commit/a6f96925a3220d8407e1b2c08e88d26bc23edbc5))
+
 ## [0.52.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.51.5...frontend-v0.52.0) (2026-09-07)
 
 
