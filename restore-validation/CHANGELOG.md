@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.2](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.1...restore-validation-v0.1.2) (2026-09-12)
+
+
+### Bug Fixes
+
+* **restore-validation:** accept long digest-pinned image refs ([#1269](https://github.com/bcit-tlu/hriv/issues/1269)) ([baae528](https://github.com/bcit-tlu/hriv/commit/baae528cef13a5b4e571a5dfee3d2b92f1bd0862))
+* **restore-validation:** rotate immutable configmaps to v3 ([#1267](https://github.com/bcit-tlu/hriv/issues/1267)) ([42e22ad](https://github.com/bcit-tlu/hriv/commit/42e22ad85d5f6ad30e2639fdb843771b1cc13faf))
+* **restore-validation:** rotate immutable configmaps to v4 ([#1270](https://github.com/bcit-tlu/hriv/issues/1270)) ([7bb2791](https://github.com/bcit-tlu/hriv/commit/7bb279191a0b29c3369e5d2eeab408c5189e752f))
+
 ## [0.1.1](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.0...restore-validation-v0.1.1) (2026-09-12)
 
 
