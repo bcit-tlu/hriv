@@ -48,10 +48,10 @@ spec:
             - {name: templates, mountPath: /config/templates, readOnly: true}
             - {name: tmp, mountPath: /tmp}
       volumes:
-        - {name: controller, configMap: {name: hriv-restore-validation-controller-v2}}
-        - {name: profile, configMap: {name: hriv-restore-validation-source-profile-v2}}
-        - {name: policy, configMap: {name: hriv-restore-validation-source-state-policy-v2}}
-        - {name: templates, configMap: {name: hriv-restore-validation-child-templates-v2}}
+        - {name: controller, configMap: {name: hriv-restore-validation-controller-v3}}
+        - {name: profile, configMap: {name: hriv-restore-validation-source-profile-v3}}
+        - {name: policy, configMap: {name: hriv-restore-validation-source-state-policy-v3}}
+        - {name: templates, configMap: {name: hriv-restore-validation-child-templates-v3}}
         - {name: tmp, emptyDir: {sizeLimit: 512Mi}}
 {{- end }}
 {{- if .Values.operational.enabled }}
@@ -159,9 +159,9 @@ spec:
                 - {name: templates, mountPath: /config/templates, readOnly: true}
                 - {name: tmp, mountPath: /tmp}
           volumes:
-            - {name: controller, configMap: {name: hriv-restore-validation-controller-v2}}
-            - {name: profile, configMap: {name: hriv-restore-validation-source-profile-v2}}
-            - {name: policy, configMap: {name: hriv-restore-validation-source-state-policy-v2}}
-            - {name: templates, configMap: {name: hriv-restore-validation-child-templates-v2}}
+            - {name: controller, configMap: {name: hriv-restore-validation-controller-v3}}
+            - {name: profile, configMap: {name: hriv-restore-validation-source-profile-v3}}
+            - {name: policy, configMap: {name: hriv-restore-validation-source-state-policy-v3}}
+            - {name: templates, configMap: {name: hriv-restore-validation-child-templates-v3}}
             - {name: tmp, emptyDir: {sizeLimit: 512Mi}}
 {{- end }}
