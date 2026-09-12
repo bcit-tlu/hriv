@@ -982,8 +982,10 @@ restore_validation_long_tag="$(printf 'a%.0s' {1..129})"
 restore_validation_bad_postgres_images=(
   "registry.example/postgresql@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
   "registry.example/postgresql::@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  "registry.example/postgresql:17:latest@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
   "registry.example/postgresql:-17@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
   "registry.example/postgresql:${restore_validation_long_tag}@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  "registry.example/PostgreSQL:17@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 )
 for bad_postgres_image in "${restore_validation_bad_postgres_images[@]}"; do
   if restore_validation_bad_postgres_output="$(helm template test charts/restore-validation \
