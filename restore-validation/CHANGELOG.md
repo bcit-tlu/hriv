@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.4](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.3...restore-validation-v0.1.4) (2026-09-12)
+
+
+### Bug Fixes
+
+* **restore-validation:** require tagged PostgreSQL image ([#1274](https://github.com/bcit-tlu/hriv/issues/1274)) ([373faf6](https://github.com/bcit-tlu/hriv/commit/373faf676dbb040b4226a4003296aee13fa9c6c2))
+* **restore-validation:** validate PostgreSQL image tag ([#1276](https://github.com/bcit-tlu/hriv/issues/1276)) ([12a1764](https://github.com/bcit-tlu/hriv/commit/12a1764c00a61d234dd05a8361f4a87dc5d27ec5))
+
 ## [0.1.3](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.2...restore-validation-v0.1.3) (2026-09-12)
 
 
