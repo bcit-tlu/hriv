@@ -9,10 +9,13 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- define "hriv-restore-validation.digestImage" -}}
 {{- if not (regexMatch "^[^[:space:]@]+@sha256:[0-9a-f]{64}$" .value) -}}{{- fail (printf "%s must be digest-pinned" .name) -}}{{- end -}}{{ .value }}
 {{- end -}}
+{{- define "hriv-restore-validation.taggedDigestImage" -}}
+{{- if not (regexMatch "^[^[:space:]@]+:[^[:space:]@/]+@sha256:[0-9a-f]{64}$" .value) -}}{{- fail (printf "%s must use a tag plus sha256 digest" .name) -}}{{- end -}}{{ .value }}
+{{- end -}}
 {{- define "hriv-restore-validation.validate" -}}
 {{- $_ := include "hriv-restore-validation.digestImage" (dict "name" "images.orchestrator" "value" .Values.images.orchestrator) -}}
 {{- $_ := include "hriv-restore-validation.digestImage" (dict "name" "images.backupChild" "value" .Values.images.backupChild) -}}
-{{- $_ := include "hriv-restore-validation.digestImage" (dict "name" "images.postgresql" "value" .Values.images.postgresql) -}}
+{{- $_ := include "hriv-restore-validation.taggedDigestImage" (dict "name" "images.postgresql" "value" .Values.images.postgresql) -}}
 {{- if .Values.objectStore.enabled -}}{{- $_ := required "objectStore.destinationPath is required when enabled" .Values.objectStore.destinationPath -}}{{- if ne .Release.Namespace "hriv-restore-validation" -}}{{- fail "enabled ObjectStore requires namespace hriv-restore-validation" -}}{{- end -}}{{- end -}}
 {{- $_ := include "hriv-restore-validation.digestImage" (dict "name" "operational.egressProxy.image" "value" .Values.operational.egressProxy.image) -}}
 {{- if .Values.operational.enabled -}}

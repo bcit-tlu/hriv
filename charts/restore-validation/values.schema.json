@@ -74,7 +74,7 @@
       "properties": {
         "orchestrator": { "type": "string", "pattern": "^[^ @]+@sha256:[0-9a-f]{64}$" },
         "backupChild": { "type": "string", "pattern": "^[^ @]+@sha256:[0-9a-f]{64}$" },
-        "postgresql": { "type": "string", "pattern": "^[^ @]+@sha256:[0-9a-f]{64}$" }
+        "postgresql": { "type": "string", "pattern": "^[^ @]+:[^ @/]+@sha256:[0-9a-f]{64}$" }
       }
     },
     "sourceArchive": {

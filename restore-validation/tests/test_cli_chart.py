@@ -47,23 +47,23 @@ class ChartTests(unittest.TestCase):
             if document:
                 self.assertLessEqual(len(document["metadata"]["labels"]["helm.sh/chart"]), 63)
 
-    def test_runtime_configmaps_are_atomic_v3_identities(self):
+    def test_runtime_configmaps_are_atomic_v6_identities(self):
         names = {item["metadata"]["name"] for item in self.documents if item and item.get("kind") == "ConfigMap"}
-        expected = {"hriv-restore-validation-controller-v5", "hriv-restore-validation-source-profile-v5", "hriv-restore-validation-source-state-policy-v5", "hriv-restore-validation-child-templates-v5"}
+        expected = {"hriv-restore-validation-controller-v6", "hriv-restore-validation-source-profile-v6", "hriv-restore-validation-source-state-policy-v6", "hriv-restore-validation-child-templates-v6"}
         self.assertLessEqual(expected, names)
-        self.assertFalse(any(name.endswith(("-v1", "-v2")) for name in names))
+        self.assertFalse(any(name.endswith(("-v1", "-v2", "-v3", "-v4", "-v5")) for name in names))
         self.assertIn("hriv-restore-validation-state", names)
 
     def test_chart_config_round_trip(self):
-        raw = self._config_map("hriv-restore-validation-controller-v5")["data"]["config.json"]
+        raw = self._config_map("hriv-restore-validation-controller-v6")["data"]["config.json"]
         self.assertEqual("hriv-restore-validation", Config.parse(raw).namespace)
 
     def test_chart_profile_round_trip(self):
-        raw = self._config_map("hriv-restore-validation-source-profile-v5")["data"]["profile.json"]
+        raw = self._config_map("hriv-restore-validation-source-profile-v6")["data"]["profile.json"]
         self.assertEqual("pg-core-source", SourceProfile.parse(raw).external_cluster)
 
     def test_chart_policy_round_trip(self):
-        raw = self._config_map("hriv-restore-validation-source-state-policy-v5")["data"]["policy.json"]
+        raw = self._config_map("hriv-restore-validation-source-state-policy-v6")["data"]["policy.json"]
         self.assertEqual(1, SourcePolicy.parse(raw).policy_version)
 
     def test_chart_current_nonzero_digest_only_policy(self):
@@ -73,21 +73,21 @@ class ChartTests(unittest.TestCase):
             values.flush()
             rendered = subprocess.check_output(["helm", "template", "test", str(CHART), "-f", values.name], text=True)
         documents = list(yaml.safe_load_all(rendered))
-        raw = next(item for item in documents if item and item.get("kind") == "ConfigMap" and item["metadata"]["name"] == "hriv-restore-validation-source-state-policy-v5")["data"]["policy.json"]
+        raw = next(item for item in documents if item and item.get("kind") == "ConfigMap" and item["metadata"]["name"] == "hriv-restore-validation-source-state-policy-v6")["data"]["policy.json"]
         parsed = SourcePolicy.parse(raw)
         self.assertEqual((digest, 39, 3), (parsed.source_state_sha256, parsed.missing_count, parsed.orphan_count))
         self.assertNotIn("source_state", json.loads(raw))
 
     def test_chart_templates_round_trip(self):
-        profile_raw = self._config_map("hriv-restore-validation-source-profile-v5")["data"]["profile.json"]
-        raw = self._config_map("hriv-restore-validation-child-templates-v5")["data"]["templates.yaml"]
+        profile_raw = self._config_map("hriv-restore-validation-source-profile-v6")["data"]["profile.json"]
+        raw = self._config_map("hriv-restore-validation-child-templates-v6")["data"]["templates.yaml"]
         parsed_profile = SourceProfile.parse(profile_raw); parsed = Templates.parse(raw, parsed_profile)
         self.assertEqual("40Gi", parsed.source_pvc["spec"]["resources"]["requests"]["storage"])
 
     def test_operational_cronjobs_proxy_and_fixed_policy(self):
         digest = "1" * 64
         values = {
-            "images": {"orchestrator": f"registry.example/controller@sha256:{digest}", "backupChild": f"registry.example/backup@sha256:{digest}", "postgresql": f"registry.example/postgres@sha256:{digest}"},
+            "images": {"orchestrator": f"registry.example/controller@sha256:{digest}", "backupChild": f"registry.example/backup@sha256:{digest}", "postgresql": f"registry.example/postgres:17@sha256:{digest}"},
             "objectStore": {"enabled": True, "destinationPath": "https://storage.blob.core.windows.net/barman"},
             "operational": {"enabled": True, "schedule": "0 11 * * 0", "egressProxy": {"image": "envoyproxy/envoy:v1.39.1@sha256:57e14a549d7bd43c8d3f6d03e8cfa653e037d4b38e133acd9b54f38c524401b4", "allowedConnectHosts": ["storageacct.blob.core.windows.net:443"]}},
         }
@@ -134,7 +134,7 @@ class ChartTests(unittest.TestCase):
         self.assertFalse(proxy_pod["automountServiceAccountToken"])
         self.assertTrue(proxy_pod["securityContext"]["runAsNonRoot"])
         self.assertTrue(proxy_pod["containers"][0]["securityContext"]["readOnlyRootFilesystem"])
-        child_config = next(item for item in docs if item.get("kind") == "ConfigMap" and item["metadata"]["name"] == "hriv-restore-validation-child-templates-v5")
+        child_config = next(item for item in docs if item.get("kind") == "ConfigMap" and item["metadata"]["name"] == "hriv-restore-validation-child-templates-v6")
         children = yaml.safe_load(child_config["data"]["templates.yaml"])
         for job_name in ("selection_job", "source_restore_job"):
             names = {item["name"] for item in children[job_name]["spec"]["template"]["spec"]["containers"][0]["env"]}

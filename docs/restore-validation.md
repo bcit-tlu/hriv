@@ -1477,12 +1477,12 @@ and allows only one-to-four exact reviewed `<account>.blob.core.windows.net:443`
 as literal domains—there is no wildcard route/domain. The operational value pins `envoyproxy/envoy:v1.39.1` to
 `sha256:57e14a549d7bd43c8d3f6d03e8cfa653e037d4b38e133acd9b54f38c524401b4`.
 
-The environment overlay must keep source-state-policy digest `958b1dc2dca298c56fd96dd80b6c694144905e22c00c4b3ca9d2c59c3b666083`; it is deployment evidence and intentionally is not the chart default. Consistency validates every selected canonical absent row's exact ID/status/path/reason and requires zero unexpected restored orphans internally. Its result omits the full list and contains only `missing_count`, SHA-256 of the actual canonical UTF-8 missing list, `unexpected_orphan_count=0`, source file digest, counts/bytes, and policy digest; the controller independently computes and exactly compares expected count/digest. Maximum 256-entry output remains below 32 KiB. The chart's 200Gi per-PVC LimitRange permits stable's required 160Gi source PVC for 128,986,771,498 bytes plus controller margin; latest remains 40Gi and namespace quota remains 320Gi under the one-active-or-one-retained rule; the 32-ConfigMap quota retains bounded immutable payload generations alongside fixed coordination and proxy ConfigMaps.
+The environment overlay must keep source-state-policy digest `958b1dc2dca298c56fd96dd80b6c694144905e22c00c4b3ca9d2c59c3b666083`; it is deployment evidence and intentionally is not the chart default. The reviewed PostgreSQL image must use an explicit tag plus SHA-256 digest (for example, `postgresql:17@sha256:<digest>`), because CNPG rejects a digest-only `spec.imageName` during upgrade detection. Consistency validates every selected canonical absent row's exact ID/status/path/reason and requires zero unexpected restored orphans internally. Its result omits the full list and contains only `missing_count`, SHA-256 of the actual canonical UTF-8 missing list, `unexpected_orphan_count=0`, source file digest, counts/bytes, and policy digest; the controller independently computes and exactly compares expected count/digest. Maximum 256-entry output remains below 32 KiB. The chart's 200Gi per-PVC LimitRange permits stable's required 160Gi source PVC for 128,986,771,498 bytes plus controller margin; latest remains 40Gi and namespace quota remains 320Gi under the one-active-or-one-retained rule; the 32-ConfigMap quota retains bounded immutable payload generations alongside fixed coordination and proxy ConfigMaps.
 
-The current changed runtime payload identities are atomically `hriv-restore-validation-controller-v5`,
-`hriv-restore-validation-source-profile-v5`, `hriv-restore-validation-source-state-policy-v5`, and
-`hriv-restore-validation-child-templates-v5`. Every orchestrator, cleanup, embedded child mount, and
-strict parser expectation uses `-v5`. Upgrade creates those immutable ConfigMaps rather than patching
+The current changed runtime payload identities are atomically `hriv-restore-validation-controller-v6`,
+`hriv-restore-validation-source-profile-v6`, `hriv-restore-validation-source-state-policy-v6`, and
+`hriv-restore-validation-child-templates-v6`. Every orchestrator, cleanup, embedded child mount, and
+strict parser expectation uses `-v6`. Upgrade creates those immutable ConfigMaps rather than patching
 prior generations; no workload references the older generations, which remain until explicit
 operator-managed cleanup. The fixed
 `hriv-restore-validation-state` ConfigMap and `hriv-restore-validation` Lease retain their names.
