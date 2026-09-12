@@ -412,7 +412,7 @@ class Templates:
             raise ValidationError("TEMPLATE_PVC_REFERENCE_INVALID")
         if database_volumes.get("credentials", {}).get("secret", {}).get("secretName") != "generated-superuser" or consistency_volumes.get("credentials", {}).get("secret", {}).get("secretName") != "generated-superuser":
             raise ValidationError("TEMPLATE_SECRET_INVALID")
-        expected_maps = {"profile": "hriv-restore-validation-source-profile-v2", "policy": "hriv-restore-validation-source-state-policy-v2"}
+        expected_maps = {"profile": "hriv-restore-validation-source-profile-v3", "policy": "hriv-restore-validation-source-state-policy-v3"}
         if database_volumes.get("profile", {}).get("configMap", {}).get("name") != expected_maps["profile"] or consistency_volumes.get("profile", {}).get("configMap", {}).get("name") != expected_maps["profile"] or consistency_volumes.get("policy", {}).get("configMap", {}).get("name") != expected_maps["policy"]:
             raise ValidationError("TEMPLATE_CONFIG_REFERENCE_INVALID")
         tmp = {"name": "tmp", "mountPath": "/tmp"}

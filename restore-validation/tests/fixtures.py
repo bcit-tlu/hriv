@@ -64,9 +64,9 @@ def template_document() -> dict[str, Any]:
                 {"name": "NO_PROXY", "value": ".svc,.cluster.local,10.43.0.1,localhost,127.0.0.1"},
             ])
         if role in {"db", "consistency"}:
-            volumes.extend([{"name": "credentials", "secret": {"secretName": "generated-superuser"}}, {"name": "profile", "configMap": {"name": "hriv-restore-validation-source-profile-v2"}}])
+            volumes.extend([{"name": "credentials", "secret": {"secretName": "generated-superuser"}}, {"name": "profile", "configMap": {"name": "hriv-restore-validation-source-profile-v3"}}])
         if role == "consistency":
-            volumes.append({"name": "policy", "configMap": {"name": "hriv-restore-validation-source-state-policy-v2"}})
+            volumes.append({"name": "policy", "configMap": {"name": "hriv-restore-validation-source-state-policy-v3"}})
         if role in {"restore", "consistency"}:
             volumes.append({"name": "source", "persistentVolumeClaim": {"claimName": "generated-source-pvc"}})
         mounts = [{"name": "tmp", "mountPath": "/tmp"}]

@@ -1,13 +1,13 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: hriv-restore-validation-child-templates-v2
+  name: hriv-restore-validation-child-templates-v3
   annotations:
     helm.sh/resource-policy: keep
     kustomize.toolkit.fluxcd.io/prune: disabled
   labels:
     {{- include "hriv-restore-validation.labels" . | nindent 4 }}
-    hriv.bcit.ca/config-version: "2"
+    hriv.bcit.ca/config-version: "3"
 immutable: true
 data:
   templates.yaml: |
@@ -110,7 +110,7 @@ data:
                   - {name: credentials, mountPath: /credentials, readOnly: true}
                   - {name: tmp, mountPath: /tmp}
             volumes:
-              - {name: profile, configMap: {name: hriv-restore-validation-source-profile-v2}}
+              - {name: profile, configMap: {name: hriv-restore-validation-source-profile-v3}}
               - {name: credentials, secret: {secretName: generated-superuser}}
               - {name: tmp, emptyDir: {sizeLimit: 256Mi}}
     source_restore_job:
@@ -177,8 +177,8 @@ data:
                   - {name: source, mountPath: /restore, readOnly: true}
                   - {name: tmp, mountPath: /tmp}
             volumes:
-              - {name: profile, configMap: {name: hriv-restore-validation-source-profile-v2}}
-              - {name: policy, configMap: {name: hriv-restore-validation-source-state-policy-v2}}
+              - {name: profile, configMap: {name: hriv-restore-validation-source-profile-v3}}
+              - {name: policy, configMap: {name: hriv-restore-validation-source-state-policy-v3}}
               - {name: credentials, secret: {secretName: generated-superuser}}
               - {name: source, persistentVolumeClaim: {claimName: generated-source-pvc}}
               - {name: tmp, emptyDir: {sizeLimit: 256Mi}}
