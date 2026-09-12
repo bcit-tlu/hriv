@@ -782,11 +782,11 @@ restore_validation_state="$(extract_top_level_yaml_doc \
 restore_validation_lease="$(extract_top_level_yaml_doc \
   "$restore_validation_manifest" "Lease" "hriv-restore-validation")"
 restore_validation_children="$(extract_top_level_yaml_doc \
-  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-child-templates-v3")"
+  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-child-templates-v4")"
 restore_validation_profile="$(extract_top_level_yaml_doc \
-  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-source-profile-v3")"
+  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-source-profile-v4")"
 restore_validation_policy="$(extract_top_level_yaml_doc \
-  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-source-state-policy-v3")"
+  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-source-state-policy-v4")"
 restore_validation_role="$(extract_top_level_yaml_doc \
   "$restore_validation_manifest" "Role" "hriv-restore-validation-orchestrator")"
 restore_validation_default_deny="$(extract_top_level_yaml_doc \
@@ -811,9 +811,9 @@ done
 ruby -ryaml -rjson -e '
   docs = YAML.load_stream(STDIN.read).compact
   by_name = docs.to_h { |doc| [[doc["kind"], doc.dig("metadata", "name")], doc] }
-  profile = JSON.parse(by_name.fetch(["ConfigMap", "hriv-restore-validation-source-profile-v3"]).fetch("data").fetch("profile.json"))
-  policy = JSON.parse(by_name.fetch(["ConfigMap", "hriv-restore-validation-source-state-policy-v3"]).fetch("data").fetch("policy.json"))
-  templates = YAML.safe_load(by_name.fetch(["ConfigMap", "hriv-restore-validation-child-templates-v3"]).fetch("data").fetch("templates.yaml"), aliases: true)
+  profile = JSON.parse(by_name.fetch(["ConfigMap", "hriv-restore-validation-source-profile-v4"]).fetch("data").fetch("profile.json"))
+  policy = JSON.parse(by_name.fetch(["ConfigMap", "hriv-restore-validation-source-state-policy-v4"]).fetch("data").fetch("policy.json"))
+  templates = YAML.safe_load(by_name.fetch(["ConfigMap", "hriv-restore-validation-child-templates-v4"]).fetch("data").fetch("templates.yaml"), aliases: true)
   raise "profile identity drift" unless profile.values_at("source_cluster", "external_cluster", "database", "owner", "server_name", "object_store") == ["pg-core", "pg-core-source", "app", "app", "pg-core", "hriv-restore-validation-pg-core"]
   raise "policy structure drift" unless policy == {"missing_count" => 39, "orphan_count" => 3, "policy_version" => 1, "source_state_sha256" => "958b1dc2dca298c56fd96dd80b6c694144905e22c00c4b3ca9d2c59c3b666083"}
   target = templates.dig("cnpg_cluster", "spec", "bootstrap", "recovery", "recoveryTarget")
@@ -829,9 +829,9 @@ import sys, yaml
 from hriv_restore_validation.models import SourcePolicy, SourceProfile, Templates
 docs = [item for item in yaml.safe_load_all(sys.stdin.read()) if item]
 config_maps = {item["metadata"]["name"]: item["data"] for item in docs if item.get("kind") == "ConfigMap"}
-profile = SourceProfile.parse(config_maps["hriv-restore-validation-source-profile-v3"]["profile.json"])
-SourcePolicy.parse(config_maps["hriv-restore-validation-source-state-policy-v3"]["policy.json"])
-Templates.parse(config_maps["hriv-restore-validation-child-templates-v3"]["templates.yaml"], profile)
+profile = SourceProfile.parse(config_maps["hriv-restore-validation-source-profile-v4"]["profile.json"])
+SourcePolicy.parse(config_maps["hriv-restore-validation-source-state-policy-v4"]["policy.json"])
+Templates.parse(config_maps["hriv-restore-validation-child-templates-v4"]["templates.yaml"], profile)
 ' <<<"$restore_validation_manifest"
 fi
 
