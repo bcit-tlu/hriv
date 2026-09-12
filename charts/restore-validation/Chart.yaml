@@ -2,5 +2,5 @@ apiVersion: v2
 name: hriv-restore-validation
 description: Isolated core restore-validation infrastructure for HRIV recovery sets
 type: application
-version: 0.1.2 # x-release-please-version
-appVersion: '0.1.2' # x-release-please-version
+version: 0.1.3 # x-release-please-version
+appVersion: '0.1.3' # x-release-please-version
