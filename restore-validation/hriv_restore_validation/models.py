@@ -19,10 +19,10 @@ NO_PERMISSION_SA = "hriv-restore-validation-no-permission"
 AZURE_SECRET = "hriv-restore-validation-azure-read"
 
 
-def _strings(value: Any, name: str, maximum: int = 64) -> tuple[str, ...]:
+def _strings(value: Any, name: str, maximum: int = 64, *, item_maximum: int = 128, pattern: re.Pattern[str] | None = None) -> tuple[str, ...]:
     if not isinstance(value, list) or len(value) > maximum:
         raise ValidationError("SCHEMA_INVALID", name)
-    result = tuple(bounded_string(item, name, 128) for item in value)
+    result = tuple(bounded_string(item, name, item_maximum, pattern) for item in value)
     if len(set(result)) != len(result):
         raise ValidationError("SCHEMA_INVALID", name)
     return result
@@ -286,7 +286,7 @@ class Templates:
         except (yaml.YAMLError, UnicodeDecodeError) as exc:
             raise ValidationError("TEMPLATE_INVALID") from exc
         obj = exact_object(value, required={"schema_version", "image_allowlist", "selection_job", "source_pvc", "cnpg_cluster", "db_validation_job", "source_restore_job", "consistency_job"})
-        if obj["schema_version"] != 1 or set(_strings(obj["image_allowlist"], "image_allowlist", 8)) != allowed_images:
+        if obj["schema_version"] != 1 or set(_strings(obj["image_allowlist"], "image_allowlist", 8, item_maximum=512, pattern=IMAGE_RE)) != allowed_images:
             raise ValidationError("TEMPLATE_IMAGE_ALLOWLIST_INVALID")
         templates = [obj[key] for key in ("selection_job", "source_pvc", "cnpg_cluster", "db_validation_job", "source_restore_job", "consistency_job")]
         if not all(isinstance(item, dict) for item in templates):
