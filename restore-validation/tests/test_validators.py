@@ -43,7 +43,7 @@ def credentials(root: Path):
 
 def database_factory(**change):
     p = profile()
-    cluster = [{"system_identifier": "777777"}, {"in_recovery": False, "timeline": 7}, [dict(item) for item in p.required_database_inventory], [{"name": "app", "attributes": ROLE_ATTRS, "memberships": []}, {"name": "v-dynamic", "attributes": ROLE_ATTRS, "memberships": []}], {"reached": True, "current_lsn": "A/1234"}]
+    cluster = [{"system_identifier": "777777"}, {"in_recovery": False, "timeline": 8}, [dict(item) for item in p.required_database_inventory], [{"name": "app", "attributes": ROLE_ATTRS, "memberships": []}, {"name": "v-dynamic", "attributes": ROLE_ATTRS, "memberships": []}], {"reached": True, "current_lsn": "A/1234"}]
     app = [{"version_num": "abc123"}, {"count": 1}, {"count": 1}, {"count": 2}, {"count": 1}, {"count": 2}, [{"id": "1", "email": "synthetic@example.invalid"}], [{"generation": 9, "fenced_at": datetime(2026, 1, 15, 9, 0, 30, tzinfo=timezone.utc)}]]
     for key, value in change.items():
         if key == "identity": cluster[0] = {"system_identifier": value}
@@ -64,6 +64,7 @@ class ValidatorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw); credentials(root); result = validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, root, connect=database_factory())
         self.assertTrue(result["success"]); self.assertEqual("hriv", profile().application_database)
+        self.assertEqual(8, result["timeline"]); self.assertEqual(7, result["target_tli"])
 
     def test_database_wrong_system(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -74,6 +75,11 @@ class ValidatorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw); credentials(root)
             with self.assertRaises(ValidationError): validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, root, connect=database_factory(recovery={"in_recovery": True, "timeline": 7}))
+
+    def test_database_requires_promoted_target_timeline(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw); credentials(root)
+            with self.assertRaises(ValidationError): validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, root, connect=database_factory(recovery={"in_recovery": False, "timeline": 7}))
 
     def test_database_fence_exact(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -108,7 +114,7 @@ class ValidatorTests(unittest.TestCase):
 
     def test_database_recovery_pending_retries_without_mutation(self):
         sleeps = []
-        sequence = [{"in_recovery": True, "timeline": 6}, {"in_recovery": False, "timeline": 7}]
+        sequence = [{"in_recovery": True, "timeline": 6}, {"in_recovery": False, "timeline": 8}]
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw); credentials(root)
             result = validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, root, connect=database_factory(recovery_sequence=sequence), sleeper=sleeps.append)

@@ -98,6 +98,7 @@ class ControllerTests(unittest.TestCase):
         cluster = next(item for item in fake.created if item["kind"] == "Cluster")
         target = cluster["spec"]["bootstrap"]["recovery"]["recoveryTarget"]
         self.assertEqual({"targetLSN": "A/1234", "targetTLI": "7"}, target)
+        self.assertEqual(cluster["metadata"]["labels"], cluster["spec"]["inheritedMetadata"]["labels"])
         self.assertNotIn("targetTimeline", json.dumps(cluster))
 
     def test_cnpg_rejects_missing_target(self) -> None:
@@ -113,6 +114,11 @@ class ControllerTests(unittest.TestCase):
     def test_selection_rejects_fence_timeline_mismatch(self) -> None:
         fake = gateway(); fake.results["selection"] = json.dumps(selection_document(target_timeline=8))
         self.assertEqual("retained", controller(fake).run(TRIGGER, RUN))
+
+    def test_selection_rejects_fence_segment_mismatch(self) -> None:
+        fake = gateway(); fake.results["selection"] = json.dumps(selection_document(wal_fence_file="000000070000000A00000001"))
+        self.assertEqual("retained", controller(fake).run(TRIGGER, RUN))
+        self.assertEqual("IMMUTABLE_BINDING_INVALID", parse_state(fake.state_raw, NOW)["latest_run"]["failure_code"])
 
     def test_cnpg_fixed_external_source(self) -> None:
         fake = gateway(); drive(controller(fake))
@@ -146,6 +152,8 @@ class ControllerTests(unittest.TestCase):
         args = job["spec"]["template"]["spec"]["containers"][0]["args"]
         self.assertEqual("2026-01-15T09:00:00Z", args[args.index("--capture-started-at") + 1])
         self.assertEqual("2026-01-15T09:01:00Z", args[args.index("--wal-fence-committed-at") + 1])
+        self.assertEqual("A/1234", args[args.index("--target-lsn") + 1])
+        self.assertEqual("7", args[args.index("--target-tli") + 1])
 
     def test_database_result_whole_second_bound_accepts_original_fractional_fence(self) -> None:
         fake = gateway(); fake.results["db-validation"] = json.dumps(database_result(fence_fenced_at="2026-01-15T09:01:00.900000Z"))
@@ -157,6 +165,17 @@ class ControllerTests(unittest.TestCase):
         fake.results["db-validation"] = json.dumps(database_result(fence_fenced_at="2026-01-15T09:01:00.900000Z"))
         self.assertEqual("retained", drive(controller(fake)))
         self.assertEqual("DB_VALIDATION_INVALID", parse_state(fake.state_raw, NOW)["latest_run"]["failure_code"])
+
+    def test_database_result_requires_promoted_target_timeline(self) -> None:
+        for result in (
+            database_result(timeline=7),
+            database_result(target_tli=8),
+            database_result(timeline=8, target_tli=8),
+        ):
+            with self.subTest(result=result):
+                fake = gateway(); fake.results["db-validation"] = json.dumps(result)
+                self.assertEqual("retained", drive(controller(fake)))
+                self.assertEqual("DB_VALIDATION_INVALID", parse_state(fake.state_raw, NOW)["latest_run"]["failure_code"])
 
     def test_restore_exact_args_and_parent_mount(self) -> None:
         fake = gateway(); drive(controller(fake))
@@ -509,7 +528,7 @@ class ControllerTests(unittest.TestCase):
         state = parse_state(fake.state_raw, NOW); run = state["latest_run"]
         cluster = next(item for item in run["child_resources"] if item["kind"] == "Cluster")
         labels = {"app.kubernetes.io/managed-by": "hriv-restore-validation", "hriv.bcit.ca/restore-validation-run-id": RUN, "hriv.bcit.ca/restore-validation-role": "cnpg", "cnpg.io/cluster": child_name(RUN, "cnpg")}
-        fake.create_child({"apiVersion": "v1", "kind": "Service", "metadata": {"name": "generated-rw", "labels": labels, "ownerReferences": [{"kind": "Cluster", "uid": cluster["uid"], "controller": True}]}})
+        fake.create_child({"apiVersion": "v1", "kind": "Service", "metadata": {"name": "generated-rw", "labels": labels, "ownerReferences": [{"apiVersion": "postgresql.cnpg.io/v1", "kind": "Cluster", "name": cluster["name"], "uid": cluster["uid"], "controller": True}]}})
         self.assertTrue(instance._ownership_intact(run))
 
     def test_run_and_child_names_deterministic(self) -> None:
@@ -552,20 +571,36 @@ class ControllerTests(unittest.TestCase):
         fake.children[key] = (ref, manifest, observation)
         with self.assertRaises(ValidationError): instance.cleanup_retained("cleanup-job-uid")
 
-    def test_manual_cleanup_deletes_legitimate_cnpg_pod_and_service_descendants(self) -> None:
+    def test_manual_cleanup_deletes_legitimate_cnpg_descendants(self) -> None:
         fake, instance = self._retained()
         state = parse_state(fake.state_raw, NOW)
         cluster = next(item for item in state["retained_runs"][0]["child_resources"] if item["kind"] == "Cluster")
         labels = {"app.kubernetes.io/managed-by": "hriv-restore-validation", "hriv.bcit.ca/restore-validation-run-id": RUN, "hriv.bcit.ca/restore-validation-role": "cnpg"}
-        for kind, name in (("Pod", "generated-pg-1"), ("Service", "generated-pg-rw")):
-            fake.create_child({"apiVersion": "v1", "kind": kind, "metadata": {"name": name, "labels": labels, "ownerReferences": [{"apiVersion": "postgresql.cnpg.io/v1", "kind": "Cluster", "uid": cluster["uid"], "controller": True}]}})
+        cluster_owner = {"apiVersion": "postgresql.cnpg.io/v1", "kind": "Cluster", "name": cluster["name"], "uid": cluster["uid"], "controller": True}
+        job = fake.create_child({"apiVersion": "batch/v1", "kind": "Job", "metadata": {"name": "generated-full-recovery", "labels": labels, "ownerReferences": [cluster_owner]}})
+        for api_version, kind, name, owner in (
+            ("v1", "PersistentVolumeClaim", "generated-pg-1", cluster_owner),
+            ("v1", "Service", "generated-pg-rw", cluster_owner),
+            ("v1", "Pod", "generated-full-recovery-pod", {"apiVersion": "batch/v1", "kind": "Job", "name": job.name, "uid": job.uid, "controller": True}),
+        ):
+            fake.create_child({"apiVersion": api_version, "kind": kind, "metadata": {"name": name, "labels": labels, "ownerReferences": [owner]}})
         self.assertEqual("succeeded", instance.cleanup_retained("cleanup-job-uid"))
         self.assertFalse(fake.list_run_children(RUN))
+
+    def test_manual_cleanup_rejects_misbound_cnpg_descendant(self) -> None:
+        fake, instance = self._retained()
+        state = parse_state(fake.state_raw, NOW)
+        cluster = next(item for item in state["retained_runs"][0]["child_resources"] if item["kind"] == "Cluster")
+        labels = {"app.kubernetes.io/managed-by": "hriv-restore-validation", "hriv.bcit.ca/restore-validation-run-id": RUN, "hriv.bcit.ca/restore-validation-role": "cnpg"}
+        job = fake.create_child({"apiVersion": "batch/v1", "kind": "Job", "metadata": {"name": "generated-full-recovery", "labels": labels, "ownerReferences": [{"apiVersion": "postgresql.cnpg.io/v1", "kind": "Cluster", "name": cluster["name"], "uid": cluster["uid"], "controller": True}]}})
+        fake.create_child({"apiVersion": "v1", "kind": "Pod", "metadata": {"name": "misbound-pod", "labels": labels, "ownerReferences": [{"apiVersion": "batch/v1", "kind": "Job", "name": "other-job", "uid": job.uid, "controller": True}]}})
+        with self.assertRaisesRegex(ValidationError, "CLEANUP_UNBOUND_CHILD"):
+            instance.cleanup_retained("cleanup-job-uid")
 
     def test_manual_cleanup_rejects_unbound_labelled_descendant(self) -> None:
         fake, instance = self._retained()
         labels = {"app.kubernetes.io/managed-by": "hriv-restore-validation", "hriv.bcit.ca/restore-validation-run-id": RUN, "hriv.bcit.ca/restore-validation-role": "cnpg"}
-        fake.create_child({"apiVersion": "v1", "kind": "Service", "metadata": {"name": "unbound", "labels": labels, "ownerReferences": [{"kind": "Cluster", "uid": "not-bound", "controller": True}]}})
+        fake.create_child({"apiVersion": "v1", "kind": "Service", "metadata": {"name": "unbound", "labels": labels, "ownerReferences": [{"apiVersion": "postgresql.cnpg.io/v1", "kind": "Cluster", "name": "unbound", "uid": "not-bound", "controller": True}]}})
         with self.assertRaisesRegex(ValidationError, "CLEANUP_UNBOUND_CHILD"):
             instance.cleanup_retained("cleanup-job-uid")
 

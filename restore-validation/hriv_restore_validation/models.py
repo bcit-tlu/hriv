@@ -328,6 +328,13 @@ class Templates:
             cluster.get("imageName") != profile.postgresql_image
             or cluster.get("storage")
             != {"size": profile.postgresql_storage_size, "storageClass": "longhorn"}
+            or cluster.get("inheritedMetadata")
+            != {
+                "labels": {
+                    "app.kubernetes.io/managed-by": "hriv-restore-validation",
+                    "hriv.bcit.ca/restore-validation-role": "cnpg",
+                }
+            }
             or cluster.get("affinity")
             != {"nodeSelector": {"bcit.ca/longhorn-storage": "true"}}
             or recovery.get("source") != "pg-core-source"
@@ -423,7 +430,7 @@ class Templates:
             raise ValidationError("TEMPLATE_PVC_REFERENCE_INVALID")
         if database_volumes.get("credentials", {}).get("secret", {}).get("secretName") != "generated-superuser" or consistency_volumes.get("credentials", {}).get("secret", {}).get("secretName") != "generated-superuser":
             raise ValidationError("TEMPLATE_SECRET_INVALID")
-        expected_maps = {"profile": "hriv-restore-validation-source-profile-v6", "policy": "hriv-restore-validation-source-state-policy-v6"}
+        expected_maps = {"profile": "hriv-restore-validation-source-profile-v7", "policy": "hriv-restore-validation-source-state-policy-v7"}
         if database_volumes.get("profile", {}).get("configMap", {}).get("name") != expected_maps["profile"] or consistency_volumes.get("profile", {}).get("configMap", {}).get("name") != expected_maps["profile"] or consistency_volumes.get("policy", {}).get("configMap", {}).get("name") != expected_maps["policy"]:
             raise ValidationError("TEMPLATE_CONFIG_REFERENCE_INVALID")
         tmp = {"name": "tmp", "mountPath": "/tmp"}

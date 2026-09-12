@@ -56,8 +56,8 @@ Scheduled and on-demand backups use the same capture implementation:
 5. In one behaviorally read-only transaction, set local lock and statement
    timeouts, then execute `BEGIN; SET LOCAL ...; LOCK ... IN SHARE MODE; COPY ...;
 COMMIT;`. Wait out existing source writers, then materialize UTC target time,
-   `pg_current_wal_lsn()` target LSN, and authoritative `source_images` rows from
-   the post-lock snapshot while source writes remain blocked. Do not declare the
+   `pg_current_wal_lsn()` capture-boundary LSN, and authoritative `source_images`
+   rows from the post-lock snapshot while source writes remain blocked. Do not declare the
    transaction `READ ONLY`, because PostgreSQL may reject the explicit lock. The
    client deadline is five seconds longer than the database timeout and failure
    exits maintenance without matching, fencing, or publication.
@@ -66,8 +66,9 @@ COMMIT;`. Wait out existing source writers, then materialize UTC target time,
    the PITR target; any resulting file is reported as an orphan and excluded.
 7. While the mutation gate remains enabled, commit a bounded update of the
    singleton `public.backup_recovery_wal_fence` row, incrementing `generation`
-   and recording `fenced_at`; then query the at-or-after WAL upper-bound file
-   after commit. This is the only production write.
+   and recording `fenced_at`; after commit, bind the resulting WAL boundary LSN
+   and its at-or-after WAL file. That post-commit fence LSN is the authoritative
+   recovery `target_lsn`. This is the only production write.
 8. Release the mutation gate and fail closed while polling until CNPG reports a
    same-timeline archived WAL file lexically at or beyond the fence upper bound.
 9. Hash, compress, and upload the inventoried files asynchronously.
@@ -158,14 +159,17 @@ without a format-version change. These WAL-fence fields are additive-compatible
 with format 2. Production capture first verifies that PostgreSQL `archive_timeout`
 is positive and strictly less than the configured fence wait timeout, recording
 it as `archive_timeout_seconds`. The inventory statement captures `target_time`,
-`target_lsn`, and rows from one snapshot acquired after the source-table SHARE
-lock; `target_lsn` precedes the separately committed singleton-row update fence.
-The post-commit WAL query may observe a later segment under concurrent database
-activity, so `wal_fence_file` is a conservative at-or-after archive upper bound,
-not necessarily the segment containing the fence tuple. Publication safely waits
-until `pg_stat_archiver` reaches that bound on the same timeline, making the
-earlier target reachable even on an otherwise idle database. High-cardinality
-mismatch details belong in the manifest and structured logs, not metric labels.
+`capture_boundary_lsn`, and rows from one snapshot acquired after the
+source-table SHARE lock; `capture_boundary_lsn` precedes the separately
+committed singleton-row update fence. The post-commit WAL boundary query
+provides the authoritative `database_recovery.target_lsn` and
+`wal_fence_file`. Because that query can observe later WAL under concurrent
+database activity, `wal_fence_file` is a conservative at-or-after archive upper
+bound, not necessarily the segment containing the fence tuple. Publication
+safely waits until `pg_stat_archiver` reaches that bound on the same timeline,
+making the fence-containing target reachable even on an otherwise idle
+database. High-cardinality mismatch details belong in the manifest and
+structured logs, not metric labels.
 
 ## Candidate state model
 
@@ -206,7 +210,7 @@ Production restoration is component-selective:
 6. Quiesce HRIV and cut over only after the new targets pass validation.
 7. Rebuild derived tiles with the supported serial operation.
 8. Treat the latest recovery set as the acceptance canary: restore CNPG to the
-   exact database-snapshot `target_lsn`, verify its source inventory against the
+   exact post-commit WAL-fence `target_lsn`, verify its source inventory against the
    manifest, then verify health, authentication, browsing, representative viewer
    behavior, and metadata before disabling maintenance mode.
 
