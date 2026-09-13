@@ -1,13 +1,13 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: hriv-restore-validation-controller-v6
+  name: hriv-restore-validation-controller-v7
   annotations:
     helm.sh/resource-policy: keep
     kustomize.toolkit.fluxcd.io/prune: disabled
   labels:
     {{- include "hriv-restore-validation.labels" . | nindent 4 }}
-    hriv.bcit.ca/config-version: "6"
+    hriv.bcit.ca/config-version: "7"
 immutable: true
 data:
   config.json: |
@@ -16,13 +16,13 @@ data:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: hriv-restore-validation-source-profile-v6
+  name: hriv-restore-validation-source-profile-v7
   annotations:
     helm.sh/resource-policy: keep
     kustomize.toolkit.fluxcd.io/prune: disabled
   labels:
     {{- include "hriv-restore-validation.labels" . | nindent 4 }}
-    hriv.bcit.ca/config-version: "6"
+    hriv.bcit.ca/config-version: "7"
 immutable: true
 data:
   profile.json: |
@@ -31,13 +31,13 @@ data:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: hriv-restore-validation-source-state-policy-v6
+  name: hriv-restore-validation-source-state-policy-v7
   annotations:
     helm.sh/resource-policy: keep
     kustomize.toolkit.fluxcd.io/prune: disabled
   labels:
     {{- include "hriv-restore-validation.labels" . | nindent 4 }}
-    hriv.bcit.ca/config-version: "6"
+    hriv.bcit.ca/config-version: "7"
 immutable: true
 data:
   policy.json: |

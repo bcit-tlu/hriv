@@ -52,6 +52,19 @@ spec:
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
+metadata: {name: hriv-restore-validation-cnpg-operator-status}
+spec:
+  podSelector:
+    matchLabels: {hriv.bcit.ca/restore-validation-role: cnpg}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: cnpg-system}}
+          podSelector: {matchLabels: {app.kubernetes.io/instance: cnpg-operator, app.kubernetes.io/name: cloudnative-pg}}
+      ports: [{protocol: TCP, port: 8000}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
 metadata: {name: hriv-restore-validation-database-clients}
 spec:
   podSelector:

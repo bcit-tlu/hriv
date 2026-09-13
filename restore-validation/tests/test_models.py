@@ -207,6 +207,16 @@ class ParsingTests(unittest.TestCase):
         value = template_document(); value["cnpg_cluster"]["spec"]["imageName"] = BACKUP_IMAGE
         with self.assertRaises(ValidationError): Templates.parse(yaml.safe_dump(value), profile())
 
+    def test_templates_require_cnpg_inherited_labels(self):
+        for mutate in (
+            lambda value: value["cnpg_cluster"]["spec"].pop("inheritedMetadata"),
+            lambda value: value["cnpg_cluster"]["spec"]["inheritedMetadata"]["labels"].pop("hriv.bcit.ca/restore-validation-role"),
+            lambda value: value["cnpg_cluster"]["spec"]["inheritedMetadata"]["labels"].update({"extra": "label"}),
+        ):
+            value = template_document(); mutate(value)
+            with self.subTest(value=value), self.assertRaises(ValidationError):
+                Templates.parse(yaml.safe_dump(value), profile())
+
     def test_templates_require_longhorn_storage_targets(self):
         for mutate in (
             lambda value: value["source_pvc"]["spec"].update(storageClassName="other"),
