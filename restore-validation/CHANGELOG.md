@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.5](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.4...restore-validation-v0.1.5) (2026-09-13)
+
+
+### Bug Fixes
+
+* publish post-fence recovery boundary ([#1277](https://github.com/bcit-tlu/hriv/issues/1277)) ([3cb13df](https://github.com/bcit-tlu/hriv/commit/3cb13dfa4f7ce6e2de3c4b82cde8de1202ebaa29))
+
 ## [0.1.4](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.3...restore-validation-v0.1.4) (2026-09-12)
 
 
