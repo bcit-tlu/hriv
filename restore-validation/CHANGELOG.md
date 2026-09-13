@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.6](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.5...restore-validation-v0.1.6) (2026-09-13)
+
+
+### Bug Fixes
+
+* **restore-validation:** un-wedge retained cleanup for runs with recorded job pods ([#1280](https://github.com/bcit-tlu/hriv/issues/1280)) ([d809810](https://github.com/bcit-tlu/hriv/commit/d8098109ea05bfe0c8fd324e61da4be29457dc09))
+
 ## [0.1.5](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.4...restore-validation-v0.1.5) (2026-09-13)
 
 
