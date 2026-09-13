@@ -614,6 +614,26 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual("succeeded", instance.cleanup_retained("cleanup-job-uid"))
         self.assertFalse(fake.list_run_children(RUN))
 
+    def test_manual_cleanup_handles_recorded_job_pods(self) -> None:
+        fake, instance = self._retained()
+        state = parse_state(fake.state_raw, NOW)
+        select = next(item for item in state["retained_runs"][0]["child_resources"] if item["kind"] == "Job" and item["name"] == child_name(RUN, "selection"))
+        labels = {"app.kubernetes.io/managed-by": "hriv-restore-validation", "hriv.bcit.ca/restore-validation-run-id": RUN, "hriv.bcit.ca/restore-validation-role": "selection"}
+        owner = {"apiVersion": "batch/v1", "kind": "Job", "name": select["name"], "uid": select["uid"], "controller": True}
+        pod = fake.create_child({"apiVersion": "v1", "kind": "Pod", "metadata": {"name": f"{select['name']}-abcde", "labels": labels, "ownerReferences": [owner]}})
+        recorded = [
+            {"apiVersion": "v1", "kind": "Pod", "name": pod.name, "uid": pod.uid},
+            {"apiVersion": "v1", "kind": "Pod", "name": f"{child_name(RUN, 'db-validation')}-zzzzz", "uid": "absent-pod-uid"},
+        ]
+        state["latest_run"]["child_resources"].extend(recorded)
+        state["retained_runs"][0]["child_resources"].extend(recorded)
+        fake.state_raw = json.dumps(state)
+        self.assertEqual("succeeded", instance.cleanup_retained("cleanup-job-uid"))
+        self.assertFalse(fake.list_run_children(RUN))
+        cleared = parse_state(fake.state_raw, NOW)
+        self.assertEqual([], cleared["retained_runs"])
+        self.assertEqual("succeeded", cleared["latest_run"]["cleanup"]["outcome"])
+
     def test_manual_cleanup_rejects_misbound_cnpg_descendant(self) -> None:
         fake, instance = self._retained()
         state = parse_state(fake.state_raw, NOW)

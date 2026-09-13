@@ -900,7 +900,7 @@ class Controller:
         tracked = {
             item["uid"]: (
                 (item["apiVersion"], item["kind"], item["name"], item["uid"]),
-                self._role_for_name(run_id, item["name"]),
+                self._recorded_role(run_id, item),
             )
             for item in child_resources
         }
@@ -934,6 +934,8 @@ class Controller:
         def bound_role(uid: str, seen: set[str]) -> tuple[str, str] | None:
             if uid in tracked:
                 identity, role = tracked[uid]
+                if role is None:
+                    return None
                 return role, identity[1]
             if uid in seen or uid not in descendants:
                 return None
@@ -997,6 +999,15 @@ class Controller:
             if child_name(run_id, role) == name:
                 return role
         raise ValidationError("OWNERSHIP_CONFLICT")
+
+    @staticmethod
+    def _recorded_role(run_id: str, item: dict[str, Any]) -> str | None:
+        try:
+            return Controller._role_for_name(run_id, item["name"])
+        except ValidationError:
+            if item["kind"] in {"Pod", "Service"}:
+                return None
+            raise
 
     @classmethod
     def _role_for_ref(cls, run: dict[str, Any], ref: ResourceRef, actual: dict[str, Any]) -> str:
