@@ -17,6 +17,46 @@ from .models import SourcePolicy, SourceProfile, canonical_source_state
 from .strict import LSN_RE, ValidationError, bounded_string, canonical_json
 
 MAX_RESULT_BYTES = 32 * 1024
+_TIMELINE_HISTORY_LINE_RE = re.compile(
+    r"^\s*(\d+)\s+([0-9A-F]+/[0-9A-F]+)(?:\s|$)", re.MULTILINE
+)
+
+
+def _postgres_lsn_value(value: str) -> int | None:
+    parts = value.split("/", 1)
+    if len(parts) != 2 or any(len(part) > 8 for part in parts):
+        return None
+    try:
+        return (int(parts[0], 16) << 32) + int(parts[1], 16)
+    except ValueError:
+        return None
+
+
+def _timeline_ancestry(
+    content: object, timeline: object, target_tli: int, target_lsn: str
+) -> tuple[int, str] | None:
+    target_lsn_value = _postgres_lsn_value(target_lsn)
+    if (
+        not isinstance(timeline, int)
+        or isinstance(timeline, bool)
+        or timeline <= target_tli
+        or timeline > 0xFFFFFFFF
+        or target_lsn_value is None
+        or not isinstance(content, str)
+    ):
+        return None
+    ancestry = _TIMELINE_HISTORY_LINE_RE.findall(content)
+    if not ancestry:
+        return None
+    parent_text, switchpoint = ancestry[-1]
+    switchpoint_value = _postgres_lsn_value(switchpoint)
+    if (
+        int(parent_text) != target_tli
+        or switchpoint_value is None
+        or switchpoint_value < target_lsn_value
+    ):
+        return None
+    return target_tli, switchpoint
 
 
 def _strict_utc(value: str) -> datetime:
@@ -71,12 +111,26 @@ def validate_database(profile: SourceProfile, host: str, capture_started_at: str
     fence_committed = _strict_utc(wal_fence_committed_at)
     if capture_started > fence_committed or LSN_RE.fullmatch(target_lsn) is None or target_lsn.lower() == "latest" or not isinstance(target_tli, int) or isinstance(target_tli, bool) or not 1 <= target_tli <= 0xFFFFFFFF or isinstance(expected_source_image_count, bool) or not isinstance(expected_source_image_count, int) or not 0 <= expected_source_image_count <= 10_000_000 or isinstance(recovery_attempts, bool) or not 1 <= recovery_attempts <= 12:
         raise ValidationError("RECOVERY_TARGET_INVALID")
-    promoted_tli = target_tli + 1
+    ancestry: tuple[int, str] | None = None
     with _connect(connect, host, "postgres", credentials) as cluster:
         identity = _one(cluster, "SELECT system_identifier::text AS system_identifier FROM pg_control_system()")
         for attempt in range(recovery_attempts):
-            recovery = _one(cluster, "SELECT pg_is_in_recovery() AS in_recovery, timeline_id::bigint AS timeline FROM pg_control_checkpoint()")
-            if recovery == {"in_recovery": False, "timeline": promoted_tli}:
+            recovery = _one(
+                cluster,
+                "SELECT pg_is_in_recovery() AS in_recovery, "
+                "timeline_id::bigint AS timeline, "
+                "pg_read_file('pg_wal/' || "
+                "upper(lpad(to_hex(timeline_id), 8, '0')) || '.history', "
+                "0, 1048576, true) AS timeline_history "
+                "FROM pg_control_checkpoint()",
+            )
+            ancestry = _timeline_ancestry(
+                recovery.get("timeline_history"),
+                recovery.get("timeline"),
+                target_tli,
+                target_lsn,
+            )
+            if recovery.get("in_recovery") is False and ancestry is not None:
                 break
             if attempt + 1 < recovery_attempts:
                 sleeper(5.0)
@@ -113,7 +167,8 @@ def validate_database(profile: SourceProfile, host: str, capture_started_at: str
         synthetic.append({"id": row.get("id"), "email_sha256": hashlib.sha256(email.lower().encode("utf-8")).hexdigest()})
     valid = (
         identity.get("system_identifier") == profile.expected_system_identifier
-        and recovery == {"in_recovery": False, "timeline": promoted_tli}
+        and recovery.get("in_recovery") is False
+        and ancestry is not None
         and observed_required_databases == required_databases
         and observed_required_roles == required_roles
         and migration.get("version_num") == profile.expected_migration_version
@@ -132,7 +187,7 @@ def validate_database(profile: SourceProfile, host: str, capture_started_at: str
     )
     if not valid:
         raise ValidationError("DATABASE_FIDELITY_MISMATCH")
-    result = {"schema_version": 1, "operation": "validate-database", "success": True, "required_database_inventory": observed_required_databases, "required_static_role_inventory": observed_required_roles, "system_identifier": identity["system_identifier"], "timeline": promoted_tli, "target_tli": target_tli, "recovery_complete": True, "migration_version": migration["version_num"], "observed_row_counts": row_counts, "source_image_count": source_count, "synthetic_row": synthetic[0], "current_lsn": reached["current_lsn"], "target_lsn": target_lsn, "fence_generation": fence["generation"], "fence_fenced_at": _utc_text(fenced_at)}
+    result = {"schema_version": 1, "operation": "validate-database", "success": True, "required_database_inventory": observed_required_databases, "required_static_role_inventory": observed_required_roles, "system_identifier": identity["system_identifier"], "timeline": recovery["timeline"], "timeline_parent": ancestry[0], "timeline_switchpoint": ancestry[1], "target_tli": target_tli, "recovery_complete": True, "migration_version": migration["version_num"], "observed_row_counts": row_counts, "source_image_count": source_count, "synthetic_row": synthetic[0], "current_lsn": reached["current_lsn"], "target_lsn": target_lsn, "fence_generation": fence["generation"], "fence_fenced_at": _utc_text(fenced_at)}
     _bounded_result(result)
     return result
 

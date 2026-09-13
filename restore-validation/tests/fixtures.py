@@ -93,7 +93,7 @@ def selection_document(**changes: Any) -> dict[str, Any]:
 
 def database_result(**changes: Any) -> dict[str, Any]:
     p = profile()
-    value = {"schema_version": 1, "operation": "validate-database", "success": True, "system_identifier": p.expected_system_identifier, "timeline": 8, "target_tli": 7, "recovery_complete": True, "required_database_inventory": [dict(item) for item in p.required_database_inventory], "required_static_role_inventory": [dict(item) for item in p.required_static_role_inventory], "migration_version": p.expected_migration_version, "observed_row_counts": p.minimum_row_counts, "source_image_count": 2, "synthetic_row": p.synthetic_row, "current_lsn": "A/1234", "target_lsn": "A/1234", "fence_generation": 9, "fence_fenced_at": "2026-01-15T09:00:30Z"}
+    value = {"schema_version": 1, "operation": "validate-database", "success": True, "system_identifier": p.expected_system_identifier, "timeline": 8, "timeline_parent": 7, "timeline_switchpoint": "A/1234", "target_tli": 7, "recovery_complete": True, "required_database_inventory": [dict(item) for item in p.required_database_inventory], "required_static_role_inventory": [dict(item) for item in p.required_static_role_inventory], "migration_version": p.expected_migration_version, "observed_row_counts": p.minimum_row_counts, "source_image_count": 2, "synthetic_row": p.synthetic_row, "current_lsn": "A/1234", "target_lsn": "A/1234", "fence_generation": 9, "fence_fenced_at": "2026-01-15T09:00:30Z"}
     value.update(changes)
     return value
 

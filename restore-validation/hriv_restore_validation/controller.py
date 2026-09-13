@@ -690,17 +690,20 @@ class Controller:
         return self._validate_selected_source(binding)
 
     def _database_result(self, raw: str, selected: dict[str, Any]) -> None:
-        required = {"schema_version", "operation", "success", "system_identifier", "timeline", "target_tli", "recovery_complete", "required_database_inventory", "required_static_role_inventory", "migration_version", "observed_row_counts", "source_image_count", "synthetic_row", "current_lsn", "target_lsn", "fence_generation", "fence_fenced_at"}
+        required = {"schema_version", "operation", "success", "system_identifier", "timeline", "timeline_parent", "timeline_switchpoint", "target_tli", "recovery_complete", "required_database_inventory", "required_static_role_inventory", "migration_version", "observed_row_counts", "source_image_count", "synthetic_row", "current_lsn", "target_lsn", "fence_generation", "fence_fenced_at"}
         value = exact_object(parse_json(raw, max_bytes=32 * 1024), required=required)
         fenced_text, fenced_at = _strict_utc(value.get("fence_fenced_at"), "fence_fenced_at")
         _, capture_started = _strict_utc(selected["capture_started_at"], "capture_started_at")
         _, fence_committed = _strict_utc(selected["wal_fence_committed_at"], "wal_fence_committed_at")
-        expected = {"schema_version": 1, "operation": "validate-database", "success": True, "system_identifier": self.profile.expected_system_identifier, "timeline": selected["target_timeline"] + 1, "target_tli": selected["target_timeline"], "recovery_complete": True, "required_database_inventory": [dict(item) for item in self.profile.required_database_inventory], "required_static_role_inventory": [dict(item) for item in self.profile.required_static_role_inventory], "migration_version": self.profile.expected_migration_version, "observed_row_counts": value.get("observed_row_counts"), "source_image_count": selected["database_row_count"], "synthetic_row": self.profile.synthetic_row, "current_lsn": value.get("current_lsn"), "target_lsn": selected["target_lsn"], "fence_generation": value.get("fence_generation"), "fence_fenced_at": fenced_text}
+        expected = {"schema_version": 1, "operation": "validate-database", "success": True, "system_identifier": self.profile.expected_system_identifier, "timeline": value.get("timeline"), "timeline_parent": selected["target_timeline"], "timeline_switchpoint": value.get("timeline_switchpoint"), "target_tli": selected["target_timeline"], "recovery_complete": True, "required_database_inventory": [dict(item) for item in self.profile.required_database_inventory], "required_static_role_inventory": [dict(item) for item in self.profile.required_static_role_inventory], "migration_version": self.profile.expected_migration_version, "observed_row_counts": value.get("observed_row_counts"), "source_image_count": selected["database_row_count"], "synthetic_row": self.profile.synthetic_row, "current_lsn": value.get("current_lsn"), "target_lsn": selected["target_lsn"], "fence_generation": value.get("fence_generation"), "fence_fenced_at": fenced_text}
         row_counts = value.get("observed_row_counts")
         rows_valid = isinstance(row_counts, dict) and set(row_counts) == set(self.profile.minimum_row_counts) and all(isinstance(row_counts[name], int) and not isinstance(row_counts[name], bool) and row_counts[name] >= minimum for name, minimum in self.profile.minimum_row_counts.items())
         generation = value.get("fence_generation")
         fenced_comparison = fenced_at.replace(microsecond=0) if fence_committed.microsecond == 0 else fenced_at
-        if value != expected or not rows_valid or LSN_RE.fullmatch(str(value.get("current_lsn", ""))) is None or not isinstance(generation, int) or isinstance(generation, bool) or generation <= 0 or not capture_started <= fenced_comparison <= fence_committed:
+        timeline = value.get("timeline")
+        switchpoint = value.get("timeline_switchpoint")
+        switchpoint_reached = isinstance(switchpoint, str) and LSN_RE.fullmatch(switchpoint) is not None and _postgres_lsn_value(switchpoint) >= _postgres_lsn_value(selected["target_lsn"])
+        if value != expected or not rows_valid or not isinstance(timeline, int) or isinstance(timeline, bool) or timeline <= selected["target_timeline"] or timeline > 0xFFFFFFFF or not switchpoint_reached or LSN_RE.fullmatch(str(value.get("current_lsn", ""))) is None or not isinstance(generation, int) or isinstance(generation, bool) or generation <= 0 or not capture_started <= fenced_comparison <= fence_committed:
             raise ValidationError("DB_VALIDATION_INVALID")
 
     def _restore_result(self, raw: str, selected: dict[str, Any]) -> None:

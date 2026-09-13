@@ -497,8 +497,11 @@ manifest's bound `wal_segment_size_bytes`, not a fixed 16-MiB assumption.
 For the deployed CNPG v1 CRD, `WAIT_CNPG` requires all of `Ready=True`,
 `status.phase: Cluster in healthy state`, and `readyInstances == instances == 1`; the Ready
 condition alone is not sufficient. The subsequent read-only database child remains the final proof
-that recovery completed and promoted to `target_timeline + 1` after reaching the exact target LSN.
-It reports both the promoted `timeline` and the bound `target_tli`. Selection also
+that recovery completed and promoted to a new, unused timeline after reaching the exact target LSN.
+It MUST read the promoted timeline's local history, require its immediate `timeline_parent` to be
+`target_tli`, and require `timeline_switchpoint` to be at or beyond `target_lsn`; the promoted
+number may exceed `target_timeline + 1` when an archived descendant already exists. It reports the
+promoted `timeline`, `timeline_parent`, `timeline_switchpoint`, and bound `target_tli`. Selection also
 binds canonical UTC `capture_started_at`, uppercase `wal_fence_file`, and canonical UTC
 `wal_fence_committed_at`/`wal_fence_archived_at`. The database child MUST observe exactly one fence row at the target, require that row's dynamic
 generation to be positive, and require its timezone-aware `fenced_at` to fall inclusively between
@@ -1032,8 +1035,9 @@ Database checks compare the expected system identifier and promoted-timeline/rec
 complete database inventory, owner and static-role inventory, schema migration version,
 representative row counts and key invariants, source-image rows, selected synthetic
 user/category/image metadata, and the recovery WAL-fence boundary. Unexpected bootstrap-created
-databases or roles, wrong ownership, a target beyond/short of the requested boundary, promotion to
-anything other than `target_timeline + 1`, or inventory drift fails closed.
+databases or roles, wrong ownership, a target beyond/short of the requested boundary, a promoted
+timeline that is not a direct descendant of `target_timeline` or whose switchpoint precedes
+`target_lsn`, or inventory drift fails closed.
 
 The recovered production synthetic user row MUST exist and pass all DB-fidelity checks before any
 credential change. The entire recovered database MUST contain exactly one row whose

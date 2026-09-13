@@ -127,7 +127,8 @@ class ControllerTests(unittest.TestCase):
             wal_segment_size_bytes=64 * 1024 * 1024,
         ))
         fake.results["db-validation"] = json.dumps(database_result(
-            timeline=2, target_tli=1, current_lsn="0/1000001", target_lsn="0/1000001"
+            timeline=2, timeline_parent=1, timeline_switchpoint="0/1000001",
+            target_tli=1, current_lsn="0/1000001", target_lsn="0/1000001"
         ))
         self.assertEqual("succeeded", drive(controller(fake)))
 
@@ -184,11 +185,18 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual("retained", drive(controller(fake)))
         self.assertEqual("DB_VALIDATION_INVALID", parse_state(fake.state_raw, NOW)["latest_run"]["failure_code"])
 
+    def test_database_result_accepts_next_unused_promoted_timeline(self) -> None:
+        fake = gateway()
+        fake.results["db-validation"] = json.dumps(database_result(timeline=9))
+        self.assertEqual("succeeded", drive(controller(fake)))
+
     def test_database_result_requires_promoted_target_timeline(self) -> None:
         for result in (
             database_result(timeline=7),
             database_result(target_tli=8),
             database_result(timeline=8, target_tli=8),
+            database_result(timeline=9, timeline_parent=8),
+            database_result(timeline=9, timeline_switchpoint="A/1233"),
         ):
             with self.subTest(result=result):
                 fake = gateway(); fake.results["db-validation"] = json.dumps(result)
