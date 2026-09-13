@@ -116,8 +116,9 @@ Use fake or isolated Azure storage and a representative source-image inventory.
    `db.sql`, tiles, incomplete uploads, and orphan files are absent.
 5. Confirm manifest format 2 records one snapshot's UTC target time,
    `capture_boundary_lsn`, the post-commit fence boundary as the authoritative
-   target LSN, `archive_timeout_seconds`, the fence WAL/commit/archive timestamps,
-   checksums, counts, missing-source rows, and orphan-file reports. Verify `validation-select` and stateless restore expose lowercase `source_files_sha256` for the canonical sorted `{path:{size,sha256}}` mapping without exposing the full inventory, and that consistency hashing rejects a same-size byte mutation.
+   target LSN, `archive_timeout_seconds`, the source `wal_segment_size_bytes`,
+   the fence WAL/commit/archive timestamps, checksums, counts, missing-source
+   rows, and orphan-file reports. Verify `validation-select` and stateless restore expose lowercase `source_files_sha256` for the canonical sorted `{path:{size,sha256}}` mapping without exposing the full inventory, and that consistency hashing rejects a same-size byte mutation.
 6. Verify archive-timeout query → `BEGIN` → local lock/statement deadlines →
    source-table SHARE lock → inventory `COPY` → `COMMIT` → filesystem matching →
    committed singleton-row UPDATE fence → post-commit WAL boundary query occurs in order while maintenance exists. Archive polling follows maintenance;
@@ -208,7 +209,7 @@ state records pending or permanently failed attempt B; corrupting any component 
 field must fail. Component start/completion timestamps must be ordered and their serialized duration
 must match the microsecond-precision delta. Override `CNPG_CLUSTER_NAME` away from the bound source
 profile and require `CNPG_METADATA_INVALID`. Read fakes use slots/spec-conforming read-only interfaces and forbid adding or
-calling mutation capabilities. Never select by blob mtime or ambiguous prefix. Assert that successful selection and stateless restore both emit canonical UTC `capture_started_at`, uppercase 24-hex `wal_fence_file`, `wal_fence_committed_at`, and `wal_fence_archived_at`, and that the first eight fence hex digits equal `target_timeline`. Failed machine commands must emit exactly `schema_version`, `operation`, `success:false`, and bounded `failure_code` so the #1251 controller can preserve the child code.
+calling mutation capabilities. Never select by blob mtime or ambiguous prefix. Assert that successful selection and stateless restore both emit canonical UTC `capture_started_at`, uppercase 24-hex `wal_fence_file`, a supported power-of-two `wal_segment_size_bytes`, `wal_fence_committed_at`, and `wal_fence_archived_at`, and that the first eight fence hex digits equal `target_timeline`. Failed machine commands must emit exactly `schema_version`, `operation`, `success:false`, and bounded `failure_code` so the #1251 controller can preserve the child code.
 
 The #1251 consistency query must preserve every recovered `source_images` row, including inactive/non-active statuses; status participates in canonical missing-source evidence and is never a row filter.
 

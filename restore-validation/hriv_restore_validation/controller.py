@@ -15,11 +15,11 @@ from .strict import LSN_RE, RFC3339_RE, UID_RE, ValidationError, bounded_string,
 MANAGED_BY = "hriv-restore-validation"
 RUN_LABEL = "hriv.bcit.ca/restore-validation-run-id"
 ROLE_LABEL = "hriv.bcit.ca/restore-validation-role"
-SELECTION_FIELDS = {"schema_version", "operation", "success", "snapshot_name", "recovery_set_id", "run_id", "manifest_sha256", "archive_blob", "archive_size", "archive_etag", "target_lsn", "target_timeline", "source_file_count", "source_total_bytes", "source_files_sha256", "database_row_count", "missing_count", "orphan_count", "exclusion_count", "source_state", "source_state_sha256", "excluded_artifacts", "capture_started_at", "wal_fence_file", "wal_fence_committed_at", "wal_fence_archived_at", "completed_at"}
+SELECTION_FIELDS = {"schema_version", "operation", "success", "snapshot_name", "recovery_set_id", "run_id", "manifest_sha256", "archive_blob", "archive_size", "archive_etag", "target_lsn", "target_timeline", "wal_segment_size_bytes", "source_file_count", "source_total_bytes", "source_files_sha256", "database_row_count", "missing_count", "orphan_count", "exclusion_count", "source_state", "source_state_sha256", "excluded_artifacts", "capture_started_at", "wal_fence_file", "wal_fence_committed_at", "wal_fence_archived_at", "completed_at"}
 SELECTED_SOURCE_FIELDS = {
     "selection_schema_version", "selection_operation", "backup_run_id", "snapshot_name", "recovery_set_id",
     "manifest_sha256", "archive_blob", "archive_size", "archive_etag", "completed_at", "target_lsn",
-    "target_timeline", "source_file_count", "source_total_bytes", "source_files_sha256", "database_row_count", "missing_count",
+    "target_timeline", "wal_segment_size_bytes", "source_file_count", "source_total_bytes", "source_files_sha256", "database_row_count", "missing_count",
     "orphan_count", "exclusion_count", "source_state", "source_state_sha256", "excluded_artifacts",
     "capture_started_at", "wal_fence_file", "wal_fence_committed_at", "wal_fence_archived_at",
     "source_profile_id", "source_profile_version", "source_profile_sha256", "source_state_policy_version",
@@ -29,7 +29,8 @@ SELECTED_SOURCE_FIELDS = {
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
 SNAPSHOT_RE = re.compile(r"hriv-backup-\d{8}-\d{6}(?:-[0-9a-f]{8})?")
 ETAG_TOKEN_RE = re.compile(r"[A-Za-z0-9._:-]{1,128}")
-_WAL_SEGMENT_SIZE = 16 * 1024 * 1024
+_WAL_SEGMENT_MIN_BYTES = 1024 * 1024
+_WAL_SEGMENT_MAX_BYTES = 1024 * 1024 * 1024
 LOCAL_FAILURE_CODES = {
     "ARGUMENTS_INVALID", "DATABASE_CREDENTIAL_INVALID", "DATABASE_FIDELITY_MISMATCH",
     "DATABASE_RESULT_INVALID", "INTERNAL_FAILURE", "RECOVERY_TARGET_INVALID",
@@ -83,9 +84,17 @@ def _postgres_lsn_value(value: str) -> int:
     return (int(high, 16) << 32) + int(low, 16)
 
 
-def _postgres_wal_file(lsn: int, timeline: int) -> str:
-    segment = (lsn - 1) // _WAL_SEGMENT_SIZE
-    log, segment_in_log = divmod(segment, (1 << 32) // _WAL_SEGMENT_SIZE)
+def _postgres_wal_segment_size(value: Any) -> int | None:
+    if not isinstance(value, int) or isinstance(value, bool):
+        return None
+    if value < _WAL_SEGMENT_MIN_BYTES or value > _WAL_SEGMENT_MAX_BYTES or value & (value - 1):
+        return None
+    return value
+
+
+def _postgres_wal_file(lsn: int, timeline: int, wal_segment_size: int) -> str:
+    segment = (lsn - 1) // wal_segment_size
+    log, segment_in_log = divmod(segment, (1 << 32) // wal_segment_size)
     return f"{timeline:08X}{log:08X}{segment_in_log:08X}"
 
 
@@ -611,10 +620,11 @@ class Controller:
             if (capture_text, committed_text, archived_text, completed_text) != (value["capture_started_at"], value["wal_fence_committed_at"], value["wal_fence_archived_at"], value["completed_at"]) or not capture <= committed <= archived <= completed:
                 raise ValidationError("IMMUTABLE_BINDING_INVALID")
             timeline = integer(value["target_timeline"], "target_timeline", 1, 2**31 - 1)
+            wal_segment_size = _postgres_wal_segment_size(value["wal_segment_size_bytes"])
             bounded_string(value["target_lsn"], "target_lsn", 17, LSN_RE)
             fence_file = bounded_string(value["wal_fence_file"], "wal_fence_file", 24, re.compile(r"[0-9A-F]{24}"))
             target_lsn_value = _postgres_lsn_value(value["target_lsn"])
-            if int(fence_file[:8], 16) != timeline or target_lsn_value <= 0 or _postgres_wal_file(target_lsn_value, timeline) != fence_file:
+            if wal_segment_size is None or int(fence_file[:8], 16) != timeline or target_lsn_value <= 0 or _postgres_wal_file(target_lsn_value, timeline, wal_segment_size) != fence_file:
                 raise ValidationError("IMMUTABLE_BINDING_INVALID")
             source_files = integer(value["source_file_count"], "source_file_count", 0, 10_000_000)
             integer(value["source_total_bytes"], "source_total_bytes", 0, 2**63 - 1)
@@ -667,6 +677,7 @@ class Controller:
             "snapshot_name": value["snapshot_name"], "recovery_set_id": value["recovery_set_id"], "manifest_sha256": value["manifest_sha256"],
             "archive_blob": value["archive_blob"], "archive_size": value["archive_size"], "archive_etag": self._canonical_archive_etag(value["archive_etag"]),
             "completed_at": value["completed_at"], "target_lsn": value["target_lsn"], "target_timeline": value["target_timeline"],
+            "wal_segment_size_bytes": value["wal_segment_size_bytes"],
             "source_file_count": value["source_file_count"], "source_total_bytes": value["source_total_bytes"], "source_files_sha256": value["source_files_sha256"], "database_row_count": value["database_row_count"],
             "missing_count": value["missing_count"], "orphan_count": value["orphan_count"], "exclusion_count": value["exclusion_count"],
             "source_state": source_state, "source_state_sha256": source_state_sha256, "excluded_artifacts": copy.deepcopy(value["excluded_artifacts"]),

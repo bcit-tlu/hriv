@@ -120,6 +120,7 @@ A successful manifest is versioned and records at least:
     "target_lsn": "<authoritative PostgreSQL recovery LSN>",
     "archive_timeout_seconds": 300,
     "wal_fence_file": "<24-hex-character WAL archive upper bound>",
+    "wal_segment_size_bytes": 16777216,
     "wal_fence_committed_at": "<UTC timestamp>",
     "wal_fence_archived_at": "<UTC timestamp>",
     "logical_dump_role": "not-included"
@@ -163,9 +164,12 @@ it as `archive_timeout_seconds`. The inventory statement captures `target_time`,
 source-table SHARE lock; `capture_boundary_lsn` precedes the separately
 committed singleton-row update fence. The post-commit WAL boundary query
 provides the authoritative `database_recovery.target_lsn` and
-`wal_fence_file`. Because that query can observe later WAL under concurrent
-database activity, `wal_fence_file` is a conservative at-or-after archive upper
-bound, not necessarily the segment containing the fence tuple. Publication
+`wal_fence_file`, plus the source cluster's `wal_segment_size_bytes`. The
+manifest validates `wal_fence_file` against `target_lsn`, the fence timeline,
+and that recorded segment size instead of assuming the 16-MiB default. Because
+the boundary query can observe later WAL under concurrent database activity,
+`wal_fence_file` is a conservative at-or-after archive upper bound, not
+necessarily the segment containing the fence tuple. Publication
 safely waits until `pg_stat_archiver` reaches that bound on the same timeline,
 making the fence-containing target reachable even on an otherwise idle
 database. High-cardinality mismatch details belong in the manifest and

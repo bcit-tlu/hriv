@@ -466,8 +466,9 @@ orchestrator or read-only selection child MUST verify:
 - missing/orphan lists and validator-derived canonical counts/digest, separately allowlisted
   exclusions, and acceptance state obey the source-state policy below;
 - CNPG provider, source cluster, WAL fence metadata, versions, and checksums are supported; and
-- `database_recovery.target_lsn` and a 24-hex-character `wal_fence_file` are present and
-  syntactically valid.
+- `database_recovery.target_lsn`, a 24-hex-character `wal_fence_file`, and a
+  supported power-of-two `wal_segment_size_bytes` are present, syntactically
+  valid, and mutually consistent.
 
 Selection also binds lowercase `source_files_sha256`, computed over canonical JSON for the exact sorted manifest source-file mapping `{path:{size,sha256}}`. Stateless restore returns the same compact binding, and consistency validation streams every restored regular file, rebuilds the mapping with `data/source_images/...` paths, and must return an exact digest match. Counts and byte totals remain independent checks. The full high-volume inventory is never copied into public machine output or durable controller state.
 
@@ -489,7 +490,9 @@ hex characters of `database_recovery.wal_fence_file` (for example, `00000007` me
 bind that parsed value, and explicitly set CNPG `recoveryTarget.targetTLI` to its decimal
 string together with `targetLSN`. It MUST reject missing, unsupported, malformed, zero, or
 inconsistent fence/timeline evidence with `WAL_FENCE_UNSUPPORTED` or `TIMELINE_MISMATCH`; it MUST
-NOT request `latest`. `target_time` remains audit evidence only.
+NOT request `latest`. Selection MUST recompute the fence WAL filename using the
+manifest's bound `wal_segment_size_bytes`, not a fixed 16-MiB assumption.
+`target_time` remains audit evidence only.
 
 For the deployed CNPG v1 CRD, `WAIT_CNPG` requires all of `Ready=True`,
 `status.phase: Cluster in healthy state`, and `readyInstances == instances == 1`; the Ready

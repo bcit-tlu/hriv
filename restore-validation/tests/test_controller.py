@@ -120,6 +120,24 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual("retained", controller(fake).run(TRIGGER, RUN))
         self.assertEqual("IMMUTABLE_BINDING_INVALID", parse_state(fake.state_raw, NOW)["latest_run"]["failure_code"])
 
+    def test_selection_accepts_nondefault_wal_segment_size(self) -> None:
+        fake = gateway(); fake.results["selection"] = json.dumps(selection_document(
+            target_lsn="0/1000001", target_timeline=1,
+            wal_fence_file="000000010000000000000000",
+            wal_segment_size_bytes=64 * 1024 * 1024,
+        ))
+        fake.results["db-validation"] = json.dumps(database_result(
+            timeline=2, target_tli=1, current_lsn="0/1000001", target_lsn="0/1000001"
+        ))
+        self.assertEqual("succeeded", drive(controller(fake)))
+
+    def test_selection_rejects_invalid_wal_segment_size(self) -> None:
+        for size in (24 * 1024 * 1024, 512 * 1024, 2 * 1024 * 1024 * 1024, "16777216"):
+            with self.subTest(size=size):
+                fake = gateway(); fake.results["selection"] = json.dumps(selection_document(wal_segment_size_bytes=size))
+                self.assertEqual("retained", controller(fake).run(TRIGGER, RUN))
+                self.assertEqual("IMMUTABLE_BINDING_INVALID", parse_state(fake.state_raw, NOW)["latest_run"]["failure_code"])
+
     def test_cnpg_fixed_external_source(self) -> None:
         fake = gateway(); drive(controller(fake))
         cluster = next(item for item in fake.created if item["kind"] == "Cluster")
@@ -220,6 +238,7 @@ class ControllerTests(unittest.TestCase):
             "completed": ("completed_at", "2026-01-15T09:01:30Z", "IMMUTABLE_BINDING_INVALID"),
             "target lsn": ("target_lsn", "latest", "IMMUTABLE_BINDING_INVALID"),
             "target timeline": ("target_timeline", 8, "IMMUTABLE_BINDING_INVALID"),
+            "WAL segment size": ("wal_segment_size_bytes", 24 * 1024 * 1024, "IMMUTABLE_BINDING_INVALID"),
             "file count": ("source_file_count", 1, "IMMUTABLE_BINDING_INVALID"),
             "source bytes": ("source_total_bytes", -1, "IMMUTABLE_BINDING_INVALID"),
             "source files hash": ("source_files_sha256", "E" * 64, "IMMUTABLE_BINDING_INVALID"),
@@ -385,7 +404,7 @@ class ControllerTests(unittest.TestCase):
         fake = gateway(); fake.results["selection"] = json.dumps(selection_document(exclusion_count=1, excluded_artifacts=[{"path": "data/admin", "reason": "non_authoritative_production_data"}]))
         controller(fake).run(TRIGGER, RUN)
         selected = parse_state(fake.state_raw, NOW)["latest_run"]["selected_source"]
-        for field in ("backup_run_id", "manifest_sha256", "archive_blob", "archive_size", "archive_etag", "completed_at", "target_lsn", "target_timeline", "source_file_count", "source_total_bytes", "source_files_sha256", "database_row_count", "missing_count", "orphan_count", "exclusion_count", "source_state", "source_state_sha256", "excluded_artifacts", "source_profile_id", "source_profile_sha256", "source_state_policy_version", "source_state_policy_sha256"):
+        for field in ("backup_run_id", "manifest_sha256", "archive_blob", "archive_size", "archive_etag", "completed_at", "target_lsn", "target_timeline", "wal_segment_size_bytes", "source_file_count", "source_total_bytes", "source_files_sha256", "database_row_count", "missing_count", "orphan_count", "exclusion_count", "source_state", "source_state_sha256", "excluded_artifacts", "source_profile_id", "source_profile_sha256", "source_state_policy_version", "source_state_policy_sha256"):
             self.assertIn(field, selected)
         self.assertEqual([{"path": "data/admin", "reason": "non_authoritative_production_data"}], selected["excluded_artifacts"])
 
