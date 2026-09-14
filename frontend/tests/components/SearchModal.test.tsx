@@ -11,6 +11,7 @@
  * 7. Searching by program name finds images within associated categories
  * 8. Searching by category name finds images within that category
  * 9. Searching by program name finds users assigned to that program
+ * 10. "quoted phrases" match an exact multi-word string instead of unioning words
  */
 
 import { describe, it, expect, vi } from 'vitest'
@@ -131,7 +132,7 @@ describe('SearchModal', () => {
 
     // Type a search query
     const input = screen.getByPlaceholderText(
-      'Search categories, images, programs, people, the guide',
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'Liver')
 
@@ -145,7 +146,7 @@ describe('SearchModal', () => {
 
     // Query should still be present
     const reopenedInput = screen.getByPlaceholderText(
-      'Search categories, images, programs, people, the guide',
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
     )
     expect(reopenedInput).toHaveValue('Liver')
   })
@@ -156,7 +157,7 @@ describe('SearchModal', () => {
 
     // Type a query to show filter chips
     const input = screen.getByPlaceholderText(
-      'Search categories, images, programs, people, the guide',
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'Liver')
 
@@ -172,7 +173,9 @@ describe('SearchModal', () => {
 
     // The query should persist, and the Images chip should still be selected (filled variant)
     expect(
-      screen.getByPlaceholderText('Search categories, images, programs, people, the guide'),
+      screen.getByPlaceholderText(
+        'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
+      ),
     ).toHaveValue('Liver')
     // The Images chip should still be in the selected (filled) state, not just present
     const imagesChipAfterReopen = screen
@@ -187,7 +190,7 @@ describe('SearchModal', () => {
     render(<SearchModal {...defaultProps} open={true} />)
 
     const input = screen.getByPlaceholderText(
-      'Search categories, images, programs, people, the guide',
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'Liver')
 
@@ -201,7 +204,7 @@ describe('SearchModal', () => {
     render(<SearchModal {...defaultProps} open={true} />)
 
     const input = screen.getByPlaceholderText(
-      'Search categories, images, programs, people, the guide',
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'xyznonexistent')
 
@@ -217,7 +220,7 @@ describe('SearchModal', () => {
     )
 
     const input = screen.getByPlaceholderText(
-      'Search categories, images, programs, people, the guide',
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'Liver')
 
@@ -245,7 +248,7 @@ describe('SearchModal', () => {
     )
 
     const input = screen.getByPlaceholderText(
-      'Search categories, images, programs, people, the guide',
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'Histology')
 
@@ -264,7 +267,7 @@ describe('SearchModal', () => {
     render(<SearchModal {...defaultProps} open={true} />)
 
     const input = screen.getByPlaceholderText(
-      'Search categories, images, programs, people, the guide',
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'Medical Lab')
 
@@ -281,7 +284,7 @@ describe('SearchModal', () => {
     render(<SearchModal {...defaultProps} open={true} />)
 
     const input = screen.getByPlaceholderText(
-      'Search categories, images, programs, people, the guide',
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'Kidney')
 
@@ -293,7 +296,7 @@ describe('SearchModal', () => {
     render(<SearchModal {...defaultProps} open={true} />)
 
     const input = screen.getByPlaceholderText(
-      'Search categories, images, programs, people, the guide',
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'Histology')
 
@@ -310,7 +313,7 @@ describe('SearchModal', () => {
     render(<SearchModal {...defaultProps} open={true} />)
 
     const input = screen.getByPlaceholderText(
-      'Search categories, images, programs, people, the guide',
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'Portal')
 
@@ -328,7 +331,7 @@ describe('SearchModal', () => {
     render(<SearchModal {...defaultProps} open={true} />)
 
     const input = screen.getByPlaceholderText(
-      'Search categories, images, programs, people, the guide',
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'Atlas')
 
@@ -346,7 +349,7 @@ describe('SearchModal', () => {
     render(<SearchModal {...defaultProps} open={true} />)
 
     const input = screen.getByPlaceholderText(
-      'Search categories, images, programs, people, the guide',
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'atlas.example')
 
@@ -364,7 +367,7 @@ describe('SearchModal', () => {
     render(<SearchModal {...defaultProps} open={true} />)
 
     const input = screen.getByPlaceholderText(
-      'Search categories, images, programs, people, the guide',
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'Atlas')
 
@@ -378,7 +381,7 @@ describe('SearchModal', () => {
     render(<SearchModal {...defaultProps} open={true} />)
 
     const input = screen.getByPlaceholderText(
-      'Search categories, images, programs, people, the guide',
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'Atlas')
     await user.click(screen.getByText('Link'))
@@ -398,7 +401,7 @@ describe('SearchModal', () => {
     render(<SearchModal {...defaultProps} open={true} />)
 
     const input = screen.getByPlaceholderText(
-      'Search categories, images, programs, people, the guide',
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'IgnorePayloadOnly')
 
@@ -421,7 +424,7 @@ describe('SearchModal', () => {
     render(<SearchModal {...defaultProps} categories={[malformedCategory]} open={true} />)
 
     const input = screen.getByPlaceholderText(
-      'Search categories, images, programs, people, the guide',
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'Portal')
 
@@ -433,7 +436,7 @@ describe('SearchModal', () => {
     render(<SearchModal {...defaultProps} open={true} />)
 
     const input = screen.getByPlaceholderText(
-      'Search categories, images, programs, people, the guide',
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'Medical Lab')
 
@@ -447,7 +450,7 @@ describe('SearchModal', () => {
     render(<SearchModal {...defaultProps} open={true} />)
 
     const input = screen.getByPlaceholderText(
-      'Search categories, images, programs, people, the guide',
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'Medical Lab')
 
@@ -461,7 +464,7 @@ describe('SearchModal', () => {
     render(<SearchModal {...defaultProps} open={true} />)
 
     const input = screen.getByPlaceholderText(
-      'Search categories, images, programs, people, the guide',
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'Liver')
 
@@ -475,7 +478,7 @@ describe('SearchModal', () => {
     render(<SearchModal {...defaultProps} open={true} />)
 
     const input = screen.getByPlaceholderText(
-      'Search categories, images, programs, people, the guide',
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'Liver')
 
@@ -493,7 +496,7 @@ describe('SearchModal', () => {
     render(<SearchModal {...defaultProps} open={true} />)
 
     const input = screen.getByPlaceholderText(
-      'Search categories, images, programs, people, the guide',
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'Histology')
 
@@ -507,7 +510,7 @@ describe('SearchModal', () => {
     render(<SearchModal {...defaultProps} open={true} />)
 
     const input = screen.getByPlaceholderText(
-      'Search categories, images, programs, people, the guide',
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'Jane')
 
@@ -521,7 +524,7 @@ describe('SearchModal', () => {
     render(<SearchModal {...defaultProps} open={true} />)
 
     const input = screen.getByPlaceholderText(
-      'Search categories, images, programs, people, the guide',
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'Medical Lab')
 
@@ -537,7 +540,7 @@ describe('SearchModal', () => {
     render(<SearchModal {...defaultProps} open={true} />)
 
     const input = screen.getByPlaceholderText(
-      'Search categories, images, programs, people, the guide',
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
     )
     // "Kidney" matches both image name ("Kidney Cross") and copyright ("Kidney Foundation 2026")
     await user.type(input, 'Kidney')
@@ -559,7 +562,7 @@ describe('SearchModal', () => {
     render(<SearchModal {...defaultProps} open={true} />)
 
     const input = screen.getByPlaceholderText(
-      'Search categories, images, programs, people, the guide',
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'Atlas')
 
@@ -577,7 +580,9 @@ describe('SearchModal', () => {
     const user = userEvent.setup()
     render(<SearchModal {...defaultProps} isStudent={true} open={true} />)
 
-    const input = screen.getByPlaceholderText('Search categories and images')
+    const input = screen.getByPlaceholderText(
+      'Search categories and images — "quotes" for exact phrases',
+    )
     await user.type(input, 'Medical Lab')
 
     // Should still find categories and images via program search,
@@ -603,7 +608,7 @@ describe('SearchModal', () => {
     )
 
     const input = screen.getByPlaceholderText(
-      'Search categories, images, programs, people, the guide',
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'Medical Lab')
 
@@ -628,7 +633,9 @@ describe('SearchModal', () => {
     const user = userEvent.setup()
     render(<SearchModal {...defaultProps} isStudent={true} open={true} />)
 
-    const input = screen.getByPlaceholderText('Search categories and images')
+    const input = screen.getByPlaceholderText(
+      'Search categories and images — "quotes" for exact phrases',
+    )
     await user.type(input, 'Jane')
 
     // Student should not see user results
@@ -639,7 +646,9 @@ describe('SearchModal', () => {
     const user = userEvent.setup()
     render(<SearchModal {...defaultProps} isStudent={true} open={true} />)
 
-    const input = screen.getByPlaceholderText('Search categories and images')
+    const input = screen.getByPlaceholderText(
+      'Search categories and images — "quotes" for exact phrases',
+    )
     await user.type(input, 'Histology')
 
     // Category result should not show the program chip for students
@@ -658,7 +667,7 @@ describe('SearchModal', () => {
     )
 
     const input = screen.getByPlaceholderText(
-      'Search categories, images, programs, people, the guide',
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'Jane')
 
@@ -676,7 +685,7 @@ describe('SearchModal', () => {
     render(<SearchModal {...defaultProps} open={true} />)
 
     const input = screen.getByPlaceholderText(
-      'Search categories, images, programs, people, the guide',
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'announcement')
 
@@ -697,7 +706,7 @@ describe('SearchModal', () => {
     )
 
     const input = screen.getByPlaceholderText(
-      'Search categories, images, programs, people, the guide',
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'Measuring on an image')
 
@@ -720,7 +729,9 @@ describe('SearchModal', () => {
     const user = userEvent.setup()
     render(<SearchModal {...defaultProps} isStudent={true} open={true} />)
 
-    const input = screen.getByPlaceholderText('Search categories and images')
+    const input = screen.getByPlaceholderText(
+      'Search categories and images — "quotes" for exact phrases',
+    )
     await user.type(input, 'announcement')
 
     expect(
@@ -731,5 +742,139 @@ describe('SearchModal', () => {
     expect(
       screen.queryAllByTestId('type-filter-chip').find((c) => c.textContent === 'Guide'),
     ).toBeUndefined()
+  })
+
+  it('keeps unquoted multi-word queries as a union of terms', async () => {
+    const user = userEvent.setup()
+    render(<SearchModal {...defaultProps} open={true} />)
+
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
+    )
+    // "Kidney Cross" matches: its name has "kidney" and its note
+    // "Cross-section of kidney cortex" has both words non-adjacently.
+    await user.type(input, 'cross kidney')
+
+    const cards = screen
+      .getAllByTestId('search-result-action-area')
+      .filter((el) => el.textContent?.includes('Kidney Cross'))
+    expect(cards).toHaveLength(1)
+    expect(cards[0].textContent).toContain('Note:')
+  })
+
+  it('narrows a quoted multi-word query to exact-phrase matches', async () => {
+    const user = userEvent.setup()
+    render(<SearchModal {...defaultProps} open={true} />)
+
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
+    )
+    await user.type(input, '"kidney cross"')
+
+    // "Kidney Cross" matches via its name only: its note and copyright contain
+    // the words separately but never the adjacent phrase "kidney cross".
+    const cards = screen
+      .getAllByTestId('search-result-action-area')
+      .filter((el) => el.textContent?.includes('Kidney Cross'))
+    expect(cards).toHaveLength(1)
+    expect(cards[0].textContent).toContain('Name:')
+    expect(cards[0].textContent).not.toContain('Note:')
+    expect(cards[0].textContent).not.toContain('Copyright:')
+  })
+
+  it('returns no results when phrase words appear in the wrong order', async () => {
+    const user = userEvent.setup()
+    render(<SearchModal {...defaultProps} open={true} />)
+
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
+    )
+    await user.type(input, '"cross kidney"')
+
+    expect(screen.getByText(/No results found/)).toBeInTheDocument()
+  })
+
+  it('unions a quoted phrase with bare terms', async () => {
+    const user = userEvent.setup()
+    render(<SearchModal {...defaultProps} open={true} />)
+
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
+    )
+    await user.type(input, 'portal "kidney cross"')
+
+    // "Liver Section" matches the bare term "portal" (annotation); "Kidney
+    // Cross" matches the phrase.
+    const cards = screen.getAllByTestId('search-result-action-area')
+    expect(cards.filter((el) => el.textContent?.includes('Liver Section'))).toHaveLength(1)
+    expect(cards.filter((el) => el.textContent?.includes('Kidney Cross'))).toHaveLength(1)
+  })
+
+  it('treats an unclosed quote as a phrase to the end of input', async () => {
+    const user = userEvent.setup()
+    render(<SearchModal {...defaultProps} open={true} />)
+
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
+    )
+    await user.type(input, '"kidney cross')
+
+    const cards = screen
+      .getAllByTestId('search-result-action-area')
+      .filter((el) => el.textContent?.includes('Kidney Cross'))
+    expect(cards).toHaveLength(1)
+    expect(cards[0].textContent).toContain('Name:')
+    expect(cards[0].textContent).not.toContain('Note:')
+  })
+
+  it('treats smart double quotes like straight quotes', async () => {
+    const user = userEvent.setup()
+    render(<SearchModal {...defaultProps} open={true} />)
+
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
+    )
+    await user.type(input, '“kidney cross”')
+
+    const cards = screen
+      .getAllByTestId('search-result-action-area')
+      .filter((el) => el.textContent?.includes('Kidney Cross'))
+    expect(cards).toHaveLength(1)
+    expect(cards[0].textContent).toContain('Name:')
+    expect(cards[0].textContent).not.toContain('Note:')
+  })
+
+  it('matches phrases inside annotation fields', async () => {
+    const user = userEvent.setup()
+    render(<SearchModal {...defaultProps} open={true} />)
+
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
+    )
+    await user.type(input, '"portal triad"')
+
+    const cards = screen
+      .getAllByText('Liver Section')
+      .filter((el) => el.closest('[data-testid="search-result-action-area"]'))
+    expect(cards).toHaveLength(1)
+    const card = cards[0].closest('[data-testid="search-result-action-area"]')!
+    expect(card.textContent).toContain('Annotation:')
+    expect(card.textContent).toContain('Portal triad')
+  })
+
+  it('matches phrases in guide content', async () => {
+    const user = userEvent.setup()
+    render(<SearchModal {...defaultProps} open={true} />)
+
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
+    )
+    // "top bar searches" is an adjacent word sequence in browsing.md.
+    await user.type(input, '"top bar searches"')
+
+    const guideResults = screen
+      .getAllByText('Guide')
+      .filter((el) => el.closest('[data-testid="search-result-action-area"]'))
+    expect(guideResults.length).toBeGreaterThan(0)
   })
 })

@@ -24,6 +24,7 @@ import TextFieldsIcon from '@mui/icons-material/TextFields'
 import type { Category, ImageItem, Program } from '../types'
 import type { ApiImage, ApiUser } from '../api'
 import { buildGuideIndex, type GuideSearchSection } from '../guideSearch'
+import { parseSearchQuery } from '../searchQuery'
 import RenewingThumbnail from './RenewingThumbnail'
 
 // ── Result types ───────────────────────────────────────
@@ -509,11 +510,8 @@ export default function SearchModal({
   const buildResults = useCallback(
     (q: string): SearchResult[] => {
       if (!q.trim()) return []
-      // Split query into individual terms (union search)
-      const terms = q
-        .toLowerCase()
-        .split(/\s+/)
-        .filter((t) => t.length > 0)
+      // Union search over clauses; "quoted phrases" count as a single clause.
+      const terms = parseSearchQuery(q)
       if (terms.length === 0) return []
       const results: SearchResult[] = []
 
@@ -679,8 +677,8 @@ export default function SearchModal({
           fullWidth
           placeholder={
             isStudent
-              ? 'Search categories and images'
-              : 'Search categories, images, programs, people, the guide'
+              ? 'Search categories and images — "quotes" for exact phrases'
+              : 'Search categories, images, programs, people, the guide — "quotes" for exact phrases'
           }
           value={query}
           onChange={(e) => setQuery(e.target.value)}

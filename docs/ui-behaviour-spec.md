@@ -128,6 +128,18 @@ images> / Empty` format used on category tiles.
   match navigates to `?page=guide&doc=<slug>` scrolled to the section anchor.
 - The `Guide` type chip limits results to guide content. Guide results and the
   chip are staff-only — students see neither, matching guide access.
+- Query syntax (`parseSearchQuery` in `src/searchQuery.ts`): whitespace splits
+  the query into terms and results union — a result appears when ANY term
+  matches a searchable field as a case-insensitive substring. Wrapping words in
+  double quotes (`"…"`, including smart `“”` quotes normalized to straight
+  quotes) groups them into a single exact-phrase clause, so `"lung 2"` matches
+  only fields containing the adjacent string "lung 2". A quoted phrase and bare
+  terms still union together (`biopsy "lung 2"` → "biopsy" OR "lung 2"). An
+  unclosed quote treats the rest of the query as the phrase, empty `""` quotes
+  contribute no clause, and whitespace runs inside a phrase collapse to single
+  spaces.
+- The search input placeholder advertises the syntax with a
+  `— "quotes" for exact phrases` suffix on both the staff and student variants.
 
 ---
 
