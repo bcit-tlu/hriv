@@ -10,36 +10,7 @@ import Typography from '@mui/material/Typography'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward'
 import GuideMarkdown from './guideMarkdown'
-
-// Markdown sources and screenshots live in frontend/guide/ so a writer can
-// edit them without touching app code. Vite inlines the .md files and
-// fingerprints the images at build time.
-const pageSources = import.meta.glob('../../guide/*.md', {
-  eager: true,
-  query: '?raw',
-  import: 'default',
-}) as Record<string, string>
-const imageFiles = import.meta.glob('../../guide/images/*', {
-  eager: true,
-  query: '?url',
-  import: 'default',
-}) as Record<string, string>
-const imageUrls: Record<string, string> = Object.fromEntries(
-  Object.entries(imageFiles).map(([path, url]) => [path.split('/').pop() ?? path, url]),
-)
-
-// Ordered table of contents; the file is guide/<slug>.md.
-const GUIDE_PAGES = [
-  { slug: 'index', title: 'Welcome' },
-  { slug: 'browsing', title: 'Browsing & Viewing' },
-  { slug: 'categories', title: 'Managing Categories' },
-  { slug: 'images', title: 'Managing Images' },
-  { slug: 'groups', title: 'Managing Groups' },
-  { slug: 'announcements', title: 'Announcements' },
-  { slug: 'help', title: 'Getting Help' },
-] as const
-
-type GuideSlug = (typeof GUIDE_PAGES)[number]['slug']
+import { GUIDE_PAGES, getGuideMarkdown, guideImageUrls } from '../guideContent'
 
 function docParam(): string {
   return new URLSearchParams(window.location.search).get('doc') ?? 'index'
@@ -54,29 +25,57 @@ function pushDocParam(slug: string) {
   window.history.pushState(window.history.state, '', `?${params.toString()}`)
 }
 
-export default function GuidePage() {
+export interface GuideDocRequest {
+  slug: string
+  anchor?: string
+  /** Monotonically increasing token so repeated picks of the same doc re-apply. */
+  seq: number
+}
+
+interface GuidePageProps {
+  /** Set when something outside the guide (e.g. search) picks a target. */
+  docRequest?: GuideDocRequest
+}
+
+export default function GuidePage({ docRequest }: GuidePageProps) {
   const [doc, setDoc] = useState<string>(docParam)
-  const pendingAnchorRef = useRef<string | undefined>(undefined)
+  // Deferred scroll target: the anchor only exists once `doc` has rendered.
+  const [pendingAnchor, setPendingAnchor] = useState<{
+    slug: string
+    anchor?: string
+  } | null>(null)
+  const [appliedSeq, setAppliedSeq] = useState(0)
   const contentRef = useRef<HTMLDivElement | null>(null)
+
+  // Apply an external doc request (search results deep-link here) by adjusting
+  // state during render. The URL is already pushed by the caller.
+  if (docRequest && docRequest.seq !== appliedSeq) {
+    setAppliedSeq(docRequest.seq)
+    setPendingAnchor({ slug: docRequest.slug, anchor: docRequest.anchor })
+    if (docRequest.slug !== doc) setDoc(docRequest.slug)
+  }
 
   // Keep the ?doc= param truthful when the browser back/forward buttons move
   // within the guide (the app-level popstate handler restores ?page=guide).
   useEffect(() => {
-    const onPop = () => setDoc(docParam())
+    const onPop = () => {
+      setPendingAnchor(null)
+      setDoc(docParam())
+    }
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
   }, [])
 
   const selectDoc = useCallback(
     (slug: string, anchor?: string) => {
-      pendingAnchorRef.current = anchor
       const next = slug || 'index'
       if (next === doc) {
         // Same-page anchor link — scroll now, no history entry.
-        pendingAnchorRef.current = undefined
+        setPendingAnchor(null)
         if (anchor) document.getElementById(anchor)?.scrollIntoView()
         return
       }
+      setPendingAnchor({ slug: next, anchor })
       setDoc(next)
       pushDocParam(next)
     },
@@ -84,18 +83,19 @@ export default function GuidePage() {
   )
 
   useEffect(() => {
-    const anchor = pendingAnchorRef.current
-    pendingAnchorRef.current = undefined
-    if (anchor) {
-      document.getElementById(anchor)?.scrollIntoView()
+    // A pending target for another doc means that page hasn't rendered yet —
+    // wait for the next run instead of scrolling against stale DOM.
+    if (pendingAnchor && pendingAnchor.slug !== doc) return
+    if (pendingAnchor?.anchor) {
+      document.getElementById(pendingAnchor.anchor)?.scrollIntoView()
     } else {
       window.scrollTo({ top: 0 })
     }
-  }, [doc])
+  }, [doc, pendingAnchor, appliedSeq])
 
-  const activeSlug = GUIDE_PAGES.some((p) => p.slug === doc) ? (doc as GuideSlug) : 'index'
+  const activeSlug = GUIDE_PAGES.some((p) => p.slug === doc) ? doc : 'index'
   const activeIndex = GUIDE_PAGES.findIndex((p) => p.slug === activeSlug)
-  const markdown = pageSources[`../../guide/${activeSlug}.md`] ?? ''
+  const markdown = getGuideMarkdown(activeSlug)
   const prev = activeIndex > 0 ? GUIDE_PAGES[activeIndex - 1] : undefined
   const next = activeIndex < GUIDE_PAGES.length - 1 ? GUIDE_PAGES[activeIndex + 1] : undefined
 
@@ -144,7 +144,7 @@ export default function GuidePage() {
           </List>
         </Paper>
 
-        <GuideMarkdown markdown={markdown} images={imageUrls} onNavigate={selectDoc} />
+        <GuideMarkdown markdown={markdown} images={guideImageUrls} onNavigate={selectDoc} />
 
         <Divider sx={{ mt: 3, mb: 2 }} />
         <Box sx={{ display: 'flex', justifyContent: 'space-between', pb: 4 }}>
