@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.8](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.7...restore-validation-v0.1.8) (2026-09-14)
+
+
+### Bug Fixes
+
+* read job pod logs as raw bytes to skip client JSON mangling ([#1284](https://github.com/bcit-tlu/hriv/issues/1284)) ([6721b99](https://github.com/bcit-tlu/hriv/commit/6721b99cc7e8831a838844a31ec847fedf3ff4d3))
+
 ## [0.1.7](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.6...restore-validation-v0.1.7) (2026-09-14)
 
 
