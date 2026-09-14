@@ -413,6 +413,23 @@ describe('observability', () => {
     })
   })
 
+  it('reports the effective page override instead of a gated URL page', async () => {
+    // A student deep-linked to ?page=guide renders browse; telemetry must agree.
+    window.history.replaceState({}, '', '/?page=guide&doc=images')
+    const { initObservability, setTelemetryPage } = await import('../src/observability')
+
+    initObservability()
+    setTelemetryPage('browse')
+    await vi.advanceTimersByTimeAsync(5 * 60_000 + 1_100)
+
+    const request = vi.mocked(fetch).mock.calls[0]?.[1]
+    const parsed = JSON.parse(String(request?.body))
+    expect(parsed.events[0]).toMatchObject({
+      event: 'application.session_heartbeat',
+      page: 'browse',
+    })
+  })
+
   it('stops the session heartbeat on pagehide', async () => {
     const { initObservability } = await import('../src/observability')
 

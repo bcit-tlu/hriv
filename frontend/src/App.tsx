@@ -96,8 +96,8 @@ import AddCategoryDialog from './components/AddCategoryDialog'
 import EditCategoryDialog from './components/EditCategoryDialog'
 import { useColorMode } from './useColorMode'
 import { useBrowseData } from './useBrowseData'
-import { emitEvent, emitSessionStartedOnce } from './observability'
-import type { TelemetryNavDirection } from './observability'
+import { emitEvent, emitSessionStartedOnce, setTelemetryPage } from './observability'
+import type { FrontendPage, TelemetryNavDirection } from './observability'
 import { narrowGroupIds, narrowProgramIds } from './categoryUtils'
 import { formatCategoryItemCountsForCategory } from './components/categoryOptionUtils'
 import { getInheritedRestrictionSx } from './restrictionStyles'
@@ -154,25 +154,39 @@ export default function App() {
     return 'browse'
   })
 
-  const lastEmittedPageRef = useRef<Page | null>(null)
+  // The page actually rendered after role gating: role-gated deep links fall
+  // back to browse for unauthorized roles (e.g. a student on ?page=guide), so
+  // telemetry reports this rather than the raw URL param.
+  const effectivePage: FrontendPage =
+    (page === 'guide' || page === 'manage') && !canEditContent
+      ? 'browse'
+      : (page === 'admin' || page === 'people') && !canManageUsers
+        ? 'browse'
+        : page
+
+  const lastEmittedPageRef = useRef<FrontendPage | null>(null)
   useEffect(() => {
     if (!currentUser) return
-    if (lastEmittedPageRef.current === page) return
+    if (lastEmittedPageRef.current === effectivePage) return
     const fromPage = lastEmittedPageRef.current
-    lastEmittedPageRef.current = page
+    lastEmittedPageRef.current = effectivePage
     emitEvent({
       event: 'navigation.page_changed',
       action: 'navigate',
       outcome: 'success',
-      page,
+      page: effectivePage,
       from_page: fromPage === null ? undefined : fromPage,
     })
-  }, [page, currentUser])
+  }, [effectivePage, currentUser])
+
+  useEffect(() => {
+    setTelemetryPage(effectivePage)
+  }, [effectivePage])
 
   useEffect(() => {
     if (usersLoading || !currentUser) return
-    emitSessionStartedOnce(page)
-  }, [currentUser, page, usersLoading])
+    emitSessionStartedOnce(effectivePage)
+  }, [currentUser, effectivePage, usersLoading])
 
   const [path, setPath] = useState<Category[]>([])
   const pathRef = useRef(path)

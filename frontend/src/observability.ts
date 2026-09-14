@@ -203,7 +203,18 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+// The page actually rendered after role gating; the app updates this so
+// background events (heartbeats, errors) agree with what the user sees rather
+// than the raw ?page= param — a deep link to a role-gated page falls back to
+// the browse view for unauthorized roles.
+let _effectivePage: FrontendPage | null = null
+
+export function setTelemetryPage(page: FrontendPage | null): void {
+  _effectivePage = page
+}
+
 function currentPage(): FrontendPage {
+  if (_effectivePage !== null) return _effectivePage
   if (!isBrowser()) return 'unknown'
   const page = new URLSearchParams(window.location.search).get('page')
   if (
