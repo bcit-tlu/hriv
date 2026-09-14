@@ -206,7 +206,13 @@ function escapeRegExp(value: string): string {
 function currentPage(): FrontendPage {
   if (!isBrowser()) return 'unknown'
   const page = new URLSearchParams(window.location.search).get('page')
-  if (page === 'browse' || page === 'manage' || page === 'people' || page === 'admin') {
+  if (
+    page === 'browse' ||
+    page === 'manage' ||
+    page === 'people' ||
+    page === 'admin' ||
+    page === 'guide'
+  ) {
     return page
   }
   return 'browse'
