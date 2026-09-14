@@ -9,7 +9,7 @@ from unittest.mock import Mock
 from kubernetes.client import ApiException
 
 import hriv_restore_validation.kubernetes_gateway as kubernetes_gateway
-from hriv_restore_validation.gateway import FakeGateway, Lease, TEMPLATE_IDENTITY_ANNOTATION, template_identity
+from hriv_restore_validation.gateway import FakeGateway, Lease, TEMPLATE_IDENTITY_ANNOTATION, adopted_ref, template_identity
 from hriv_restore_validation.models import ResourceRef
 from hriv_restore_validation.strict import ValidationError
 
@@ -54,6 +54,15 @@ class GatewayTests(unittest.TestCase):
                     retry["metadata"]["annotations"][TEMPLATE_IDENTITY_ANNOTATION] = template_identity(retry)
                 with self.assertRaises(ValidationError):
                     fake.create_child(retry)
+
+    def test_adopted_ref_accepts_api_elided_readonly_default(self):
+        manifest = self._manifest()
+        manifest["spec"]["template"] = {"spec": {"containers": [{"name": "x", "volumeMounts": [{"name": "source", "mountPath": "/restore", "readOnly": False}]}]}}
+        manifest["metadata"]["annotations"][TEMPLATE_IDENTITY_ANNOTATION] = template_identity(manifest)
+        actual = copy.deepcopy(manifest)
+        del actual["spec"]["template"]["spec"]["containers"][0]["volumeMounts"][0]["readOnly"]
+        actual["metadata"]["uid"] = "job-uid"
+        self.assertEqual("x", adopted_ref(manifest, actual).name)
 
     def test_fake_async_delete(self):
         fake = FakeGateway(); ref = fake.create_child({"apiVersion": "v1", "kind": "PersistentVolumeClaim", "metadata": {"name": "x", "labels": {"app.kubernetes.io/managed-by": "hriv-restore-validation"}}}); fake.async_deletes = True; fake.delete_child(ref)

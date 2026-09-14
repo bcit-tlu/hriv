@@ -651,6 +651,23 @@ class ControllerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValidationError, "CLEANUP_UNBOUND_CHILD"):
             instance.cleanup_retained("cleanup-job-uid")
 
+    def test_manual_cleanup_deletes_unrecorded_name_bound_roots(self) -> None:
+        fake, instance = self._retained()
+        labels = {"app.kubernetes.io/managed-by": "hriv-restore-validation", "hriv.bcit.ca/restore-validation-run-id": RUN, "hriv.bcit.ca/restore-validation-role": "source-restore"}
+        job = fake.create_child({"apiVersion": "batch/v1", "kind": "Job", "metadata": {"name": child_name(RUN, "source-restore"), "labels": labels}})
+        fake.create_child({"apiVersion": "v1", "kind": "Pod", "metadata": {"name": f"{job.name}-abcde", "labels": labels, "ownerReferences": [{"apiVersion": "batch/v1", "kind": "Job", "name": job.name, "uid": job.uid, "controller": True}]}})
+        self.assertEqual("succeeded", instance.cleanup_retained("cleanup-job-uid"))
+        self.assertFalse(fake.list_run_children(RUN))
+
+    def test_manual_cleanup_rejects_unrecorded_foreign_roots(self) -> None:
+        for name, role in (("foreign-job", "cnpg"), (child_name(RUN, "source-restore"), "cnpg")):
+            with self.subTest(name=name, role=role):
+                fake, instance = self._retained()
+                labels = {"app.kubernetes.io/managed-by": "hriv-restore-validation", "hriv.bcit.ca/restore-validation-run-id": RUN, "hriv.bcit.ca/restore-validation-role": role}
+                fake.create_child({"apiVersion": "batch/v1", "kind": "Job", "metadata": {"name": name, "labels": labels}})
+                with self.assertRaisesRegex(ValidationError, "CLEANUP_UNBOUND_CHILD"):
+                    instance.cleanup_retained("cleanup-job-uid")
+
     def test_manual_cleanup_rejects_changed_bound_template_identity(self) -> None:
         fake, instance = self._retained()
         key, (ref, manifest, observation) = next(
