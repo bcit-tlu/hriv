@@ -45,11 +45,13 @@ function docParam(): string {
   return new URLSearchParams(window.location.search).get('doc') ?? 'index'
 }
 
-function replaceDocParam(slug: string) {
-  const params = new URLSearchParams(window.location.search)
+function pushDocParam(slug: string) {
+  const params = new URLSearchParams()
   params.set('page', 'guide')
   params.set('doc', slug)
-  window.history.replaceState(window.history.state, '', `?${params.toString()}`)
+  // Keep the app's NavHistoryState so its popstate handler still sees
+  // page='guide' when the user traverses doc entries with back/forward.
+  window.history.pushState(window.history.state, '', `?${params.toString()}`)
 }
 
 export default function GuidePage() {
@@ -65,11 +67,21 @@ export default function GuidePage() {
     return () => window.removeEventListener('popstate', onPop)
   }, [])
 
-  const selectDoc = useCallback((slug: string, anchor?: string) => {
-    pendingAnchorRef.current = anchor
-    setDoc(slug || 'index')
-    replaceDocParam(slug || 'index')
-  }, [])
+  const selectDoc = useCallback(
+    (slug: string, anchor?: string) => {
+      pendingAnchorRef.current = anchor
+      const next = slug || 'index'
+      if (next === doc) {
+        // Same-page anchor link — scroll now, no history entry.
+        pendingAnchorRef.current = undefined
+        if (anchor) document.getElementById(anchor)?.scrollIntoView()
+        return
+      }
+      setDoc(next)
+      pushDocParam(next)
+    },
+    [doc],
+  )
 
   useEffect(() => {
     const anchor = pendingAnchorRef.current

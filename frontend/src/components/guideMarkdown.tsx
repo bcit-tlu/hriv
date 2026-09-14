@@ -13,7 +13,7 @@ import Typography from '@mui/material/Typography'
 import { headingSlug, parseGuideMarkdown } from '../guideMarkdown'
 
 const INLINE_TOKEN_REGEX =
-  /(!\[[^\]]*\]\([^)\s]+\)|\[[^\]]+\]\([^)\s]+\)|\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g
+  /(!\[[^\]]*\]\([^)\s]+\)|\[[^\]]+\]\([^)\s]+\)|\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*|_[^_]+_)/g
 const LINK_REGEX = /^\[([^\]]+)\]\(([^)\s]+)\)$/
 const IMAGE_REGEX = /^!\[([^\]]*)\]\(([^)\s]+)\)$/
 
@@ -70,6 +70,9 @@ function renderInline(text: string, keyPrefix: string, ctx: GuideInlineContext):
     if (part.startsWith('*') && part.endsWith('*')) {
       return <em key={key}>{part.slice(1, -1)}</em>
     }
+    if (part.startsWith('_') && part.endsWith('_')) {
+      return <em key={key}>{part.slice(1, -1)}</em>
+    }
     return <span key={key}>{part}</span>
   })
 }
@@ -101,6 +104,8 @@ export default function GuideMarkdown({ markdown, images, onNavigate }: GuideMar
         typography: 'body1',
         '& p': { mt: 0, mb: 2 },
         '& ul': { mt: 0, mb: 2, pl: 3 },
+        '& ol': { mt: 0, mb: 2, pl: 3 },
+        '& ul ul, & ol ul, & ul ol, & ol ol': { mb: 0 },
         '& li': { mb: 0.75 },
         '& code': {
           fontFamily: 'monospace',
@@ -139,18 +144,31 @@ export default function GuideMarkdown({ markdown, images, onNavigate }: GuideMar
               </Typography>
             )
           }
-          case 'list':
+          case 'list': {
+            const ListTag = block.ordered ? 'ol' : 'ul'
             return (
-              <Box key={key} component="ul">
+              <Box key={key} component={ListTag}>
                 {block.items.map((item, itemIndex) => (
                   <li key={`${key}-${itemIndex}`}>
                     <Typography component="span" variant="body1">
-                      {renderInline(item, `${key}-${itemIndex}`, ctx)}
+                      {renderInline(item.text, `${key}-${itemIndex}`, ctx)}
                     </Typography>
+                    {item.subItems.length > 0 && (
+                      <Box component="ul" sx={{ mt: 0.5, mb: 0 }}>
+                        {item.subItems.map((sub, subIndex) => (
+                          <li key={`${key}-${itemIndex}-s${subIndex}`}>
+                            <Typography component="span" variant="body1">
+                              {renderInline(sub, `${key}-${itemIndex}-s${subIndex}`, ctx)}
+                            </Typography>
+                          </li>
+                        ))}
+                      </Box>
+                    )}
                   </li>
                 ))}
               </Box>
             )
+          }
           case 'code':
             return (
               <Box key={key} component="pre">

@@ -16,7 +16,29 @@ describe('parseGuideMarkdown', () => {
     expect(parseGuideMarkdown('# Title\nSome text\n\n- One\n- Two')).toEqual([
       { type: 'heading', level: 1, text: 'Title' },
       { type: 'paragraph', text: 'Some text' },
-      { type: 'list', items: ['One', 'Two'] },
+      {
+        type: 'list',
+        ordered: false,
+        items: [
+          { text: 'One', subItems: [] },
+          { text: 'Two', subItems: [] },
+        ],
+      },
+    ])
+  })
+
+  it('parses ordered lists, nested bullets, and indented continuations', () => {
+    expect(
+      parseGuideMarkdown('1. First\n   continued text\n   - sub a\n   - sub b\n2. Second'),
+    ).toEqual([
+      {
+        type: 'list',
+        ordered: true,
+        items: [
+          { text: 'First continued text', subItems: ['sub a', 'sub b'] },
+          { text: 'Second', subItems: [] },
+        ],
+      },
     ])
   })
 

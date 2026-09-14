@@ -1,7 +1,12 @@
+export interface GuideListItem {
+  text: string
+  subItems: string[]
+}
+
 export type GuideBlock =
   | { type: 'heading'; level: 1 | 2 | 3; text: string }
   | { type: 'paragraph'; text: string }
-  | { type: 'list'; items: string[] }
+  | { type: 'list'; ordered: boolean; items: GuideListItem[] }
   | { type: 'code'; text: string }
   | { type: 'image'; alt: string; src: string }
   | { type: 'table'; header: string[]; rows: string[][] }
@@ -25,7 +30,8 @@ export function parseGuideMarkdown(markdown: string): GuideBlock[] {
   const blocks: GuideBlock[] = []
   const lines = markdown.replace(/\r\n/g, '\n').split('\n')
   const paragraphLines: string[] = []
-  let listItems: string[] = []
+  let listItems: GuideListItem[] = []
+  let listOrdered = false
   let codeLines: string[] = []
   let inCodeFence = false
 
@@ -39,7 +45,7 @@ export function parseGuideMarkdown(markdown: string): GuideBlock[] {
 
   const flushList = () => {
     if (listItems.length > 0) {
-      blocks.push({ type: 'list', items: [...listItems] })
+      blocks.push({ type: 'list', ordered: listOrdered, items: [...listItems] })
       listItems = []
     }
   }
@@ -123,10 +129,35 @@ export function parseGuideMarkdown(markdown: string): GuideBlock[] {
       continue
     }
 
+    const orderedMatch = line.match(/^\s{0,2}(\d+)\.\s+(.+)$/)
+    if (orderedMatch) {
+      flushParagraph()
+      if (listItems.length > 0 && !listOrdered) flushList()
+      listOrdered = true
+      listItems.push({ text: orderedMatch[2].trim(), subItems: [] })
+      continue
+    }
+
+    const nestedListMatch = line.match(/^\s{2,}[-*]\s+(.+)$/)
+    if (nestedListMatch && listItems.length > 0) {
+      flushParagraph()
+      listItems[listItems.length - 1].subItems.push(nestedListMatch[1].trim())
+      continue
+    }
+
     const listMatch = line.match(/^[-*]\s+(.+)$/)
     if (listMatch) {
       flushParagraph()
-      listItems.push(listMatch[1].trim())
+      if (listItems.length > 0 && listOrdered) flushList()
+      listOrdered = false
+      listItems.push({ text: listMatch[1].trim(), subItems: [] })
+      continue
+    }
+
+    // An indented non-marker line continues the previous list item.
+    if (/^\s+\S/.test(line) && listItems.length > 0) {
+      const last = listItems[listItems.length - 1]
+      last.text = `${last.text} ${line.trim()}`
       continue
     }
 

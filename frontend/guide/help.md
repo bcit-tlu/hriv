@@ -18,7 +18,8 @@ next to the version numbers.
   the app.
 - **About** in the same menu shows the running version — handy to mention
   when reporting a problem.
-- Need to reach a person? Contact the BCIT Teaching and Learning Unit —
-  there's a link in the footer.
+- Need to reach a person? Contact the BCIT Teaching and Learning Unit.
+- The footer also links to the **HRIV project on GitHub** for the
+  technically curious.
 
 ![The notifications menu](images/notifications.png)

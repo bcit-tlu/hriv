@@ -717,7 +717,7 @@ export default function App() {
     const prevUser = prevUserRef.current
     prevUserRef.current = currentUser
 
-    const isRealUserSwitch = prevUser != null && prevUser !== currentUser
+    const isRealUserSwitch = prevUser != null && prevUser.id !== currentUser?.id
     if (isRealUserSwitch) {
       lastEmittedPageRef.current = null
       lastEmittedCategoryRef.current = null
