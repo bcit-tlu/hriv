@@ -691,6 +691,21 @@ Each stage has a configured deadline bounded by the maximum runtime. Retryable o
 bounded exponential backoff with jitter. Semantic validation failures, unsupported inputs,
 overlap, authorization denial, and capacity failures are not retried within an attempt.
 
+Deadline and storage sizing are chart values so overlays scale with the source set they select.
+`childJobs.sourceRestoreDeadlineSeconds` and `childJobs.consistencyDeadlineSeconds` set the child
+Job `activeDeadlineSeconds`; the consistency deadline MUST cover rehashing the largest source set
+the profile can select, not merely the currently observed one. `controller.maxRuntimeSeconds`
+bounds the whole accepted run and is also the orchestrator Job's own active deadline, and
+`controller.stageTimeoutSeconds` bounds stage observation; an overlay restoring a larger source
+set (for example 160Gi rather than 40Gi) MUST raise all three together.
+`sourceProfile.sourceStorageClass` selects the source PVC and CNPG Cluster storage class. Both
+source-touching child Jobs carry the storage-node selector (`bcit.ca/longhorn-storage: "true"`)
+and `fsGroupChangePolicy: OnRootMismatch` so mount-time ownership checks do not re-walk the
+restored tree. The controller additionally pins the consistency Pod to the node that ran the
+source-restore Pod (`spec.nodeName`, runtime scheduling placement excluded from template
+identity), so replica-local reads are used whenever the configured storage class provides data
+locality.
+
 ### Sequence
 
 ```text
@@ -1415,8 +1430,9 @@ The deployed drill consists only of the #1251 core controller, fixed state Confi
 initially suspended weekly and suspended on-demand orchestrator CronJobs, one suspended manual-cleanup CronJob, the
 validation-local ObjectStore, fixed Envoy egress proxy, RBAC/quota, and fixed NetworkPolicies. The
 weekly schedule is unsuspended only after the latest on-demand acceptance run passes; stable remains suspended until latest evidence is reviewed. The weekly CronJob is exactly `hriv-restore-validation-weekly`, runs `0 11 * * 0` in UTC, forbids
-concurrency, has a 3600-second starting deadline, zero Job retries, `Never` restart, a 21600-second
-active deadline, two successful and one failed Job histories, and no TTL. The on-demand template is
+concurrency, has a 3600-second starting deadline, zero Job retries, `Never` restart, an
+active deadline equal to `controller.maxRuntimeSeconds` (21600 seconds in the reviewed overlays),
+two successful and one failed Job histories, and no TTL. The on-demand template is
 `hriv-restore-validation-on-demand`; its standalone Job template sets native
 `ttlSecondsAfterFinished: 604800` (seven days), as does the standalone cleanup Job template. This is
 native evidence cleanup, not an application reaper. Operators MUST preserve/download Job and Pod logs

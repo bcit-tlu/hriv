@@ -148,6 +148,11 @@ class KubernetesGateway:
     def _job_log_result(self, ref: ResourceRef, job: dict[str, Any], *, expect_success: bool) -> tuple[str | None, ResourceRef] | None:
         selector = f"batch.kubernetes.io/controller-uid={ref.uid},job-name={ref.name}"
         pods = self.core.list_namespaced_pod(self.namespace, label_selector=selector).items
+        # Zero pods is not ambiguity: the Job controller reaps pods on
+        # DeadlineExceeded, so a deadline-killed Job has no result to read.
+        # Report the missing pod distinctly from a genuinely ambiguous set.
+        if not pods:
+            raise ValidationError("JOB_POD_MISSING")
         if len(pods) != 1:
             raise ValidationError("JOB_POD_AMBIGUOUS")
         pod = pods[0]

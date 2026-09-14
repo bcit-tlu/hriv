@@ -1043,9 +1043,9 @@ assert_contains "$restore_validation_children" "barmanObjectName: hriv-restore-v
   "CNPG external source must use the exact ObjectStore name"
 assert_contains "$restore_validation_children" "serverName: pg-core" \
   "CNPG external source must use the exact Barman server name"
-assert_contains "$restore_validation_children" "storageClassName: longhorn" \
+assert_contains "$restore_validation_children" 'storageClassName: "longhorn"' \
   "source restore PVC must bind the approved Longhorn storage class"
-assert_contains "$restore_validation_children" "storageClass: longhorn" \
+assert_contains "$restore_validation_children" 'storageClass: "longhorn"' \
   "recovered CNPG storage must bind the approved Longhorn storage class"
 assert_contains "$restore_validation_children" 'bcit.ca/longhorn-storage: "true"' \
   "recovered CNPG must schedule only on approved storage-labelled nodes"

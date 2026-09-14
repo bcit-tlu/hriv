@@ -10,6 +10,7 @@ sourceProfile:
   expectedSystemIdentifier: '1'
   postgresqlStorageSize: 40Gi
   sourcePvcSize: 40Gi
+  sourceStorageClass: longhorn
   requiredDatabaseInventory:
     - { name: app, owner: app, allow_connections: true }
     - { name: hriv, owner: app, allow_connections: true }
@@ -47,6 +48,9 @@ controller:
   maxChildResources: 16
   maxJobs: 32
   maxPvcs: 8
+childJobs:
+  sourceRestoreDeadlineSeconds: 7200
+  consistencyDeadlineSeconds: 7200
 objectStore:
   enabled: false
   destinationPath: ''
