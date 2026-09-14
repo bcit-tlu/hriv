@@ -64,6 +64,15 @@ class GatewayTests(unittest.TestCase):
         actual["metadata"]["uid"] = "job-uid"
         self.assertEqual("x", adopted_ref(manifest, actual).name)
 
+    def test_adopted_ref_ignores_runtime_nodename(self):
+        manifest = self._manifest()
+        manifest["spec"]["template"] = {"spec": {"containers": [{"name": "x"}]}}
+        manifest["metadata"]["annotations"][TEMPLATE_IDENTITY_ANNOTATION] = template_identity(manifest)
+        actual = copy.deepcopy(manifest)
+        actual["spec"]["template"]["spec"]["nodeName"] = "worker-01"
+        actual["metadata"]["uid"] = "job-uid"
+        self.assertEqual("x", adopted_ref(manifest, actual).name)
+
     def test_fake_async_delete(self):
         fake = FakeGateway(); ref = fake.create_child({"apiVersion": "v1", "kind": "PersistentVolumeClaim", "metadata": {"name": "x", "labels": {"app.kubernetes.io/managed-by": "hriv-restore-validation"}}}); fake.async_deletes = True; fake.delete_child(ref)
         self.assertIsNotNone(fake.get_child(ref)); fake.finish_deletes(); self.assertIsNone(fake.get_child(ref))
@@ -125,7 +134,14 @@ class GatewayTests(unittest.TestCase):
 
     def test_job_requires_one_pod(self):
         gateway, ref = self._successful(); gateway.core.list_namespaced_pod.return_value.items = []
-        with self.assertRaises(ValidationError): gateway.observe_child(ref)
+        with self.assertRaises(ValidationError) as ctx: gateway.observe_child(ref)
+        self.assertEqual("JOB_POD_MISSING", ctx.exception.code)
+
+    def test_job_rejects_multiple_pods(self):
+        gateway, ref = self._successful(); pod = gateway.core.list_namespaced_pod.return_value.items[0]
+        gateway.core.list_namespaced_pod.return_value.items = [pod, pod]
+        with self.assertRaises(ValidationError) as ctx: gateway.observe_child(ref)
+        self.assertEqual("JOB_POD_AMBIGUOUS", ctx.exception.code)
 
     def test_job_requires_owner_uid(self):
         gateway, ref = self._successful(); gateway.core.list_namespaced_pod.return_value.items[0].metadata.owner_references[0].uid = "wrong"

@@ -92,8 +92,8 @@ class Config:
             bounded_string(value["lease_name"], "lease_name", 63, DNS_RE),
             integer(value["lease_seconds"], "lease_seconds", 10, 300),
             integer(value["initialization_grace_seconds"], "initialization_grace_seconds", 0, 300),
-            integer(value["max_runtime_seconds"], "max_runtime_seconds", 60, 21600),
-            integer(value["stage_timeout_seconds"], "stage_timeout_seconds", 30, 7200),
+            integer(value["max_runtime_seconds"], "max_runtime_seconds", 60, 43200),
+            integer(value["stage_timeout_seconds"], "stage_timeout_seconds", 30, 21600),
             integer(value["retained_seconds"], "retained_seconds", 3600, 172800),
             integer(value["cas_retries"], "cas_retries", 1, 20),
             integer(value["max_retained_runs"], "max_retained_runs", 0, 2),
@@ -128,6 +128,7 @@ class SourceProfile:
     backup_image: str
     source_container: str
     source_prefix: str
+    source_storage_class: str
     sha256: str
 
     @property
@@ -141,7 +142,7 @@ class SourceProfile:
     @classmethod
     def parse(cls, raw: str | bytes) -> "SourceProfile":
         required = {"schema_version", "profile_id", "profile_version", "provider", "source_cluster", "external_cluster", "database", "owner", "application_database", "server_name", "expected_system_identifier", "object_store", "object_store_api_version", "postgresql_major", "postgresql_image", "postgresql_storage_size", "required_database_inventory", "required_static_role_inventory", "dynamic_role_prefixes", "expected_migration_version", "minimum_row_counts", "synthetic_row", "controller_image", "backup_image", "source_container", "source_prefix"}
-        value = exact_object(parse_json(raw, max_bytes=64 * 1024), required=required)
+        value = exact_object(parse_json(raw, max_bytes=64 * 1024), required=required, optional={"source_storage_class"})
         if value["schema_version"] != 1:
             raise ValidationError("PROFILE_SCHEMA_UNSUPPORTED")
         fixed = (value["provider"], value["source_cluster"], value["external_cluster"], value["database"], value["owner"], value["application_database"], value["server_name"], value["object_store"], value["object_store_api_version"], value["postgresql_major"])
@@ -167,7 +168,8 @@ class SourceProfile:
             _strings(value["dynamic_role_prefixes"], "dynamic_role_prefixes", 16),
             bounded_string(value["expected_migration_version"], "expected_migration_version", 128), row_counts,
             {"id": bounded_string(synthetic["id"], "synthetic.id", 128), "email_sha256": bounded_string(synthetic["email_sha256"], "synthetic.email_sha256", 64, re.compile(r"[0-9a-f]{64}"))},
-            images[1], images[2], bounded_string(value["source_container"], "source_container", 63, DNS_RE), bounded_string(value["source_prefix"], "source_prefix", 256), profile_digest,
+            images[1], images[2], bounded_string(value["source_container"], "source_container", 63, DNS_RE), bounded_string(value["source_prefix"], "source_prefix", 256),
+            bounded_string(value.get("source_storage_class", "longhorn"), "source_storage_class", 63, DNS_RE), profile_digest,
         )
 
     @staticmethod
@@ -317,7 +319,7 @@ class Templates:
             not isinstance(pvc_size, str)
             or _quantity_bytes(pvc_size) < 40 * 1024**3
             or pvc_spec.get("accessModes") != ["ReadWriteOnce"]
-            or pvc_spec.get("storageClassName") != "longhorn"
+            or pvc_spec.get("storageClassName") != profile.source_storage_class
         ):
             raise ValidationError("TEMPLATE_PVC_INVALID")
         cluster = obj["cnpg_cluster"].get("spec", {})
@@ -327,7 +329,7 @@ class Templates:
         if (
             cluster.get("imageName") != profile.postgresql_image
             or cluster.get("storage")
-            != {"size": profile.postgresql_storage_size, "storageClass": "longhorn"}
+            != {"size": profile.postgresql_storage_size, "storageClass": profile.source_storage_class}
             or cluster.get("inheritedMetadata")
             != {
                 "labels": {
