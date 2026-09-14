@@ -80,7 +80,7 @@ export type TelemetryErrorCode =
   | 'unhandled_promise_rejection'
   | 'window_runtime_error'
 export type FrontendPerformanceMetric = 'application_load' | 'lcp' | 'inp' | 'cls' | 'image_ready'
-export type FrontendPage = 'browse' | 'manage' | 'people' | 'admin' | 'other' | 'unknown'
+export type FrontendPage = 'browse' | 'manage' | 'people' | 'admin' | 'guide' | 'other' | 'unknown'
 export type TelemetryNavDirection = 'down' | 'up' | 'jump'
 
 interface TelemetryEventBase {
@@ -97,6 +97,8 @@ interface TelemetryEventBase {
   image_id?: number
   category_id?: number
   from_category_id?: number
+  /** Guide doc slug for 'navigate_guide_doc' page hits (bounded server-side). */
+  guide_doc?: string
   direction?: TelemetryNavDirection
   request_id?: string
   trace_id?: string

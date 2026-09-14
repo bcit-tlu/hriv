@@ -97,7 +97,7 @@ import EditCategoryDialog from './components/EditCategoryDialog'
 import { useColorMode } from './useColorMode'
 import { useBrowseData } from './useBrowseData'
 import { emitEvent, emitSessionStartedOnce } from './observability'
-import type { FrontendPage, TelemetryNavDirection } from './observability'
+import type { TelemetryNavDirection } from './observability'
 import { narrowGroupIds, narrowProgramIds } from './categoryUtils'
 import { formatCategoryItemCountsForCategory } from './components/categoryOptionUtils'
 import { getInheritedRestrictionSx } from './restrictionStyles'
@@ -115,12 +115,6 @@ import { tileOrderingCoordinator } from './tileOrdering'
 import { logDrag } from './dndInstrumentation'
 
 const COLLAPSED_BREADCRUMB_CATEGORY_DEPTH = 2
-
-// The guide page isn't a tracked app page — report it via the 'other' bucket
-// that the backend telemetry whitelist reserves for unlisted pages.
-function toTelemetryPage(page: Page): FrontendPage {
-  return page === 'guide' ? 'other' : page
-}
 
 function listFailedSourceImages() {
   return listSourceImages({ status: 'failed', limit: MAX_REHYDRATED_FAILURES })
@@ -170,14 +164,14 @@ export default function App() {
       event: 'navigation.page_changed',
       action: 'navigate',
       outcome: 'success',
-      page: toTelemetryPage(page),
-      from_page: fromPage === null ? undefined : toTelemetryPage(fromPage),
+      page,
+      from_page: fromPage === null ? undefined : fromPage,
     })
   }, [page, currentUser])
 
   useEffect(() => {
     if (usersLoading || !currentUser) return
-    emitSessionStartedOnce(toTelemetryPage(page))
+    emitSessionStartedOnce(page)
   }, [currentUser, page, usersLoading])
 
   const [path, setPath] = useState<Category[]>([])
@@ -209,7 +203,7 @@ export default function App() {
       event: 'navigation.page_changed',
       action: 'navigate_category',
       outcome: 'success',
-      page: toTelemetryPage(page),
+      page,
       category_id: categoryId,
       from_category_id: fromCategoryId ?? undefined,
       direction,
@@ -2534,7 +2528,7 @@ export default function App() {
       <ReportIssueModal
         open={reportIssueOpen}
         onClose={() => setReportIssueOpen(false)}
-        page={toTelemetryPage(page)}
+        page={page}
         frontendVersion={frontendVersion}
         onSuccess={(message, trackingUrl) => {
           setSuccessSnack({ message, trackingUrl })

@@ -721,6 +721,7 @@ is unset, the frontend falls back to the same-origin relative path
 | `page`             | string                                | Low-cardinality page identifier for navigation events            |
 | `from_page`        | bounded string                        | Previous page for navigation transitions (bounded to page names) |
 | `direction`        | bounded string                        | `down`/`up`/`jump` for `navigate_category` transitions           |
+| `guide_doc`        | bounded string                        | Guide page slug for `navigate_guide_doc` hits (kebab-case only)  |
 | `error`            | string                                | High-level error category, never free-text or PII                |
 | `error_code`       | bounded string                        | Stable error code for `frontend.error` events                    |
 | `synthetic`        | boolean                               | Client hint only; server metadata is authoritative (see below)   |
@@ -791,6 +792,8 @@ The endpoint enriches each event with:
 - `category.from_id` / `category.from_label` — previous category (id and
   server-resolved label) for `navigate_category` transitions, powering the
   navigation-path panels on the usage dashboard
+- `guide.doc` — bounded guide-page slug for `navigate_guide_doc` transitions,
+  powering per-page hit counts on the usage dashboard
 - `event.direction` — bounded navigation direction (`down`, `up`, or `jump`,
   derived client-side from the breadcrumb path change); the usage dashboard's
   Sankey funnel keeps only `down` edges so the flow stays acyclic
