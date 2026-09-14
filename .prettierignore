@@ -14,6 +14,7 @@ backend/CHANGELOG.md
 frontend/CHANGELOG.md
 backup/CHANGELOG.md
 synthetic-monitoring/CHANGELOG.md
+restore-validation/CHANGELOG.md
 
 
 backup/.venv

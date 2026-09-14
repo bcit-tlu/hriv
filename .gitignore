@@ -111,4 +111,4 @@ database/
 dump.rdb
 src/git_ignored_folder
 src/tests/assets
-images/
+/images/
