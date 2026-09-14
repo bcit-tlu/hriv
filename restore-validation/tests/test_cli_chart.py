@@ -143,6 +143,9 @@ class ChartTests(unittest.TestCase):
         self.assertEqual({"app.kubernetes.io/managed-by": "hriv-restore-validation", "hriv.bcit.ca/restore-validation-role": "cnpg"}, children["cnpg_cluster"]["spec"]["inheritedMetadata"]["labels"])
         for job_name in ("db_validation_job", "consistency_job"):
             self.assertNotIn("env", children[job_name]["spec"]["template"]["spec"]["containers"][0])
+        # The consistency child rehashes the full restored source tree, so it
+        # needs the same deadline headroom as the restore that wrote it.
+        self.assertEqual(children["source_restore_job"]["spec"]["activeDeadlineSeconds"], children["consistency_job"]["spec"]["activeDeadlineSeconds"])
         policies = {item["metadata"]["name"]: item["spec"] for item in docs if item.get("kind") == "NetworkPolicy"}
         selector_values = lambda name: set(policies[name]["podSelector"]["matchExpressions"][0]["values"])
         self.assertEqual({"db-validation", "consistency"}, selector_values("hriv-restore-validation-database-clients"))

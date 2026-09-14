@@ -125,7 +125,14 @@ class GatewayTests(unittest.TestCase):
 
     def test_job_requires_one_pod(self):
         gateway, ref = self._successful(); gateway.core.list_namespaced_pod.return_value.items = []
-        with self.assertRaises(ValidationError): gateway.observe_child(ref)
+        with self.assertRaises(ValidationError) as ctx: gateway.observe_child(ref)
+        self.assertEqual("JOB_POD_MISSING", ctx.exception.code)
+
+    def test_job_rejects_multiple_pods(self):
+        gateway, ref = self._successful(); pod = gateway.core.list_namespaced_pod.return_value.items[0]
+        gateway.core.list_namespaced_pod.return_value.items = [pod, pod]
+        with self.assertRaises(ValidationError) as ctx: gateway.observe_child(ref)
+        self.assertEqual("JOB_POD_AMBIGUOUS", ctx.exception.code)
 
     def test_job_requires_owner_uid(self):
         gateway, ref = self._successful(); gateway.core.list_namespaced_pod.return_value.items[0].metadata.owner_references[0].uid = "wrong"

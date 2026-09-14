@@ -160,7 +160,7 @@ data:
       metadata: {}
       spec:
         backoffLimit: 0
-        activeDeadlineSeconds: 1800
+        activeDeadlineSeconds: 7200
         template:
           metadata: {}
           spec:
