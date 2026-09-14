@@ -235,7 +235,12 @@ export function useNavigationHistory(
    * the URL for other pages.
    */
   const pushNavState = useCallback(
-    (page: string, catIds: number[] = [], imageId: number | null = null) => {
+    (
+      page: string,
+      catIds: number[] = [],
+      imageId: number | null = null,
+      extraParams?: Record<string, string>,
+    ) => {
       if (!enableHistorySync) return
       const historyIndex = currentIndexRef.current + 1
       const state = buildNavHistoryState(page, catIds, imageId, historyIndex)
@@ -245,6 +250,9 @@ export function useNavigationHistory(
       } else {
         if (catIds.length > 0) params.set('cat', catIds.join(','))
         if (imageId != null) params.set('image', String(imageId))
+      }
+      if (extraParams) {
+        for (const [key, value] of Object.entries(extraParams)) params.set(key, value)
       }
       const qs = params.toString()
       const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname

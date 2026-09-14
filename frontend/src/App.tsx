@@ -517,6 +517,12 @@ export default function App() {
   // External navigation target for the guide page (e.g. from search results).
   const [guideDocRequest, setGuideDocRequest] = useState<GuideDocRequest | undefined>(undefined)
   const guideDocSeqRef = useRef(0)
+
+  // Guide doc requests are one-shot: once we leave the guide page, drop any
+  // consumed request so a remounted GuidePage initializes from ?doc= alone.
+  if (page !== 'guide' && guideDocRequest !== undefined) {
+    setGuideDocRequest(undefined)
+  }
   const [searchUsers, setSearchUsers] = useState<ApiUser[]>([])
   const [searchInitialQuery, setSearchInitialQuery] = useState<string | undefined>(undefined)
   const [searchInitialTypeFilter, setSearchInitialTypeFilter] = useState<string | undefined>(
@@ -2599,14 +2605,7 @@ export default function App() {
           if (!canEditContent) return
           runCanvasNavigation(() => {
             setPage('guide')
-            const params = new URLSearchParams()
-            params.set('page', 'guide')
-            params.set('doc', slug)
-            window.history.pushState(
-              window.history.state,
-              '',
-              `${window.location.pathname}?${params.toString()}`,
-            )
+            pushNavState('guide', [], null, { doc: slug })
             guideDocSeqRef.current += 1
             setGuideDocRequest({ slug, anchor, seq: guideDocSeqRef.current })
           })

@@ -39,11 +39,15 @@ interface GuidePageProps {
 
 export default function GuidePage({ docRequest }: GuidePageProps) {
   const [doc, setDoc] = useState<string>(docParam)
-  // Deferred scroll target: the anchor only exists once `doc` has rendered.
-  const [pendingAnchor, setPendingAnchor] = useState<{
+  // Deferred scroll target keyed per navigation: the anchor only exists once
+  // the requested `doc` has rendered. `null` = plain doc change → scroll top.
+  const [pendingScroll, setPendingScroll] = useState<{
+    key: string
     slug: string
     anchor?: string
   } | null>(null)
+  const lastScrolledKeyRef = useRef<string | null>(null)
+  const navNonceRef = useRef(0)
   const [appliedSeq, setAppliedSeq] = useState(0)
   const contentRef = useRef<HTMLDivElement | null>(null)
 
@@ -51,7 +55,11 @@ export default function GuidePage({ docRequest }: GuidePageProps) {
   // state during render. The URL is already pushed by the caller.
   if (docRequest && docRequest.seq !== appliedSeq) {
     setAppliedSeq(docRequest.seq)
-    setPendingAnchor({ slug: docRequest.slug, anchor: docRequest.anchor })
+    setPendingScroll({
+      key: `req:${docRequest.seq}`,
+      slug: docRequest.slug,
+      anchor: docRequest.anchor,
+    })
     if (docRequest.slug !== doc) setDoc(docRequest.slug)
   }
 
@@ -59,7 +67,7 @@ export default function GuidePage({ docRequest }: GuidePageProps) {
   // within the guide (the app-level popstate handler restores ?page=guide).
   useEffect(() => {
     const onPop = () => {
-      setPendingAnchor(null)
+      setPendingScroll(null)
       setDoc(docParam())
     }
     window.addEventListener('popstate', onPop)
@@ -71,11 +79,11 @@ export default function GuidePage({ docRequest }: GuidePageProps) {
       const next = slug || 'index'
       if (next === doc) {
         // Same-page anchor link — scroll now, no history entry.
-        setPendingAnchor(null)
         if (anchor) document.getElementById(anchor)?.scrollIntoView()
         return
       }
-      setPendingAnchor({ slug: next, anchor })
+      navNonceRef.current += 1
+      setPendingScroll({ key: `nav:${navNonceRef.current}`, slug: next, anchor })
       setDoc(next)
       pushDocParam(next)
     },
@@ -83,15 +91,20 @@ export default function GuidePage({ docRequest }: GuidePageProps) {
   )
 
   useEffect(() => {
+    if (!pendingScroll) {
+      window.scrollTo({ top: 0 })
+      return
+    }
     // A pending target for another doc means that page hasn't rendered yet —
     // wait for the next run instead of scrolling against stale DOM.
-    if (pendingAnchor && pendingAnchor.slug !== doc) return
-    if (pendingAnchor?.anchor) {
-      document.getElementById(pendingAnchor.anchor)?.scrollIntoView()
+    if (pendingScroll.key === lastScrolledKeyRef.current || pendingScroll.slug !== doc) return
+    lastScrolledKeyRef.current = pendingScroll.key
+    if (pendingScroll.anchor) {
+      document.getElementById(pendingScroll.anchor)?.scrollIntoView()
     } else {
       window.scrollTo({ top: 0 })
     }
-  }, [doc, pendingAnchor, appliedSeq])
+  }, [doc, pendingScroll])
 
   const activeSlug = GUIDE_PAGES.some((p) => p.slug === doc) ? doc : 'index'
   const activeIndex = GUIDE_PAGES.findIndex((p) => p.slug === activeSlug)

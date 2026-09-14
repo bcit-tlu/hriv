@@ -118,9 +118,19 @@ describe('GuideMarkdown', () => {
 })
 
 describe('GuidePage', () => {
+  const originalScrollIntoView = window.HTMLElement.prototype.scrollIntoView
+
   beforeEach(() => {
     window.history.replaceState(null, '', '?page=guide')
     window.scrollTo = vi.fn()
+  })
+
+  afterEach(() => {
+    if (originalScrollIntoView) {
+      window.HTMLElement.prototype.scrollIntoView = originalScrollIntoView
+    } else {
+      delete (window.HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView
+    }
   })
 
   it('renders the welcome page with nav', () => {
