@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.10](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.9...restore-validation-v0.1.10) (2026-09-14)
+
+
+### Bug Fixes
+
+* read job result logs by tail_lines instead of limit_bytes ([#1289](https://github.com/bcit-tlu/hriv/issues/1289)) ([ef5a139](https://github.com/bcit-tlu/hriv/commit/ef5a139d3af5637e520cd24a3f009a716e5e0c51))
+
 ## [0.1.9](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.8...restore-validation-v0.1.9) (2026-09-14)
 
 
