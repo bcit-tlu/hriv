@@ -78,7 +78,9 @@ class GatewayTests(unittest.TestCase):
         terminated = SimpleNamespace(exit_code=exit_code); status = SimpleNamespace(name="main", state=SimpleNamespace(terminated=terminated)); owner = SimpleNamespace(kind="Job", name="job", uid="job-uid", controller=True)
         pod_labels = labels | {"job-name": "job", "batch.kubernetes.io/controller-uid": "job-uid"}
         pod = SimpleNamespace(metadata=SimpleNamespace(name="pod", uid="pod-uid", labels=pod_labels, owner_references=[owner]), status=SimpleNamespace(container_statuses=[status]))
-        gateway.core.list_namespaced_pod.return_value.items = [pod]; gateway.core.read_namespaced_pod_log.return_value = SimpleNamespace(data=log.encode("utf-8"))
+        response = Mock()
+        response.stream.return_value = iter([log.encode("utf-8")])
+        gateway.core.list_namespaced_pod.return_value.items = [pod]; gateway.core.read_namespaced_pod_log.return_value = response
         return gateway, ref
 
     def test_job_result_final_log_line(self):
@@ -93,7 +95,9 @@ class GatewayTests(unittest.TestCase):
         gateway, ref = self._successful('{"schema_version":1,"success')
         gateway.get_child.return_value["status"]["completionTime"] = datetime.now(timezone.utc)
         self.assertEqual("Running", gateway.observe_child(ref).phase)
-        gateway.core.read_namespaced_pod_log.return_value = SimpleNamespace(data=b'diagnostic\n{"schema_version":1}\n')
+        response = Mock()
+        response.stream.return_value = iter([b'diagnostic\n{"schema_version":1}\n'])
+        gateway.core.read_namespaced_pod_log.return_value = response
         self.assertEqual("Succeeded", gateway.observe_child(ref).phase)
 
     def test_job_result_still_fails_after_grace(self):
@@ -110,6 +114,8 @@ class GatewayTests(unittest.TestCase):
         observation = gateway.observe_child(ref)
         self.assertEqual("Succeeded", observation.phase)
         self.assertEqual(False, gateway.core.read_namespaced_pod_log.call_args.kwargs["_preload_content"])
+        kwargs = gateway.core.read_namespaced_pod_log.call_args.kwargs
+        self.assertIn("tail_lines", kwargs); self.assertNotIn("limit_bytes", kwargs)
 
     def test_job_result_pending_when_pod_not_marked_terminated(self):
         gateway, ref = self._successful()
@@ -141,8 +147,8 @@ class GatewayTests(unittest.TestCase):
         with self.assertRaises(ValidationError): gateway.observe_child(ref)
 
     def test_job_log_bounded(self):
-        gateway, ref = self._successful("x" * 32769)
-        with self.assertRaises(ValidationError): gateway.observe_child(ref)
+        gateway, ref = self._successful("x" * 131073)
+        with self.assertRaisesRegex(ValidationError, "JOB_LOG_TOO_LARGE"): gateway.observe_child(ref)
 
     def test_failed_job_returns_owned_failure_result(self):
         raw = '{"schema_version":1,"operation":"validation-select","success":false,"failure_code":"MARKER_MISSING"}'

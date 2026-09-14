@@ -180,10 +180,22 @@ class KubernetesGateway:
             # json.loads on the response body even for str responses, so a log
             # that is a single JSON document comes back as a Python repr, which
             # the strict result parse rejects. Raw bytes avoid the mangling.
-            response = self.core.read_namespaced_pod_log(pod.metadata.name, self.namespace, container=statuses[0].name, limit_bytes=32769, _preload_content=False)
-            raw = response.data
-            if not isinstance(raw, bytes) or len(raw) > 32768:
-                raise ValidationError("JOB_LOG_TOO_LARGE")
+            # tail_lines, not limit_bytes: limit_bytes returns the log's HEAD,
+            # which never contains the trailing result line on chatty jobs.
+            # Stream the tail so the byte budget aborts the transfer instead of
+            # validating an allocation that already happened.
+            response = self.core.read_namespaced_pod_log(pod.metadata.name, self.namespace, container=statuses[0].name, tail_lines=_JOB_LOG_TAIL_LINES, _preload_content=False)
+            chunks: list[bytes] = []
+            try:
+                total = 0
+                for chunk in response.stream(65536, decode_content=True):
+                    chunks.append(chunk)
+                    total += len(chunk)
+                    if total > _JOB_LOG_MAX_BYTES:
+                        raise ValidationError("JOB_LOG_TOO_LARGE")
+            finally:
+                response.close()
+            raw = b"".join(chunks)
             try:
                 log = raw.decode("utf-8")
             except UnicodeDecodeError as exc:
@@ -279,6 +291,11 @@ class KubernetesGateway:
 # status.completionTime; permanent anomalies still fail once it elapses.
 _JOB_RESULT_GRACE_SECONDS = 60
 _TRANSIENT_RESULT_CODES = {"RESULT_MISSING", "INVALID_JSON", "RESULT_INVALID"}
+# The result contract is "last non-empty line"; a tail read bounds the fetch
+# for jobs with verbose diagnostic output (the restore job logs ~100k lines of
+# SDK request traces) while keeping the ambiguity scan over the tail.
+_JOB_LOG_TAIL_LINES = 256
+_JOB_LOG_MAX_BYTES = 131072
 
 
 def _job_result_pending(job: dict[str, Any]) -> bool:
