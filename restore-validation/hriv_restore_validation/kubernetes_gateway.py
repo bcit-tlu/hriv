@@ -128,7 +128,10 @@ class KubernetesGateway:
         if ref.kind == "Job":
             status = obj.get("status", {})
             if status.get("succeeded") == 1:
-                result, pod_ref = self._job_log_result(ref, obj, expect_success=True)
+                outcome = self._job_log_result(ref, obj, expect_success=True)
+                if outcome is None:
+                    return Observation("Running")
+                result, pod_ref = outcome
                 return Observation("Succeeded", result, (pod_ref,))
             if status.get("failed", 0):
                 result, pod_ref = self._job_log_result(ref, obj, expect_success=False)
@@ -142,7 +145,7 @@ class KubernetesGateway:
             return Observation("Healthy" if healthy else "Running")
         return Observation("Succeeded")
 
-    def _job_log_result(self, ref: ResourceRef, job: dict[str, Any], *, expect_success: bool) -> tuple[str | None, ResourceRef]:
+    def _job_log_result(self, ref: ResourceRef, job: dict[str, Any], *, expect_success: bool) -> tuple[str | None, ResourceRef] | None:
         selector = f"batch.kubernetes.io/controller-uid={ref.uid},job-name={ref.name}"
         pods = self.core.list_namespaced_pod(self.namespace, label_selector=selector).items
         if len(pods) != 1:
@@ -162,12 +165,16 @@ class KubernetesGateway:
             and str(owners[0].uid) == ref.uid
             and owners[0].controller is True
         )
-        if any(value is None or labels.get(key) != value for key, value in expected.items()) or labels.get("job-name") != ref.name or labels.get("batch.kubernetes.io/controller-uid") != ref.uid or not owner_valid or len(statuses) != 1 or statuses[0].name != expected_container or not statuses[0].state.terminated:
+        if any(value is None or labels.get(key) != value for key, value in expected.items()) or labels.get("job-name") != ref.name or labels.get("batch.kubernetes.io/controller-uid") != ref.uid or not owner_valid or len(statuses) != 1 or statuses[0].name != expected_container:
+            raise ValidationError("JOB_POD_OWNERSHIP_INVALID")
+        pod_ref = ResourceRef("v1", "Pod", pod.metadata.name, str(pod.metadata.uid))
+        if not statuses[0].state.terminated:
+            if _job_result_pending(job):
+                return None
             raise ValidationError("JOB_POD_OWNERSHIP_INVALID")
         exit_code = statuses[0].state.terminated.exit_code
         if (expect_success and exit_code != 0) or (not expect_success and exit_code == 0):
             raise ValidationError("JOB_POD_EXIT_INVALID")
-        pod_ref = ResourceRef("v1", "Pod", pod.metadata.name, str(pod.metadata.uid))
         try:
             log = self.core.read_namespaced_pod_log(pod.metadata.name, self.namespace, container=statuses[0].name, limit_bytes=32769)
             if not isinstance(log, str) or len(log.encode()) > 32768:
@@ -184,7 +191,9 @@ class KubernetesGateway:
                     continue
                 if isinstance(parsed, dict):
                     raise ValidationError("RESULT_AMBIGUOUS")
-        except ValidationError:
+        except ValidationError as exc:
+            if expect_success and exc.code in _TRANSIENT_RESULT_CODES and _job_result_pending(job):
+                return None
             if expect_success:
                 raise
             return None, pod_ref
@@ -253,6 +262,22 @@ class KubernetesGateway:
         if (api, kind) not in table:
             raise ValidationError("RESOURCE_KIND_FORBIDDEN")
         return table[(api, kind)](name, self.namespace, body=body)
+
+
+# A just-completed Job can briefly report succeeded==1 before the pod's
+# terminated state or full log tail is visible via the API. Treat these
+# result-read failures as still-converging for a short window after
+# status.completionTime; permanent anomalies still fail once it elapses.
+_JOB_RESULT_GRACE_SECONDS = 60
+_TRANSIENT_RESULT_CODES = {"RESULT_MISSING", "INVALID_JSON", "RESULT_INVALID"}
+
+
+def _job_result_pending(job: dict[str, Any]) -> bool:
+    try:
+        completed = _time(job.get("status", {}).get("completionTime"))
+    except ValidationError:
+        return False
+    return completed is not None and (datetime.now(timezone.utc) - completed).total_seconds() < _JOB_RESULT_GRACE_SECONDS
 
 
 def _time(value: Any) -> datetime | None:

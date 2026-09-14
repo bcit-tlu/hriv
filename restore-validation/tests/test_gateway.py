@@ -75,6 +75,33 @@ class GatewayTests(unittest.TestCase):
     def test_job_result_final_log_line(self):
         gateway, ref = self._successful(); self.assertEqual('{"schema_version":1}', gateway.observe_child(ref).result)
 
+    def test_job_result_pending_on_torn_log_read(self):
+        gateway, ref = self._successful('{"schema_version":1,"success')
+        gateway.get_child.return_value["status"]["completionTime"] = datetime.now(timezone.utc)
+        self.assertEqual("Running", gateway.observe_child(ref).phase)
+
+    def test_job_result_pending_recovers_on_next_poll(self):
+        gateway, ref = self._successful('{"schema_version":1,"success')
+        gateway.get_child.return_value["status"]["completionTime"] = datetime.now(timezone.utc)
+        self.assertEqual("Running", gateway.observe_child(ref).phase)
+        gateway.core.read_namespaced_pod_log.return_value = 'diagnostic\n{"schema_version":1}\n'
+        self.assertEqual("Succeeded", gateway.observe_child(ref).phase)
+
+    def test_job_result_still_fails_after_grace(self):
+        gateway, ref = self._successful('{"schema_version":1,"success')
+        gateway.get_child.return_value["status"]["completionTime"] = datetime.now(timezone.utc) - timedelta(seconds=120)
+        with self.assertRaises(ValidationError): gateway.observe_child(ref)
+
+    def test_job_result_missing_fails_without_completion_time(self):
+        gateway, ref = self._successful('{"schema_version":1,"success')
+        with self.assertRaises(ValidationError): gateway.observe_child(ref)
+
+    def test_job_result_pending_when_pod_not_marked_terminated(self):
+        gateway, ref = self._successful()
+        gateway.get_child.return_value["status"]["completionTime"] = datetime.now(timezone.utc)
+        gateway.core.list_namespaced_pod.return_value.items[0].status.container_statuses[0].state.terminated = None
+        self.assertEqual("Running", gateway.observe_child(ref).phase)
+
     def test_job_requires_one_pod(self):
         gateway, ref = self._successful(); gateway.core.list_namespaced_pod.return_value.items = []
         with self.assertRaises(ValidationError): gateway.observe_child(ref)
