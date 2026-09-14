@@ -387,7 +387,7 @@ class Controller:
                     "enableSuperuserAccess": True,
                     "storage": {
                         "size": self.profile.postgresql_storage_size,
-                        "storageClass": "longhorn",
+                        "storageClass": self.profile.source_storage_class,
                     },
                 }
             )
@@ -421,6 +421,12 @@ class Controller:
         elif stage == "VALIDATE_CONSISTENCY":
             selected = self.store.read()[0]["latest_run"]["selected_source"]
             manifest = self._database_manifest(run_id, self.templates.consistency_job)
+            # Pin the hashing pod to the node that restored the data: with a
+            # data-locality storage class the replica already lives there, so
+            # the rehash reads locally instead of crossing the storage network.
+            node = self._restore_pod_node(run_id)
+            if node is not None:
+                manifest["spec"]["template"]["spec"]["nodeName"] = node
             self._container(manifest)["args"] = ["validate-consistency", "--host", f"{child_name(run_id, 'cnpg')}-rw", "--source", "/restore/data/source_images", "--selected-source-state", canonical_json(selected["source_state"])]
             result = self._job(run_id, "consistency", manifest)
             if result is None:
@@ -445,6 +451,18 @@ class Controller:
         fixed_child_maximum = 10  # four Jobs, four Job Pods, one source PVC, one CNPG Cluster
         if len(self.store.read()[0]["retained_runs"]) >= self.config.max_retained_runs or usage.get("jobs", 0) + 3 > self.config.max_jobs or usage.get("pvcs", 0) + 2 > self.config.max_pvcs or fixed_child_maximum > self.config.max_child_resources:
             raise ValidationError("CAPACITY_INSUFFICIENT")
+
+    def _restore_pod_node(self, run_id: str) -> str | None:
+        prefix = child_name(run_id, "source-restore")
+        for item in self.store.read()[0]["latest_run"].get("child_resources", []):
+            if item.get("kind") != "Pod" or not str(item.get("name", "")).startswith(prefix):
+                continue
+            pod = self.gateway.get_child(ResourceRef(item["apiVersion"], item["kind"], item["name"], item["uid"]))
+            if pod is not None:
+                node = pod.get("spec", {}).get("nodeName")
+                if isinstance(node, str) and node:
+                    return node
+        return None
 
     def _database_manifest(self, run_id: str, template: dict[str, Any]) -> dict[str, Any]:
         manifest = copy.deepcopy(template)

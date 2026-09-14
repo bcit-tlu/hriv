@@ -89,6 +89,7 @@ class ChartTests(unittest.TestCase):
         values = {
             "images": {"orchestrator": f"registry.example/controller@sha256:{digest}", "backupChild": f"registry.example/backup@sha256:{digest}", "postgresql": f"registry.example/postgres:17@sha256:{digest}"},
             "objectStore": {"enabled": True, "destinationPath": "https://storage.blob.core.windows.net/barman"},
+            "controller": {"maxRuntimeSeconds": 28800},
             "operational": {"enabled": True, "schedule": "0 11 * * 0", "egressProxy": {"image": "envoyproxy/envoy:v1.39.1@sha256:57e14a549d7bd43c8d3f6d03e8cfa653e037d4b38e133acd9b54f38c524401b4", "allowedConnectHosts": ["storageacct.blob.core.windows.net:443"]}},
         }
         with tempfile.NamedTemporaryFile("w", suffix=".yaml") as source:
@@ -103,7 +104,7 @@ class ChartTests(unittest.TestCase):
         self.assertTrue(weekly["spec"]["suspend"])
         weekly_template = weekly["spec"]["jobTemplate"]
         demand_template = on_demand["spec"]["jobTemplate"]
-        self.assertEqual((0, 21600, "Never"), (weekly_template["spec"]["backoffLimit"], weekly_template["spec"]["activeDeadlineSeconds"], weekly_template["spec"]["template"]["spec"]["restartPolicy"]))
+        self.assertEqual((0, 28800, "Never"), (weekly_template["spec"]["backoffLimit"], weekly_template["spec"]["activeDeadlineSeconds"], weekly_template["spec"]["template"]["spec"]["restartPolicy"]))
         self.assertNotIn("ttlSecondsAfterFinished", weekly_template["spec"])
         self.assertEqual(604800, demand_template["spec"]["ttlSecondsAfterFinished"])
         self.assertTrue(on_demand["spec"]["suspend"])
@@ -146,6 +147,11 @@ class ChartTests(unittest.TestCase):
         # The consistency child rehashes the full restored source tree, so it
         # needs the same deadline headroom as the restore that wrote it.
         self.assertEqual(children["source_restore_job"]["spec"]["activeDeadlineSeconds"], children["consistency_job"]["spec"]["activeDeadlineSeconds"])
+        for job_name in ("source_restore_job", "consistency_job"):
+            pod = children[job_name]["spec"]["template"]["spec"]
+            self.assertEqual({"bcit.ca/longhorn-storage": "true"}, pod["nodeSelector"])
+            self.assertEqual("OnRootMismatch", pod["securityContext"]["fsGroupChangePolicy"])
+        self.assertEqual({"requests": {"cpu": "100m", "memory": "256Mi"}, "limits": {"cpu": "2", "memory": "2Gi"}}, children["consistency_job"]["spec"]["template"]["spec"]["containers"][0]["resources"])
         policies = {item["metadata"]["name"]: item["spec"] for item in docs if item.get("kind") == "NetworkPolicy"}
         selector_values = lambda name: set(policies[name]["podSelector"]["matchExpressions"][0]["values"])
         self.assertEqual({"db-validation", "consistency"}, selector_values("hriv-restore-validation-database-clients"))
@@ -157,6 +163,21 @@ class ChartTests(unittest.TestCase):
         self.assertEqual([{"protocol": "TCP", "port": 8000}], status["ingress"][0]["ports"])
         broad = [name for name, spec in policies.items() if any(peer.get("ipBlock", {}).get("cidr") == "0.0.0.0/0" for rule in spec.get("egress", []) for peer in rule.get("to", []))]
         self.assertEqual(["hriv-restore-validation-proxy-egress"], broad)
+
+    def test_chart_child_jobs_and_storage_class_values(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".yaml") as values:
+            yaml.safe_dump({"childJobs": {"sourceRestoreDeadlineSeconds": 14400, "consistencyDeadlineSeconds": 10800}, "sourceProfile": {"sourceStorageClass": "longhorn-rv"}}, values)
+            values.flush()
+            rendered = subprocess.check_output(["helm", "template", "test", str(CHART), "-f", values.name], text=True)
+        docs = list(yaml.safe_load_all(rendered))
+        child_config = next(item for item in docs if item and item.get("kind") == "ConfigMap" and item["metadata"]["name"] == "hriv-restore-validation-child-templates-v7")
+        children = yaml.safe_load(child_config["data"]["templates.yaml"])
+        self.assertEqual(14400, children["source_restore_job"]["spec"]["activeDeadlineSeconds"])
+        self.assertEqual(10800, children["consistency_job"]["spec"]["activeDeadlineSeconds"])
+        self.assertEqual("longhorn-rv", children["source_pvc"]["spec"]["storageClassName"])
+        self.assertEqual("longhorn-rv", children["cnpg_cluster"]["spec"]["storage"]["storageClass"])
+        profile_raw = next(item for item in docs if item and item.get("kind") == "ConfigMap" and item["metadata"]["name"] == "hriv-restore-validation-source-profile-v7")["data"]["profile.json"]
+        self.assertEqual("longhorn-rv", SourceProfile.parse(profile_raw).source_storage_class)
 
     def test_no_secret_manifest(self):
         self.assertFalse(any(item and item.get("kind") == "Secret" for item in self.documents))

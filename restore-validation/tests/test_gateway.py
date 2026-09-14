@@ -64,6 +64,15 @@ class GatewayTests(unittest.TestCase):
         actual["metadata"]["uid"] = "job-uid"
         self.assertEqual("x", adopted_ref(manifest, actual).name)
 
+    def test_adopted_ref_ignores_runtime_nodename(self):
+        manifest = self._manifest()
+        manifest["spec"]["template"] = {"spec": {"containers": [{"name": "x"}]}}
+        manifest["metadata"]["annotations"][TEMPLATE_IDENTITY_ANNOTATION] = template_identity(manifest)
+        actual = copy.deepcopy(manifest)
+        actual["spec"]["template"]["spec"]["nodeName"] = "worker-01"
+        actual["metadata"]["uid"] = "job-uid"
+        self.assertEqual("x", adopted_ref(manifest, actual).name)
+
     def test_fake_async_delete(self):
         fake = FakeGateway(); ref = fake.create_child({"apiVersion": "v1", "kind": "PersistentVolumeClaim", "metadata": {"name": "x", "labels": {"app.kubernetes.io/managed-by": "hriv-restore-validation"}}}); fake.async_deletes = True; fake.delete_child(ref)
         self.assertIsNotNone(fake.get_child(ref)); fake.finish_deletes(); self.assertIsNone(fake.get_child(ref))
