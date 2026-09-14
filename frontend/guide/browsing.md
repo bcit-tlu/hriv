@@ -13,7 +13,9 @@ The **Home** tab is the image library — the same view your students get
 - Use the **breadcrumbs** at the top to jump back up, or **Home** to return
   to the top level.
 - The **search icon** in the top bar searches across images by name, note,
-  and other details.
+  and other details. Wrap words in `"quotes"` to match an exact phrase
+  instead of each word on its own — `"lung 2"` finds only the string
+  "lung 2", not everything containing "lung" or "2".
 
 ## Viewing an image
 
