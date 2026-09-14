@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.57.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.56.0...backend-v0.57.0) (2026-09-14)
+
+
+### Features
+
+* emit admin tab page hits for telemetry dashboards ([#1297](https://github.com/bcit-tlu/hriv/issues/1297)) ([5163f82](https://github.com/bcit-tlu/hriv/commit/5163f827a167092f1d9e4975b2cd7764c5a45754))
+* instrument guide page hits for telemetry dashboards ([#1294](https://github.com/bcit-tlu/hriv/issues/1294)) ([2a6ae3d](https://github.com/bcit-tlu/hriv/commit/2a6ae3d2d1e62889ba8537a9c7d93f79ba163dc3))
+
 ## [0.56.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.55.0...backend-v0.56.0) (2026-09-08)
 
 
