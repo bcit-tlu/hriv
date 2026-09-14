@@ -135,6 +135,9 @@ def _bounded(value: str | None, allowed: frozenset[str]) -> str | None:
 
 _GUIDE_DOC_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 
+# Admin page tabs for 'navigate_admin_tab' page hits.
+_ADMIN_TABS = frozenset({"changelog", "backups"})
+
 
 def _bounded_slug(value: str | None) -> str | None:
     """Return *value* when it is a lowercase URL slug, else ``"other"``.
@@ -194,6 +197,9 @@ class TelemetryEvent(BaseModel):
     # Guide doc slug for 'navigate_guide_doc' page hits; bounded to slug shape
     # server-side so it stays low-cardinality for dashboards.
     guide_doc: str | None = Field(None, max_length=64)
+
+    # Admin tab for 'navigate_admin_tab' page hits; bounded server-side.
+    admin_tab: str | None = Field(None, max_length=32)
 
     # Reorder operation diagnostics (``reorder.operation`` events). Only the
     # bounded ``state`` ever feeds a metric label; everything else stays in
@@ -364,6 +370,9 @@ async def ingest_telemetry_events(
         guide_doc = _bounded_slug(event.guide_doc)
         if guide_doc is not None:
             extra["guide.doc"] = guide_doc
+        admin_tab = _bounded(event.admin_tab, _ADMIN_TABS)
+        if admin_tab is not None:
+            extra["admin.tab"] = admin_tab
         if event.event == "reorder.operation":
             if event.state is None:
                 # Distinguish "client sent no state" from "client sent an

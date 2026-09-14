@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi, afterEach } from 'vitest'
 import { render, screen, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import AdminPage from '../../src/components/AdminPage'
+import { emitEvent } from '../../src/observability'
 import * as api from '../../src/api'
 
 const { mockLogout } = vi.hoisted(() => ({
@@ -42,6 +43,11 @@ vi.mock('../../src/useAuth', () => ({
 
 vi.mock('../../src/components/ChangelogAdmin', () => ({
   default: () => <div>Changelog admin content</div>,
+}))
+
+vi.mock('../../src/observability', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/observability')>()),
+  emitEvent: vi.fn(),
 }))
 
 const mockFetchAdminTasks = vi.mocked(api.fetchAdminTasks)
@@ -187,6 +193,7 @@ describe('AdminPage', () => {
     mockDeleteFilesImportArchive.mockReset()
     mockFetchAdminTask.mockReset()
     mockLogout.mockClear()
+    vi.mocked(emitEvent).mockClear()
   })
 
   afterEach(() => {
@@ -213,6 +220,26 @@ describe('AdminPage', () => {
     expect(screen.getByText('Changelog admin content')).toBeInTheDocument()
 
     await waitFor(() => expect(mockFetchAdminTasks).toHaveBeenCalledTimes(1))
+  })
+
+  it('emits a page-hit telemetry event per shown tab', async () => {
+    const user = userEvent.setup()
+    render(<AdminPage />)
+
+    await waitFor(() => expect(mockFetchAdminTasks).toHaveBeenCalled())
+    expect(emitEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'navigation.page_changed',
+        action: 'navigate_admin_tab',
+        page: 'admin',
+        admin_tab: 'changelog',
+      }),
+    )
+
+    await user.click(screen.getByRole('tab', { name: 'Backups' }))
+    expect(emitEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'navigate_admin_tab', admin_tab: 'backups' }),
+    )
   })
 
   it('groups data-transfer cards together and keeps recent tasks collapsed on the backups tab', async () => {
