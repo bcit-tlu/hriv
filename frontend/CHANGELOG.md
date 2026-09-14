@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.55.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.54.0...frontend-v0.55.0) (2026-09-14)
+
+
+### Features
+
+* **frontend:** support quoted exact-phrase search ([#1299](https://github.com/bcit-tlu/hriv/issues/1299)) ([b3f990a](https://github.com/bcit-tlu/hriv/commit/b3f990a623eab1670370077a4f883e1e4dbc84cd))
+
 ## [0.54.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.53.0...frontend-v0.54.0) (2026-09-14)
 
 
