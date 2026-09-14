@@ -710,42 +710,47 @@ is unset, the frontend falls back to the same-origin relative path
 
 ### Event fields
 
-| Field              | Type                                  | Purpose                                                                                                                                                            |
-| ------------------ | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `event`            | string (required)                     | One of the allowed event names above                                                                                                                               |
-| `schema_version`   | integer                               | Event payload version (logged as `schema.version`)                                                                                                                 |
-| `event_version`    | integer                               | Event-specific contract version (logged as `event.version`)                                                                                                        |
-| `outcome`          | `"success"`, `"failure"`, `"unknown"` | Result of the operation                                                                                                                                            |
-| `duration_ms`      | number                                | End-to-end duration in milliseconds, when meaningful                                                                                                               |
-| `action`           | string                                | Low-cardinality action label (e.g. `view`, `navigate`)                                                                                                             |
-| `page`             | string                                | Low-cardinality page identifier for navigation events; reflects the rendered page after role gating (role-gated deep links report `browse` for unauthorized roles) |
-| `from_page`        | bounded string                        | Previous page for navigation transitions (bounded to page names)                                                                                                   |
-| `direction`        | bounded string                        | `down`/`up`/`jump` for `navigate_category` transitions                                                                                                             |
-| `guide_doc`        | bounded string                        | Guide page slug for `navigate_guide_doc` hits (kebab-case only)                                                                                                    |
-| `error`            | string                                | High-level error category, never free-text or PII                                                                                                                  |
-| `error_code`       | bounded string                        | Stable error code for `frontend.error` events                                                                                                                      |
-| `synthetic`        | boolean                               | Client hint only; server metadata is authoritative (see below)                                                                                                     |
-| `image_id`         | integer                               | Structured domain id for image events (never a Prometheus label)                                                                                                   |
-| `category_id`      | integer                               | Structured domain id for category context (never a label)                                                                                                          |
-| `from_category_id` | integer                               | Previous category id for `navigate_category` transitions                                                                                                           |
-| `request_id`       | string                                | Backend request identifier when already generated server-side                                                                                                      |
-| `trace_id`         | string                                | Active trace identifier when available                                                                                                                             |
-| `value`            | number                                | Numeric value for `frontend.performance` events                                                                                                                    |
-| `unit`             | bounded string                        | Unit for `value` (`ms` or `score`)                                                                                                                                 |
-| `upload_mode`      | bounded string                        | `single`/`bulk` for `image.upload.completed`                                                                                                                       |
-| `file_type`        | bounded string                        | Bounded upload file-type bucket (see above)                                                                                                                        |
-| `browser_family`   | bounded string                        | `chrome`/`firefox`/`safari`/`edge`/`opera`/`samsung`/`other`                                                                                                       |
-| `browser_major`    | string                                | Major browser version only (e.g. `128`)                                                                                                                            |
-| `os_family`        | bounded string                        | `windows`/`macos`/`ios`/`android`/`linux`/`chromeos`/`other`                                                                                                       |
-| `device_class`     | bounded string                        | `desktop`/`mobile`/`tablet`/`other`                                                                                                                                |
-| `viewport_bucket`  | bounded string                        | `xs`/`sm`/`md`/`lg`/`xl` (Material UI breakpoints)                                                                                                                 |
-| `touch_capable`    | boolean                               | Whether the device reports touch capability                                                                                                                        |
+| Field              | Type                                  | Purpose                                                          |
+| ------------------ | ------------------------------------- | ---------------------------------------------------------------- |
+| `event`            | string (required)                     | One of the allowed event names above                             |
+| `schema_version`   | integer                               | Event payload version (logged as `schema.version`)               |
+| `event_version`    | integer                               | Event-specific contract version (logged as `event.version`)      |
+| `outcome`          | `"success"`, `"failure"`, `"unknown"` | Result of the operation                                          |
+| `duration_ms`      | number                                | End-to-end duration in milliseconds, when meaningful             |
+| `action`           | string                                | Low-cardinality action label (e.g. `view`, `navigate`)           |
+| `page`             | string                                | Low-cardinality page identifier for navigation events            |
+| `from_page`        | bounded string                        | Previous page for navigation transitions (bounded to page names) |
+| `direction`        | bounded string                        | `down`/`up`/`jump` for `navigate_category` transitions           |
+| `guide_doc`        | bounded string                        | Guide page slug for `navigate_guide_doc` hits (kebab-case only)  |
+| `error`            | string                                | High-level error category, never free-text or PII                |
+| `error_code`       | bounded string                        | Stable error code for `frontend.error` events                    |
+| `synthetic`        | boolean                               | Client hint only; server metadata is authoritative (see below)   |
+| `image_id`         | integer                               | Structured domain id for image events (never a Prometheus label) |
+| `category_id`      | integer                               | Structured domain id for category context (never a label)        |
+| `from_category_id` | integer                               | Previous category id for `navigate_category` transitions         |
+| `request_id`       | string                                | Backend request identifier when already generated server-side    |
+| `trace_id`         | string                                | Active trace identifier when available                           |
+| `value`            | number                                | Numeric value for `frontend.performance` events                  |
+| `unit`             | bounded string                        | Unit for `value` (`ms` or `score`)                               |
+| `upload_mode`      | bounded string                        | `single`/`bulk` for `image.upload.completed`                     |
+| `file_type`        | bounded string                        | Bounded upload file-type bucket (see above)                      |
+| `browser_family`   | bounded string                        | `chrome`/`firefox`/`safari`/`edge`/`opera`/`samsung`/`other`     |
+| `browser_major`    | string                                | Major browser version only (e.g. `128`)                          |
+| `os_family`        | bounded string                        | `windows`/`macos`/`ios`/`android`/`linux`/`chromeos`/`other`     |
+| `device_class`     | bounded string                        | `desktop`/`mobile`/`tablet`/`other`                              |
+| `viewport_bucket`  | bounded string                        | `xs`/`sm`/`md`/`lg`/`xl` (Material UI breakpoints)               |
+| `touch_capable`    | boolean                               | Whether the device reports touch capability                      |
 
 Domain identifiers (`image_id`, `category_id`) are emitted only as **structured
 event fields**, never as Prometheus metric labels, to keep metric cardinality
 bounded. Client-environment fields are reduced to small enumerated buckets and
 the backend **re-bounds** them against allowlists (coercing anything unknown to
 `other`), so a client cannot inject high-cardinality or free-text values.
+
+`page` fields reflect the **rendered** page after role gating: a deep link to a
+page the user's role cannot open (e.g. a student on `?page=guide`) falls back
+to the browse view, and telemetry reports `browse` so visits are not attributed
+to content that was never shown.
 
 Client-environment values are detected once per tab (on the first telemetry
 event) and cached for the tab lifetime. In particular `viewport_bucket`
