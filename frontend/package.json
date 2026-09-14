@@ -22,7 +22,10 @@
     "test:storybook": "vitest --config vitest.config.ts",
     "test:storybook:watch": "vitest --config vitest.config.ts --watch",
     "test:watch": "vitest --config vite.config.ts",
-    "test:coverage": "vitest run --config vite.config.ts --coverage"
+    "test:coverage": "vitest run --config vite.config.ts --coverage",
+    "docs:dev": "vitepress dev guide --port 5174",
+    "docs:build": "vitepress build guide",
+    "docs:preview": "vitepress preview guide --port 4174"
   },
   "dependencies": {
     "@dnd-kit/helpers": "^0.4.0",
@@ -77,6 +80,7 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.56.1",
     "vite": "^8.0.16",
+    "vitepress": "^1.6.4",
     "vitest": "^4.1.3"
   }
 }

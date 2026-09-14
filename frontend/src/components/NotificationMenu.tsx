@@ -200,7 +200,7 @@ export default function NotificationMenu({
         </MenuItem>
         <MenuItem
           component="a"
-          href="https://github.com/bcit-tlu/hriv/tree/main/docs"
+          href="/guide/"
           target="_blank"
           rel="noopener noreferrer"
           onClick={() => setAnchor(null)}
