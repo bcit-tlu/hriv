@@ -23,6 +23,11 @@ def _fixed_spec(value: Any) -> Any:
         annotations = result.get("annotations")
         if isinstance(annotations, dict):
             result["annotations"] = {key: item for key, item in annotations.items() if key not in _VOLATILE_ANNOTATIONS}
+        # The API omits readOnly when false (the default) on round-trip, so an
+        # explicit "readOnly": false in a template can never appear in the live
+        # object. Normalizing it away keeps the comparison semantic.
+        if result.get("readOnly") is False:
+            del result["readOnly"]
         return result
     if isinstance(value, list):
         return [_fixed_spec(item) for item in value]

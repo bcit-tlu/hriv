@@ -911,7 +911,7 @@ class Controller:
                 continue
             if ref.uid in tracked or ref.uid in descendants:
                 return False
-            if ref.kind not in {"Job", "PersistentVolumeClaim", "Pod", "Service"}:
+            if ref.kind not in {"Job", "PersistentVolumeClaim", "Pod", "Service", "Cluster"}:
                 return False
             actual = self.gateway.get_child(ref)
             metadata = (actual or {}).get("metadata", {})
@@ -926,10 +926,18 @@ class Controller:
                 or labels.get(RUN_LABEL) != run_id
                 or not isinstance(role, str)
                 or not role
-                or owner.get("controller") is not True
             ):
                 return False
-            descendants[ref.uid] = (ref, role, owner)
+            if owner.get("controller") is True:
+                descendants[ref.uid] = (ref, role, owner)
+            elif not owners and ref.kind in {"Job", "Cluster", "PersistentVolumeClaim"} and role in {"selection", "source-pvc", "cnpg", "db-validation", "source-restore", "consistency"} and ref.name == child_name(run_id, role):
+                # A create can succeed while its ref never reaches
+                # child_resources (post-create verification failure). Such a
+                # root has no owner chain; the deterministic run-scoped name
+                # and matching run labels are the binding.
+                descendants[ref.uid] = (ref, role, {})
+            else:
+                return False
 
         def bound_role(uid: str, seen: set[str]) -> tuple[str, str] | None:
             if uid in tracked:
@@ -940,6 +948,10 @@ class Controller:
             if uid in seen or uid not in descendants:
                 return None
             ref, role, owner = descendants[uid]
+            if not owner:
+                if ref.kind not in {"Job", "Cluster", "PersistentVolumeClaim"}:
+                    return None
+                return role, ref.kind
             owner_uid = str(owner.get("uid"))
             owner_identity = (
                 owner.get("apiVersion"),
