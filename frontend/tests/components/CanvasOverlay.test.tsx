@@ -178,8 +178,8 @@ vi.mock('fabric', () => {
     })
     installObjectGeometry(this)
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function FabricLine(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     this: any,
     pointsOrOptions: number[] | Record<string, unknown> = {},
     lineOptions: Record<string, unknown> = {},

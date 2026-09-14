@@ -80,7 +80,7 @@ export type TelemetryErrorCode =
   | 'unhandled_promise_rejection'
   | 'window_runtime_error'
 export type FrontendPerformanceMetric = 'application_load' | 'lcp' | 'inp' | 'cls' | 'image_ready'
-export type FrontendPage = 'browse' | 'manage' | 'people' | 'admin' | 'unknown'
+export type FrontendPage = 'browse' | 'manage' | 'people' | 'admin' | 'other' | 'unknown'
 export type TelemetryNavDirection = 'down' | 'up' | 'jump'
 
 interface TelemetryEventBase {
