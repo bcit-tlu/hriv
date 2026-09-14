@@ -544,6 +544,8 @@ All drag interactions are gated behind `canEditContent` — students see no drag
 > reproduce the acceleration/jitter where feel bugs live. Any change to collision detection, drop
 > zones, collision priority, or activation constraints must be **feel-tested by a human** before
 > merge; a green recording is only a mechanics smoke-test, not feel validation.
+> The canonical production-scale checklist (80+ categories / 600+ images) is
+> `docs/drag-and-drop.md` → Human feel-test protocol.
 
 ### Testing Browse Tile Reorder Persistence (PR #1089 / `tile-order` cache fix)
 

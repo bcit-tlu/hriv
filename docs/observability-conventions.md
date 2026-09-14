@@ -280,6 +280,23 @@ In local execution mode, a missing dedicated-worker heartbeat is expected and
 does not make the queue health endpoint degraded; use the worker liveness signal
 for required-mode deployments.
 
+## Browse Tree Cache Metrics
+
+`GET /api/categories/tree` short-circuits to `304` when the client's ETag
+matches the current browse revision (`docs/browse-state.md`). The endpoint
+emits two OTel meter series so the saved work is measurable (issue #1100):
+
+- `hriv.browse_tree.requests` — counter, attribute `outcome` ∈
+  `full` | `not_modified`. `not_modified` marks a 304 short-circuit.
+- `hriv.browse_tree.build.duration` — histogram (seconds) recorded only for
+  full builds; multiplying `not_modified` volume by its mean approximates the
+  backend work the short-circuit avoids.
+
+`outcome` is the only label (bounded, on the allowlist). Revisions, viewer
+hashes, and request IDs stay in logs/traces. Client-side, the equivalent
+poll-outcome counters are dev-mode only (`window.__hrivBrowseStats`,
+`docs/drag-and-drop.md` → Instrumentation) — they are not telemetry events.
+
 ## Privacy, Access, and Retention
 
 Observability data serves two different uses and must be treated differently:

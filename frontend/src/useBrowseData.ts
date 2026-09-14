@@ -10,6 +10,7 @@ import type { Category, Group, ImageItem, Program, User } from './types'
 import { narrowProgramIds, narrowGroupIds, resolvePathNode } from './categoryUtils'
 import { apiGroupToGroup } from './groupUtils'
 import { tileOrderingCoordinator } from './tileOrdering'
+import { recordBrowseTreePoll } from './dndInstrumentation'
 import { useBackgroundRefresh } from './useBackgroundRefresh'
 
 function isAbortError(err: unknown): boolean {
@@ -333,6 +334,7 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
         if (tree === null) {
           // 304 Not Modified — the tree is up to date.
           if (effectiveSignal?.aborted || gen !== categoriesReadGen.current) return false
+          recordBrowseTreePoll('not_modified')
           if (receivedHeaders.status !== 0) {
             lastCategoryTree.current = {
               etag: receivedHeaders.etag,
@@ -348,6 +350,9 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
         if (!arraysReferentiallyEqual(nextCategories, categoriesRef.current)) {
           setCategories(nextCategories)
           categoriesRef.current = nextCategories
+          recordBrowseTreePoll('applied')
+        } else {
+          recordBrowseTreePoll('unchanged')
         }
         if (receivedHeaders.status !== 0) {
           lastCategoryTree.current = {
@@ -483,6 +488,7 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
           // 304 Not Modified after a reorder: the tree is unchanged.
           if (gen === categoriesReadGen.current) {
             if (ac.signal.aborted) return categoriesRef.current
+            recordBrowseTreePoll('not_modified')
             if (receivedHeaders.status !== 0) {
               lastCategoryTree.current = {
                 etag: receivedHeaders.etag,
@@ -505,6 +511,9 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
           if (!arraysReferentiallyEqual(cats, categoriesRef.current)) {
             setCategories(cats)
             categoriesRef.current = cats
+            recordBrowseTreePoll('applied')
+          } else {
+            recordBrowseTreePoll('unchanged')
           }
           if (receivedHeaders.status !== 0) {
             lastCategoryTree.current = {

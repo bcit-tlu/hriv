@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useBrowseData, apiTreeToCategory } from '../src/useBrowseData'
+import { browseTreeStats } from '../src/dndInstrumentation'
 import type { UseBrowseDataDeps } from '../src/useBrowseData'
 import type { Category, User } from '../src/types'
 import type { ApiCategoryTree } from '../src/api'
@@ -348,6 +349,7 @@ describe('useBrowseData', () => {
 
       // 304 Not Modified: fetchCategoryTree returns null
       mockFetchCategoryTree.mockResolvedValue(null)
+      const notModifiedBefore = browseTreeStats.not_modified
       let fresh = false
       await act(async () => {
         fresh = await result.current.loadCategories()
@@ -355,6 +357,7 @@ describe('useBrowseData', () => {
 
       expect(fresh).toBe(true)
       expect(result.current.categories[0].label).toBe('Fresh')
+      expect(browseTreeStats.not_modified).toBe(notModifiedBefore + 1)
     })
 
     it('refreshCategories resolves current categories on 304 without overwriting state', async () => {
@@ -368,6 +371,7 @@ describe('useBrowseData', () => {
       })
 
       mockFetchCategoryTree.mockResolvedValue(null)
+      const notModifiedBefore = browseTreeStats.not_modified
       let refreshed: Category[] = []
       await act(async () => {
         refreshed = await result.current.refreshCategories()
@@ -375,6 +379,7 @@ describe('useBrowseData', () => {
 
       expect(refreshed[0].label).toBe('Fresh')
       expect(result.current.categories[0].label).toBe('Fresh')
+      expect(browseTreeStats.not_modified).toBe(notModifiedBefore + 1)
     })
 
     it('does not call invalidateRef when signal is provided', async () => {

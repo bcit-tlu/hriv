@@ -20,7 +20,7 @@ import type { DragEndEvent, DragStartEvent } from '@dnd-kit/react'
 import type { Category, Group, ImageItem, Program } from '../types'
 import type { ApiImage, TileOrderItemRef } from '../api'
 import type { ReorderDragContext } from '../tileOrdering'
-import { DndMonitor, logDrag } from '../dndInstrumentation'
+import { DndMonitor, logDrag, recordTileRender } from '../dndInstrumentation'
 import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
 import { getCategoryHiddenStateFromPath } from '../treeUtils'
 import CategoryTile from './CategoryTile'
@@ -101,6 +101,9 @@ const GridTile = memo(function GridTile({
   renderCategoryTile,
   renderImageTile,
 }: GridTileProps) {
+  // Dev-trace render counter (issue #1100): a no-op unless a traced drag is
+  // active — see dndInstrumentation.ts.
+  recordTileRender(tileId(item))
   return (
     <SortableTile id={tileId(item)} index={index} disabled={disabled}>
       {item.type === 'category'

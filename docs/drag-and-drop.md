@@ -169,6 +169,21 @@ and `App.handleReorderComplete` (coordinator refresh start/end/deferred). This i
 off in production and only logs when `import.meta.env.DEV` is true or the
 `localStorage` flag is set.
 
+`dndInstrumentation.ts` also keeps two dev-mode counters (issue #1100):
+
+- **Per-drag tile re-renders** — `GridTile` calls `recordTileRender()` on every
+  render; the count resets on `dragstart` and `dragend` logs a
+  `render summary` line (`tileRenders`, `distinctTiles`). With tile memoization
+  working, a steady-state drag should re-render ~zero tiles beyond the source —
+  a large `distinctTiles` value is the memoization-regression signal.
+- **Browse-tree poll outcomes** — `useBrowseData` calls
+  `recordBrowseTreePoll('not_modified' | 'applied' | 'unchanged')` for each
+  committed `GET /api/categories/tree` response. Cumulative counts live on
+  `window.__hrivBrowseStats` (`polls`, `not_modified`, `applied`, `unchanged`)
+  and each poll is traced as `browse-tree poll`. A long-idle Browse tab should
+  show `not_modified` dominating `polls` — the client-side view of the backend
+  `hriv.browse_tree.requests` short-circuit metric.
+
 ## Process gate (feel cannot be proven by a recording)
 
 Any change to collision detection, drop zones, collision priority, or activation
@@ -177,3 +192,46 @@ drags move the pointer in discrete idealized steps and do **not** reproduce the
 acceleration, jitter, and hesitation where feel bugs live — a green recording
 has historically coexisted with bad local feel. Unit tests cover the reorder
 math and the move/reorder dispatch contract, not the feel.
+
+## Human feel-test protocol (production-scale fixture)
+
+The canonical checklist for a feel-test at production scale (issue #1100, epic
+#975). Record the result in `docs/reorder-performance.md` (or the validating
+PR/issue) with tester, date, environment, and per-item pass/fail.
+
+**Setup**
+
+1. `docker compose up -d --build` — wait for the seed to finish (~10 s).
+2. Seed the reorder fixture
+   (`docs/reorder-fixture.md`):
+   ```bash
+   cd backend
+   DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv \
+     poetry run python -m app.reorder_fixture
+   ```
+3. Log in as `instructor@example.ca`, then enable the dev trace:
+   `localStorage.setItem('hriv-dnd-trace', '1')` and reload.
+
+**Checklist**
+
+| #   | Scope / action                                               | Pass criteria                                                                                                                     |
+| --- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `RF-Root-01` flat scope (80 categories): 5+ reorders         | Tiles slide to make room as the pointer crosses a neighbour's centre; drag never appears frozen; drop commits the previewed order |
+| 2   | Same scope: hover the **near half** of a category tile       | "Move here" appears (move wins); no reorder preview                                                                               |
+| 3   | Same scope: hover the near half of an **image** tile         | Calm dead-zone — no reflow, no affordance                                                                                         |
+| 4   | 10–20 rapid successive drops while a save is in flight       | Every accepted drop commits (queued/coalesced); `ReorderStatusIndicator` cycles dirty→saving→saved; nothing silently reverts      |
+| 5   | `RF-Root-02` gallery scope (600 images): repeat gestures 1–4 | Same behaviour at scale; note whether the ~370 ms drag-activation stall measured in `docs/reorder-performance.md` is perceptible  |
+| 6   | Drop, then immediately navigate into a category and back     | Order retained, no duplicates, no stale-order flash                                                                               |
+| 7   | Reload the browser                                           | Displayed order matches `GET /api/tile-order?parent_category_id=<id>` exactly                                                     |
+| 8   | (Two tabs) reorder the same scope concurrently               | Second writer gets the explicit conflict UX ("Order changed elsewhere"), never silent last-write-wins                             |
+| 9   | Console: `[dnd]` `render summary` after each drag            | `distinctTiles` stays near zero (tile memoization holds); `window.__hrivBrowseStats.not_modified` grows during idle polling       |
+
+**Sign-off** — paste into `docs/reorder-performance.md` or the tracking issue:
+
+```
+Feel-test sign-off — issue #1100
+Tester: <name>   Date: <YYYY-MM-DD>   Env: <local docker-compose / latest / stable>
+Items 1–9: <pass/fail each>
+Activation stall at 600 tiles: <imperceptible / noticeable / disruptive>
+Notes: <…>
+```

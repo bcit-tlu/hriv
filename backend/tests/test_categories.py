@@ -287,9 +287,23 @@ def _expected_browse_etag(
     return f'W/"browse-{revision}-{fragment}"'
 
 
+@pytest.fixture
+def _browse_tree_instruments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[MagicMock, MagicMock]:
+    """Swap the OTel counter/histogram for mocks (issue #1100)."""
+    requests = MagicMock()
+    duration = MagicMock()
+    monkeypatch.setattr(categories_router, "_browse_tree_requests", requests)
+    monkeypatch.setattr(categories_router, "_browse_tree_build_duration", duration)
+    return requests, duration
+
+
 async def test_get_category_tree_returns_tree_and_browse_headers(
     monkeypatch: pytest.MonkeyPatch,
+    _browse_tree_instruments: tuple[MagicMock, MagicMock],
 ) -> None:
+    requests_mock, duration_mock = _browse_tree_instruments
     user = _make_user("admin")
     request = MagicMock()
     request.headers = {}
@@ -303,12 +317,16 @@ async def test_get_category_tree_returns_tree_and_browse_headers(
     assert result == tree
     assert response.headers["X-Browse-Revision"] == "7"
     assert response.headers["ETag"] == _expected_browse_etag(7, "admin")
+    requests_mock.add.assert_called_once_with(1, {"outcome": "full"})
+    duration_mock.record.assert_called_once()
 
 
 async def test_get_category_tree_304_short_circuits(
     monkeypatch: pytest.MonkeyPatch,
+    _browse_tree_instruments: tuple[MagicMock, MagicMock],
 ) -> None:
     """Matching If-None-Match must skip the expensive tree load entirely."""
+    requests_mock, duration_mock = _browse_tree_instruments
     user = _make_user("admin")
     etag = _expected_browse_etag(7, "admin")
     request = MagicMock()
@@ -324,6 +342,8 @@ async def test_get_category_tree_304_short_circuits(
     assert result.headers["ETag"] == etag
     assert result.headers["X-Browse-Revision"] == "7"
     load_tree_mock.assert_not_awaited()
+    requests_mock.add.assert_called_once_with(1, {"outcome": "not_modified"})
+    duration_mock.record.assert_not_called()
 
 
 async def test_get_category_tree_bumps_browse_revision_on_category_create(
