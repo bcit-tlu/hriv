@@ -16,17 +16,19 @@ import ImageIcon from '@mui/icons-material/Image'
 import LinkIcon from '@mui/icons-material/Link'
 import NoteIcon from '@mui/icons-material/StickyNote2'
 import PersonIcon from '@mui/icons-material/Person'
+import MenuBookIcon from '@mui/icons-material/MenuBook'
 import BadgeIcon from '@mui/icons-material/Badge'
 import SchoolIcon from '@mui/icons-material/School'
 import SearchIcon from '@mui/icons-material/Search'
 import TextFieldsIcon from '@mui/icons-material/TextFields'
 import type { Category, ImageItem, Program } from '../types'
 import type { ApiImage, ApiUser } from '../api'
+import { buildGuideIndex, type GuideSearchSection } from '../guideSearch'
 import RenewingThumbnail from './RenewingThumbnail'
 
 // ── Result types ───────────────────────────────────────
 
-type ResultKind = 'category' | 'image' | 'program' | 'user'
+type ResultKind = 'category' | 'image' | 'program' | 'user' | 'guide'
 
 interface FieldMatch {
   field: string
@@ -37,8 +39,9 @@ interface FieldMatch {
 
 interface SearchResult {
   kind: ResultKind
-  /** Real entity identifier for deduplication (e.g. cat.id, img.id, user.id) */
-  entityId: number
+  /** Real entity identifier for deduplication (e.g. cat.id, img.id, user.id);
+      guide results use a `<slug>#<anchor>` string key. */
+  entityId: number | string
   /** Primary label shown in bold */
   label: string
   /** Which field matched */
@@ -50,15 +53,15 @@ interface SearchResult {
   /** Length of the matched query string */
   matchLength: number
   /** Extra payload needed for navigation */
-  payload: CategoryPayload | ImagePayload | ProgramPayload | UserPayload
+  payload: CategoryPayload | ImagePayload | ProgramPayload | UserPayload | GuidePayload
 }
 
 interface GroupedResult {
   kind: ResultKind
-  entityId: number
+  entityId: number | string
   label: string
   matches: FieldMatch[]
-  payload: CategoryPayload | ImagePayload | ProgramPayload | UserPayload
+  payload: CategoryPayload | ImagePayload | ProgramPayload | UserPayload | GuidePayload
 }
 
 interface CategoryPayload {
@@ -81,6 +84,12 @@ interface UserPayload {
   kind: 'user'
   userId: number
   programNames: string[]
+}
+
+interface GuidePayload {
+  kind: 'guide'
+  slug: string
+  anchor?: string
 }
 
 // ── Filter definitions ─────────────────────────────────
@@ -119,6 +128,12 @@ const TYPE_FILTERS: FilterDef<TypeFilter>[] = [
     label: 'People',
     icon: <PersonIcon fontSize="small" />,
     tooltip: 'Show only people',
+  },
+  {
+    key: 'guide',
+    label: 'Guide',
+    icon: <MenuBookIcon fontSize="small" />,
+    tooltip: 'Show only guide pages',
   },
 ]
 
@@ -201,6 +216,8 @@ function iconForKind(kind: ResultKind) {
       return <SchoolIcon sx={{ color: '#6a8a5b' }} />
     case 'user':
       return <PersonIcon sx={{ color: '#5b7a8a' }} />
+    case 'guide':
+      return <MenuBookIcon sx={{ color: '#8a6a5b' }} />
   }
 }
 
@@ -214,6 +231,8 @@ function labelForKind(kind: ResultKind): string {
       return 'Program'
     case 'user':
       return 'User'
+    case 'guide':
+      return 'Guide'
   }
 }
 
@@ -370,6 +389,37 @@ function addImageMatches(
 
 // ── Component ──────────────────────────────────────────
 
+// Static index — guide Markdown is bundled at build time, so this never
+// changes at runtime.
+const GUIDE_INDEX: GuideSearchSection[] = buildGuideIndex()
+
+function collectGuideResults(terms: string[], results: SearchResult[]): void {
+  for (const section of GUIDE_INDEX) {
+    const entityId = section.anchor ? `${section.slug}#${section.anchor}` : section.slug
+    const label = section.heading ? `${section.title} — ${section.heading}` : section.title
+    const fields = [
+      { field: 'Title', value: label },
+      { field: 'Content', value: section.content },
+    ]
+    for (const { field, value } of fields) {
+      if (!value) continue
+      const m = findFirstTermMatch(value, terms)
+      if (m) {
+        results.push({
+          kind: 'guide',
+          entityId,
+          label,
+          field,
+          fieldValue: value,
+          matchIndex: m.index,
+          matchLength: m.length,
+          payload: { kind: 'guide', slug: section.slug, anchor: section.anchor },
+        })
+      }
+    }
+  }
+}
+
 interface SearchModalProps {
   open: boolean
   onClose: () => void
@@ -383,6 +433,7 @@ interface SearchModalProps {
   onImageRenewed?: (image: ApiImage) => void
   onSelectProgram: (programName: string) => void
   onSelectUser: (userId: number) => void
+  onSelectGuide?: (slug: string, anchor?: string) => void
   /** Pre-fill the search query when the modal opens. */
   initialQuery?: string
   /** Pre-select a type filter when the modal opens. */
@@ -402,6 +453,7 @@ export default function SearchModal({
   onImageRenewed,
   onSelectProgram,
   onSelectUser,
+  onSelectGuide,
   initialQuery,
   initialTypeFilter,
 }: SearchModalProps) {
@@ -495,7 +547,12 @@ export default function SearchModal({
         }
       }
 
-      // 5. Users (hidden from students)
+      // 5. Guide pages (staff-only content)
+      if (!isStudent) {
+        collectGuideResults(terms, results)
+      }
+
+      // 6. Users (hidden from students)
       if (!isStudent) {
         for (const user of users) {
           const userFields: { field: string; value: string }[] = [
@@ -594,6 +651,9 @@ export default function SearchModal({
       case 'user':
         onSelectUser(result.payload.userId)
         break
+      case 'guide':
+        onSelectGuide?.(result.payload.slug, result.payload.anchor)
+        break
     }
   }
 
@@ -620,7 +680,7 @@ export default function SearchModal({
           placeholder={
             isStudent
               ? 'Search categories and images'
-              : 'Search categories, images, programs, people'
+              : 'Search categories, images, programs, people, the guide'
           }
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -646,7 +706,7 @@ export default function SearchModal({
               Type:
             </Typography>
             {TYPE_FILTERS.filter(
-              (f) => !(isStudent && (f.key === 'program' || f.key === 'user')),
+              (f) => !(isStudent && (f.key === 'program' || f.key === 'user' || f.key === 'guide')),
             ).map((f) => (
               <Tooltip key={f.key} title={f.tooltip}>
                 <Chip

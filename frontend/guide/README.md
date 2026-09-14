@@ -11,7 +11,10 @@ frontend — there is no separate docs site or build step.
 - Screenshots live in `images/`. Reference them as
   `![Alt text](images/your-file.png)`.
 - To add a page: create `your-page.md`, then add it to the `GUIDE_PAGES` list
-  in `src/components/GuidePage.tsx` so it appears in the guide's navigation.
+  in `src/guideContent.ts` so it appears in the guide's navigation.
+- Pages are indexed automatically: staff search results include guide
+  sections (a `Guide` chip narrows results), so clear `##` headings double as
+  search targets.
 - Link between pages with `[label](page-slug)` or `[label](page-slug#section)`
   — section anchors are the heading text in lowercase, words joined by `-`
   (e.g. `## Measuring on an image` → `#measuring-on-an-image`).

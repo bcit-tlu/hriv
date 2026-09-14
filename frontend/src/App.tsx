@@ -45,7 +45,7 @@ import EditImageModal from './components/EditImageModal'
 import ProgramManagementModal from './components/ProgramManagementModal'
 import GroupManagementModal from './components/GroupManagementModal'
 import NotificationMenu from './components/NotificationMenu'
-import GuidePage from './components/GuidePage'
+import GuidePage, { type GuideDocRequest } from './components/GuidePage'
 import ReportIssueModal from './components/ReportIssueModal'
 import SearchModal from './components/SearchModal'
 import type { TypeFilter } from './components/SearchModal'
@@ -514,6 +514,15 @@ export default function App() {
 
   // Search modal state
   const [searchOpen, setSearchOpen] = useState(false)
+  // External navigation target for the guide page (e.g. from search results).
+  const [guideDocRequest, setGuideDocRequest] = useState<GuideDocRequest | undefined>(undefined)
+  const guideDocSeqRef = useRef(0)
+
+  // Guide doc requests are one-shot: once we leave the guide page, drop any
+  // consumed request so a remounted GuidePage initializes from ?doc= alone.
+  if (page !== 'guide' && guideDocRequest !== undefined) {
+    setGuideDocRequest(undefined)
+  }
   const [searchUsers, setSearchUsers] = useState<ApiUser[]>([])
   const [searchInitialQuery, setSearchInitialQuery] = useState<string | undefined>(undefined)
   const [searchInitialTypeFilter, setSearchInitialTypeFilter] = useState<string | undefined>(
@@ -1497,7 +1506,7 @@ export default function App() {
       >
         <Container maxWidth={false} sx={{ px: { xs: 2, sm: 3, lg: '72px', xl: '120px' } }}>
           {page === 'guide' && canEditContent ? (
-            <GuidePage />
+            <GuidePage docRequest={guideDocRequest} />
           ) : page === 'admin' && canManageUsers ? (
             <AdminPage onChangelogEntriesChanged={bumpChangelogVersion} />
           ) : page === 'people' && canManageUsers ? (
@@ -2591,6 +2600,15 @@ export default function App() {
               pushNavState('people')
             })
           }
+        }}
+        onSelectGuide={(slug, anchor) => {
+          if (!canEditContent) return
+          runCanvasNavigation(() => {
+            setPage('guide')
+            pushNavState('guide', [], null, { doc: slug })
+            guideDocSeqRef.current += 1
+            setGuideDocRequest({ slug, anchor, seq: guideDocSeqRef.current })
+          })
         }}
       />
 

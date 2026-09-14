@@ -123,6 +123,11 @@ images> / Empty` format used on category tiles.
   `Link URL`, so users can keep only annotation-derived image matches visible.
 - Search result field labels render in a stronger secondary style so the field
   name reads as metadata rather than body text.
+- Staff searches also match the user guide: each guide page is split into
+  heading-delimited sections (`buildGuideIndex` in `src/guideSearch.ts`), and a
+  match navigates to `?page=guide&doc=<slug>` scrolled to the section anchor.
+- The `Guide` type chip limits results to guide content. Guide results and the
+  chip are staff-only — students see neither, matching guide access.
 
 ---
 
