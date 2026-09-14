@@ -99,6 +99,8 @@ interface TelemetryEventBase {
   from_category_id?: number
   /** Guide doc slug for 'navigate_guide_doc' page hits (bounded server-side). */
   guide_doc?: string
+  /** Admin tab for 'navigate_admin_tab' page hits (bounded server-side). */
+  admin_tab?: string
   direction?: TelemetryNavDirection
   request_id?: string
   trace_id?: string

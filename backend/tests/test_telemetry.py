@@ -741,3 +741,42 @@ async def test_telemetry_records_guide_page_hits(
     assert getattr(second, "guide.doc") == "images"
     # Non-slug guide_doc values are coerced to the bounded "other" bucket.
     assert getattr(third, "guide.doc") == "other"
+
+
+async def test_telemetry_records_admin_tab_hits(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Admin tab hits pass through with a bounded ``admin.tab`` value."""
+    caplog.set_level("INFO", logger="app.routers.telemetry")
+
+    batch = TelemetryBatch(
+        events=[
+            TelemetryEvent(
+                event="navigation.page_changed",
+                action="navigate_admin_tab",
+                page="admin",
+                admin_tab="backups",
+            ),
+            TelemetryEvent(
+                event="navigation.page_changed",
+                action="navigate_admin_tab",
+                page="admin",
+                admin_tab="not-a-tab",
+            ),
+        ]
+    )
+    request = _make_request()
+    user = SimpleNamespace(id=1, role="admin", metadata_=None)
+    db = _make_db()
+
+    with _allow_rate_limit():
+        await ingest_telemetry_events(
+            batch=batch, request=request, user=user, db=db, x_session_id=None
+        )
+
+    first, second = [
+        r for r in caplog.records if r.message == "frontend telemetry event"
+    ]
+    assert getattr(first, "admin.tab") == "backups"
+    # Unknown admin_tab values are coerced to the bounded "other" bucket.
+    assert getattr(second, "admin.tab") == "other"
