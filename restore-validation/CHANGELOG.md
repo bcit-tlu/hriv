@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.11](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.10...restore-validation-v0.1.11) (2026-09-14)
+
+
+### Bug Fixes
+
+* extend consistency deadline and report missing job pods distinctly ([#1293](https://github.com/bcit-tlu/hriv/issues/1293)) ([a18f946](https://github.com/bcit-tlu/hriv/commit/a18f9467563a72dcd44b37ac258313f757e717cb))
+
 ## [0.1.10](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.9...restore-validation-v0.1.10) (2026-09-14)
 
 
