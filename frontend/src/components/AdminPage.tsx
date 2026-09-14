@@ -66,6 +66,7 @@ import type {
   FilesImportArchiveRetentionPolicy,
 } from '../api'
 import { useAuth } from '../useAuth'
+import { emitEvent } from '../observability'
 import ConfirmImportDialog, { type ConfirmImportKind } from './ConfirmImportDialog'
 import ChangelogAdmin from './ChangelogAdmin'
 
@@ -198,6 +199,22 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
   // Log viewer modal
   const [logTask, setLogTask] = useState<AdminTask | null>(null)
   const [activeTab, setActiveTab] = useState<AdminTabValue>('changelog')
+
+  // One page-hit event per shown tab so dashboards can break admin traffic
+  // down by section, matching the per-doc hits on the guide page. Deduped per
+  // mount so re-renders don't double-count.
+  const emittedTabRef = useRef<AdminTabValue | null>(null)
+  useEffect(() => {
+    if (emittedTabRef.current === activeTab) return
+    emittedTabRef.current = activeTab
+    emitEvent({
+      event: 'navigation.page_changed',
+      action: 'navigate_admin_tab',
+      outcome: 'success',
+      page: 'admin',
+      admin_tab: activeTab,
+    })
+  }, [activeTab])
   const [taskHistoryExpanded, setTaskHistoryExpanded] = useState(false)
   const [restoreSnapshots, setRestoreSnapshots] = useState<BackupSnapshotSummary[]>([])
   const [restoreConfigured, setRestoreConfigured] = useState<boolean | null>(null)
