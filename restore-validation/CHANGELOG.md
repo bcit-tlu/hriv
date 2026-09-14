@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.9](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.8...restore-validation-v0.1.9) (2026-09-14)
+
+
+### Bug Fixes
+
+* close create-then-verify ownership gaps in child-resource binding ([#1286](https://github.com/bcit-tlu/hriv/issues/1286)) ([880e6bc](https://github.com/bcit-tlu/hriv/commit/880e6bc0acf40eb4244ebb37947a94aa45fdbfd7))
+
 ## [0.1.8](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.7...restore-validation-v0.1.8) (2026-09-14)
 
 
