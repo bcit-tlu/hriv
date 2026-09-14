@@ -176,9 +176,18 @@ class KubernetesGateway:
         if (expect_success and exit_code != 0) or (not expect_success and exit_code == 0):
             raise ValidationError("JOB_POD_EXIT_INVALID")
         try:
-            log = self.core.read_namespaced_pod_log(pod.metadata.name, self.namespace, container=statuses[0].name, limit_bytes=32769)
-            if not isinstance(log, str) or len(log.encode()) > 32768:
+            # _preload_content=False is required: the client's deserializer runs
+            # json.loads on the response body even for str responses, so a log
+            # that is a single JSON document comes back as a Python repr, which
+            # the strict result parse rejects. Raw bytes avoid the mangling.
+            response = self.core.read_namespaced_pod_log(pod.metadata.name, self.namespace, container=statuses[0].name, limit_bytes=32769, _preload_content=False)
+            raw = response.data
+            if not isinstance(raw, bytes) or len(raw) > 32768:
                 raise ValidationError("JOB_LOG_TOO_LARGE")
+            try:
+                log = raw.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise ValidationError("INVALID_UTF8") from exc
             lines = [line for line in log.splitlines() if line.strip()]
             if not lines:
                 raise ValidationError("RESULT_MISSING")
