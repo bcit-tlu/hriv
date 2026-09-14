@@ -80,7 +80,7 @@ export type TelemetryErrorCode =
   | 'unhandled_promise_rejection'
   | 'window_runtime_error'
 export type FrontendPerformanceMetric = 'application_load' | 'lcp' | 'inp' | 'cls' | 'image_ready'
-export type FrontendPage = 'browse' | 'manage' | 'people' | 'admin' | 'other' | 'unknown'
+export type FrontendPage = 'browse' | 'manage' | 'people' | 'admin' | 'guide' | 'other' | 'unknown'
 export type TelemetryNavDirection = 'down' | 'up' | 'jump'
 
 interface TelemetryEventBase {
@@ -97,6 +97,8 @@ interface TelemetryEventBase {
   image_id?: number
   category_id?: number
   from_category_id?: number
+  /** Guide doc slug for 'navigate_guide_doc' page hits (bounded server-side). */
+  guide_doc?: string
   direction?: TelemetryNavDirection
   request_id?: string
   trace_id?: string
@@ -201,10 +203,27 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+// The page actually rendered after role gating; the app updates this so
+// background events (heartbeats, errors) agree with what the user sees rather
+// than the raw ?page= param — a deep link to a role-gated page falls back to
+// the browse view for unauthorized roles.
+let _effectivePage: FrontendPage | null = null
+
+export function setTelemetryPage(page: FrontendPage | null): void {
+  _effectivePage = page
+}
+
 function currentPage(): FrontendPage {
+  if (_effectivePage !== null) return _effectivePage
   if (!isBrowser()) return 'unknown'
   const page = new URLSearchParams(window.location.search).get('page')
-  if (page === 'browse' || page === 'manage' || page === 'people' || page === 'admin') {
+  if (
+    page === 'browse' ||
+    page === 'manage' ||
+    page === 'people' ||
+    page === 'admin' ||
+    page === 'guide'
+  ) {
     return page
   }
   return 'browse'

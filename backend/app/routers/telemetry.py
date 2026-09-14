@@ -23,6 +23,7 @@ Design constraints for decision-maker analytics:
 from __future__ import annotations
 
 import logging
+import re
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
@@ -99,7 +100,7 @@ _OS_FAMILIES = frozenset({
     "windows", "macos", "ios", "android", "linux", "chromeos", "other",
 })
 _DEVICE_CLASSES = frozenset({"desktop", "mobile", "tablet", "other"})
-_PAGES = frozenset({"browse", "manage", "people", "admin", "unknown", "other"})
+_PAGES = frozenset({"browse", "manage", "people", "admin", "guide", "unknown", "other"})
 _NAV_DIRECTIONS = frozenset({"down", "up", "jump"})
 _VIEWPORT_BUCKETS = frozenset({"xs", "sm", "md", "lg", "xl"})
 _UNITS = frozenset({"ms", "score"})
@@ -130,6 +131,20 @@ def _bounded(value: str | None, allowed: frozenset[str]) -> str | None:
     if value is None:
         return None
     return value if value in allowed else "other"
+
+
+_GUIDE_DOC_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+
+
+def _bounded_slug(value: str | None) -> str | None:
+    """Return *value* when it is a lowercase URL slug, else ``"other"``.
+
+    Guide doc slugs are low-cardinality kebab-case strings; anything else is
+    coerced to ``"other"`` so clients cannot inject arbitrary text.
+    """
+    if value is None:
+        return None
+    return value if _GUIDE_DOC_RE.fullmatch(value) else "other"
 
 
 def _bounded_major(value: str | None) -> str | None:
@@ -175,6 +190,10 @@ class TelemetryEvent(BaseModel):
     image_id: int | None = None
     category_id: int | None = None
     from_category_id: int | None = None
+
+    # Guide doc slug for 'navigate_guide_doc' page hits; bounded to slug shape
+    # server-side so it stays low-cardinality for dashboards.
+    guide_doc: str | None = Field(None, max_length=64)
 
     # Reorder operation diagnostics (``reorder.operation`` events). Only the
     # bounded ``state`` ever feeds a metric label; everything else stays in
@@ -342,6 +361,9 @@ async def ingest_telemetry_events(
             from_category_label = category_labels.get(event.from_category_id)
             if from_category_label is not None:
                 extra["category.from_label"] = from_category_label
+        guide_doc = _bounded_slug(event.guide_doc)
+        if guide_doc is not None:
+            extra["guide.doc"] = guide_doc
         if event.event == "reorder.operation":
             if event.state is None:
                 # Distinguish "client sent no state" from "client sent an

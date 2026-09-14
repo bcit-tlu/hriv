@@ -11,6 +11,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward'
 import GuideMarkdown from './guideMarkdown'
 import { GUIDE_PAGES, getGuideMarkdown, guideImageUrls } from '../guideContent'
+import { emitEvent } from '../observability'
 
 function docParam(): string {
   return new URLSearchParams(window.location.search).get('doc') ?? 'index'
@@ -107,6 +108,22 @@ export default function GuidePage({ docRequest }: GuidePageProps) {
   }, [doc, pendingScroll])
 
   const activeSlug = GUIDE_PAGES.some((p) => p.slug === doc) ? doc : 'index'
+
+  // One page-hit event per shown doc so dashboards can break guide traffic
+  // down by page. Deduped per mount so re-renders don't double-count.
+  const emittedDocRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (emittedDocRef.current === activeSlug) return
+    emittedDocRef.current = activeSlug
+    emitEvent({
+      event: 'navigation.page_changed',
+      action: 'navigate_guide_doc',
+      outcome: 'success',
+      page: 'guide',
+      guide_doc: activeSlug,
+    })
+  }, [activeSlug])
+
   const activeIndex = GUIDE_PAGES.findIndex((p) => p.slug === activeSlug)
   const markdown = getGuideMarkdown(activeSlug)
   const prev = activeIndex > 0 ? GUIDE_PAGES[activeIndex - 1] : undefined

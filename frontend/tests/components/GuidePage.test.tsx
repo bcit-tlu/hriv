@@ -5,6 +5,12 @@ import { ThemeProvider, createTheme } from '@mui/material/styles'
 import GuidePage from '../../src/components/GuidePage'
 import GuideMarkdown from '../../src/components/guideMarkdown'
 import { headingSlug, parseGuideMarkdown } from '../../src/guideMarkdown'
+import { emitEvent } from '../../src/observability'
+
+vi.mock('../../src/observability', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/observability')>()),
+  emitEvent: vi.fn(),
+}))
 
 function renderWithTheme(ui: ReactElement) {
   const theme = createTheme()
@@ -123,6 +129,7 @@ describe('GuidePage', () => {
   beforeEach(() => {
     window.history.replaceState(null, '', '?page=guide')
     window.scrollTo = vi.fn()
+    vi.mocked(emitEvent).mockClear()
   })
 
   afterEach(() => {
@@ -180,5 +187,23 @@ describe('GuidePage', () => {
     )
     expect(screen.getByRole('heading', { name: 'Getting Help' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Managing Images' })).not.toBeInTheDocument()
+  })
+
+  it('emits a page-hit telemetry event per shown doc', async () => {
+    window.history.replaceState(null, '', '?page=guide&doc=images')
+    renderWithTheme(<GuidePage />)
+    expect(emitEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'navigation.page_changed',
+        action: 'navigate_guide_doc',
+        page: 'guide',
+        guide_doc: 'images',
+      }),
+    )
+
+    await userEvent.click(screen.getAllByRole('button', { name: 'Managing Groups' })[0])
+    expect(emitEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'navigate_guide_doc', guide_doc: 'groups' }),
+    )
   })
 })
