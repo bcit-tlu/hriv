@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.7](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.6...restore-validation-v0.1.7) (2026-09-14)
+
+
+### Bug Fixes
+
+* tolerate transient job-result reads right after pod termination ([#1282](https://github.com/bcit-tlu/hriv/issues/1282)) ([9184712](https://github.com/bcit-tlu/hriv/commit/9184712578b980e2ce32637c29642da7018f1e96))
+
 ## [0.1.6](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.5...restore-validation-v0.1.6) (2026-09-13)
 
 
