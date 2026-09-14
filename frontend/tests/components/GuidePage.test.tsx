@@ -5,6 +5,12 @@ import { ThemeProvider, createTheme } from '@mui/material/styles'
 import GuidePage from '../../src/components/GuidePage'
 import GuideMarkdown from '../../src/components/guideMarkdown'
 import { headingSlug, parseGuideMarkdown } from '../../src/guideMarkdown'
+import { emitEvent } from '../../src/observability'
+
+vi.mock('../../src/observability', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/observability')>()),
+  emitEvent: vi.fn(),
+}))
 
 function renderWithTheme(ui: ReactElement) {
   const theme = createTheme()
@@ -118,9 +124,20 @@ describe('GuideMarkdown', () => {
 })
 
 describe('GuidePage', () => {
+  const originalScrollIntoView = window.HTMLElement.prototype.scrollIntoView
+
   beforeEach(() => {
     window.history.replaceState(null, '', '?page=guide')
     window.scrollTo = vi.fn()
+    vi.mocked(emitEvent).mockClear()
+  })
+
+  afterEach(() => {
+    if (originalScrollIntoView) {
+      window.HTMLElement.prototype.scrollIntoView = originalScrollIntoView
+    } else {
+      delete (window.HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView
+    }
   })
 
   it('renders the welcome page with nav', () => {
@@ -143,5 +160,50 @@ describe('GuidePage', () => {
     expect(screen.getByRole('heading', { name: 'Managing Images' })).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'Managing Categories' })).not.toHaveLength(0)
     expect(screen.getAllByRole('button', { name: 'Managing Groups' })).not.toHaveLength(0)
+  })
+
+  it('applies docRequest to switch pages without URL state', () => {
+    renderWithTheme(<GuidePage docRequest={{ slug: 'help', seq: 1 }} />)
+    expect(screen.getByRole('heading', { name: 'Getting Help' })).toBeInTheDocument()
+  })
+
+  it('scrolls to the requested anchor on a new request', async () => {
+    const scrollIntoView = vi.fn()
+    window.HTMLElement.prototype.scrollIntoView = scrollIntoView
+    renderWithTheme(
+      <GuidePage docRequest={{ slug: 'images', anchor: 'measuring-on-an-image', seq: 2 }} />,
+    )
+    await screen.findByRole('heading', { name: 'Managing Images' })
+    expect(scrollIntoView).toHaveBeenCalled()
+  })
+
+  it('ignores a docRequest with an already-applied seq', async () => {
+    const { rerender } = renderWithTheme(<GuidePage docRequest={{ slug: 'help', seq: 5 }} />)
+    expect(screen.getByRole('heading', { name: 'Getting Help' })).toBeInTheDocument()
+    rerender(
+      <ThemeProvider theme={createTheme()}>
+        <GuidePage docRequest={{ slug: 'images', seq: 5 }} />
+      </ThemeProvider>,
+    )
+    expect(screen.getByRole('heading', { name: 'Getting Help' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Managing Images' })).not.toBeInTheDocument()
+  })
+
+  it('emits a page-hit telemetry event per shown doc', async () => {
+    window.history.replaceState(null, '', '?page=guide&doc=images')
+    renderWithTheme(<GuidePage />)
+    expect(emitEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'navigation.page_changed',
+        action: 'navigate_guide_doc',
+        page: 'guide',
+        guide_doc: 'images',
+      }),
+    )
+
+    await userEvent.click(screen.getAllByRole('button', { name: 'Managing Groups' })[0])
+    expect(emitEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'navigate_guide_doc', guide_doc: 'groups' }),
+    )
   })
 })

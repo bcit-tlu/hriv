@@ -130,7 +130,9 @@ describe('SearchModal', () => {
     const { rerender } = render(<SearchModal {...defaultProps} open={true} />)
 
     // Type a search query
-    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide',
+    )
     await user.type(input, 'Liver')
 
     expect(input).toHaveValue('Liver')
@@ -142,7 +144,9 @@ describe('SearchModal', () => {
     rerender(<SearchModal {...defaultProps} open={true} />)
 
     // Query should still be present
-    const reopenedInput = screen.getByPlaceholderText('Search categories, images, programs, people')
+    const reopenedInput = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide',
+    )
     expect(reopenedInput).toHaveValue('Liver')
   })
 
@@ -151,7 +155,9 @@ describe('SearchModal', () => {
     const { rerender } = render(<SearchModal {...defaultProps} open={true} />)
 
     // Type a query to show filter chips
-    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide',
+    )
     await user.type(input, 'Liver')
 
     // Click the "Images" type filter chip
@@ -165,9 +171,9 @@ describe('SearchModal', () => {
     rerender(<SearchModal {...defaultProps} open={true} />)
 
     // The query should persist, and the Images chip should still be selected (filled variant)
-    expect(screen.getByPlaceholderText('Search categories, images, programs, people')).toHaveValue(
-      'Liver',
-    )
+    expect(
+      screen.getByPlaceholderText('Search categories, images, programs, people, the guide'),
+    ).toHaveValue('Liver')
     // The Images chip should still be in the selected (filled) state, not just present
     const imagesChipAfterReopen = screen
       .getByText('Images')
@@ -180,7 +186,9 @@ describe('SearchModal', () => {
     const user = userEvent.setup()
     render(<SearchModal {...defaultProps} open={true} />)
 
-    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide',
+    )
     await user.type(input, 'Liver')
 
     // Should find results for "Liver Section" (may appear multiple times for different field matches)
@@ -192,7 +200,9 @@ describe('SearchModal', () => {
     const user = userEvent.setup()
     render(<SearchModal {...defaultProps} open={true} />)
 
-    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide',
+    )
     await user.type(input, 'xyznonexistent')
 
     expect(screen.getByText(/No results found/)).toBeInTheDocument()
@@ -206,7 +216,9 @@ describe('SearchModal', () => {
       <SearchModal {...defaultProps} onClose={onClose} onSelectImage={onSelectImage} open={true} />,
     )
 
-    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide',
+    )
     await user.type(input, 'Liver')
 
     // Click the first result button (image result for "Liver Section")
@@ -232,7 +244,9 @@ describe('SearchModal', () => {
       />,
     )
 
-    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide',
+    )
     await user.type(input, 'Histology')
 
     // Click the first result button (category result for "Histology")
@@ -249,7 +263,9 @@ describe('SearchModal', () => {
     const user = userEvent.setup()
     render(<SearchModal {...defaultProps} open={true} />)
 
-    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide',
+    )
     await user.type(input, 'Medical Lab')
 
     // Should find "Histology" category via its program association
@@ -264,7 +280,9 @@ describe('SearchModal', () => {
     const user = userEvent.setup()
     render(<SearchModal {...defaultProps} open={true} />)
 
-    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide',
+    )
     await user.type(input, 'Kidney')
 
     expect(screen.getByText('Name:')).toHaveStyle({ fontWeight: '700' })
@@ -274,7 +292,9 @@ describe('SearchModal', () => {
     const user = userEvent.setup()
     render(<SearchModal {...defaultProps} open={true} />)
 
-    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide',
+    )
     await user.type(input, 'Histology')
 
     // Should find "Liver Section" image via its parent category name
@@ -289,7 +309,9 @@ describe('SearchModal', () => {
     const user = userEvent.setup()
     render(<SearchModal {...defaultProps} open={true} />)
 
-    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide',
+    )
     await user.type(input, 'Portal')
 
     const cards = screen
@@ -305,7 +327,9 @@ describe('SearchModal', () => {
     const user = userEvent.setup()
     render(<SearchModal {...defaultProps} open={true} />)
 
-    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide',
+    )
     await user.type(input, 'Atlas')
 
     const cards = screen
@@ -321,7 +345,9 @@ describe('SearchModal', () => {
     const user = userEvent.setup()
     render(<SearchModal {...defaultProps} open={true} />)
 
-    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide',
+    )
     await user.type(input, 'atlas.example')
 
     const cards = screen
@@ -337,7 +363,9 @@ describe('SearchModal', () => {
     const user = userEvent.setup()
     render(<SearchModal {...defaultProps} open={true} />)
 
-    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide',
+    )
     await user.type(input, 'Atlas')
 
     expect(screen.getByText('Annotation')).toBeInTheDocument()
@@ -349,7 +377,9 @@ describe('SearchModal', () => {
     const user = userEvent.setup()
     render(<SearchModal {...defaultProps} open={true} />)
 
-    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide',
+    )
     await user.type(input, 'Atlas')
     await user.click(screen.getByText('Link'))
 
@@ -367,7 +397,9 @@ describe('SearchModal', () => {
     const user = userEvent.setup()
     render(<SearchModal {...defaultProps} open={true} />)
 
-    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide',
+    )
     await user.type(input, 'IgnorePayloadOnly')
 
     expect(screen.getByText(/No results found/)).toBeInTheDocument()
@@ -388,7 +420,9 @@ describe('SearchModal', () => {
     }
     render(<SearchModal {...defaultProps} categories={[malformedCategory]} open={true} />)
 
-    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide',
+    )
     await user.type(input, 'Portal')
 
     expect(screen.getByText(/No results found/)).toBeInTheDocument()
@@ -398,7 +432,9 @@ describe('SearchModal', () => {
     const user = userEvent.setup()
     render(<SearchModal {...defaultProps} open={true} />)
 
-    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide',
+    )
     await user.type(input, 'Medical Lab')
 
     // Should find "Liver Section" image via its parent category's program
@@ -410,7 +446,9 @@ describe('SearchModal', () => {
     const user = userEvent.setup()
     render(<SearchModal {...defaultProps} open={true} />)
 
-    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide',
+    )
     await user.type(input, 'Medical Lab')
 
     // Should find "Jane Doe" user via her program assignment
@@ -422,7 +460,9 @@ describe('SearchModal', () => {
     const user = userEvent.setup()
     render(<SearchModal {...defaultProps} open={true} />)
 
-    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide',
+    )
     await user.type(input, 'Liver')
 
     const thumbs = screen.getAllByAltText('Liver Section')
@@ -434,7 +474,9 @@ describe('SearchModal', () => {
     const user = userEvent.setup()
     render(<SearchModal {...defaultProps} open={true} />)
 
-    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide',
+    )
     await user.type(input, 'Liver')
 
     // The parent category "Histology" should appear in the image result card
@@ -450,7 +492,9 @@ describe('SearchModal', () => {
     const user = userEvent.setup()
     render(<SearchModal {...defaultProps} open={true} />)
 
-    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide',
+    )
     await user.type(input, 'Histology')
 
     // Program chip "Medical Lab Science" should appear on the category result
@@ -462,7 +506,9 @@ describe('SearchModal', () => {
     const user = userEvent.setup()
     render(<SearchModal {...defaultProps} open={true} />)
 
-    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide',
+    )
     await user.type(input, 'Jane')
 
     // Program chip "Medical Lab Science" should appear on the user result
@@ -474,7 +520,9 @@ describe('SearchModal', () => {
     const user = userEvent.setup()
     render(<SearchModal {...defaultProps} open={true} />)
 
-    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide',
+    )
     await user.type(input, 'Medical Lab')
 
     // Program result label should be rendered as a chip (MuiChip)
@@ -488,7 +536,9 @@ describe('SearchModal', () => {
     const user = userEvent.setup()
     render(<SearchModal {...defaultProps} open={true} />)
 
-    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide',
+    )
     // "Kidney" matches both image name ("Kidney Cross") and copyright ("Kidney Foundation 2026")
     await user.type(input, 'Kidney')
 
@@ -508,7 +558,9 @@ describe('SearchModal', () => {
     const user = userEvent.setup()
     render(<SearchModal {...defaultProps} open={true} />)
 
-    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide',
+    )
     await user.type(input, 'Atlas')
 
     const cards = screen
@@ -550,7 +602,9 @@ describe('SearchModal', () => {
       />,
     )
 
-    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide',
+    )
     await user.type(input, 'Medical Lab')
 
     // Program results render their label as a dedicated result chip,
@@ -603,7 +657,9 @@ describe('SearchModal', () => {
       <SearchModal {...defaultProps} onClose={onClose} onSelectUser={onSelectUser} open={true} />,
     )
 
-    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide',
+    )
     await user.type(input, 'Jane')
 
     const resultButtons = screen
@@ -613,5 +669,67 @@ describe('SearchModal', () => {
 
     expect(onClose).toHaveBeenCalled()
     expect(onSelectUser).toHaveBeenCalledWith(50)
+  })
+
+  it('shows guide results matching guide page content', async () => {
+    const user = userEvent.setup()
+    render(<SearchModal {...defaultProps} open={true} />)
+
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide',
+    )
+    await user.type(input, 'announcement')
+
+    // The announcements guide page should surface as a Guide-kind result
+    const guideBadge = screen
+      .getAllByText('Guide')
+      .filter((el) => el.closest('[data-testid="search-result-action-area"]'))
+    expect(guideBadge.length).toBeGreaterThan(0)
+    expect(screen.getByText(/Announcements/)).toBeInTheDocument()
+  })
+
+  it('calls onSelectGuide with slug and anchor when a guide result is clicked', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    const onSelectGuide = vi.fn()
+    render(
+      <SearchModal {...defaultProps} onClose={onClose} onSelectGuide={onSelectGuide} open={true} />,
+    )
+
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide',
+    )
+    await user.type(input, 'Measuring on an image')
+
+    // Restrict to guide results only via the Guide chip, then click the result
+    const guideChip = screen
+      .getAllByTestId('type-filter-chip')
+      .find((chip) => chip.textContent === 'Guide')!
+    await user.click(guideChip)
+    const measuringResult = screen
+      .getAllByRole('button')
+      .filter((btn) => btn.closest('[data-testid="search-result-action-area"]'))
+      .find((btn) => /Measuring on an image/.test(btn.textContent ?? ''))
+    await user.click(measuringResult!)
+
+    expect(onClose).toHaveBeenCalled()
+    expect(onSelectGuide).toHaveBeenCalledWith('images', 'measuring-on-an-image')
+  })
+
+  it('hides guide results and the Guide chip from students', async () => {
+    const user = userEvent.setup()
+    render(<SearchModal {...defaultProps} isStudent={true} open={true} />)
+
+    const input = screen.getByPlaceholderText('Search categories and images')
+    await user.type(input, 'announcement')
+
+    expect(
+      screen
+        .queryAllByText('Guide')
+        .filter((el) => el.closest('[data-testid="search-result-action-area"]')),
+    ).toHaveLength(0)
+    expect(
+      screen.queryAllByTestId('type-filter-chip').find((c) => c.textContent === 'Guide'),
+    ).toBeUndefined()
   })
 })

@@ -593,6 +593,7 @@ vi.mock('../src/components/ReportIssueModal', () => ({
 vi.mock('../src/observability', () => ({
   emitEvent: (...args: unknown[]) => emitEventMock(...args),
   emitSessionStartedOnce: (...args: unknown[]) => emitSessionStartedOnceMock(...args),
+  setTelemetryPage: vi.fn(),
 }))
 vi.mock('../src/components/SearchModal', () => ({
   default: ({
