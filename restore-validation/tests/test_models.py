@@ -75,6 +75,11 @@ class ParsingTests(unittest.TestCase):
     def test_profile_storage_minimum_syntax(self):
         with self.assertRaises(ValidationError): SourceProfile.parse(json.dumps(profile_document(postgresql_storage_size="40GB")))
 
+    def test_profile_source_storage_class_optional_default(self):
+        value = profile_document(); del value["source_storage_class"]
+        self.assertEqual("longhorn", SourceProfile.parse(json.dumps(value)).source_storage_class)
+        self.assertEqual("longhorn-rv", SourceProfile.parse(json.dumps(profile_document(source_storage_class="longhorn-rv"))).source_storage_class)
+
     def test_profile_role_attributes_exact(self):
         value = profile_document(); del value["required_static_role_inventory"][0]["attributes"]["bypassrls"]
         with self.assertRaises(ValidationError): SourceProfile.parse(json.dumps(value))

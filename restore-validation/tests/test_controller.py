@@ -43,6 +43,11 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual({"stage": "core_succeeded", "completed_at": "2026-01-15T10:00:00Z", "contract_boundary": "simplified1253"}, state["latest_run"]["core_succeeded"])
         self.assertEqual({"run_id": RUN, "completed_at": "2026-01-15T10:00:00Z", "recovery_set_id": selection_document()["recovery_set_id"], "source_files_sha256": "e" * 64, "cleanup": {"outcome": "succeeded", "completed_at": "2026-01-15T10:00:00Z", "remaining_resource_count": 0}}, state["last_complete_success"])
 
+    def test_consistency_job_pinned_to_restore_node(self) -> None:
+        fake = gateway(); self.assertEqual("succeeded", drive(controller(fake)))
+        consistency = next(item for item in fake.created if item["metadata"]["labels"].get("hriv.bcit.ca/restore-validation-role") == "consistency")
+        self.assertEqual("storage-node-1", consistency["spec"]["template"]["spec"]["nodeName"])
+
     def test_legacy_1251_success_allows_next_run_without_promotion(self) -> None:
         fake = gateway(); self.assertEqual("succeeded", drive(controller(fake)))
         state = json.loads(fake.state_raw)

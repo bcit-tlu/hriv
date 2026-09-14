@@ -6,7 +6,7 @@ metadata:
     app.kubernetes.io/component: orchestrator
 spec:
   backoffLimit: 0
-  activeDeadlineSeconds: 21600
+  activeDeadlineSeconds: {{ .root.Values.controller.maxRuntimeSeconds }}
   {{- if .standalone }}
   ttlSecondsAfterFinished: 604800
   {{- end }}

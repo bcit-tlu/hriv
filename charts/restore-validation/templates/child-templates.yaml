@@ -55,7 +55,7 @@ data:
       metadata: {}
       spec:
         accessModes: [ReadWriteOnce]
-        storageClassName: longhorn
+        storageClassName: {{ .Values.sourceProfile.sourceStorageClass | quote }}
         resources: {requests: {storage: {{ .Values.sourceProfile.sourcePvcSize | quote }}}}
     cnpg_cluster:
       apiVersion: postgresql.cnpg.io/v1
@@ -85,7 +85,7 @@ data:
             plugin:
               name: barman-cloud.cloudnative-pg.io
               parameters: {barmanObjectName: hriv-restore-validation-pg-core, serverName: pg-core}
-        storage: {size: {{ .Values.sourceProfile.postgresqlStorageSize | quote }}, storageClass: longhorn}
+        storage: {size: {{ .Values.sourceProfile.postgresqlStorageSize | quote }}, storageClass: {{ .Values.sourceProfile.sourceStorageClass | quote }}}
         affinity:
           nodeSelector: {bcit.ca/longhorn-storage: "true"}
         resources: {requests: {cpu: 250m, memory: 512Mi}, limits: {cpu: "2", memory: 2Gi}}
@@ -123,14 +123,15 @@ data:
       metadata: {}
       spec:
         backoffLimit: 0
-        activeDeadlineSeconds: 7200
+        activeDeadlineSeconds: {{ .Values.childJobs.sourceRestoreDeadlineSeconds }}
         template:
           metadata: {}
           spec:
             serviceAccountName: hriv-restore-validation-no-permission
             automountServiceAccountToken: false
             restartPolicy: Never
-            securityContext: {runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, fsGroup: 65532, seccompProfile: {type: RuntimeDefault}}
+            nodeSelector: {bcit.ca/longhorn-storage: "true"}
+            securityContext: {runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, fsGroup: 65532, fsGroupChangePolicy: OnRootMismatch, seccompProfile: {type: RuntimeDefault}}
             containers:
               - name: source-restore
                 image: {{ .Values.images.backupChild | quote }}
@@ -160,20 +161,21 @@ data:
       metadata: {}
       spec:
         backoffLimit: 0
-        activeDeadlineSeconds: 1800
+        activeDeadlineSeconds: {{ .Values.childJobs.consistencyDeadlineSeconds }}
         template:
           metadata: {}
           spec:
             serviceAccountName: hriv-restore-validation-no-permission
             automountServiceAccountToken: false
             restartPolicy: Never
-            securityContext: {runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, fsGroup: 65532, seccompProfile: {type: RuntimeDefault}}
+            nodeSelector: {bcit.ca/longhorn-storage: "true"}
+            securityContext: {runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, fsGroup: 65532, fsGroupChangePolicy: OnRootMismatch, seccompProfile: {type: RuntimeDefault}}
             containers:
               - name: consistency
                 image: {{ .Values.images.orchestrator | quote }}
                 args: [validate-consistency]
                 securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
-                resources: {requests: {cpu: 100m, memory: 256Mi}, limits: {cpu: "1", memory: 1Gi}}
+                resources: {requests: {cpu: 100m, memory: 256Mi}, limits: {cpu: "2", memory: 2Gi}}
                 volumeMounts:
                   - {name: profile, mountPath: /etc/hriv/profile.json, subPath: profile.json, readOnly: true}
                   - {name: policy, mountPath: /etc/hriv/policy.json, subPath: policy.json, readOnly: true}
