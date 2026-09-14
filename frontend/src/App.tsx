@@ -45,6 +45,7 @@ import EditImageModal from './components/EditImageModal'
 import ProgramManagementModal from './components/ProgramManagementModal'
 import GroupManagementModal from './components/GroupManagementModal'
 import NotificationMenu from './components/NotificationMenu'
+import GuidePage from './components/GuidePage'
 import ReportIssueModal from './components/ReportIssueModal'
 import SearchModal from './components/SearchModal'
 import type { TypeFilter } from './components/SearchModal'
@@ -96,7 +97,7 @@ import EditCategoryDialog from './components/EditCategoryDialog'
 import { useColorMode } from './useColorMode'
 import { useBrowseData } from './useBrowseData'
 import { emitEvent, emitSessionStartedOnce } from './observability'
-import type { TelemetryNavDirection } from './observability'
+import type { FrontendPage, TelemetryNavDirection } from './observability'
 import { narrowGroupIds, narrowProgramIds } from './categoryUtils'
 import { formatCategoryItemCountsForCategory } from './components/categoryOptionUtils'
 import { getInheritedRestrictionSx } from './restrictionStyles'
@@ -114,6 +115,12 @@ import { tileOrderingCoordinator } from './tileOrdering'
 import { logDrag } from './dndInstrumentation'
 
 const COLLAPSED_BREADCRUMB_CATEGORY_DEPTH = 2
+
+// The guide page isn't a tracked app page — report it via the 'other' bucket
+// that the backend telemetry whitelist reserves for unlisted pages.
+function toTelemetryPage(page: Page): FrontendPage {
+  return page === 'guide' ? 'other' : page
+}
 
 function listFailedSourceImages() {
   return listSourceImages({ status: 'failed', limit: MAX_REHYDRATED_FAILURES })
@@ -149,7 +156,7 @@ export default function App() {
 
   const [page, setPage] = useState<Page>(() => {
     const p = new URLSearchParams(window.location.search).get('page')
-    if (p === 'manage' || p === 'people' || p === 'admin') return p
+    if (p === 'manage' || p === 'people' || p === 'admin' || p === 'guide') return p
     return 'browse'
   })
 
@@ -163,14 +170,14 @@ export default function App() {
       event: 'navigation.page_changed',
       action: 'navigate',
       outcome: 'success',
-      page,
-      from_page: fromPage ?? undefined,
+      page: toTelemetryPage(page),
+      from_page: fromPage === null ? undefined : toTelemetryPage(fromPage),
     })
   }, [page, currentUser])
 
   useEffect(() => {
     if (usersLoading || !currentUser) return
-    emitSessionStartedOnce(page)
+    emitSessionStartedOnce(toTelemetryPage(page))
   }, [currentUser, page, usersLoading])
 
   const [path, setPath] = useState<Category[]>([])
@@ -202,7 +209,7 @@ export default function App() {
       event: 'navigation.page_changed',
       action: 'navigate_category',
       outcome: 'success',
-      page,
+      page: toTelemetryPage(page),
       category_id: categoryId,
       from_category_id: fromCategoryId ?? undefined,
       direction,
@@ -578,7 +585,7 @@ export default function App() {
       }
       setCanvasEditActive(false)
       const validPage = (
-        ['browse', 'manage', 'people', 'admin'].includes(popPage) ? popPage : 'browse'
+        ['browse', 'manage', 'people', 'admin', 'guide'].includes(popPage) ? popPage : 'browse'
       ) as Page
       setPage(validPage)
 
@@ -1474,6 +1481,7 @@ export default function App() {
             backendVersion={backendVersion}
             backupVersion={backupVersion}
             changelogVersion={changelogVersion}
+            onOpenGuide={() => handleTabChange('guide')}
           />
         ) : null
       }
@@ -1488,7 +1496,9 @@ export default function App() {
         }}
       >
         <Container maxWidth={false} sx={{ px: { xs: 2, sm: 3, lg: '72px', xl: '120px' } }}>
-          {page === 'admin' && canManageUsers ? (
+          {page === 'guide' && canEditContent ? (
+            <GuidePage />
+          ) : page === 'admin' && canManageUsers ? (
             <AdminPage onChangelogEntriesChanged={bumpChangelogVersion} />
           ) : page === 'people' && canManageUsers ? (
             <PeoplePage
@@ -2515,7 +2525,7 @@ export default function App() {
       <ReportIssueModal
         open={reportIssueOpen}
         onClose={() => setReportIssueOpen(false)}
-        page={page}
+        page={toTelemetryPage(page)}
         frontendVersion={frontendVersion}
         onSuccess={(message, trackingUrl) => {
           setSuccessSnack({ message, trackingUrl })

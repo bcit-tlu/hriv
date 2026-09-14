@@ -23,8 +23,3 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-
-# Generated user-guide site (npm run docs:build)
-public/guide/
-guide/.vitepress/cache
-guide/.vitepress/dist

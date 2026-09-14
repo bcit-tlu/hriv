@@ -16,8 +16,6 @@ backup/CHANGELOG.md
 synthetic-monitoring/CHANGELOG.md
 restore-validation/CHANGELOG.md
 
-frontend/public/guide
-
 
 backup/.venv
 backup/.pytest_cache

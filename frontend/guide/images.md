@@ -27,7 +27,6 @@ to open **Edit Details**.
 
 - **Name**, **Category**, **Copyright**, and **Note** — the note shows
   alongside the image for students.
-- **Programs** — tag which programs the image belongs to (used for filtering).
 - **Scale** and **Unit** — optional: pixels per real-world unit (e.g.
   `8` px per `um`). This unlocks measurement boxes in the viewer.
 
@@ -51,8 +50,12 @@ real size — great for calling out a feature's dimensions.
 
 ![A measurement box](images/measure-box.png)
 
-Drawn boxes show up for anyone who views the image. Lock them with the
-padlock so they can't be dragged, and clear them with the **X**.
+A box you draw stays private until you save or share it:
+
+- **Padlock** — saves your boxes to the image so everyone who views it sees
+  them (and can't move them). Unlock to edit again.
+- **Share View** — copies a link that opens the image with your boxes drawn.
+- **X** — clears all boxes.
 
 ## Annotating an image
 

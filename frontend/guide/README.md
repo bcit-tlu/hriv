@@ -1,8 +1,8 @@
 # HRIV user guide (source)
 
-This folder is the source for the user-facing guide served in the app at
-`/guide/` (bell menu → **Documentation**). It is a [VitePress](https://vitepress.dev)
-site — plain Markdown pages plus a small config file.
+This folder holds the user-facing guide shown in the app via the bell menu
+(**Documentation**, `?page=guide`). It is plain Markdown rendered by the
+frontend — there is no separate docs site or build step.
 
 ## Editing
 
@@ -10,19 +10,26 @@ site — plain Markdown pages plus a small config file.
   required.
 - Screenshots live in `images/`. Reference them as
   `![Alt text](images/your-file.png)`.
-- To add a page: create `your-page.md`, then add it to the `sidebar` list in
-  `.vitepress/config.mts` so it shows up in the navigation.
-- VitePress supports friendly callouts — `> [!TIP]`, `> [!WARNING]`,
-  `> [!IMPORTANT]` — used sparingly in the existing pages.
+- To add a page: create `your-page.md`, then add it to the `GUIDE_PAGES` list
+  in `src/components/GuidePage.tsx` so it appears in the guide's navigation.
+- Link between pages with `[label](page-slug)` or `[label](page-slug#section)`
+  — section anchors are the heading text in lowercase, words joined by `-`
+  (e.g. `## Measuring on an image` → `#measuring-on-an-image`).
+
+## Supported formatting
+
+The renderer (`src/components/guideMarkdown.tsx`) understands a small subset
+of Markdown — keep pages inside it:
+
+- `#`, `##`, `###` headings, paragraphs, `- ` bullet lists, ``` fenced code
+- `**bold**`, `*italic*`, `` `code` ``, `[links](…)`
+- `![images](images/file.png)`
+- simple `| pipe | tables |`
+- `::: tip Title` … `:::` callout boxes (also `note`, `warning`, `important`,
+  `caution`)
 
 ## Previewing
 
-From the `frontend/` directory:
-
-```sh
-npm run docs:dev     # live preview at http://localhost:5174
-npm run docs:build   # build into frontend/public/guide (what the app serves)
-```
-
-The build also runs inside the frontend Docker image, so changes to this folder
-ship automatically with the next deployment.
+Run the app (`npm run dev` or `docker compose up`), sign in as an instructor
+or admin, and open **Documentation** from the bell menu — or go straight to
+`/?page=guide&doc=your-page`.

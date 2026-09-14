@@ -67,7 +67,7 @@ import {
   getSurfaceVariant,
 } from '../theme'
 
-export type Page = 'browse' | 'manage' | 'people' | 'admin'
+export type Page = 'browse' | 'manage' | 'people' | 'admin' | 'guide'
 
 export interface AppShellProps {
   page: Page
@@ -318,7 +318,8 @@ export default function AppShell(props: AppShellProps) {
             <Box sx={{ flexGrow: 1 }} />
           ) : (
             <Tabs
-              value={page}
+              // 'guide' has no AppBar tab — it is opened via the notification menu.
+              value={page === 'guide' ? false : page}
               onChange={(_, v: Page) => {
                 if (v === 'browse' || v === 'manage' || v === 'people' || v === 'admin') {
                   onTabChange(v)

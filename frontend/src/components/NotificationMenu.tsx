@@ -22,7 +22,6 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import MenuBookIcon from '@mui/icons-material/MenuBook'
 import NotificationsIcon from '@mui/icons-material/Notifications'
-import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import { fetchChangelogEntries, markChangelogRead, type ApiChangelogEntry } from '../api'
 import { appBarIconButtonSx } from '../theme'
 import MarkdownContent from './MarkdownContent'
@@ -52,6 +51,7 @@ export interface NotificationMenuProps {
   backendVersion: string | null
   backupVersion: string | null
   changelogVersion: number
+  onOpenGuide?: () => void
 }
 
 export default function NotificationMenu({
@@ -61,6 +61,7 @@ export default function NotificationMenu({
   backendVersion,
   backupVersion,
   changelogVersion,
+  onOpenGuide,
 }: NotificationMenuProps) {
   const lsKey = useMemo(() => `hriv_changelog_last_read_${userEmail}`, [userEmail])
   const [entries, setEntries] = useState<ApiChangelogEntry[]>([])
@@ -199,17 +200,15 @@ export default function NotificationMenu({
           <ListItemText primary="What's New" />
         </MenuItem>
         <MenuItem
-          component="a"
-          href="/guide/"
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={() => setAnchor(null)}
+          onClick={() => {
+            setAnchor(null)
+            onOpenGuide?.()
+          }}
         >
           <ListItemIcon>
             <MenuBookIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText primary="Documentation" />
-          <OpenInNewIcon fontSize="small" sx={{ ml: 1, color: 'text.disabled' }} />
         </MenuItem>
         <MenuItem
           onClick={() => {

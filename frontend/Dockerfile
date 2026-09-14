@@ -33,11 +33,6 @@ ENV VITE_API_URL=${VITE_API_URL}
 # ``/version``, which is rendered by nginx via ``envsubst`` on
 # ``APP_VERSION`` supplied by the Helm chart at deploy time (see
 # ``charts/frontend/files/default.conf.template``).
-#
-# Build the VitePress user guide first: it emits into ``public/guide/``
-# (gitignored), which ``vite build`` then copies into ``dist`` and nginx
-# serves at ``/guide/``.
-RUN npm run docs:build
 RUN npm run build
 
 # ── Stage 4: Stable server (nginx) ───────────────────
