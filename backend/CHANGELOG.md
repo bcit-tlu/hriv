@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.58.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.57.0...backend-v0.58.0) (2026-09-15)
+
+
+### Features
+
+* add browse-tree 304 metrics and dev re-render counts ([#1301](https://github.com/bcit-tlu/hriv/issues/1301)) ([ada2466](https://github.com/bcit-tlu/hriv/commit/ada24668a6f2a0f4dff989506f5005d8d149f5d9))
+* **metrics:** publish hriv_backup_attempt_in_progress gauge ([#1307](https://github.com/bcit-tlu/hriv/issues/1307)) ([4b7241a](https://github.com/bcit-tlu/hriv/commit/4b7241a826728173ab168e30ca8c7cb2511c597e))
+
 ## [0.57.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.56.0...backend-v0.57.0) (2026-09-14)
 
 
