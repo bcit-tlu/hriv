@@ -6,14 +6,17 @@ import CircularProgress from '@mui/material/CircularProgress'
 import Dialog from '@mui/material/Dialog'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
+import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
 import InputAdornment from '@mui/material/InputAdornment'
 import Link from '@mui/material/Link'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
+import useMediaQuery from '@mui/material/useMediaQuery'
+import { useTheme } from '@mui/material/styles'
 import Visibility from '@mui/icons-material/Visibility'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
-import AnnouncementBanner from './AnnouncementBanner'
+import CloseIcon from '@mui/icons-material/Close'
 import ColorModeToggle from './ColorModeToggle'
 import { fetchOidcEnabled, getOidcLoginUrl } from '../api'
 import { useAuth } from '../useAuth'
@@ -22,7 +25,6 @@ import LoginSplashImage from './LoginSplashImage'
 
 interface LoginScreenProps {
   onLogin: (email: string, password: string) => Promise<void>
-  announcement?: string
 }
 
 // Map short, stable error codes returned by the backend OIDC callback
@@ -43,7 +45,7 @@ const OIDC_ERROR_MESSAGES: Record<string, string> = {
     'This email is already linked to a different identity. Please contact an administrator.',
 }
 
-export default function LoginScreen({ onLogin, announcement }: LoginScreenProps) {
+export default function LoginScreen({ onLogin }: LoginScreenProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -53,6 +55,62 @@ export default function LoginScreen({ onLogin, announcement }: LoginScreenProps)
   const [showLocalForm, setShowLocalForm] = useState(false)
   const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false)
   const { oidcError, clearOidcError } = useAuth()
+
+  // All login-page tweaks in this block are phone-only (small form factor);
+  // the desktop layout is intentionally left unchanged.
+  const theme = useTheme()
+  // `noSsr: true` evaluates the query synchronously in a layout effect before
+  // first paint, so phones don't briefly flash the desktop layout on initial
+  // render. Safe here because this is a client-only (Vite SPA) app.
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'), { noSsr: true })
+
+  // Mobile-only field treatment: rounded, surface-filled inputs with the
+  // thinnest possible outline (1px in every state — default, hover, and focus,
+  // so focus never thickens it). All values are theme tokens, so light/dark
+  // modes stay in sync — no hard-coded colours.
+  const mobileFieldSx = {
+    '& .MuiOutlinedInput-root': {
+      borderRadius: 2,
+      bgcolor: 'background.default',
+    },
+    // Larger typed-in text (and placeholder) for easier reading on mobile.
+    '& .MuiOutlinedInput-input': {
+      fontSize: 17,
+    },
+    '& .MuiOutlinedInput-notchedOutline': {
+      borderColor: 'divider',
+      borderWidth: '1px',
+    },
+    '& .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline': {
+      borderColor: 'divider',
+      borderWidth: '1px',
+    },
+    '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': {
+      borderWidth: '1px',
+    },
+  }
+
+  // Field label rendered ABOVE the input on mobile (not MUI's floating notch
+  // label). 14px matches the mobile body scale (per user request to enlarge the
+  // labels); secondary colour mirrors the previous label look.
+  const mobileFieldLabelSx = {
+    display: 'block',
+    mb: 0.5,
+    fontSize: 14,
+    color: 'text.secondary',
+  }
+
+  // Desktop keeps MUI's standard (underline) fields with the floating notch
+  // label, but adopts the same font scale as mobile: 14px labels and 17px
+  // typed-in text. Applies to the standard-variant class names.
+  const desktopFieldSx = {
+    '& .MuiInputBase-input': {
+      fontSize: 17,
+    },
+    '& .MuiInputLabel-root': {
+      fontSize: 14,
+    },
+  }
 
   useEffect(() => {
     fetchOidcEnabled()
@@ -89,7 +147,11 @@ export default function LoginScreen({ onLogin, announcement }: LoginScreenProps)
   return (
     <Box
       sx={{
-        minHeight: '100vh',
+        // Mobile: `100dvh` (dynamic viewport height) sizes the page to the
+        // *visible* viewport so the footer isn't pushed under the browser
+        // chrome — `100vh` targets the largest (address-bar-hidden) viewport
+        // and forces a scroll on phones. Desktop keeps `100vh`.
+        minHeight: isMobile ? '100dvh' : '100vh',
         display: 'flex',
         flexDirection: 'column',
         bgcolor: 'background.paper',
@@ -103,45 +165,106 @@ export default function LoginScreen({ onLogin, announcement }: LoginScreenProps)
           position: 'relative',
         }}
       >
-        {/* Theme toggle (Light / Dark / Auto) */}
-        <Box
-          sx={{
-            position: 'absolute',
-            top: 16,
-            right: 16,
-            zIndex: 1,
-          }}
-        >
-          <ColorModeToggle iconButtonSx={{ color: 'text.secondary' }} />
-        </Box>
+        {/* Theme toggle (Light / Dark / Auto). Hidden on mobile — after sign-in
+            the toggle lives in the profile menu (AppShell), so the small-screen
+            login stays uncluttered. Desktop keeps it here. */}
+        {!isMobile && (
+          <Box
+            sx={{
+              position: 'absolute',
+              top: 16,
+              right: 16,
+              zIndex: 1,
+            }}
+          >
+            <ColorModeToggle iconButtonSx={{ color: 'text.secondary' }} />
+          </Box>
+        )}
 
-        {/* Left side — form */}
+        {/* Left side — form. `xs: '1 1 100%'` makes this column fill the whole
+            viewport on mobile (without it the flex item shrink-wraps to its
+            content and hugs the left). Tighter mobile padding for a fuller
+            edge-to-edge feel. */}
         <Box
           sx={{
-            flex: { sm: '1 1 100%', md: '0 0 50%' },
+            flex: { xs: '1 1 100%', md: '0 0 50%' },
             display: 'flex',
-            alignItems: 'center',
+            // Mobile: anchor content to the top (with breathing room) instead of
+            // vertically centring it — reads better on phone browsers. Desktop
+            // keeps the centred layout.
+            alignItems: isMobile ? 'flex-start' : 'center',
             justifyContent: 'center',
-            px: { xs: 3, sm: 6, md: 8 },
+            px: { xs: 2, sm: 6, md: 8 },
+            // Mobile: modest top padding (was 6) so the full page — brand,
+            // form and footer — fits the viewport without vertical scrolling.
+            ...(isMobile && { pt: 3 }),
           }}
         >
-          <Box sx={{ width: '100%', maxWidth: 400 }}>
-            {announcement && <AnnouncementBanner message={announcement} variant="login" />}
-
-            {/* BCIT logo + Login heading */}
+          {/* On mobile the content spans the full column (no 400px cap). */}
+          <Box sx={{ width: '100%', maxWidth: isMobile ? 'none' : 400 }}>
+            {/* BCIT logo + heading. Mobile: an enlarged logo stacked ON TOP of a
+                single-line title; desktop keeps the original inline row. */}
             <Box
               sx={{
                 display: 'flex',
+                flexDirection: isMobile ? 'column' : 'row',
+                // Mobile: centre the stacked logo + title.
                 alignItems: 'center',
-                gap: 1.5,
-                mb: 5,
+                // Mobile: more space below the (stacked) logo; desktop keeps the
+                // tight inline gap.
+                gap: isMobile ? 3 : 1.5,
+                // Mobile: tighter space below the brand (down to the divider).
+                mb: isMobile ? 3 : 5,
               }}
             >
-              <Box component="img" src="/bcit-logo.svg" alt="BCIT" sx={{ height: 48 }} />
-              <Typography variant="h5" sx={{ fontWeight: 400 }}>
-                High Resolution Image Viewer (HRIV) Login
+              <Box
+                component="img"
+                src="/bcit-logo.svg"
+                alt="BCIT"
+                sx={{ height: isMobile ? 64 : 48 }}
+              />
+              <Typography
+                variant="h5"
+                sx={{
+                  fontWeight: 400,
+                  // Mobile: larger + bold, centered. Allowed to wrap (no nowrap) so
+                  // the long title never overflows horizontally on ~320px-wide
+                  // phones — it stays on one line where it fits and wraps only on
+                  // the very narrowest screens.
+                  ...(isMobile && { fontSize: 21, fontWeight: 700, textAlign: 'center' }),
+                }}
+              >
+                {isMobile
+                  ? 'High Resolution Image Viewer'
+                  : 'High Resolution Image Viewer (HRIV) Login'}
               </Typography>
             </Box>
+
+            {/* A divider visually separates the brand lockup from the credential
+                form, with generous space above (brand-box mb) and below
+                (divider mb). Shown on both mobile and desktop. */}
+            {/* Mobile only: scaleY(0.5) renders the 1px line as a ~0.5px hairline
+                on hi-DPI phone screens — the thinnest a divider can practically
+                get. The mb (spacing) is unaffected by the transform. */}
+            <Divider sx={{ mb: 3, ...(isMobile && { transform: 'scaleY(0.5)' }) }} />
+
+            {/* Section heading introducing the credential form below. */}
+            <Typography
+              component="h2"
+              sx={{
+                mb: 3,
+                textAlign: 'center',
+                fontWeight: 700,
+                fontSize: '1.25rem',
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                // Match the brand title, which uses the default primary text
+                // color so it tracks the active theme (light/dark).
+                color: 'text.primary',
+              }}
+            >
+              Log In
+            </Typography>
 
             {oidcErrorMessage && (
               <Alert severity="error" onClose={clearOidcError} sx={{ mb: 2 }}>
@@ -198,46 +321,85 @@ export default function LoginScreen({ onLogin, announcement }: LoginScreenProps)
                   </Alert>
                 )}
 
-                <TextField
-                  label="Username"
-                  placeholder="username@example.ca"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  fullWidth
-                  autoFocus
-                  autoComplete="email"
-                  variant="standard"
-                />
+                <Box>
+                  {isMobile && (
+                    <Typography
+                      variant="caption"
+                      component="label"
+                      htmlFor="login-username"
+                      sx={mobileFieldLabelSx}
+                    >
+                      {/* Asterisk is decorative: aria-hidden so the accessible
+                          name stays "Username"; the required state is conveyed
+                          by the input's `required` attribute (MUI desktop
+                          parity). */}
+                      Username{' '}
+                      <Box component="span" aria-hidden="true">
+                        *
+                      </Box>
+                    </Typography>
+                  )}
+                  <TextField
+                    id="login-username"
+                    label={isMobile ? undefined : 'Username'}
+                    placeholder="username@example.ca"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    fullWidth
+                    autoFocus
+                    autoComplete="email"
+                    variant={isMobile ? 'outlined' : 'standard'}
+                    sx={isMobile ? mobileFieldSx : desktopFieldSx}
+                  />
+                </Box>
 
-                <TextField
-                  label="Password"
-                  placeholder="Password"
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  fullWidth
-                  autoComplete="current-password"
-                  variant="standard"
-                  slotProps={{
-                    input: {
-                      endAdornment: (
-                        <InputAdornment position="end">
-                          <IconButton
-                            aria-label="toggle password visibility"
-                            onClick={() => setShowPassword((prev) => !prev)}
-                            edge="end"
-                            size="small"
-                          >
-                            {showPassword ? <VisibilityOff /> : <Visibility />}
-                          </IconButton>
-                        </InputAdornment>
-                      ),
-                    },
-                  }}
-                />
+                <Box>
+                  {isMobile && (
+                    <Typography
+                      variant="caption"
+                      component="label"
+                      htmlFor="login-password"
+                      sx={mobileFieldLabelSx}
+                    >
+                      {/* See the username label above re: aria-hidden asterisk. */}
+                      Password{' '}
+                      <Box component="span" aria-hidden="true">
+                        *
+                      </Box>
+                    </Typography>
+                  )}
+                  <TextField
+                    id="login-password"
+                    label={isMobile ? undefined : 'Password'}
+                    placeholder="Password"
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    fullWidth
+                    autoComplete="current-password"
+                    variant={isMobile ? 'outlined' : 'standard'}
+                    sx={isMobile ? mobileFieldSx : desktopFieldSx}
+                    slotProps={{
+                      input: {
+                        endAdornment: (
+                          <InputAdornment position="end">
+                            <IconButton
+                              aria-label="toggle password visibility"
+                              onClick={() => setShowPassword((prev) => !prev)}
+                              edge="end"
+                              size="small"
+                            >
+                              {showPassword ? <VisibilityOff /> : <Visibility />}
+                            </IconButton>
+                          </InputAdornment>
+                        ),
+                      },
+                    }}
+                  />
+                </Box>
 
                 <Box
                   sx={{
@@ -267,6 +429,9 @@ export default function LoginScreen({ onLogin, announcement }: LoginScreenProps)
                     sx={{
                       fontWeight: 600,
                       letterSpacing: 1,
+                      // Larger LOGIN label for a clearer primary action, matched
+                      // across mobile and desktop.
+                      fontSize: 17,
                     }}
                   >
                     {loading ? 'Signing in...' : 'LOGIN'}
@@ -296,7 +461,19 @@ export default function LoginScreen({ onLogin, announcement }: LoginScreenProps)
           onClose={() => setForgotPasswordOpen(false)}
           aria-labelledby="forgot-password-dialog-title"
         >
-          <DialogTitle id="forgot-password-dialog-title">Forgot Password</DialogTitle>
+          {/* Close (X) in the top-right corner. Positioned against the dialog
+              paper (which is `position: relative`), so it sits at the corner
+              regardless of the title/content size. */}
+          <IconButton
+            aria-label="close"
+            onClick={() => setForgotPasswordOpen(false)}
+            sx={{ position: 'absolute', right: 8, top: 8, color: 'text.secondary' }}
+          >
+            <CloseIcon />
+          </IconButton>
+          <DialogTitle id="forgot-password-dialog-title" sx={{ pr: 6 }}>
+            Forgot Password
+          </DialogTitle>
           <DialogContent>
             <Typography>Please contact the TLU Lab via Teams to reset your password.</Typography>
           </DialogContent>
