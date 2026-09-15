@@ -171,11 +171,13 @@ off in production and only logs when `import.meta.env.DEV` is true or the
 
 `dndInstrumentation.ts` also keeps two dev-mode counters (issue #1100):
 
-- **Per-drag tile re-renders** — `GridTile` calls `recordTileRender()` on every
-  render; the count resets on `dragstart` and `dragend` logs a
-  `render summary` line (`tileRenders`, `distinctTiles`). With tile memoization
-  working, a steady-state drag should re-render ~zero tiles beyond the source —
-  a large `distinctTiles` value is the memoization-regression signal.
+- **Per-drag tile re-renders** — `GridTile` counts committed renders via a
+  commit-phase `useEffect`; the count resets on `dragstart` and `dragend` logs
+  a `render summary` line (`tileRenders`, `distinctTiles`). At the 599-tile
+  fixture scope the observed steady state is ~1 render per tile per drag
+  (page-level state transitions churn the tile render-callback props —
+  measured in `docs/reorder-performance.md`). The regression signal is
+  superlinear growth — renders scaling per dragmove or per tile × frame.
 - **Browse-tree poll outcomes** — `useBrowseData` calls
   `recordBrowseTreePoll('not_modified' | 'applied' | 'unchanged')` for each
   committed `GET /api/categories/tree` response. Cumulative counts live on
@@ -214,17 +216,17 @@ PR/issue) with tester, date, environment, and per-item pass/fail.
 
 **Checklist**
 
-| #   | Scope / action                                               | Pass criteria                                                                                                                     |
-| --- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `RF-Root-01` flat scope (80 categories): 5+ reorders         | Tiles slide to make room as the pointer crosses a neighbour's centre; drag never appears frozen; drop commits the previewed order |
-| 2   | Same scope: hover the **near half** of a category tile       | "Move here" appears (move wins); no reorder preview                                                                               |
-| 3   | Same scope: hover the near half of an **image** tile         | Calm dead-zone — no reflow, no affordance                                                                                         |
-| 4   | 10–20 rapid successive drops while a save is in flight       | Every accepted drop commits (queued/coalesced); `ReorderStatusIndicator` cycles dirty→saving→saved; nothing silently reverts      |
-| 5   | `RF-Root-02` gallery scope (600 images): repeat gestures 1–4 | Same behaviour at scale; note whether the ~370 ms drag-activation stall measured in `docs/reorder-performance.md` is perceptible  |
-| 6   | Drop, then immediately navigate into a category and back     | Order retained, no duplicates, no stale-order flash                                                                               |
-| 7   | Reload the browser                                           | Displayed order matches `GET /api/tile-order?parent_category_id=<id>` exactly                                                     |
-| 8   | (Two tabs) reorder the same scope concurrently               | Second writer gets the explicit conflict UX ("Order changed elsewhere"), never silent last-write-wins                             |
-| 9   | Console: `[dnd]` `render summary` after each drag            | `distinctTiles` stays near zero (tile memoization holds); `window.__hrivBrowseStats.not_modified` grows during idle polling       |
+| #   | Scope / action                                               | Pass criteria                                                                                                                                                  |
+| --- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `RF-Root-01` flat scope (80 categories): 5+ reorders         | Tiles slide to make room as the pointer crosses a neighbour's centre; drag never appears frozen; drop commits the previewed order                              |
+| 2   | Same scope: hover the **near half** of a category tile       | "Move here" appears (move wins); no reorder preview                                                                                                            |
+| 3   | Same scope: hover the near half of an **image** tile         | Calm dead-zone — no reflow, no affordance                                                                                                                      |
+| 4   | 10–20 rapid successive drops while a save is in flight       | Every accepted drop commits (queued/coalesced); `ReorderStatusIndicator` cycles dirty→saving→saved; nothing silently reverts                                   |
+| 5   | `RF-Root-02` gallery scope (600 images): repeat gestures 1–4 | Same behaviour at scale; note whether the ~370 ms drag-activation stall measured in `docs/reorder-performance.md` is perceptible                               |
+| 6   | Drop, then immediately navigate into a category and back     | Order retained, no duplicates, no stale-order flash                                                                                                            |
+| 7   | Reload the browser                                           | Displayed order matches `GET /api/tile-order?parent_category_id=<id>` exactly                                                                                  |
+| 8   | (Two tabs) reorder the same scope concurrently               | Second writer gets the explicit conflict UX ("Order changed elsewhere"), never silent last-write-wins                                                          |
+| 9   | Console: `[dnd]` `render summary` after each drag            | `tileRenders` bounded (~≤ item count per drag; superlinear growth is the regression signal); `window.__hrivBrowseStats.not_modified` grows during idle polling |
 
 **Sign-off** — paste into `docs/reorder-performance.md` or the tracking issue:
 
