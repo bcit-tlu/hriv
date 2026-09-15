@@ -77,6 +77,24 @@ grid re-render and a costly tree rebuild in React.
 `backend/app/main.py` exposes `ETag` and `X-Browse-Revision` and allows
 `If-None-Match` so the browser can send and read these headers.
 
+## Metrics
+
+`GET /api/categories/tree` emits two OTel meter series (issue #1100, naming per
+`docs/observability-conventions.md`):
+
+- `hriv.browse_tree.requests` — counter, attribute `outcome` ∈
+  `full` | `not_modified`. The `not_modified` share is the 304 hit rate;
+  `full` counts successful builds only.
+- `hriv.browse_tree.build.duration` — histogram (seconds) recorded only on the
+  full-build path, i.e. the work each 304 avoids.
+
+Backend work saved ≈ `not_modified` count × mean build duration (one PromQL
+expression over the two series). The same split is derivable from Loki
+`http.request` logs (`route="/api/categories/tree"`, `status` 304 vs 200,
+`duration_ms`) when metrics are unavailable. Client-side, `useBrowseData`
+keeps cumulative poll outcomes on `window.__hrivBrowseStats` (dev-mode;
+see `docs/drag-and-drop.md` → Instrumentation).
+
 ## Testing
 
 Backend tests cover:

@@ -100,9 +100,50 @@ feel-testing at scale (see below) contradicts the measured results.
 - **Thumbnail deferral during drag**: image decode/paint did not appear as a
   long-task source in profiles (thumbnails are already small and cached).
 
-## Needs human verification
+## Human feel-test sign-off — issue #1100
 
-- Drag feel at the 600-image gallery scope on real hardware (scripted drags
-  cannot prove feel — see the process gate in `docs/drag-and-drop.md`).
-- Whether the ~370 ms activation stall at 600 tiles is perceptible enough to
-  justify follow-up work (e.g. deferred/incremental shape measurement).
+Tester: Kyle · Date: 2026-09-15 · Env: local `docker compose` (OrbStack), Vite
+dev build · Fixture: `reorder_fixture` seeded — 109 categories / 642 images
+(`RF-Root-01` = 80 flat categories, `RF-Root-02` = 600-image gallery)
+
+Checklist (`docs/drag-and-drop.md` → Human feel-test protocol):
+
+| #   | Item                                               | Result                                                                                                    |
+| --- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| 1   | 80-category reorders reflow + commit               | pass                                                                                                      |
+| 2   | Near-half "Move here" affordance on category tiles | pass                                                                                                      |
+| 3   | Dead-zone over image tiles                         | pass                                                                                                      |
+| 4   | 10–20 rapid drops during in-flight save            | pass — every accepted drop committed; backend log shows zero 409/5xx across 167 tile-order responses      |
+| 5   | 600-image scope, activation stall                  | pass — the ~370 ms activation stall is **imperceptible during gestures**; does not justify follow-up work |
+| 6   | Navigate in-and-back mid-save                      | pass                                                                                                      |
+| 7   | Reload persistence                                 | pass — displayed order retained                                                                           |
+| 8   | Two-tab concurrent reorder                         | pass — explicit conflict UX                                                                               |
+| 9   | Render summaries + poll counters                   | pass — see measured values below                                                                          |
+
+Measured (dev counters + backend log, same session):
+
+- `render summary` at the 599-tile scope: `tileRenders=2995` on the first
+  drag, then `599` (≈1 committed render per tile per drag) — **not zero**.
+  Coordinator save-state transitions (`dirty→saving→saved`) re-render the
+  page mid-drag, churning the `renderCategoryTile`/`renderImageTile` callback
+  identities and defeating `GridTile`'s memo once per transition. Bounded and
+  linear — imperceptible per the tester — but a real gap the counters were
+  built to surface; revisit the callback-prop stability if profiling ever
+  shows cost.
+- `browse-tree poll` outcomes: `applied` tracks reorder→refresh cycles (each
+  `PUT /api/tile-order` bumps the browse revision → next poll is a real 200);
+  once idle, polls every ~30 s all report `not_modified`.
+- Backend `http.request` log agrees: `GET /api/categories/tree` 304 ≈ 10 ms
+  vs 200 ≈ 55–200 ms; `PUT /api/tile-order` 200 in ~40–270 ms with a
+  `reorder.persisted` structured event each.
+- Prometheus end-to-end (local observability compose):
+  `hriv_browse_tree_requests_total{outcome="full"}=16`,
+  `{outcome="not_modified"}=9`, mean `hriv.browse_tree.build.duration` ≈
+  101 ms → backend work saved ≈ `not_modified` × ~101 ms per short-circuit.
+
+## Needs human verification (historical)
+
+- ~~Drag feel at the 600-image gallery scope on real hardware~~ — answered by
+  the sign-off above: feel is acceptable at 600 images.
+- ~~Whether the ~370 ms activation stall at 600 tiles is perceptible~~ —
+  imperceptible during gestures per the sign-off; no follow-up needed.

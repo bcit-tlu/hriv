@@ -8,7 +8,14 @@ import type {
   DragStartEvent,
 } from '@dnd-kit/react'
 
-import { DndMonitor, isDndTraceEnabled, logDrag } from '../src/dndInstrumentation'
+import {
+  DndMonitor,
+  browseTreeStats,
+  isDndTraceEnabled,
+  logDrag,
+  recordBrowseTreePoll,
+  recordTileRender,
+} from '../src/dndInstrumentation'
 
 vi.mock('@dnd-kit/react', () => ({
   useDragDropMonitor: vi.fn(),
@@ -194,6 +201,104 @@ describe('dndInstrumentation', () => {
       capturedHandlers?.onDragOver(over)
       capturedHandlers?.onDragOver(over)
       expect(spy).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  describe('render counters (issue #1100)', () => {
+    let spy: ReturnType<typeof vi.spyOn>
+
+    beforeEach(() => {
+      spy = vi.spyOn(console, 'debug').mockImplementation(() => {})
+      render(<DndMonitor />)
+      Object.assign(browseTreeStats, { polls: 0, not_modified: 0, applied: 0, unchanged: 0 })
+    })
+
+    afterEach(() => {
+      spy.mockRestore()
+    })
+
+    function makeStart(): DragStartEvent {
+      return {
+        operation: { source: { id: 'src' }, position: { current: { x: 0, y: 0 } } },
+      } as unknown as DragStartEvent
+    }
+
+    function makeEnd(): DragEndEvent {
+      return {
+        canceled: false,
+        operation: {
+          source: { id: 'src' },
+          target: { id: 'tgt' },
+          position: { current: { x: 0, y: 0 } },
+        },
+      } as unknown as DragEndEvent
+    }
+
+    it('counts per-tile renders during a drag and logs the summary on dragend', () => {
+      capturedHandlers?.onDragStart(makeStart())
+      recordTileRender('cat-1')
+      recordTileRender('cat-1')
+      recordTileRender('img-5')
+
+      capturedHandlers?.onDragEnd(makeEnd())
+
+      expect(spy).toHaveBeenCalledWith(expect.stringContaining('render summary'), {
+        tileRenders: 3,
+        distinctTiles: 2,
+      })
+    })
+
+    it('ignores tile renders when no drag is active', () => {
+      recordTileRender('cat-1')
+      capturedHandlers?.onDragEnd(makeEnd())
+      expect(spy).not.toHaveBeenCalledWith(
+        expect.stringContaining('render summary'),
+        expect.anything(),
+      )
+    })
+
+    it('resets counts between drags and stops tracking after dragend', () => {
+      capturedHandlers?.onDragStart(makeStart())
+      recordTileRender('cat-1')
+      capturedHandlers?.onDragEnd(makeEnd())
+
+      // Tracking is off after dragend — this render must not be counted.
+      recordTileRender('cat-9')
+
+      capturedHandlers?.onDragStart(makeStart())
+      recordTileRender('img-2')
+      capturedHandlers?.onDragEnd(makeEnd())
+
+      expect(spy).toHaveBeenLastCalledWith(expect.stringContaining('render summary'), {
+        tileRenders: 1,
+        distinctTiles: 1,
+      })
+    })
+
+    it('logs a zero summary when a drag caused no tile re-renders', () => {
+      capturedHandlers?.onDragStart(makeStart())
+      capturedHandlers?.onDragEnd(makeEnd())
+      // A {0,0} summary is the memoization-held signal — distinguishable
+      // from a dragend with no preceding tracked dragstart.
+      expect(spy).toHaveBeenCalledWith(expect.stringContaining('render summary'), {
+        tileRenders: 0,
+        distinctTiles: 0,
+      })
+    })
+
+    it('accumulates browse-tree poll outcomes and logs them', () => {
+      recordBrowseTreePoll('not_modified')
+      recordBrowseTreePoll('applied')
+      recordBrowseTreePoll('unchanged')
+
+      expect(browseTreeStats).toEqual({ polls: 3, not_modified: 1, applied: 1, unchanged: 1 })
+      expect(spy).toHaveBeenCalledWith(expect.stringContaining('browse-tree poll'), {
+        outcome: 'unchanged',
+        polls: 3,
+        not_modified: 1,
+        applied: 1,
+        unchanged: 1,
+      })
     })
   })
 })
