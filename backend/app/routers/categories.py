@@ -34,7 +34,8 @@ logger = logging.getLogger(__name__)
 _meter = metrics.get_meter(__name__)
 
 # Browse-tree 304 short-circuit observability (issue #1100): the counter splits
-# full builds from ETag short-circuits; the histogram measures the avoided work
+# successful full builds from ETag short-circuits (build failures surface via
+# http.request 5xx, not this series); the histogram measures the avoided work
 # so "work saved" ≈ not_modified count × mean build duration. `outcome` is on
 # the metric-label allowlist in docs/observability-conventions.md.
 _browse_tree_requests = _meter.create_counter(
@@ -332,7 +333,6 @@ async def get_category_tree(
             },
         )
 
-    _browse_tree_requests.add(1, {"outcome": "full"})
     build_started = time.monotonic()
     tree = await _load_tree(
         db, None,
@@ -340,6 +340,7 @@ async def get_category_tree(
         user_program_ids=user_program_ids,
         user_group_ids=user_group_ids,
     )
+    _browse_tree_requests.add(1, {"outcome": "full"})
     _browse_tree_build_duration.record(time.monotonic() - build_started)
     return tree
 

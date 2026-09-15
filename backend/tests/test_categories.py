@@ -346,6 +346,26 @@ async def test_get_category_tree_304_short_circuits(
     duration_mock.record.assert_not_called()
 
 
+async def test_get_category_tree_failed_build_records_no_full_outcome(
+    monkeypatch: pytest.MonkeyPatch,
+    _browse_tree_instruments: tuple[MagicMock, MagicMock],
+) -> None:
+    """A _load_tree exception must not count as a successful full response."""
+    requests_mock, duration_mock = _browse_tree_instruments
+    user = _make_user("admin")
+    request = MagicMock()
+    request.headers = {}
+    response = Response()
+    monkeypatch.setattr(categories_router, "get_browse_revision", AsyncMock(return_value=7))
+    monkeypatch.setattr(categories_router, "_load_tree", AsyncMock(side_effect=RuntimeError("db down")))
+
+    with pytest.raises(RuntimeError):
+        await get_category_tree(request, response, user, AsyncMock())
+
+    requests_mock.add.assert_not_called()
+    duration_mock.record.assert_not_called()
+
+
 async def test_get_category_tree_bumps_browse_revision_on_category_create(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

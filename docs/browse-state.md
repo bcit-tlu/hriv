@@ -83,7 +83,8 @@ grid re-render and a costly tree rebuild in React.
 `docs/observability-conventions.md`):
 
 - `hriv.browse_tree.requests` — counter, attribute `outcome` ∈
-  `full` | `not_modified`. The `not_modified` share is the 304 hit rate.
+  `full` | `not_modified`. The `not_modified` share is the 304 hit rate;
+  `full` counts successful builds only.
 - `hriv.browse_tree.build.duration` — histogram (seconds) recorded only on the
   full-build path, i.e. the work each 304 avoids.
 

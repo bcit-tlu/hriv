@@ -275,13 +275,15 @@ describe('dndInstrumentation', () => {
       })
     })
 
-    it('logs an empty summary-free dragend when nothing re-rendered', () => {
+    it('logs a zero summary when a drag caused no tile re-renders', () => {
       capturedHandlers?.onDragStart(makeStart())
       capturedHandlers?.onDragEnd(makeEnd())
-      expect(spy).not.toHaveBeenCalledWith(
-        expect.stringContaining('render summary'),
-        expect.anything(),
-      )
+      // A {0,0} summary is the memoization-held signal — distinguishable
+      // from a dragend with no preceding tracked dragstart.
+      expect(spy).toHaveBeenCalledWith(expect.stringContaining('render summary'), {
+        tileRenders: 0,
+        distinctTiles: 0,
+      })
     })
 
     it('accumulates browse-tree poll outcomes and logs them', () => {

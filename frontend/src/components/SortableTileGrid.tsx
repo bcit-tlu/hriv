@@ -102,8 +102,11 @@ const GridTile = memo(function GridTile({
   renderImageTile,
 }: GridTileProps) {
   // Dev-trace render counter (issue #1100): a no-op unless a traced drag is
-  // active — see dndInstrumentation.ts.
-  recordTileRender(tileId(item))
+  // active. Commit-phase hook so Strict Mode's double-invoked render bodies
+  // don't inflate the count — see dndInstrumentation.ts.
+  useEffect(() => {
+    recordTileRender(tileId(item))
+  })
   return (
     <SortableTile id={tileId(item)} index={index} disabled={disabled}>
       {item.type === 'category'

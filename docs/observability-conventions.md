@@ -287,7 +287,9 @@ matches the current browse revision (`docs/browse-state.md`). The endpoint
 emits two OTel meter series so the saved work is measurable (issue #1100):
 
 - `hriv.browse_tree.requests` — counter, attribute `outcome` ∈
-  `full` | `not_modified`. `not_modified` marks a 304 short-circuit.
+  `full` | `not_modified`. `not_modified` marks a 304 short-circuit; `full`
+  counts only completed builds (build failures surface via `http.request`
+  5xx, keeping the two series consistent).
 - `hriv.browse_tree.build.duration` — histogram (seconds) recorded only for
   full builds; multiplying `not_modified` volume by its mean approximates the
   backend work the short-circuit avoids.

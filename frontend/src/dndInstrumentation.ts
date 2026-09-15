@@ -46,14 +46,15 @@ function resetTileRenderCounts(): void {
 }
 
 function summarizeTileRenderCounts(): void {
-  if (tileRenderCounts.size > 0) {
-    let total = 0
-    for (const count of tileRenderCounts.values()) total += count
-    logDrag('render summary', {
-      tileRenders: total,
-      distinctTiles: tileRenderCounts.size,
-    })
-  }
+  if (!tileRenderTracking) return
+  let total = 0
+  for (const count of tileRenderCounts.values()) total += count
+  // Always emit — {0,0} is the memoization-held signal; silence would be
+  // indistinguishable from inactive instrumentation.
+  logDrag('render summary', {
+    tileRenders: total,
+    distinctTiles: tileRenderCounts.size,
+  })
   tileRenderCounts.clear()
   tileRenderTracking = false
 }
@@ -74,6 +75,7 @@ export const browseTreeStats = {
 export type BrowseTreePollOutcome = 'not_modified' | 'applied' | 'unchanged'
 
 export function recordBrowseTreePoll(outcome: BrowseTreePollOutcome): void {
+  if (!isDndTraceEnabled()) return
   browseTreeStats.polls += 1
   browseTreeStats[outcome] += 1
   logDrag('browse-tree poll', { outcome, ...browseTreeStats })
