@@ -481,6 +481,7 @@ Published backup gauges:
 - `hriv_backup_last_attempt_timestamp_seconds{backup_type}`
 - `hriv_backup_last_success_timestamp_seconds{backup_type}`
 - `hriv_backup_last_outcome{backup_type}`
+- `hriv_backup_attempt_in_progress{backup_type}`
 - `hriv_backup_last_duration_seconds{backup_type}`
 - `hriv_backup_last_size_bytes{backup_type}`
 - `hriv_backup_archives_retained{backup_type}`
@@ -492,6 +493,16 @@ retained-archive classification cache was last refreshed successfully, and
 `hriv_backup_archive_listing_last_outcome` distinguishes success, failure, and
 not-configured states. Archive listing failures must not be rendered as zero
 retained archives.
+
+`hriv_backup_last_outcome` reads `-1` ("unknown") while an attempt is in flight
+because the attempt state records `success` only at completion; the same `-1`
+covers a run that crashed before writing its outcome. Consumers must therefore
+not treat `-1` as failure. `hriv_backup_attempt_in_progress` disambiguates: it
+is `1` whenever an attempt has `started_at` but no recorded outcome, which
+covers both a healthy in-flight run and an interrupted attempt. Alerting should
+fire on `last_outcome == 0` for recorded failures and on
+`attempt_in_progress == 1` persisting beyond the maximum expected backup
+duration for interrupted runs.
 
 Backup freshness is measured from the time a snapshot became restorable, not
 from the time its run started: `LAST_SUCCESS.json` carries `completed_at`

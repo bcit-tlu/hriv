@@ -146,6 +146,37 @@ async def test_render_backup_metrics_exposes_split_backup_state() -> None:
     assert b'hriv_restore_last_duration_seconds{purpose="test",restore_type="database"} 30.0' in content
 
 
+async def test_render_backup_metrics_marks_in_flight_attempt_in_progress() -> None:
+    state = _state(db_success=None, fs_success=False)
+
+    with (
+        patch("app.backup_metrics.get_backup_observability_state", return_value=state),
+        patch("app.backup_metrics.get_restore_observability_state", return_value=_restore_state()),
+        patch("app.backup_metrics.list_retained_backup_archives", return_value=_archive_summary()),
+    ):
+        content, _ = backup_metrics.render_backup_metrics()
+
+    assert b'hriv_backup_attempt_in_progress{backup_type="database"} 1.0' in content
+    assert b'hriv_backup_last_outcome{backup_type="database"} -1.0' in content
+    assert b'hriv_backup_attempt_in_progress{backup_type="filesystem"} 0.0' in content
+    assert b'hriv_backup_last_outcome{backup_type="filesystem"} 0.0' in content
+
+
+async def test_render_backup_metrics_in_progress_requires_started_attempt() -> None:
+    state = _state(db_success=None)
+    state["database"]["started_at"] = None
+
+    with (
+        patch("app.backup_metrics.get_backup_observability_state", return_value=state),
+        patch("app.backup_metrics.get_restore_observability_state", return_value=_restore_state()),
+        patch("app.backup_metrics.list_retained_backup_archives", return_value=_archive_summary()),
+    ):
+        content, _ = backup_metrics.render_backup_metrics()
+
+    assert b'hriv_backup_attempt_in_progress{backup_type="database"} 0.0' in content
+    assert b'hriv_backup_last_outcome{backup_type="database"} -1.0' in content
+
+
 async def test_render_backup_metrics_preserves_failed_attempt_with_older_success() -> None:
     state = _state(db_success=True, fs_success=False)
 
