@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.56.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.55.0...frontend-v0.56.0) (2026-09-15)
+
+
+### Features
+
+* add browse-tree 304 metrics and dev re-render counts ([#1301](https://github.com/bcit-tlu/hriv/issues/1301)) ([ada2466](https://github.com/bcit-tlu/hriv/commit/ada24668a6f2a0f4dff989506f5005d8d149f5d9))
+
 ## [0.55.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.54.0...frontend-v0.55.0) (2026-09-14)
 
 
