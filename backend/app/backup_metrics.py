@@ -342,14 +342,15 @@ def render_backup_metrics() -> tuple[bytes, str]:
                 success_completed.timestamp() if success_completed else None,
             )
             _backup_last_outcome.labels(backup_type=backup_type).set(_attempt_outcome_value(section))
-            _backup_attempt_in_progress.labels(backup_type=backup_type).set(
-                1.0
-                if (
-                    isinstance(section, dict)
-                    and attempt_started is not None
-                    and section.get("success") is None
+            _set_or_nan(
+                _backup_attempt_in_progress.labels(backup_type=backup_type),
+                (
+                    1.0
+                    if attempt_started is not None and section.get("success") is None
+                    else 0.0
                 )
-                else 0.0
+                if isinstance(section, dict)
+                else None,
             )
             _set_or_nan(
                 _backup_last_duration.labels(backup_type=backup_type),

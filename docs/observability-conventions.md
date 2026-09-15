@@ -499,7 +499,9 @@ because the attempt state records `success` only at completion; the same `-1`
 covers a run that crashed before writing its outcome. Consumers must therefore
 not treat `-1` as failure. `hriv_backup_attempt_in_progress` disambiguates: it
 is `1` whenever an attempt has `started_at` but no recorded outcome, which
-covers both a healthy in-flight run and an interrupted attempt. Alerting should
+covers both a healthy in-flight run and an interrupted attempt, and `NaN` when
+the attempt state itself cannot be read so that "unknown" is never rendered as
+idle. Alerting should
 fire on `last_outcome == 0` for recorded failures and on
 `attempt_in_progress == 1` persisting beyond the maximum expected backup
 duration for interrupted runs.

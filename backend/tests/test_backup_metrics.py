@@ -263,6 +263,7 @@ async def test_missing_state_reports_infinite_age() -> None:
 
     assert b'hriv_backup_age_seconds +Inf' in content
     assert b'hriv_backup_last_outcome{backup_type="database"} -1.0' in content
+    assert b'hriv_backup_attempt_in_progress{backup_type="database"} NaN' in content
 
 
 async def test_archive_listing_failure_preserves_stale_summary_without_zeroing() -> None:
