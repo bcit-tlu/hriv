@@ -174,6 +174,13 @@ _backup_last_outcome = Gauge(
     registry=_registry,
 )
 
+_backup_attempt_in_progress = Gauge(
+    "hriv_backup_attempt_in_progress",
+    "Whether a backup attempt for this backup type has started but not recorded an outcome: 1 running or interrupted, 0 idle",
+    labelnames=("backup_type",),
+    registry=_registry,
+)
+
 _backup_last_duration = Gauge(
     "hriv_backup_last_duration_seconds",
     "Duration in seconds of the latest backup attempt for this backup type",
@@ -335,6 +342,16 @@ def render_backup_metrics() -> tuple[bytes, str]:
                 success_completed.timestamp() if success_completed else None,
             )
             _backup_last_outcome.labels(backup_type=backup_type).set(_attempt_outcome_value(section))
+            _set_or_nan(
+                _backup_attempt_in_progress.labels(backup_type=backup_type),
+                (
+                    1.0
+                    if attempt_started is not None and section.get("success") is None
+                    else 0.0
+                )
+                if isinstance(section, dict)
+                else None,
+            )
             _set_or_nan(
                 _backup_last_duration.labels(backup_type=backup_type),
                 _parse_numeric(section.get("duration_seconds")) if isinstance(section, dict) else None,
