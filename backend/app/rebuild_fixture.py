@@ -14,8 +14,8 @@ Fixture rows are marked by:
 - the ``TRF-`` name/filename prefix;
 - files confined to the ``rebuild-fixture`` subdirectory.
 
-Seeding is idempotent: ``--purge`` (or a reseed) removes every fixture row and
-file before re-inserting.
+Seeding is idempotent: ``--purge`` (or a reseed) removes every fixture row,
+source file, generated tile tree, and rebuild temporary tree before re-inserting.
 
 CLI usage (requires ``DATABASE_URL`` and a writable ``SOURCE_IMAGES_DIR``)::
 
@@ -132,17 +132,32 @@ def write_fixture_files(spec: list[RebuildFixtureSpec]) -> Path:
     fixture_dir.mkdir(parents=True, exist_ok=True)
     for item in spec:
         path = fixture_dir / item.filename
-        if (
-            not path.is_file()
-            or path.stat().st_size != len(FIXTURE_TIFF_BYTES)
-        ):
+        if not path.is_file() or path.read_bytes() != FIXTURE_TIFF_BYTES:
             path.write_bytes(FIXTURE_TIFF_BYTES)
     return fixture_dir
 
 
 def purge_fixture_files() -> None:
-    """Remove the fixture source directory (confined to ``rebuild-fixture``)."""
+    """Remove fixture source files and generated tile trees."""
     shutil.rmtree(fixture_source_dir(), ignore_errors=True)
+    tiles_dir = Path(settings.tiles_dir)
+    if not tiles_dir.is_dir():
+        return
+    for path in tiles_dir.iterdir():
+        name = path.name
+        source_id = None
+        if name.isdigit():
+            source_id = int(name)
+        elif name.startswith(".rebuild-"):
+            try:
+                source_id = int(name.split("-", 2)[1])
+            except (IndexError, ValueError):
+                source_id = None
+        if source_id is not None and source_id >= SOURCE_IMAGE_ID_BASE:
+            if path.is_symlink() or not path.is_dir():
+                path.unlink(missing_ok=True)
+            else:
+                shutil.rmtree(path)
 
 
 async def purge_rebuild_fixture(session: AsyncSession) -> None:
@@ -181,8 +196,8 @@ async def seed_rebuild_fixture(
     """Idempotently (re-)create *count* linked fixture sources."""
     spec = build_fixture_spec(count)
     await purge_rebuild_fixture(session)
-    purge_fixture_files()
-    fixture_dir = write_fixture_files(spec)
+    await asyncio.to_thread(purge_fixture_files)
+    fixture_dir = await asyncio.to_thread(write_fixture_files, spec)
 
     checksum = hashlib.sha256(FIXTURE_TIFF_BYTES).hexdigest()
     settings_hash = current_tile_settings_hash()
@@ -252,7 +267,7 @@ async def _run_cli(*, count: int, purge_only: bool) -> None:
         async with session_factory() as session:
             if purge_only:
                 await purge_rebuild_fixture(session)
-                purge_fixture_files()
+                await asyncio.to_thread(purge_fixture_files)
                 print("Rebuild fixture purged.")
             else:
                 spec = await seed_rebuild_fixture(session, count)
@@ -278,7 +293,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--purge",
         action="store_true",
-        help="Remove the fixture rows and files without reseeding.",
+        help="Remove fixture rows, sources, and tiles without reseeding.",
     )
     args = parser.parse_args(argv)
     asyncio.run(_run_cli(count=args.count, purge_only=args.purge))

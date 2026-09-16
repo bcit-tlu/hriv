@@ -698,6 +698,76 @@ async def test_pump_releases_unstarted_claim_after_submission_failure(
     release.assert_awaited_once()
 
 
+async def test_skipped_reservation_records_queue_wait_after_commit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    claimed_at = datetime.now(timezone.utc) - timedelta(seconds=2)
+    job = SimpleNamespace(
+        id=7,
+        status="running",
+        metadata_={
+            "scope": "missing",
+            "child_timeout_seconds": 1800,
+            "heartbeat_seconds": 30,
+            "lease_seconds": 2100,
+        },
+    )
+    item = SimpleNamespace(
+        id=11,
+        job_id=7,
+        resource_type="source_image",
+        resource_id="101",
+        started_at=datetime.now(timezone.utc),
+        metadata_={"claimed_at": claimed_at.isoformat()},
+    )
+    source = SimpleNamespace(id=101, image_id=201, stored_path="/source.tif")
+    session = MagicMock()
+    session.get = AsyncMock(side_effect=[item, source])
+    session.commit = AsyncMock()
+    factory = MagicMock(return_value=_session_context(session))
+    queue_wait = MagicMock()
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs.get_async_session",
+        MagicMock(return_value=factory),
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._lock_tile_rebuild_job",
+        AsyncMock(return_value=job),
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs.reserve_job_item_execution",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs.finalize_job_item",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._refresh_tile_rebuild_job",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._load_processing",
+        MagicMock(
+            return_value=SimpleNamespace(
+                select_rebuild_targets=AsyncMock(return_value=[]),
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        tile_rebuild_metrics,
+        "record_queue_wait",
+        queue_wait,
+    )
+
+    result = await tile_rebuild_jobs._reserve_rebuild_source(7, 11, "claim")
+
+    assert result.outcome == "skipped"
+    session.commit.assert_awaited_once()
+    queue_wait.assert_called_once()
+    assert queue_wait.call_args.args[0] >= 2
+
+
 async def test_duplicate_child_delivery_does_not_process(monkeypatch) -> None:
     reserve = AsyncMock(
         return_value=ReservedRebuild(outcome="duplicate")
@@ -776,6 +846,7 @@ async def test_cancelling_child_discards_prepared_before_promotion(
                 source_image_id=101,
                 image_id=201,
                 stored_path="/sources/one.svs",
+                child_timeout_seconds=1800,
                 heartbeat_seconds=30,
                 lease_seconds=90,
             )
@@ -859,6 +930,7 @@ async def test_ready_child_promotes_and_finalizes_current_claim(
                 source_image_id=101,
                 image_id=201,
                 stored_path="/sources/one.svs",
+                child_timeout_seconds=1800,
                 heartbeat_seconds=30,
                 lease_seconds=90,
             )
@@ -950,6 +1022,7 @@ async def test_commit_failure_rolls_back_promotion_and_fails_item(
                 source_image_id=101,
                 image_id=201,
                 stored_path="/sources/one.svs",
+                child_timeout_seconds=1800,
                 heartbeat_seconds=30,
                 lease_seconds=90,
             )
@@ -1016,6 +1089,7 @@ async def test_cancelled_child_discards_prepared_tiles(
                 source_image_id=101,
                 image_id=201,
                 stored_path="/sources/one.svs",
+                child_timeout_seconds=1800,
                 heartbeat_seconds=30,
                 lease_seconds=90,
             )
@@ -1075,6 +1149,7 @@ async def test_cancelled_child_stops_heartbeat_during_slow_preparation(
                 source_image_id=101,
                 image_id=201,
                 stored_path="/sources/one.svs",
+                child_timeout_seconds=1800,
                 heartbeat_seconds=30,
                 lease_seconds=90,
             )
@@ -1158,6 +1233,7 @@ async def test_heartbeat_failure_cancels_slow_preparation_before_exit(
                 source_image_id=101,
                 image_id=201,
                 stored_path="/sources/one.svs",
+                child_timeout_seconds=1800,
                 heartbeat_seconds=0.01,
                 lease_seconds=90,
             )
@@ -1201,6 +1277,49 @@ async def test_heartbeat_failure_cancels_slow_preparation_before_exit(
     assert cleanup_finished.is_set()
     finalize_failure.assert_not_awaited()
     processing.discard_prepared_tile_rebuild.assert_not_awaited()
+
+
+async def test_child_timeout_finalizes_durable_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    finalize_failure = AsyncMock()
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._reserve_rebuild_source",
+        AsyncMock(
+            return_value=ReservedRebuild(
+                outcome="ready",
+                source_image_id=101,
+                image_id=201,
+                stored_path="/sources/one.svs",
+                child_timeout_seconds=0.01,
+                heartbeat_seconds=30,
+                lease_seconds=90,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._heartbeat_rebuild_item",
+        _wait_for_cancellation,
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._process_reserved_tile_rebuild",
+        _wait_for_cancellation,
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._finalize_rebuild_failure",
+        finalize_failure,
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._load_processing",
+        MagicMock(return_value=SimpleNamespace()),
+    )
+
+    with pytest.raises(TimeoutError):
+        await process_tile_rebuild_item(7, 11, "claim")
+
+    finalize_failure.assert_awaited_once()
+    assert finalize_failure.await_args.args[:3] == (7, 11, "claim")
+    assert isinstance(finalize_failure.await_args.args[3], TimeoutError)
 
 
 async def test_active_tile_rebuild_job_ids_reads_postgres(

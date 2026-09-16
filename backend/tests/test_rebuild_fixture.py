@@ -97,10 +97,20 @@ def test_fixture_tile_sources_embed_source_id() -> None:
 def test_write_and_purge_fixture_files(tmp_path: Path) -> None:
     spec = build_fixture_spec(4)
     fixture_dir = tmp_path / "rebuild-fixture"
-    with patch.object(
-        rebuild_fixture,
-        "fixture_source_dir",
-        return_value=fixture_dir,
+    tiles_dir = tmp_path / "tiles"
+    fixture_tiles = tiles_dir / str(SOURCE_IMAGE_ID_BASE)
+    fixture_temp = tiles_dir / f".rebuild-{SOURCE_IMAGE_ID_BASE}-abc"
+    preserved_tiles = tiles_dir / str(SOURCE_IMAGE_ID_BASE - 1)
+    for path in (fixture_tiles, fixture_temp, preserved_tiles):
+        path.mkdir(parents=True)
+        (path / "marker").write_text("present")
+    with (
+        patch.object(
+            rebuild_fixture,
+            "fixture_source_dir",
+            return_value=fixture_dir,
+        ),
+        patch.object(rebuild_fixture.settings, "tiles_dir", str(tiles_dir)),
     ):
         written = write_fixture_files(spec)
         assert written == fixture_dir
@@ -109,14 +119,17 @@ def test_write_and_purge_fixture_files(tmp_path: Path) -> None:
             assert path.is_file()
             assert path.read_bytes() == FIXTURE_TIFF_BYTES
 
-        # Rewriting an intact file is a no-op; a corrupted one is repaired.
+        # Rewriting an intact file is a no-op; same-size corruption is repaired.
         marker = fixture_dir / spec[0].filename
-        marker.write_bytes(b"corrupt")
+        marker.write_bytes(b"x" * len(FIXTURE_TIFF_BYTES))
         write_fixture_files(spec)
         assert marker.read_bytes() == FIXTURE_TIFF_BYTES
 
         purge_fixture_files()
         assert not fixture_dir.exists()
+        assert not fixture_tiles.exists()
+        assert not fixture_temp.exists()
+        assert preserved_tiles.exists()
         # Purge is idempotent and must not touch the parent directory.
         purge_fixture_files()
         assert tmp_path.exists()

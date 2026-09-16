@@ -264,8 +264,7 @@ kubectl -n hriv exec deploy/hriv-backend -- \
   python -m app.rebuild_fixture --purge
 ```
 
-This removes all `TRF-`/`rebuild-fixture` rows and files. It does not touch
-generated tile trees for fixture sources — delete
-`tiles/<fixture-source-id>/` trees manually if reclaiming the space matters,
-or leave them: they are valid tiles for rows that no longer exist and are
-ignored by selection.
+This removes all `TRF-`/`rebuild-fixture` rows, source files, generated tile
+trees, and abandoned fixture rebuild temporary trees. Fixture filesystem work
+runs off the CLI event loop so thousands of small files do not block database
+or cancellation progress.

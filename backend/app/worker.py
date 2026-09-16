@@ -690,7 +690,11 @@ class WorkerSettings:
         func(rebuild_tile_pump_task, max_tries=1),
         func(
             rebuild_tile_item,
-            timeout=settings.rebuild_child_timeout_seconds,
+            timeout=max(
+                settings.rebuild_lease_seconds,
+                settings.rebuild_child_timeout_seconds
+                + settings.rebuild_heartbeat_seconds,
+            ),
             max_tries=1,
         ),
     ]

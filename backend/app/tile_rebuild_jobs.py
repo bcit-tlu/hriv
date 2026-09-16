@@ -209,6 +209,7 @@ class ReservedRebuild:
     source_image_id: int | None = None
     image_id: int | None = None
     stored_path: str | None = None
+    child_timeout_seconds: int | None = None
     heartbeat_seconds: int | None = None
     lease_seconds: int | None = None
 
@@ -1114,6 +1115,11 @@ async def _reserve_rebuild_source(
             else None
         )
 
+        child_timeout_seconds = _metadata_positive_int(
+            job.metadata_,
+            "child_timeout_seconds",
+            settings.rebuild_child_timeout_seconds,
+        )
         heartbeat_seconds = _metadata_positive_int(
             job.metadata_,
             "heartbeat_seconds",
@@ -1145,6 +1151,8 @@ async def _reserve_rebuild_source(
                 await _refresh_tile_rebuild_job(session, job_id)
             await session.commit()
             emit_pending_metrics(session)
+            if queue_wait_seconds is not None:
+                tile_rebuild_metrics.record_queue_wait(queue_wait_seconds)
             if finalized:
                 tile_rebuild_metrics.record_item_terminal(
                     "skipped",
@@ -1160,6 +1168,7 @@ async def _reserve_rebuild_source(
             source_image_id=source.id,
             image_id=source.image_id,
             stored_path=source.stored_path,
+            child_timeout_seconds=child_timeout_seconds,
             heartbeat_seconds=heartbeat_seconds,
             lease_seconds=lease_seconds,
         )
@@ -1405,6 +1414,7 @@ async def process_tile_rebuild_item(
     if (
         reservation.source_image_id is None
         or reservation.stored_path is None
+        or reservation.child_timeout_seconds is None
         or reservation.heartbeat_seconds is None
         or reservation.lease_seconds is None
     ):
@@ -1431,35 +1441,48 @@ async def process_tile_rebuild_item(
         )
     )
     try:
-        done, _pending = await asyncio.wait(
-            [operation_task, heartbeat_task],
-            return_when=asyncio.FIRST_COMPLETED,
-        )
-        if operation_task in done:
-            heartbeat_task.cancel()
-            await asyncio.gather(heartbeat_task, return_exceptions=True)
-            return operation_task.result()
+        async with asyncio.timeout(reservation.child_timeout_seconds):
+            try:
+                done, _pending = await asyncio.wait(
+                    [operation_task, heartbeat_task],
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if operation_task in done:
+                    heartbeat_task.cancel()
+                    await asyncio.gather(
+                        heartbeat_task,
+                        return_exceptions=True,
+                    )
+                    return operation_task.result()
 
-        heartbeat_error = (
-            None
-            if heartbeat_task.cancelled()
-            else heartbeat_task.exception()
+                heartbeat_error = (
+                    None
+                    if heartbeat_task.cancelled()
+                    else heartbeat_task.exception()
+                )
+                operation_task.cancel()
+                await asyncio.gather(operation_task, return_exceptions=True)
+                if heartbeat_error is not None:
+                    raise heartbeat_error
+                raise TileRebuildLeaseLostError(
+                    f"Tile rebuild item {item_id} heartbeat stopped"
+                )
+            finally:
+                heartbeat_task.cancel()
+                operation_task.cancel()
+                await asyncio.gather(
+                    heartbeat_task,
+                    operation_task,
+                    return_exceptions=True,
+                )
+    except TimeoutError as exc:
+        await _finalize_rebuild_failure(
+            job_id,
+            item_id,
+            claim_token,
+            exc,
         )
-        operation_task.cancel()
-        await asyncio.gather(operation_task, return_exceptions=True)
-        if heartbeat_error is not None:
-            raise heartbeat_error
-        raise TileRebuildLeaseLostError(
-            f"Tile rebuild item {item_id} heartbeat stopped"
-        )
-    finally:
-        heartbeat_task.cancel()
-        operation_task.cancel()
-        await asyncio.gather(
-            heartbeat_task,
-            operation_task,
-            return_exceptions=True,
-        )
+        raise
 
 
 async def active_tile_rebuild_job_ids(

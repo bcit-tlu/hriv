@@ -124,8 +124,11 @@ Children recheck the authoritative source-image and tile-provenance state after
 reserving execution. Current or superseded targets are skipped. Ready targets
 reuse the same prepare/promote/rollback primitives as the serial rebuild,
 heartbeat their lease during processing, and finalize only with the current
-claim token. Child completion requests another pump after its database
-transaction commits; a periodic worker sweep is the backstop for lost triggers.
+claim token. The persisted child timeout is enforced inside this execution
+boundary so timeout cancellation becomes a durable retry/failure and metric;
+arq keeps a longer lease-derived safety timeout for stuck cleanup. Child
+completion requests another pump after its database transaction commits; a
+periodic worker sweep is the backstop for lost triggers.
 
 Cancellation and retry requests lock the supervisor before mutating state. A
 cancellation request changes the supervisor to `cancelling` and cancels queued
