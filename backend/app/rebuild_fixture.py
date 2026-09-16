@@ -42,7 +42,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
 
-from sqlalchemy import delete, or_
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -50,7 +50,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from .browse_state import bump_browse_revision
-from .database import settings
+from .database import AppSession, settings
 from .models import Image, SourceImage
 from .tile_provenance import current_tile_settings_hash
 
@@ -111,6 +111,51 @@ class RebuildFixtureSpec:
     filename: str
 
 
+def is_rebuild_fixture_image(image: Image) -> bool:
+    return (image.metadata_ or {}).get("rebuild_fixture") is True
+
+
+def is_rebuild_fixture_source(
+    source: SourceImage,
+    fixture_image_ids: set[int],
+) -> bool:
+    if source.image_id not in fixture_image_ids:
+        return False
+    stored_path = Path(source.stored_path).resolve(strict=False)
+    fixture_dir = fixture_source_dir().resolve(strict=False)
+    return stored_path.is_relative_to(fixture_dir)
+
+
+def select_rebuild_fixture_rows(
+    images: list[Image],
+    sources: list[SourceImage],
+) -> tuple[list[Image], list[SourceImage]]:
+    candidate_ids = {
+        image.id for image in images if is_rebuild_fixture_image(image)
+    }
+    sources_by_image: dict[int, list[SourceImage]] = {}
+    for source in sources:
+        if source.image_id in candidate_ids:
+            sources_by_image.setdefault(source.image_id, []).append(source)
+    fixture_image_ids = {
+        image_id
+        for image_id, linked_sources in sources_by_image.items()
+        if linked_sources
+        and all(
+            is_rebuild_fixture_source(source, candidate_ids)
+            for source in linked_sources
+        )
+    }
+    return (
+        [image for image in images if image.id in fixture_image_ids],
+        [
+            source
+            for source in sources
+            if is_rebuild_fixture_source(source, fixture_image_ids)
+        ],
+    )
+
+
 def build_fixture_spec(count: int) -> list[RebuildFixtureSpec]:
     """Build the deterministic fixture specification (no I/O)."""
     if count < 0:
@@ -131,16 +176,35 @@ def fixture_source_dir() -> Path:
     return Path(settings.source_images_dir) / FIXTURE_DIRNAME
 
 
-def _acquire_archive_lock(source_images_dir: str | Path | None = None) -> TextIO:
+def _archive_lock_path(source_images_dir: str | Path | None = None) -> Path:
     root = (
         Path(source_images_dir)
         if source_images_dir is not None
         else fixture_source_dir().parent
     )
     root.mkdir(parents=True, exist_ok=True)
-    handle = (root / FIXTURE_ARCHIVE_LOCK_FILENAME).open("a+")
+    return root / FIXTURE_ARCHIVE_LOCK_FILENAME
+
+
+def _acquire_archive_lock(source_images_dir: str | Path | None = None) -> TextIO:
+    handle = _archive_lock_path(source_images_dir).open("a+")
     try:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+    except Exception:
+        handle.close()
+        raise
+    return handle
+
+
+def _try_acquire_archive_lock(
+    source_images_dir: str | Path | None = None,
+) -> TextIO | None:
+    handle = _archive_lock_path(source_images_dir).open("a+")
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        return None
     except Exception:
         handle.close()
         raise
@@ -151,6 +215,12 @@ async def acquire_rebuild_fixture_archive_lock(
     source_images_dir: str | Path | None = None,
 ) -> TextIO:
     return await asyncio.to_thread(_acquire_archive_lock, source_images_dir)
+
+
+async def try_acquire_rebuild_fixture_archive_lock(
+    source_images_dir: str | Path | None = None,
+) -> TextIO | None:
+    return await asyncio.to_thread(_try_acquire_archive_lock, source_images_dir)
 
 
 async def release_rebuild_fixture_archive_lock(handle: TextIO) -> None:
@@ -174,8 +244,8 @@ def write_fixture_files(spec: list[RebuildFixtureSpec]) -> Path:
     return fixture_dir
 
 
-def purge_fixture_files() -> None:
-    """Remove fixture source files and generated tile trees."""
+def purge_fixture_files(source_image_ids: set[int]) -> None:
+    """Remove fixture source files and exact linked tile trees."""
     shutil.rmtree(fixture_source_dir(), ignore_errors=True)
     tiles_dir = Path(settings.tiles_dir)
     if not tiles_dir.is_dir():
@@ -194,40 +264,55 @@ def purge_fixture_files() -> None:
             prefix, _separator, _suffix = name.partition(".old-")
             if prefix.isdigit():
                 source_id = int(prefix)
-        if source_id is not None and source_id >= SOURCE_IMAGE_ID_BASE:
+        if source_id in source_image_ids:
             if path.is_symlink() or not path.is_dir():
                 path.unlink(missing_ok=True)
             else:
                 shutil.rmtree(path)
 
 
-async def purge_rebuild_fixture(session: AsyncSession) -> None:
-    """Delete every fixture row (reserved ID range or ``TRF-`` prefix)."""
-    # ``synchronize_session="fetch"`` keeps the identity map consistent with
-    # the bulk delete so reseeding in the same session cannot conflict.
-    await session.execute(
-        delete(SourceImage)
+async def purge_rebuild_fixture(session: AsyncSession) -> set[int]:
+    """Delete rows carrying the exact fixture marker and path contract."""
+    image_result = await session.execute(
+        select(Image)
         .where(
-            or_(
-                SourceImage.id >= SOURCE_IMAGE_ID_BASE,
-                SourceImage.original_filename.like(f"{FIXTURE_PREFIX}%"),
-            )
+            Image.metadata_["rebuild_fixture"].as_boolean().is_(True)
         )
-        .execution_options(synchronize_session="fetch")
+        .with_for_update()
     )
-    await session.execute(
-        delete(Image)
-        .where(
-            or_(
-                Image.id >= IMAGE_ID_BASE,
-                Image.name.like(f"{FIXTURE_PREFIX}%"),
-            )
+    candidate_images = list(image_result.scalars().all())
+    candidate_image_ids = {image.id for image in candidate_images}
+
+    linked_sources: list[SourceImage] = []
+    if candidate_image_ids:
+        source_result = await session.execute(
+            select(SourceImage)
+            .where(SourceImage.image_id.in_(candidate_image_ids))
+            .with_for_update()
         )
-        .execution_options(synchronize_session="fetch")
+        linked_sources = list(source_result.scalars().all())
+    images, sources = select_rebuild_fixture_rows(
+        candidate_images,
+        linked_sources,
     )
-    # Deleted fixture images must invalidate browse caches too.
-    await bump_browse_revision(session)
+    source_ids = {source.id for source in sources}
+    image_ids = {image.id for image in images}
+
+    if source_ids:
+        await session.execute(
+            delete(SourceImage)
+            .where(SourceImage.id.in_(source_ids))
+            .execution_options(synchronize_session="fetch")
+        )
+    if image_ids:
+        await session.execute(
+            delete(Image)
+            .where(Image.id.in_(image_ids))
+            .execution_options(synchronize_session="fetch")
+        )
+        await bump_browse_revision(session)
     await session.commit()
+    return source_ids
 
 
 async def _seed_rebuild_fixture_locked(
@@ -236,8 +321,8 @@ async def _seed_rebuild_fixture_locked(
 ) -> list[RebuildFixtureSpec]:
     """Idempotently (re-)create *count* linked fixture sources."""
     spec = build_fixture_spec(count)
-    await purge_rebuild_fixture(session)
-    await asyncio.to_thread(purge_fixture_files)
+    source_ids = await purge_rebuild_fixture(session)
+    await asyncio.to_thread(purge_fixture_files, source_ids)
     fixture_dir = fixture_source_dir()
     if spec:
         fixture_dir = await asyncio.to_thread(write_fixture_files, spec)
@@ -316,14 +401,18 @@ def _resolve_database_url() -> str:
 
 async def _run_cli(*, count: int, purge_only: bool) -> None:
     engine = create_async_engine(_resolve_database_url())
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    session_factory = async_sessionmaker(
+        engine,
+        expire_on_commit=False,
+        sync_session_class=AppSession,
+    )
     try:
         async with session_factory() as session:
             if purge_only:
                 lock = await acquire_rebuild_fixture_archive_lock()
                 try:
-                    await purge_rebuild_fixture(session)
-                    await asyncio.to_thread(purge_fixture_files)
+                    source_ids = await purge_rebuild_fixture(session)
+                    await asyncio.to_thread(purge_fixture_files, source_ids)
                 finally:
                     await release_rebuild_fixture_archive_lock(lock)
                 print("Rebuild fixture purged.")

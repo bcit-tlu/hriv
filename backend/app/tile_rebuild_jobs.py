@@ -18,6 +18,7 @@ from sqlalchemy.exc import (
     TimeoutError as SQLAlchemyTimeoutError,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import SessionTransaction
 
 from . import tile_rebuild_metrics
 from .database import AppSession, get_async_session, settings
@@ -66,47 +67,46 @@ JobMetadata: TypeAlias = dict[str, JSONValue]
 _PENDING_CALLBACKS_KEY = "tile_rebuild_pending_callbacks"
 
 
-def _current_nested_transaction(session: object) -> object | None:
-    getter = getattr(session, "get_nested_transaction", None)
-    transaction = getter() if callable(getter) else None
-    return getattr(transaction, "sync_transaction", transaction)
+def _current_nested_transaction(
+    session: AsyncSession | AppSession,
+) -> SessionTransaction | None:
+    if isinstance(session, AsyncSession):
+        transaction = session.get_nested_transaction()
+        return transaction.sync_transaction if transaction is not None else None
+    return session.get_nested_transaction()
 
 
 def _defer_after_commit(
-    session: object,
+    session: AsyncSession | AppSession,
     callback: Callable[[], None],
 ) -> None:
     """Queue *callback* until the owning transaction commits."""
-    pending = getattr(session, "info", None)
-    if not isinstance(pending, dict):
+    if not isinstance(session, (AsyncSession, AppSession)):
         callback()
         return
-    pending.setdefault(_PENDING_CALLBACKS_KEY, []).append(
+    session.info.setdefault(_PENDING_CALLBACKS_KEY, []).append(
         (_current_nested_transaction(session), callback)
     )
 
 
-def emit_pending_callbacks(session: object) -> None:
+def emit_pending_callbacks(session: AppSession) -> None:
     """Emit callbacks deferred while *session*'s transaction was open."""
-    pending = getattr(session, "info", None)
-    if not isinstance(pending, dict):
-        return
-    for _transaction, callback in pending.pop(_PENDING_CALLBACKS_KEY, []):
+    for _transaction, callback in session.info.pop(
+        _PENDING_CALLBACKS_KEY,
+        [],
+    ):
         callback()
 
 
 def _discard_pending_callbacks(
-    session: object,
-    transaction: object | None = None,
+    session: AppSession,
+    transaction: SessionTransaction | None = None,
 ) -> None:
-    pending = getattr(session, "info", None)
-    if not isinstance(pending, dict):
-        return
     if transaction is None:
-        pending.pop(_PENDING_CALLBACKS_KEY, None)
+        session.info.pop(_PENDING_CALLBACKS_KEY, None)
         return
-    callbacks = pending.get(_PENDING_CALLBACKS_KEY, [])
-    pending[_PENDING_CALLBACKS_KEY] = [
+    callbacks = session.info.get(_PENDING_CALLBACKS_KEY, [])
+    session.info[_PENDING_CALLBACKS_KEY] = [
         entry for entry in callbacks if entry[0] is not transaction
     ]
 
@@ -120,16 +120,16 @@ def _emit_callbacks_after_commit(session: AppSession) -> None:
 @event.listens_for(AppSession, "after_soft_rollback")
 def _discard_callbacks_after_soft_rollback(
     session: AppSession,
-    previous_transaction: object,
+    previous_transaction: SessionTransaction,
 ) -> None:
-    if getattr(previous_transaction, "nested", False):
+    if previous_transaction.nested:
         _discard_pending_callbacks(session, previous_transaction)
     else:
         _discard_pending_callbacks(session)
 
 
 def _defer_info_event(
-    session: object,
+    session: AsyncSession | AppSession,
     message: str,
     extra: dict[str, object],
 ) -> None:

@@ -161,7 +161,8 @@ linked source image and adds a large fixture population. Run it only on
 the serial rebuild path verified healthy first.
 
 The fixture is deliberately excluded from recoverable artifacts. Admin JSON
-exports omit its reserved rows; fixture mutation, admin filesystem export, and
+exports omit only images carrying the exact `metadata.rebuild_fixture=true`
+marker and their linked sources inside the fixture directory; fixture mutation, admin filesystem export, and
 the backup service share an exclusive source-volume lock that closes the
 check/inventory race. Exports and backups fail closed before creating an archive
 while `source_images/rebuild-fixture/` exists, and blocked backup attempts are
@@ -275,8 +276,9 @@ kubectl -n hriv exec deploy/hriv-backend -- \
   python -m app.rebuild_fixture --purge
 ```
 
-This removes all `TRF-`/`rebuild-fixture` rows, source files, generated tile
-trees, abandoned fixture rebuild temporary trees, and retained `.old-*` trees. Fixture filesystem work
+This removes only exact `metadata.rebuild_fixture=true` images, their linked
+sources whose stored paths are inside `rebuild-fixture`, and tile/temp/`.old-*`
+trees for those exact source IDs. Fixture filesystem work
 runs off the CLI event loop so thousands of small files do not block database
 or cancellation progress. Trigger or wait for the next scheduled backup after
 purge and confirm it succeeds; do not retain or use any failed backup attempt

@@ -62,8 +62,9 @@ tooling:
 - `rebuild_fixture.py` is a deterministic seeder (`python -m
 app.rebuild_fixture --count N` / `--purge`) that creates N linked
   completed `SourceImage`/`Image` pairs backed by tiny valid TIFFs under a
-  reserved `TRF-`/`rebuild-fixture` namespace. It pads an environment to
-  production item count so pump batching, lease churn, and aggregate updates
+  reserved `TRF-`/`rebuild-fixture` namespace. Cleanup recognizes them by the
+  exact `metadata.rebuild_fixture=true` image marker plus linked source path,
+  never by name or ID range alone. It pads an environment to production item count so pump batching, lease churn, and aggregate updates
   are measured at scale; real throughput percentiles still come from real
   sources.
 - The production-shaped rehearsal procedure and its measurement record

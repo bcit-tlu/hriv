@@ -1838,7 +1838,7 @@ async def test_finalize_rebuild_failure_counts_timeouts(
 
 def test_deferred_callbacks_wait_for_commit() -> None:
     calls: list[str] = []
-    session = SimpleNamespace(info={})
+    session = tile_rebuild_jobs.AppSession()
 
     tile_rebuild_jobs._defer_after_commit(
         session, lambda: calls.append("emit")
@@ -1908,7 +1908,7 @@ def test_nested_rollback_preserves_outer_callbacks() -> None:
 
 
 def test_info_event_waits_for_commit(monkeypatch: pytest.MonkeyPatch) -> None:
-    session = SimpleNamespace(info={})
+    session = tile_rebuild_jobs.AppSession()
     info = MagicMock()
     monkeypatch.setattr(tile_rebuild_jobs.logger, "info", info)
 

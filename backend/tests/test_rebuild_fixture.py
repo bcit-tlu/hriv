@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -122,11 +123,13 @@ def test_write_and_purge_fixture_files(tmp_path: Path) -> None:
     fixture_temp = tiles_dir / f".rebuild-{SOURCE_IMAGE_ID_BASE}-abc"
     fixture_retained = tiles_dir / f"{SOURCE_IMAGE_ID_BASE}.old-abc"
     preserved_tiles = tiles_dir / str(SOURCE_IMAGE_ID_BASE - 1)
+    preserved_high_tiles = tiles_dir / str(SOURCE_IMAGE_ID_BASE + 1)
     for path in (
         fixture_tiles,
         fixture_temp,
         fixture_retained,
         preserved_tiles,
+        preserved_high_tiles,
     ):
         path.mkdir(parents=True)
         (path / "marker").write_text("present")
@@ -151,15 +154,71 @@ def test_write_and_purge_fixture_files(tmp_path: Path) -> None:
         write_fixture_files(spec)
         assert marker.read_bytes() == FIXTURE_TIFF_BYTES
 
-        purge_fixture_files()
+        purge_fixture_files({SOURCE_IMAGE_ID_BASE})
         assert not fixture_dir.exists()
         assert not fixture_tiles.exists()
         assert not fixture_temp.exists()
         assert not fixture_retained.exists()
         assert preserved_tiles.exists()
+        assert preserved_high_tiles.exists()
         # Purge is idempotent and must not touch the parent directory.
-        purge_fixture_files()
+        purge_fixture_files({SOURCE_IMAGE_ID_BASE})
         assert tmp_path.exists()
+
+
+async def test_purge_uses_exact_marker_link_and_path(tmp_path: Path) -> None:
+    fixture_dir = tmp_path / "rebuild-fixture"
+    fixture_image = SimpleNamespace(
+        id=IMAGE_ID_BASE,
+        metadata_={"rebuild_fixture": True},
+    )
+    real_high_image = SimpleNamespace(
+        id=IMAGE_ID_BASE + 1,
+        metadata_={},
+    )
+    fixture_source = SimpleNamespace(
+        id=SOURCE_IMAGE_ID_BASE,
+        image_id=IMAGE_ID_BASE,
+        stored_path=str(fixture_dir / "TRF-00000.tif"),
+    )
+    outside_source = SimpleNamespace(
+        id=SOURCE_IMAGE_ID_BASE + 1,
+        image_id=IMAGE_ID_BASE + 1,
+        stored_path=str(tmp_path / "real-TRF-study.tif"),
+    )
+
+    def rows_result(rows: list[object]) -> MagicMock:
+        result = MagicMock()
+        result.scalars.return_value.all.return_value = rows
+        return result
+
+    session = AsyncMock()
+    session.execute = AsyncMock(
+        side_effect=[
+            rows_result([fixture_image, real_high_image]),
+            rows_result([fixture_source, outside_source]),
+            MagicMock(),
+            MagicMock(),
+        ]
+    )
+    with (
+        patch.object(
+            rebuild_fixture,
+            "fixture_source_dir",
+            return_value=fixture_dir,
+        ),
+        patch.object(
+            rebuild_fixture,
+            "bump_browse_revision",
+            new_callable=AsyncMock,
+        ) as bump_revision,
+    ):
+        source_ids = await rebuild_fixture.purge_rebuild_fixture(session)
+
+    assert source_ids == {SOURCE_IMAGE_ID_BASE}
+    assert session.execute.await_count == 4
+    bump_revision.assert_awaited_once_with(session)
+    session.commit.assert_awaited_once()
 
 
 async def test_seed_rebuild_fixture_inserts_linked_pairs(tmp_path: Path) -> None:
@@ -179,6 +238,7 @@ async def test_seed_rebuild_fixture_inserts_linked_pairs(tmp_path: Path) -> None
             rebuild_fixture,
             "purge_rebuild_fixture",
             new_callable=AsyncMock,
+            return_value=set(),
         ),
         patch.object(
             rebuild_fixture,
@@ -226,6 +286,7 @@ async def test_seed_zero_leaves_no_active_fixture_directory(
             rebuild_fixture,
             "purge_rebuild_fixture",
             new_callable=AsyncMock,
+            return_value=set(),
         ),
         patch.object(
             rebuild_fixture,

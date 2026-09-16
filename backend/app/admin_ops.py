@@ -54,11 +54,9 @@ from .models import (
 from .rebuild_fixture import (
     FIXTURE_ARCHIVE_LOCK_FILENAME as REBUILD_FIXTURE_ARCHIVE_LOCK_FILENAME,
     FIXTURE_DIRNAME as REBUILD_FIXTURE_DIRNAME,
-    FIXTURE_PREFIX as REBUILD_FIXTURE_PREFIX,
-    IMAGE_ID_BASE as REBUILD_FIXTURE_IMAGE_ID_BASE,
-    SOURCE_IMAGE_ID_BASE as REBUILD_FIXTURE_SOURCE_ID_BASE,
-    acquire_rebuild_fixture_archive_lock,
     release_rebuild_fixture_archive_lock,
+    select_rebuild_fixture_rows,
+    try_acquire_rebuild_fixture_archive_lock,
 )
 from .rebuild_locks import (
     acquire_rebuild_creation_lock,
@@ -1054,12 +1052,7 @@ async def run_db_export(task_id: int) -> None:
             # Images
             await _update_task(session, task, log_line="Exporting images…", progress=40, check_cancelled=True)
             result = await session.execute(select(Image).order_by(Image.id))
-            images = [
-                image
-                for image in result.scalars().all()
-                if image.id < REBUILD_FIXTURE_IMAGE_ID_BASE
-                and not (image.name or "").startswith(REBUILD_FIXTURE_PREFIX)
-            ]
+            all_images = list(result.scalars().all())
 
             # Users
             await _update_task(session, task, log_line="Exporting users…", progress=55, check_cancelled=True)
@@ -1069,13 +1062,24 @@ async def run_db_export(task_id: int) -> None:
             # Source images
             await _update_task(session, task, log_line="Exporting source images…", progress=65, check_cancelled=True)
             result = await session.execute(select(SourceImage).order_by(SourceImage.id))
+            all_source_images = list(result.scalars().all())
+            fixture_images, fixture_source_images = select_rebuild_fixture_rows(
+                all_images,
+                all_source_images,
+            )
+            fixture_image_ids = {image.id for image in fixture_images}
+            images = [
+                image
+                for image in all_images
+                if image.id not in fixture_image_ids
+            ]
+            fixture_source_ids = {
+                source.id for source in fixture_source_images
+            }
             source_images = [
                 source
-                for source in result.scalars().all()
-                if source.id < REBUILD_FIXTURE_SOURCE_ID_BASE
-                and not (source.original_filename or "").startswith(
-                    REBUILD_FIXTURE_PREFIX
-                )
+                for source in all_source_images
+                if source.id not in fixture_source_ids
             ]
 
             # Changelog entries
@@ -2420,9 +2424,21 @@ async def run_files_export(task_id: int) -> None:
                 raise ValueError("Data directory is empty or missing — nothing to export")
 
             source_images_dir = data_dir / "source_images"
-            fixture_lock = await acquire_rebuild_fixture_archive_lock(
-                source_images_dir
-            )
+            while fixture_lock is None:
+                fixture_lock = await try_acquire_rebuild_fixture_archive_lock(
+                    source_images_dir
+                )
+                if fixture_lock is not None:
+                    break
+                await asyncio.sleep(_LOG_FLUSH_INTERVAL)
+                await session.refresh(task, attribute_names=["status"])
+                if task.status in ("cancelling", "cancelled"):
+                    raise TaskCancelled("Task cancelled by admin")
+                if task.status != "running":
+                    raise RuntimeError(
+                        "Filesystem export stopped while waiting for archive lock"
+                    )
+                await _heartbeat_task(session, task)
             if (source_images_dir / REBUILD_FIXTURE_DIRNAME).is_dir():
                 raise RuntimeError(
                     "Filesystem export is blocked while the tile-rebuild "

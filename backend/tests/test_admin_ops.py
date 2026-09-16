@@ -1047,7 +1047,21 @@ async def test_run_db_export_success(tmp_path) -> None:
             metadata_={"rebuild_fixture": True},
             created_at=now,
             updated_at=now,
-        )
+        ),
+        SimpleNamespace(
+            id=9_400_005,
+            name="TRF-study",
+            thumb="/api/tiles/812/thumbnail.jpeg",
+            tile_sources="/api/tiles/812/image.dzi",
+            category_id=None,
+            copyright=None,
+            note=None,
+            active=True,
+            sort_order=1,
+            metadata_={},
+            created_at=now,
+            updated_at=now,
+        ),
     ]
     users = [SimpleNamespace(
         id=1, name="Admin", email="admin@test.com", password_hash="hash",
@@ -1094,6 +1108,27 @@ async def test_run_db_export_success(tmp_path) -> None:
             source_checksum="fixture",
             tile_settings_hash="fixture",
             tiles_generated_at=None,
+            created_at=now,
+            updated_at=now,
+        ),
+        SimpleNamespace(
+            id=812,
+            original_filename="TRF-study.tif",
+            stored_path="/data/source_images/TRF-study.tif",
+            status="completed",
+            progress=100,
+            error_message=None,
+            name="TRF-study",
+            category_id=None,
+            copyright=None,
+            note=None,
+            active=True,
+            image_id=9_400_005,
+            uploaded_by=1,
+            file_size=2048,
+            source_checksum="real",
+            tile_settings_hash="real",
+            tiles_generated_at=now,
             created_at=now,
             updated_at=now,
         ),
@@ -1164,8 +1199,8 @@ async def test_run_db_export_success(tmp_path) -> None:
     by_id = {p["id"]: p for p in dump["programs"]}
     assert set(by_id) == {1, 2}
     assert "parent_program_id" not in by_id[1]
-    assert dump["images"] == []
-    assert [source["id"] for source in dump["source_images"]] == [1]
+    assert [image["id"] for image in dump["images"]] == [9_400_005]
+    assert [source["id"] for source in dump["source_images"]] == [1, 812]
     assert dump["source_images"][0]["uploaded_by"] == 1
     assert dump["changelog_entries"] == [
         {
@@ -1613,15 +1648,32 @@ async def test_run_files_export_blocks_rebuild_fixture(tmp_path) -> None:
     )
     mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
+    lock_handle = MagicMock()
     with (
         patch("app.admin_ops.get_async_session", return_value=mock_session_factory),
         patch("app.admin_ops.settings") as mock_settings,
+        patch(
+            "app.admin_ops.try_acquire_rebuild_fixture_archive_lock",
+            AsyncMock(side_effect=[None, lock_handle]),
+        ) as try_lock,
+        patch(
+            "app.admin_ops.release_rebuild_fixture_archive_lock",
+            new_callable=AsyncMock,
+        ) as release_lock,
+        patch("app.admin_ops.asyncio.sleep", new_callable=AsyncMock),
+        patch(
+            "app.admin_ops._heartbeat_task",
+            new_callable=AsyncMock,
+        ) as heartbeat,
     ):
         mock_settings.tiles_dir = str(data_dir / "tiles")
         await run_files_export(1)
 
     assert task.status == "failed"
     assert "scale fixture is active" in (task.error_message or "")
+    assert try_lock.await_count == 2
+    heartbeat.assert_awaited_once_with(mock_session, task)
+    release_lock.assert_awaited_once_with(lock_handle)
 
 
 async def test_run_files_export_success(tmp_path) -> None:
