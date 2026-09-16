@@ -224,8 +224,14 @@ vi.mock('fabric', () => {
     Object.assign(this, options)
     this.text = text
     this.set = vi.fn((values: Record<string, unknown>) => Object.assign(this, values))
+    this.isEditing = false
+    this.selectionStart = 0
+    this.selectionEnd = 0
     this.exitEditing = vi.fn(() => {
       this.isEditing = false
+    })
+    this.enterEditing = vi.fn(() => {
+      this.isEditing = true
     })
     this.controls = createObjectDefaultControls()
     installObjectGeometry(this)
@@ -1412,6 +1418,43 @@ describe('CanvasOverlay', () => {
           (o) => o._annotationType === 'rect',
         ),
       ).toBe(true)
+    })
+
+    it('restores the active text-editing session across a resize reprojection', () => {
+      renderEditMode({
+        annotations: [makeAnnotation({ id: 'txt-1', type: 'text', text: 'hello' })],
+      })
+      const canvas = fabricTestState.canvases.at(-1) as {
+        objects: Array<{
+          _annotationId?: string
+          isEditing: boolean
+          selectionStart: number
+          selectionEnd: number
+          enterEditing: Mock
+        }>
+        setActiveObject: Mock
+        getActiveObject: Mock
+      }
+      const original = canvas.objects.find((o) => o._annotationId === 'txt-1')
+      expect(original).toBeTruthy()
+      // Simulate an in-progress edit with a selection range
+      original!.isEditing = true
+      original!.selectionStart = 1
+      original!.selectionEnd = 4
+      canvas.setActiveObject(original)
+
+      act(() => {
+        resizeObserveCallback?.([], {} as ResizeObserver)
+      })
+
+      const recreated = canvas.objects.find((o) => o._annotationId === 'txt-1')
+      expect(recreated).toBeTruthy()
+      expect(recreated).not.toBe(original)
+      expect(recreated!.enterEditing).toHaveBeenCalled()
+      expect(recreated!.isEditing).toBe(true)
+      expect(recreated!.selectionStart).toBe(1)
+      expect(recreated!.selectionEnd).toBe(4)
+      expect(canvas.getActiveObject()).toBe(recreated)
     })
   })
 

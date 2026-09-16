@@ -1332,11 +1332,16 @@ export default function CanvasOverlay({
   useEffect(() => {
     if (!editMode) return
     let draft: CanvasAnnotation[] | null = null
+    // In-progress text edit captured before collectAnnotations commits it, so
+    // the session can be restored on the recreated object.
+    let editingState: { id: string; start?: number; end?: number } | null = null
     let raf = 0
     const reproject = () => {
       const fc = fabricCanvasRef.current
       const annotations = draft
+      const editing = editingState
       draft = null
+      editingState = null
       if (!fc || !viewer.viewport || !annotations) return
       const container = viewer.container
       fc.setDimensions({ width: container.clientWidth, height: container.clientHeight })
@@ -1353,6 +1358,20 @@ export default function CanvasOverlay({
             transparentCorners: false,
           })
           fc.add(obj)
+        }
+      }
+      if (editing) {
+        const target = fc
+          .getObjects()
+          .find(
+            (o): o is fabric.IText =>
+              o instanceof fabric.IText && (o as AnnotatedObject)._annotationId === editing.id,
+          )
+        if (target) {
+          fc.setActiveObject(target)
+          target.enterEditing()
+          if (editing.start != null) target.selectionStart = editing.start
+          if (editing.end != null) target.selectionEnd = editing.end
         }
       }
       refreshBoundingGuides(fc)
@@ -1377,6 +1396,20 @@ export default function CanvasOverlay({
         isDrawingRef.current = false
         drawStartRef.current = null
         drawObjRef.current = null
+      }
+      // Capture the active text-editing session before collectAnnotations
+      // commits it — reproject() restores it on the recreated object.
+      editingState = null
+      const active = fc.getActiveObject()
+      if (active instanceof fabric.IText && active.isEditing) {
+        const editingId = (active as AnnotatedObject)._annotationId
+        if (editingId) {
+          editingState = {
+            id: editingId,
+            start: active.selectionStart,
+            end: active.selectionEnd,
+          }
+        }
       }
       draft = collectAnnotations()
       cancelAnimationFrame(raf)
