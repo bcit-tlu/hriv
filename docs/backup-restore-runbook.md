@@ -160,6 +160,14 @@ linked source image and adds a large fixture population. Run it only on
 `latest` (or another non-production environment) inside a change window, with
 the serial rebuild path verified healthy first.
 
+The fixture is deliberately excluded from recoverable artifacts. Admin JSON
+exports omit its reserved rows; admin filesystem exports and the backup service
+fail closed before creating an archive while
+`source_images/rebuild-fixture/` exists. Confirm no
+backup is already running before seeding; backup attempts during the rehearsal
+will fail with `backup.rebuild_fixture_blocked` and must not be treated as
+recovery points.
+
 ### Prepare the population
 
 1. Record the real linked-source count — these provide the real libvips
@@ -267,4 +275,6 @@ kubectl -n hriv exec deploy/hriv-backend -- \
 This removes all `TRF-`/`rebuild-fixture` rows, source files, generated tile
 trees, abandoned fixture rebuild temporary trees, and retained `.old-*` trees. Fixture filesystem work
 runs off the CLI event loop so thousands of small files do not block database
-or cancellation progress.
+or cancellation progress. Trigger or wait for the next scheduled backup after
+purge and confirm it succeeds; do not retain or use any failed backup attempt
+from the fixture window.

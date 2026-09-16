@@ -67,6 +67,12 @@ JobMetadata: TypeAlias = dict[str, JSONValue]
 _PENDING_CALLBACKS_KEY = "tile_rebuild_pending_callbacks"
 
 
+def _current_nested_transaction(session: object) -> object | None:
+    getter = getattr(session, "get_nested_transaction", None)
+    transaction = getter() if callable(getter) else None
+    return getattr(transaction, "sync_transaction", transaction)
+
+
 def _defer_after_commit(
     session: object,
     callback: Callable[[], None],
@@ -76,7 +82,9 @@ def _defer_after_commit(
     if not isinstance(pending, dict):
         callback()
         return
-    pending.setdefault(_PENDING_CALLBACKS_KEY, []).append(callback)
+    pending.setdefault(_PENDING_CALLBACKS_KEY, []).append(
+        (_current_nested_transaction(session), callback)
+    )
 
 
 def emit_pending_callbacks(session: object) -> None:
@@ -84,32 +92,41 @@ def emit_pending_callbacks(session: object) -> None:
     pending = getattr(session, "info", None)
     if not isinstance(pending, dict):
         return
-    for callback in pending.pop(_PENDING_CALLBACKS_KEY, []):
+    for _transaction, callback in pending.pop(_PENDING_CALLBACKS_KEY, []):
         callback()
 
 
-def _discard_pending_callbacks(session: object) -> None:
+def _discard_pending_callbacks(
+    session: object,
+    transaction: object | None = None,
+) -> None:
     pending = getattr(session, "info", None)
-    if isinstance(pending, dict):
+    if not isinstance(pending, dict):
+        return
+    if transaction is None:
         pending.pop(_PENDING_CALLBACKS_KEY, None)
+        return
+    callbacks = pending.get(_PENDING_CALLBACKS_KEY, [])
+    pending[_PENDING_CALLBACKS_KEY] = [
+        entry for entry in callbacks if entry[0] is not transaction
+    ]
 
 
 @event.listens_for(Session, "after_commit")
 def _emit_callbacks_after_commit(session: Session) -> None:
-    emit_pending_callbacks(session)
-
-
-@event.listens_for(Session, "after_rollback")
-def _discard_callbacks_after_rollback(session: Session) -> None:
-    _discard_pending_callbacks(session)
+    if not session.in_nested_transaction():
+        emit_pending_callbacks(session)
 
 
 @event.listens_for(Session, "after_soft_rollback")
 def _discard_callbacks_after_soft_rollback(
     session: Session,
-    _previous_transaction: object,
+    previous_transaction: object,
 ) -> None:
-    _discard_pending_callbacks(session)
+    if getattr(previous_transaction, "nested", False):
+        _discard_pending_callbacks(session, previous_transaction)
+    else:
+        _discard_pending_callbacks(session)
 
 
 def _defer_info_event(
@@ -943,10 +960,6 @@ async def claim_tile_rebuild_window(
     for item in claimed:
         if item.claim_token is None:
             raise RuntimeError(f"Claimed item {item.id} has no claim token")
-        item.metadata_ = {
-            **(item.metadata_ or {}),
-            "claimed_at": current.isoformat(),
-        }
         item.arq_job_id = tile_rebuild_arq_job_id(
             job_id,
             item.id,
@@ -962,6 +975,12 @@ async def claim_tile_rebuild_window(
             )
         )
     await _refresh_tile_rebuild_job(session, job_id)
+    claimed_at = datetime.now(timezone.utc).isoformat()
+    for item in claimed:
+        item.metadata_ = {
+            **(item.metadata_ or {}),
+            "claimed_at": claimed_at,
+        }
     await session.flush()
     return dispatches, True
 
@@ -978,7 +997,6 @@ async def pump_tile_rebuild_job(
                 job_id,
             )
             await session.commit()
-            emit_pending_callbacks(session)
     except Exception:
         tile_rebuild_metrics.record_pump_run("failed")
         raise
@@ -1068,7 +1086,6 @@ async def _submit_claimed_rebuild(
                 dispatch_error = TileRebuildDispatchError()
             if queued:
                 await session.commit()
-                emit_pending_callbacks(session)
                 return "submitted"
         elif job.status != "cancelling":
             await session.rollback()
@@ -1088,7 +1105,6 @@ async def _submit_claimed_rebuild(
         )
         await _refresh_tile_rebuild_job(session, dispatch.job_id)
         await session.commit()
-        emit_pending_callbacks(session)
         return "released"
 
 
@@ -1109,7 +1125,6 @@ async def _reserve_rebuild_source(
             if finalized:
                 await _refresh_tile_rebuild_job(session, job_id)
             await session.commit()
-            emit_pending_callbacks(session)
             if finalized:
                 tile_rebuild_metrics.record_item_terminal("cancelled")
             return ReservedRebuild(outcome="cancelled")
@@ -1185,7 +1200,6 @@ async def _reserve_rebuild_source(
             if finalized:
                 await _refresh_tile_rebuild_job(session, job_id)
             await session.commit()
-            emit_pending_callbacks(session)
             if queue_wait_seconds is not None:
                 tile_rebuild_metrics.record_queue_wait(queue_wait_seconds)
             if finalized:
@@ -1208,7 +1222,6 @@ async def _reserve_rebuild_source(
             lease_seconds=lease_seconds,
         )
         await session.commit()
-        emit_pending_callbacks(session)
         if queue_wait_seconds is not None:
             tile_rebuild_metrics.record_queue_wait(queue_wait_seconds)
         logger.info(
@@ -1262,7 +1275,6 @@ async def _finalize_rebuild_failure(
         )
         await _refresh_tile_rebuild_job(session, job_id)
         await session.commit()
-        emit_pending_callbacks(session)
 
 
 async def _heartbeat_rebuild_item(
@@ -1346,7 +1358,6 @@ async def _process_reserved_tile_rebuild(
                 if finalized:
                     await _refresh_tile_rebuild_job(session, job_id)
                 await session.commit()
-                emit_pending_callbacks(session)
                 if finalized:
                     tile_rebuild_metrics.record_item_terminal(
                         "cancelled",
@@ -1375,7 +1386,6 @@ async def _process_reserved_tile_rebuild(
                 if finalized:
                     await _refresh_tile_rebuild_job(session, job_id)
                 await session.commit()
-                emit_pending_callbacks(session)
                 if finalized:
                     tile_rebuild_metrics.record_item_terminal(
                         "skipped",
@@ -1405,7 +1415,6 @@ async def _process_reserved_tile_rebuild(
             except Exception:
                 await session.rollback()
                 raise
-            emit_pending_callbacks(session)
             committed = True
             tile_rebuild_metrics.record_item_terminal(
                 "completed",

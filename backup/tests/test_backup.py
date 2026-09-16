@@ -1083,6 +1083,40 @@ class BackupRunTestCase(_BackupTestCase):
         (self.data_dir / "tiles").mkdir()
         (self.data_dir / "tiles" / "img.dzi").write_bytes(b"tiles")
 
+    def test_rebuild_fixture_detection_supports_both_mount_layouts(self):
+        self._reload({"DATA_DIR": str(self.data_dir)})
+        for relative_path in (
+            "rebuild-fixture",
+            "source_images/rebuild-fixture",
+        ):
+            with self.subTest(relative_path=relative_path):
+                fixture_dir = self.data_dir / relative_path
+                fixture_dir.mkdir(parents=True)
+                self.assertTrue(backup._rebuild_fixture_present())
+                fixture_dir.rmdir()
+
+    def test_backup_is_blocked_while_rebuild_fixture_is_active(self):
+        fixture_dir = self.data_dir / "rebuild-fixture"
+        fixture_dir.mkdir()
+        local_dir = self.tmp / "blocked-backups"
+        local_dir.mkdir()
+        self._reload(
+            {"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)}
+        )
+
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=local_dir),
+            patch.object(backup, "_run_backup_inner") as run_inner,
+            self.assertLogs("hriv-backup", level="ERROR") as captured_logs,
+        ):
+            self.assertIsNone(backup.run_backup())
+
+        run_inner.assert_not_called()
+        self.assertEqual(list(local_dir.glob("*.tar.gz")), [])
+        self.assertTrue(
+            any("scale fixture is active" in line for line in captured_logs.output)
+        )
+
     def test_local_publication_state_or_marker_failure_restores_prior_documents(self):
         for failure in ("state", "marker"):
             with self.subTest(failure=failure):

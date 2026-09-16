@@ -356,8 +356,9 @@ Rules:
   values from `hriv.tile_rebuild.items.completed` and
   `hriv.tile_rebuild.item.duration`, not dedicated instruments.
 - Terminal metrics and durable state-transition events are emitted only after
-  the owning transaction commits. SQLAlchemy commit/rollback hooks drain or
-  discard queued callbacks so a reused session cannot emit rolled-back signal.
+  the owning transaction commits. SQLAlchemy transaction hooks emit callbacks
+  only on the outer commit, discard all callbacks on an outer rollback, and
+  remove only savepoint-scoped callbacks on a nested rollback.
 
 ## Privacy, Access, and Retention
 

@@ -565,6 +565,11 @@ async def test_claim_window_uses_database_running_count(
     reclaim = AsyncMock(return_value=0)
     claim = AsyncMock(return_value=claimed)
     aggregate = AsyncMock()
+    recovery_now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    claimed_now = recovery_now + timedelta(seconds=12)
+    clock = MagicMock()
+    clock.now.side_effect = [recovery_now, claimed_now]
+    monkeypatch.setattr(tile_rebuild_jobs, "datetime", clock)
     monkeypatch.setattr(
         "app.tile_rebuild_jobs.try_acquire_rebuild_pump_lock",
         lock,
@@ -594,7 +599,8 @@ async def test_claim_window_uses_database_running_count(
     ]
     assert claimed[0].arq_job_id == "rebuild:7:11:2"
     claimed_at = claimed[0].metadata_["claimed_at"]
-    assert isinstance(claimed_at, str)
+    assert claimed_at == claimed_now.isoformat()
+    assert claimed_at != recovery_now.isoformat()
     # claimed_at drives the queue-wait histogram; existing metadata keys
     # (image_id, stored_path) must be preserved.
     assert claimed[0].metadata_["image_id"] == 201
@@ -1881,6 +1887,24 @@ def test_session_rollback_discards_deferred_callbacks() -> None:
     session.commit()
 
     assert calls == []
+
+
+def test_nested_rollback_preserves_outer_callbacks() -> None:
+    calls: list[str] = []
+    session = tile_rebuild_jobs.Session()
+    session.begin()
+    tile_rebuild_jobs._defer_after_commit(
+        session, lambda: calls.append("outer")
+    )
+    nested = session.begin_nested()
+    tile_rebuild_jobs._defer_after_commit(
+        session, lambda: calls.append("nested")
+    )
+
+    nested.rollback()
+    session.commit()
+
+    assert calls == ["outer"]
 
 
 def test_info_event_waits_for_commit(monkeypatch: pytest.MonkeyPatch) -> None:

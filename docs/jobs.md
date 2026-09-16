@@ -169,7 +169,8 @@ jobs, determine when retry work is claimable.
 
 Two small metadata timestamps drive the latency measurements below:
 
-- `job_items.metadata.claimed_at` — set when a claim commits (per attempt);
+- `job_items.metadata.claimed_at` — stamped after claim/recovery and aggregate
+  database work, immediately before the claim transaction flushes and commits;
   the difference to execution reservation is the queue-wait histogram.
 - `jobs.metadata.cancel_requested_at` — set when a cancellation request first
   moves the supervisor to `cancelling`; the difference to the terminal

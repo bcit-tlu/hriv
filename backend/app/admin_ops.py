@@ -51,6 +51,12 @@ from .models import (
     SourceImage,
     User,
 )
+from .rebuild_fixture import (
+    FIXTURE_DIRNAME as REBUILD_FIXTURE_DIRNAME,
+    FIXTURE_PREFIX as REBUILD_FIXTURE_PREFIX,
+    IMAGE_ID_BASE as REBUILD_FIXTURE_IMAGE_ID_BASE,
+    SOURCE_IMAGE_ID_BASE as REBUILD_FIXTURE_SOURCE_ID_BASE,
+)
 from .rebuild_locks import (
     acquire_rebuild_creation_lock,
     find_active_rebuild,
@@ -1045,7 +1051,12 @@ async def run_db_export(task_id: int) -> None:
             # Images
             await _update_task(session, task, log_line="Exporting images…", progress=40, check_cancelled=True)
             result = await session.execute(select(Image).order_by(Image.id))
-            images = result.scalars().all()
+            images = [
+                image
+                for image in result.scalars().all()
+                if image.id < REBUILD_FIXTURE_IMAGE_ID_BASE
+                and not (image.name or "").startswith(REBUILD_FIXTURE_PREFIX)
+            ]
 
             # Users
             await _update_task(session, task, log_line="Exporting users…", progress=55, check_cancelled=True)
@@ -1055,7 +1066,14 @@ async def run_db_export(task_id: int) -> None:
             # Source images
             await _update_task(session, task, log_line="Exporting source images…", progress=65, check_cancelled=True)
             result = await session.execute(select(SourceImage).order_by(SourceImage.id))
-            source_images = result.scalars().all()
+            source_images = [
+                source
+                for source in result.scalars().all()
+                if source.id < REBUILD_FIXTURE_SOURCE_ID_BASE
+                and not (source.original_filename or "").startswith(
+                    REBUILD_FIXTURE_PREFIX
+                )
+            ]
 
             # Changelog entries
             await _update_task(session, task, log_line="Exporting changelog entries…", progress=70, check_cancelled=True)
@@ -2396,6 +2414,13 @@ async def run_files_export(task_id: int) -> None:
 
             if not data_dir.exists() or not any(data_dir.iterdir()):
                 raise ValueError("Data directory is empty or missing — nothing to export")
+            if (
+                data_dir / "source_images" / REBUILD_FIXTURE_DIRNAME
+            ).is_dir():
+                raise RuntimeError(
+                    "Filesystem export is blocked while the tile-rebuild "
+                    "scale fixture is active"
+                )
 
             await _update_task(
                 session, task, progress=10,

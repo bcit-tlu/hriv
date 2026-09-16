@@ -2774,6 +2774,13 @@ def _run_backup_inner() -> Path | None:
         return Path(archive_key) if not _azure_configured() else Path(archive_name)
 
 
+def _rebuild_fixture_present() -> bool:
+    data_dir = Path(DATA_DIR)
+    return (data_dir / "rebuild-fixture").is_dir() or (
+        data_dir / "source_images" / "rebuild-fixture"
+    ).is_dir()
+
+
 def run_backup() -> Path | None:
     """Run one backup while excluding overlapping scheduled or on-demand calls."""
     with _run_lock() as locked:
@@ -2800,6 +2807,12 @@ def run_backup() -> Path | None:
             log.warning(
                 "Overlap rejection was appended without changing active publication ownership",
                 extra={"event": "backup.overlap_rejected", "run_id": state["run_id"]},
+            )
+            return None
+        if _rebuild_fixture_present():
+            log.error(
+                "Backup blocked while the tile-rebuild scale fixture is active",
+                extra={"event": "backup.rebuild_fixture_blocked"},
             )
             return None
         _reconcile_publications(lock_held=True)

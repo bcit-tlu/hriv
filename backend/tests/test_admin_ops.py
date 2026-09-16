@@ -1033,7 +1033,22 @@ async def test_run_db_export_success(tmp_path) -> None:
         ),
     ]
     categories = []
-    images = []
+    images = [
+        SimpleNamespace(
+            id=9_400_000,
+            name="TRF-Image-00000",
+            thumb="/api/tiles/9300000/thumbnail.jpeg",
+            tile_sources="/api/tiles/9300000/image.dzi",
+            category_id=None,
+            copyright=None,
+            note=None,
+            active=True,
+            sort_order=0,
+            metadata_={"rebuild_fixture": True},
+            created_at=now,
+            updated_at=now,
+        )
+    ]
     users = [SimpleNamespace(
         id=1, name="Admin", email="admin@test.com", password_hash="hash",
         oidc_subject=None, role="admin", active=False, programs=[], last_access=None,
@@ -1060,7 +1075,28 @@ async def test_run_db_export_success(tmp_path) -> None:
             tiles_generated_at=None,
             created_at=now,
             updated_at=now,
-        )
+        ),
+        SimpleNamespace(
+            id=9_300_000,
+            original_filename="TRF-00000.tif",
+            stored_path="/data/source_images/rebuild-fixture/TRF-00000.tif",
+            status="completed",
+            progress=100,
+            error_message=None,
+            name="TRF-Image-00000",
+            category_id=None,
+            copyright=None,
+            note=None,
+            active=True,
+            image_id=9_400_000,
+            uploaded_by=None,
+            file_size=1024,
+            source_checksum="fixture",
+            tile_settings_hash="fixture",
+            tiles_generated_at=None,
+            created_at=now,
+            updated_at=now,
+        ),
     ]
     changelog_entries = [
         SimpleNamespace(
@@ -1128,6 +1164,8 @@ async def test_run_db_export_success(tmp_path) -> None:
     by_id = {p["id"]: p for p in dump["programs"]}
     assert set(by_id) == {1, 2}
     assert "parent_program_id" not in by_id[1]
+    assert dump["images"] == []
+    assert [source["id"] for source in dump["source_images"]] == [1]
     assert dump["source_images"][0]["uploaded_by"] == 1
     assert dump["changelog_entries"] == [
         {
@@ -1556,6 +1594,34 @@ async def test_run_files_export_empty_data_dir(tmp_path) -> None:
 
     assert task.status == "failed"
     assert "empty or missing" in (task.error_message or "")
+
+
+async def test_run_files_export_blocks_rebuild_fixture(tmp_path) -> None:
+    data_dir = tmp_path / "data"
+    fixture_dir = data_dir / "source_images" / "rebuild-fixture"
+    fixture_dir.mkdir(parents=True)
+    task = SimpleNamespace(
+        id=1, task_type="files_export", status="pending", progress=0, log="",
+        result_filename=None, result_path=None, input_path=None, error_message=None,
+    )
+    mock_session = AsyncMock()
+    mock_session.get = AsyncMock(return_value=task)
+    mock_session.commit = AsyncMock()
+    mock_session_factory = MagicMock()
+    mock_session_factory.return_value.__aenter__ = AsyncMock(
+        return_value=mock_session
+    )
+    mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=mock_session_factory),
+        patch("app.admin_ops.settings") as mock_settings,
+    ):
+        mock_settings.tiles_dir = str(data_dir / "tiles")
+        await run_files_export(1)
+
+    assert task.status == "failed"
+    assert "scale fixture is active" in (task.error_message or "")
 
 
 async def test_run_files_export_success(tmp_path) -> None:

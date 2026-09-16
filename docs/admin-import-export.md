@@ -404,7 +404,9 @@ PostgreSQL-derived `hriv_tile_rebuild_jobs_active`,
 gauges. For a production-shaped scale rehearsal, `python -m
 app.rebuild_fixture --count N` seeds deterministic `TRF-` linked sources
 backed by tiny valid TIFFs (`--purge` removes their rows, source files, generated
-tiles, and rebuild temporary trees); the full procedure and
+tiles, and rebuild temporary trees). Database JSON exports omit these fixture
+rows, while filesystem exports and scheduled backups fail closed while the
+fixture directory exists; the full procedure and
 measurement record live in
 [backup-restore-runbook.md](backup-restore-runbook.md#tile-rebuild-scale-rehearsal-opt-in-issue-1189).
 

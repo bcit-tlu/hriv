@@ -88,7 +88,9 @@ rebuilds` section polls `GET /api/jobs/` every 2 s only while a rebuild job
   fallback. Durable rebuilds emit the `hriv.tile_rebuild.*` metrics and
   `rebuild.*` log events documented in `../../../docs/jobs.md`; the
   deterministic scale seeder is `python -m app.rebuild_fixture --count N`
-  (`--purge` to remove). See `../../../docs/jobs.md` and
+  (`--purge` to remove). Admin JSON exports omit its rows, and filesystem
+  exports/backups fail closed while its source directory exists. See
+  `../../../docs/jobs.md` and
   `../../../docs/backup-restore-runbook.md`.
 
 ## Validation
