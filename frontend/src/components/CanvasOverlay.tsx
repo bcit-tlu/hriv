@@ -400,12 +400,16 @@ export default function CanvasOverlay({
   // enters/exits full-page mode, and re-clamp the toolbar to the new bounds
   // once the element has been reparented and resized.
   useEffect(() => {
+    let timer = 0
     const handleFullPage = () => {
       closeTransientUi()
-      window.setTimeout(reclampToolbar, 0)
+      timer = window.setTimeout(reclampToolbar, 0)
     }
     viewer.addHandler('full-page', handleFullPage)
-    return () => viewer.removeHandler('full-page', handleFullPage)
+    return () => {
+      window.clearTimeout(timer)
+      viewer.removeHandler('full-page', handleFullPage)
+    }
   }, [viewer, closeTransientUi, reclampToolbar])
 
   const refreshBoundingGuides = useCallback(
@@ -1391,6 +1395,9 @@ export default function CanvasOverlay({
       }
       const fc = fabricCanvasRef.current
       if (!fc || !viewer.viewport) return
+      // A resize changes the canvas pixel space mid-gesture and the shape's
+      // remaining geometry depends on live pointer deltas from the old anchor,
+      // so it can't be reprojected — cancel the draw like Escape does.
       if (isDrawingRef.current && drawObjRef.current) {
         fc.remove(drawObjRef.current)
         isDrawingRef.current = false
