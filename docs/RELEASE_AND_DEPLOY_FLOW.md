@@ -6,10 +6,13 @@ between this repo and your downstream FluxCD repository (for example, `bcit-tlu/
 
 A fourth Release Please component, `synthetic-monitoring`, follows the same
 image-release contract (RC images on `main`, `<component>-v<ver>` tags, digest
-retag to `<ver>`/`latest`) but is **image-only — it has no Helm chart** and is
-therefore not deployed by flux-fleet. Its `helm-publish.yaml` dispatch is
-skipped in `release-please.yaml`, and it is absent from the `helm-publish.yaml`
-and `ci.yaml` chart-publish loops. See
+retag to `<ver>`/`latest`) but is **image-only — it has no Helm chart**, so its
+`helm-publish.yaml` dispatch is skipped in `release-please.yaml` and it is
+absent from the `helm-publish.yaml` and `ci.yaml` chart-publish loops.
+Flux-fleet still deploys it, as a raw CronJob manifest rather than a chart:
+`apps/base/hriv/synthetic-monitoring/`, with the stable overlay pinned to a
+released semver (`synthetic-monitoring-pin.yaml`) that must be bumped when a
+`synthetic-monitoring-vX.Y.Z` release ships. See
 [synthetic-monitoring.md](synthetic-monitoring.md).
 
 ## At a glance
