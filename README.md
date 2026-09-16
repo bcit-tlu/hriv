@@ -127,6 +127,7 @@ reconciliation model for both environments.
 | [docs/reorder-fixture.md](docs/reorder-fixture.md)                                   | Production-scale reorder fixture and regression scaffolding (epic #975)          |
 | [docs/reorder-telemetry.md](docs/reorder-telemetry.md)                               | Reorder operation correlation, timing, and diagnostic telemetry (epic #975)      |
 | [docs/tile-ordering.md](docs/tile-ordering.md)                                       | Atomic, revisioned tile-order API and ordering normalization (epic #975)         |
+| [frontend/guide/](frontend/guide/)                                                   | Instructor/admin user guide (Markdown rendered in-app at `?page=guide`)          |
 | [docs/browse-state.md](docs/browse-state.md)                                         | Monotonic browse revision and `GET /categories/tree` `304` short-circuit (#1066) |
 | [docs/reorder-performance.md](docs/reorder-performance.md)                           | Browse drag-and-drop profiling results and optimization record (epic #975)       |
 | [docs/image-metadata-and-versioning.md](docs/image-metadata-and-versioning.md)       | Image metadata, versioning, and optimistic concurrency control                   |

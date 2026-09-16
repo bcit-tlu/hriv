@@ -1,0 +1,52 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as RebuildJobsPanelStories from './RebuildJobsPanel.stories'
+
+<Meta of={RebuildJobsPanelStories} />
+
+<Title />
+
+<Subtitle>
+  Admin-page section listing durable parallel tile-rebuild jobs with status, progress, and operator
+  controls.
+</Subtitle>
+
+## When to use
+
+`RebuildJobsPanel` renders the `Parallel tile rebuilds` section of the Admin page
+Backups tab. It receives rebuild jobs, the parallel-rebuild capability, and
+mutation callbacks from `AdminPage`, and owns only its failed-item expansion and
+lazy pagination state.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={RebuildJobsPanelStories.Basic} />
+
+## Guidance
+
+- Each job shows a status chip, a determinate progress bar, and a six-count
+  summary (queued / running / completed / skipped / failed / cancelled).
+- `Cancel` renders only for `queued` and `running` jobs; `Retry N failed`
+  renders when failures exist and the job is not `cancelling`, `cancelled`, or
+  `completed`.
+- Failed items are fetched lazily on expand, one bounded page at a time; a
+  `Load more` button appears while the keyset cursor continues.
+- `capability.enabled === false` shows the disabled notice while still listing
+  in-flight jobs; `null` (probe unknown) shows no notice.
+- Async props (`onCancelJob`, `onRetryFailedItems`, `onRetryItem`,
+  `fetchFailedItems`) are stubbed in stories, so Controls on `Basic` only cover
+  the data props. Retry callbacks resolve `true` on success so the panel knows
+  when to drop stale failed-items state.
+
+## Stories
+
+<Stories includePrimary={false} />

@@ -116,6 +116,13 @@ import {
   fetchAdminTasks,
   fetchAdminTask,
   cancelAdminTask,
+  listJobs,
+  fetchRebuildTilesCapability,
+  startParallelRebuildTiles,
+  fetchJobItems,
+  cancelJob,
+  retryJobItem,
+  retryFailedJobItems,
   uploadSourceImage,
   bulkImportImages,
   replaceImage,
@@ -2100,5 +2107,89 @@ describe('Upload status API', () => {
     expect(url).toBe('/api/admin/tasks/3/upload/finalize')
     expect(init.method).toBe('POST')
     expect(JSON.parse(init.body)).toEqual({ total_bytes: 4096 })
+  })
+})
+
+// ── Durable jobs API (#1191) ─────────────────────────────────────────────
+
+describe('Durable jobs API', () => {
+  beforeEach(() => {
+    mockFetch.mockReset()
+    setToken('jwt')
+  })
+  afterEach(() => setToken(null))
+
+  it('listJobs sends GET to /jobs/', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse([]))
+    await listJobs()
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/jobs/')
+  })
+
+  it('fetchRebuildTilesCapability sends GET to /jobs/rebuild-tiles', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse({ enabled: true, parallelism: 2 }))
+    const result = await fetchRebuildTilesCapability()
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/jobs/rebuild-tiles')
+    expect(result).toEqual({ enabled: true, parallelism: 2 })
+  })
+
+  it('startParallelRebuildTiles POSTs the rebuild request body', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse({ id: 5, status: 'queued' }))
+    await startParallelRebuildTiles({ scope: 'selected', image_ids: [3] })
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/jobs/rebuild-tiles')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body)).toEqual({ scope: 'selected', image_ids: [3] })
+  })
+
+  it('startParallelRebuildTiles defaults to the missing_stale scope', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse({ id: 5, status: 'queued' }))
+    await startParallelRebuildTiles()
+    const [, init] = mockFetch.mock.calls[0]
+    expect(JSON.parse(init.body)).toEqual({ scope: 'missing_stale' })
+  })
+
+  it('fetchJobItems builds the keyset query string', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse({ items: [], next_after_id: null }))
+    await fetchJobItems(5, { status: 'failed', afterId: 42, limit: 50 })
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/jobs/5/items?status=failed&after_id=42&limit=50')
+  })
+
+  it('fetchJobItems omits optional params on the first page', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse({ items: [], next_after_id: 7 }))
+    await fetchJobItems(5, { status: 'failed' })
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/jobs/5/items?status=failed')
+  })
+
+  it('cancelJob POSTs to /jobs/:id/cancel', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse({ id: 5, status: 'cancelling' }))
+    await cancelJob(5)
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/jobs/5/cancel')
+    expect(init.method).toBe('POST')
+  })
+
+  it('retryJobItem POSTs to the nested item retry route', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse({ requeued_count: 1, job: { id: 5 } }))
+    const result = await retryJobItem(5, 11)
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/jobs/5/items/11/retry')
+    expect(init.method).toBe('POST')
+    expect(result.requeued_count).toBe(1)
+  })
+
+  it('retryFailedJobItems POSTs to /jobs/:id/retry-failed', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse({ requeued_count: 250, job: { id: 5 } }))
+    const result = await retryFailedJobItems(5)
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/jobs/5/retry-failed')
+    expect(init.method).toBe('POST')
+    expect(result.requeued_count).toBe(250)
+  })
+
+  it('surfaces 409 conflicts as ApiError', async () => {
+    mockFetch.mockReturnValueOnce(errorResponse(409, 'Parallel tile rebuilds are disabled'))
+    await expect(startParallelRebuildTiles()).rejects.toMatchObject({
+      status: 409,
+    })
   })
 })

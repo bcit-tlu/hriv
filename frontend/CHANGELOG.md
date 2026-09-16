@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.56.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.55.0...frontend-v0.56.0) (2026-09-15)
+
+
+### Features
+
+* add browse-tree 304 metrics and dev re-render counts ([#1301](https://github.com/bcit-tlu/hriv/issues/1301)) ([ada2466](https://github.com/bcit-tlu/hriv/commit/ada24668a6f2a0f4dff989506f5005d8d149f5d9))
+
+## [0.55.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.54.0...frontend-v0.55.0) (2026-09-14)
+
+
+### Features
+
+* **frontend:** support quoted exact-phrase search ([#1299](https://github.com/bcit-tlu/hriv/issues/1299)) ([b3f990a](https://github.com/bcit-tlu/hriv/commit/b3f990a623eab1670370077a4f883e1e4dbc84cd))
+
+## [0.54.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.53.0...frontend-v0.54.0) (2026-09-14)
+
+
+### Features
+
+* emit admin tab page hits for telemetry dashboards ([#1297](https://github.com/bcit-tlu/hriv/issues/1297)) ([5163f82](https://github.com/bcit-tlu/hriv/commit/5163f827a167092f1d9e4975b2cd7764c5a45754))
+* **frontend:** add guide pages to search results with Guide chip ([#1292](https://github.com/bcit-tlu/hriv/issues/1292)) ([6e1f277](https://github.com/bcit-tlu/hriv/commit/6e1f277bb4ef120fced81d0f81ed2470c24f3ef1))
+* instrument guide page hits for telemetry dashboards ([#1294](https://github.com/bcit-tlu/hriv/issues/1294)) ([2a6ae3d](https://github.com/bcit-tlu/hriv/commit/2a6ae3d2d1e62889ba8537a9c7d93f79ba163dc3))
+
 ## [0.53.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.52.0...frontend-v0.53.0) (2026-09-11)
 
 

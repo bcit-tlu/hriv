@@ -25,6 +25,68 @@ export function logDrag(label: string, payload?: Record<string, unknown>): void 
   console.debug(`[dnd ${ts}] ${label}`, payload ?? {})
 }
 
+// ── Render / refresh counters (issue #1100) ─────────────────────────────
+// Dev-mode observability for the mid-drag rebuild gating and the browse-tree
+// 304 short-circuit. Tile renders are counted only while a drag is active
+// (the flag is set by the dragstart handler, which exists only when tracing
+// is enabled), then summarized on dragend — memoized tiles should show ~zero
+// re-renders during a drag (see frontend/tests/components/tileMemoization.test.tsx).
+const tileRenderCounts = new Map<string, number>()
+let tileRenderTracking = false
+
+/** Increment the per-drag render count for one tile. Called by `GridTile`. */
+export function recordTileRender(id: string): void {
+  if (!tileRenderTracking) return
+  tileRenderCounts.set(id, (tileRenderCounts.get(id) ?? 0) + 1)
+}
+
+function resetTileRenderCounts(): void {
+  tileRenderCounts.clear()
+  tileRenderTracking = true
+}
+
+function summarizeTileRenderCounts(): void {
+  if (!tileRenderTracking) return
+  let total = 0
+  for (const count of tileRenderCounts.values()) total += count
+  // Always emit — {0,0} is the memoization-held signal; silence would be
+  // indistinguishable from inactive instrumentation.
+  logDrag('render summary', {
+    tileRenders: total,
+    distinctTiles: tileRenderCounts.size,
+  })
+  tileRenderCounts.clear()
+  tileRenderTracking = false
+}
+
+/**
+ * Session-level outcomes for `GET /api/categories/tree` refreshes — the
+ * client-side view of the work the 304 short-circuit saves. `not_modified`
+ * means the response was a 304 and no React state was rebuilt; `applied`
+ * means a 200 payload actually changed the committed tree; `unchanged`
+ * means a 200 payload was referentially identical to committed state.
+ */
+export const browseTreeStats = {
+  polls: 0,
+  not_modified: 0,
+  applied: 0,
+  unchanged: 0,
+}
+export type BrowseTreePollOutcome = 'not_modified' | 'applied' | 'unchanged'
+
+export function recordBrowseTreePoll(outcome: BrowseTreePollOutcome): void {
+  if (!isDndTraceEnabled()) return
+  browseTreeStats.polls += 1
+  browseTreeStats[outcome] += 1
+  logDrag('browse-tree poll', { outcome, ...browseTreeStats })
+}
+
+// Console-readable handle for the feel-test operator (and ad-hoc debugging):
+// `window.__hrivBrowseStats` in the browser console prints cumulative counts.
+if (typeof window !== 'undefined') {
+  ;(window as unknown as Record<string, unknown>).__hrivBrowseStats = browseTreeStats
+}
+
 const THROTTLE_MS = 150
 
 /**
@@ -51,6 +113,7 @@ export function useDnDMonitor(enabled: boolean = isDndTraceEnabled()): void {
       onDragStart: (event: DragStartEvent) => {
         lastMoveLogRef.current = 0
         lastCollisionLogRef.current = 0
+        resetTileRenderCounts()
 
         const { operation } = event
         logDrag('dragstart', {
@@ -99,6 +162,7 @@ export function useDnDMonitor(enabled: boolean = isDndTraceEnabled()): void {
           canceled: event.canceled,
           position: operation.position.current,
         })
+        summarizeTileRenderCounts()
       },
     }
   }, [enabled])

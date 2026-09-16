@@ -466,8 +466,9 @@ orchestrator or read-only selection child MUST verify:
 - missing/orphan lists and validator-derived canonical counts/digest, separately allowlisted
   exclusions, and acceptance state obey the source-state policy below;
 - CNPG provider, source cluster, WAL fence metadata, versions, and checksums are supported; and
-- `database_recovery.target_lsn` and a 24-hex-character `wal_fence_file` are present and
-  syntactically valid.
+- `database_recovery.target_lsn`, a 24-hex-character `wal_fence_file`, and a
+  supported power-of-two `wal_segment_size_bytes` are present, syntactically
+  valid, and mutually consistent.
 
 Selection also binds lowercase `source_files_sha256`, computed over canonical JSON for the exact sorted manifest source-file mapping `{path:{size,sha256}}`. Stateless restore returns the same compact binding, and consistency validation streams every restored regular file, rebuilds the mapping with `data/source_images/...` paths, and must return an exact digest match. Counts and byte totals remain independent checks. The full high-volume inventory is never copied into public machine output or durable controller state.
 
@@ -489,12 +490,18 @@ hex characters of `database_recovery.wal_fence_file` (for example, `00000007` me
 bind that parsed value, and explicitly set CNPG `recoveryTarget.targetTLI` to its decimal
 string together with `targetLSN`. It MUST reject missing, unsupported, malformed, zero, or
 inconsistent fence/timeline evidence with `WAL_FENCE_UNSUPPORTED` or `TIMELINE_MISMATCH`; it MUST
-NOT request `latest`. `target_time` remains audit evidence only.
+NOT request `latest`. Selection MUST recompute the fence WAL filename using the
+manifest's bound `wal_segment_size_bytes`, not a fixed 16-MiB assumption.
+`target_time` remains audit evidence only.
 
 For the deployed CNPG v1 CRD, `WAIT_CNPG` requires all of `Ready=True`,
 `status.phase: Cluster in healthy state`, and `readyInstances == instances == 1`; the Ready
 condition alone is not sufficient. The subsequent read-only database child remains the final proof
-that recovery completed on the bound timeline and reached the exact target LSN. Selection also
+that recovery completed and promoted to a new, unused timeline after reaching the exact target LSN.
+It MUST read the promoted timeline's local history, require its immediate `timeline_parent` to be
+`target_tli`, and require `timeline_switchpoint` to be at or beyond `target_lsn`; the promoted
+number may exceed `target_timeline + 1` when an archived descendant already exists. It reports the
+promoted `timeline`, `timeline_parent`, `timeline_switchpoint`, and bound `target_tli`. Selection also
 binds canonical UTC `capture_started_at`, uppercase `wal_fence_file`, and canonical UTC
 `wal_fence_committed_at`/`wal_fence_archived_at`. The database child MUST observe exactly one fence row at the target, require that row's dynamic
 generation to be positive, and require its timezone-aware `fenced_at` to fall inclusively between
@@ -683,6 +690,21 @@ active/inactive status; status remains canonical missing-source evidence and is 
 Each stage has a configured deadline bounded by the maximum runtime. Retryable observations use
 bounded exponential backoff with jitter. Semantic validation failures, unsupported inputs,
 overlap, authorization denial, and capacity failures are not retried within an attempt.
+
+Deadline and storage sizing are chart values so overlays scale with the source set they select.
+`childJobs.sourceRestoreDeadlineSeconds` and `childJobs.consistencyDeadlineSeconds` set the child
+Job `activeDeadlineSeconds`; the consistency deadline MUST cover rehashing the largest source set
+the profile can select, not merely the currently observed one. `controller.maxRuntimeSeconds`
+bounds the whole accepted run and is also the orchestrator Job's own active deadline, and
+`controller.stageTimeoutSeconds` bounds stage observation; an overlay restoring a larger source
+set (for example 160Gi rather than 40Gi) MUST raise all three together.
+`sourceProfile.sourceStorageClass` selects the source PVC and CNPG Cluster storage class. Both
+source-touching child Jobs carry the storage-node selector (`bcit.ca/longhorn-storage: "true"`)
+and `fsGroupChangePolicy: OnRootMismatch` so mount-time ownership checks do not re-walk the
+restored tree. The controller additionally pins the consistency Pod to the node that ran the
+source-restore Pod (`spec.nodeName`, runtime scheduling placement excluded from template
+identity), so replica-local reads are used whenever the configured storage class provides data
+locality.
 
 ### Sequence
 
@@ -1024,12 +1046,13 @@ identity, and `ObjectStore`, restores all physical databases, and targets the ex
 explicit derived timeline. The controller MUST NOT use manifest `database_name` or a
 default-generated application Secret as evidence that source database/owner recovery was correct.
 
-Database checks compare the expected system identifier and timeline/recovery evidence, complete
-database inventory, owner and static-role inventory, schema migration version, representative
-row counts and key invariants, source-image rows, selected synthetic user/category/image metadata,
-and the recovery WAL-fence boundary. Unexpected bootstrap-created databases or roles, wrong
-ownership, a target beyond/short of the requested boundary or on another timeline, or inventory
-drift fails closed.
+Database checks compare the expected system identifier and promoted-timeline/recovery evidence,
+complete database inventory, owner and static-role inventory, schema migration version,
+representative row counts and key invariants, source-image rows, selected synthetic
+user/category/image metadata, and the recovery WAL-fence boundary. Unexpected bootstrap-created
+databases or roles, wrong ownership, a target beyond/short of the requested boundary, a promoted
+timeline that is not a direct descendant of `target_timeline` or whose switchpoint precedes
+`target_lsn`, or inventory drift fails closed.
 
 The recovered production synthetic user row MUST exist and pass all DB-fidelity checks before any
 credential change. The entire recovered database MUST contain exactly one row whose
@@ -1407,8 +1430,9 @@ The deployed drill consists only of the #1251 core controller, fixed state Confi
 initially suspended weekly and suspended on-demand orchestrator CronJobs, one suspended manual-cleanup CronJob, the
 validation-local ObjectStore, fixed Envoy egress proxy, RBAC/quota, and fixed NetworkPolicies. The
 weekly schedule is unsuspended only after the latest on-demand acceptance run passes; stable remains suspended until latest evidence is reviewed. The weekly CronJob is exactly `hriv-restore-validation-weekly`, runs `0 11 * * 0` in UTC, forbids
-concurrency, has a 3600-second starting deadline, zero Job retries, `Never` restart, a 21600-second
-active deadline, two successful and one failed Job histories, and no TTL. The on-demand template is
+concurrency, has a 3600-second starting deadline, zero Job retries, `Never` restart, an
+active deadline equal to `controller.maxRuntimeSeconds` (21600 seconds in the reviewed overlays),
+two successful and one failed Job histories, and no TTL. The on-demand template is
 `hriv-restore-validation-on-demand`; its standalone Job template sets native
 `ttlSecondsAfterFinished: 604800` (seven days), as does the standalone cleanup Job template. This is
 native evidence cleanup, not an application reaper. Operators MUST preserve/download Job and Pod logs
@@ -1471,19 +1495,26 @@ Azure-reading selection/source-restore/CNPG workloads use only `HTTPS_PROXY` poi
 `.svc,.cluster.local,10.43.0.1,localhost,127.0.0.1`. Database/consistency/controller containers do
 not receive an internet proxy. Default deny remains. DNS is selector-limited to CoreDNS;
 orchestrator/cleanup may reach only API `10.43.0.1/32:443`; validation traffic stays in the namespace;
-Azure readers reach only the proxy; and only the proxy receives TCP/443 internet egress. NetworkPolicy
+Azure readers reach only the proxy; and only the proxy receives TCP/443 internet egress. The CNPG
+Cluster template sets `spec.inheritedMetadata.labels` to the fixed managed-by/role labels, and the
+controller adds its run ID so generated recovery Jobs, Pods, PVCs, Services, and Secrets inherit
+run evidence; observed Jobs, Pods, PVCs, and Services remain policy-selected and state-accounted.
+A separate narrow ingress rule permits only the `cnpg-system`
+`cnpg-operator`/`cloudnative-pg` operator to reach recovered instances on TCP/8000; database clients
+remain limited to TCP/5432. NetworkPolicy
 cannot enforce hostnames: the Envoy v1.39 CONNECT virtual-host ACL is the hostname enforcement layer
 and allows only one-to-four exact reviewed `<account>.blob.core.windows.net:443` authorities represented
 as literal domains—there is no wildcard route/domain. The operational value pins `envoyproxy/envoy:v1.39.1` to
 `sha256:57e14a549d7bd43c8d3f6d03e8cfa653e037d4b38e133acd9b54f38c524401b4`.
 
-The environment overlay must keep source-state-policy digest `958b1dc2dca298c56fd96dd80b6c694144905e22c00c4b3ca9d2c59c3b666083`; it is deployment evidence and intentionally is not the chart default. Consistency validates every selected canonical absent row's exact ID/status/path/reason and requires zero unexpected restored orphans internally. Its result omits the full list and contains only `missing_count`, SHA-256 of the actual canonical UTF-8 missing list, `unexpected_orphan_count=0`, source file digest, counts/bytes, and policy digest; the controller independently computes and exactly compares expected count/digest. Maximum 256-entry output remains below 32 KiB. The chart's 200Gi per-PVC LimitRange permits stable's required 160Gi source PVC for 128,986,771,498 bytes plus controller margin; latest remains 40Gi and namespace quota remains 320Gi under the one-active-or-one-retained rule.
+The environment overlay must keep source-state-policy digest `958b1dc2dca298c56fd96dd80b6c694144905e22c00c4b3ca9d2c59c3b666083`; it is deployment evidence and intentionally is not the chart default. The reviewed PostgreSQL image must use an explicit OCI-valid tag plus SHA-256 digest (for example, `postgresql:17@sha256:<digest>`), because CNPG rejects a digest-only `spec.imageName` during upgrade detection. Consistency validates every selected canonical absent row's exact ID/status/path/reason and requires zero unexpected restored orphans internally. Its result omits the full list and contains only `missing_count`, SHA-256 of the actual canonical UTF-8 missing list, `unexpected_orphan_count=0`, source file digest, counts/bytes, and policy digest; the controller independently computes and exactly compares expected count/digest. Maximum 256-entry output remains below 32 KiB. The chart's 200Gi per-PVC LimitRange permits stable's required 160Gi source PVC for 128,986,771,498 bytes plus controller margin; latest remains 40Gi and namespace quota remains 320Gi under the one-active-or-one-retained rule; the 32-ConfigMap quota retains bounded immutable payload generations alongside fixed coordination and proxy ConfigMaps.
 
-The current changed runtime payload identities are atomically `hriv-restore-validation-controller-v2`,
-`hriv-restore-validation-source-profile-v2`, `hriv-restore-validation-source-state-policy-v2`, and
-`hriv-restore-validation-child-templates-v2`. Every orchestrator, cleanup, embedded child mount, and
-strict parser expectation uses `-v2`. Upgrade creates those immutable ConfigMaps rather than patching
-`-v1`; no workload references `-v1`, which remains until explicit operator-managed cleanup. The fixed
+The current changed runtime payload identities are atomically `hriv-restore-validation-controller-v7`,
+`hriv-restore-validation-source-profile-v7`, `hriv-restore-validation-source-state-policy-v7`, and
+`hriv-restore-validation-child-templates-v7`. Every orchestrator, cleanup, embedded child mount, and
+strict parser expectation uses `-v7`. Upgrade creates those immutable ConfigMaps rather than patching
+prior generations; no workload references the older generations, which remain until explicit
+operator-managed cleanup. The fixed
 `hriv-restore-validation-state` ConfigMap and `hriv-restore-validation` Lease retain their names.
 
 There is one operationally rendered native `monitoring.coreos.com/v1` PrometheusRule and exactly one

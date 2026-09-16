@@ -74,7 +74,10 @@
       "properties": {
         "orchestrator": { "type": "string", "pattern": "^[^ @]+@sha256:[0-9a-f]{64}$" },
         "backupChild": { "type": "string", "pattern": "^[^ @]+@sha256:[0-9a-f]{64}$" },
-        "postgresql": { "type": "string", "pattern": "^[^ @]+@sha256:[0-9a-f]{64}$" }
+        "postgresql": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?(?::[0-9]+)?/(?:[a-z0-9]+(?:[._-][a-z0-9]+)*/)*[a-z0-9]+(?:[._-][a-z0-9]+)*:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}@sha256:[0-9a-f]{64}$"
+        }
       }
     },
     "sourceArchive": {
@@ -114,6 +117,12 @@
         "sourcePvcSize": {
           "type": "string",
           "pattern": "^([4-9][0-9]|[1-9][0-9]{2,})Gi$|^[1-9][0-9]*Ti$"
+        },
+        "sourceStorageClass": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "pattern": "^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$"
         },
         "requiredDatabaseInventory": {
           "type": "array",
@@ -158,6 +167,15 @@
         }
       }
     },
+    "childJobs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceRestoreDeadlineSeconds", "consistencyDeadlineSeconds"],
+      "properties": {
+        "sourceRestoreDeadlineSeconds": { "type": "integer", "minimum": 60, "maximum": 21600 },
+        "consistencyDeadlineSeconds": { "type": "integer", "minimum": 60, "maximum": 21600 }
+      }
+    },
     "sourceStatePolicy": {
       "type": "object",
       "additionalProperties": false,
@@ -186,8 +204,8 @@
       "properties": {
         "leaseSeconds": { "type": "integer", "minimum": 10, "maximum": 300 },
         "initializationGraceSeconds": { "type": "integer", "minimum": 0, "maximum": 300 },
-        "maxRuntimeSeconds": { "type": "integer", "minimum": 60, "maximum": 21600 },
-        "stageTimeoutSeconds": { "type": "integer", "minimum": 30, "maximum": 7200 },
+        "maxRuntimeSeconds": { "type": "integer", "minimum": 60, "maximum": 43200 },
+        "stageTimeoutSeconds": { "type": "integer", "minimum": 30, "maximum": 21600 },
         "retainedSeconds": { "type": "integer", "minimum": 3600, "maximum": 172800 },
         "casRetries": { "type": "integer", "minimum": 1, "maximum": 20 },
         "maxRetainedRuns": { "type": "integer", "minimum": 0, "maximum": 2 },

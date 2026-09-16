@@ -34,23 +34,36 @@ class ChartTests(unittest.TestCase):
         self.assertNotIn("hriv-restore-validation-invoke", self.rendered)
         self.assertFalse(any(item and item.get("kind") == "PrometheusRule" for item in self.documents))
 
-    def test_runtime_configmaps_are_atomic_v2_identities(self):
+    def test_rc_chart_label_is_kubernetes_label_safe(self):
+        with tempfile.TemporaryDirectory() as directory:
+            chart_dir = Path(directory) / "chart"
+            shutil.copytree(CHART, chart_dir)
+            chart_path = chart_dir / "Chart.yaml"
+            chart = yaml.safe_load(chart_path.read_text())
+            chart["version"] = "0.1.1-rc.20260912010743.gbc34069+0550278e4a04"
+            chart_path.write_text(yaml.safe_dump(chart, sort_keys=False))
+            rendered = subprocess.check_output(["helm", "template", "test", str(chart_dir)], text=True)
+        for document in yaml.safe_load_all(rendered):
+            if document:
+                self.assertLessEqual(len(document["metadata"]["labels"]["helm.sh/chart"]), 63)
+
+    def test_runtime_configmaps_are_atomic_v7_identities(self):
         names = {item["metadata"]["name"] for item in self.documents if item and item.get("kind") == "ConfigMap"}
-        expected = {"hriv-restore-validation-controller-v2", "hriv-restore-validation-source-profile-v2", "hriv-restore-validation-source-state-policy-v2", "hriv-restore-validation-child-templates-v2"}
+        expected = {"hriv-restore-validation-controller-v7", "hriv-restore-validation-source-profile-v7", "hriv-restore-validation-source-state-policy-v7", "hriv-restore-validation-child-templates-v7"}
         self.assertLessEqual(expected, names)
-        self.assertFalse(any(name.endswith("-v1") for name in names))
+        self.assertFalse(any(name.endswith(("-v1", "-v2", "-v3", "-v4", "-v5", "-v6")) for name in names))
         self.assertIn("hriv-restore-validation-state", names)
 
     def test_chart_config_round_trip(self):
-        raw = self._config_map("hriv-restore-validation-controller-v2")["data"]["config.json"]
+        raw = self._config_map("hriv-restore-validation-controller-v7")["data"]["config.json"]
         self.assertEqual("hriv-restore-validation", Config.parse(raw).namespace)
 
     def test_chart_profile_round_trip(self):
-        raw = self._config_map("hriv-restore-validation-source-profile-v2")["data"]["profile.json"]
+        raw = self._config_map("hriv-restore-validation-source-profile-v7")["data"]["profile.json"]
         self.assertEqual("pg-core-source", SourceProfile.parse(raw).external_cluster)
 
     def test_chart_policy_round_trip(self):
-        raw = self._config_map("hriv-restore-validation-source-state-policy-v2")["data"]["policy.json"]
+        raw = self._config_map("hriv-restore-validation-source-state-policy-v7")["data"]["policy.json"]
         self.assertEqual(1, SourcePolicy.parse(raw).policy_version)
 
     def test_chart_current_nonzero_digest_only_policy(self):
@@ -60,22 +73,23 @@ class ChartTests(unittest.TestCase):
             values.flush()
             rendered = subprocess.check_output(["helm", "template", "test", str(CHART), "-f", values.name], text=True)
         documents = list(yaml.safe_load_all(rendered))
-        raw = next(item for item in documents if item and item.get("kind") == "ConfigMap" and item["metadata"]["name"] == "hriv-restore-validation-source-state-policy-v2")["data"]["policy.json"]
+        raw = next(item for item in documents if item and item.get("kind") == "ConfigMap" and item["metadata"]["name"] == "hriv-restore-validation-source-state-policy-v7")["data"]["policy.json"]
         parsed = SourcePolicy.parse(raw)
         self.assertEqual((digest, 39, 3), (parsed.source_state_sha256, parsed.missing_count, parsed.orphan_count))
         self.assertNotIn("source_state", json.loads(raw))
 
     def test_chart_templates_round_trip(self):
-        profile_raw = self._config_map("hriv-restore-validation-source-profile-v2")["data"]["profile.json"]
-        raw = self._config_map("hriv-restore-validation-child-templates-v2")["data"]["templates.yaml"]
+        profile_raw = self._config_map("hriv-restore-validation-source-profile-v7")["data"]["profile.json"]
+        raw = self._config_map("hriv-restore-validation-child-templates-v7")["data"]["templates.yaml"]
         parsed_profile = SourceProfile.parse(profile_raw); parsed = Templates.parse(raw, parsed_profile)
         self.assertEqual("40Gi", parsed.source_pvc["spec"]["resources"]["requests"]["storage"])
 
     def test_operational_cronjobs_proxy_and_fixed_policy(self):
         digest = "1" * 64
         values = {
-            "images": {"orchestrator": f"registry.example/controller@sha256:{digest}", "backupChild": f"registry.example/backup@sha256:{digest}", "postgresql": f"registry.example/postgres@sha256:{digest}"},
+            "images": {"orchestrator": f"registry.example/controller@sha256:{digest}", "backupChild": f"registry.example/backup@sha256:{digest}", "postgresql": f"registry.example/postgres:17@sha256:{digest}"},
             "objectStore": {"enabled": True, "destinationPath": "https://storage.blob.core.windows.net/barman"},
+            "controller": {"maxRuntimeSeconds": 28800},
             "operational": {"enabled": True, "schedule": "0 11 * * 0", "egressProxy": {"image": "envoyproxy/envoy:v1.39.1@sha256:57e14a549d7bd43c8d3f6d03e8cfa653e037d4b38e133acd9b54f38c524401b4", "allowedConnectHosts": ["storageacct.blob.core.windows.net:443"]}},
         }
         with tempfile.NamedTemporaryFile("w", suffix=".yaml") as source:
@@ -90,7 +104,7 @@ class ChartTests(unittest.TestCase):
         self.assertTrue(weekly["spec"]["suspend"])
         weekly_template = weekly["spec"]["jobTemplate"]
         demand_template = on_demand["spec"]["jobTemplate"]
-        self.assertEqual((0, 21600, "Never"), (weekly_template["spec"]["backoffLimit"], weekly_template["spec"]["activeDeadlineSeconds"], weekly_template["spec"]["template"]["spec"]["restartPolicy"]))
+        self.assertEqual((0, 28800, "Never"), (weekly_template["spec"]["backoffLimit"], weekly_template["spec"]["activeDeadlineSeconds"], weekly_template["spec"]["template"]["spec"]["restartPolicy"]))
         self.assertNotIn("ttlSecondsAfterFinished", weekly_template["spec"])
         self.assertEqual(604800, demand_template["spec"]["ttlSecondsAfterFinished"])
         self.assertTrue(on_demand["spec"]["suspend"])
@@ -121,21 +135,49 @@ class ChartTests(unittest.TestCase):
         self.assertFalse(proxy_pod["automountServiceAccountToken"])
         self.assertTrue(proxy_pod["securityContext"]["runAsNonRoot"])
         self.assertTrue(proxy_pod["containers"][0]["securityContext"]["readOnlyRootFilesystem"])
-        child_config = next(item for item in docs if item.get("kind") == "ConfigMap" and item["metadata"]["name"] == "hriv-restore-validation-child-templates-v2")
+        child_config = next(item for item in docs if item.get("kind") == "ConfigMap" and item["metadata"]["name"] == "hriv-restore-validation-child-templates-v7")
         children = yaml.safe_load(child_config["data"]["templates.yaml"])
         for job_name in ("selection_job", "source_restore_job"):
             names = {item["name"] for item in children[job_name]["spec"]["template"]["spec"]["containers"][0]["env"]}
             self.assertIn("HTTPS_PROXY", names); self.assertNotIn("HTTP_PROXY", names)
         self.assertEqual({"HTTPS_PROXY", "NO_PROXY"}, {item["name"] for item in children["cnpg_cluster"]["spec"]["env"]})
+        self.assertEqual({"app.kubernetes.io/managed-by": "hriv-restore-validation", "hriv.bcit.ca/restore-validation-role": "cnpg"}, children["cnpg_cluster"]["spec"]["inheritedMetadata"]["labels"])
         for job_name in ("db_validation_job", "consistency_job"):
             self.assertNotIn("env", children[job_name]["spec"]["template"]["spec"]["containers"][0])
+        # The consistency child rehashes the full restored source tree, so it
+        # needs the same deadline headroom as the restore that wrote it.
+        self.assertEqual(children["source_restore_job"]["spec"]["activeDeadlineSeconds"], children["consistency_job"]["spec"]["activeDeadlineSeconds"])
+        for job_name in ("source_restore_job", "consistency_job"):
+            pod = children[job_name]["spec"]["template"]["spec"]
+            self.assertEqual({"bcit.ca/longhorn-storage": "true"}, pod["nodeSelector"])
+            self.assertEqual("OnRootMismatch", pod["securityContext"]["fsGroupChangePolicy"])
+        self.assertEqual({"requests": {"cpu": "100m", "memory": "256Mi"}, "limits": {"cpu": "2", "memory": "2Gi"}}, children["consistency_job"]["spec"]["template"]["spec"]["containers"][0]["resources"])
         policies = {item["metadata"]["name"]: item["spec"] for item in docs if item.get("kind") == "NetworkPolicy"}
         selector_values = lambda name: set(policies[name]["podSelector"]["matchExpressions"][0]["values"])
         self.assertEqual({"db-validation", "consistency"}, selector_values("hriv-restore-validation-database-clients"))
         self.assertEqual({"selection", "source-restore", "cnpg"}, selector_values("hriv-restore-validation-azure-readers"))
         self.assertEqual({"orchestrator", "cleanup"}, selector_values("hriv-restore-validation-api"))
+        status = policies["hriv-restore-validation-cnpg-operator-status"]
+        self.assertEqual("cnpg", status["podSelector"]["matchLabels"]["hriv.bcit.ca/restore-validation-role"])
+        self.assertEqual([{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "cnpg-system"}}, "podSelector": {"matchLabels": {"app.kubernetes.io/instance": "cnpg-operator", "app.kubernetes.io/name": "cloudnative-pg"}}}], status["ingress"][0]["from"])
+        self.assertEqual([{"protocol": "TCP", "port": 8000}], status["ingress"][0]["ports"])
         broad = [name for name, spec in policies.items() if any(peer.get("ipBlock", {}).get("cidr") == "0.0.0.0/0" for rule in spec.get("egress", []) for peer in rule.get("to", []))]
         self.assertEqual(["hriv-restore-validation-proxy-egress"], broad)
+
+    def test_chart_child_jobs_and_storage_class_values(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".yaml") as values:
+            yaml.safe_dump({"childJobs": {"sourceRestoreDeadlineSeconds": 14400, "consistencyDeadlineSeconds": 10800}, "sourceProfile": {"sourceStorageClass": "longhorn-rv"}}, values)
+            values.flush()
+            rendered = subprocess.check_output(["helm", "template", "test", str(CHART), "-f", values.name], text=True)
+        docs = list(yaml.safe_load_all(rendered))
+        child_config = next(item for item in docs if item and item.get("kind") == "ConfigMap" and item["metadata"]["name"] == "hriv-restore-validation-child-templates-v7")
+        children = yaml.safe_load(child_config["data"]["templates.yaml"])
+        self.assertEqual(14400, children["source_restore_job"]["spec"]["activeDeadlineSeconds"])
+        self.assertEqual(10800, children["consistency_job"]["spec"]["activeDeadlineSeconds"])
+        self.assertEqual("longhorn-rv", children["source_pvc"]["spec"]["storageClassName"])
+        self.assertEqual("longhorn-rv", children["cnpg_cluster"]["spec"]["storage"]["storageClass"])
+        profile_raw = next(item for item in docs if item and item.get("kind") == "ConfigMap" and item["metadata"]["name"] == "hriv-restore-validation-source-profile-v7")["data"]["profile.json"]
+        self.assertEqual("longhorn-rv", SourceProfile.parse(profile_raw).source_storage_class)
 
     def test_no_secret_manifest(self):
         self.assertFalse(any(item and item.get("kind") == "Secret" for item in self.documents))

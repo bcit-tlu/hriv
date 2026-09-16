@@ -38,6 +38,15 @@ rebuild remain serial, and the serial runner remains the immediate rollback
 path. Durable creation requires `TASK_EXECUTION_MODE=required` and
 `REBUILD_PARALLEL_ENABLED=true`; the flag defaults to false.
 
+Issue #1191 later added the admin-only durable control surface:
+`POST /api/jobs/rebuild-tiles` for creation (409 when the flag is off or a
+rebuild is already active), bounded keyset-paginated item inspection at
+`GET /api/jobs/{id}/items`, idempotent cancellation at
+`POST /api/jobs/{id}/cancel`, and failed-item retry routes — plus a compact
+`Parallel tile rebuilds` section on the Admin page's Backups tab that selects
+the parallel endpoint only when `GET /api/jobs/rebuild-tiles` reports the
+capability enabled. The serial `AdminTask` endpoint is unchanged.
+
 Current scheduler controls are:
 
 | Setting                         | Default | Purpose                                      |

@@ -43,6 +43,11 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual({"stage": "core_succeeded", "completed_at": "2026-01-15T10:00:00Z", "contract_boundary": "simplified1253"}, state["latest_run"]["core_succeeded"])
         self.assertEqual({"run_id": RUN, "completed_at": "2026-01-15T10:00:00Z", "recovery_set_id": selection_document()["recovery_set_id"], "source_files_sha256": "e" * 64, "cleanup": {"outcome": "succeeded", "completed_at": "2026-01-15T10:00:00Z", "remaining_resource_count": 0}}, state["last_complete_success"])
 
+    def test_consistency_job_pinned_to_restore_node(self) -> None:
+        fake = gateway(); self.assertEqual("succeeded", drive(controller(fake)))
+        consistency = next(item for item in fake.created if item["metadata"]["labels"].get("hriv.bcit.ca/restore-validation-role") == "consistency")
+        self.assertEqual("storage-node-1", consistency["spec"]["template"]["spec"]["nodeName"])
+
     def test_legacy_1251_success_allows_next_run_without_promotion(self) -> None:
         fake = gateway(); self.assertEqual("succeeded", drive(controller(fake)))
         state = json.loads(fake.state_raw)
@@ -98,6 +103,7 @@ class ControllerTests(unittest.TestCase):
         cluster = next(item for item in fake.created if item["kind"] == "Cluster")
         target = cluster["spec"]["bootstrap"]["recovery"]["recoveryTarget"]
         self.assertEqual({"targetLSN": "A/1234", "targetTLI": "7"}, target)
+        self.assertEqual(cluster["metadata"]["labels"], cluster["spec"]["inheritedMetadata"]["labels"])
         self.assertNotIn("targetTimeline", json.dumps(cluster))
 
     def test_cnpg_rejects_missing_target(self) -> None:
@@ -113,6 +119,30 @@ class ControllerTests(unittest.TestCase):
     def test_selection_rejects_fence_timeline_mismatch(self) -> None:
         fake = gateway(); fake.results["selection"] = json.dumps(selection_document(target_timeline=8))
         self.assertEqual("retained", controller(fake).run(TRIGGER, RUN))
+
+    def test_selection_rejects_fence_segment_mismatch(self) -> None:
+        fake = gateway(); fake.results["selection"] = json.dumps(selection_document(wal_fence_file="000000070000000A00000001"))
+        self.assertEqual("retained", controller(fake).run(TRIGGER, RUN))
+        self.assertEqual("IMMUTABLE_BINDING_INVALID", parse_state(fake.state_raw, NOW)["latest_run"]["failure_code"])
+
+    def test_selection_accepts_nondefault_wal_segment_size(self) -> None:
+        fake = gateway(); fake.results["selection"] = json.dumps(selection_document(
+            target_lsn="0/1000001", target_timeline=1,
+            wal_fence_file="000000010000000000000000",
+            wal_segment_size_bytes=64 * 1024 * 1024,
+        ))
+        fake.results["db-validation"] = json.dumps(database_result(
+            timeline=2, timeline_parent=1, timeline_switchpoint="0/1000001",
+            target_tli=1, current_lsn="0/1000001", target_lsn="0/1000001"
+        ))
+        self.assertEqual("succeeded", drive(controller(fake)))
+
+    def test_selection_rejects_invalid_wal_segment_size(self) -> None:
+        for size in (24 * 1024 * 1024, 512 * 1024, 2 * 1024 * 1024 * 1024, "16777216"):
+            with self.subTest(size=size):
+                fake = gateway(); fake.results["selection"] = json.dumps(selection_document(wal_segment_size_bytes=size))
+                self.assertEqual("retained", controller(fake).run(TRIGGER, RUN))
+                self.assertEqual("IMMUTABLE_BINDING_INVALID", parse_state(fake.state_raw, NOW)["latest_run"]["failure_code"])
 
     def test_cnpg_fixed_external_source(self) -> None:
         fake = gateway(); drive(controller(fake))
@@ -146,6 +176,8 @@ class ControllerTests(unittest.TestCase):
         args = job["spec"]["template"]["spec"]["containers"][0]["args"]
         self.assertEqual("2026-01-15T09:00:00Z", args[args.index("--capture-started-at") + 1])
         self.assertEqual("2026-01-15T09:01:00Z", args[args.index("--wal-fence-committed-at") + 1])
+        self.assertEqual("A/1234", args[args.index("--target-lsn") + 1])
+        self.assertEqual("7", args[args.index("--target-tli") + 1])
 
     def test_database_result_whole_second_bound_accepts_original_fractional_fence(self) -> None:
         fake = gateway(); fake.results["db-validation"] = json.dumps(database_result(fence_fenced_at="2026-01-15T09:01:00.900000Z"))
@@ -157,6 +189,24 @@ class ControllerTests(unittest.TestCase):
         fake.results["db-validation"] = json.dumps(database_result(fence_fenced_at="2026-01-15T09:01:00.900000Z"))
         self.assertEqual("retained", drive(controller(fake)))
         self.assertEqual("DB_VALIDATION_INVALID", parse_state(fake.state_raw, NOW)["latest_run"]["failure_code"])
+
+    def test_database_result_accepts_next_unused_promoted_timeline(self) -> None:
+        fake = gateway()
+        fake.results["db-validation"] = json.dumps(database_result(timeline=9))
+        self.assertEqual("succeeded", drive(controller(fake)))
+
+    def test_database_result_requires_promoted_target_timeline(self) -> None:
+        for result in (
+            database_result(timeline=7),
+            database_result(target_tli=8),
+            database_result(timeline=8, target_tli=8),
+            database_result(timeline=9, timeline_parent=8),
+            database_result(timeline=9, timeline_switchpoint="A/1233"),
+        ):
+            with self.subTest(result=result):
+                fake = gateway(); fake.results["db-validation"] = json.dumps(result)
+                self.assertEqual("retained", drive(controller(fake)))
+                self.assertEqual("DB_VALIDATION_INVALID", parse_state(fake.state_raw, NOW)["latest_run"]["failure_code"])
 
     def test_restore_exact_args_and_parent_mount(self) -> None:
         fake = gateway(); drive(controller(fake))
@@ -201,6 +251,7 @@ class ControllerTests(unittest.TestCase):
             "completed": ("completed_at", "2026-01-15T09:01:30Z", "IMMUTABLE_BINDING_INVALID"),
             "target lsn": ("target_lsn", "latest", "IMMUTABLE_BINDING_INVALID"),
             "target timeline": ("target_timeline", 8, "IMMUTABLE_BINDING_INVALID"),
+            "WAL segment size": ("wal_segment_size_bytes", 24 * 1024 * 1024, "IMMUTABLE_BINDING_INVALID"),
             "file count": ("source_file_count", 1, "IMMUTABLE_BINDING_INVALID"),
             "source bytes": ("source_total_bytes", -1, "IMMUTABLE_BINDING_INVALID"),
             "source files hash": ("source_files_sha256", "E" * 64, "IMMUTABLE_BINDING_INVALID"),
@@ -366,7 +417,7 @@ class ControllerTests(unittest.TestCase):
         fake = gateway(); fake.results["selection"] = json.dumps(selection_document(exclusion_count=1, excluded_artifacts=[{"path": "data/admin", "reason": "non_authoritative_production_data"}]))
         controller(fake).run(TRIGGER, RUN)
         selected = parse_state(fake.state_raw, NOW)["latest_run"]["selected_source"]
-        for field in ("backup_run_id", "manifest_sha256", "archive_blob", "archive_size", "archive_etag", "completed_at", "target_lsn", "target_timeline", "source_file_count", "source_total_bytes", "source_files_sha256", "database_row_count", "missing_count", "orphan_count", "exclusion_count", "source_state", "source_state_sha256", "excluded_artifacts", "source_profile_id", "source_profile_sha256", "source_state_policy_version", "source_state_policy_sha256"):
+        for field in ("backup_run_id", "manifest_sha256", "archive_blob", "archive_size", "archive_etag", "completed_at", "target_lsn", "target_timeline", "wal_segment_size_bytes", "source_file_count", "source_total_bytes", "source_files_sha256", "database_row_count", "missing_count", "orphan_count", "exclusion_count", "source_state", "source_state_sha256", "excluded_artifacts", "source_profile_id", "source_profile_sha256", "source_state_policy_version", "source_state_policy_sha256"):
             self.assertIn(field, selected)
         self.assertEqual([{"path": "data/admin", "reason": "non_authoritative_production_data"}], selected["excluded_artifacts"])
 
@@ -509,7 +560,7 @@ class ControllerTests(unittest.TestCase):
         state = parse_state(fake.state_raw, NOW); run = state["latest_run"]
         cluster = next(item for item in run["child_resources"] if item["kind"] == "Cluster")
         labels = {"app.kubernetes.io/managed-by": "hriv-restore-validation", "hriv.bcit.ca/restore-validation-run-id": RUN, "hriv.bcit.ca/restore-validation-role": "cnpg", "cnpg.io/cluster": child_name(RUN, "cnpg")}
-        fake.create_child({"apiVersion": "v1", "kind": "Service", "metadata": {"name": "generated-rw", "labels": labels, "ownerReferences": [{"kind": "Cluster", "uid": cluster["uid"], "controller": True}]}})
+        fake.create_child({"apiVersion": "v1", "kind": "Service", "metadata": {"name": "generated-rw", "labels": labels, "ownerReferences": [{"apiVersion": "postgresql.cnpg.io/v1", "kind": "Cluster", "name": cluster["name"], "uid": cluster["uid"], "controller": True}]}})
         self.assertTrue(instance._ownership_intact(run))
 
     def test_run_and_child_names_deterministic(self) -> None:
@@ -552,22 +603,75 @@ class ControllerTests(unittest.TestCase):
         fake.children[key] = (ref, manifest, observation)
         with self.assertRaises(ValidationError): instance.cleanup_retained("cleanup-job-uid")
 
-    def test_manual_cleanup_deletes_legitimate_cnpg_pod_and_service_descendants(self) -> None:
+    def test_manual_cleanup_deletes_legitimate_cnpg_descendants(self) -> None:
         fake, instance = self._retained()
         state = parse_state(fake.state_raw, NOW)
         cluster = next(item for item in state["retained_runs"][0]["child_resources"] if item["kind"] == "Cluster")
         labels = {"app.kubernetes.io/managed-by": "hriv-restore-validation", "hriv.bcit.ca/restore-validation-run-id": RUN, "hriv.bcit.ca/restore-validation-role": "cnpg"}
-        for kind, name in (("Pod", "generated-pg-1"), ("Service", "generated-pg-rw")):
-            fake.create_child({"apiVersion": "v1", "kind": kind, "metadata": {"name": name, "labels": labels, "ownerReferences": [{"apiVersion": "postgresql.cnpg.io/v1", "kind": "Cluster", "uid": cluster["uid"], "controller": True}]}})
+        cluster_owner = {"apiVersion": "postgresql.cnpg.io/v1", "kind": "Cluster", "name": cluster["name"], "uid": cluster["uid"], "controller": True}
+        job = fake.create_child({"apiVersion": "batch/v1", "kind": "Job", "metadata": {"name": "generated-full-recovery", "labels": labels, "ownerReferences": [cluster_owner]}})
+        for api_version, kind, name, owner in (
+            ("v1", "PersistentVolumeClaim", "generated-pg-1", cluster_owner),
+            ("v1", "Service", "generated-pg-rw", cluster_owner),
+            ("v1", "Pod", "generated-full-recovery-pod", {"apiVersion": "batch/v1", "kind": "Job", "name": job.name, "uid": job.uid, "controller": True}),
+        ):
+            fake.create_child({"apiVersion": api_version, "kind": kind, "metadata": {"name": name, "labels": labels, "ownerReferences": [owner]}})
         self.assertEqual("succeeded", instance.cleanup_retained("cleanup-job-uid"))
         self.assertFalse(fake.list_run_children(RUN))
+
+    def test_manual_cleanup_handles_recorded_job_pods(self) -> None:
+        fake, instance = self._retained()
+        state = parse_state(fake.state_raw, NOW)
+        select = next(item for item in state["retained_runs"][0]["child_resources"] if item["kind"] == "Job" and item["name"] == child_name(RUN, "selection"))
+        labels = {"app.kubernetes.io/managed-by": "hriv-restore-validation", "hriv.bcit.ca/restore-validation-run-id": RUN, "hriv.bcit.ca/restore-validation-role": "selection"}
+        owner = {"apiVersion": "batch/v1", "kind": "Job", "name": select["name"], "uid": select["uid"], "controller": True}
+        pod = fake.create_child({"apiVersion": "v1", "kind": "Pod", "metadata": {"name": f"{select['name']}-abcde", "labels": labels, "ownerReferences": [owner]}})
+        recorded = [
+            {"apiVersion": "v1", "kind": "Pod", "name": pod.name, "uid": pod.uid},
+            {"apiVersion": "v1", "kind": "Pod", "name": f"{child_name(RUN, 'db-validation')}-zzzzz", "uid": "absent-pod-uid"},
+        ]
+        state["latest_run"]["child_resources"].extend(recorded)
+        state["retained_runs"][0]["child_resources"].extend(recorded)
+        fake.state_raw = json.dumps(state)
+        self.assertEqual("succeeded", instance.cleanup_retained("cleanup-job-uid"))
+        self.assertFalse(fake.list_run_children(RUN))
+        cleared = parse_state(fake.state_raw, NOW)
+        self.assertEqual([], cleared["retained_runs"])
+        self.assertEqual("succeeded", cleared["latest_run"]["cleanup"]["outcome"])
+
+    def test_manual_cleanup_rejects_misbound_cnpg_descendant(self) -> None:
+        fake, instance = self._retained()
+        state = parse_state(fake.state_raw, NOW)
+        cluster = next(item for item in state["retained_runs"][0]["child_resources"] if item["kind"] == "Cluster")
+        labels = {"app.kubernetes.io/managed-by": "hriv-restore-validation", "hriv.bcit.ca/restore-validation-run-id": RUN, "hriv.bcit.ca/restore-validation-role": "cnpg"}
+        job = fake.create_child({"apiVersion": "batch/v1", "kind": "Job", "metadata": {"name": "generated-full-recovery", "labels": labels, "ownerReferences": [{"apiVersion": "postgresql.cnpg.io/v1", "kind": "Cluster", "name": cluster["name"], "uid": cluster["uid"], "controller": True}]}})
+        fake.create_child({"apiVersion": "v1", "kind": "Pod", "metadata": {"name": "misbound-pod", "labels": labels, "ownerReferences": [{"apiVersion": "batch/v1", "kind": "Job", "name": "other-job", "uid": job.uid, "controller": True}]}})
+        with self.assertRaisesRegex(ValidationError, "CLEANUP_UNBOUND_CHILD"):
+            instance.cleanup_retained("cleanup-job-uid")
 
     def test_manual_cleanup_rejects_unbound_labelled_descendant(self) -> None:
         fake, instance = self._retained()
         labels = {"app.kubernetes.io/managed-by": "hriv-restore-validation", "hriv.bcit.ca/restore-validation-run-id": RUN, "hriv.bcit.ca/restore-validation-role": "cnpg"}
-        fake.create_child({"apiVersion": "v1", "kind": "Service", "metadata": {"name": "unbound", "labels": labels, "ownerReferences": [{"kind": "Cluster", "uid": "not-bound", "controller": True}]}})
+        fake.create_child({"apiVersion": "v1", "kind": "Service", "metadata": {"name": "unbound", "labels": labels, "ownerReferences": [{"apiVersion": "postgresql.cnpg.io/v1", "kind": "Cluster", "name": "unbound", "uid": "not-bound", "controller": True}]}})
         with self.assertRaisesRegex(ValidationError, "CLEANUP_UNBOUND_CHILD"):
             instance.cleanup_retained("cleanup-job-uid")
+
+    def test_manual_cleanup_deletes_unrecorded_name_bound_roots(self) -> None:
+        fake, instance = self._retained()
+        labels = {"app.kubernetes.io/managed-by": "hriv-restore-validation", "hriv.bcit.ca/restore-validation-run-id": RUN, "hriv.bcit.ca/restore-validation-role": "source-restore"}
+        job = fake.create_child({"apiVersion": "batch/v1", "kind": "Job", "metadata": {"name": child_name(RUN, "source-restore"), "labels": labels}})
+        fake.create_child({"apiVersion": "v1", "kind": "Pod", "metadata": {"name": f"{job.name}-abcde", "labels": labels, "ownerReferences": [{"apiVersion": "batch/v1", "kind": "Job", "name": job.name, "uid": job.uid, "controller": True}]}})
+        self.assertEqual("succeeded", instance.cleanup_retained("cleanup-job-uid"))
+        self.assertFalse(fake.list_run_children(RUN))
+
+    def test_manual_cleanup_rejects_unrecorded_foreign_roots(self) -> None:
+        for name, role in (("foreign-job", "cnpg"), (child_name(RUN, "source-restore"), "cnpg")):
+            with self.subTest(name=name, role=role):
+                fake, instance = self._retained()
+                labels = {"app.kubernetes.io/managed-by": "hriv-restore-validation", "hriv.bcit.ca/restore-validation-run-id": RUN, "hriv.bcit.ca/restore-validation-role": role}
+                fake.create_child({"apiVersion": "batch/v1", "kind": "Job", "metadata": {"name": name, "labels": labels}})
+                with self.assertRaisesRegex(ValidationError, "CLEANUP_UNBOUND_CHILD"):
+                    instance.cleanup_retained("cleanup-job-uid")
 
     def test_manual_cleanup_rejects_changed_bound_template_identity(self) -> None:
         fake, instance = self._retained()

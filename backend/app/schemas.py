@@ -272,6 +272,9 @@ class JobOut(BaseModel):
     failed_count: int
     skipped_count: int = 0
     cancelled_count: int
+    # Derived per-request from job_items (not persisted columns on Job).
+    queued_count: int = 0
+    running_count: int = 0
     error_message: str | None = None
     metadata_extra: Annotated[dict | None, Field(validation_alias="metadata_")] = None
     requested_by: int | None = None
@@ -283,8 +286,25 @@ class JobOut(BaseModel):
     model_config = {"from_attributes": True, "populate_by_name": True}
 
 
-class JobDetailOut(JobOut):
-    items: list[JobItemOut] = []
+class JobItemsPageOut(BaseModel):
+    """One keyset-paginated page of job items, ordered by ``id`` ascending."""
+
+    items: list[JobItemOut]
+    next_after_id: int | None = None
+
+
+class JobRetryOut(BaseModel):
+    """Result of an explicit item-retry mutation on a job."""
+
+    requeued_count: int
+    job: JobOut
+
+
+class RebuildTilesCapabilityOut(BaseModel):
+    """Whether this deployment accepts parallel tile-rebuild creation."""
+
+    enabled: bool
+    parallelism: int
 
 
 # ── Category ──────────────────────────────────────────────

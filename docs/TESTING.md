@@ -37,6 +37,10 @@ All seed users share the password `password`.
 8. **Assert:** Category tiles load (at least "Architecture" and "Panoramas" visible).
 9. Click Logout. Enter email with mixed case: `Admin@Example.CA`, password: `password`, click Sign in.
 10. **Assert:** Login succeeds — email matching is case-insensitive.
+11. As an admin, deactivate a test account via People → Edit → status toggle, then log out.
+12. Attempt login with the deactivated account's credentials.
+13. **Assert:** Error alert appears containing "Account has been disabled. Please contact the TLU Learning Tech Lab via Teams to activate your account." (not "Incorrect email or password").
+14. Reactivate the account to restore seed state.
 
 ---
 
@@ -324,7 +328,13 @@ All endpoints except login require a valid JWT bearer token in the `Authorizatio
 | GET    | /api/admin/tasks/backup-archives                                                                          | Yes           | admin                                                                       |
 | DELETE | /api/admin/tasks/backup-archives/{task_id}/{artifact_role}                                                | Yes           | admin                                                                       |
 | GET    | /api/jobs/ (list, read-only)                                                                              | Yes           | admin                                                                       |
-| GET    | /api/jobs/{job_id} (single job with items, read-only)                                                     | Yes           | admin                                                                       |
+| GET    | /api/jobs/{job_id} (single job supervisor state, read-only; no items)                                     | Yes           | admin                                                                       |
+| GET    | /api/jobs/{job_id}/items (bounded keyset-paginated item inspection)                                       | Yes           | admin                                                                       |
+| GET    | /api/jobs/rebuild-tiles (parallel-rebuild capability probe)                                               | Yes           | admin                                                                       |
+| POST   | /api/jobs/rebuild-tiles (create durable rebuild job; 409 when disabled/active)                            | Yes           | admin                                                                       |
+| POST   | /api/jobs/{job_id}/cancel (idempotent rebuild cancellation)                                               | Yes           | admin                                                                       |
+| POST   | /api/jobs/{job_id}/items/{item_id}/retry (requeue one failed rebuild item)                                | Yes           | admin                                                                       |
+| POST   | /api/jobs/{job_id}/retry-failed (requeue all failed rebuild items)                                        | Yes           | admin                                                                       |
 
 All `/api/groups/` endpoints require the `admin` or `instructor` role (read
 endpoints are open to any instructor). Rows marked **†** are mutations that

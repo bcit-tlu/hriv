@@ -307,6 +307,13 @@ current pipeline settings. The operation is:
 - **Filesystem-aware** — checks on-disk `image.dzi` manifest, not just DB
   provenance, so it catches tiles lost from a DB-only restore.
 
+When the deployment has `REBUILD_PARALLEL_ENABLED=true`, the Admin UI's
+**Rebuild Tiles** button and `POST /api/jobs/rebuild-tiles` create a durable
+parallel rebuild job instead; the Backups tab's **Parallel tile rebuilds**
+section then offers per-item inspection, cancellation, and failed-item retry.
+The serial endpoint above remains valid in either mode. See
+[jobs.md](jobs.md#api) for the durable API surface.
+
 See [admin-import-export.md](admin-import-export.md#rebuild-tiles) for the
 full API reference and [tile-cache-provenance.md](tile-cache-provenance.md)
 for how `missing` vs `stale` is determined.

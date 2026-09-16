@@ -51,7 +51,9 @@ records.
 ### Local login
 
 `POST /api/auth/login` rejects inactive accounts with `403` and
-`"Account is inactive"`.
+`"Account is inactive"`. The login screen maps the `403` to a user-facing
+message: "Account has been disabled. Please contact the TLU Learning Tech
+Lab via Teams to activate your account."
 
 ### OIDC callback
 
@@ -59,6 +61,9 @@ If the resolved existing user is inactive, `GET /api/auth/oidc/callback`
 redirects to the frontend with:
 
 - `#oidc_error=account_inactive`
+
+The login screen maps this code to the same disabled-account message shown
+for local login.
 
 ### Token-authenticated access
 

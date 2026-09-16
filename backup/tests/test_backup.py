@@ -1368,6 +1368,30 @@ class BackupRunTestCase(_BackupTestCase):
             )
         )
 
+    def test_run_backup_rejects_inconsistent_fence_before_publication(self):
+        self._reload(
+            {
+                "BACKUP_MODE": "production",
+                "DATA_DIR": str(self.data_dir),
+            }
+        )
+        local_dir = self.tmp / "backups"
+        local_dir.mkdir()
+        inventory_run, _commands = _production_inventory_run(
+            self.data_dir,
+            fence_lsn="0/60001FE",
+            fence_file="000000010000000000000007",
+        )
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=local_dir),
+            patch.object(backup.subprocess, "run", side_effect=inventory_run),
+        ):
+            self.assertIsNone(backup.run_backup())
+        self.assertEqual(list(local_dir.glob("*.tar.gz")), [])
+        self.assertEqual(list(local_dir.glob("*.manifest.json")), [])
+        state = json.loads((local_dir / "BACKUP_STATE.json").read_text())
+        self.assertFalse(state["filesystem"]["success"])
+
     def test_run_backup_marker_records_completion_and_per_type_success(self):
         self._reload(
             {
@@ -1625,9 +1649,10 @@ class BackupRunTestCase(_BackupTestCase):
         self.assertEqual(manifest["capture_boundary_lsn"], "0/5000000")
         self.assertTrue(manifest["completed_at"])
         recovery = manifest["database_recovery"]
-        self.assertEqual(recovery["target_lsn"], "0/5000000")
+        self.assertEqual(recovery["target_lsn"], "0/60001FE")
         self.assertEqual(recovery["archive_timeout_seconds"], 300)
         self.assertEqual(recovery["wal_fence_file"], "000000010000000000000006")
+        self.assertEqual(recovery["wal_segment_size_bytes"], 16 * 1024 * 1024)
         self.assertEqual(
             recovery["wal_fence_committed_at"], "2026-01-02T03:04:06+00:00"
         )
@@ -1663,7 +1688,8 @@ class BackupRunTestCase(_BackupTestCase):
         self.assertIn("generation = generation + 1", psql_queries[2])
         self.assertIn("fenced_at = CURRENT_TIMESTAMP", psql_queries[2])
         self.assertIn("TO STDOUT WITH (FORMAT csv, HEADER true)", psql_queries[2])
-        self.assertIn("pg_walfile_name", psql_queries[3])
+        self.assertIn("pg_current_wal_lsn() AS fence_lsn", psql_queries[3])
+        self.assertIn("pg_walfile_name(fence_lsn - 1)", psql_queries[3])
         self.assertIn("AT TIME ZONE 'UTC'", psql_queries[3])
         self.assertIn("pg_stat_archiver", psql_queries[4])
         self.assertIn("AT TIME ZONE 'UTC'", psql_queries[4])
@@ -2302,6 +2328,69 @@ class AzurePublicationTestCase(_BackupTestCase):
                     "UPDATE public.backup_recovery_wal_fence", commands[0][-1]
                 )
 
+    def test_wal_fence_boundary_requires_valid_post_commit_values(self):
+        self._reload({"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)})
+        db = backup._parse_db_url(backup.DATABASE_URL)
+        valid = (
+            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes\n"
+            "0/60001FE,000000010000000000000006,2026-01-02T03:04:06.000000Z,16777216\n"
+        )
+        for payload in (
+            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes\nnot-an-lsn,000000010000000000000006,2026-01-02T03:04:06.000000Z,16777216\n",
+            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes\n0/60001FE,not-a-wal,2026-01-02T03:04:06.000000Z,16777216\n",
+            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes\n0/60001FE,000000010000000000000006,not-a-time,16777216\n",
+            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes\n0/60001FE,000000010000000000000006,2026-01-02T03:04:06.000000Z,16777217\n",
+            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes\n0/60001FE,000000010000000000000006,2026-01-02T03:04:06.000000Z,524288\n",
+        ):
+            with self.subTest(payload=payload):
+                responses = iter(("generation\n1\n", payload))
+                def invalid_boundary(_cmd, **_kwargs):
+                    return MagicMock(returncode=0, stdout=next(responses), stderr="")
+                with (
+                    patch.object(backup.subprocess, "run", side_effect=invalid_boundary),
+                    self.assertRaisesRegex(RuntimeError, "boundary query returned invalid values"),
+                ):
+                    backup._emit_wal_fence(db)
+
+        responses = iter(("generation\n1\n", valid))
+        def valid_boundary(_cmd, **_kwargs):
+            return MagicMock(returncode=0, stdout=next(responses), stderr="")
+        with patch.object(backup.subprocess, "run", side_effect=valid_boundary):
+            self.assertEqual(
+                (
+                    "0/60001FE",
+                    "000000010000000000000006",
+                    datetime(2026, 1, 2, 3, 4, 6, tzinfo=timezone.utc),
+                    16777216,
+                ),
+                backup._emit_wal_fence(db),
+            )
+
+    def test_postgres_lsn_and_wal_file_boundaries(self):
+        self.assertEqual((0x1A << 32) + 0x1000000, backup._postgres_lsn_value("1A/1000000"))
+        self.assertEqual(
+            "000000010000001A00000000",
+            backup._postgres_wal_file(
+                backup._postgres_lsn_value("1A/1000000"), 1, 16 * 1024 * 1024
+            ),
+        )
+        self.assertEqual(
+            "000000010000000000000000",
+            backup._postgres_wal_file(16 * 1024 * 1024 + 1, 1, 64 * 1024 * 1024),
+        )
+        self.assertEqual(
+            "000000010000000000000001",
+            backup._postgres_wal_file(16 * 1024 * 1024 + 1, 1, 16 * 1024 * 1024),
+        )
+        for value in ("latest", "1A", "1A/", "1A/100000000", "100000000/1", "1A/-1"):
+            with self.subTest(value=value):
+                self.assertIsNone(backup._postgres_lsn_value(value))
+        for size in (0, 512 * 1024, 2 * 1024 * 1024 * 1024, 24 * 1024 * 1024, "16MB"):
+            with self.subTest(size=size):
+                self.assertIsNone(backup._postgres_wal_segment_size(size))
+        self.assertIsNone(backup._postgres_wal_file(0, 1, 16 * 1024 * 1024))
+        self.assertIsNone(backup._postgres_wal_file(1, 1, 24 * 1024 * 1024))
+
     def test_wal_fence_wait_polls_until_same_timeline_file_is_archived(self):
         self._reload({"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)})
         fence = "000000010000000000000006"
@@ -2787,7 +2876,9 @@ def _production_inventory_run(
     boundary="2026-01-02T03:04:05.000000Z",
     target_lsn="0/5000000",
     archive_timeout="300",
+    fence_lsn="0/60001FE",
     fence_file="000000010000000000000006",
+    wal_segment_size=16 * 1024 * 1024,
     archived_files=None,
     after_boundary=None,
 ):
@@ -2829,8 +2920,8 @@ def _production_inventory_run(
             return MagicMock(
                 returncode=0,
                 stdout=(
-                    "wal_fence_file,wal_fence_committed_at\n"
-                    f"{fence_file},2026-01-02T03:04:06.000000Z\n"
+                    "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes\n"
+                    f"{fence_lsn},{fence_file},2026-01-02T03:04:06.000000Z,{wal_segment_size}\n"
                 ),
                 stderr="",
             )
@@ -4709,7 +4800,8 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
         manifest_completed = "2026-01-01T02:01:00+00:00"
         payload = b"source"
         metadata = {"size": len(payload), "sha256": hashlib.sha256(payload).hexdigest()}
-        target_lsn = "1A/2B"
+        boundary_lsn = "1A/2B"
+        target_lsn = "1A/1000000"
         capture_started = "2026-01-01T01:59:00+00:00"
         database_started = "2026-01-01T01:59:10.123456+00:00"
         filesystem_started = "2026-01-01T01:59:20.654321+00:00"
@@ -4723,7 +4815,7 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
             "completed_at": manifest_completed,
             "capture_started_at": capture_started,
             "capture_boundary_at": target_time,
-            "capture_boundary_lsn": target_lsn,
+            "capture_boundary_lsn": boundary_lsn,
             "database_name": "hriv",
             "versions": {"hriv": "unknown", "backup": "unknown", "archive_format": 2},
             "backup_mode": "production",
@@ -4755,7 +4847,8 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
                 "target_time": target_time,
                 "target_lsn": target_lsn,
                 "archive_timeout_seconds": 300,
-                "wal_fence_file": "000000010000000000000001",
+                "wal_fence_file": "000000010000001A00000000",
+                "wal_segment_size_bytes": 16 * 1024 * 1024,
                 "wal_fence_committed_at": "2026-01-01T02:00:10+00:00",
                 "wal_fence_archived_at": "2026-01-01T02:00:20+00:00",
                 "logical_dump_role": "not-included",
@@ -4932,7 +5025,8 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
         )
         self.assertEqual(result["excluded_artifacts"], [])
         self.assertEqual(result["capture_started_at"], "2026-01-01T01:59:00Z")
-        self.assertEqual(result["wal_fence_file"], "000000010000000000000001")
+        self.assertEqual(result["wal_fence_file"], "000000010000001A00000000")
+        self.assertEqual(result["wal_segment_size_bytes"], 16 * 1024 * 1024)
         self.assertEqual(result["wal_fence_committed_at"], "2026-01-01T02:00:10Z")
         self.assertEqual(result["wal_fence_archived_at"], "2026-01-01T02:00:20Z")
         self.assertEqual(result["completed_at"], "2026-01-01T02:01:00Z")
@@ -5410,10 +5504,24 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
         candidate["capture_started_at"] = "2026-01-01 01:59:00Z"
         invalid.append(candidate)
         candidate = copy.deepcopy(manifest)
+        candidate["database_recovery"]["target_lsn"] = manifest[
+            "capture_boundary_lsn"
+        ]
+        invalid.append(candidate)
+        candidate = copy.deepcopy(manifest)
+        candidate["database_recovery"]["target_lsn"] = "1A/2000000"
+        invalid.append(candidate)
+        candidate = copy.deepcopy(manifest)
         candidate["database_recovery"]["wal_fence_file"] = "0" * 24
         invalid.append(candidate)
         candidate = copy.deepcopy(manifest)
         candidate["database_recovery"]["wal_fence_file"] = "0000000a0000000000000001"
+        invalid.append(candidate)
+        candidate = copy.deepcopy(manifest)
+        candidate["database_recovery"]["wal_segment_size_bytes"] = 24 * 1024 * 1024
+        invalid.append(candidate)
+        candidate = copy.deepcopy(manifest)
+        candidate["database_recovery"]["wal_segment_size_bytes"] = 1024 * 1024
         invalid.append(candidate)
         candidate = copy.deepcopy(manifest)
         candidate["source_images"]["file_count"] = 2
@@ -5427,6 +5535,18 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
         too_long_after_prefix = "source_images/" + "a" * 498
         with self.assertRaises(backup.ValidationFailure):
             backup._canonical_source_path(too_long_after_prefix)
+
+    def test_manifest_accepts_nondefault_wal_segment_size(self):
+        _snapshot, manifest, _sidecar, _blobs, _container, _calls = self._fixture()
+        manifest["capture_boundary_lsn"] = "0/1000000"
+        manifest["database_recovery"]["target_lsn"] = "0/1000001"
+        manifest["database_recovery"]["wal_fence_file"] = (
+            "000000010000000000000000"
+        )
+        manifest["database_recovery"]["wal_segment_size_bytes"] = 64 * 1024 * 1024
+        summary = backup._validation_manifest_summary(manifest)
+        self.assertEqual(summary["target_timeline"], 1)
+        self.assertEqual(summary["wal_segment_size_bytes"], 64 * 1024 * 1024)
 
     def test_excluded_artifacts_match_incomplete_segments_and_suffixes_case_insensitively(self):
         _snapshot, manifest, _sidecar, _blobs, _container, _calls = self._fixture()
@@ -5582,7 +5702,7 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
             self.assertEqual(result["restored_file_count"], 1)
             self.assertEqual(result["target_data_dir"], str(target))
             self.assertEqual(result["capture_started_at"], "2026-01-01T01:59:00Z")
-            self.assertEqual(result["wal_fence_file"], "000000010000000000000001")
+            self.assertEqual(result["wal_fence_file"], "000000010000001A00000000")
             self.assertEqual(result["wal_fence_committed_at"], "2026-01-01T02:00:10Z")
             self.assertEqual(result["wal_fence_archived_at"], "2026-01-01T02:00:20Z")
             self.assertFalse((target / "db.sql").exists())

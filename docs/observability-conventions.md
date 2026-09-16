@@ -280,6 +280,25 @@ In local execution mode, a missing dedicated-worker heartbeat is expected and
 does not make the queue health endpoint degraded; use the worker liveness signal
 for required-mode deployments.
 
+## Browse Tree Cache Metrics
+
+`GET /api/categories/tree` short-circuits to `304` when the client's ETag
+matches the current browse revision (`docs/browse-state.md`). The endpoint
+emits two OTel meter series so the saved work is measurable (issue #1100):
+
+- `hriv.browse_tree.requests` — counter, attribute `outcome` ∈
+  `full` | `not_modified`. `not_modified` marks a 304 short-circuit; `full`
+  counts only completed builds (build failures surface via `http.request`
+  5xx, keeping the two series consistent).
+- `hriv.browse_tree.build.duration` — histogram (seconds) recorded only for
+  full builds; multiplying `not_modified` volume by its mean approximates the
+  backend work the short-circuit avoids.
+
+`outcome` is the only label (bounded, on the allowlist). Revisions, viewer
+hashes, and request IDs stay in logs/traces. Client-side, the equivalent
+poll-outcome counters are dev-mode only (`window.__hrivBrowseStats`,
+`docs/drag-and-drop.md` → Instrumentation) — they are not telemetry events.
+
 ## Privacy, Access, and Retention
 
 Observability data serves two different uses and must be treated differently:
@@ -462,6 +481,7 @@ Published backup gauges:
 - `hriv_backup_last_attempt_timestamp_seconds{backup_type}`
 - `hriv_backup_last_success_timestamp_seconds{backup_type}`
 - `hriv_backup_last_outcome{backup_type}`
+- `hriv_backup_attempt_in_progress{backup_type}`
 - `hriv_backup_last_duration_seconds{backup_type}`
 - `hriv_backup_last_size_bytes{backup_type}`
 - `hriv_backup_archives_retained{backup_type}`
@@ -473,6 +493,18 @@ retained-archive classification cache was last refreshed successfully, and
 `hriv_backup_archive_listing_last_outcome` distinguishes success, failure, and
 not-configured states. Archive listing failures must not be rendered as zero
 retained archives.
+
+`hriv_backup_last_outcome` reads `-1` ("unknown") while an attempt is in flight
+because the attempt state records `success` only at completion; the same `-1`
+covers a run that crashed before writing its outcome. Consumers must therefore
+not treat `-1` as failure. `hriv_backup_attempt_in_progress` disambiguates: it
+is `1` whenever an attempt has `started_at` but no recorded outcome, which
+covers both a healthy in-flight run and an interrupted attempt, and `NaN` when
+the attempt state itself cannot be read so that "unknown" is never rendered as
+idle. Alerting should
+fire on `last_outcome == 0` for recorded failures and on
+`attempt_in_progress == 1` persisting beyond the maximum expected backup
+duration for interrupted runs.
 
 Backup freshness is measured from the time a snapshot became restorable, not
 from the time its run started: `LAST_SUCCESS.json` carries `completed_at`
@@ -721,6 +753,8 @@ is unset, the frontend falls back to the same-origin relative path
 | `page`             | string                                | Low-cardinality page identifier for navigation events            |
 | `from_page`        | bounded string                        | Previous page for navigation transitions (bounded to page names) |
 | `direction`        | bounded string                        | `down`/`up`/`jump` for `navigate_category` transitions           |
+| `guide_doc`        | bounded string                        | Guide page slug for `navigate_guide_doc` hits (kebab-case only)  |
+| `admin_tab`        | bounded string                        | Admin tab for `navigate_admin_tab` hits (`changelog`/`backups`)  |
 | `error`            | string                                | High-level error category, never free-text or PII                |
 | `error_code`       | bounded string                        | Stable error code for `frontend.error` events                    |
 | `synthetic`        | boolean                               | Client hint only; server metadata is authoritative (see below)   |
@@ -745,6 +779,11 @@ event fields**, never as Prometheus metric labels, to keep metric cardinality
 bounded. Client-environment fields are reduced to small enumerated buckets and
 the backend **re-bounds** them against allowlists (coercing anything unknown to
 `other`), so a client cannot inject high-cardinality or free-text values.
+
+`page` fields reflect the **rendered** page after role gating: a deep link to a
+page the user's role cannot open (e.g. a student on `?page=guide`) falls back
+to the browse view, and telemetry reports `browse` so visits are not attributed
+to content that was never shown.
 
 Client-environment values are detected once per tab (on the first telemetry
 event) and cached for the tab lifetime. In particular `viewport_bucket`
@@ -791,6 +830,11 @@ The endpoint enriches each event with:
 - `category.from_id` / `category.from_label` — previous category (id and
   server-resolved label) for `navigate_category` transitions, powering the
   navigation-path panels on the usage dashboard
+- `guide.doc` — bounded guide-page slug for `navigate_guide_doc` transitions,
+  powering per-page hit counts on the usage dashboard
+- `admin.tab` — bounded admin tab for `navigate_admin_tab` transitions
+  (`changelog`/`backups`), powering per-section hit counts on the usage
+  dashboard
 - `event.direction` — bounded navigation direction (`down`, `up`, or `jump`,
   derived client-side from the breadcrumb path change); the usage dashboard's
   Sankey funnel keeps only `down` edges so the flow stays acyclic

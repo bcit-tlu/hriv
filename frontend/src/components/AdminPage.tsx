@@ -36,17 +36,24 @@ import CancelIcon from '@mui/icons-material/Cancel'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import {
   ApiError,
+  cancelJob,
   deleteFilesImportArchive,
   fetchBackupSnapshotManifest,
   fetchFilesImportArchiveRetention,
   fetchFilesImportArchives,
+  fetchJobItems,
+  fetchRebuildTilesCapability,
   listExportArchives,
+  listJobs,
   purgeExportArchive,
+  retryFailedJobItems,
+  retryJobItem,
   startDbExport,
   startDbImport,
   listBackupSnapshots,
   startFilesExport,
   initFilesImport,
+  startParallelRebuildTiles,
   startRebuildTiles,
   rerunFilesImportArchive,
   startFileRestore,
@@ -59,17 +66,26 @@ import {
 } from '../api'
 import type {
   AdminTask,
+  ApiJob,
   BackupSnapshotManifest,
   BackupSnapshotSummary,
   ExportArchive,
   FilesImportArchive,
   FilesImportArchiveRetentionPolicy,
+  RebuildTilesCapability,
 } from '../api'
 import { useAuth } from '../useAuth'
+import { emitEvent } from '../observability'
 import ConfirmImportDialog, { type ConfirmImportKind } from './ConfirmImportDialog'
 import ChangelogAdmin from './ChangelogAdmin'
+import RebuildJobsPanel from './RebuildJobsPanel'
 
 const POLL_INTERVAL = 2000 // ms
+
+// Durable rebuild jobs (#1191): supervisor states that are still in flight
+// and worth polling, and the bounded page size for failed-item inspection.
+const ACTIVE_REBUILD_JOB_STATUSES = new Set<ApiJob['status']>(['queued', 'running', 'cancelling'])
+const FAILED_ITEMS_PAGE_SIZE = 50
 
 // A 401/403 during a task interaction means the acting account was replaced
 // (e.g. by a database import) and the current JWT is no longer valid.
@@ -198,6 +214,22 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
   // Log viewer modal
   const [logTask, setLogTask] = useState<AdminTask | null>(null)
   const [activeTab, setActiveTab] = useState<AdminTabValue>('changelog')
+
+  // One page-hit event per shown tab so dashboards can break admin traffic
+  // down by section, matching the per-doc hits on the guide page. Deduped per
+  // mount so re-renders don't double-count.
+  const emittedTabRef = useRef<AdminTabValue | null>(null)
+  useEffect(() => {
+    if (emittedTabRef.current === activeTab) return
+    emittedTabRef.current = activeTab
+    emitEvent({
+      event: 'navigation.page_changed',
+      action: 'navigate_admin_tab',
+      outcome: 'success',
+      page: 'admin',
+      admin_tab: activeTab,
+    })
+  }, [activeTab])
   const [taskHistoryExpanded, setTaskHistoryExpanded] = useState(false)
   const [restoreSnapshots, setRestoreSnapshots] = useState<BackupSnapshotSummary[]>([])
   const [restoreConfigured, setRestoreConfigured] = useState<boolean | null>(null)
@@ -214,6 +246,13 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
   const [error, setError] = useState<string | null>(null)
   const [starting, setStarting] = useState<string | null>(null) // task_type being kicked off
   const [sessionEndedMessage, setSessionEndedMessage] = useState<string | null>(null)
+
+  // Durable parallel tile-rebuild jobs (#1191). The capability flag only
+  // gates *creation* — previously created jobs continue through their
+  // persisted execution mode, so jobs are listed regardless of the flag.
+  const [rebuildJobs, setRebuildJobs] = useState<ApiJob[]>([])
+  const [rebuildCapability, setRebuildCapability] = useState<RebuildTilesCapability | null>(null)
+  const [jobActionPending, setJobActionPending] = useState<string | null>(null)
 
   const pollRefs = useRef(new Map<number, ReturnType<typeof setTimeout>>())
   const pollGenerations = useRef(new Map<number, number>())
@@ -248,6 +287,59 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
         /* ignore */
       })
   }, [])
+
+  // Monotonic sequence for jobs-list responses: each refresh stamps its
+  // request, and mutations bump the counter so a list snapshot produced
+  // before a create/cancel/retry can't clobber the newer state (#1191).
+  const jobsRequestSeq = useRef(0)
+  const refreshRebuildJobs = useCallback(async () => {
+    const seq = ++jobsRequestSeq.current
+    try {
+      const jobs = await listJobs()
+      if (seq === jobsRequestSeq.current) setRebuildJobs(jobs)
+    } catch {
+      /* transient failure — the panel keeps its last state */
+    }
+  }, [])
+
+  // Load durable jobs and the parallel-rebuild capability once (#1191).
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void refreshRebuildJobs()
+    fetchRebuildTilesCapability()
+      .then(setRebuildCapability)
+      .catch(() => {
+        /* capability unknown → serial rebuild fallback */
+      })
+  }, [refreshRebuildJobs])
+
+  const hasActiveRebuildJob = rebuildJobs.some(
+    (job) => job.job_type === 'rebuild_tiles' && ACTIVE_REBUILD_JOB_STATUSES.has(job.status),
+  )
+
+  // Poll the bounded jobs list while any rebuild job is active. The chain
+  // schedules its next tick only after the previous request resolves, so
+  // requests can never overlap; it stops itself once every job is terminal.
+  const rebuildPollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    const tick = () => {
+      rebuildPollRef.current = setTimeout(() => {
+        void (async () => {
+          await refreshRebuildJobs()
+          if (!cancelled) tick()
+        })()
+      }, POLL_INTERVAL)
+    }
+    if (hasActiveRebuildJob) tick()
+    return () => {
+      cancelled = true
+      if (rebuildPollRef.current !== null) {
+        clearTimeout(rebuildPollRef.current)
+        rebuildPollRef.current = null
+      }
+    }
+  }, [hasActiveRebuildJob, refreshRebuildJobs])
 
   // ── Polling ──────────────────────────────────────────────
 
@@ -507,7 +599,26 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
 
   const handleExport = () => kickOff('db_export', startDbExport)
   const handleExportFiles = () => kickOff('files_export', startFilesExport)
-  const handleRebuildTiles = () => kickOff('rebuild_tiles', startRebuildTiles)
+  const handleRebuildTiles = () => {
+    // When parallel rebuilds are enabled the button creates a durable Job
+    // through the jobs API; otherwise it keeps the serial AdminTask path
+    // (local dev / flag-off fallback). The serial response shape is never
+    // changed by this branch.
+    if (rebuildCapability?.enabled) {
+      setError(null)
+      setStarting('rebuild_tiles')
+      startParallelRebuildTiles()
+        .then((job) => {
+          // Invalidate any jobs list still in flight from before creation.
+          jobsRequestSeq.current += 1
+          setRebuildJobs((prev) => [job, ...prev.filter((j) => j.id !== job.id)])
+        })
+        .catch((err) => setError(userMessage(err, 'Failed to start tile rebuild')))
+        .finally(() => setStarting(null))
+      return
+    }
+    void kickOff('rebuild_tiles', startRebuildTiles)
+  }
 
   const handleImportClick = () => fileRef.current?.click()
   const handleImportFilesClick = () => filesRef.current?.click()
@@ -768,6 +879,69 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
     }
   }
 
+  // ── Durable rebuild job controls (#1191) ───────────────
+
+  const syncRebuildJob = useCallback((updated: ApiJob) => {
+    // Invalidate any jobs list still in flight from before this mutation.
+    jobsRequestSeq.current += 1
+    setRebuildJobs((prev) => prev.map((j) => (j.id === updated.id ? updated : j)))
+  }, [])
+
+  const handleCancelRebuildJob = async (jobId: number) => {
+    setError(null)
+    setJobActionPending(`cancel:${jobId}`)
+    try {
+      syncRebuildJob(await cancelJob(jobId))
+    } catch (err) {
+      setError(userMessage(err, 'Failed to cancel rebuild'))
+    } finally {
+      setJobActionPending(null)
+    }
+  }
+
+  // Resolve true so the panel knows its local failed-items state is stale.
+  const handleRetryFailedJobItems = async (jobId: number): Promise<boolean> => {
+    setError(null)
+    setJobActionPending(`retry-failed:${jobId}`)
+    try {
+      const result = await retryFailedJobItems(jobId)
+      syncRebuildJob(result.job)
+      return true
+    } catch (err) {
+      setError(userMessage(err, 'Failed to retry rebuild items'))
+      return false
+    } finally {
+      setJobActionPending(null)
+    }
+  }
+
+  // Failed-item pages are fetched lazily by the panel — only when the
+  // operator expands the list — one bounded page at a time.
+  const fetchFailedItems = useCallback(
+    (jobId: number, afterId?: number) =>
+      fetchJobItems(jobId, {
+        status: 'failed',
+        afterId,
+        limit: FAILED_ITEMS_PAGE_SIZE,
+      }),
+    [],
+  )
+
+  const handleRetryJobItem = async (jobId: number, itemId: number): Promise<boolean> => {
+    setError(null)
+    setJobActionPending(`retry-item:${itemId}`)
+    try {
+      const result = await retryJobItem(jobId, itemId)
+      syncRebuildJob(result.job)
+      return true
+    } catch (err) {
+      setError(userMessage(err, 'Failed to retry item'))
+      return false
+    } finally {
+      setJobActionPending(null)
+    }
+  }
+
   // Disable action buttons while a task is being kicked off OR while
   // any task is still uploading (#263 — setStarting(null) fires before
   // the XHR upload completes, so also check for in-flight uploads).
@@ -784,6 +958,9 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
       t.status === 'running' ||
       t.status === 'cancelling',
   )
+
+  // Durable jobs are generic (#1067); this panel only surfaces rebuilds.
+  const rebuildTileJobs = rebuildJobs.filter((job) => job.job_type === 'rebuild_tiles')
 
   return (
     <Box>
@@ -1059,6 +1236,17 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
               </CardContent>
             </Card>
           </Box>
+
+          {/* ── Parallel tile rebuilds (#1191) ─────────────── */}
+          <RebuildJobsPanel
+            jobs={rebuildTileJobs}
+            capability={rebuildCapability}
+            actionPending={jobActionPending}
+            onCancelJob={handleCancelRebuildJob}
+            onRetryFailedItems={handleRetryFailedJobItems}
+            onRetryItem={handleRetryJobItem}
+            fetchFailedItems={fetchFailedItems}
+          />
 
           <Box>
             <Typography variant="h6" sx={{ mb: 2 }}>

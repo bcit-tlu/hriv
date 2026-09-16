@@ -45,6 +45,7 @@ import EditImageModal from './components/EditImageModal'
 import ProgramManagementModal from './components/ProgramManagementModal'
 import GroupManagementModal from './components/GroupManagementModal'
 import NotificationMenu from './components/NotificationMenu'
+import GuidePage, { type GuideDocRequest } from './components/GuidePage'
 import ReportIssueModal from './components/ReportIssueModal'
 import SearchModal from './components/SearchModal'
 import type { TypeFilter } from './components/SearchModal'
@@ -95,8 +96,8 @@ import AddCategoryDialog from './components/AddCategoryDialog'
 import EditCategoryDialog from './components/EditCategoryDialog'
 import { useColorMode } from './useColorMode'
 import { useBrowseData } from './useBrowseData'
-import { emitEvent, emitSessionStartedOnce } from './observability'
-import type { TelemetryNavDirection } from './observability'
+import { emitEvent, emitSessionStartedOnce, setTelemetryPage } from './observability'
+import type { FrontendPage, TelemetryNavDirection } from './observability'
 import { narrowGroupIds, narrowProgramIds } from './categoryUtils'
 import { formatCategoryItemCountsForCategory } from './components/categoryOptionUtils'
 import { getInheritedRestrictionSx } from './restrictionStyles'
@@ -149,29 +150,43 @@ export default function App() {
 
   const [page, setPage] = useState<Page>(() => {
     const p = new URLSearchParams(window.location.search).get('page')
-    if (p === 'manage' || p === 'people' || p === 'admin') return p
+    if (p === 'manage' || p === 'people' || p === 'admin' || p === 'guide') return p
     return 'browse'
   })
 
-  const lastEmittedPageRef = useRef<Page | null>(null)
+  // The page actually rendered after role gating: role-gated deep links fall
+  // back to browse for unauthorized roles (e.g. a student on ?page=guide), so
+  // telemetry reports this rather than the raw URL param.
+  const effectivePage: FrontendPage =
+    (page === 'guide' || page === 'manage') && !canEditContent
+      ? 'browse'
+      : (page === 'admin' || page === 'people') && !canManageUsers
+        ? 'browse'
+        : page
+
+  const lastEmittedPageRef = useRef<FrontendPage | null>(null)
   useEffect(() => {
     if (!currentUser) return
-    if (lastEmittedPageRef.current === page) return
+    if (lastEmittedPageRef.current === effectivePage) return
     const fromPage = lastEmittedPageRef.current
-    lastEmittedPageRef.current = page
+    lastEmittedPageRef.current = effectivePage
     emitEvent({
       event: 'navigation.page_changed',
       action: 'navigate',
       outcome: 'success',
-      page,
-      from_page: fromPage ?? undefined,
+      page: effectivePage,
+      from_page: fromPage === null ? undefined : fromPage,
     })
-  }, [page, currentUser])
+  }, [effectivePage, currentUser])
+
+  useEffect(() => {
+    setTelemetryPage(effectivePage)
+  }, [effectivePage])
 
   useEffect(() => {
     if (usersLoading || !currentUser) return
-    emitSessionStartedOnce(page)
-  }, [currentUser, page, usersLoading])
+    emitSessionStartedOnce(effectivePage)
+  }, [currentUser, effectivePage, usersLoading])
 
   const [path, setPath] = useState<Category[]>([])
   const pathRef = useRef(path)
@@ -507,6 +522,15 @@ export default function App() {
 
   // Search modal state
   const [searchOpen, setSearchOpen] = useState(false)
+  // External navigation target for the guide page (e.g. from search results).
+  const [guideDocRequest, setGuideDocRequest] = useState<GuideDocRequest | undefined>(undefined)
+  const guideDocSeqRef = useRef(0)
+
+  // Guide doc requests are one-shot: once we leave the guide page, drop any
+  // consumed request so a remounted GuidePage initializes from ?doc= alone.
+  if (page !== 'guide' && guideDocRequest !== undefined) {
+    setGuideDocRequest(undefined)
+  }
   const [searchUsers, setSearchUsers] = useState<ApiUser[]>([])
   const [searchInitialQuery, setSearchInitialQuery] = useState<string | undefined>(undefined)
   const [searchInitialTypeFilter, setSearchInitialTypeFilter] = useState<string | undefined>(
@@ -578,7 +602,7 @@ export default function App() {
       }
       setCanvasEditActive(false)
       const validPage = (
-        ['browse', 'manage', 'people', 'admin'].includes(popPage) ? popPage : 'browse'
+        ['browse', 'manage', 'people', 'admin', 'guide'].includes(popPage) ? popPage : 'browse'
       ) as Page
       setPage(validPage)
 
@@ -710,7 +734,7 @@ export default function App() {
     const prevUser = prevUserRef.current
     prevUserRef.current = currentUser
 
-    const isRealUserSwitch = prevUser != null && prevUser !== currentUser
+    const isRealUserSwitch = prevUser != null && prevUser.id !== currentUser?.id
     if (isRealUserSwitch) {
       lastEmittedPageRef.current = null
       lastEmittedCategoryRef.current = null
@@ -1474,6 +1498,7 @@ export default function App() {
             backendVersion={backendVersion}
             backupVersion={backupVersion}
             changelogVersion={changelogVersion}
+            onOpenGuide={() => handleTabChange('guide')}
           />
         ) : null
       }
@@ -1488,7 +1513,9 @@ export default function App() {
         }}
       >
         <Container maxWidth={false} sx={{ px: { xs: 2, sm: 3, lg: '72px', xl: '120px' } }}>
-          {page === 'admin' && canManageUsers ? (
+          {page === 'guide' && canEditContent ? (
+            <GuidePage docRequest={guideDocRequest} />
+          ) : page === 'admin' && canManageUsers ? (
             <AdminPage onChangelogEntriesChanged={bumpChangelogVersion} />
           ) : page === 'people' && canManageUsers ? (
             <PeoplePage
@@ -2581,6 +2608,15 @@ export default function App() {
               pushNavState('people')
             })
           }
+        }}
+        onSelectGuide={(slug, anchor) => {
+          if (!canEditContent) return
+          runCanvasNavigation(() => {
+            setPage('guide')
+            pushNavState('guide', [], null, { doc: slug })
+            guideDocSeqRef.current += 1
+            setGuideDocRequest({ slug, anchor, seq: guideDocSeqRef.current })
+          })
         }}
       />
 

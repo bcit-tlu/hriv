@@ -23,6 +23,14 @@ def _fixed_spec(value: Any) -> Any:
         annotations = result.get("annotations")
         if isinstance(annotations, dict):
             result["annotations"] = {key: item for key, item in annotations.items() if key not in _VOLATILE_ANNOTATIONS}
+        # The API omits readOnly when false (the default) on round-trip, so an
+        # explicit "readOnly": false in a template can never appear in the live
+        # object. Normalizing it away keeps the comparison semantic.
+        if result.get("readOnly") is False:
+            del result["readOnly"]
+        # nodeName is runtime scheduling placement stamped by the controller,
+        # not template identity; dropping it keeps re-adoption deterministic.
+        result.pop("nodeName", None)
         return result
     if isinstance(value, list):
         return [_fixed_spec(item) for item in value]
@@ -156,6 +164,7 @@ class FakeGateway:
         self.results: dict[str, str] = {}
         self.phases: dict[str, str] = {}
         self.async_deletes = False
+        self.pod_node = "storage-node-1"
 
     def read_state(self, name: str) -> tuple[str | None, str]:
         return self.state_raw, str(self.state_version)
@@ -212,7 +221,14 @@ class FakeGateway:
         role = metadata.get("labels", {}).get("hriv.bcit.ca/restore-validation-role", "")
         result = self.results.get(role)
         phase = self.phases.get(role, "Healthy" if manifest["kind"] == "Cluster" else "Succeeded")
-        self.children[key] = (ref, manifest, Observation(phase, result))
+        children: tuple[ResourceRef, ...] = ()
+        if manifest["kind"] == "Job":
+            pod_ref = ResourceRef("v1", "Pod", f"{metadata['name']}-pod0", f"{uid}-pod0")
+            owner = [{"apiVersion": "batch/v1", "kind": "Job", "name": metadata["name"], "uid": uid, "controller": True}]
+            pod_manifest = {"apiVersion": "v1", "kind": "Pod", "metadata": {"name": pod_ref.name, "labels": dict(metadata.get("labels", {})), "ownerReferences": owner}, "spec": {"nodeName": self.pod_node}, "status": {}}
+            self.children[("v1", "Pod", pod_ref.name)] = (pod_ref, pod_manifest, Observation("Succeeded"))
+            children = (pod_ref,)
+        self.children[key] = (ref, manifest, Observation(phase, result, children))
         self.created.append(manifest)
         return ref
 

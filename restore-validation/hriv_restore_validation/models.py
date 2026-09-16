@@ -13,16 +13,23 @@ import yaml
 from .strict import DNS_RE, ValidationError, bounded_string, exact_object, integer, parse_json
 
 IMAGE_RE = re.compile(r"[^\s@]+@sha256:[0-9a-f]{64}")
+TAGGED_IMAGE_RE = re.compile(
+    r"[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?(?::[0-9]+)?/"
+    r"(?:[a-z0-9]+(?:[._-][a-z0-9]+)*/)*"
+    r"[a-z0-9]+(?:[._-][a-z0-9]+)*"
+    r":[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}"
+    r"@sha256:[0-9a-f]{64}"
+)
 IDENT_RE = re.compile(r"[a-z_][a-z0-9_]{0,62}")
 PG_NAME_RE = re.compile(r"[a-z_][a-z0-9_-]{0,62}")
 NO_PERMISSION_SA = "hriv-restore-validation-no-permission"
 AZURE_SECRET = "hriv-restore-validation-azure-read"
 
 
-def _strings(value: Any, name: str, maximum: int = 64) -> tuple[str, ...]:
+def _strings(value: Any, name: str, maximum: int = 64, *, item_maximum: int = 128, pattern: re.Pattern[str] | None = None) -> tuple[str, ...]:
     if not isinstance(value, list) or len(value) > maximum:
         raise ValidationError("SCHEMA_INVALID", name)
-    result = tuple(bounded_string(item, name, 128) for item in value)
+    result = tuple(bounded_string(item, name, item_maximum, pattern) for item in value)
     if len(set(result)) != len(result):
         raise ValidationError("SCHEMA_INVALID", name)
     return result
@@ -85,8 +92,8 @@ class Config:
             bounded_string(value["lease_name"], "lease_name", 63, DNS_RE),
             integer(value["lease_seconds"], "lease_seconds", 10, 300),
             integer(value["initialization_grace_seconds"], "initialization_grace_seconds", 0, 300),
-            integer(value["max_runtime_seconds"], "max_runtime_seconds", 60, 21600),
-            integer(value["stage_timeout_seconds"], "stage_timeout_seconds", 30, 7200),
+            integer(value["max_runtime_seconds"], "max_runtime_seconds", 60, 43200),
+            integer(value["stage_timeout_seconds"], "stage_timeout_seconds", 30, 21600),
             integer(value["retained_seconds"], "retained_seconds", 3600, 172800),
             integer(value["cas_retries"], "cas_retries", 1, 20),
             integer(value["max_retained_runs"], "max_retained_runs", 0, 2),
@@ -121,6 +128,7 @@ class SourceProfile:
     backup_image: str
     source_container: str
     source_prefix: str
+    source_storage_class: str
     sha256: str
 
     @property
@@ -134,13 +142,17 @@ class SourceProfile:
     @classmethod
     def parse(cls, raw: str | bytes) -> "SourceProfile":
         required = {"schema_version", "profile_id", "profile_version", "provider", "source_cluster", "external_cluster", "database", "owner", "application_database", "server_name", "expected_system_identifier", "object_store", "object_store_api_version", "postgresql_major", "postgresql_image", "postgresql_storage_size", "required_database_inventory", "required_static_role_inventory", "dynamic_role_prefixes", "expected_migration_version", "minimum_row_counts", "synthetic_row", "controller_image", "backup_image", "source_container", "source_prefix"}
-        value = exact_object(parse_json(raw, max_bytes=64 * 1024), required=required)
+        value = exact_object(parse_json(raw, max_bytes=64 * 1024), required=required, optional={"source_storage_class"})
         if value["schema_version"] != 1:
             raise ValidationError("PROFILE_SCHEMA_UNSUPPORTED")
         fixed = (value["provider"], value["source_cluster"], value["external_cluster"], value["database"], value["owner"], value["application_database"], value["server_name"], value["object_store"], value["object_store_api_version"], value["postgresql_major"])
         if fixed != ("cloudnative-pg", "pg-core", "pg-core-source", "app", "app", "hriv", "pg-core", "hriv-restore-validation-pg-core", "barmancloud.cnpg.io/v1", 17):
             raise ValidationError("PROFILE_NOT_APPROVED")
-        images = [bounded_string(value[name], name, 512, IMAGE_RE) for name in ("postgresql_image", "controller_image", "backup_image")]
+        images = [
+            bounded_string(value["postgresql_image"], "postgresql_image", 512, TAGGED_IMAGE_RE),
+            bounded_string(value["controller_image"], "controller_image", 512, IMAGE_RE),
+            bounded_string(value["backup_image"], "backup_image", 512, IMAGE_RE),
+        ]
         databases = cls._databases(value["required_database_inventory"])
         roles = cls._roles(value["required_static_role_inventory"])
         row_counts = cls._row_counts(value["minimum_row_counts"])
@@ -156,7 +168,8 @@ class SourceProfile:
             _strings(value["dynamic_role_prefixes"], "dynamic_role_prefixes", 16),
             bounded_string(value["expected_migration_version"], "expected_migration_version", 128), row_counts,
             {"id": bounded_string(synthetic["id"], "synthetic.id", 128), "email_sha256": bounded_string(synthetic["email_sha256"], "synthetic.email_sha256", 64, re.compile(r"[0-9a-f]{64}"))},
-            images[1], images[2], bounded_string(value["source_container"], "source_container", 63, DNS_RE), bounded_string(value["source_prefix"], "source_prefix", 256), profile_digest,
+            images[1], images[2], bounded_string(value["source_container"], "source_container", 63, DNS_RE), bounded_string(value["source_prefix"], "source_prefix", 256),
+            bounded_string(value.get("source_storage_class", "longhorn"), "source_storage_class", 63, DNS_RE), profile_digest,
         )
 
     @staticmethod
@@ -286,7 +299,7 @@ class Templates:
         except (yaml.YAMLError, UnicodeDecodeError) as exc:
             raise ValidationError("TEMPLATE_INVALID") from exc
         obj = exact_object(value, required={"schema_version", "image_allowlist", "selection_job", "source_pvc", "cnpg_cluster", "db_validation_job", "source_restore_job", "consistency_job"})
-        if obj["schema_version"] != 1 or set(_strings(obj["image_allowlist"], "image_allowlist", 8)) != allowed_images:
+        if obj["schema_version"] != 1 or set(_strings(obj["image_allowlist"], "image_allowlist", 8, item_maximum=512, pattern=IMAGE_RE)) != allowed_images:
             raise ValidationError("TEMPLATE_IMAGE_ALLOWLIST_INVALID")
         templates = [obj[key] for key in ("selection_job", "source_pvc", "cnpg_cluster", "db_validation_job", "source_restore_job", "consistency_job")]
         if not all(isinstance(item, dict) for item in templates):
@@ -306,7 +319,7 @@ class Templates:
             not isinstance(pvc_size, str)
             or _quantity_bytes(pvc_size) < 40 * 1024**3
             or pvc_spec.get("accessModes") != ["ReadWriteOnce"]
-            or pvc_spec.get("storageClassName") != "longhorn"
+            or pvc_spec.get("storageClassName") != profile.source_storage_class
         ):
             raise ValidationError("TEMPLATE_PVC_INVALID")
         cluster = obj["cnpg_cluster"].get("spec", {})
@@ -314,9 +327,16 @@ class Templates:
         target = recovery.get("recoveryTarget", {})
         external = cluster.get("externalClusters", [])
         if (
-            cluster.get("imageName") not in allowed_images
+            cluster.get("imageName") != profile.postgresql_image
             or cluster.get("storage")
-            != {"size": profile.postgresql_storage_size, "storageClass": "longhorn"}
+            != {"size": profile.postgresql_storage_size, "storageClass": profile.source_storage_class}
+            or cluster.get("inheritedMetadata")
+            != {
+                "labels": {
+                    "app.kubernetes.io/managed-by": "hriv-restore-validation",
+                    "hriv.bcit.ca/restore-validation-role": "cnpg",
+                }
+            }
             or cluster.get("affinity")
             != {"nodeSelector": {"bcit.ca/longhorn-storage": "true"}}
             or recovery.get("source") != "pg-core-source"
@@ -412,7 +432,7 @@ class Templates:
             raise ValidationError("TEMPLATE_PVC_REFERENCE_INVALID")
         if database_volumes.get("credentials", {}).get("secret", {}).get("secretName") != "generated-superuser" or consistency_volumes.get("credentials", {}).get("secret", {}).get("secretName") != "generated-superuser":
             raise ValidationError("TEMPLATE_SECRET_INVALID")
-        expected_maps = {"profile": "hriv-restore-validation-source-profile-v2", "policy": "hriv-restore-validation-source-state-policy-v2"}
+        expected_maps = {"profile": "hriv-restore-validation-source-profile-v7", "policy": "hriv-restore-validation-source-state-policy-v7"}
         if database_volumes.get("profile", {}).get("configMap", {}).get("name") != expected_maps["profile"] or consistency_volumes.get("profile", {}).get("configMap", {}).get("name") != expected_maps["profile"] or consistency_volumes.get("policy", {}).get("configMap", {}).get("name") != expected_maps["policy"]:
             raise ValidationError("TEMPLATE_CONFIG_REFERENCE_INVALID")
         tmp = {"name": "tmp", "mountPath": "/tmp"}

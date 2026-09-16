@@ -9,7 +9,7 @@ from unittest.mock import Mock
 from kubernetes.client import ApiException
 
 import hriv_restore_validation.kubernetes_gateway as kubernetes_gateway
-from hriv_restore_validation.gateway import FakeGateway, Lease, TEMPLATE_IDENTITY_ANNOTATION, template_identity
+from hriv_restore_validation.gateway import FakeGateway, Lease, TEMPLATE_IDENTITY_ANNOTATION, adopted_ref, template_identity
 from hriv_restore_validation.models import ResourceRef
 from hriv_restore_validation.strict import ValidationError
 
@@ -19,7 +19,7 @@ class GatewayTests(unittest.TestCase):
         value = datetime(2026, 1, 15, 2, 0, 0, 999999, tzinfo=timezone(timedelta(hours=-8)))
         self.assertEqual(datetime(2026, 1, 15, 10, 0, tzinfo=timezone.utc), kubernetes_gateway._time(value))
 
-    def test_lease_write_microsecond_roundtrip_is_exact_utc_seconds(self):
+    def test_lease_write_uses_kubernetes_microtime_and_read_normalizes(self):
         gateway = self._gateway(); gateway.coordination = Mock()
         raw = datetime(2026, 1, 15, 2, 0, 0, 999999, tzinfo=timezone(timedelta(hours=-8)))
         normalized = datetime(2026, 1, 15, 10, 0, tzinfo=timezone.utc)
@@ -28,7 +28,7 @@ class GatewayTests(unittest.TestCase):
         gateway.coordination.patch_namespaced_lease.return_value = SimpleNamespace(metadata=SimpleNamespace(resource_version="8"), spec=response_spec)
         stored = gateway.replace_lease("lease", Lease("7", holder, raw, raw, 30))
         body = gateway.coordination.patch_namespaced_lease.call_args.args[2]
-        self.assertEqual(normalized, body["spec"]["acquireTime"]); self.assertEqual(normalized, stored.renew_time)
+        self.assertEqual("2026-01-15T10:00:00.000000Z", body["spec"]["acquireTime"]); self.assertEqual("2026-01-15T10:00:00.000000Z", body["spec"]["renewTime"]); self.assertEqual(normalized, stored.renew_time)
 
     @staticmethod
     def _manifest():
@@ -55,6 +55,24 @@ class GatewayTests(unittest.TestCase):
                 with self.assertRaises(ValidationError):
                     fake.create_child(retry)
 
+    def test_adopted_ref_accepts_api_elided_readonly_default(self):
+        manifest = self._manifest()
+        manifest["spec"]["template"] = {"spec": {"containers": [{"name": "x", "volumeMounts": [{"name": "source", "mountPath": "/restore", "readOnly": False}]}]}}
+        manifest["metadata"]["annotations"][TEMPLATE_IDENTITY_ANNOTATION] = template_identity(manifest)
+        actual = copy.deepcopy(manifest)
+        del actual["spec"]["template"]["spec"]["containers"][0]["volumeMounts"][0]["readOnly"]
+        actual["metadata"]["uid"] = "job-uid"
+        self.assertEqual("x", adopted_ref(manifest, actual).name)
+
+    def test_adopted_ref_ignores_runtime_nodename(self):
+        manifest = self._manifest()
+        manifest["spec"]["template"] = {"spec": {"containers": [{"name": "x"}]}}
+        manifest["metadata"]["annotations"][TEMPLATE_IDENTITY_ANNOTATION] = template_identity(manifest)
+        actual = copy.deepcopy(manifest)
+        actual["spec"]["template"]["spec"]["nodeName"] = "worker-01"
+        actual["metadata"]["uid"] = "job-uid"
+        self.assertEqual("x", adopted_ref(manifest, actual).name)
+
     def test_fake_async_delete(self):
         fake = FakeGateway(); ref = fake.create_child({"apiVersion": "v1", "kind": "PersistentVolumeClaim", "metadata": {"name": "x", "labels": {"app.kubernetes.io/managed-by": "hriv-restore-validation"}}}); fake.async_deletes = True; fake.delete_child(ref)
         self.assertIsNotNone(fake.get_child(ref)); fake.finish_deletes(); self.assertIsNone(fake.get_child(ref))
@@ -69,15 +87,61 @@ class GatewayTests(unittest.TestCase):
         terminated = SimpleNamespace(exit_code=exit_code); status = SimpleNamespace(name="main", state=SimpleNamespace(terminated=terminated)); owner = SimpleNamespace(kind="Job", name="job", uid="job-uid", controller=True)
         pod_labels = labels | {"job-name": "job", "batch.kubernetes.io/controller-uid": "job-uid"}
         pod = SimpleNamespace(metadata=SimpleNamespace(name="pod", uid="pod-uid", labels=pod_labels, owner_references=[owner]), status=SimpleNamespace(container_statuses=[status]))
-        gateway.core.list_namespaced_pod.return_value.items = [pod]; gateway.core.read_namespaced_pod_log.return_value = log
+        response = Mock()
+        response.stream.return_value = iter([log.encode("utf-8")])
+        gateway.core.list_namespaced_pod.return_value.items = [pod]; gateway.core.read_namespaced_pod_log.return_value = response
         return gateway, ref
 
     def test_job_result_final_log_line(self):
         gateway, ref = self._successful(); self.assertEqual('{"schema_version":1}', gateway.observe_child(ref).result)
 
+    def test_job_result_pending_on_torn_log_read(self):
+        gateway, ref = self._successful('{"schema_version":1,"success')
+        gateway.get_child.return_value["status"]["completionTime"] = datetime.now(timezone.utc)
+        self.assertEqual("Running", gateway.observe_child(ref).phase)
+
+    def test_job_result_pending_recovers_on_next_poll(self):
+        gateway, ref = self._successful('{"schema_version":1,"success')
+        gateway.get_child.return_value["status"]["completionTime"] = datetime.now(timezone.utc)
+        self.assertEqual("Running", gateway.observe_child(ref).phase)
+        response = Mock()
+        response.stream.return_value = iter([b'diagnostic\n{"schema_version":1}\n'])
+        gateway.core.read_namespaced_pod_log.return_value = response
+        self.assertEqual("Succeeded", gateway.observe_child(ref).phase)
+
+    def test_job_result_still_fails_after_grace(self):
+        gateway, ref = self._successful('{"schema_version":1,"success')
+        gateway.get_child.return_value["status"]["completionTime"] = datetime.now(timezone.utc) - timedelta(seconds=120)
+        with self.assertRaises(ValidationError): gateway.observe_child(ref)
+
+    def test_job_result_missing_fails_without_completion_time(self):
+        gateway, ref = self._successful('{"schema_version":1,"success')
+        with self.assertRaises(ValidationError): gateway.observe_child(ref)
+
+    def test_job_log_read_bypasses_client_deserialization(self):
+        gateway, ref = self._successful('{"schema_version":1,"success":true}')
+        observation = gateway.observe_child(ref)
+        self.assertEqual("Succeeded", observation.phase)
+        self.assertEqual(False, gateway.core.read_namespaced_pod_log.call_args.kwargs["_preload_content"])
+        kwargs = gateway.core.read_namespaced_pod_log.call_args.kwargs
+        self.assertIn("tail_lines", kwargs); self.assertNotIn("limit_bytes", kwargs)
+
+    def test_job_result_pending_when_pod_not_marked_terminated(self):
+        gateway, ref = self._successful()
+        gateway.get_child.return_value["status"]["completionTime"] = datetime.now(timezone.utc)
+        gateway.core.list_namespaced_pod.return_value.items[0].status.container_statuses[0].state.terminated = None
+        self.assertEqual("Running", gateway.observe_child(ref).phase)
+
     def test_job_requires_one_pod(self):
         gateway, ref = self._successful(); gateway.core.list_namespaced_pod.return_value.items = []
-        with self.assertRaises(ValidationError): gateway.observe_child(ref)
+        with self.assertRaises(ValidationError) as ctx: gateway.observe_child(ref)
+        self.assertEqual("JOB_POD_MISSING", ctx.exception.code)
+
+    def test_job_rejects_multiple_pods(self):
+        gateway, ref = self._successful(); pod = gateway.core.list_namespaced_pod.return_value.items[0]
+        gateway.core.list_namespaced_pod.return_value.items = [pod, pod]
+        with self.assertRaises(ValidationError) as ctx: gateway.observe_child(ref)
+        self.assertEqual("JOB_POD_AMBIGUOUS", ctx.exception.code)
 
     def test_job_requires_owner_uid(self):
         gateway, ref = self._successful(); gateway.core.list_namespaced_pod.return_value.items[0].metadata.owner_references[0].uid = "wrong"
@@ -99,8 +163,8 @@ class GatewayTests(unittest.TestCase):
         with self.assertRaises(ValidationError): gateway.observe_child(ref)
 
     def test_job_log_bounded(self):
-        gateway, ref = self._successful("x" * 32769)
-        with self.assertRaises(ValidationError): gateway.observe_child(ref)
+        gateway, ref = self._successful("x" * 131073)
+        with self.assertRaisesRegex(ValidationError, "JOB_LOG_TOO_LARGE"): gateway.observe_child(ref)
 
     def test_failed_job_returns_owned_failure_result(self):
         raw = '{"schema_version":1,"operation":"validation-select","success":false,"failure_code":"MARKER_MISSING"}'

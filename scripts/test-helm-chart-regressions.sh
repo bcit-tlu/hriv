@@ -756,7 +756,7 @@ restore_validation_helm_args=(
   --namespace hriv-restore-validation
   --set-string images.orchestrator=registry.example/hriv-restore-validation@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
   --set-string images.backupChild=registry.example/hriv-backup@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-  --set-string images.postgresql=registry.example/postgresql@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+  --set-string images.postgresql=registry.example/postgresql:17@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
   --set-string sourceArchive.container=hriv-backup
   --set-string sourceArchive.prefix=published/
   --set-string sourceProfile.expectedSystemIdentifier=1234567890
@@ -782,11 +782,11 @@ restore_validation_state="$(extract_top_level_yaml_doc \
 restore_validation_lease="$(extract_top_level_yaml_doc \
   "$restore_validation_manifest" "Lease" "hriv-restore-validation")"
 restore_validation_children="$(extract_top_level_yaml_doc \
-  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-child-templates-v2")"
+  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-child-templates-v7")"
 restore_validation_profile="$(extract_top_level_yaml_doc \
-  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-source-profile-v2")"
+  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-source-profile-v7")"
 restore_validation_policy="$(extract_top_level_yaml_doc \
-  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-source-state-policy-v2")"
+  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-source-state-policy-v7")"
 restore_validation_role="$(extract_top_level_yaml_doc \
   "$restore_validation_manifest" "Role" "hriv-restore-validation-orchestrator")"
 restore_validation_default_deny="$(extract_top_level_yaml_doc \
@@ -795,27 +795,31 @@ restore_validation_quota="$(extract_top_level_yaml_doc \
   "$restore_validation_manifest" "ResourceQuota" "hriv-restore-validation")"
 restore_validation_limits="$(extract_top_level_yaml_doc \
   "$restore_validation_manifest" "LimitRange" "hriv-restore-validation")"
-assert_not_contains "$restore_validation_manifest" 'hriv-restore-validation-controller-v1' \
-  "v1 controller ConfigMap must be unreferenced after the atomic v2 upgrade"
-assert_not_contains "$restore_validation_manifest" 'hriv-restore-validation-source-profile-v1' \
-  "v1 profile ConfigMap must be unreferenced after the atomic v2 upgrade"
-assert_not_contains "$restore_validation_manifest" 'hriv-restore-validation-source-state-policy-v1' \
-  "v1 policy ConfigMap must be unreferenced after the atomic v2 upgrade"
-assert_not_contains "$restore_validation_manifest" 'hriv-restore-validation-child-templates-v1' \
-  "v1 templates ConfigMap must be unreferenced after the atomic v2 upgrade"
+for version in v1 v2 v3 v4 v5 v6; do
+  assert_not_contains "$restore_validation_manifest" "hriv-restore-validation-controller-${version}" \
+    "${version} controller ConfigMap must be unreferenced after the atomic v7 upgrade"
+  assert_not_contains "$restore_validation_manifest" "hriv-restore-validation-source-profile-${version}" \
+    "${version} profile ConfigMap must be unreferenced after the atomic v7 upgrade"
+  assert_not_contains "$restore_validation_manifest" "hriv-restore-validation-source-state-policy-${version}" \
+    "${version} policy ConfigMap must be unreferenced after the atomic v7 upgrade"
+  assert_not_contains "$restore_validation_manifest" "hriv-restore-validation-child-templates-${version}" \
+    "${version} templates ConfigMap must be unreferenced after the atomic v7 upgrade"
+done
 
 # Parse the outer manifests and all embedded profile/policy/template documents with
 # real YAML/JSON parsers rather than treating indentation or quoting as sufficient.
 ruby -ryaml -rjson -e '
   docs = YAML.load_stream(STDIN.read).compact
   by_name = docs.to_h { |doc| [[doc["kind"], doc.dig("metadata", "name")], doc] }
-  profile = JSON.parse(by_name.fetch(["ConfigMap", "hriv-restore-validation-source-profile-v2"]).fetch("data").fetch("profile.json"))
-  policy = JSON.parse(by_name.fetch(["ConfigMap", "hriv-restore-validation-source-state-policy-v2"]).fetch("data").fetch("policy.json"))
-  templates = YAML.safe_load(by_name.fetch(["ConfigMap", "hriv-restore-validation-child-templates-v2"]).fetch("data").fetch("templates.yaml"), aliases: true)
+  profile = JSON.parse(by_name.fetch(["ConfigMap", "hriv-restore-validation-source-profile-v7"]).fetch("data").fetch("profile.json"))
+  policy = JSON.parse(by_name.fetch(["ConfigMap", "hriv-restore-validation-source-state-policy-v7"]).fetch("data").fetch("policy.json"))
+  templates = YAML.safe_load(by_name.fetch(["ConfigMap", "hriv-restore-validation-child-templates-v7"]).fetch("data").fetch("templates.yaml"), aliases: true)
   raise "profile identity drift" unless profile.values_at("source_cluster", "external_cluster", "database", "owner", "server_name", "object_store") == ["pg-core", "pg-core-source", "app", "app", "pg-core", "hriv-restore-validation-pg-core"]
   raise "policy structure drift" unless policy == {"missing_count" => 39, "orphan_count" => 3, "policy_version" => 1, "source_state_sha256" => "958b1dc2dca298c56fd96dd80b6c694144905e22c00c4b3ca9d2c59c3b666083"}
   target = templates.dig("cnpg_cluster", "spec", "bootstrap", "recovery", "recoveryTarget")
   raise "CNPG target drift" unless target == {"targetLSN" => "CONTROLLER_BOUND_TARGET_LSN", "targetTLI" => "CONTROLLER_BOUND_TARGET_TLI"}
+  inherited = templates.dig("cnpg_cluster", "spec", "inheritedMetadata", "labels")
+  raise "CNPG inherited labels drift" unless inherited == {"app.kubernetes.io/managed-by" => "hriv-restore-validation", "hriv.bcit.ca/restore-validation-role" => "cnpg"}
 ' <<<"$restore_validation_manifest"
 
 # When the restore-validation environment is installed, additionally run the
@@ -827,9 +831,9 @@ import sys, yaml
 from hriv_restore_validation.models import SourcePolicy, SourceProfile, Templates
 docs = [item for item in yaml.safe_load_all(sys.stdin.read()) if item]
 config_maps = {item["metadata"]["name"]: item["data"] for item in docs if item.get("kind") == "ConfigMap"}
-profile = SourceProfile.parse(config_maps["hriv-restore-validation-source-profile-v2"]["profile.json"])
-SourcePolicy.parse(config_maps["hriv-restore-validation-source-state-policy-v2"]["policy.json"])
-Templates.parse(config_maps["hriv-restore-validation-child-templates-v2"]["templates.yaml"], profile)
+profile = SourceProfile.parse(config_maps["hriv-restore-validation-source-profile-v7"]["profile.json"])
+SourcePolicy.parse(config_maps["hriv-restore-validation-source-state-policy-v7"]["policy.json"])
+Templates.parse(config_maps["hriv-restore-validation-child-templates-v7"]["templates.yaml"], profile)
 ' <<<"$restore_validation_manifest"
 fi
 
@@ -848,6 +852,8 @@ assert_contains "$restore_validation_lease" "kustomize.toolkit.fluxcd.io/prune: 
   "restore-validation Lease must survive Flux pruning"
 assert_contains "$restore_validation_quota" 'count/jobs.batch: "32"' \
   "restore-validation must enforce the bounded Job quota"
+assert_contains "$restore_validation_quota" 'count/configmaps: "32"' \
+  "restore-validation must retain bounded immutable ConfigMap generations"
 assert_contains "$restore_validation_quota" 'count/persistentvolumeclaims: "8"' \
   "restore-validation must enforce the bounded PVC quota"
 assert_contains "$restore_validation_quota" 'requests.storage: 320Gi' \
@@ -949,6 +955,9 @@ ruby -ryaml -e '
   raise "Azure reader proxy access widened" unless policies.fetch("hriv-restore-validation-azure-readers").dig("podSelector", "matchExpressions", 0, "values").sort == %w[cnpg selection source-restore]
   raise "proxy ingress widened" unless roles.call("hriv-restore-validation-proxy-ingress", "ingress") == %w[cnpg selection source-restore]
   raise "CNPG database ingress widened" unless roles.call("hriv-restore-validation-database-ingress", "ingress") == %w[consistency db-validation]
+  status = policies.fetch("hriv-restore-validation-cnpg-operator-status")
+  status_peer = status.dig("ingress", 0, "from", 0)
+  raise "CNPG operator status ingress widened" unless status.dig("podSelector", "matchLabels") == {"hriv.bcit.ca/restore-validation-role" => "cnpg"} && status_peer.dig("namespaceSelector", "matchLabels") == {"kubernetes.io/metadata.name" => "cnpg-system"} && status_peer.dig("podSelector", "matchLabels") == {"app.kubernetes.io/instance" => "cnpg-operator", "app.kubernetes.io/name" => "cloudnative-pg"} && status.dig("ingress", 0, "ports") == [{"protocol" => "TCP", "port" => 8000}]
   api_values = policies.fetch("hriv-restore-validation-api").dig("podSelector", "matchExpressions", 0, "values").sort
   raise "orchestrator API selector drift" unless api_values == %w[cleanup orchestrator]
   broad = policies.select { |_name, spec| spec.fetch("egress", []).any? { |rule| rule.fetch("to", []).any? { |peer| peer.dig("ipBlock", "cidr") == "0.0.0.0/0" } } }.keys
@@ -969,8 +978,28 @@ for image_value in images.orchestrator images.backupChild images.postgresql; do
     --set-string "${image_value}=registry.example/unpinned:latest" 2>&1)"; then
     fail "expected ${image_value} without a sha256 digest to be rejected"
   fi
-  if ! grep -Eq 'must be digest-pinned|does not match (the )?pattern|doesn.t match (the )?pattern' <<<"$restore_validation_bad_image_output"; then
+  if ! grep -Eq 'must be digest-pinned|tag plus sha256 digest|does not match (the )?pattern|doesn.t match (the )?pattern' <<<"$restore_validation_bad_image_output"; then
     fail "restore-validation chart should explain the digest requirement for ${image_value}"
+  fi
+done
+
+restore_validation_long_tag="$(printf 'a%.0s' {1..129})"
+restore_validation_bad_postgres_images=(
+  "registry.example/postgresql@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  "registry.example/postgresql::@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  "registry.example/postgresql:17:latest@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  "registry.example/postgresql:-17@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  "registry.example/postgresql:${restore_validation_long_tag}@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  "registry.example/PostgreSQL:17@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+)
+for bad_postgres_image in "${restore_validation_bad_postgres_images[@]}"; do
+  if restore_validation_bad_postgres_output="$(helm template test charts/restore-validation \
+    "${restore_validation_helm_args[@]}" \
+    --set-string "images.postgresql=${bad_postgres_image}" 2>&1)"; then
+    fail "expected invalid images.postgresql to be rejected: ${bad_postgres_image}"
+  fi
+  if ! grep -Eq 'tag plus sha256 digest|does not match (the )?pattern|doesn.t match (the )?pattern' <<<"$restore_validation_bad_postgres_output"; then
+    fail "restore-validation chart should explain the PostgreSQL tag requirement"
   fi
 done
 
@@ -1014,9 +1043,9 @@ assert_contains "$restore_validation_children" "barmanObjectName: hriv-restore-v
   "CNPG external source must use the exact ObjectStore name"
 assert_contains "$restore_validation_children" "serverName: pg-core" \
   "CNPG external source must use the exact Barman server name"
-assert_contains "$restore_validation_children" "storageClassName: longhorn" \
+assert_contains "$restore_validation_children" 'storageClassName: "longhorn"' \
   "source restore PVC must bind the approved Longhorn storage class"
-assert_contains "$restore_validation_children" "storageClass: longhorn" \
+assert_contains "$restore_validation_children" 'storageClass: "longhorn"' \
   "recovered CNPG storage must bind the approved Longhorn storage class"
 assert_contains "$restore_validation_children" 'bcit.ca/longhorn-storage: "true"' \
   "recovered CNPG must schedule only on approved storage-labelled nodes"

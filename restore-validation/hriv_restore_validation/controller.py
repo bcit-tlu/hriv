@@ -15,11 +15,11 @@ from .strict import LSN_RE, RFC3339_RE, UID_RE, ValidationError, bounded_string,
 MANAGED_BY = "hriv-restore-validation"
 RUN_LABEL = "hriv.bcit.ca/restore-validation-run-id"
 ROLE_LABEL = "hriv.bcit.ca/restore-validation-role"
-SELECTION_FIELDS = {"schema_version", "operation", "success", "snapshot_name", "recovery_set_id", "run_id", "manifest_sha256", "archive_blob", "archive_size", "archive_etag", "target_lsn", "target_timeline", "source_file_count", "source_total_bytes", "source_files_sha256", "database_row_count", "missing_count", "orphan_count", "exclusion_count", "source_state", "source_state_sha256", "excluded_artifacts", "capture_started_at", "wal_fence_file", "wal_fence_committed_at", "wal_fence_archived_at", "completed_at"}
+SELECTION_FIELDS = {"schema_version", "operation", "success", "snapshot_name", "recovery_set_id", "run_id", "manifest_sha256", "archive_blob", "archive_size", "archive_etag", "target_lsn", "target_timeline", "wal_segment_size_bytes", "source_file_count", "source_total_bytes", "source_files_sha256", "database_row_count", "missing_count", "orphan_count", "exclusion_count", "source_state", "source_state_sha256", "excluded_artifacts", "capture_started_at", "wal_fence_file", "wal_fence_committed_at", "wal_fence_archived_at", "completed_at"}
 SELECTED_SOURCE_FIELDS = {
     "selection_schema_version", "selection_operation", "backup_run_id", "snapshot_name", "recovery_set_id",
     "manifest_sha256", "archive_blob", "archive_size", "archive_etag", "completed_at", "target_lsn",
-    "target_timeline", "source_file_count", "source_total_bytes", "source_files_sha256", "database_row_count", "missing_count",
+    "target_timeline", "wal_segment_size_bytes", "source_file_count", "source_total_bytes", "source_files_sha256", "database_row_count", "missing_count",
     "orphan_count", "exclusion_count", "source_state", "source_state_sha256", "excluded_artifacts",
     "capture_started_at", "wal_fence_file", "wal_fence_committed_at", "wal_fence_archived_at",
     "source_profile_id", "source_profile_version", "source_profile_sha256", "source_state_policy_version",
@@ -29,6 +29,8 @@ SELECTED_SOURCE_FIELDS = {
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
 SNAPSHOT_RE = re.compile(r"hriv-backup-\d{8}-\d{6}(?:-[0-9a-f]{8})?")
 ETAG_TOKEN_RE = re.compile(r"[A-Za-z0-9._:-]{1,128}")
+_WAL_SEGMENT_MIN_BYTES = 1024 * 1024
+_WAL_SEGMENT_MAX_BYTES = 1024 * 1024 * 1024
 LOCAL_FAILURE_CODES = {
     "ARGUMENTS_INVALID", "DATABASE_CREDENTIAL_INVALID", "DATABASE_FIDELITY_MISMATCH",
     "DATABASE_RESULT_INVALID", "INTERNAL_FAILURE", "RECOVERY_TARGET_INVALID",
@@ -75,6 +77,25 @@ def child_name(run_id: str, role: str) -> str:
     suffix = run_id.rsplit("-", 1)[-1]
     names = {"selection": "select", "source-pvc": "source", "cnpg": "pg", "db-validation": "db-check", "source-restore": "source-restore", "consistency": "consistency"}
     return f"rv-{suffix}-{names[role]}"
+
+
+def _postgres_lsn_value(value: str) -> int:
+    high, low = value.split("/", 1)
+    return (int(high, 16) << 32) + int(low, 16)
+
+
+def _postgres_wal_segment_size(value: Any) -> int | None:
+    if not isinstance(value, int) or isinstance(value, bool):
+        return None
+    if value < _WAL_SEGMENT_MIN_BYTES or value > _WAL_SEGMENT_MAX_BYTES or value & (value - 1):
+        return None
+    return value
+
+
+def _postgres_wal_file(lsn: int, timeline: int, wal_segment_size: int) -> str:
+    segment = (lsn - 1) // wal_segment_size
+    log, segment_in_log = divmod(segment, (1 << 32) // wal_segment_size)
+    return f"{timeline:08X}{log:08X}{segment_in_log:08X}"
 
 
 def normalize_lease_time(value: datetime) -> datetime:
@@ -366,7 +387,7 @@ class Controller:
                     "enableSuperuserAccess": True,
                     "storage": {
                         "size": self.profile.postgresql_storage_size,
-                        "storageClass": "longhorn",
+                        "storageClass": self.profile.source_storage_class,
                     },
                 }
             )
@@ -400,6 +421,12 @@ class Controller:
         elif stage == "VALIDATE_CONSISTENCY":
             selected = self.store.read()[0]["latest_run"]["selected_source"]
             manifest = self._database_manifest(run_id, self.templates.consistency_job)
+            # Pin the hashing pod to the node that restored the data: with a
+            # data-locality storage class the replica already lives there, so
+            # the rehash reads locally instead of crossing the storage network.
+            node = self._restore_pod_node(run_id)
+            if node is not None:
+                manifest["spec"]["template"]["spec"]["nodeName"] = node
             self._container(manifest)["args"] = ["validate-consistency", "--host", f"{child_name(run_id, 'cnpg')}-rw", "--source", "/restore/data/source_images", "--selected-source-state", canonical_json(selected["source_state"])]
             result = self._job(run_id, "consistency", manifest)
             if result is None:
@@ -424,6 +451,18 @@ class Controller:
         fixed_child_maximum = 10  # four Jobs, four Job Pods, one source PVC, one CNPG Cluster
         if len(self.store.read()[0]["retained_runs"]) >= self.config.max_retained_runs or usage.get("jobs", 0) + 3 > self.config.max_jobs or usage.get("pvcs", 0) + 2 > self.config.max_pvcs or fixed_child_maximum > self.config.max_child_resources:
             raise ValidationError("CAPACITY_INSUFFICIENT")
+
+    def _restore_pod_node(self, run_id: str) -> str | None:
+        prefix = child_name(run_id, "source-restore")
+        for item in self.store.read()[0]["latest_run"].get("child_resources", []):
+            if item.get("kind") != "Pod" or not str(item.get("name", "")).startswith(prefix):
+                continue
+            pod = self.gateway.get_child(ResourceRef(item["apiVersion"], item["kind"], item["name"], item["uid"]))
+            if pod is not None:
+                node = pod.get("spec", {}).get("nodeName")
+                if isinstance(node, str) and node:
+                    return node
+        return None
 
     def _database_manifest(self, run_id: str, template: dict[str, Any]) -> dict[str, Any]:
         manifest = copy.deepcopy(template)
@@ -454,6 +493,9 @@ class Controller:
         result["metadata"] = {"name": child_name(run_id, role), "namespace": self.config.namespace, "labels": labels, "annotations": annotations}
         if result["kind"] == "Job":
             result["spec"]["template"]["metadata"] = {"labels": labels, "annotations": annotations}
+        if result["kind"] == "Cluster":
+            inherited = result["spec"].setdefault("inheritedMetadata", {}).setdefault("labels", {})
+            inherited.update(labels)
         result["metadata"]["annotations"][TEMPLATE_IDENTITY_ANNOTATION] = template_identity(result)
         return result
 
@@ -596,9 +638,11 @@ class Controller:
             if (capture_text, committed_text, archived_text, completed_text) != (value["capture_started_at"], value["wal_fence_committed_at"], value["wal_fence_archived_at"], value["completed_at"]) or not capture <= committed <= archived <= completed:
                 raise ValidationError("IMMUTABLE_BINDING_INVALID")
             timeline = integer(value["target_timeline"], "target_timeline", 1, 2**31 - 1)
+            wal_segment_size = _postgres_wal_segment_size(value["wal_segment_size_bytes"])
             bounded_string(value["target_lsn"], "target_lsn", 17, LSN_RE)
             fence_file = bounded_string(value["wal_fence_file"], "wal_fence_file", 24, re.compile(r"[0-9A-F]{24}"))
-            if int(fence_file[:8], 16) != timeline:
+            target_lsn_value = _postgres_lsn_value(value["target_lsn"])
+            if wal_segment_size is None or int(fence_file[:8], 16) != timeline or target_lsn_value <= 0 or _postgres_wal_file(target_lsn_value, timeline, wal_segment_size) != fence_file:
                 raise ValidationError("IMMUTABLE_BINDING_INVALID")
             source_files = integer(value["source_file_count"], "source_file_count", 0, 10_000_000)
             integer(value["source_total_bytes"], "source_total_bytes", 0, 2**63 - 1)
@@ -651,6 +695,7 @@ class Controller:
             "snapshot_name": value["snapshot_name"], "recovery_set_id": value["recovery_set_id"], "manifest_sha256": value["manifest_sha256"],
             "archive_blob": value["archive_blob"], "archive_size": value["archive_size"], "archive_etag": self._canonical_archive_etag(value["archive_etag"]),
             "completed_at": value["completed_at"], "target_lsn": value["target_lsn"], "target_timeline": value["target_timeline"],
+            "wal_segment_size_bytes": value["wal_segment_size_bytes"],
             "source_file_count": value["source_file_count"], "source_total_bytes": value["source_total_bytes"], "source_files_sha256": value["source_files_sha256"], "database_row_count": value["database_row_count"],
             "missing_count": value["missing_count"], "orphan_count": value["orphan_count"], "exclusion_count": value["exclusion_count"],
             "source_state": source_state, "source_state_sha256": source_state_sha256, "excluded_artifacts": copy.deepcopy(value["excluded_artifacts"]),
@@ -663,17 +708,20 @@ class Controller:
         return self._validate_selected_source(binding)
 
     def _database_result(self, raw: str, selected: dict[str, Any]) -> None:
-        required = {"schema_version", "operation", "success", "system_identifier", "timeline", "recovery_complete", "required_database_inventory", "required_static_role_inventory", "migration_version", "observed_row_counts", "source_image_count", "synthetic_row", "current_lsn", "target_lsn", "fence_generation", "fence_fenced_at"}
+        required = {"schema_version", "operation", "success", "system_identifier", "timeline", "timeline_parent", "timeline_switchpoint", "target_tli", "recovery_complete", "required_database_inventory", "required_static_role_inventory", "migration_version", "observed_row_counts", "source_image_count", "synthetic_row", "current_lsn", "target_lsn", "fence_generation", "fence_fenced_at"}
         value = exact_object(parse_json(raw, max_bytes=32 * 1024), required=required)
         fenced_text, fenced_at = _strict_utc(value.get("fence_fenced_at"), "fence_fenced_at")
         _, capture_started = _strict_utc(selected["capture_started_at"], "capture_started_at")
         _, fence_committed = _strict_utc(selected["wal_fence_committed_at"], "wal_fence_committed_at")
-        expected = {"schema_version": 1, "operation": "validate-database", "success": True, "system_identifier": self.profile.expected_system_identifier, "timeline": selected["target_timeline"], "recovery_complete": True, "required_database_inventory": [dict(item) for item in self.profile.required_database_inventory], "required_static_role_inventory": [dict(item) for item in self.profile.required_static_role_inventory], "migration_version": self.profile.expected_migration_version, "observed_row_counts": value.get("observed_row_counts"), "source_image_count": selected["database_row_count"], "synthetic_row": self.profile.synthetic_row, "current_lsn": value.get("current_lsn"), "target_lsn": selected["target_lsn"], "fence_generation": value.get("fence_generation"), "fence_fenced_at": fenced_text}
+        expected = {"schema_version": 1, "operation": "validate-database", "success": True, "system_identifier": self.profile.expected_system_identifier, "timeline": value.get("timeline"), "timeline_parent": selected["target_timeline"], "timeline_switchpoint": value.get("timeline_switchpoint"), "target_tli": selected["target_timeline"], "recovery_complete": True, "required_database_inventory": [dict(item) for item in self.profile.required_database_inventory], "required_static_role_inventory": [dict(item) for item in self.profile.required_static_role_inventory], "migration_version": self.profile.expected_migration_version, "observed_row_counts": value.get("observed_row_counts"), "source_image_count": selected["database_row_count"], "synthetic_row": self.profile.synthetic_row, "current_lsn": value.get("current_lsn"), "target_lsn": selected["target_lsn"], "fence_generation": value.get("fence_generation"), "fence_fenced_at": fenced_text}
         row_counts = value.get("observed_row_counts")
         rows_valid = isinstance(row_counts, dict) and set(row_counts) == set(self.profile.minimum_row_counts) and all(isinstance(row_counts[name], int) and not isinstance(row_counts[name], bool) and row_counts[name] >= minimum for name, minimum in self.profile.minimum_row_counts.items())
         generation = value.get("fence_generation")
         fenced_comparison = fenced_at.replace(microsecond=0) if fence_committed.microsecond == 0 else fenced_at
-        if value != expected or not rows_valid or LSN_RE.fullmatch(str(value.get("current_lsn", ""))) is None or not isinstance(generation, int) or isinstance(generation, bool) or generation <= 0 or not capture_started <= fenced_comparison <= fence_committed:
+        timeline = value.get("timeline")
+        switchpoint = value.get("timeline_switchpoint")
+        switchpoint_reached = isinstance(switchpoint, str) and LSN_RE.fullmatch(switchpoint) is not None and _postgres_lsn_value(switchpoint) >= _postgres_lsn_value(selected["target_lsn"])
+        if value != expected or not rows_valid or not isinstance(timeline, int) or isinstance(timeline, bool) or timeline <= selected["target_timeline"] or timeline > 0xFFFFFFFF or not switchpoint_reached or LSN_RE.fullmatch(str(value.get("current_lsn", ""))) is None or not isinstance(generation, int) or isinstance(generation, bool) or generation <= 0 or not capture_started <= fenced_comparison <= fence_committed:
             raise ValidationError("DB_VALIDATION_INVALID")
 
     def _restore_result(self, raw: str, selected: dict[str, Any]) -> None:
@@ -867,35 +915,89 @@ class Controller:
             (item["apiVersion"], item["kind"], item["name"], item["uid"])
             for item in child_resources
         }
-        owner_roles = {
-            item["uid"]: self._role_for_name(run_id, item["name"])
+        tracked = {
+            item["uid"]: (
+                (item["apiVersion"], item["kind"], item["name"], item["uid"]),
+                self._recorded_role(run_id, item),
+            )
             for item in child_resources
-            if item["kind"] in {"Job", "Cluster"}
         }
+        descendants: dict[str, tuple[ResourceRef, str, dict[str, Any]]] = {}
         for ref in observed_refs:
             identity = (ref.api_version, ref.kind, ref.name, ref.uid)
             if identity in expected:
                 continue
-            if ref.kind not in {"Pod", "Service"}:
+            if ref.uid in tracked or ref.uid in descendants:
+                return False
+            if ref.kind not in {"Job", "PersistentVolumeClaim", "Pod", "Service", "Cluster"}:
                 return False
             actual = self.gateway.get_child(ref)
             metadata = (actual or {}).get("metadata", {})
-            labels = metadata.get("labels", {})
-            owners = metadata.get("ownerReferences", [])
-            owner_uid = str(owners[0].get("uid")) if len(owners) == 1 else ""
-            required = {
-                "app.kubernetes.io/managed-by": MANAGED_BY,
-                RUN_LABEL: run_id,
-                ROLE_LABEL: owner_roles.get(owner_uid),
-            }
+            labels = metadata.get("labels", {}) if isinstance(metadata, dict) else {}
+            owners = metadata.get("ownerReferences", []) if isinstance(metadata, dict) else []
+            if not isinstance(labels, dict) or not isinstance(owners, list):
+                return False
+            owner = owners[0] if len(owners) == 1 and isinstance(owners[0], dict) else {}
+            role = labels.get(ROLE_LABEL)
             if (
-                any(value is None or labels.get(key) != value for key, value in required.items())
-                or len(owners) != 1
-                or owner_uid not in owner_roles
-                or owners[0].get("controller") is not True
+                labels.get("app.kubernetes.io/managed-by") != MANAGED_BY
+                or labels.get(RUN_LABEL) != run_id
+                or not isinstance(role, str)
+                or not role
             ):
                 return False
-        return True
+            if owner.get("controller") is True:
+                descendants[ref.uid] = (ref, role, owner)
+            elif not owners and ref.kind in {"Job", "Cluster", "PersistentVolumeClaim"} and role in {"selection", "source-pvc", "cnpg", "db-validation", "source-restore", "consistency"} and ref.name == child_name(run_id, role):
+                # A create can succeed while its ref never reaches
+                # child_resources (post-create verification failure). Such a
+                # root has no owner chain; the deterministic run-scoped name
+                # and matching run labels are the binding.
+                descendants[ref.uid] = (ref, role, {})
+            else:
+                return False
+
+        def bound_role(uid: str, seen: set[str]) -> tuple[str, str] | None:
+            if uid in tracked:
+                identity, role = tracked[uid]
+                if role is None:
+                    return None
+                return role, identity[1]
+            if uid in seen or uid not in descendants:
+                return None
+            ref, role, owner = descendants[uid]
+            if not owner:
+                if ref.kind not in {"Job", "Cluster", "PersistentVolumeClaim"}:
+                    return None
+                return role, ref.kind
+            owner_uid = str(owner.get("uid"))
+            owner_identity = (
+                owner.get("apiVersion"),
+                owner.get("kind"),
+                owner.get("name"),
+                owner_uid,
+            )
+            if owner_uid in tracked:
+                parent_identity, parent_role = tracked[owner_uid]
+                if owner_identity != parent_identity:
+                    return None
+                root_role, root_kind = parent_role, parent_identity[1]
+            else:
+                parent = descendants.get(owner_uid)
+                if parent is None:
+                    return None
+                parent_ref = parent[0]
+                if owner_identity != (parent_ref.api_version, parent_ref.kind, parent_ref.name, parent_ref.uid):
+                    return None
+                resolved = bound_role(owner_uid, seen | {uid})
+                if resolved is None:
+                    return None
+                root_role, root_kind = resolved
+            if role != root_role or root_kind not in {"Job", "Cluster"}:
+                return None
+            return root_role, root_kind
+
+        return all(bound_role(uid, set()) is not None for uid in descendants)
 
     def _ownership_intact(self, run: dict[str, Any]) -> bool:
         expected = {
@@ -927,6 +1029,15 @@ class Controller:
             if child_name(run_id, role) == name:
                 return role
         raise ValidationError("OWNERSHIP_CONFLICT")
+
+    @staticmethod
+    def _recorded_role(run_id: str, item: dict[str, Any]) -> str | None:
+        try:
+            return Controller._role_for_name(run_id, item["name"])
+        except ValidationError:
+            if item["kind"] in {"Pod", "Service"}:
+                return None
+            raise
 
     @classmethod
     def _role_for_ref(cls, run: dict[str, Any], ref: ResourceRef, actual: dict[str, Any]) -> str:

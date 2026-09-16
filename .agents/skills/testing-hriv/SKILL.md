@@ -544,6 +544,8 @@ All drag interactions are gated behind `canEditContent` — students see no drag
 > reproduce the acceleration/jitter where feel bugs live. Any change to collision detection, drop
 > zones, collision priority, or activation constraints must be **feel-tested by a human** before
 > merge; a green recording is only a mechanics smoke-test, not feel validation.
+> The canonical production-scale checklist (80+ categories / 600+ images) is
+> `docs/drag-and-drop.md` → Human feel-test protocol.
 
 ### Testing Browse Tile Reorder Persistence (PR #1089 / `tile-order` cache fix)
 
@@ -1299,3 +1301,28 @@ ensures annotations remain visible at low zoom levels.
 - `fireRightClick`/`fireMiddleClick` flipped to `true`. Mouse handler guards against
   non-left-button events.
 - `fabric.Line` is deprecated in v7 but still functional. Tracked for future migration.
+
+## In-app guide runtime testing
+
+- Enter through Notifications → Documentation as instructor/admin. The guide uses
+  `?page=guide&doc=<slug>` inside the React app, retaining its AppBar and footer.
+  Check student entry absence and direct-query fallback separately.
+- Guide sources and screenshots live in `frontend/guide`. When compose does not
+  bind-mount this directory, new files or edits require a frontend image rebuild:
+  `docker compose up -d --build --no-deps frontend`. If navigation renders but
+  content is blank, inspect `/app/guide` inside the container before diagnosing
+  the Markdown renderer.
+- Exercise all seven documents, inline links, previous/next, cross-page anchors,
+  refresh and browser Back/Forward. Inspect actual URL and visible heading
+  together; a document switch alone does not prove history persistence.
+- Visually check wrapped bullets, ordered/nested lists, underscore emphasis,
+  callouts and the toolbar table. Decode every rendered screenshot as a
+  supplementary check, rather than relying only on file existence.
+- Await screenshot decoding before asserting anchor placement, especially on a
+  cold page. Distinguish existing localhost:4318 telemetry failures from
+  guide-asset or renderer errors.
+
+### Devin Secrets Needed
+
+None for the local seeded stack; use the seeded instructor/admin/student
+accounts documented above.

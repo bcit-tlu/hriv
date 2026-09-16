@@ -1,9 +1,11 @@
 import hashlib
 import json as _json
+import time
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 import logging
+from opentelemetry import metrics
 from sqlalchemy import and_, select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +31,23 @@ from ..visibility import compute_excluded_category_ids, get_student_excluded_cat
 
 
 logger = logging.getLogger(__name__)
+_meter = metrics.get_meter(__name__)
+
+# Browse-tree 304 short-circuit observability (issue #1100): the counter splits
+# successful full builds from ETag short-circuits (build failures surface via
+# http.request 5xx, not this series); the histogram measures the avoided work
+# so "work saved" ≈ not_modified count × mean build duration. `outcome` is on
+# the metric-label allowlist in docs/observability-conventions.md.
+_browse_tree_requests = _meter.create_counter(
+    "hriv.browse_tree.requests",
+    description="GET /api/categories/tree responses by outcome",
+    unit="1",
+)
+_browse_tree_build_duration = _meter.create_histogram(
+    "hriv.browse_tree.build.duration",
+    description="Category-tree build duration on non-short-circuited requests",
+    unit="s",
+)
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
@@ -304,6 +323,7 @@ async def get_category_tree(
 
     client_etags = request.headers.get("if-none-match", "")
     if client_etags == "*" or f'W/"{browse_etag}"' in [t.strip() for t in client_etags.split(",")]:
+        _browse_tree_requests.add(1, {"outcome": "not_modified"})
         return Response(
             status_code=304,
             headers={
@@ -313,12 +333,15 @@ async def get_category_tree(
             },
         )
 
+    build_started = time.monotonic()
     tree = await _load_tree(
         db, None,
         user_role=_user.role,
         user_program_ids=user_program_ids,
         user_group_ids=user_group_ids,
     )
+    _browse_tree_requests.add(1, {"outcome": "full"})
+    _browse_tree_build_duration.record(time.monotonic() - build_started)
     return tree
 
 

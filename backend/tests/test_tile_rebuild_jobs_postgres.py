@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -20,6 +21,7 @@ from app.job_state import (
     reserve_job_item_execution,
 )
 from app.models import AdminTask, Job, JobItem
+from app.routers.jobs import cancel_rebuild_job, list_job_items
 from app.rebuild_locks import (
     acquire_rebuild_creation_lock,
     find_active_rebuild,
@@ -715,3 +717,89 @@ async def test_failure_finalization_retries_transient_once(
         assert item.status == "failed"
         assert item.attempts == 2
         assert item.error_message == "builtins.ValueError"
+
+
+@requires_db
+async def test_items_endpoint_keyset_pagination_over_real_rows(
+    db_factory,
+) -> None:
+    """Bounded item page walks a real table via id keyset (#1191)."""
+    job_id = await _create_job(db_factory, item_count=5)
+    async with db_factory() as session:
+        items = (
+            await session.execute(
+                select(JobItem)
+                .where(JobItem.job_id == job_id)
+                .order_by(JobItem.id)
+            )
+        ).scalars().all()
+        for item in items[:3]:
+            item.status = "failed"
+        await session.commit()
+
+    async with db_factory() as session:
+        page1 = await list_job_items(
+            job_id, session, None, status="failed", limit=2
+        )
+        assert [i.resource_id for i in page1.items] == ["0", "1"]
+        assert page1.next_after_id == page1.items[-1].id
+
+        page2 = await list_job_items(
+            job_id,
+            session,
+            None,
+            status="failed",
+            after_id=page1.next_after_id,
+            limit=2,
+        )
+        assert [i.resource_id for i in page2.items] == ["2"]
+        assert page2.next_after_id is None
+
+        unfiltered = await list_job_items(job_id, session, None)
+        assert len(unfiltered.items) == 5
+        assert unfiltered.next_after_id is None
+
+
+@requires_db
+async def test_rebuild_mutations_reject_non_rebuild_jobs(db_factory) -> None:
+    """job_type filter means bulk_import jobs 404 on rebuild routes."""
+    async with db_factory() as session:
+        other = Job(
+            job_type="bulk_import",
+            status="running",
+            error_message="wave-1-postgres-test",
+        )
+        session.add(other)
+        await session.commit()
+        other_id = other.id
+    try:
+        async with db_factory() as session:
+            with pytest.raises(HTTPException) as exc_info:
+                await cancel_rebuild_job(other_id, session, None)
+            assert exc_info.value.status_code == 404
+    finally:
+        async with db_factory() as session:
+            await session.execute(delete(Job).where(Job.id == other_id))
+            await session.commit()
+
+
+@requires_db
+async def test_cancellation_uses_locked_row_not_stale_identity(
+    db_factory,
+) -> None:
+    """A session that pre-loaded the job unlocked must decide on the locked
+    row's real status, not the stale identity-map snapshot (#1191 review)."""
+    job_id = await _create_job(db_factory, status="running", item_count=1)
+    async with db_factory() as session:
+        # Preload the row without a lock so it enters the identity map.
+        stale = await session.get(Job, job_id)
+        assert stale is not None and stale.status == "running"
+        async with db_factory() as other:
+            row = await other.get(Job, job_id)
+            row.status = "completed"
+            await other.commit()
+        # populate_existing refreshes the locked row, so the service sees
+        # "completed" and leaves the terminal state untouched.
+        assert await request_job_cancellation(session, job_id) == 0
+        assert stale.status == "completed"
+        await session.rollback()

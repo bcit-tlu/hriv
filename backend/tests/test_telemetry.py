@@ -694,3 +694,89 @@ async def test_telemetry_records_navigation_transition_fields(
     assert getattr(third, "event.from_page") == "other"
     # Unrecognized directions are coerced to the bounded "other" bucket too.
     assert getattr(third, "event.direction") == "other"
+
+
+async def test_telemetry_records_guide_page_hits(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Guide page hits pass through with a bounded ``guide.doc`` slug."""
+    caplog.set_level("INFO", logger="app.routers.telemetry")
+
+    batch = TelemetryBatch(
+        events=[
+            TelemetryEvent(
+                event="navigation.page_changed",
+                action="navigate",
+                page="guide",
+                from_page="browse",
+            ),
+            TelemetryEvent(
+                event="navigation.page_changed",
+                action="navigate_guide_doc",
+                page="guide",
+                guide_doc="images",
+            ),
+            TelemetryEvent(
+                event="navigation.page_changed",
+                action="navigate_guide_doc",
+                page="guide",
+                guide_doc="../../etc/passwd",
+            ),
+        ]
+    )
+    request = _make_request()
+    user = SimpleNamespace(id=1, role="instructor", metadata_=None)
+    db = _make_db()
+
+    with _allow_rate_limit():
+        await ingest_telemetry_events(
+            batch=batch, request=request, user=user, db=db, x_session_id=None
+        )
+
+    first, second, third = [
+        r for r in caplog.records if r.message == "frontend telemetry event"
+    ]
+    assert getattr(first, "event.page") == "guide"
+    assert getattr(first, "event.from_page") == "browse"
+    assert getattr(second, "guide.doc") == "images"
+    # Non-slug guide_doc values are coerced to the bounded "other" bucket.
+    assert getattr(third, "guide.doc") == "other"
+
+
+async def test_telemetry_records_admin_tab_hits(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Admin tab hits pass through with a bounded ``admin.tab`` value."""
+    caplog.set_level("INFO", logger="app.routers.telemetry")
+
+    batch = TelemetryBatch(
+        events=[
+            TelemetryEvent(
+                event="navigation.page_changed",
+                action="navigate_admin_tab",
+                page="admin",
+                admin_tab="backups",
+            ),
+            TelemetryEvent(
+                event="navigation.page_changed",
+                action="navigate_admin_tab",
+                page="admin",
+                admin_tab="not-a-tab",
+            ),
+        ]
+    )
+    request = _make_request()
+    user = SimpleNamespace(id=1, role="admin", metadata_=None)
+    db = _make_db()
+
+    with _allow_rate_limit():
+        await ingest_telemetry_events(
+            batch=batch, request=request, user=user, db=db, x_session_id=None
+        )
+
+    first, second = [
+        r for r in caplog.records if r.message == "frontend telemetry event"
+    ]
+    assert getattr(first, "admin.tab") == "backups"
+    # Unknown admin_tab values are coerced to the bounded "other" bucket.
+    assert getattr(second, "admin.tab") == "other"

@@ -10,7 +10,7 @@ spec:
     count/jobs.batch: "32"
     count/pods: "40"
     count/services: "16"
-    count/configmaps: "16"
+    count/configmaps: "32"
     count/persistentvolumeclaims: "8"
     count/clusters.postgresql.cnpg.io: "3"
     requests.cpu: "12"

@@ -242,6 +242,10 @@ export function useShareableImageState(
     const params = new URLSearchParams()
     if (page !== 'browse') {
       params.set('page', page)
+      // The guide page owns a ?doc= sub-param — preserve it so refreshes and
+      // shared links keep the current document.
+      const doc = new URLSearchParams(window.location.search).get('doc')
+      if (doc) params.set('doc', doc)
     } else {
       if (path.length > 0) {
         params.set('cat', path.map((c) => c.id).join(','))

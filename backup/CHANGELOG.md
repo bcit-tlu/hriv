@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.1](https://github.com/bcit-tlu/hriv/compare/backup-v0.15.0...backup-v0.15.1) (2026-09-13)
+
+
+### Bug Fixes
+
+* publish post-fence recovery boundary ([#1277](https://github.com/bcit-tlu/hriv/issues/1277)) ([3cb13df](https://github.com/bcit-tlu/hriv/commit/3cb13dfa4f7ce6e2de3c4b82cde8de1202ebaa29))
+
 ## [0.15.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.14.0...backup-v0.15.0) (2026-09-12)
 
 

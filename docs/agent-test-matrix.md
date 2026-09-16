@@ -70,6 +70,13 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
 - skill: [`.agents/skills/testing-hriv/SKILL.md`](../.agents/skills/testing-hriv/SKILL.md) (admin export/import section)
 - See [admin-import-export.md](admin-import-export.md).
 
+### Changed durable jobs / parallel tile rebuilds
+
+- backend: `poetry run pytest tests/test_router_jobs.py tests/test_tile_rebuild_jobs.py tests/test_tile_rebuild_jobs_postgres.py tests/test_job_state.py`
+- note: `test_tile_rebuild_jobs_postgres.py` is gated on `REORDER_FIXTURE_DATABASE_URL` (real PostgreSQL); it runs in CI. Include `tests/test_worker.py` when touching pump/cron wiring.
+- frontend: `npm test -- AdminPage api` when touching the jobs panel or `api.ts` wrappers.
+- See [jobs.md](jobs.md).
+
 ### Changed OIDC / auth
 
 - backend: `poetry run pytest tests/test_auth.py tests/test_router_auth.py tests/test_router_oidc.py tests/test_migration_role_helpers.py`

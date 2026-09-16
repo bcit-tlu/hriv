@@ -81,6 +81,25 @@
 - Use Vitest for testing framework (with `@testing-library/react` for component tests)
 - Aim for >80% code coverage
 - Run tests before committing (`npm test`)
+- **Storybook stories for visual coverage.** Chromatic snapshots every story on
+  each push, so stories are permanent baselines — target meaningfully distinct
+  visual states, not one story per code path:
+  - New components in `src/components/` need a `*.stories.tsx` covering each
+    meaningfully distinct visual state.
+  - New UI inside existing pages/containers needs a story only when the change
+    is extractable into a component worth isolating.
+  - Behavior changes to already-storied components need no new stories —
+    existing snapshots cover regression.
+  - Theme/viewport variants use `parameters.chromatic.modes` instead of
+    duplicating stories; each mode is its own baseline, so apply deliberately.
+  - Fixtures must be deterministic: literal dates and data, no `Date.now()` or
+    `Math.random()`.
+  - Tune noisy stories via `parameters.chromatic` (`diffThreshold`,
+    `pauseAnimationAtEnd`, `delay`, `disableSnapshot` for docs-only stories)
+    rather than dropping coverage.
+  - Story format: `Components/<Name>` title, `Basic` first, an attached
+    `<Name>.docs.mdx` page, and `play` functions for small deterministic
+    interactions — see `docs/storybook-chromatic.md`.
 
 ### Backend
 

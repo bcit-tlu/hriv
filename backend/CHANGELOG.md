@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.58.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.57.0...backend-v0.58.0) (2026-09-15)
+
+
+### Features
+
+* add browse-tree 304 metrics and dev re-render counts ([#1301](https://github.com/bcit-tlu/hriv/issues/1301)) ([ada2466](https://github.com/bcit-tlu/hriv/commit/ada24668a6f2a0f4dff989506f5005d8d149f5d9))
+* **metrics:** publish hriv_backup_attempt_in_progress gauge ([#1307](https://github.com/bcit-tlu/hriv/issues/1307)) ([4b7241a](https://github.com/bcit-tlu/hriv/commit/4b7241a826728173ab168e30ca8c7cb2511c597e))
+
+## [0.57.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.56.0...backend-v0.57.0) (2026-09-14)
+
+
+### Features
+
+* emit admin tab page hits for telemetry dashboards ([#1297](https://github.com/bcit-tlu/hriv/issues/1297)) ([5163f82](https://github.com/bcit-tlu/hriv/commit/5163f827a167092f1d9e4975b2cd7764c5a45754))
+* instrument guide page hits for telemetry dashboards ([#1294](https://github.com/bcit-tlu/hriv/issues/1294)) ([2a6ae3d](https://github.com/bcit-tlu/hriv/commit/2a6ae3d2d1e62889ba8537a9c7d93f79ba163dc3))
+
 ## [0.56.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.55.0...backend-v0.56.0) (2026-09-08)
 
 

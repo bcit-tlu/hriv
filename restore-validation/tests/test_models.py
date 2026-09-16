@@ -9,7 +9,7 @@ import yaml
 
 from hriv_restore_validation.models import Config, SourcePolicy, SourceProfile, Templates, canonical_source_state
 from hriv_restore_validation.strict import ValidationError, canonical_json, parse_json
-from fixtures import BACKUP_IMAGE, config, policy_document, profile, profile_document, template_document
+from fixtures import BACKUP_IMAGE, POSTGRES_IMAGE, config, policy_document, profile, profile_document, template_document
 
 
 class ParsingTests(unittest.TestCase):
@@ -52,8 +52,33 @@ class ParsingTests(unittest.TestCase):
     def test_profile_unpinned_image(self):
         with self.assertRaises(ValidationError): SourceProfile.parse(json.dumps(profile_document(controller_image="image:latest")))
 
+    def test_profile_postgresql_requires_tagged_digest(self):
+        digest = "c" * 64
+        invalid = [
+            f"registry/postgres@sha256:{digest}",
+            f"registry/postgres::@sha256:{digest}",
+            f"registry/postgres:17:latest@sha256:{digest}",
+            f"registry/postgres:-17@sha256:{digest}",
+            f"registry/postgres:{'a' * 129}@sha256:{digest}",
+            f"registry/Postgres:17@sha256:{digest}",
+        ]
+        for image in invalid:
+            with self.subTest(image=image), self.assertRaises(ValidationError):
+                SourceProfile.parse(json.dumps(profile_document(postgresql_image=image)))
+        for valid in (
+            f"registry/postgres:{'a' * 128}@sha256:{digest}",
+            f"registry:5000/postgres:17@sha256:{digest}",
+        ):
+            with self.subTest(image=valid):
+                self.assertEqual(valid, SourceProfile.parse(json.dumps(profile_document(postgresql_image=valid))).postgresql_image)
+
     def test_profile_storage_minimum_syntax(self):
         with self.assertRaises(ValidationError): SourceProfile.parse(json.dumps(profile_document(postgresql_storage_size="40GB")))
+
+    def test_profile_source_storage_class_optional_default(self):
+        value = profile_document(); del value["source_storage_class"]
+        self.assertEqual("longhorn", SourceProfile.parse(json.dumps(value)).source_storage_class)
+        self.assertEqual("longhorn-rv", SourceProfile.parse(json.dumps(profile_document(source_storage_class="longhorn-rv"))).source_storage_class)
 
     def test_profile_role_attributes_exact(self):
         value = profile_document(); del value["required_static_role_inventory"][0]["attributes"]["bypassrls"]
@@ -165,9 +190,37 @@ class ParsingTests(unittest.TestCase):
         value = template_document(); value["image_allowlist"].remove(BACKUP_IMAGE)
         with self.assertRaises(ValidationError): Templates.parse(yaml.safe_dump(value), profile())
 
+    def test_templates_allow_long_digest_pinned_controller_image(self):
+        long_controller = "ghcr.io/bcit-tlu/hriv/hriv-restore-validation:0.1.2-rc.20260912040709.g42e22ad@sha256:" + "d" * 64
+        assert len(long_controller) > 128
+        long_profile = SourceProfile.parse(json.dumps(profile_document(controller_image=long_controller)))
+        value = template_document()
+        value["image_allowlist"] = [long_controller, BACKUP_IMAGE, POSTGRES_IMAGE]
+        for key in ("db_validation_job", "consistency_job"):
+            value[key]["spec"]["template"]["spec"]["containers"][0]["image"] = long_controller
+        Templates.parse(yaml.safe_dump(value), long_profile)
+
+    def test_templates_reject_unpinned_allowlist_reference(self):
+        value = template_document(); value["image_allowlist"][0] = "registry/controller:latest"
+        with self.assertRaises(ValidationError): Templates.parse(yaml.safe_dump(value), profile())
+
     def test_templates_reject_small_pvc(self):
         value = template_document(); value["source_pvc"]["spec"]["resources"]["requests"]["storage"] = "20Gi"
         with self.assertRaises(ValidationError): Templates.parse(yaml.safe_dump(value), profile())
+
+    def test_templates_require_profile_postgresql_image(self):
+        value = template_document(); value["cnpg_cluster"]["spec"]["imageName"] = BACKUP_IMAGE
+        with self.assertRaises(ValidationError): Templates.parse(yaml.safe_dump(value), profile())
+
+    def test_templates_require_cnpg_inherited_labels(self):
+        for mutate in (
+            lambda value: value["cnpg_cluster"]["spec"].pop("inheritedMetadata"),
+            lambda value: value["cnpg_cluster"]["spec"]["inheritedMetadata"]["labels"].pop("hriv.bcit.ca/restore-validation-role"),
+            lambda value: value["cnpg_cluster"]["spec"]["inheritedMetadata"]["labels"].update({"extra": "label"}),
+        ):
+            value = template_document(); mutate(value)
+            with self.subTest(value=value), self.assertRaises(ValidationError):
+                Templates.parse(yaml.safe_dump(value), profile())
 
     def test_templates_require_longhorn_storage_targets(self):
         for mutate in (

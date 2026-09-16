@@ -123,6 +123,23 @@ images> / Empty` format used on category tiles.
   `Link URL`, so users can keep only annotation-derived image matches visible.
 - Search result field labels render in a stronger secondary style so the field
   name reads as metadata rather than body text.
+- Staff searches also match the user guide: each guide page is split into
+  heading-delimited sections (`buildGuideIndex` in `src/guideSearch.ts`), and a
+  match navigates to `?page=guide&doc=<slug>` scrolled to the section anchor.
+- The `Guide` type chip limits results to guide content. Guide results and the
+  chip are staff-only — students see neither, matching guide access.
+- Query syntax (`parseSearchQuery` in `src/searchQuery.ts`): whitespace splits
+  the query into terms and results union — a result appears when ANY term
+  matches a searchable field as a case-insensitive substring. Wrapping words in
+  double quotes (`"…"`, including smart `“”` quotes normalized to straight
+  quotes) groups them into a single exact-phrase clause, so `"lung 2"` matches
+  only fields containing the adjacent string "lung 2". A quoted phrase and bare
+  terms still union together (`biopsy "lung 2"` → "biopsy" OR "lung 2"). An
+  unclosed quote treats the rest of the query as the phrase, empty `""` quotes
+  contribute no clause, and whitespace runs inside a phrase collapse to single
+  spaces.
+- The search input placeholder advertises the syntax with a
+  `— "quotes" for exact phrases` suffix on both the staff and student variants.
 
 ---
 
@@ -358,10 +375,31 @@ M images> / Empty` format used on category tiles.
   management appears without scrolling.
 - **Given** the admin switches to the `Backups` sub-tab, **Then** the page
   groups backup tools in this order: a data-transfer card grid first (export
-  cards, then the destructive import cards, then Rebuild Tiles), the
+  cards, then the destructive import cards, then Rebuild Tiles), a
+  `Parallel tile rebuilds` section listing durable rebuild jobs, the
   `Restore individual file` panel, `Recent Tasks` in a collapsible accordion,
   and finally the archive-history panels (`Stored export archives` and
   `Previously uploaded import archives`) side by side.
+- The `Parallel tile rebuilds` section (#1191) is separate from `Recent
+Tasks`: durable `Job` rows are never merged into the serial `AdminTask`
+  list. Each rebuild job shows a status chip, a determinate progress bar, and
+  per-status item counts (queued/running/completed/skipped/failed/cancelled).
+  The jobs list loads once on mount and re-polls every 2 s only while a
+  rebuild job is `queued`, `running`, or `cancelling`; polling stops itself
+  once every rebuild job is terminal and never overlaps requests.
+- **Given** a rebuild job is active, **Then** a `Cancel` button requests
+  idempotent supervisor cancellation; **Given** a job has failed items and is
+  not `cancelling`/`cancelled`/`completed`, **Then** a `Retry N failed`
+  button requeues all failures. Failed items load lazily — expanding the list
+  fetches the first bounded page of 50, and a `Load more` button pages forward
+  via `next_after_id` until the cursor is `null`. `Completed with errors`
+  renders distinctly from clean `Completed` and `Cancelled`.
+- **Given** `GET /api/jobs/rebuild-tiles` reports `enabled`, **Then** the
+  Rebuild Tiles button creates a durable job via `POST
+/api/jobs/rebuild-tiles`; otherwise it uses the serial
+  `POST /api/admin/tasks/rebuild-tiles` task path, and the section notes that
+  parallel rebuilds are disabled while still listing any in-flight durable
+  jobs.
 - Active task alerts remain visible above the tab strip so background export or
   import progress is not hidden while the admin is working in either sub-tab.
 
