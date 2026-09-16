@@ -1886,6 +1886,119 @@ export function cancelAdminTask(taskId: number): Promise<AdminTask> {
   return request(`/admin/tasks/${taskId}/cancel`, { method: 'POST' })
 }
 
+// ── Durable jobs (parallel tile rebuilds) ────────────────
+
+export type ApiJobStatus =
+  | 'queued'
+  | 'running'
+  | 'completed'
+  | 'completed_with_errors'
+  | 'failed'
+  | 'cancelling'
+  | 'cancelled'
+
+export type ApiJobItemStatus =
+  'queued' | 'running' | 'completed' | 'skipped' | 'failed' | 'cancelled'
+
+export interface ApiJob {
+  id: number
+  job_type: string
+  status: ApiJobStatus
+  progress: number
+  total_count: number
+  completed_count: number
+  failed_count: number
+  skipped_count: number
+  cancelled_count: number
+  queued_count: number
+  running_count: number
+  error_message: string | null
+  metadata_extra?: Record<string, unknown> | null
+  requested_by: number | null
+  started_at: string | null
+  completed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ApiJobItem {
+  id: number
+  job_id: number
+  resource_type: string
+  resource_id: string | null
+  status: ApiJobItemStatus
+  attempts: number
+  progress: number
+  error_message: string | null
+  heartbeat_at: string | null
+  lease_expires_at: string | null
+  retry_not_before: string | null
+  arq_job_id: string | null
+  metadata_extra?: Record<string, unknown> | null
+  started_at: string | null
+  completed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface JobItemsPage {
+  items: ApiJobItem[]
+  next_after_id: number | null
+}
+
+export interface JobRetryResult {
+  requeued_count: number
+  job: ApiJob
+}
+
+/** Whether this deployment accepts parallel tile-rebuild creation. */
+export interface RebuildTilesCapability {
+  enabled: boolean
+  parallelism: number
+}
+
+export function listJobs(): Promise<ApiJob[]> {
+  return request('/jobs/')
+}
+
+export function fetchRebuildTilesCapability(): Promise<RebuildTilesCapability> {
+  return request('/jobs/rebuild-tiles')
+}
+
+/** Create a durable parallel tile-rebuild job (admin; 409 when disabled/active). */
+export function startParallelRebuildTiles(
+  body: RebuildTilesRequest = { scope: 'missing_stale' },
+): Promise<ApiJob> {
+  return request('/jobs/rebuild-tiles', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function fetchJobItems(
+  jobId: number,
+  opts: { status?: ApiJobItemStatus; afterId?: number; limit?: number } = {},
+): Promise<JobItemsPage> {
+  const params = new URLSearchParams()
+  if (opts.status) params.set('status', opts.status)
+  if (opts.afterId !== undefined) params.set('after_id', String(opts.afterId))
+  if (opts.limit !== undefined) params.set('limit', String(opts.limit))
+  const qs = params.toString()
+  return request(`/jobs/${jobId}/items${qs ? `?${qs}` : ''}`)
+}
+
+export function cancelJob(jobId: number): Promise<ApiJob> {
+  return request(`/jobs/${jobId}/cancel`, { method: 'POST' })
+}
+
+export function retryJobItem(jobId: number, itemId: number): Promise<JobRetryResult> {
+  return request(`/jobs/${jobId}/items/${itemId}/retry`, { method: 'POST' })
+}
+
+export function retryFailedJobItems(jobId: number): Promise<JobRetryResult> {
+  return request(`/jobs/${jobId}/retry-failed`, { method: 'POST' })
+}
+
 export interface VersionsResponse {
   backend: string
   backup: string
