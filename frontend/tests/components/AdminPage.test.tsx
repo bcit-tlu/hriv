@@ -1196,6 +1196,34 @@ describe('AdminPage', () => {
       await waitFor(() => expect(screen.queryByTestId('rebuild-item-1')).not.toBeInTheDocument())
     })
 
+    it('keeps a newly created job when a stale mount-time list resolves late', async () => {
+      const user = userEvent.setup()
+      let resolveMountList: (jobs: api.ApiJob[]) => void = () => {}
+      mockListJobs.mockReturnValueOnce(
+        new Promise<api.ApiJob[]>((resolve) => {
+          resolveMountList = resolve
+        }),
+      )
+      mockFetchRebuildTilesCapability.mockResolvedValue({
+        enabled: true,
+        parallelism: 2,
+      })
+      mockStartParallelRebuildTiles.mockResolvedValue(rebuildJob({ status: 'queued' }))
+
+      render(<AdminPage />)
+      await openBackupsTab(user)
+
+      // Create while the mount-time listJobs request is still in flight.
+      await user.click(screen.getByRole('button', { name: 'Rebuild Tiles' }))
+      expect(await screen.findByTestId('rebuild-job-7')).toBeInTheDocument()
+
+      // The pre-creation snapshot resolves late — it must not wipe job 7.
+      await act(async () => {
+        resolveMountList([])
+      })
+      expect(screen.getByTestId('rebuild-job-7')).toBeInTheDocument()
+    })
+
     it('distinguishes completed_with_errors from clean completion', async () => {
       const user = userEvent.setup()
       mockListJobs.mockResolvedValue([

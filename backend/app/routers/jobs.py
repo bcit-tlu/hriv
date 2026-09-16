@@ -247,6 +247,17 @@ async def cancel_rebuild_job(
             ),
         )
     await request_job_cancellation(db, job_id)
+    # The lock's populate_existing refresh makes `job` authoritative now —
+    # a job that completed between the pre-check and lock acquisition must
+    # still answer 409 rather than being overwritten.
+    if job.status not in _CANCELLABLE_JOB_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Tile rebuild job {job_id} is {job.status} "
+                "and cannot be cancelled"
+            ),
+        )
     await db.commit()
     # A pump drains queued items into cancelled and finalizes the supervisor
     # sooner than waiting for running children or the periodic sweep.

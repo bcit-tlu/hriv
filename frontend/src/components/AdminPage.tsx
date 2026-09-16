@@ -337,19 +337,29 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
       })
   }, [])
 
+  // Monotonic sequence for jobs-list responses: each refresh stamps its
+  // request, and mutations bump the counter so a list snapshot produced
+  // before a create/cancel/retry can't clobber the newer state (#1191).
+  const jobsRequestSeq = useRef(0)
+  const refreshRebuildJobs = useCallback(async () => {
+    const seq = ++jobsRequestSeq.current
+    try {
+      const jobs = await listJobs()
+      if (seq === jobsRequestSeq.current) setRebuildJobs(jobs)
+    } catch {
+      /* transient failure — the panel keeps its last state */
+    }
+  }, [])
+
   // Load durable jobs and the parallel-rebuild capability once (#1191).
   useEffect(() => {
-    listJobs()
-      .then(setRebuildJobs)
-      .catch(() => {
-        /* jobs panel stays empty on failure */
-      })
+    void refreshRebuildJobs()
     fetchRebuildTilesCapability()
       .then(setRebuildCapability)
       .catch(() => {
         /* capability unknown → serial rebuild fallback */
       })
-  }, [])
+  }, [refreshRebuildJobs])
 
   const hasActiveRebuildJob = rebuildJobs.some(
     (job) => job.job_type === 'rebuild_tiles' && ACTIVE_REBUILD_JOB_STATUSES.has(job.status),
@@ -364,12 +374,7 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
     const tick = () => {
       rebuildPollRef.current = setTimeout(() => {
         void (async () => {
-          try {
-            const jobs = await listJobs()
-            if (!cancelled) setRebuildJobs(jobs)
-          } catch {
-            /* transient failure — keep polling while work is active */
-          }
+          await refreshRebuildJobs()
           if (!cancelled) tick()
         })()
       }, POLL_INTERVAL)
@@ -382,7 +387,7 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
         rebuildPollRef.current = null
       }
     }
-  }, [hasActiveRebuildJob])
+  }, [hasActiveRebuildJob, refreshRebuildJobs])
 
   // ── Polling ──────────────────────────────────────────────
 
@@ -651,7 +656,11 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
       setError(null)
       setStarting('rebuild_tiles')
       startParallelRebuildTiles()
-        .then((job) => setRebuildJobs((prev) => [job, ...prev.filter((j) => j.id !== job.id)]))
+        .then((job) => {
+          // Invalidate any jobs list still in flight from before creation.
+          jobsRequestSeq.current += 1
+          setRebuildJobs((prev) => [job, ...prev.filter((j) => j.id !== job.id)])
+        })
         .catch((err) => setError(userMessage(err, 'Failed to start tile rebuild')))
         .finally(() => setStarting(null))
       return
@@ -921,6 +930,8 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
   // ── Durable rebuild job controls (#1191) ───────────────
 
   const syncRebuildJob = useCallback((updated: ApiJob) => {
+    // Invalidate any jobs list still in flight from before this mutation.
+    jobsRequestSeq.current += 1
     setRebuildJobs((prev) => prev.map((j) => (j.id === updated.id ? updated : j)))
   }, [])
 

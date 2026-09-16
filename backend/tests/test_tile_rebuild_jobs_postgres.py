@@ -781,3 +781,25 @@ async def test_rebuild_mutations_reject_non_rebuild_jobs(db_factory) -> None:
         async with db_factory() as session:
             await session.execute(delete(Job).where(Job.id == other_id))
             await session.commit()
+
+
+@requires_db
+async def test_cancellation_uses_locked_row_not_stale_identity(
+    db_factory,
+) -> None:
+    """A session that pre-loaded the job unlocked must decide on the locked
+    row's real status, not the stale identity-map snapshot (#1191 review)."""
+    job_id = await _create_job(db_factory, status="running", item_count=1)
+    async with db_factory() as session:
+        # Preload the row without a lock so it enters the identity map.
+        stale = await session.get(Job, job_id)
+        assert stale is not None and stale.status == "running"
+        async with db_factory() as other:
+            row = await other.get(Job, job_id)
+            row.status = "completed"
+            await other.commit()
+        # populate_existing refreshes the locked row, so the service sees
+        # "completed" and leaves the terminal state untouched.
+        assert await request_job_cancellation(session, job_id) == 0
+        assert stale.status == "completed"
+        await session.rollback()

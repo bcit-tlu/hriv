@@ -273,10 +273,14 @@ async def _lock_tile_rebuild_job(
     session: AsyncSession,
     job_id: int,
 ) -> Job:
+    # populate_existing refreshes attributes when the row is already in the
+    # session identity map (e.g. a router pre-fetched it without a lock), so
+    # status decisions under the lock never see a stale snapshot.
     result = await session.execute(
         select(Job)
         .where(Job.id == job_id, Job.job_type == REBUILD_JOB_TYPE)
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
     job = result.scalar_one_or_none()
     if job is None:
