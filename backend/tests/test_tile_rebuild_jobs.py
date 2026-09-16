@@ -1385,7 +1385,7 @@ async def test_post_commit_cleanup_cancellation_propagates_after_cleanup(
     child.cancel()
 
     with pytest.raises(asyncio.CancelledError):
-        await child
+        await asyncio.wait_for(child, timeout=1)
 
 
 async def test_child_timeout_preserves_completion_committed_during_cancel(
@@ -1396,6 +1396,7 @@ async def test_child_timeout_preserves_completion_committed_during_cancel(
             await asyncio.Event().wait()
         except asyncio.CancelledError:
             return "completed", None
+        return "completed", None
 
     finalize_failure = AsyncMock()
     monkeypatch.setattr(
