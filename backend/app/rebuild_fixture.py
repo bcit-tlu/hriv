@@ -16,6 +16,8 @@ Fixture rows are marked by:
 
 Seeding is idempotent: ``--purge`` (or a reseed) removes every fixture row,
 source file, generated tile tree, and rebuild temporary tree before re-inserting.
+Fixture mutation holds the source-volume archive lock shared with backups and
+filesystem exports; ``--count 0`` leaves no active fixture directory.
 
 CLI usage (requires ``DATABASE_URL`` and a writable ``SOURCE_IMAGES_DIR``)::
 
@@ -32,11 +34,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import fcntl
 import hashlib
 import os
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TextIO
 
 from sqlalchemy import delete, or_
 from sqlalchemy.ext.asyncio import (
@@ -52,6 +56,7 @@ from .tile_provenance import current_tile_settings_hash
 
 FIXTURE_PREFIX = "TRF-"
 FIXTURE_DIRNAME = "rebuild-fixture"
+FIXTURE_ARCHIVE_LOCK_FILENAME = ".rebuild-fixture-archive.lock"
 
 # Reserved ID ranges, disjoint from reorder_fixture's 9_100_000/9_200_000.
 SOURCE_IMAGE_ID_BASE = 9_300_000
@@ -126,6 +131,38 @@ def fixture_source_dir() -> Path:
     return Path(settings.source_images_dir) / FIXTURE_DIRNAME
 
 
+def _acquire_archive_lock(source_images_dir: str | Path | None = None) -> TextIO:
+    root = (
+        Path(source_images_dir)
+        if source_images_dir is not None
+        else fixture_source_dir().parent
+    )
+    root.mkdir(parents=True, exist_ok=True)
+    handle = (root / FIXTURE_ARCHIVE_LOCK_FILENAME).open("a+")
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+    except Exception:
+        handle.close()
+        raise
+    return handle
+
+
+async def acquire_rebuild_fixture_archive_lock(
+    source_images_dir: str | Path | None = None,
+) -> TextIO:
+    return await asyncio.to_thread(_acquire_archive_lock, source_images_dir)
+
+
+async def release_rebuild_fixture_archive_lock(handle: TextIO) -> None:
+    def release() -> None:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            handle.close()
+
+    await asyncio.to_thread(release)
+
+
 def write_fixture_files(spec: list[RebuildFixtureSpec]) -> Path:
     """Write one tiny TIFF per fixture source and return the directory."""
     fixture_dir = fixture_source_dir()
@@ -193,7 +230,7 @@ async def purge_rebuild_fixture(session: AsyncSession) -> None:
     await session.commit()
 
 
-async def seed_rebuild_fixture(
+async def _seed_rebuild_fixture_locked(
     session: AsyncSession,
     count: int,
 ) -> list[RebuildFixtureSpec]:
@@ -201,7 +238,9 @@ async def seed_rebuild_fixture(
     spec = build_fixture_spec(count)
     await purge_rebuild_fixture(session)
     await asyncio.to_thread(purge_fixture_files)
-    fixture_dir = await asyncio.to_thread(write_fixture_files, spec)
+    fixture_dir = fixture_source_dir()
+    if spec:
+        fixture_dir = await asyncio.to_thread(write_fixture_files, spec)
 
     checksum = hashlib.sha256(FIXTURE_TIFF_BYTES).hexdigest()
     settings_hash = current_tile_settings_hash()
@@ -251,6 +290,17 @@ async def seed_rebuild_fixture(
     return spec
 
 
+async def seed_rebuild_fixture(
+    session: AsyncSession,
+    count: int,
+) -> list[RebuildFixtureSpec]:
+    lock = await acquire_rebuild_fixture_archive_lock()
+    try:
+        return await _seed_rebuild_fixture_locked(session, count)
+    finally:
+        await release_rebuild_fixture_archive_lock(lock)
+
+
 def _resolve_database_url() -> str:
     url = os.environ.get("DATABASE_URL", "")
     if not url:
@@ -270,8 +320,12 @@ async def _run_cli(*, count: int, purge_only: bool) -> None:
     try:
         async with session_factory() as session:
             if purge_only:
-                await purge_rebuild_fixture(session)
-                await asyncio.to_thread(purge_fixture_files)
+                lock = await acquire_rebuild_fixture_archive_lock()
+                try:
+                    await purge_rebuild_fixture(session)
+                    await asyncio.to_thread(purge_fixture_files)
+                finally:
+                    await release_rebuild_fixture_archive_lock(lock)
                 print("Rebuild fixture purged.")
             else:
                 spec = await seed_rebuild_fixture(session, count)

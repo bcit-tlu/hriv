@@ -8,10 +8,14 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, Session
 
 
 MAX_REBUILD_CHILD_TIMEOUT_SECONDS = 86400
+
+
+class AppSession(Session):
+    pass
 
 
 class Settings(BaseSettings):
@@ -155,7 +159,10 @@ def get_async_session() -> async_sessionmaker[AsyncSession]:
     global _async_session
     if _async_session is None:
         _async_session = async_sessionmaker(
-            get_engine(), class_=AsyncSession, expire_on_commit=False
+            get_engine(),
+            class_=AsyncSession,
+            expire_on_commit=False,
+            sync_session_class=AppSession,
         )
     return _async_session
 

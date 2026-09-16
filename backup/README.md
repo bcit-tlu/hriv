@@ -1,6 +1,6 @@
 # HRIV Disaster Recovery Backup Service
 
-Standalone service that publishes HRIV recovery archives on a configurable schedule, stores archives in Azure Blob Storage, and supports component-selective restore after a fresh redeployment. In production, CloudNativePG backup and WAL archiving protect PostgreSQL while this service streams authoritative source images directly to Azure; generated DZI tiles are derived data that can be rebuilt from source images. Development mode retains the legacy logical database plus filesystem archive.
+Standalone service that publishes HRIV recovery archives on a configurable schedule, stores archives in Azure Blob Storage, and supports component-selective restore after a fresh redeployment. In production, CloudNativePG backup and WAL archiving protect PostgreSQL while this service streams authoritative source images directly to Azure; generated DZI tiles are derived data that can be rebuilt from source images. Development mode retains the legacy logical database plus filesystem archive. Backup inventory shares an exclusive source-volume lock with tile-rebuild fixture mutation and admin filesystem export.
 
 ## Quick Start
 

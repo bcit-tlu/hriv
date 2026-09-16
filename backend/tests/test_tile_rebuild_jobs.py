@@ -1863,7 +1863,7 @@ def test_deferred_callbacks_emit_immediately_for_session_doubles() -> None:
 
 def test_session_commit_emits_deferred_callbacks() -> None:
     calls: list[str] = []
-    session = tile_rebuild_jobs.Session()
+    session = tile_rebuild_jobs.AppSession()
     session.begin()
     tile_rebuild_jobs._defer_after_commit(
         session, lambda: calls.append("committed")
@@ -1876,7 +1876,7 @@ def test_session_commit_emits_deferred_callbacks() -> None:
 
 def test_session_rollback_discards_deferred_callbacks() -> None:
     calls: list[str] = []
-    session = tile_rebuild_jobs.Session()
+    session = tile_rebuild_jobs.AppSession()
     session.begin()
     tile_rebuild_jobs._defer_after_commit(
         session, lambda: calls.append("stale")
@@ -1891,7 +1891,7 @@ def test_session_rollback_discards_deferred_callbacks() -> None:
 
 def test_nested_rollback_preserves_outer_callbacks() -> None:
     calls: list[str] = []
-    session = tile_rebuild_jobs.Session()
+    session = tile_rebuild_jobs.AppSession()
     session.begin()
     tile_rebuild_jobs._defer_after_commit(
         session, lambda: calls.append("outer")

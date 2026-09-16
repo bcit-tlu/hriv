@@ -18,10 +18,9 @@ from sqlalchemy.exc import (
     TimeoutError as SQLAlchemyTimeoutError,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
 
 from . import tile_rebuild_metrics
-from .database import get_async_session, settings
+from .database import AppSession, get_async_session, settings
 from .job_state import (
     JobItemSpec,
     add_job_item_snapshot,
@@ -112,15 +111,15 @@ def _discard_pending_callbacks(
     ]
 
 
-@event.listens_for(Session, "after_commit")
-def _emit_callbacks_after_commit(session: Session) -> None:
+@event.listens_for(AppSession, "after_commit")
+def _emit_callbacks_after_commit(session: AppSession) -> None:
     if not session.in_nested_transaction():
         emit_pending_callbacks(session)
 
 
-@event.listens_for(Session, "after_soft_rollback")
+@event.listens_for(AppSession, "after_soft_rollback")
 def _discard_callbacks_after_soft_rollback(
-    session: Session,
+    session: AppSession,
     previous_transaction: object,
 ) -> None:
     if getattr(previous_transaction, "nested", False):

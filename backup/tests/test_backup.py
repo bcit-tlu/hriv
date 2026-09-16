@@ -1113,6 +1113,14 @@ class BackupRunTestCase(_BackupTestCase):
 
         run_inner.assert_not_called()
         self.assertEqual(list(local_dir.glob("*.tar.gz")), [])
+        state = json.loads((local_dir / "BACKUP_STATE.json").read_text())
+        fixture_attempts = [
+            attempt
+            for attempt in state["attempts"]
+            if attempt["failure_reason"] == "rebuild_fixture_active"
+        ]
+        self.assertEqual(len(fixture_attempts), 2)
+        self.assertTrue(all(attempt["success"] is False for attempt in fixture_attempts))
         self.assertTrue(
             any("scale fixture is active" in line for line in captured_logs.output)
         )

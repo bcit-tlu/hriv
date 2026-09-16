@@ -14,6 +14,7 @@ from app.admin_ops import (
     _run_rebuild_with_heartbeat,
     reconcile_stale_tasks,
 )
+from app.database import AppSession
 from app.job_state import (
     claim_job_items,
     finalize_job_item,
@@ -47,7 +48,11 @@ requires_db = pytest.mark.skipif(
 @pytest.fixture
 async def db_factory():
     engine = create_async_engine(DB_URL)
-    factory = async_sessionmaker(engine, expire_on_commit=False)
+    factory = async_sessionmaker(
+        engine,
+        expire_on_commit=False,
+        sync_session_class=AppSession,
+    )
     yield factory
     async with factory() as session:
         await session.execute(

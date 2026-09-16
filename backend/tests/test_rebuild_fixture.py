@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -94,6 +95,25 @@ def test_fixture_tile_sources_embed_source_id() -> None:
         assert _tile_source_id_from_url(url) == item.source_image_id
 
 
+async def test_archive_lock_serializes_fixture_mutations(tmp_path: Path) -> None:
+    fixture_dir = tmp_path / "rebuild-fixture"
+    with patch.object(
+        rebuild_fixture,
+        "fixture_source_dir",
+        return_value=fixture_dir,
+    ):
+        first = await rebuild_fixture.acquire_rebuild_fixture_archive_lock()
+        blocked = asyncio.create_task(
+            rebuild_fixture.acquire_rebuild_fixture_archive_lock()
+        )
+        await asyncio.sleep(0.05)
+        assert not blocked.done()
+
+        await rebuild_fixture.release_rebuild_fixture_archive_lock(first)
+        second = await asyncio.wait_for(blocked, timeout=1)
+        await rebuild_fixture.release_rebuild_fixture_archive_lock(second)
+
+
 def test_write_and_purge_fixture_files(tmp_path: Path) -> None:
     spec = build_fixture_spec(4)
     fixture_dir = tmp_path / "rebuild-fixture"
@@ -184,6 +204,39 @@ async def test_seed_rebuild_fixture_inserts_linked_pairs(tmp_path: Path) -> None
         assert source.tiles_generated_at is None
         assert image.tile_sources == f"/api/tiles/{source.id}/image.dzi"
         assert Path(source.stored_path).read_bytes() == FIXTURE_TIFF_BYTES
+
+
+async def test_seed_zero_leaves_no_active_fixture_directory(
+    tmp_path: Path,
+) -> None:
+    fixture_dir = tmp_path / "rebuild-fixture"
+    session = AsyncMock()
+    with (
+        patch.object(
+            rebuild_fixture,
+            "fixture_source_dir",
+            return_value=fixture_dir,
+        ),
+        patch.object(
+            rebuild_fixture.settings,
+            "tiles_dir",
+            str(tmp_path / "tiles"),
+        ),
+        patch.object(
+            rebuild_fixture,
+            "purge_rebuild_fixture",
+            new_callable=AsyncMock,
+        ),
+        patch.object(
+            rebuild_fixture,
+            "bump_browse_revision",
+            new_callable=AsyncMock,
+        ),
+    ):
+        result = await rebuild_fixture.seed_rebuild_fixture(session, 0)
+
+    assert result == []
+    assert not fixture_dir.exists()
 
 
 def test_resolve_database_url_requires_and_normalizes(

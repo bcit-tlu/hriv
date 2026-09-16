@@ -23,7 +23,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import TypeVar
+from typing import TextIO, TypeVar
 
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
@@ -52,10 +52,13 @@ from .models import (
     User,
 )
 from .rebuild_fixture import (
+    FIXTURE_ARCHIVE_LOCK_FILENAME as REBUILD_FIXTURE_ARCHIVE_LOCK_FILENAME,
     FIXTURE_DIRNAME as REBUILD_FIXTURE_DIRNAME,
     FIXTURE_PREFIX as REBUILD_FIXTURE_PREFIX,
     IMAGE_ID_BASE as REBUILD_FIXTURE_IMAGE_ID_BASE,
     SOURCE_IMAGE_ID_BASE as REBUILD_FIXTURE_SOURCE_ID_BASE,
+    acquire_rebuild_fixture_archive_lock,
+    release_rebuild_fixture_archive_lock,
 )
 from .rebuild_locks import (
     acquire_rebuild_creation_lock,
@@ -2161,6 +2164,8 @@ def _iter_export_entries(
 
         for fname in filenames:
             _check_cancel()
+            if fname == REBUILD_FIXTURE_ARCHIVE_LOCK_FILENAME:
+                continue
             fpath = os.path.join(dirpath, fname)
             arc_fpath = os.path.join(arcname, fname)
             try:
@@ -2402,6 +2407,7 @@ async def run_files_export(task_id: int) -> None:
 
         filepath: str | None = None
         tmp_name: str | None = None
+        fixture_lock: TextIO | None = None
         try:
             await _update_task(
                 session, task,
@@ -2409,14 +2415,15 @@ async def run_files_export(task_id: int) -> None:
                 log_line="Starting filesystem export…",
                 check_cancelled=True,
             )
-
             data_dir = Path(settings.tiles_dir).parent  # /data
-
             if not data_dir.exists() or not any(data_dir.iterdir()):
                 raise ValueError("Data directory is empty or missing — nothing to export")
-            if (
-                data_dir / "source_images" / REBUILD_FIXTURE_DIRNAME
-            ).is_dir():
+
+            source_images_dir = data_dir / "source_images"
+            fixture_lock = await acquire_rebuild_fixture_archive_lock(
+                source_images_dir
+            )
+            if (source_images_dir / REBUILD_FIXTURE_DIRNAME).is_dir():
                 raise RuntimeError(
                     "Filesystem export is blocked while the tile-rebuild "
                     "scale fixture is active"
@@ -2665,6 +2672,9 @@ async def run_files_export(task_id: int) -> None:
                 log_line=f"ERROR: {exc}",
                 error_message=str(exc),
             )
+        finally:
+            if fixture_lock is not None:
+                await release_rebuild_fixture_archive_lock(fixture_lock)
 
 
 # ── Filesystem Import ──────────────────────────────────────

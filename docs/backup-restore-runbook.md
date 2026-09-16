@@ -161,9 +161,12 @@ linked source image and adds a large fixture population. Run it only on
 the serial rebuild path verified healthy first.
 
 The fixture is deliberately excluded from recoverable artifacts. Admin JSON
-exports omit its reserved rows; admin filesystem exports and the backup service
-fail closed before creating an archive while
-`source_images/rebuild-fixture/` exists. Confirm no
+exports omit its reserved rows; fixture mutation, admin filesystem export, and
+the backup service share an exclusive source-volume lock that closes the
+check/inventory race. Exports and backups fail closed before creating an archive
+while `source_images/rebuild-fixture/` exists, and blocked backup attempts are
+persisted for both components with `failure_reason=rebuild_fixture_active`.
+Confirm no
 backup is already running before seeding; backup attempts during the rehearsal
 will fail with `backup.rebuild_fixture_blocked` and must not be treated as
 recovery points.
