@@ -127,7 +127,9 @@ heartbeat their lease during processing, and finalize only with the current
 claim token. The persisted child timeout is enforced inside this execution
 boundary so timeout cancellation becomes a durable retry/failure and metric.
 Post-commit retained-tree cleanup runs outside that deadline and cannot turn an
-already-completed item into a worker timeout. arq keeps a fixed 25-hour safety
+already-completed item into a worker timeout. Worker-shutdown cancellation is
+propagated only after cancellation-safe cleanup; PostgreSQL remains completed
+and the attempt is not retried. arq keeps a fixed 25-hour safety
 timeout above the supported 24-hour child maximum, independent of rollout
 settings, for stuck cleanup. Child
 completion requests another pump after its database transaction commits; a

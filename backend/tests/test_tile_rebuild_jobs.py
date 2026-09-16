@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import tile_rebuild_jobs, tile_rebuild_metrics
 from app.database import settings
@@ -1337,7 +1338,7 @@ async def test_post_commit_cleanup_runs_outside_child_timeout(
     finalize_failure.assert_not_awaited()
 
 
-async def test_post_commit_cleanup_cancellation_preserves_completion(
+async def test_post_commit_cleanup_cancellation_propagates_after_cleanup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     promoted = object()
@@ -1383,7 +1384,53 @@ async def test_post_commit_cleanup_cancellation_preserves_completion(
     await cleanup_started.wait()
     child.cancel()
 
-    assert await child == "completed"
+    with pytest.raises(asyncio.CancelledError):
+        await child
+
+
+async def test_child_timeout_preserves_completion_committed_during_cancel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def complete_on_cancel(*_args: object):
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            return "completed", None
+
+    finalize_failure = AsyncMock()
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._reserve_rebuild_source",
+        AsyncMock(
+            return_value=ReservedRebuild(
+                outcome="ready",
+                source_image_id=101,
+                image_id=201,
+                stored_path="/sources/one.svs",
+                child_timeout_seconds=0.01,
+                heartbeat_seconds=30,
+                lease_seconds=90,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._heartbeat_rebuild_item",
+        _wait_for_cancellation,
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._process_reserved_tile_rebuild",
+        complete_on_cancel,
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._finalize_rebuild_failure",
+        finalize_failure,
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._load_processing",
+        MagicMock(return_value=SimpleNamespace()),
+    )
+
+    assert await process_tile_rebuild_item(7, 11, "claim") == "completed"
+    finalize_failure.assert_not_awaited()
 
 
 async def test_child_timeout_finalizes_durable_attempt(
@@ -1859,6 +1906,12 @@ def test_deferred_callbacks_emit_immediately_for_session_doubles() -> None:
         SimpleNamespace(), lambda: calls.append("emit")
     )
     assert calls == ["emit"]
+
+
+def test_plain_async_session_cannot_bypass_callback_contract() -> None:
+    session = AsyncSession()
+    with pytest.raises(TypeError, match="requires AppSession"):
+        tile_rebuild_jobs._defer_after_commit(session, lambda: None)
 
 
 def test_session_commit_emits_deferred_callbacks() -> None:

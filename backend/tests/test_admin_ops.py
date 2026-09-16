@@ -1175,6 +1175,14 @@ async def test_run_db_export_success(tmp_path) -> None:
     with (
         patch("app.admin_ops.get_async_session", return_value=mock_session_factory),
         patch("app.admin_ops._TASKS_DIR", tasks_dir),
+        patch(
+            "app.admin_ops._acquire_fixture_archive_lock_for_task",
+            AsyncMock(return_value=MagicMock()),
+        ),
+        patch(
+            "app.admin_ops.release_rebuild_fixture_archive_lock",
+            new_callable=AsyncMock,
+        ),
     ):
         await run_db_export(1)
 
@@ -2906,6 +2914,14 @@ async def test_run_db_export_includes_groups(tmp_path) -> None:
     with (
         patch("app.admin_ops.get_async_session", return_value=factory),
         patch("app.admin_ops._TASKS_DIR", tasks_dir),
+        patch(
+            "app.admin_ops._acquire_fixture_archive_lock_for_task",
+            AsyncMock(return_value=MagicMock()),
+        ),
+        patch(
+            "app.admin_ops.release_rebuild_fixture_archive_lock",
+            new_callable=AsyncMock,
+        ),
     ):
         await run_db_export(1)
 

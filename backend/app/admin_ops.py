@@ -1017,6 +1017,26 @@ async def delete_files_import_archive(
 # ── Database Export ────────────────────────────────────────
 
 
+async def _acquire_fixture_archive_lock_for_task(
+    session: AsyncSession,
+    task: AdminTask,
+    source_images_dir: str | Path,
+) -> TextIO:
+    while True:
+        handle = await try_acquire_rebuild_fixture_archive_lock(
+            source_images_dir
+        )
+        if handle is not None:
+            return handle
+        await asyncio.sleep(_LOG_FLUSH_INTERVAL)
+        await session.refresh(task, attribute_names=["status"])
+        if task.status in ("cancelling", "cancelled"):
+            raise TaskCancelled("Task cancelled by admin")
+        if task.status != "running":
+            raise RuntimeError("Task stopped while waiting for archive lock")
+        await _heartbeat_task(session, task)
+
+
 async def run_db_export(task_id: int) -> None:
     """Export all database tables to a JSON file in the background."""
     async with get_async_session()() as session:
@@ -1026,12 +1046,18 @@ async def run_db_export(task_id: int) -> None:
             return
 
         filepath: str | None = None
+        fixture_lock: TextIO | None = None
         try:
             await _update_task(
                 session, task,
                 status="running", progress=0,
                 log_line="Starting database export…",
                 check_cancelled=True,
+            )
+            fixture_lock = await _acquire_fixture_archive_lock_for_task(
+                session,
+                task,
+                settings.source_images_dir,
             )
 
             # Programs
@@ -1285,6 +1311,9 @@ async def run_db_export(task_id: int) -> None:
                 log_line=f"ERROR: {exc}",
                 error_message=str(exc),
             )
+        finally:
+            if fixture_lock is not None:
+                await release_rebuild_fixture_archive_lock(fixture_lock)
 
 
 def _write_file(path: str, content: str) -> None:
@@ -2424,21 +2453,11 @@ async def run_files_export(task_id: int) -> None:
                 raise ValueError("Data directory is empty or missing — nothing to export")
 
             source_images_dir = data_dir / "source_images"
-            while fixture_lock is None:
-                fixture_lock = await try_acquire_rebuild_fixture_archive_lock(
-                    source_images_dir
-                )
-                if fixture_lock is not None:
-                    break
-                await asyncio.sleep(_LOG_FLUSH_INTERVAL)
-                await session.refresh(task, attribute_names=["status"])
-                if task.status in ("cancelling", "cancelled"):
-                    raise TaskCancelled("Task cancelled by admin")
-                if task.status != "running":
-                    raise RuntimeError(
-                        "Filesystem export stopped while waiting for archive lock"
-                    )
-                await _heartbeat_task(session, task)
+            fixture_lock = await _acquire_fixture_archive_lock_for_task(
+                session,
+                task,
+                source_images_dir,
+            )
             if (source_images_dir / REBUILD_FIXTURE_DIRNAME).is_dir():
                 raise RuntimeError(
                     "Filesystem export is blocked while the tile-rebuild "

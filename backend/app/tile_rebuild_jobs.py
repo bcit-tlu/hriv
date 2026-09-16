@@ -84,6 +84,11 @@ def _defer_after_commit(
     if not isinstance(session, (AsyncSession, AppSession)):
         callback()
         return
+    if isinstance(session, AsyncSession) and not isinstance(
+        session.sync_session,
+        AppSession,
+    ):
+        raise TypeError("Tile rebuild telemetry requires AppSession")
     session.info.setdefault(_PENDING_CALLBACKS_KEY, []).append(
         (_current_nested_transaction(session), callback)
     )
@@ -1424,9 +1429,15 @@ async def _process_reserved_tile_rebuild(
             )
         return "completed", promoted
     except asyncio.CancelledError:
-        if promoted is not None and not committed:
+        if promoted is not None and committed:
+            try:
+                await processing.finish_promoted_tile_rebuild(promoted)
+            except asyncio.CancelledError:
+                return "completed", None
+            return "completed", None
+        if promoted is not None:
             await processing.rollback_promoted_tile_rebuild(promoted)
-        elif prepared is not None and promoted is None:
+        elif prepared is not None:
             await processing.discard_prepared_tile_rebuild(prepared)
         raise
     except Exception as exc:
@@ -1515,6 +1526,17 @@ async def process_tile_rebuild_item(
                     return_exceptions=True,
                 )
     except TimeoutError as exc:
+        completion: ProcessedRebuild | None = None
+        if operation_task.done() and not operation_task.cancelled():
+            try:
+                completion = operation_task.result()
+            except Exception:
+                completion = None
+        if completion is not None:
+            outcome, promoted = completion
+            if promoted is not None:
+                await processing.finish_promoted_tile_rebuild(promoted)
+            return outcome
         await _finalize_rebuild_failure(
             job_id,
             item_id,
@@ -1524,10 +1546,7 @@ async def process_tile_rebuild_item(
         raise
 
     if promoted is not None:
-        try:
-            await processing.finish_promoted_tile_rebuild(promoted)
-        except asyncio.CancelledError:
-            return outcome
+        await processing.finish_promoted_tile_rebuild(promoted)
     return outcome
 
 
