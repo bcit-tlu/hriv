@@ -6,9 +6,9 @@ history and must not be the only source of user-facing task status.
 
 Issue #1067 introduced the generic `Job` / `JobItem` schema foundation.
 Existing `AdminTask` and `BulkImportJob` flows remain separate. Durable tile
-rebuild scheduling is the first workflow integration, shipped behind a
-default-off feature flag while its public creation and cancellation controls
-remain deferred.
+rebuild scheduling is the first workflow integration: admin-only creation,
+cancellation, bounded item inspection, and retry controls shipped in #1191,
+still behind the default-off `REBUILD_PARALLEL_ENABLED` feature flag.
 
 ## State model
 
@@ -127,13 +127,13 @@ heartbeat their lease during processing, and finalize only with the current
 claim token. Child completion requests another pump after its database
 transaction commits; a periodic worker sweep is the backstop for lost triggers.
 
-Cancellation and retry are internal service boundaries in this phase. A
-cancellation request locks the supervisor, changes it to `cancelling`, and
-cancels queued or claimed-but-not-started items in bounded batches. Started
-children finish the active libvips generation rather than being forcibly
-interrupted, then recheck cancellation before promotion. The supervisor becomes
-`cancelled` only after running work drains, preserving work that committed
-before cancellation won the lock.
+Cancellation and retry requests lock the supervisor before mutating state. A
+cancellation request changes the supervisor to `cancelling` and cancels queued
+or claimed-but-not-started items in bounded batches. Started children finish
+the active libvips generation rather than being forcibly interrupted, then
+recheck cancellation before promotion. The supervisor becomes `cancelled` only
+after running work drains, preserving work that committed before cancellation
+won the lock.
 
 Automatic retries are limited to typed transient failures such as connection
 and timeout errors, selected temporary filesystem errno values, dispatch
@@ -162,23 +162,56 @@ intervals. PostgreSQL `retry_not_before` timestamps, rather than delayed Redis
 jobs, determine when retry work is claimable.
 
 The existing admin rebuild endpoint and automatic post-import rebuild continue
-to create serial `AdminTask` work. Parallel creation requires both
-`REBUILD_PARALLEL_ENABLED=true` and `TASK_EXECUTION_MODE=required`, and no
-public parallel creation API or UI is exposed in this phase. The serial path is
-the immediate rollback and local-development behavior.
+to create serial `AdminTask` work. Durable creation requires both
+`REBUILD_PARALLEL_ENABLED=true` and `TASK_EXECUTION_MODE=required`; when the
+flag is off the `POST /api/jobs/rebuild-tiles` route rejects with 409 and the
+admin UI keeps using the serial endpoint. The serial path remains the
+immediate rollback and local-development behavior, and `POST
+/api/admin/tasks/rebuild-tiles` is unchanged.
 
 ## API
 
-The read-only visibility endpoints (`routers/jobs.py`) remain admin-only:
+All durable job endpoints (`routers/jobs.py`) are admin-only. Responses carry
+the supervisor aggregate counts plus derived `queued_count` and
+`running_count` item tallies, and never serialize claim tokens. Error payloads
+contain only the bounded, sanitized summaries the service persists.
 
-- `GET /api/jobs/` — list recent jobs, newest first (limit 50), same shape as
-  the existing `AdminTask` listing.
-- `GET /api/jobs/{job_id}` — a single job including its child `JobItem` rows,
-  404 if not found.
+- `GET /api/jobs/` — list recent jobs, newest first (limit 50).
+- `GET /api/jobs/{job_id}` — a single job's bounded supervisor state, 404 if
+  not found. Item rows are **not** embedded; use the items endpoint.
+- `GET /api/jobs/{job_id}/items` — bounded keyset-paginated item inspection
+  ordered by `id` ascending. Query params: `status` (one of `queued`,
+  `running`, `completed`, `skipped`, `failed`, `cancelled`), `after_id`
+  (numeric cursor, omit on the first page), `limit` (default 50, max 100).
+  Returns `{items, next_after_id}`; `next_after_id` is `null` when exhausted.
+  Invalid filters or pagination return 422.
+- `GET /api/jobs/rebuild-tiles` — capability probe returning
+  `{enabled, parallelism}`. `enabled` is true only when parallel rebuilds are
+  flag-enabled and `TASK_EXECUTION_MODE=required`.
+- `POST /api/jobs/rebuild-tiles` — create a durable rebuild job. Accepts the
+  existing `RebuildTilesRequest` (`scope`, optional `image_ids`) and returns
+  the created job (201). Rejects with 409 when parallel mode is disabled or
+  another rebuild (serial or durable) is already active. The first pump is
+  requested only after the creation commit so the worker never observes an
+  invisible job; the periodic pump sweep is the backstop for lost triggers.
+- `POST /api/jobs/{job_id}/cancel` — idempotently request supervisor
+  cancellation. Returns the current job for `queued`, `running`,
+  `cancelling`, and already-`cancelled` jobs; 409 for `completed`, `failed`,
+  and `completed_with_errors`. Cancellation is cooperative: started children
+  finish their active tile generation before the supervisor finalizes as
+  `cancelled`.
+- `POST /api/jobs/{job_id}/items/{item_id}/retry` — requeue one failed item.
+  404 for an unknown job or an item outside the job; 409 for an item that is
+  not `failed`. Returns `{requeued_count, job}`; successful item history and
+  attempt counts are preserved.
+- `POST /api/jobs/{job_id}/retry-failed` — requeue every failed item through
+  the bounded service batches (the router never loads the full item set).
+  Returns `{requeued_count, job}`; 409 when the job is in a state where retry
+  is not permitted (e.g. `cancelling`).
 
-No public endpoint creates, updates, or cancels durable jobs yet. Durable tile
-rebuild creation is an internal service boundary until the later admin-control
-phase supplies its API and UI.
+All mutation routes verify `job_type="rebuild_tiles"` — a valid `Job` id of a
+different type returns 404, keeping the control surface narrow while the job
+model stays generic. The serial `AdminTask` rebuild endpoint is unaffected.
 
 ## Import/export boundary
 

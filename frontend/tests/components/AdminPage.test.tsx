@@ -32,6 +32,13 @@ vi.mock('../../src/api', async () => {
     deleteFilesImportArchive: vi.fn(),
     cancelAdminTask: vi.fn(),
     downloadAdminTaskResult: vi.fn(),
+    listJobs: vi.fn(),
+    fetchRebuildTilesCapability: vi.fn(),
+    startParallelRebuildTiles: vi.fn(),
+    fetchJobItems: vi.fn(),
+    cancelJob: vi.fn(),
+    retryJobItem: vi.fn(),
+    retryFailedJobItems: vi.fn(),
   }
 })
 
@@ -69,6 +76,56 @@ const mockRerunFilesImportArchive = vi.mocked(api.rerunFilesImportArchive)
 const mockDeleteFilesImportArchive = vi.mocked(api.deleteFilesImportArchive)
 const mockCancelAdminTask = vi.mocked(api.cancelAdminTask)
 const mockDownloadAdminTaskResult = vi.mocked(api.downloadAdminTaskResult)
+const mockListJobs = vi.mocked(api.listJobs)
+const mockFetchRebuildTilesCapability = vi.mocked(api.fetchRebuildTilesCapability)
+const mockStartParallelRebuildTiles = vi.mocked(api.startParallelRebuildTiles)
+const mockFetchJobItems = vi.mocked(api.fetchJobItems)
+const mockCancelJob = vi.mocked(api.cancelJob)
+const mockRetryJobItem = vi.mocked(api.retryJobItem)
+const mockRetryFailedJobItems = vi.mocked(api.retryFailedJobItems)
+
+const rebuildJob = (overrides: Partial<api.ApiJob> = {}): api.ApiJob => ({
+  id: 7,
+  job_type: 'rebuild_tiles',
+  status: 'running',
+  progress: 40,
+  total_count: 10,
+  completed_count: 4,
+  failed_count: 1,
+  skipped_count: 0,
+  cancelled_count: 0,
+  queued_count: 4,
+  running_count: 1,
+  error_message: null,
+  metadata_extra: { scope: 'missing_stale' },
+  requested_by: 1,
+  started_at: '2026-01-01T00:00:00Z',
+  completed_at: null,
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-01T00:00:00Z',
+  ...overrides,
+})
+
+const failedItem = (id: number, overrides: Partial<api.ApiJobItem> = {}): api.ApiJobItem => ({
+  id,
+  job_id: 7,
+  resource_type: 'source_image',
+  resource_id: String(100 + id),
+  status: 'failed',
+  attempts: 2,
+  progress: 0,
+  error_message: 'operational error',
+  heartbeat_at: null,
+  lease_expires_at: null,
+  retry_not_before: null,
+  arq_job_id: null,
+  metadata_extra: { image_id: 100 + id },
+  started_at: null,
+  completed_at: null,
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-01T00:00:00Z',
+  ...overrides,
+})
 
 describe('AdminPage', () => {
   beforeEach(() => {
@@ -189,6 +246,14 @@ describe('AdminPage', () => {
       updated_at: '2026-01-01T00:00:00Z',
     })
     mockDownloadAdminTaskResult.mockResolvedValue()
+    // Durable jobs (#1191): empty list + capability off by default keeps
+    // existing tests on the serial rebuild path.
+    mockListJobs.mockResolvedValue([])
+    mockFetchRebuildTilesCapability.mockResolvedValue({
+      enabled: false,
+      parallelism: 2,
+    })
+    mockFetchJobItems.mockResolvedValue({ items: [], next_after_id: null })
     mockRerunFilesImportArchive.mockReset()
     mockDeleteFilesImportArchive.mockReset()
     mockFetchAdminTask.mockReset()
@@ -929,4 +994,223 @@ describe('AdminPage', () => {
       ).not.toBeInTheDocument(),
     )
   }, 30_000)
+  describe('AdminPage — durable parallel rebuilds (#1191)', () => {
+    const openBackupsTab = async (user: ReturnType<typeof userEvent.setup>) => {
+      await user.click(screen.getByRole('tab', { name: 'Backups' }))
+      await screen.findByText('Parallel tile rebuilds')
+    }
+
+    it('uses the parallel jobs endpoint when the capability is enabled', async () => {
+      const user = userEvent.setup()
+      mockFetchRebuildTilesCapability.mockResolvedValue({ enabled: true, parallelism: 2 })
+      mockStartParallelRebuildTiles.mockResolvedValue(rebuildJob({ status: 'queued' }))
+
+      render(<AdminPage />)
+      await openBackupsTab(user)
+
+      await user.click(screen.getByRole('button', { name: 'Rebuild Tiles' }))
+
+      await waitFor(() => expect(mockStartParallelRebuildTiles).toHaveBeenCalledTimes(1))
+      expect(mockStartRebuildTiles).not.toHaveBeenCalled()
+      expect(await screen.findByTestId('rebuild-job-7')).toBeInTheDocument()
+      expect(screen.getByTestId('rebuild-job-status-7')).toHaveTextContent('Queued')
+    })
+
+    it('falls back to the serial task runner when parallel is disabled', async () => {
+      const user = userEvent.setup()
+
+      render(<AdminPage />)
+      await openBackupsTab(user)
+
+      await user.click(screen.getByRole('button', { name: 'Rebuild Tiles' }))
+
+      await waitFor(() => expect(mockStartRebuildTiles).toHaveBeenCalledTimes(1))
+      expect(mockStartParallelRebuildTiles).not.toHaveBeenCalled()
+      expect(screen.getByTestId('parallel-rebuild-disabled-note')).toBeInTheDocument()
+    })
+
+    it('surfaces a 409 from the parallel endpoint as an error, not a task', async () => {
+      const user = userEvent.setup()
+      mockFetchRebuildTilesCapability.mockResolvedValue({ enabled: true, parallelism: 2 })
+      mockStartParallelRebuildTiles.mockRejectedValue(
+        new api.ApiError(409, 'Parallel tile rebuilds are disabled'),
+      )
+
+      render(<AdminPage />)
+      await openBackupsTab(user)
+
+      await user.click(screen.getByRole('button', { name: 'Rebuild Tiles' }))
+
+      expect(await screen.findByText(/Parallel tile rebuilds are disabled/)).toBeInTheDocument()
+      expect(mockStartRebuildTiles).not.toHaveBeenCalled()
+    })
+
+    it('lists rebuild jobs with counts and polls only while active', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      mockListJobs
+        .mockResolvedValueOnce([rebuildJob({ status: 'running' })])
+        .mockResolvedValue([rebuildJob({ status: 'completed', progress: 100 })])
+
+      render(<AdminPage />)
+      await openBackupsTab(user)
+
+      expect(screen.getByTestId('rebuild-job-7')).toBeInTheDocument()
+      expect(screen.getByText(/Queued 4 · Running 1 · Completed 4/)).toBeInTheDocument()
+
+      // Active job → next list poll fires after the interval.
+      const callsAfterLoad = mockListJobs.mock.calls.length
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000)
+      })
+      expect(mockListJobs.mock.calls.length).toBeGreaterThan(callsAfterLoad)
+      const callsAfterFirstPoll = mockListJobs.mock.calls.length
+
+      // Job is now terminal → polling stops; no further requests are made.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000)
+      })
+      expect(mockListJobs.mock.calls.length).toBe(callsAfterFirstPoll)
+      expect(screen.getByTestId('rebuild-job-status-7')).toHaveTextContent('Completed')
+    })
+
+    it('never polls when no rebuild job is active', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      mockListJobs.mockResolvedValue([
+        rebuildJob({ status: 'completed' }),
+        rebuildJob({ id: 9, job_type: 'bulk_import', status: 'running' }),
+      ])
+
+      render(<AdminPage />)
+      await openBackupsTab(user)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000)
+      })
+      // Only the single mount-time load — a running non-rebuild job does not
+      // keep the rebuild poller alive.
+      expect(mockListJobs).toHaveBeenCalledTimes(1)
+    })
+
+    it('cancels an active rebuild job from the panel', async () => {
+      const user = userEvent.setup()
+      mockListJobs.mockResolvedValue([rebuildJob({ status: 'running' })])
+      mockCancelJob.mockResolvedValue(rebuildJob({ status: 'cancelling' }))
+
+      render(<AdminPage />)
+      await openBackupsTab(user)
+
+      await user.click(screen.getByTestId('cancel-rebuild-job-7'))
+
+      await waitFor(() => expect(mockCancelJob).toHaveBeenCalledWith(7))
+      await waitFor(() =>
+        expect(screen.getByTestId('rebuild-job-status-7')).toHaveTextContent('Cancelling'),
+      )
+    })
+
+    it('loads failed items lazily and paginates via Load more', async () => {
+      const user = userEvent.setup()
+      mockListJobs.mockResolvedValue([
+        rebuildJob({ status: 'completed_with_errors', failed_count: 2, progress: 100 }),
+      ])
+      mockFetchJobItems
+        .mockResolvedValueOnce({ items: [failedItem(1)], next_after_id: 11 })
+        .mockResolvedValueOnce({ items: [failedItem(12)], next_after_id: null })
+
+      render(<AdminPage />)
+      await openBackupsTab(user)
+
+      // Nothing fetched until the operator expands the section.
+      expect(mockFetchJobItems).not.toHaveBeenCalled()
+      await user.click(screen.getByTestId('failed-items-toggle-7'))
+
+      await waitFor(() =>
+        expect(mockFetchJobItems).toHaveBeenCalledWith(7, {
+          status: 'failed',
+          afterId: undefined,
+          limit: 50,
+        }),
+      )
+      expect(await screen.findByTestId('rebuild-item-1')).toBeInTheDocument()
+      expect(screen.getByText(/operational error/)).toBeInTheDocument()
+
+      await user.click(screen.getByTestId('failed-items-more-7'))
+      await waitFor(() =>
+        expect(mockFetchJobItems).toHaveBeenCalledWith(7, {
+          status: 'failed',
+          afterId: 11,
+          limit: 50,
+        }),
+      )
+      expect(await screen.findByTestId('rebuild-item-12')).toBeInTheDocument()
+      // Exhausted → no more Load more.
+      expect(screen.queryByTestId('failed-items-more-7')).not.toBeInTheDocument()
+    })
+
+    it('retries one failed item and removes it from the list', async () => {
+      const user = userEvent.setup()
+      mockListJobs.mockResolvedValue([
+        rebuildJob({ status: 'completed_with_errors', failed_count: 1 }),
+      ])
+      mockFetchJobItems.mockResolvedValue({ items: [failedItem(5)], next_after_id: null })
+      mockRetryJobItem.mockResolvedValue({
+        requeued_count: 1,
+        job: rebuildJob({ status: 'running', failed_count: 0, queued_count: 5 }),
+      })
+
+      render(<AdminPage />)
+      await openBackupsTab(user)
+      await user.click(screen.getByTestId('failed-items-toggle-7'))
+      await screen.findByTestId('rebuild-item-5')
+
+      await user.click(screen.getByTestId('retry-item-5'))
+
+      await waitFor(() => expect(mockRetryJobItem).toHaveBeenCalledWith(7, 5))
+      await waitFor(() => expect(screen.queryByTestId('rebuild-item-5')).not.toBeInTheDocument())
+    })
+
+    it('retries all failed items and clears the expanded list', async () => {
+      const user = userEvent.setup()
+      mockListJobs.mockResolvedValue([
+        rebuildJob({ status: 'completed_with_errors', failed_count: 2 }),
+      ])
+      mockFetchJobItems.mockResolvedValue({
+        items: [failedItem(1), failedItem(2)],
+        next_after_id: null,
+      })
+      mockRetryFailedJobItems.mockResolvedValue({
+        requeued_count: 2,
+        job: rebuildJob({ status: 'running', failed_count: 0, queued_count: 6 }),
+      })
+
+      render(<AdminPage />)
+      await openBackupsTab(user)
+      await user.click(screen.getByTestId('failed-items-toggle-7'))
+      await screen.findByTestId('rebuild-item-1')
+
+      await user.click(screen.getByTestId('retry-failed-7'))
+
+      await waitFor(() => expect(mockRetryFailedJobItems).toHaveBeenCalledWith(7))
+      // The stale failed-items cache was dropped and the list collapsed.
+      await waitFor(() => expect(screen.queryByTestId('rebuild-item-1')).not.toBeInTheDocument())
+    })
+
+    it('distinguishes completed_with_errors from clean completion', async () => {
+      const user = userEvent.setup()
+      mockListJobs.mockResolvedValue([
+        rebuildJob({ id: 7, status: 'completed_with_errors', failed_count: 2 }),
+        rebuildJob({ id: 8, status: 'completed', failed_count: 0, progress: 100 }),
+      ])
+
+      render(<AdminPage />)
+      await openBackupsTab(user)
+
+      expect(screen.getByTestId('rebuild-job-status-7')).toHaveTextContent('Completed with errors')
+      expect(screen.getByTestId('rebuild-job-status-8')).toHaveTextContent('Completed')
+      // Partial failure keeps the retry affordance; clean completion does not.
+      expect(screen.getByTestId('retry-failed-7')).toBeInTheDocument()
+      expect(screen.queryByTestId('retry-failed-8')).not.toBeInTheDocument()
+    })
+  })
 })

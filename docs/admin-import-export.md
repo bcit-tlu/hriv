@@ -382,6 +382,20 @@ never resurrected.
 - A rerun skips tile sets that are already current (unless `scope = all`), so
   the operation is safe to run repeatedly.
 
+### Parallel (durable) rebuilds
+
+When `REBUILD_PARALLEL_ENABLED=true` and `TASK_EXECUTION_MODE=required`, the
+Admin UI's **Rebuild Tiles** button instead creates a durable
+`Job(job_type="rebuild_tiles")` through `POST /api/jobs/rebuild-tiles`, and the
+Backups tab's **Parallel tile rebuilds** section shows supervisor status,
+progress, per-status counts, and operator controls (cancel while active,
+retry failed items, bounded failed-item inspection). Durable jobs are listed
+separately from the serial `AdminTask` recent-tasks list; they are never
+merged. See [Durable jobs](jobs.md) for the API surface and state model. When
+the flag is off, the button keeps using the serial endpoint and the section
+notes that parallel rebuilds are disabled; already-running durable jobs still
+run to completion.
+
 ## Per-file backup restore
 
 The admin area also exposes a manifest-browsing restore flow for restoring a

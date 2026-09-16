@@ -76,6 +76,16 @@ Use this skill for administrator-facing operations and long-running task flows.
   idempotent (skips already-current tiles unless `scope = all`). See
   `../../../docs/admin-import-export.md#rebuild-tiles` and
   `../../../docs/tile-cache-provenance.md`.
+- Durable parallel rebuilds (#1191) use `Job`/`JobItem` rows behind
+  `REBUILD_PARALLEL_ENABLED` (requires `TASK_EXECUTION_MODE=required`). Admin
+  API lives in `routers/jobs.py`: `POST /api/jobs/rebuild-tiles` (409 when
+  disabled or another rebuild is active), bounded item paging at
+  `GET /api/jobs/{id}/items`, idempotent `POST .../cancel`, and
+  `.../items/{id}/retry` + `.../retry-failed`. The Admin UI's `Parallel tile
+rebuilds` section polls `GET /api/jobs/` every 2 s only while a rebuild job
+  is active and lazy-loads failed items 50 per page. The serial
+  `POST /api/admin/tasks/rebuild-tiles` path is unchanged and remains the
+  fallback. See `../../../docs/jobs.md`.
 
 ## Validation
 
