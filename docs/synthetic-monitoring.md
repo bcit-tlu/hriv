@@ -17,6 +17,14 @@ retained Kubernetes Job objects.
 - **Image:** `ghcr.io/bcit-tlu/hriv/hriv-synthetic-monitoring`
 - **Released as:** the `synthetic-monitoring` Release Please component (image
   only — no Helm chart).
+- **Deployed by:** the `hriv-synthetic-monitoring` CronJob in flux-fleet
+  (`apps/base/hriv/synthetic-monitoring/`). The `latest` overlay tracks the
+  rolling `latest` tag; **stable is pinned to a released semver** with
+  `imagePullPolicy: IfNotPresent` in
+  `apps/overlays/stable/hriv/synthetic-monitoring-pin.yaml` — when a
+  `synthetic-monitoring-vX.Y.Z` release ships, bump that pin (otherwise stable
+  keeps running the old image; tracking `latest` orphaned ~1 GiB per retag,
+  see flux-fleet#284).
 
 ## What the journey asserts
 
