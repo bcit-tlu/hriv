@@ -140,6 +140,7 @@ def test_release_rebuild_attempt_schedules_retry() -> None:
     )
 
     outcome = tile_rebuild_jobs._release_rebuild_attempt(
+        SimpleNamespace(),
         job,
         item,
         retryable=True,
@@ -173,6 +174,7 @@ def test_release_rebuild_attempt_fails_exhausted_retry() -> None:
     )
 
     outcome = tile_rebuild_jobs._release_rebuild_attempt(
+        SimpleNamespace(),
         job,
         item,
         retryable=True,
@@ -207,6 +209,7 @@ def test_release_rebuild_attempt_cancellation_clears_failure() -> None:
     )
 
     outcome = tile_rebuild_jobs._release_rebuild_attempt(
+        SimpleNamespace(),
         job,
         item,
         retryable=True,
@@ -1258,6 +1261,7 @@ def test_release_rebuild_attempt_records_retry_metric(monkeypatch) -> None:
     monkeypatch.setattr(tile_rebuild_metrics, "record_item_retry", retry)
 
     outcome = tile_rebuild_jobs._release_rebuild_attempt(
+        SimpleNamespace(),
         job,
         item,
         retryable=True,
@@ -1293,6 +1297,7 @@ def test_release_rebuild_attempt_records_terminal_duration(
     )
 
     outcome = tile_rebuild_jobs._release_rebuild_attempt(
+        SimpleNamespace(),
         job,
         item,
         retryable=True,
@@ -1603,3 +1608,29 @@ async def test_finalize_rebuild_failure_counts_timeouts(
         ValueError("not a timeout"),
     )
     timeouts.assert_not_called()
+
+
+def test_deferred_metrics_wait_for_commit() -> None:
+    """Session-backed deferrals emit only via emit_pending_metrics."""
+    calls: list[str] = []
+    session = SimpleNamespace(info={})
+
+    tile_rebuild_jobs._defer_metric(
+        session, lambda: calls.append("emit")
+    )
+    assert calls == []
+
+    tile_rebuild_jobs.emit_pending_metrics(session)
+    assert calls == ["emit"]
+
+    # The pending list is drained; a second flush is a no-op.
+    tile_rebuild_jobs.emit_pending_metrics(session)
+    assert calls == ["emit"]
+
+
+def test_deferred_metrics_emit_immediately_for_session_doubles() -> None:
+    calls: list[str] = []
+    tile_rebuild_jobs._defer_metric(
+        SimpleNamespace(), lambda: calls.append("emit")
+    )
+    assert calls == ["emit"]

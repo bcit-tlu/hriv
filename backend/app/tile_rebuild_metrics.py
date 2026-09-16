@@ -255,6 +255,8 @@ async def collect_tile_rebuild_state() -> dict[str, Any]:
         state["running_items"] = counts.get("running", 0)
         state["queued_items"] = counts.get("queued", 0)
     except Exception:
+        # Intentional: an unreadable PostgreSQL state must degrade to NaN
+        # gauges, never break the whole /api/metrics scrape.
         pass
     return state
 

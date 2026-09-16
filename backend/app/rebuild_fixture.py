@@ -169,6 +169,8 @@ async def purge_rebuild_fixture(session: AsyncSession) -> None:
         )
         .execution_options(synchronize_session="fetch")
     )
+    # Deleted fixture images must invalidate browse caches too.
+    await bump_browse_revision(session)
     await session.commit()
 
 
@@ -191,7 +193,9 @@ async def seed_rebuild_fixture(
             Image(
                 id=item.image_id,
                 name=item.name,
-                thumb=f"/api/tiles/{item.source_image_id}/thumb.jpeg",
+                thumb=(
+                    f"/api/tiles/{item.source_image_id}/thumbnail.jpeg"
+                ),
                 tile_sources=(
                     f"/api/tiles/{item.source_image_id}/image.dzi"
                 ),
@@ -234,6 +238,10 @@ def _resolve_database_url() -> str:
         raise SystemExit(
             "DATABASE_URL is required to load the rebuild fixture"
         )
+    # The chart stores the driverless ``postgresql://`` form; mirror the
+    # Settings normalization so the async engine gets asyncpg.
+    if url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
     return url
 
 

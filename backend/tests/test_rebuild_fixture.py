@@ -164,3 +164,26 @@ async def test_seed_rebuild_fixture_inserts_linked_pairs(tmp_path: Path) -> None
         assert source.tiles_generated_at is None
         assert image.tile_sources == f"/api/tiles/{source.id}/image.dzi"
         assert Path(source.stored_path).read_bytes() == FIXTURE_TIFF_BYTES
+
+
+def test_resolve_database_url_requires_and_normalizes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The chart stores driverless postgresql:// URLs; the CLI needs asyncpg."""
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    with pytest.raises(SystemExit):
+        rebuild_fixture._resolve_database_url()
+
+    monkeypatch.setenv(
+        "DATABASE_URL", "postgresql://hriv:secret@db:5432/hriv"
+    )
+    assert rebuild_fixture._resolve_database_url() == (
+        "postgresql+asyncpg://hriv:secret@db:5432/hriv"
+    )
+
+    monkeypatch.setenv(
+        "DATABASE_URL", "postgresql+asyncpg://hriv:secret@db:5432/hriv"
+    )
+    assert rebuild_fixture._resolve_database_url() == (
+        "postgresql+asyncpg://hriv:secret@db:5432/hriv"
+    )
