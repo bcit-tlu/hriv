@@ -204,6 +204,7 @@ The initial frontend setup now includes:
   `frontend/src/components/ColorModeToggle.stories.tsx`,
   `frontend/src/components/FooterBar.stories.tsx`,
   `frontend/src/components/LoginSplashImage.stories.tsx`,
+  `frontend/src/components/RebuildJobsPanel.stories.tsx`,
   `frontend/src/button.stories.tsx`, `frontend/src/field.stories.tsx`, and
   `frontend/src/link.stories.tsx` use a Grafana-inspired docs pattern for simple
   component stories:
@@ -232,6 +233,28 @@ Dismiss Action`, `Login Screen`, and `Empty Message`.
   - When a story intentionally disables controls, explain why in the component's
     attached `*.docs.mdx` page and point readers back to `Basic` for interactive
     controls.
+
+## Story coverage convention
+
+Chromatic snapshots every story on each push, so each story is a permanent
+baseline that someone must review — target meaningfully distinct visual states,
+not one story per code path:
+
+- New components in `src/components/` require a `*.stories.tsx` covering each
+  meaningfully distinct visual state.
+- New UI inside existing pages/containers requires a story only when the change
+  is extractable into a component worth isolating (the `RebuildJobsPanel`
+  extraction from `AdminPage` is the worked example).
+- Behavior changes to already-storied components need no new stories — existing
+  snapshots cover regression.
+- Theme/viewport variants use `parameters.chromatic.modes` instead of
+  duplicating stories; each mode is its own baseline, so apply them
+  deliberately.
+- Fixtures must be deterministic: literal dates and data, no `Date.now()` or
+  `Math.random()`.
+- Tune noisy stories via `parameters.chromatic` (`diffThreshold`,
+  `pauseAnimationAtEnd`, `delay`, `disableSnapshot` for docs-only stories)
+  rather than dropping coverage.
 
 Because the frontend currently uses Vite 8, the Storybook packages are pinned to
 Storybook 10.6 beta versions, which are the available versions whose React/Vite
