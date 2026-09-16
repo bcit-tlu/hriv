@@ -164,10 +164,11 @@ each short-lived and independently retryable:
   `SELECT ... FOR UPDATE SKIP LOCKED`, enqueue, repeat). This bounds both
   Redis queue depth and libvips memory/CPU pressure independently of
   `max_jobs`.
-- Child jobs enforce the persisted per-image timeout (e.g. 30 min) inside the
-  execution boundary so timeouts finalize durably; arq retains a fixed 25-hour
-  safety ceiling above the supported 24-hour child maximum, so rollout setting
-  changes cannot preempt existing jobs.
+- Child jobs enforce the persisted per-image timeout (e.g. 30 min) through the
+  durable completion commit so timeouts finalize correctly. Retained-tree
+  cleanup runs after that deadline and cannot reclassify committed success; arq
+  retains a fixed 25-hour safety ceiling above the supported 24-hour child
+  maximum, so rollout setting changes cannot preempt existing jobs.
 - Worker isolation: a crashing/OOMing image kills one child job, not the
   batch. The item is marked `failed` with `attempts` incremented; the
   supervisor continues.

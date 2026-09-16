@@ -1279,6 +1279,107 @@ async def test_heartbeat_failure_cancels_slow_preparation_before_exit(
     processing.discard_prepared_tile_rebuild.assert_not_awaited()
 
 
+async def test_post_commit_cleanup_runs_outside_child_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    promoted = object()
+
+    async def finish_promoted_tile_rebuild(_promoted: object) -> None:
+        await asyncio.sleep(0.02)
+
+    processing = SimpleNamespace(
+        finish_promoted_tile_rebuild=AsyncMock(
+            side_effect=finish_promoted_tile_rebuild,
+        )
+    )
+    finalize_failure = AsyncMock()
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._reserve_rebuild_source",
+        AsyncMock(
+            return_value=ReservedRebuild(
+                outcome="ready",
+                source_image_id=101,
+                image_id=201,
+                stored_path="/sources/one.svs",
+                child_timeout_seconds=0.01,
+                heartbeat_seconds=30,
+                lease_seconds=90,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._heartbeat_rebuild_item",
+        _wait_for_cancellation,
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._process_reserved_tile_rebuild",
+        AsyncMock(return_value=("completed", promoted)),
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._finalize_rebuild_failure",
+        finalize_failure,
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._load_processing",
+        MagicMock(return_value=processing),
+    )
+
+    result = await process_tile_rebuild_item(7, 11, "claim")
+
+    assert result == "completed"
+    processing.finish_promoted_tile_rebuild.assert_awaited_once_with(promoted)
+    finalize_failure.assert_not_awaited()
+
+
+async def test_post_commit_cleanup_cancellation_preserves_completion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    promoted = object()
+    cleanup_started = asyncio.Event()
+
+    async def finish_promoted_tile_rebuild(_promoted: object) -> None:
+        cleanup_started.set()
+        await asyncio.Event().wait()
+
+    processing = SimpleNamespace(
+        finish_promoted_tile_rebuild=finish_promoted_tile_rebuild,
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._reserve_rebuild_source",
+        AsyncMock(
+            return_value=ReservedRebuild(
+                outcome="ready",
+                source_image_id=101,
+                image_id=201,
+                stored_path="/sources/one.svs",
+                child_timeout_seconds=1800,
+                heartbeat_seconds=30,
+                lease_seconds=2100,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._heartbeat_rebuild_item",
+        _wait_for_cancellation,
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._process_reserved_tile_rebuild",
+        AsyncMock(return_value=("completed", promoted)),
+    )
+    monkeypatch.setattr(
+        "app.tile_rebuild_jobs._load_processing",
+        MagicMock(return_value=processing),
+    )
+
+    child = asyncio.create_task(
+        process_tile_rebuild_item(7, 11, "claim")
+    )
+    await cleanup_started.wait()
+    child.cancel()
+
+    assert await child == "completed"
+
+
 async def test_child_timeout_finalizes_durable_attempt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

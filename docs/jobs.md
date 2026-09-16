@@ -125,9 +125,11 @@ reserving execution. Current or superseded targets are skipped. Ready targets
 reuse the same prepare/promote/rollback primitives as the serial rebuild,
 heartbeat their lease during processing, and finalize only with the current
 claim token. The persisted child timeout is enforced inside this execution
-boundary so timeout cancellation becomes a durable retry/failure and metric;
-arq keeps a fixed 25-hour safety timeout above the supported 24-hour child
-maximum, independent of rollout settings, for stuck cleanup. Child
+boundary so timeout cancellation becomes a durable retry/failure and metric.
+Post-commit retained-tree cleanup runs outside that deadline and cannot turn an
+already-completed item into a worker timeout. arq keeps a fixed 25-hour safety
+timeout above the supported 24-hour child maximum, independent of rollout
+settings, for stuck cleanup. Child
 completion requests another pump after its database transaction commits; a
 periodic worker sweep is the backstop for lost triggers.
 

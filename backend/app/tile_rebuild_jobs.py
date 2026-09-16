@@ -57,6 +57,7 @@ TileRebuildResult = Literal[
     "completed",
     "skipped",
 ]
+ProcessedRebuild: TypeAlias = tuple[TileRebuildResult, object | None]
 JSONScalar: TypeAlias = str | int | float | bool | None
 JSONValue: TypeAlias = (
     JSONScalar | list["JSONValue"] | dict[str, "JSONValue"]
@@ -1294,8 +1295,8 @@ async def _process_reserved_tile_rebuild(
     source_image_id: int,
     image_id: int | None,
     stored_path: str,
-) -> TileRebuildResult:
-    """Process an already-reserved durable tile rebuild child."""
+) -> ProcessedRebuild:
+    """Commit one reserved rebuild and return post-commit cleanup input."""
     source = processing.TileRebuildSource(
         source_image_id=source_image_id,
         image_id=image_id,
@@ -1332,7 +1333,7 @@ async def _process_reserved_tile_rebuild(
                 await session.rollback()
                 tile_rebuild_metrics.record_duplicate_delivery()
                 await processing.discard_prepared_tile_rebuild(prepared)
-                return "duplicate"
+                return "duplicate", None
             item_started_at = item.started_at
 
             if job.status == "cancelling":
@@ -1355,12 +1356,12 @@ async def _process_reserved_tile_rebuild(
                         ),
                     )
                 await processing.discard_prepared_tile_rebuild(prepared)
-                return "cancelled"
+                return "cancelled", None
             if job.status not in {"queued", "running"}:
                 await session.rollback()
                 tile_rebuild_metrics.record_duplicate_delivery()
                 await processing.discard_prepared_tile_rebuild(prepared)
-                return "duplicate"
+                return "duplicate", None
 
             source_image = await session.get(SourceImage, source_image_id)
             if source_image is None:
@@ -1383,7 +1384,7 @@ async def _process_reserved_tile_rebuild(
                             datetime.now(timezone.utc),
                         ),
                     )
-                return "skipped"
+                return "skipped", None
 
             promoted = await processing.promote_source_image_tile_rebuild(
                 session,
@@ -1413,8 +1414,7 @@ async def _process_reserved_tile_rebuild(
                     datetime.now(timezone.utc),
                 ),
             )
-        await processing.finish_promoted_tile_rebuild(promoted)
-        return "completed"
+        return "completed", promoted
     except asyncio.CancelledError:
         if promoted is not None and not committed:
             await processing.rollback_promoted_tile_rebuild(promoted)
@@ -1481,26 +1481,23 @@ async def process_tile_rebuild_item(
                     [operation_task, heartbeat_task],
                     return_when=asyncio.FIRST_COMPLETED,
                 )
-                if operation_task in done:
-                    heartbeat_task.cancel()
+                if operation_task not in done:
+                    heartbeat_error = (
+                        None
+                        if heartbeat_task.cancelled()
+                        else heartbeat_task.exception()
+                    )
+                    operation_task.cancel()
                     await asyncio.gather(
-                        heartbeat_task,
+                        operation_task,
                         return_exceptions=True,
                     )
-                    return operation_task.result()
-
-                heartbeat_error = (
-                    None
-                    if heartbeat_task.cancelled()
-                    else heartbeat_task.exception()
-                )
-                operation_task.cancel()
-                await asyncio.gather(operation_task, return_exceptions=True)
-                if heartbeat_error is not None:
-                    raise heartbeat_error
-                raise TileRebuildLeaseLostError(
-                    f"Tile rebuild item {item_id} heartbeat stopped"
-                )
+                    if heartbeat_error is not None:
+                        raise heartbeat_error
+                    raise TileRebuildLeaseLostError(
+                        f"Tile rebuild item {item_id} heartbeat stopped"
+                    )
+                outcome, promoted = operation_task.result()
             finally:
                 heartbeat_task.cancel()
                 operation_task.cancel()
@@ -1517,6 +1514,13 @@ async def process_tile_rebuild_item(
             exc,
         )
         raise
+
+    if promoted is not None:
+        try:
+            await processing.finish_promoted_tile_rebuild(promoted)
+        except asyncio.CancelledError:
+            return outcome
+    return outcome
 
 
 async def active_tile_rebuild_job_ids(
