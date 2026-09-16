@@ -11,6 +11,7 @@
  * 7. Announcement banner renders when provided
  * 8. Forgot Password dialog opens on button click
  * 9. Graceful fallback when fetchOidcEnabled fails
+ * 10. 403/429 login failures show specific messages; OIDC account_inactive maps too
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -25,6 +26,18 @@ import LoginScreen from '../../src/components/LoginScreen'
 vi.mock('../../src/api', () => ({
   fetchOidcEnabled: vi.fn(),
   getOidcLoginUrl: vi.fn(() => '/api/auth/oidc/login'),
+  // Stub matching the real ApiError's shape — LoginScreen checks
+  // `instanceof ApiError` + `status` against this same mocked export.
+  ApiError: class ApiError extends Error {
+    status: number
+    detail: string
+    constructor(status: number, detail: string) {
+      super(`API ${status}: ${detail}`)
+      this.name = 'ApiError'
+      this.status = status
+      this.detail = detail
+    }
+  },
 }))
 
 // LoginScreen reads the OIDC error code from useAuth; stub the hook so
@@ -38,7 +51,7 @@ vi.mock('../../src/useAuth', () => ({
   })),
 }))
 
-import { fetchOidcEnabled } from '../../src/api'
+import { ApiError, fetchOidcEnabled } from '../../src/api'
 import { useAuth } from '../../src/useAuth'
 
 // ---------------------------------------------------------------------------
@@ -209,6 +222,39 @@ describe('LoginScreen', () => {
       })
     })
 
+    it('shows a disabled-account message when login returns 403', async () => {
+      const user = userEvent.setup()
+      const onLogin = vi.fn().mockRejectedValue(new ApiError(403, 'Account is inactive'))
+      await renderOidcDisabled({ onLogin })
+
+      await user.type(getUsernameField(), 'inactive@example.ca')
+      await user.type(getPasswordField(), 'password')
+      await user.click(screen.getByRole('button', { name: 'LOGIN' }))
+
+      await waitFor(() => {
+        expect(screen.getByText(/Account has been disabled/)).toBeInTheDocument()
+      })
+      expect(screen.queryByText('Incorrect email or password')).not.toBeInTheDocument()
+    })
+
+    it('shows a rate-limit message when login returns 429', async () => {
+      const user = userEvent.setup()
+      const onLogin = vi
+        .fn()
+        .mockRejectedValue(new ApiError(429, 'Too many login attempts. Please try again later.'))
+      await renderOidcDisabled({ onLogin })
+
+      await user.type(getUsernameField(), 'admin@example.ca')
+      await user.type(getPasswordField(), 'wrong')
+      await user.click(screen.getByRole('button', { name: 'LOGIN' }))
+
+      await waitFor(() => {
+        expect(
+          screen.getByText('Too many login attempts. Please try again later.'),
+        ).toBeInTheDocument()
+      })
+    })
+
     it('disables the LOGIN button when fields are empty', async () => {
       await renderOidcDisabled()
       expect(screen.getByRole('button', { name: 'LOGIN' })).toBeDisabled()
@@ -295,6 +341,11 @@ describe('LoginScreen', () => {
       })
       await user.click(closeBtn)
       expect(mockClearOidcError).toHaveBeenCalledTimes(1)
+    })
+
+    it('maps account_inactive to a disabled-account message', async () => {
+      renderWithOidcError('account_inactive')
+      expect(await screen.findByText(/Account has been disabled/)).toBeInTheDocument()
     })
 
     it('renders nothing when oidcError is null', async () => {

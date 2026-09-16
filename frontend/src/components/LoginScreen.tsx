@@ -15,7 +15,7 @@ import Visibility from '@mui/icons-material/Visibility'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import AnnouncementBanner from './AnnouncementBanner'
 import ColorModeToggle from './ColorModeToggle'
-import { fetchOidcEnabled, getOidcLoginUrl } from '../api'
+import { ApiError, fetchOidcEnabled, getOidcLoginUrl } from '../api'
 import { useAuth } from '../useAuth'
 import FooterBar from './FooterBar'
 import LoginSplashImage from './LoginSplashImage'
@@ -41,6 +41,8 @@ const OIDC_ERROR_MESSAGES: Record<string, string> = {
     'Your account is missing required information from the identity provider. Please contact an administrator.',
   subject_mismatch:
     'This email is already linked to a different identity. Please contact an administrator.',
+  account_inactive:
+    'Account has been disabled. Please contact the TLU Learning Tech Lab via Teams to activate your account.',
 }
 
 export default function LoginScreen({ onLogin, announcement }: LoginScreenProps) {
@@ -76,7 +78,18 @@ export default function LoginScreen({ onLogin, announcement }: LoginScreenProps)
       await onLogin(email, password)
     } catch (err) {
       console.error('Login error:', err instanceof Error ? err.message : err)
-      setError('Incorrect email or password')
+      if (err instanceof ApiError && err.status === 403) {
+        // /auth/login only returns 403 for deactivated accounts.
+        setError(
+          'Account has been disabled. Please contact the TLU Learning Tech Lab via Teams to activate your account.',
+        )
+      } else if (err instanceof ApiError && err.status === 429) {
+        setError('Too many login attempts. Please try again later.')
+      } else {
+        // Generic message for bad credentials so the response doesn't
+        // reveal which field was wrong.
+        setError('Incorrect email or password')
+      }
     } finally {
       setLoading(false)
     }
