@@ -15,10 +15,11 @@
  * the suite runs in jsdom without a real canvas.
  */
 
-import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest'
-import { render, screen, act } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest'
+import { render, screen, act, fireEvent, waitFor } from '@testing-library/react'
 import * as fabric from 'fabric'
 import type { CanvasAnnotation } from '../../src/components/CanvasOverlay'
+import { clearDraggablePositionCache } from '../../src/useDraggablePosition'
 
 // ---------------------------------------------------------------------------
 // Mocks — fabric.js and OpenSeadragon rely on native canvas / WebGL, so we
@@ -91,6 +92,11 @@ vi.mock('fabric', () => {
     this.hoverCursor = 'default'
     this.width = 800
     this.height = 600
+    this.setDimensions = vi.fn((dims: { width?: number; height?: number }) => {
+      if (dims.width != null) this.width = dims.width
+      if (dims.height != null) this.height = dims.height
+    })
+    this.calcOffset = vi.fn()
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function FabricPoint(this: any, x: number, y: number) {
@@ -352,16 +358,37 @@ describe('wrapCanvasText', () => {
 
 /** Build a minimal mock OpenSeadragon.Viewer for component props */
 function mockViewer() {
-  return {
-    container: { clientWidth: 800, clientHeight: 600 },
+  // CanvasOverlay portals its output into viewer.container, so the container
+  // must be a real element attached to the document for queries to find it.
+  const container = document.createElement('div')
+  container.className = 'openseadragon-container'
+  document.body.appendChild(container)
+  Object.defineProperty(container, 'clientWidth', { value: 800, configurable: true })
+  Object.defineProperty(container, 'clientHeight', { value: 600, configurable: true })
+  const handlers = new Map<string, Array<(event?: unknown) => void>>()
+  const viewer = {
+    container,
     viewport: {
       pixelFromPoint: vi.fn(() => ({ x: 100, y: 100 })),
       pointFromPixel: vi.fn(() => ({ x: 0.1, y: 0.1 })),
       getZoom: vi.fn(() => 1),
     },
-    addHandler: vi.fn(),
-    removeHandler: vi.fn(),
-  } as unknown as Parameters<typeof CanvasOverlay>[0]['viewer']
+    addHandler: vi.fn((event: string, handler: (event?: unknown) => void) => {
+      handlers.set(event, [...(handlers.get(event) ?? []), handler])
+    }),
+    removeHandler: vi.fn((event: string, handler: (event?: unknown) => void) => {
+      handlers.set(
+        event,
+        (handlers.get(event) ?? []).filter((h) => h !== handler),
+      )
+    }),
+    fire: (event: string, payload?: unknown) => {
+      for (const handler of handlers.get(event) ?? []) handler(payload)
+    },
+  }
+  return viewer as unknown as Parameters<typeof CanvasOverlay>[0]['viewer'] & {
+    fire: (event: string, payload?: unknown) => void
+  }
 }
 
 /** Factory for a sample annotation */
@@ -382,6 +409,20 @@ function makeAnnotation(overrides: Partial<CanvasAnnotation> = {}): CanvasAnnota
 // Tests
 // ---------------------------------------------------------------------------
 
+// jsdom lacks ResizeObserver. This fake delivers the initial notification
+// synchronously on observe() (per spec), then lets tests trigger further
+// deliveries via resizeObserveCallback.
+let resizeObserveCallback: ResizeObserverCallback | null = null
+class FakeResizeObserver {
+  constructor(private cb: ResizeObserverCallback) {}
+  observe() {
+    resizeObserveCallback = this.cb
+    this.cb([], this as unknown as ResizeObserver)
+  }
+  unobserve() {}
+  disconnect() {}
+}
+
 describe('CanvasOverlay', () => {
   let viewer: ReturnType<typeof mockViewer>
   const noop = vi.fn()
@@ -389,11 +430,22 @@ describe('CanvasOverlay', () => {
   beforeEach(() => {
     viewer = mockViewer()
     vi.clearAllMocks()
+    clearDraggablePositionCache()
+    resizeObserveCallback = null
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver)
+    // jsdom does not register active pointers; stub capture so drag handling works
+    Element.prototype.setPointerCapture = vi.fn()
+    Element.prototype.releasePointerCapture = vi.fn()
     // Flush requestAnimationFrame synchronously so link-box useEffect completes
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
       cb(0)
       return 0
     })
+  })
+
+  afterEach(() => {
+    viewer.container.remove()
+    vi.unstubAllGlobals()
   })
 
   // ─── Null / empty renders ───────────────────────────────────────────
@@ -419,7 +471,7 @@ describe('CanvasOverlay', () => {
   describe('view mode', () => {
     it('renders a view canvas when annotations are present', () => {
       const annotations: CanvasAnnotation[] = [makeAnnotation()]
-      const { container } = render(
+      render(
         <CanvasOverlay
           viewer={viewer}
           annotations={annotations}
@@ -429,7 +481,7 @@ describe('CanvasOverlay', () => {
           onEditModeChange={noop}
         />,
       )
-      const canvas = container.querySelector('canvas')
+      const canvas = viewer.container.querySelector('canvas')
       expect(canvas).toBeInTheDocument()
     })
 
@@ -492,7 +544,7 @@ describe('CanvasOverlay', () => {
     })
 
     it('renders a canvas element for fabric.js', () => {
-      const { container } = render(
+      render(
         <CanvasOverlay
           viewer={viewer}
           annotations={[]}
@@ -502,7 +554,7 @@ describe('CanvasOverlay', () => {
           onEditModeChange={noop}
         />,
       )
-      const canvases = container.querySelectorAll('canvas')
+      const canvases = viewer.container.querySelectorAll('canvas')
       expect(canvases.length).toBeGreaterThanOrEqual(1)
     })
 
@@ -1199,6 +1251,170 @@ describe('CanvasOverlay', () => {
     })
   })
 
+  // ─── Draggable toolbar ─────────────────────────────────────────────
+
+  describe('draggable toolbar', () => {
+    const renderEditMode = (props: Record<string, unknown> = {}) =>
+      render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[]}
+          onAnnotationsChange={noop}
+          canEdit={true}
+          editMode={true}
+          onEditModeChange={noop}
+          {...props}
+        />,
+      )
+
+    const getToolbar = () =>
+      screen.getByLabelText('Move annotation toolbar').parentElement as HTMLElement
+
+    it('portals the toolbar into the OSD container, flush top and centred', () => {
+      renderEditMode()
+      const toolbar = getToolbar()
+      expect(viewer.container.contains(toolbar)).toBe(true)
+      expect(toolbar).toHaveStyle({ top: '0px', left: '50%', transform: 'translateX(-50%)' })
+    })
+
+    it('renders the drag handle with an accessible label', () => {
+      renderEditMode()
+      const handle = screen.getByLabelText('Move annotation toolbar')
+      expect(handle).toBeInTheDocument()
+      expect(handle).toHaveStyle({ touchAction: 'none' })
+    })
+
+    it('moves the toolbar on pointer drag and clamps inside the viewer', () => {
+      renderEditMode()
+      const handle = screen.getByLabelText('Move annotation toolbar')
+      const toolbar = getToolbar()
+      Object.defineProperty(toolbar, 'offsetWidth', { value: 300, configurable: true })
+      Object.defineProperty(toolbar, 'offsetHeight', { value: 40, configurable: true })
+
+      fireEvent.pointerDown(handle, { pointerId: 1, button: 0, clientX: 400, clientY: 20 })
+      fireEvent.pointerMove(handle, { pointerId: 1, clientX: 450, clientY: 80 })
+      expect(toolbar).toHaveStyle({ left: '50px', top: '60px', transform: 'none' })
+
+      // Drag past the bottom-right corner — clamps to the 800x600 container
+      fireEvent.pointerMove(handle, { pointerId: 1, clientX: 900, clientY: 800 })
+      expect(toolbar).toHaveStyle({ left: '500px', top: '560px' })
+      fireEvent.pointerUp(handle, { pointerId: 1 })
+    })
+
+    it('nudges the toolbar with arrow keys and resets on Home/double-click', () => {
+      renderEditMode()
+      const handle = screen.getByLabelText('Move annotation toolbar')
+      const toolbar = getToolbar()
+
+      fireEvent.keyDown(handle, { key: 'ArrowRight' })
+      expect(toolbar).toHaveStyle({ left: '8px', top: '0px' })
+
+      fireEvent.keyDown(handle, { key: 'ArrowDown', shiftKey: true })
+      expect(toolbar).toHaveStyle({ top: '32px' })
+
+      fireEvent.keyDown(handle, { key: 'Home' })
+      expect(toolbar).toHaveStyle({ left: '50%' })
+
+      fireEvent.keyDown(handle, { key: 'ArrowLeft' })
+      expect(toolbar).toHaveStyle({ left: '0px' })
+      fireEvent.doubleClick(handle)
+      expect(toolbar).toHaveStyle({ left: '50%' })
+    })
+
+    it('restores the dragged position after leaving and re-entering edit mode', () => {
+      const utils = renderEditMode()
+      const handle = screen.getByLabelText('Move annotation toolbar')
+      fireEvent.pointerDown(handle, { pointerId: 1, button: 0, clientX: 100, clientY: 20 })
+      fireEvent.pointerMove(handle, { pointerId: 1, clientX: 150, clientY: 80 })
+      fireEvent.pointerUp(handle, { pointerId: 1 })
+      expect(getToolbar()).toHaveStyle({ left: '50px' })
+
+      utils.rerender(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[]}
+          onAnnotationsChange={noop}
+          canEdit={true}
+          editMode={false}
+          onEditModeChange={noop}
+        />,
+      )
+      expect(screen.queryByLabelText('Move annotation toolbar')).not.toBeInTheDocument()
+
+      utils.rerender(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[]}
+          onAnnotationsChange={noop}
+          canEdit={true}
+          editMode={true}
+          onEditModeChange={noop}
+        />,
+      )
+      const remounted = getToolbar()
+      expect(remounted).toHaveStyle({ left: '50px', top: '60px' })
+    })
+
+    it('closes an open submenu when a drag starts', async () => {
+      renderEditMode()
+      fireEvent.click(screen.getByLabelText('Rectangle'))
+      expect(await screen.findByLabelText('Outlined Rectangle')).toBeInTheDocument()
+
+      const handle = screen.getByLabelText('Move annotation toolbar')
+      fireEvent.pointerDown(handle, { pointerId: 1, button: 0, clientX: 10, clientY: 10 })
+      // The popover unmounts after its exit transition
+      await waitFor(() =>
+        expect(screen.queryByLabelText('Outlined Rectangle')).not.toBeInTheDocument(),
+      )
+      fireEvent.pointerUp(handle, { pointerId: 1 })
+    })
+
+    it('closes popovers when the viewer enters full-page mode', async () => {
+      renderEditMode()
+      fireEvent.click(screen.getByLabelText('Rectangle'))
+      expect(await screen.findByLabelText('Outlined Rectangle')).toBeInTheDocument()
+
+      act(() => viewer.fire('full-page', { fullPage: true }))
+      await waitFor(() =>
+        expect(screen.queryByLabelText('Outlined Rectangle')).not.toBeInTheDocument(),
+      )
+    })
+
+    it('re-projects the fabric canvas when the viewer resizes during edit mode', () => {
+      renderEditMode({ annotations: [makeAnnotation()] })
+      const canvas = fabricTestState.canvases.at(-1) as {
+        setDimensions: Mock
+        calcOffset: Mock
+        add: Mock
+        objects: unknown[]
+      }
+      canvas.add.mockClear()
+
+      Object.defineProperty(viewer.container, 'clientWidth', {
+        value: 1024,
+        configurable: true,
+      })
+      Object.defineProperty(viewer.container, 'clientHeight', {
+        value: 768,
+        configurable: true,
+      })
+      // Deliver a container-resize notification; the rAF mock flushes the
+      // reprojection synchronously.
+      act(() => {
+        resizeObserveCallback?.([], {} as ResizeObserver)
+      })
+
+      expect(canvas.setDimensions).toHaveBeenCalledWith({ width: 1024, height: 768 })
+      expect(canvas.calcOffset).toHaveBeenCalled()
+      // The existing annotation is re-projected and re-added at the new size
+      expect(
+        (canvas.objects as Array<{ _annotationType?: string }>).some(
+          (o) => o._annotationType === 'rect',
+        ),
+      ).toBe(true)
+    })
+  })
+
   // ─── Link URL sanitization (XSS prevention) ────────────────────────
 
   describe('link URL sanitization', () => {
@@ -1231,7 +1447,7 @@ describe('CanvasOverlay', () => {
     }
 
     it('renders an anchor for https:// link annotations in view mode', () => {
-      const { container } = renderWithLinks([
+      renderWithLinks([
         makeAnnotation({
           id: 'link-safe',
           type: 'link',
@@ -1240,14 +1456,14 @@ describe('CanvasOverlay', () => {
           vpFontSize: 0.02,
         }),
       ])
-      const anchor = container.querySelector('a[href="https://example.com"]')
+      const anchor = viewer.container.querySelector('a[href="https://example.com"]')
       expect(anchor).toBeInTheDocument()
       expect(anchor?.getAttribute('target')).toBe('_blank')
       expect(anchor?.getAttribute('rel')).toContain('noopener')
     })
 
     it('renders an anchor for http:// link annotations in view mode', () => {
-      const { container } = renderWithLinks([
+      renderWithLinks([
         makeAnnotation({
           id: 'link-http',
           type: 'link',
@@ -1256,12 +1472,12 @@ describe('CanvasOverlay', () => {
           vpFontSize: 0.02,
         }),
       ])
-      const anchor = container.querySelector('a[href="http://example.com"]')
+      const anchor = viewer.container.querySelector('a[href="http://example.com"]')
       expect(anchor).toBeInTheDocument()
     })
 
     it('does NOT render an anchor for javascript: protocol links', () => {
-      const { container } = renderWithLinks([
+      renderWithLinks([
         makeAnnotation({
           id: 'link-xss',
           type: 'link',
@@ -1270,12 +1486,12 @@ describe('CanvasOverlay', () => {
           vpFontSize: 0.02,
         }),
       ])
-      const anchor = container.querySelector('a')
+      const anchor = viewer.container.querySelector('a')
       expect(anchor).not.toBeInTheDocument()
     })
 
     it('does NOT render an anchor for data: protocol links', () => {
-      const { container } = renderWithLinks([
+      renderWithLinks([
         makeAnnotation({
           id: 'link-data',
           type: 'link',
@@ -1284,12 +1500,12 @@ describe('CanvasOverlay', () => {
           vpFontSize: 0.02,
         }),
       ])
-      const anchor = container.querySelector('a')
+      const anchor = viewer.container.querySelector('a')
       expect(anchor).not.toBeInTheDocument()
     })
 
     it('does NOT render an anchor for empty URL', () => {
-      const { container } = renderWithLinks([
+      renderWithLinks([
         makeAnnotation({
           id: 'link-empty',
           type: 'link',
@@ -1298,12 +1514,12 @@ describe('CanvasOverlay', () => {
           vpFontSize: 0.02,
         }),
       ])
-      const anchor = container.querySelector('a')
+      const anchor = viewer.container.querySelector('a')
       expect(anchor).not.toBeInTheDocument()
     })
 
     it('renders only safe links among mixed annotations', () => {
-      const { container } = renderWithLinks([
+      renderWithLinks([
         makeAnnotation({ id: 'r1', type: 'rect' }),
         makeAnnotation({ id: 'c1', type: 'circle' }),
         makeAnnotation({
@@ -1321,7 +1537,7 @@ describe('CanvasOverlay', () => {
           vpFontSize: 0.02,
         }),
       ])
-      const anchors = container.querySelectorAll('a')
+      const anchors = viewer.container.querySelectorAll('a')
       expect(anchors).toHaveLength(1)
       expect(anchors[0].getAttribute('href')).toBe('https://example.com')
     })

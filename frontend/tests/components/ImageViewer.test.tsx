@@ -123,12 +123,20 @@ vi.mock('openseadragon', () => {
     const handlers = new Map<string, ((event: unknown) => void)[]>()
     const onceHandlers = new Map<string, ((event: unknown) => void)[]>()
     const container = document.createElement('div')
+    // Mirror OSD's ControlDock layout: per-anchor dock divs are children of the
+    // container and hold inline-block wrappers around each control element.
+    const bottomLeftDock = document.createElement('div')
+    const bottomRightDock = document.createElement('div')
+    container.appendChild(bottomLeftDock)
+    container.appendChild(bottomRightDock)
+    const navigatorElement = document.createElement('div')
+    bottomRightDock.appendChild(navigatorElement)
     const activeOverlays = new Set<HTMLElement>()
     const viewer: MockViewer = {
       element: document.createElement('div'),
       container,
       canvas: document.createElement('div'),
-      navigator: { element: document.createElement('div') },
+      navigator: { element: navigatorElement },
       world: {
         getItemAt: vi.fn(() => ({ getContentSize: () => ({ x: 1000, y: 800 }) })),
       },
@@ -150,7 +158,11 @@ vi.mock('openseadragon', () => {
       addOnceHandler: vi.fn((event: string, handler: (event: unknown) => void) => {
         onceHandlers.set(event, [...(onceHandlers.get(event) ?? []), handler])
       }),
-      addControl: vi.fn((el: HTMLElement) => container.appendChild(el)),
+      addControl: vi.fn((el: HTMLElement) => {
+        const wrapper = document.createElement('div')
+        wrapper.appendChild(el)
+        bottomLeftDock.appendChild(wrapper)
+      }),
       addOverlay: vi.fn((element: HTMLElement) => activeOverlays.add(element)),
       updateOverlay: vi.fn(),
       removeOverlay: vi.fn((element: HTMLElement) => activeOverlays.delete(element)),
@@ -804,6 +816,31 @@ describe('ImageViewer canvas edit mode', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Overlay done' }))
     expect(screen.getByText('canvas edit: false')).toBeInTheDocument()
+  })
+
+  it('marks the canvas-edit button active with the standard red outline', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" canEditContent />)
+    const button = buttonByTooltip('Canvas annotations (add shapes, text, links)')
+
+    act(() => button.options.onClick())
+    expect(button.element.style.outline).toBe('2px solid red')
+    expect(button.element.style.outlineOffset).toBe('-2px')
+  })
+})
+
+describe('ImageViewer chrome alignment', () => {
+  it('bottom-aligns bottom-dock descendants so toolbar and minimap sit flush', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" canEditContent />)
+    const v = viewer()
+    const docks = Array.from(v.container.children) as HTMLElement[]
+    expect(docks.length).toBeGreaterThanOrEqual(2)
+    for (const dock of docks) {
+      const descendants = dock.querySelectorAll<HTMLElement>('*')
+      expect(descendants.length).toBeGreaterThan(0)
+      descendants.forEach((el) => expect(el.style.verticalAlign).toBe('bottom'))
+    }
+    // The navigator/minimap sits in the bottom-right dock
+    expect(v.navigator.element.style.verticalAlign).toBe('bottom')
   })
 })
 

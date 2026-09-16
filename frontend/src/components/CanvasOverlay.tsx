@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import OpenSeadragon from 'openseadragon'
 import * as fabric from 'fabric'
 import { wrapCanvasText } from './canvasText'
@@ -28,6 +29,8 @@ import CheckIcon from '@mui/icons-material/Check'
 import CloseIcon from '@mui/icons-material/Close'
 import PaletteIcon from '@mui/icons-material/Palette'
 import LineWeightIcon from '@mui/icons-material/LineWeight'
+import DragIndicatorIcon from '@mui/icons-material/DragIndicator'
+import { useDraggablePosition } from '../useDraggablePosition'
 
 /** Serialisable annotation stored in image metadata */
 export interface CanvasAnnotation {
@@ -368,6 +371,42 @@ export default function CanvasOverlay({
   const clipboardRef = useRef<CanvasAnnotation[]>([])
   const snapshotRef = useRef<CanvasAnnotation[]>([])
   const dirtyRef = useRef(false)
+
+  // Close transient menus/dialogs — used when a toolbar drag starts and when
+  // OSD full-page reparents the viewer (body-portaled popovers would be
+  // hidden or left at stale anchor positions).
+  const closeTransientUi = useCallback(() => {
+    setRectAnchor(null)
+    setCircleAnchor(null)
+    setArrowAnchor(null)
+    setLineWidthAnchor(null)
+    setColorPickerAnchor(null)
+    setLinkDialogOpen(false)
+    setDiscardDialogOpen(false)
+  }, [])
+
+  const {
+    targetRef: toolbarRef,
+    position: toolbarPos,
+    dragging: toolbarDragging,
+    handleProps: toolbarHandleProps,
+    reclamp: reclampToolbar,
+  } = useDraggablePosition({
+    cacheKey: 'canvas-annotation-toolbar',
+    onDragStart: closeTransientUi,
+  })
+
+  // Hide popovers/dialogs that MUI portals to document.body when the viewer
+  // enters/exits full-page mode, and re-clamp the toolbar to the new bounds
+  // once the element has been reparented and resized.
+  useEffect(() => {
+    const handleFullPage = () => {
+      closeTransientUi()
+      window.setTimeout(reclampToolbar, 0)
+    }
+    viewer.addHandler('full-page', handleFullPage)
+    return () => viewer.removeHandler('full-page', handleFullPage)
+  }, [viewer, closeTransientUi, reclampToolbar])
 
   const refreshBoundingGuides = useCallback(
     (canvas: fabric.Canvas | null = fabricCanvasRef.current) => {
@@ -890,6 +929,7 @@ export default function CanvasOverlay({
     (commitTextEditing = true) => {
       const annotations = collectAnnotations(commitTextEditing)
       dirtyRef.current = JSON.stringify(annotations) !== JSON.stringify(snapshotRef.current)
+      annotationsRef.current = annotations
       console.debug(LOG_PREFIX, 'emitAnnotations:', annotations.length, 'objects')
       onAnnotationsChange(annotations)
     },
@@ -1276,6 +1316,86 @@ export default function CanvasOverlay({
     }
   }, [editMode, emitAnnotations, refreshBoundingGuides])
 
+  // Keep the edit canvas aligned with the image across viewer resizes
+  // (window resize, OSD full-page entry/exit, layout shifts). Fabric object
+  // coords are pixels, so the draft is re-projected from viewport-space
+  // annotations at the new size. The canvas instance — and every handler
+  // bound to it — is preserved; only object geometry is replaced.
+  //
+  // Timing: OSD observes viewer.container with its own ResizeObserver but
+  // only sets a needsResize flag there — the actual viewport resize runs
+  // later on its update loop, and its 'resize'/'after-resize' events fire
+  // mid-update with a mixed transform. This observer therefore runs while
+  // the OLD pixel→viewport transform is still in effect: stash the draft as
+  // viewport-space annotations, then re-project them in a rAF, which runs
+  // after OSD's update tick under the NEW transform.
+  useEffect(() => {
+    if (!editMode) return
+    let draft: CanvasAnnotation[] | null = null
+    let raf = 0
+    const reproject = () => {
+      const fc = fabricCanvasRef.current
+      const annotations = draft
+      draft = null
+      if (!fc || !viewer.viewport || !annotations) return
+      const container = viewer.container
+      fc.setDimensions({ width: container.clientWidth, height: container.clientHeight })
+      fc.discardActiveObject()
+      for (const obj of [...fc.getObjects()]) fc.remove(obj)
+      for (const ann of annotations) {
+        const obj = annotationToFabric(ann)
+        if (obj) {
+          obj.set({
+            borderColor: '#263238',
+            cornerColor: '#263238',
+            cornerStrokeColor: '#ffffff',
+            cornerSize: 10,
+            transparentCorners: false,
+          })
+          fc.add(obj)
+        }
+      }
+      refreshBoundingGuides(fc)
+      // The canvas may have moved in the document (full-page reparent);
+      // refresh fabric's cached pointer offset.
+      fc.calcOffset()
+      fc.renderAll()
+      reclampToolbar()
+    }
+    // The observer fires once on observe() with the current size — nothing
+    // has moved yet, so skip that first delivery.
+    let firstDelivery = true
+    const observer = new ResizeObserver(() => {
+      if (firstDelivery) {
+        firstDelivery = false
+        return
+      }
+      const fc = fabricCanvasRef.current
+      if (!fc || !viewer.viewport) return
+      if (isDrawingRef.current && drawObjRef.current) {
+        fc.remove(drawObjRef.current)
+        isDrawingRef.current = false
+        drawStartRef.current = null
+        drawObjRef.current = null
+      }
+      draft = collectAnnotations()
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(reproject)
+    })
+    observer.observe(viewer.container)
+    return () => {
+      cancelAnimationFrame(raf)
+      observer.disconnect()
+    }
+  }, [
+    editMode,
+    viewer,
+    collectAnnotations,
+    annotationToFabric,
+    refreshBoundingGuides,
+    reclampToolbar,
+  ])
+
   // Tool actions
 
   const handleAddText = useCallback(() => {
@@ -1472,7 +1592,11 @@ export default function CanvasOverlay({
 
   if (!editMode && annotations.length === 0) return null
 
-  return (
+  // Portal into the OSD container so the overlay (view canvas, fabric edit
+  // canvas, toolbar, status label) travels with the viewer when OSD full-page
+  // mode reparents viewer.element to document.body. Positioned children anchor
+  // to viewer.container, which is position:relative and viewport-sized.
+  return createPortal(
     <>
       {/* View-mode canvas */}
       {!editMode && (
@@ -1533,11 +1657,9 @@ export default function CanvasOverlay({
       {/* Edit-mode toolbar */}
       {editMode && (
         <Box
+          ref={toolbarRef}
           sx={{
             position: 'absolute',
-            top: 8,
-            left: '50%',
-            transform: 'translateX(-50%)',
             zIndex: 20,
             display: 'flex',
             alignItems: 'center',
@@ -1547,8 +1669,30 @@ export default function CanvasOverlay({
             px: 1,
             py: 0.5,
             pointerEvents: flushing ? 'none' : 'auto',
+            userSelect: toolbarDragging ? 'none' : undefined,
+            // Default: flush against the top edge, horizontally centred.
+            // Once dragged, an explicit px position replaces the transform.
+            ...(toolbarPos
+              ? { left: toolbarPos.x, top: toolbarPos.y, transform: 'none' }
+              : { top: 0, left: '50%', transform: 'translateX(-50%)' }),
           }}
         >
+          <Tooltip title="Drag to move toolbar — arrow keys nudge, double-click resets">
+            <IconButton
+              aria-label="Move annotation toolbar"
+              {...toolbarHandleProps}
+              sx={{
+                color: 'white',
+                p: 0.5,
+                cursor: toolbarDragging ? 'grabbing' : 'grab',
+                touchAction: 'none',
+                flexShrink: 0,
+              }}
+            >
+              <DragIndicatorIcon sx={{ fontSize: 24 }} />
+            </IconButton>
+          </Tooltip>
+          <Divider orientation="vertical" flexItem sx={{ borderColor: 'rgba(255,255,255,0.3)' }} />
           {/* Rectangle with fill-mode submenu */}
           <Tooltip title="Rectangle">
             <IconButton
@@ -2015,6 +2159,7 @@ export default function CanvasOverlay({
           </Button>
         </DialogActions>
       </Dialog>
-    </>
+    </>,
+    viewer.container,
   )
 }

@@ -97,6 +97,31 @@ images> / Empty` format used on category tiles.
   Fabric objects use the solid selection border with visible handles while
   unselected annotations retain their dotted boxes. Presentation guides are not
   persisted in `metadata_extra.canvas_annotations`.
+- The canvas annotation toolbar starts flush against the top of the viewer
+  frame, horizontally centred. Its left-edge grip handle moves it anywhere
+  inside the frame: drag with a pointer (grab/grabbing cursor,
+  `touch-action: none`), or focus it and nudge with arrow keys (8px, 32px with
+  Shift). The toolbar is clamped so it stays fully inside the viewer bounds;
+  `Home` or a double-click on the handle resets to the default position. The
+  position persists for the browser session (module-level cache in
+  `useDraggablePosition.ts`) and resets on page reload. Starting a drag closes
+  any open tool submenu.
+- The whole `CanvasOverlay` (view canvas, fabric edit canvas, toolbar, status
+  label) is portaled into `viewer.container`, so annotation viewing and
+  editing work in OSD full-page mode — previously the overlay stayed under
+  `#root`, which full-page hides (#1311). MUI submenus/dialogs portal to
+  `document.body`, so they close on `full-page` transitions rather than
+  ending up hidden or detached. When the viewer container changes size during
+  edit mode (window resize, full-page transitions, layout shifts) the fabric
+  canvas is resized and its objects are re-projected from the viewport-space
+  draft, keeping annotations glued to the image.
+- The OSD bottom-left control strip and the bottom-right minimap sit flush
+  with the bottom edge of the frame: `ImageViewer` applies
+  `vertical-align: bottom` to bottom-dock descendants to counter the
+  inline-block baseline strut that otherwise lifts them a few px.
+- The canvas-edit pencil button uses the same state styling as the other OSD
+  toolbar icons: translucent dark rest/hover backgrounds, a red pressed
+  background, and a red `2px` outline while canvas edit mode is active.
 - Touch pinch gestures use a per-gesture zoom-vs-rotate mode lock. The
   `ImageViewer` intercepts `canvas-pinch` and compares initial finger-line
   rotation against finger-separation change. The dominant motion wins:
