@@ -153,6 +153,10 @@ def purge_fixture_files() -> None:
                 source_id = int(name.split("-", 2)[1])
             except (IndexError, ValueError):
                 source_id = None
+        elif ".old-" in name:
+            prefix, _separator, _suffix = name.partition(".old-")
+            if prefix.isdigit():
+                source_id = int(prefix)
         if source_id is not None and source_id >= SOURCE_IMAGE_ID_BASE:
             if path.is_symlink() or not path.is_dir():
                 path.unlink(missing_ok=True)

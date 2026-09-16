@@ -100,8 +100,14 @@ def test_write_and_purge_fixture_files(tmp_path: Path) -> None:
     tiles_dir = tmp_path / "tiles"
     fixture_tiles = tiles_dir / str(SOURCE_IMAGE_ID_BASE)
     fixture_temp = tiles_dir / f".rebuild-{SOURCE_IMAGE_ID_BASE}-abc"
+    fixture_retained = tiles_dir / f"{SOURCE_IMAGE_ID_BASE}.old-abc"
     preserved_tiles = tiles_dir / str(SOURCE_IMAGE_ID_BASE - 1)
-    for path in (fixture_tiles, fixture_temp, preserved_tiles):
+    for path in (
+        fixture_tiles,
+        fixture_temp,
+        fixture_retained,
+        preserved_tiles,
+    ):
         path.mkdir(parents=True)
         (path / "marker").write_text("present")
     with (
@@ -129,6 +135,7 @@ def test_write_and_purge_fixture_files(tmp_path: Path) -> None:
         assert not fixture_dir.exists()
         assert not fixture_tiles.exists()
         assert not fixture_temp.exists()
+        assert not fixture_retained.exists()
         assert preserved_tiles.exists()
         # Purge is idempotent and must not touch the parent directory.
         purge_fixture_files()

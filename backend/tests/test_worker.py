@@ -281,11 +281,7 @@ def test_worker_settings_apply_task_specific_timeouts() -> None:
     assert rebuild_pump_fn.max_tries == 1
     rebuild_child_fn = WorkerSettings.functions[5]
     assert rebuild_child_fn.name == "rebuild_tile_item"
-    assert rebuild_child_fn.timeout_s == max(
-        settings.rebuild_lease_seconds,
-        settings.rebuild_child_timeout_seconds
-        + settings.rebuild_heartbeat_seconds,
-    )
+    assert rebuild_child_fn.timeout_s == 90000
     assert rebuild_child_fn.max_tries == 1
 
 

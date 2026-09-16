@@ -265,6 +265,6 @@ kubectl -n hriv exec deploy/hriv-backend -- \
 ```
 
 This removes all `TRF-`/`rebuild-fixture` rows, source files, generated tile
-trees, and abandoned fixture rebuild temporary trees. Fixture filesystem work
+trees, abandoned fixture rebuild temporary trees, and retained `.old-*` trees. Fixture filesystem work
 runs off the CLI event loop so thousands of small files do not block database
 or cancellation progress.

@@ -126,7 +126,8 @@ reuse the same prepare/promote/rollback primitives as the serial rebuild,
 heartbeat their lease during processing, and finalize only with the current
 claim token. The persisted child timeout is enforced inside this execution
 boundary so timeout cancellation becomes a durable retry/failure and metric;
-arq keeps a longer lease-derived safety timeout for stuck cleanup. Child
+arq keeps a fixed 25-hour safety timeout above the supported 24-hour child
+maximum, independent of rollout settings, for stuck cleanup. Child
 completion requests another pump after its database transaction commits; a
 periodic worker sweep is the backstop for lost triggers.
 
@@ -151,7 +152,7 @@ The scheduler settings are:
 
 - `REBUILD_PARALLEL_ENABLED=false`
 - `REBUILD_PARALLELISM=2`
-- `REBUILD_CHILD_TIMEOUT_SECONDS=1800`
+- `REBUILD_CHILD_TIMEOUT_SECONDS=1800` (maximum `86400`)
 - `REBUILD_LEASE_SECONDS=2100`
 - `REBUILD_HEARTBEAT_SECONDS=30`
 - `REBUILD_PUMP_CADENCE_SECONDS=60`

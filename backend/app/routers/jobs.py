@@ -38,7 +38,7 @@ from ..tile_rebuild_jobs import (
     TileRebuildParallelDisabledError,
     TileRebuildStateError,
     create_tile_rebuild_job,
-    emit_pending_metrics,
+    emit_pending_callbacks,
     request_job_cancellation,
     retry_failed_job_items,
 )
@@ -260,7 +260,7 @@ async def cancel_rebuild_job(
             ),
         )
     await db.commit()
-    emit_pending_metrics(db)
+    emit_pending_callbacks(db)
     # A pump drains queued items into cancelled and finalizes the supervisor
     # sooner than waiting for running children or the periodic sweep.
     await _request_pump(job_id, f"cancel:{job_id}")
@@ -288,7 +288,7 @@ async def retry_rebuild_job_item(
     except TileRebuildStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     await db.commit()
-    emit_pending_metrics(db)
+    emit_pending_callbacks(db)
     if requeued:
         await _request_pump(
             job_id, f"retry:{item_id}:{uuid4().hex[:8]}"
@@ -321,7 +321,7 @@ async def retry_failed_rebuild_job_items(
     except TileRebuildStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     await db.commit()
-    emit_pending_metrics(db)
+    emit_pending_callbacks(db)
     if requeued:
         await _request_pump(
             job_id, f"retry-failed:{uuid4().hex[:8]}"

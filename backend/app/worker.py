@@ -38,7 +38,11 @@ from opentelemetry.propagate import extract, inject
 from opentelemetry.trace import Status, StatusCode
 
 from .component_versions import get_worker_version
-from .database import async_session, settings
+from .database import (
+    MAX_REBUILD_CHILD_TIMEOUT_SECONDS,
+    async_session,
+    settings,
+)
 from .logging_config import setup_logging
 from .models import ACTIVE_TASK_STATUSES, AdminTask
 from .queue_metrics import (
@@ -57,6 +61,9 @@ from .tile_rebuild_jobs import (
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
+REBUILD_ARQ_SAFETY_TIMEOUT_SECONDS = (
+    MAX_REBUILD_CHILD_TIMEOUT_SECONDS + 3600
+)
 _pool: ArqRedis | None = None
 _pool_creation_locks: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
@@ -690,11 +697,7 @@ class WorkerSettings:
         func(rebuild_tile_pump_task, max_tries=1),
         func(
             rebuild_tile_item,
-            timeout=max(
-                settings.rebuild_lease_seconds,
-                settings.rebuild_child_timeout_seconds
-                + settings.rebuild_heartbeat_seconds,
-            ),
+            timeout=REBUILD_ARQ_SAFETY_TIMEOUT_SECONDS,
             max_tries=1,
         ),
     ]

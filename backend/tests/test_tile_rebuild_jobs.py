@@ -1729,27 +1729,73 @@ async def test_finalize_rebuild_failure_counts_timeouts(
     timeouts.assert_not_called()
 
 
-def test_deferred_metrics_wait_for_commit() -> None:
-    """Session-backed deferrals emit only via emit_pending_metrics."""
+def test_deferred_callbacks_wait_for_commit() -> None:
     calls: list[str] = []
     session = SimpleNamespace(info={})
 
-    tile_rebuild_jobs._defer_metric(
+    tile_rebuild_jobs._defer_after_commit(
         session, lambda: calls.append("emit")
     )
     assert calls == []
 
-    tile_rebuild_jobs.emit_pending_metrics(session)
+    tile_rebuild_jobs.emit_pending_callbacks(session)
     assert calls == ["emit"]
 
     # The pending list is drained; a second flush is a no-op.
-    tile_rebuild_jobs.emit_pending_metrics(session)
+    tile_rebuild_jobs.emit_pending_callbacks(session)
     assert calls == ["emit"]
 
 
-def test_deferred_metrics_emit_immediately_for_session_doubles() -> None:
+def test_deferred_callbacks_emit_immediately_for_session_doubles() -> None:
     calls: list[str] = []
-    tile_rebuild_jobs._defer_metric(
+    tile_rebuild_jobs._defer_after_commit(
         SimpleNamespace(), lambda: calls.append("emit")
     )
     assert calls == ["emit"]
+
+
+def test_session_commit_emits_deferred_callbacks() -> None:
+    calls: list[str] = []
+    session = tile_rebuild_jobs.Session()
+    session.begin()
+    tile_rebuild_jobs._defer_after_commit(
+        session, lambda: calls.append("committed")
+    )
+
+    session.commit()
+
+    assert calls == ["committed"]
+
+
+def test_session_rollback_discards_deferred_callbacks() -> None:
+    calls: list[str] = []
+    session = tile_rebuild_jobs.Session()
+    session.begin()
+    tile_rebuild_jobs._defer_after_commit(
+        session, lambda: calls.append("stale")
+    )
+
+    session.rollback()
+    session.begin()
+    session.commit()
+
+    assert calls == []
+
+
+def test_info_event_waits_for_commit(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = SimpleNamespace(info={})
+    info = MagicMock()
+    monkeypatch.setattr(tile_rebuild_jobs.logger, "info", info)
+
+    tile_rebuild_jobs._defer_info_event(
+        session,
+        "Terminal",
+        {"event": "rebuild.job_terminal", "job_id": 7},
+    )
+    info.assert_not_called()
+
+    tile_rebuild_jobs.emit_pending_callbacks(session)
+    info.assert_called_once_with(
+        "Terminal",
+        extra={"event": "rebuild.job_terminal", "job_id": 7},
+    )

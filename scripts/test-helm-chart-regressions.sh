@@ -657,6 +657,13 @@ fi
 assert_contains "$backend_rebuild_local_output" "requires tasks.executionMode=required" \
   "backend chart should require durable rebuilding to use the dedicated worker"
 
+if backend_rebuild_timeout_output="$(helm template test charts/backend \
+  --set tasks.rebuild.childTimeoutSeconds=86401 2>&1)"; then
+  fail "expected a rebuild child timeout above the safety ceiling to be rejected"
+fi
+assert_contains "$backend_rebuild_timeout_output" "must not exceed 86400 seconds" \
+  "backend chart should explain the rebuild child-timeout ceiling"
+
 if backend_low_max_jobs_output="$(helm template test charts/backend \
   --set redis.worker.maxJobs=1 2>&1)"; then
   fail "expected redis.worker.maxJobs below 2 to be rejected"

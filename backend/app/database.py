@@ -11,6 +11,9 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase
 
 
+MAX_REBUILD_CHILD_TIMEOUT_SECONDS = 86400
+
+
 class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://hriv:hriv@db:5432/hriv"
     data_dir: str = "/data"
@@ -29,7 +32,11 @@ class Settings(BaseSettings):
     worker_max_jobs: int = Field(default=4, ge=2)
     rebuild_parallel_enabled: bool = False
     rebuild_parallelism: int = Field(default=2, ge=1)
-    rebuild_child_timeout_seconds: int = Field(default=1800, ge=60)
+    rebuild_child_timeout_seconds: int = Field(
+        default=1800,
+        ge=60,
+        le=MAX_REBUILD_CHILD_TIMEOUT_SECONDS,
+    )
     rebuild_lease_seconds: int = Field(default=2100, ge=120)
     rebuild_heartbeat_seconds: int = Field(default=30, ge=5)
     rebuild_pump_cadence_seconds: int = Field(default=60, ge=60, le=3600)

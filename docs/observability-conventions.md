@@ -355,8 +355,9 @@ Rules:
 - Throughput (images/hour) and per-item percentiles are derived dashboard
   values from `hriv.tile_rebuild.items.completed` and
   `hriv.tile_rebuild.item.duration`, not dedicated instruments.
-- A terminal metric is recorded only after the owning transaction commits, so
-  commit failures cannot double-count outcomes.
+- Terminal metrics and durable state-transition events are emitted only after
+  the owning transaction commits. SQLAlchemy commit/rollback hooks drain or
+  discard queued callbacks so a reused session cannot emit rolled-back signal.
 
 ## Privacy, Access, and Retention
 

@@ -76,7 +76,7 @@ Current scheduler controls are:
 | ------------------------------- | ------- | -------------------------------------------- |
 | `REBUILD_PARALLEL_ENABLED`      | `false` | Gates creation of durable parallel rebuilds  |
 | `REBUILD_PARALLELISM`           | `2`     | Independent PostgreSQL-derived child window  |
-| `REBUILD_CHILD_TIMEOUT_SECONDS` | `1800`  | Persisted per-child execution timeout        |
+| `REBUILD_CHILD_TIMEOUT_SECONDS` | `1800`  | Persisted timeout; maximum 24 hours          |
 | `REBUILD_LEASE_SECONDS`         | `2100`  | Ownership recovery horizon                   |
 | `REBUILD_HEARTBEAT_SECONDS`     | `30`    | Lease renewal cadence during tile generation |
 | `REBUILD_PUMP_CADENCE_SECONDS`  | `60`    | Periodic missed-trigger recovery cadence     |
@@ -165,8 +165,9 @@ each short-lived and independently retryable:
   Redis queue depth and libvips memory/CPU pressure independently of
   `max_jobs`.
 - Child jobs enforce the persisted per-image timeout (e.g. 30 min) inside the
-  execution boundary so timeouts finalize durably; arq retains a longer safety
-  timeout instead of the serial batch-wide 2 h bound.
+  execution boundary so timeouts finalize durably; arq retains a fixed 25-hour
+  safety ceiling above the supported 24-hour child maximum, so rollout setting
+  changes cannot preempt existing jobs.
 - Worker isolation: a crashing/OOMing image kills one child job, not the
   batch. The item is marked `failed` with `attempts` incremented; the
   supervisor continues.
