@@ -33,6 +33,17 @@ frontend-facing behavior described in docs.
   and planning a human feel-test.
 - Preserve stable dimensions for tile grids, toolbar controls, and viewer
   surfaces so dynamic labels and hover states do not shift layout.
+- New components in `src/components/` require a `*.stories.tsx` covering each
+  meaningfully distinct visual state; new UI inside existing pages/containers
+  requires one only when the change is extractable into a component worth
+  isolating, and behavior changes to already-storied components need no new
+  stories. Stories are permanent Chromatic baselines — target real visual
+  variance, not one story per code path.
+- Story conventions: `Components/<Name>` title, `Basic` first, attached
+  `<Name>.docs.mdx` page, `play` functions for small deterministic
+  interactions, deterministic fixtures, `parameters.chromatic.modes` for
+  theme/viewport variants, and `parameters.chromatic` tuning for noisy
+  stories. See `../../../docs/storybook-chromatic.md`.
 
 ## Validation
 
@@ -46,6 +57,15 @@ Check repo formatting when you touch frontend files or docs:
 
 ```bash
 npm run format:check
+```
+
+When touching `*.stories.*` or `*.docs.mdx`, also verify the Storybook build
+and story tests (play functions run in Chromium):
+
+```bash
+npm run build-storybook
+npx playwright install chromium  # once per machine
+npm run test:storybook
 ```
 
 Run the frontend suite before a PR when practical:

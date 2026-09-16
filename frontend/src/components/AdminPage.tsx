@@ -67,7 +67,6 @@ import {
 import type {
   AdminTask,
   ApiJob,
-  ApiJobItem,
   BackupSnapshotManifest,
   BackupSnapshotSummary,
   ExportArchive,
@@ -79,6 +78,7 @@ import { useAuth } from '../useAuth'
 import { emitEvent } from '../observability'
 import ConfirmImportDialog, { type ConfirmImportKind } from './ConfirmImportDialog'
 import ChangelogAdmin from './ChangelogAdmin'
+import RebuildJobsPanel from './RebuildJobsPanel'
 
 const POLL_INTERVAL = 2000 // ms
 
@@ -86,43 +86,6 @@ const POLL_INTERVAL = 2000 // ms
 // and worth polling, and the bounded page size for failed-item inspection.
 const ACTIVE_REBUILD_JOB_STATUSES = new Set<ApiJob['status']>(['queued', 'running', 'cancelling'])
 const FAILED_ITEMS_PAGE_SIZE = 50
-
-const REBUILD_JOB_STATUS_LABELS: Record<ApiJob['status'], string> = {
-  queued: 'Queued',
-  running: 'Running',
-  completed: 'Completed',
-  completed_with_errors: 'Completed with errors',
-  failed: 'Failed',
-  cancelling: 'Cancelling',
-  cancelled: 'Cancelled',
-}
-
-function rebuildJobStatusColor(
-  status: ApiJob['status'],
-): 'success' | 'error' | 'warning' | 'info' | 'default' {
-  switch (status) {
-    case 'completed':
-      return 'success'
-    case 'failed':
-      return 'error'
-    case 'completed_with_errors':
-    case 'cancelling':
-    case 'cancelled':
-      return 'warning'
-    case 'running':
-      return 'info'
-    default:
-      return 'default'
-  }
-}
-
-// Source-image identity for a rebuild item: prefer the linked image id in
-// item metadata, fall back to the source-image resource id.
-function rebuildItemImageId(item: ApiJobItem): string {
-  const imageId = item.metadata_extra?.image_id
-  if (typeof imageId === 'number') return String(imageId)
-  return item.resource_id ?? '?'
-}
 
 // A 401/403 during a task interaction means the acting account was replaced
 // (e.g. by a database import) and the current JWT is no longer valid.
@@ -289,18 +252,6 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
   // persisted execution mode, so jobs are listed regardless of the flag.
   const [rebuildJobs, setRebuildJobs] = useState<ApiJob[]>([])
   const [rebuildCapability, setRebuildCapability] = useState<RebuildTilesCapability | null>(null)
-  const [expandedFailedJobs, setExpandedFailedJobs] = useState<Set<number>>(new Set())
-  const [failedJobItems, setFailedJobItems] = useState<
-    Record<
-      number,
-      {
-        items: ApiJobItem[]
-        nextAfterId: number | null
-        loading: boolean
-        error: string | null
-      }
-    >
-  >({})
   const [jobActionPending, setJobActionPending] = useState<string | null>(null)
 
   const pollRefs = useRef(new Map<number, ReturnType<typeof setTimeout>>())
@@ -353,6 +304,7 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
 
   // Load durable jobs and the parallel-rebuild capability once (#1191).
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshRebuildJobs()
     fetchRebuildTilesCapability()
       .then(setRebuildCapability)
@@ -947,104 +899,44 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
     }
   }
 
-  const handleRetryFailedJobItems = async (jobId: number) => {
+  // Resolve true so the panel knows its local failed-items state is stale.
+  const handleRetryFailedJobItems = async (jobId: number): Promise<boolean> => {
     setError(null)
     setJobActionPending(`retry-failed:${jobId}`)
     try {
       const result = await retryFailedJobItems(jobId)
       syncRebuildJob(result.job)
-      // Everything failed was requeued — the failed-items list is stale.
-      setFailedJobItems((prev) => {
-        if (!(jobId in prev)) return prev
-        const next = { ...prev }
-        delete next[jobId]
-        return next
-      })
-      setExpandedFailedJobs((prev) => {
-        const next = new Set(prev)
-        next.delete(jobId)
-        return next
-      })
+      return true
     } catch (err) {
       setError(userMessage(err, 'Failed to retry rebuild items'))
+      return false
     } finally {
       setJobActionPending(null)
     }
   }
 
-  // Failed items are fetched lazily — only when the operator expands the
-  // list — and one bounded page at a time via keyset pagination.
-  const loadFailedItems = useCallback(async (jobId: number, afterId?: number) => {
-    setFailedJobItems((prev) => ({
-      ...prev,
-      [jobId]: {
-        items: prev[jobId]?.items ?? [],
-        nextAfterId: prev[jobId]?.nextAfterId ?? null,
-        loading: true,
-        error: null,
-      },
-    }))
-    try {
-      const page = await fetchJobItems(jobId, {
+  // Failed-item pages are fetched lazily by the panel — only when the
+  // operator expands the list — one bounded page at a time.
+  const fetchFailedItems = useCallback(
+    (jobId: number, afterId?: number) =>
+      fetchJobItems(jobId, {
         status: 'failed',
         afterId,
         limit: FAILED_ITEMS_PAGE_SIZE,
-      })
-      setFailedJobItems((prev) => ({
-        ...prev,
-        [jobId]: {
-          items:
-            afterId === undefined ? page.items : [...(prev[jobId]?.items ?? []), ...page.items],
-          nextAfterId: page.next_after_id,
-          loading: false,
-          error: null,
-        },
-      }))
-    } catch (err) {
-      setFailedJobItems((prev) => ({
-        ...prev,
-        [jobId]: {
-          items: prev[jobId]?.items ?? [],
-          nextAfterId: prev[jobId]?.nextAfterId ?? null,
-          loading: false,
-          error: userMessage(err, 'Failed to load failed items'),
-        },
-      }))
-    }
-  }, [])
+      }),
+    [],
+  )
 
-  const toggleFailedItems = (jobId: number) => {
-    setExpandedFailedJobs((prev) => {
-      const next = new Set(prev)
-      if (next.has(jobId)) {
-        next.delete(jobId)
-      } else {
-        next.add(jobId)
-      }
-      return next
-    })
-    if (!expandedFailedJobs.has(jobId) && failedJobItems[jobId] === undefined) {
-      void loadFailedItems(jobId)
-    }
-  }
-
-  const handleRetryJobItem = async (jobId: number, itemId: number) => {
+  const handleRetryJobItem = async (jobId: number, itemId: number): Promise<boolean> => {
     setError(null)
     setJobActionPending(`retry-item:${itemId}`)
     try {
       const result = await retryJobItem(jobId, itemId)
       syncRebuildJob(result.job)
-      // The requeued item no longer belongs in the failed list.
-      setFailedJobItems((prev) => {
-        const page = prev[jobId]
-        if (!page) return prev
-        return {
-          ...prev,
-          [jobId]: { ...page, items: page.items.filter((i) => i.id !== itemId) },
-        }
-      })
+      return true
     } catch (err) {
       setError(userMessage(err, 'Failed to retry item'))
+      return false
     } finally {
       setJobActionPending(null)
     }
@@ -1346,191 +1238,15 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
           </Box>
 
           {/* ── Parallel tile rebuilds (#1191) ─────────────── */}
-          <Box>
-            <Typography variant="h6" sx={{ mb: 1 }}>
-              Parallel tile rebuilds
-            </Typography>
-            {rebuildCapability?.enabled === false && (
-              <Alert severity="info" sx={{ mb: 2 }} data-testid="parallel-rebuild-disabled-note">
-                Parallel rebuilds are disabled in this environment — the Rebuild Tiles button uses
-                the serial task runner. Durable jobs listed below still run to completion.
-              </Alert>
-            )}
-            {rebuildTileJobs.length === 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                No durable tile-rebuild jobs yet.
-              </Typography>
-            ) : (
-              <Stack spacing={1.5}>
-                {rebuildTileJobs.map((job) => {
-                  const failedPage = failedJobItems[job.id]
-                  const failedExpanded = expandedFailedJobs.has(job.id)
-                  const retryable =
-                    job.failed_count > 0 &&
-                    job.status !== 'cancelling' &&
-                    job.status !== 'cancelled' &&
-                    job.status !== 'completed'
-                  return (
-                    <Box
-                      key={job.id}
-                      sx={{
-                        border: 1,
-                        borderColor: 'divider',
-                        borderRadius: 1,
-                        p: 2,
-                        bgcolor: 'background.paper',
-                      }}
-                      data-testid={`rebuild-job-${job.id}`}
-                    >
-                      <Box
-                        sx={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 2,
-                          flexWrap: 'wrap',
-                        }}
-                      >
-                        <Chip
-                          size="small"
-                          label={REBUILD_JOB_STATUS_LABELS[job.status] ?? job.status}
-                          color={rebuildJobStatusColor(job.status)}
-                          sx={{ minWidth: 80 }}
-                          data-testid={`rebuild-job-status-${job.id}`}
-                        />
-                        <Typography variant="body2" sx={{ flex: 1 }}>
-                          Rebuild job #{job.id}
-                          {typeof job.metadata_extra?.scope === 'string' &&
-                            ` · scope ${job.metadata_extra.scope}`}
-                          {' · '}
-                          {new Date(job.created_at).toLocaleString()}
-                        </Typography>
-                        {(job.status === 'queued' || job.status === 'running') && (
-                          <Button
-                            size="small"
-                            color="warning"
-                            variant="outlined"
-                            disabled={jobActionPending === `cancel:${job.id}`}
-                            onClick={() => void handleCancelRebuildJob(job.id)}
-                            data-testid={`cancel-rebuild-job-${job.id}`}
-                          >
-                            {jobActionPending === `cancel:${job.id}` ? 'Cancelling…' : 'Cancel'}
-                          </Button>
-                        )}
-                        {retryable && (
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            disabled={jobActionPending === `retry-failed:${job.id}`}
-                            onClick={() => void handleRetryFailedJobItems(job.id)}
-                            data-testid={`retry-failed-${job.id}`}
-                          >
-                            Retry {job.failed_count} failed
-                          </Button>
-                        )}
-                      </Box>
-                      <LinearProgress variant="determinate" value={job.progress} sx={{ mt: 1 }} />
-                      <Typography
-                        variant="caption"
-                        color="text.secondary"
-                        sx={{ mt: 0.5, display: 'block' }}
-                      >
-                        {`Queued ${job.queued_count} · Running ${job.running_count} · Completed ${job.completed_count} · Skipped ${job.skipped_count} · Failed ${job.failed_count} · Cancelled ${job.cancelled_count} · ${job.progress}%`}
-                      </Typography>
-                      {job.error_message && (
-                        <Alert severity="error" sx={{ mt: 1 }}>
-                          {job.error_message}
-                        </Alert>
-                      )}
-                      {job.failed_count > 0 && (
-                        <Box sx={{ mt: 1 }}>
-                          <Button
-                            size="small"
-                            onClick={() => toggleFailedItems(job.id)}
-                            data-testid={`failed-items-toggle-${job.id}`}
-                          >
-                            {failedExpanded ? 'Hide' : 'Show'} failed items ({job.failed_count})
-                          </Button>
-                          {failedExpanded && (
-                            <Box
-                              sx={{
-                                mt: 1,
-                                borderTop: 1,
-                                borderColor: 'divider',
-                                pt: 1,
-                              }}
-                            >
-                              {failedPage?.error && (
-                                <Alert severity="error" sx={{ mb: 1 }}>
-                                  {failedPage.error}
-                                </Alert>
-                              )}
-                              {failedPage === undefined || failedPage.loading ? (
-                                <CircularProgress size={20} />
-                              ) : failedPage.items.length === 0 ? (
-                                <Typography variant="body2" color="text.secondary">
-                                  No failed items remain.
-                                </Typography>
-                              ) : (
-                                failedPage.items.map((item) => (
-                                  <Box
-                                    key={item.id}
-                                    sx={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: 2,
-                                      py: 0.5,
-                                    }}
-                                    data-testid={`rebuild-item-${item.id}`}
-                                  >
-                                    <Typography variant="body2" sx={{ minWidth: 90 }}>
-                                      Image #{rebuildItemImageId(item)}
-                                    </Typography>
-                                    <Typography
-                                      variant="caption"
-                                      color="text.secondary"
-                                      sx={{ flex: 1 }}
-                                    >
-                                      {item.error_message ?? 'Failed'} · {item.attempts}{' '}
-                                      {item.attempts === 1 ? 'attempt' : 'attempts'}
-                                    </Typography>
-                                    <Button
-                                      size="small"
-                                      variant="outlined"
-                                      disabled={jobActionPending === `retry-item:${item.id}`}
-                                      onClick={() => void handleRetryJobItem(job.id, item.id)}
-                                      data-testid={`retry-item-${item.id}`}
-                                    >
-                                      Retry
-                                    </Button>
-                                  </Box>
-                                ))
-                              )}
-                              {failedPage !== undefined &&
-                                !failedPage.loading &&
-                                failedPage.nextAfterId !== null && (
-                                  <Button
-                                    size="small"
-                                    onClick={() =>
-                                      void loadFailedItems(
-                                        job.id,
-                                        failedPage.nextAfterId ?? undefined,
-                                      )
-                                    }
-                                    data-testid={`failed-items-more-${job.id}`}
-                                  >
-                                    Load more
-                                  </Button>
-                                )}
-                            </Box>
-                          )}
-                        </Box>
-                      )}
-                    </Box>
-                  )
-                })}
-              </Stack>
-            )}
-          </Box>
+          <RebuildJobsPanel
+            jobs={rebuildTileJobs}
+            capability={rebuildCapability}
+            actionPending={jobActionPending}
+            onCancelJob={handleCancelRebuildJob}
+            onRetryFailedItems={handleRetryFailedJobItems}
+            onRetryItem={handleRetryJobItem}
+            fetchFailedItems={fetchFailedItems}
+          />
 
           <Box>
             <Typography variant="h6" sx={{ mb: 2 }}>
