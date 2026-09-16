@@ -15,7 +15,7 @@
 | Annotations and overlays          | `useCanvasAnnotations.ts`, `useOverlayPersistence.ts`                                                                           |
 | Processing status                 | `useProcessingJobs.ts`, `pollProcessingJob.ts`                                                                                  |
 | Drag and drop                     | `SortableTileGrid.tsx`, `sortableTileGridUtils.ts`                                                                              |
-| People/admin UI                   | `PeoplePage.tsx`, `AdminPage.tsx`, `GroupManagementModal.tsx`, `ProgramManagementModal.tsx`                                     |
+| People/admin UI                   | `PeoplePage.tsx`, `AdminPage.tsx`, `RebuildJobsPanel.tsx`, `GroupManagementModal.tsx`, `ProgramManagementModal.tsx`             |
 
 ## Change Heuristics
 
