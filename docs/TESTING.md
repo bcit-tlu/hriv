@@ -37,6 +37,10 @@ All seed users share the password `password`.
 8. **Assert:** Category tiles load (at least "Architecture" and "Panoramas" visible).
 9. Click Logout. Enter email with mixed case: `Admin@Example.CA`, password: `password`, click Sign in.
 10. **Assert:** Login succeeds — email matching is case-insensitive.
+11. As an admin, deactivate a test account via People → Edit → status toggle, then log out.
+12. Attempt login with the deactivated account's credentials.
+13. **Assert:** Error alert appears containing "Account has been disabled. Please contact the TLU Learning Tech Lab via Teams to activate your account." (not "Incorrect email or password").
+14. Reactivate the account to restore seed state.
 
 ---
 
