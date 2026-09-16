@@ -803,3 +803,56 @@ async def test_cancellation_uses_locked_row_not_stale_identity(
         assert await request_job_cancellation(session, job_id) == 0
         assert stale.status == "completed"
         await session.rollback()
+
+
+@requires_db
+async def test_parallelism_bounds_claims_and_stamps_claimed_at(
+    db_factory,
+) -> None:
+    """Scale invariant: a 10-item job under parallelism=2 can never have
+    more than two claims outstanding, and every claim stamps the
+    ``claimed_at`` metadata used for the queue-wait histogram."""
+    job_id = await _create_job(db_factory, item_count=10)
+    async with db_factory() as session:
+        first, acquired = await claim_tile_rebuild_window(session, job_id)
+        assert acquired
+        assert len(first) == 2
+        await session.commit()
+
+    # The window is full: a second pump must claim nothing.
+    async with db_factory() as session:
+        second, acquired = await claim_tile_rebuild_window(session, job_id)
+        assert acquired
+        assert second == []
+        await session.commit()
+
+    async with db_factory() as session:
+        items = (
+            await session.execute(
+                select(JobItem)
+                .where(JobItem.job_id == job_id)
+                .order_by(JobItem.id)
+            )
+        ).scalars().all()
+        running = [item for item in items if item.status == "running"]
+        assert len(running) == 2
+        for item in running:
+            claimed_at = item.metadata_.get("claimed_at")
+            assert claimed_at is not None
+            assert datetime.fromisoformat(claimed_at).tzinfo is not None
+
+    # Completing one child frees exactly one slot for the next claim.
+    async with db_factory() as session:
+        assert await finalize_job_item(
+            session,
+            first[0].item_id,
+            first[0].claim_token,
+            "completed",
+        )
+        await session.commit()
+    async with db_factory() as session:
+        third, acquired = await claim_tile_rebuild_window(session, job_id)
+        assert acquired
+        assert len(third) == 1
+        assert third[0].item_id not in {d.item_id for d in first}
+        await session.commit()

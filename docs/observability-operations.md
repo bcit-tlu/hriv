@@ -96,6 +96,7 @@ severity, dashboards, and runbooks.
 | Repeated pod restarts                                         | Warning  | `HRIV Service Health`       | [`Repeated Pod Restarts`](observability-runbooks.md#repeated-pod-restarts)                                   |
 | Backup metrics missing                                        | Warning  | `HRIV Data and Recovery`    | [`Backup Failed Or Overdue`](observability-runbooks.md#backup-failed-or-overdue)                             |
 | Synthetic metrics missing                                     | Warning  | `HRIV Synthetic Monitoring` | [`Synthetic Monitor Stale`](observability-runbooks.md#synthetic-monitor-stale)                               |
+| Tile rebuild stalled or elevated item failures                | Warning  | `HRIV Data and Recovery`    | [`Tile Rebuild Stalled Or Failing`](observability-runbooks.md#tile-rebuild-stalled-or-failing)               |
 
 ## Notification Routing Model
 

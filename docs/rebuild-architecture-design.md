@@ -47,6 +47,29 @@ rebuild is already active), bounded keyset-paginated item inspection at
 the parallel endpoint only when `GET /api/jobs/rebuild-tiles` reports the
 capability enabled. The serial `AdminTask` endpoint is unchanged.
 
+Issue #1189 added the scale-validation observability contract and rehearsal
+tooling:
+
+- `tile_rebuild_metrics.py` emits `hriv.tile_rebuild.*` OTel instruments
+  (item duration and queue-wait histograms, supervisor duration,
+  cancellation latency, outcome/reason/state-labelled counters for item
+  terminals, retries, timeouts, lease reclaims, pump runs, enqueue failures,
+  and duplicate deliveries) plus PostgreSQL-derived `/api/metrics` gauges
+  for active supervisors, running children, and queued items. Job, item, and
+  source-image IDs stay in structured `rebuild.*` log events and span
+  attributes; metric labels carry only bounded `outcome`/`reason`/`state`
+  values.
+- `rebuild_fixture.py` is a deterministic seeder (`python -m
+app.rebuild_fixture --count N` / `--purge`) that creates N linked
+  completed `SourceImage`/`Image` pairs backed by tiny valid TIFFs under a
+  reserved `TRF-`/`rebuild-fixture` namespace. It pads an environment to
+  production item count so pump batching, lease churn, and aggregate updates
+  are measured at scale; real throughput percentiles still come from real
+  sources.
+- The production-shaped rehearsal procedure and its measurement record
+  template live in
+  [backup-restore-runbook.md](backup-restore-runbook.md#tile-rebuild-scale-rehearsal).
+
 Current scheduler controls are:
 
 | Setting                         | Default | Purpose                                      |
@@ -61,8 +84,10 @@ Current scheduler controls are:
 `WORKER_MAX_JOBS` remains the worker's overall arq capacity and does not
 silently define rebuild parallelism.
 
-Cancellation/retry controls, public admin creation and item controls, scale
-rehearsal, measurement-based tuning, and default enablement remain later waves.
+Cancellation/retry controls and the public admin creation and item controls
+shipped in #1188/#1191; scale-rehearsal tooling and instrumentation shipped in
+#1189. Measurement-based default tuning and flag-flip rollout complete the
+epic.
 
 ## Problem
 
