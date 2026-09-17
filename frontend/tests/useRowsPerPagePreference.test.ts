@@ -32,6 +32,15 @@ describe('useRowsPerPagePreference', () => {
     expect(result.current[0]).toBe(50)
   })
 
+  it('loads a stored preference for the extended options (#1060)', () => {
+    localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
+    localStorage.setItem(storageKeyFor('manage-images', 1), '200')
+
+    const { result } = renderHook(() => useRowsPerPagePreference('manage-images'))
+
+    expect(result.current[0]).toBe(200)
+  })
+
   it('persists changes to localStorage', () => {
     localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
 

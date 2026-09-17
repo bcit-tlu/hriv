@@ -384,7 +384,7 @@ M images> / Empty` format used on category tiles.
   localStorage (`useRowsPerPagePreference`), in the same style as table column
   visibility and filter preferences, so navigating away to an image and back
   keeps the chosen page size. The People page table persists its rows-per-page
-  the same way.
+  the same way. Available options are 5, 10, 25, 50, 100, and 200 rows.
 - **Auto-refresh:** `ManagePage` reloads (`loadImages`) whenever the
   `imagesVersion` prop changes. **Given** a bulk import job completes, **When**
   the app bumps `imagesVersion`, **Then** the table re-fetches so newly imported
