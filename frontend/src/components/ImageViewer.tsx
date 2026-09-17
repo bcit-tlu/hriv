@@ -586,6 +586,18 @@ export default function ImageViewer({
 
     const selectionTracker = new OpenSeadragon.MouseTracker({
       element: viewer.element,
+      // CanvasOverlay portals its UI (edit toolbar, link annotations, fabric
+      // canvas) into viewer.container, inside this tracker's element. Without
+      // this guard the tracker would capture every such press to
+      // viewer.element — retargeting pointerup/click away from the real target
+      // — and preventDefault the pointerdown, which suppresses focus and
+      // breaks the toolbar's arrow-key nudge. preventGesture skips both.
+      preProcessEventHandler: (event: OpenSeadragon.PreProcessMouseTrackerEvent) => {
+        const target = event.originalEvent?.target
+        if (target instanceof Element && target.closest('[data-hriv-canvas-ui]')) {
+          event.preventGesture = true
+        }
+      },
       pressHandler: (event: OpenSeadragon.MouseTrackerEvent) => {
         if (!selectionModeRef.current || !event.position) return
         const overlayElement = document.createElement('div')
@@ -772,7 +784,7 @@ export default function ImageViewer({
           setCanvasEditMode(entering)
           viewer.setMouseNavEnabled(!entering)
           onCanvasEditModeChangeRef.current?.(entering)
-          canvasEditButton.element.style.outline = entering ? '2px solid #2196F3' : 'none'
+          canvasEditButton.element.style.outline = entering ? '2px solid red' : 'none'
           canvasEditButton.element.style.outlineOffset = entering ? '-2px' : ''
         },
       })
@@ -783,7 +795,7 @@ export default function ImageViewer({
 
       // Allow external code (e.g. CanvasOverlay "Done" button) to update the button outline
       updateCanvasEditUiRef.current = (active: boolean) => {
-        canvasEditButton.element.style.outline = active ? '2px solid #2196F3' : 'none'
+        canvasEditButton.element.style.outline = active ? '2px solid red' : 'none'
         canvasEditButton.element.style.outlineOffset = active ? '-2px' : ''
       }
     }
@@ -819,6 +831,20 @@ export default function ImageViewer({
     magBadge.style.display = 'none'
     if (viewer.navigator) {
       viewer.navigator.element.appendChild(magBadge)
+    }
+
+    // OSD wraps each control in an inline-block wrapper that sits on a text
+    // baseline; the line-box strut leaves a few px of dead space under the
+    // bottom-anchored chrome. Bottom-align every element in the bottom docks so
+    // the toolbar and navigator sit flush with the bottom edge of the frame.
+    let navigatorAnchor: HTMLElement | null = viewer.navigator?.element ?? null
+    while (navigatorAnchor && navigatorAnchor.parentElement !== viewer.container) {
+      navigatorAnchor = navigatorAnchor.parentElement
+    }
+    for (const dock of [toolbarAnchor, navigatorAnchor]) {
+      dock?.querySelectorAll<HTMLElement>('*').forEach((el) => {
+        el.style.verticalAlign = 'bottom'
+      })
     }
 
     const updateMagnification = () => {

@@ -15,10 +15,11 @@
  * the suite runs in jsdom without a real canvas.
  */
 
-import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest'
-import { render, screen, act } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest'
+import { render, screen, act, fireEvent, waitFor } from '@testing-library/react'
 import * as fabric from 'fabric'
 import type { CanvasAnnotation } from '../../src/components/CanvasOverlay'
+import { clearDraggablePositionCache } from '../../src/useDraggablePosition'
 
 // ---------------------------------------------------------------------------
 // Mocks — fabric.js and OpenSeadragon rely on native canvas / WebGL, so we
@@ -91,6 +92,11 @@ vi.mock('fabric', () => {
     this.hoverCursor = 'default'
     this.width = 800
     this.height = 600
+    this.setDimensions = vi.fn((dims: { width?: number; height?: number }) => {
+      if (dims.width != null) this.width = dims.width
+      if (dims.height != null) this.height = dims.height
+    })
+    this.calcOffset = vi.fn()
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function FabricPoint(this: any, x: number, y: number) {
@@ -151,6 +157,7 @@ vi.mock('fabric', () => {
     obj.getX = vi.fn(() => obj.getPointByOrigin(obj.originX ?? 'center', 'center').x)
     obj.getY = vi.fn(() => obj.getPointByOrigin('center', obj.originY ?? 'center').y)
     obj.calcTransformMatrix = vi.fn(() => objectMatrix(obj))
+    obj.setCoords = vi.fn()
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function FabricRect(this: any, options: Record<string, unknown> = {}) {
@@ -218,8 +225,14 @@ vi.mock('fabric', () => {
     Object.assign(this, options)
     this.text = text
     this.set = vi.fn((values: Record<string, unknown>) => Object.assign(this, values))
+    this.isEditing = false
+    this.selectionStart = 0
+    this.selectionEnd = 0
     this.exitEditing = vi.fn(() => {
       this.isEditing = false
+    })
+    this.enterEditing = vi.fn(() => {
+      this.isEditing = true
     })
     this.controls = createObjectDefaultControls()
     installObjectGeometry(this)
@@ -280,6 +293,14 @@ vi.mock('fabric', () => {
       })
     })
     this.getObjects = vi.fn(() => this.objects)
+    this.set = vi.fn((keyOrValues: string | Record<string, unknown>, value?: unknown) => {
+      if (typeof keyOrValues === 'string') {
+        this[keyOrValues] = value
+      } else {
+        Object.assign(this, keyOrValues)
+      }
+      return this
+    })
     this.restoreObjects = vi.fn(() => {
       this.objects.forEach((obj: { left?: number; top?: number }, index: number) => {
         Object.assign(obj, this.absolutePositions[index])
@@ -352,16 +373,37 @@ describe('wrapCanvasText', () => {
 
 /** Build a minimal mock OpenSeadragon.Viewer for component props */
 function mockViewer() {
-  return {
-    container: { clientWidth: 800, clientHeight: 600 },
+  // CanvasOverlay portals its output into viewer.container, so the container
+  // must be a real element attached to the document for queries to find it.
+  const container = document.createElement('div')
+  container.className = 'openseadragon-container'
+  document.body.appendChild(container)
+  Object.defineProperty(container, 'clientWidth', { value: 800, configurable: true })
+  Object.defineProperty(container, 'clientHeight', { value: 600, configurable: true })
+  const handlers = new Map<string, Array<(event?: unknown) => void>>()
+  const viewer = {
+    container,
     viewport: {
       pixelFromPoint: vi.fn(() => ({ x: 100, y: 100 })),
       pointFromPixel: vi.fn(() => ({ x: 0.1, y: 0.1 })),
       getZoom: vi.fn(() => 1),
     },
-    addHandler: vi.fn(),
-    removeHandler: vi.fn(),
-  } as unknown as Parameters<typeof CanvasOverlay>[0]['viewer']
+    addHandler: vi.fn((event: string, handler: (event?: unknown) => void) => {
+      handlers.set(event, [...(handlers.get(event) ?? []), handler])
+    }),
+    removeHandler: vi.fn((event: string, handler: (event?: unknown) => void) => {
+      handlers.set(
+        event,
+        (handlers.get(event) ?? []).filter((h) => h !== handler),
+      )
+    }),
+    fire: (event: string, payload?: unknown) => {
+      for (const handler of handlers.get(event) ?? []) handler(payload)
+    },
+  }
+  return viewer as unknown as Parameters<typeof CanvasOverlay>[0]['viewer'] & {
+    fire: (event: string, payload?: unknown) => void
+  }
 }
 
 /** Factory for a sample annotation */
@@ -382,6 +424,20 @@ function makeAnnotation(overrides: Partial<CanvasAnnotation> = {}): CanvasAnnota
 // Tests
 // ---------------------------------------------------------------------------
 
+// jsdom lacks ResizeObserver. This fake delivers the initial notification
+// synchronously on observe() (per spec), then lets tests trigger further
+// deliveries via resizeObserveCallback.
+let resizeObserveCallback: ResizeObserverCallback | null = null
+class FakeResizeObserver {
+  constructor(private cb: ResizeObserverCallback) {}
+  observe() {
+    resizeObserveCallback = this.cb
+    this.cb([], this as unknown as ResizeObserver)
+  }
+  unobserve() {}
+  disconnect() {}
+}
+
 describe('CanvasOverlay', () => {
   let viewer: ReturnType<typeof mockViewer>
   const noop = vi.fn()
@@ -389,11 +445,22 @@ describe('CanvasOverlay', () => {
   beforeEach(() => {
     viewer = mockViewer()
     vi.clearAllMocks()
+    clearDraggablePositionCache()
+    resizeObserveCallback = null
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver)
+    // jsdom does not register active pointers; stub capture so drag handling works
+    Element.prototype.setPointerCapture = vi.fn()
+    Element.prototype.releasePointerCapture = vi.fn()
     // Flush requestAnimationFrame synchronously so link-box useEffect completes
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
       cb(0)
       return 0
     })
+  })
+
+  afterEach(() => {
+    viewer.container.remove()
+    vi.unstubAllGlobals()
   })
 
   // ─── Null / empty renders ───────────────────────────────────────────
@@ -419,7 +486,7 @@ describe('CanvasOverlay', () => {
   describe('view mode', () => {
     it('renders a view canvas when annotations are present', () => {
       const annotations: CanvasAnnotation[] = [makeAnnotation()]
-      const { container } = render(
+      render(
         <CanvasOverlay
           viewer={viewer}
           annotations={annotations}
@@ -429,7 +496,7 @@ describe('CanvasOverlay', () => {
           onEditModeChange={noop}
         />,
       )
-      const canvas = container.querySelector('canvas')
+      const canvas = viewer.container.querySelector('canvas')
       expect(canvas).toBeInTheDocument()
     })
 
@@ -492,7 +559,7 @@ describe('CanvasOverlay', () => {
     })
 
     it('renders a canvas element for fabric.js', () => {
-      const { container } = render(
+      render(
         <CanvasOverlay
           viewer={viewer}
           annotations={[]}
@@ -502,7 +569,7 @@ describe('CanvasOverlay', () => {
           onEditModeChange={noop}
         />,
       )
-      const canvases = container.querySelectorAll('canvas')
+      const canvases = viewer.container.querySelectorAll('canvas')
       expect(canvases.length).toBeGreaterThanOrEqual(1)
     })
 
@@ -536,11 +603,47 @@ describe('CanvasOverlay', () => {
         guides.map((guide: { _annotationGuideFor: string }) => guide._annotationGuideFor),
       ).toEqual(['rect-guide', 'text-guide'])
       for (const guide of guides) {
+        expect(guide.stroke).toBe('#000000')
+        expect(guide.strokeWidth).toBe(2.5)
         expect(guide.strokeDashArray).toEqual([5, 3])
         expect(guide.selectable).toBe(false)
         expect(guide.evented).toBe(false)
         expect(guide.excludeFromExport).toBe(true)
       }
+    })
+
+    it('aligns the dashed guide with the annotation stroked bounds', () => {
+      render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[makeAnnotation({ id: 'guided', type: 'rect' })]}
+          onAnnotationsChange={noop}
+          canEdit={true}
+          editMode={true}
+          onEditModeChange={noop}
+        />,
+      )
+
+      const fc = fabricTestState.canvases.at(-1)
+      const annotation = fc
+        .getObjects()
+        .find((obj: { _annotationId?: string }) => obj._annotationId === 'guided')
+      const guide = fc
+        .getObjects()
+        .find((obj: { _annotationGuideFor?: string }) => obj._annotationGuideFor === 'guided')
+
+      // The guide is centred on the object and expanded by the rendered
+      // stroke, so its dashed outline wraps the painted edge.
+      const sw = annotation.strokeWidth ?? 0
+      const centre = (o: {
+        getPointByOrigin: (x: string, y: string) => { x: number; y: number }
+      }) => o.getPointByOrigin('center', 'center')
+      expect(centre(guide).x).toBeCloseTo(centre(annotation).x)
+      expect(centre(guide).y).toBeCloseTo(centre(annotation).y)
+      const guideTL = guide.getPointByOrigin('left', 'top')
+      expect(guideTL.x).toBeLessThanOrEqual((annotation.left ?? 0) - sw / 2 + 0.001)
+      expect(guideTL.y).toBeLessThanOrEqual((annotation.top ?? 0) - sw / 2 + 0.001)
+      expect(guide.stroke).toBe('#000000')
     })
 
     it('removes guides from selected annotations while preserving guides on unselected ones', () => {
@@ -611,14 +714,16 @@ describe('CanvasOverlay', () => {
         fc
           .getObjects()
           .find((obj: { _annotationGuideFor?: string }) => obj._annotationGuideFor === 'moving')
+      const centreX = (obj: { getPointByOrigin: (x: string, y: string) => { x: number } }) =>
+        obj.getPointByOrigin('center', 'center').x
 
-      expect(guide()?.left).toBe(annotation.left)
+      expect(centreX(guide()!)).toBeCloseTo(centreX(annotation))
       annotation.set({ left: 240 })
       act(() => {
         fc.fire('object:moving', { target: annotation })
       })
 
-      expect(guide()?.left).toBe(240)
+      expect(centreX(guide()!)).toBeCloseTo(centreX(annotation))
     })
 
     it('omits presentation guides from saved annotation snapshots', async () => {
@@ -680,6 +785,82 @@ describe('CanvasOverlay', () => {
       })
 
       expect(onAnnotationsChange).toHaveBeenLastCalledWith([])
+    })
+
+    const SELECTION_STYLE = {
+      borderColor: '#000000',
+      borderScaleFactor: 2,
+      cornerColor: '#263238',
+      cornerStrokeColor: '#ffffff',
+      cornerSize: 10,
+      transparentCorners: false,
+    }
+
+    it('applies the dark selection styling to loaded annotation objects', () => {
+      render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[makeAnnotation({ id: 'styled-rect', type: 'rect' })]}
+          onAnnotationsChange={noop}
+          canEdit={true}
+          editMode={true}
+          onEditModeChange={noop}
+        />,
+      )
+
+      const fc = fabricTestState.canvases.at(-1)
+      const obj = fc
+        .getObjects()
+        .find((o: { _annotationId?: string }) => o._annotationId === 'styled-rect')
+      expect(obj).toMatchObject(SELECTION_STYLE)
+    })
+
+    it('applies the dark selection styling to objects drawn during the session', () => {
+      render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[]}
+          onAnnotationsChange={noop}
+          canEdit={true}
+          editMode={true}
+          onEditModeChange={noop}
+        />,
+      )
+      fireEvent.click(screen.getByLabelText('Rectangle'))
+      fireEvent.click(screen.getByLabelText('Outlined Rectangle'))
+
+      const fc = fabricTestState.canvases.at(-1) as {
+        objects: Array<Record<string, unknown>>
+        fire: (event: string, payload?: unknown) => void
+        getScenePoint: Mock
+      }
+      fc.getScenePoint.mockReturnValueOnce({ x: 10, y: 10 }).mockReturnValue({ x: 60, y: 40 })
+      act(() => fc.fire('mouse:down', { e: {} }))
+      act(() => fc.fire('mouse:move', { e: {} }))
+      act(() => fc.fire('mouse:up', { e: {} }))
+
+      const drawn = fc.objects.find((o) => o._annotationType === 'rect')
+      expect(drawn).toMatchObject({ selectable: true, ...SELECTION_STYLE })
+    })
+
+    it('applies the dark selection styling to toolbar-created text annotations', () => {
+      render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[]}
+          onAnnotationsChange={noop}
+          canEdit={true}
+          editMode={true}
+          onEditModeChange={noop}
+        />,
+      )
+      fireEvent.click(screen.getByLabelText('Add Text'))
+
+      const fc = fabricTestState.canvases.at(-1)
+      const text = fc
+        .getObjects()
+        .find((o: { _annotationType?: string }) => o._annotationType === 'text')
+      expect(text).toMatchObject(SELECTION_STYLE)
     })
 
     it('creates text annotations as textboxes with independent dimension controls', () => {
@@ -1199,6 +1380,217 @@ describe('CanvasOverlay', () => {
     })
   })
 
+  // ─── Draggable toolbar ─────────────────────────────────────────────
+
+  describe('draggable toolbar', () => {
+    const renderEditMode = (props: Record<string, unknown> = {}) =>
+      render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[]}
+          onAnnotationsChange={noop}
+          canEdit={true}
+          editMode={true}
+          onEditModeChange={noop}
+          {...props}
+        />,
+      )
+
+    const getToolbar = () =>
+      screen.getByLabelText('Move annotation toolbar').parentElement as HTMLElement
+
+    it('portals the toolbar into the OSD container, flush top and centred', () => {
+      renderEditMode()
+      const toolbar = getToolbar()
+      expect(viewer.container.contains(toolbar)).toBe(true)
+      expect(toolbar).toHaveStyle({ top: '0px', left: '50%', transform: 'translateX(-50%)' })
+    })
+
+    it('wraps the portaled UI in the marker the selection tracker checks for', () => {
+      // ImageViewer's selection tracker skips capture/preventDefault for
+      // events inside [data-hriv-canvas-ui]; without the marker on the portal
+      // root the toolbar buttons would be left inert.
+      renderEditMode()
+      const marker = getToolbar().closest('[data-hriv-canvas-ui]')
+      expect(marker).not.toBeNull()
+      expect(viewer.container.contains(marker)).toBe(true)
+    })
+
+    it('renders the drag handle with an accessible label', () => {
+      renderEditMode()
+      const handle = screen.getByLabelText('Move annotation toolbar')
+      expect(handle).toBeInTheDocument()
+      expect(handle).toHaveStyle({ touchAction: 'none' })
+    })
+
+    it('moves the toolbar on pointer drag and clamps inside the viewer', () => {
+      renderEditMode()
+      const handle = screen.getByLabelText('Move annotation toolbar')
+      const toolbar = getToolbar()
+      Object.defineProperty(toolbar, 'offsetWidth', { value: 300, configurable: true })
+      Object.defineProperty(toolbar, 'offsetHeight', { value: 40, configurable: true })
+
+      fireEvent.pointerDown(handle, { pointerId: 1, button: 0, clientX: 400, clientY: 20 })
+      fireEvent.pointerMove(handle, { pointerId: 1, clientX: 450, clientY: 80 })
+      expect(toolbar).toHaveStyle({ left: '50px', top: '60px', transform: 'none' })
+
+      // Drag past the bottom-right corner — clamps to the 800x600 container
+      fireEvent.pointerMove(handle, { pointerId: 1, clientX: 900, clientY: 800 })
+      expect(toolbar).toHaveStyle({ left: '500px', top: '560px' })
+      fireEvent.pointerUp(handle, { pointerId: 1 })
+    })
+
+    it('nudges the toolbar with arrow keys and resets on Home/double-click', () => {
+      renderEditMode()
+      const handle = screen.getByLabelText('Move annotation toolbar')
+      const toolbar = getToolbar()
+
+      fireEvent.keyDown(handle, { key: 'ArrowRight' })
+      expect(toolbar).toHaveStyle({ left: '8px', top: '0px' })
+
+      fireEvent.keyDown(handle, { key: 'ArrowDown', shiftKey: true })
+      expect(toolbar).toHaveStyle({ top: '32px' })
+
+      fireEvent.keyDown(handle, { key: 'Home' })
+      expect(toolbar).toHaveStyle({ left: '50%' })
+
+      fireEvent.keyDown(handle, { key: 'ArrowLeft' })
+      expect(toolbar).toHaveStyle({ left: '0px' })
+      fireEvent.doubleClick(handle)
+      expect(toolbar).toHaveStyle({ left: '50%' })
+    })
+
+    it('restores the dragged position after leaving and re-entering edit mode', () => {
+      const utils = renderEditMode()
+      const handle = screen.getByLabelText('Move annotation toolbar')
+      fireEvent.pointerDown(handle, { pointerId: 1, button: 0, clientX: 100, clientY: 20 })
+      fireEvent.pointerMove(handle, { pointerId: 1, clientX: 150, clientY: 80 })
+      fireEvent.pointerUp(handle, { pointerId: 1 })
+      expect(getToolbar()).toHaveStyle({ left: '50px' })
+
+      utils.rerender(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[]}
+          onAnnotationsChange={noop}
+          canEdit={true}
+          editMode={false}
+          onEditModeChange={noop}
+        />,
+      )
+      expect(screen.queryByLabelText('Move annotation toolbar')).not.toBeInTheDocument()
+
+      utils.rerender(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[]}
+          onAnnotationsChange={noop}
+          canEdit={true}
+          editMode={true}
+          onEditModeChange={noop}
+        />,
+      )
+      const remounted = getToolbar()
+      expect(remounted).toHaveStyle({ left: '50px', top: '60px' })
+    })
+
+    it('closes an open submenu when a drag starts', async () => {
+      renderEditMode()
+      fireEvent.click(screen.getByLabelText('Rectangle'))
+      expect(await screen.findByLabelText('Outlined Rectangle')).toBeInTheDocument()
+
+      const handle = screen.getByLabelText('Move annotation toolbar')
+      fireEvent.pointerDown(handle, { pointerId: 1, button: 0, clientX: 10, clientY: 10 })
+      // The popover unmounts after its exit transition
+      await waitFor(() =>
+        expect(screen.queryByLabelText('Outlined Rectangle')).not.toBeInTheDocument(),
+      )
+      fireEvent.pointerUp(handle, { pointerId: 1 })
+    })
+
+    it('closes popovers when the viewer enters full-page mode', async () => {
+      renderEditMode()
+      fireEvent.click(screen.getByLabelText('Rectangle'))
+      expect(await screen.findByLabelText('Outlined Rectangle')).toBeInTheDocument()
+
+      act(() => viewer.fire('full-page', { fullPage: true }))
+      await waitFor(() =>
+        expect(screen.queryByLabelText('Outlined Rectangle')).not.toBeInTheDocument(),
+      )
+    })
+
+    it('re-projects the fabric canvas when the viewer resizes during edit mode', () => {
+      renderEditMode({ annotations: [makeAnnotation()] })
+      const canvas = fabricTestState.canvases.at(-1) as {
+        setDimensions: Mock
+        calcOffset: Mock
+        add: Mock
+        objects: unknown[]
+      }
+      canvas.add.mockClear()
+
+      Object.defineProperty(viewer.container, 'clientWidth', {
+        value: 1024,
+        configurable: true,
+      })
+      Object.defineProperty(viewer.container, 'clientHeight', {
+        value: 768,
+        configurable: true,
+      })
+      // Deliver a container-resize notification; the rAF mock flushes the
+      // reprojection synchronously.
+      act(() => {
+        resizeObserveCallback?.([], {} as ResizeObserver)
+      })
+
+      expect(canvas.setDimensions).toHaveBeenCalledWith({ width: 1024, height: 768 })
+      expect(canvas.calcOffset).toHaveBeenCalled()
+      // The existing annotation is re-projected and re-added at the new size
+      expect(
+        (canvas.objects as Array<{ _annotationType?: string }>).some(
+          (o) => o._annotationType === 'rect',
+        ),
+      ).toBe(true)
+    })
+
+    it('restores the active text-editing session across a resize reprojection', () => {
+      renderEditMode({
+        annotations: [makeAnnotation({ id: 'txt-1', type: 'text', text: 'hello' })],
+      })
+      const canvas = fabricTestState.canvases.at(-1) as {
+        objects: Array<{
+          _annotationId?: string
+          isEditing: boolean
+          selectionStart: number
+          selectionEnd: number
+          enterEditing: Mock
+        }>
+        setActiveObject: Mock
+        getActiveObject: Mock
+      }
+      const original = canvas.objects.find((o) => o._annotationId === 'txt-1')
+      expect(original).toBeTruthy()
+      // Simulate an in-progress edit with a selection range
+      original!.isEditing = true
+      original!.selectionStart = 1
+      original!.selectionEnd = 4
+      canvas.setActiveObject(original)
+
+      act(() => {
+        resizeObserveCallback?.([], {} as ResizeObserver)
+      })
+
+      const recreated = canvas.objects.find((o) => o._annotationId === 'txt-1')
+      expect(recreated).toBeTruthy()
+      expect(recreated).not.toBe(original)
+      expect(recreated!.enterEditing).toHaveBeenCalled()
+      expect(recreated!.isEditing).toBe(true)
+      expect(recreated!.selectionStart).toBe(1)
+      expect(recreated!.selectionEnd).toBe(4)
+      expect(canvas.getActiveObject()).toBe(recreated)
+    })
+  })
+
   // ─── Link URL sanitization (XSS prevention) ────────────────────────
 
   describe('link URL sanitization', () => {
@@ -1231,7 +1623,7 @@ describe('CanvasOverlay', () => {
     }
 
     it('renders an anchor for https:// link annotations in view mode', () => {
-      const { container } = renderWithLinks([
+      renderWithLinks([
         makeAnnotation({
           id: 'link-safe',
           type: 'link',
@@ -1240,14 +1632,14 @@ describe('CanvasOverlay', () => {
           vpFontSize: 0.02,
         }),
       ])
-      const anchor = container.querySelector('a[href="https://example.com"]')
+      const anchor = viewer.container.querySelector('a[href="https://example.com"]')
       expect(anchor).toBeInTheDocument()
       expect(anchor?.getAttribute('target')).toBe('_blank')
       expect(anchor?.getAttribute('rel')).toContain('noopener')
     })
 
     it('renders an anchor for http:// link annotations in view mode', () => {
-      const { container } = renderWithLinks([
+      renderWithLinks([
         makeAnnotation({
           id: 'link-http',
           type: 'link',
@@ -1256,12 +1648,12 @@ describe('CanvasOverlay', () => {
           vpFontSize: 0.02,
         }),
       ])
-      const anchor = container.querySelector('a[href="http://example.com"]')
+      const anchor = viewer.container.querySelector('a[href="http://example.com"]')
       expect(anchor).toBeInTheDocument()
     })
 
     it('does NOT render an anchor for javascript: protocol links', () => {
-      const { container } = renderWithLinks([
+      renderWithLinks([
         makeAnnotation({
           id: 'link-xss',
           type: 'link',
@@ -1270,12 +1662,12 @@ describe('CanvasOverlay', () => {
           vpFontSize: 0.02,
         }),
       ])
-      const anchor = container.querySelector('a')
+      const anchor = viewer.container.querySelector('a')
       expect(anchor).not.toBeInTheDocument()
     })
 
     it('does NOT render an anchor for data: protocol links', () => {
-      const { container } = renderWithLinks([
+      renderWithLinks([
         makeAnnotation({
           id: 'link-data',
           type: 'link',
@@ -1284,12 +1676,12 @@ describe('CanvasOverlay', () => {
           vpFontSize: 0.02,
         }),
       ])
-      const anchor = container.querySelector('a')
+      const anchor = viewer.container.querySelector('a')
       expect(anchor).not.toBeInTheDocument()
     })
 
     it('does NOT render an anchor for empty URL', () => {
-      const { container } = renderWithLinks([
+      renderWithLinks([
         makeAnnotation({
           id: 'link-empty',
           type: 'link',
@@ -1298,12 +1690,12 @@ describe('CanvasOverlay', () => {
           vpFontSize: 0.02,
         }),
       ])
-      const anchor = container.querySelector('a')
+      const anchor = viewer.container.querySelector('a')
       expect(anchor).not.toBeInTheDocument()
     })
 
     it('renders only safe links among mixed annotations', () => {
-      const { container } = renderWithLinks([
+      renderWithLinks([
         makeAnnotation({ id: 'r1', type: 'rect' }),
         makeAnnotation({ id: 'c1', type: 'circle' }),
         makeAnnotation({
@@ -1321,7 +1713,7 @@ describe('CanvasOverlay', () => {
           vpFontSize: 0.02,
         }),
       ])
-      const anchors = container.querySelectorAll('a')
+      const anchors = viewer.container.querySelectorAll('a')
       expect(anchors).toHaveLength(1)
       expect(anchors[0].getAttribute('href')).toBe('https://example.com')
     })

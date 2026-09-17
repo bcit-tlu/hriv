@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.59.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.58.0...backend-v0.59.0) (2026-09-17)
+
+
+### Features
+
+* **jobs:** expose durable parallel tile-rebuild controls to admins ([#1310](https://github.com/bcit-tlu/hriv/issues/1310)) ([50a8147](https://github.com/bcit-tlu/hriv/commit/50a8147fb75ff9bf3ba6ad1c0a66ad40a4e4f17a))
+
 ## [0.58.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.57.0...backend-v0.58.0) (2026-09-15)
 
 
