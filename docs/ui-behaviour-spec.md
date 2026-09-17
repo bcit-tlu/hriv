@@ -97,10 +97,11 @@ images> / Empty` format used on category tiles.
   Fabric objects use the solid selection border with visible handles while
   unselected annotations retain their dotted boxes. Presentation guides are not
   persisted in `metadata_extra.canvas_annotations`. The selection chrome
-  (`ANNOTATION_SELECTION_STYLE` in `CanvasOverlay.tsx`: `#263238` border and
-  filled corner handles with a white stroke) is applied to every annotation
-  object — loaded, drawn, pasted, or toolbar-created — so selected objects
-  stay legible over imagery.
+  (`ANNOTATION_SELECTION_STYLE` in `CanvasOverlay.tsx`: 2px black border,
+  filled `#263238` corner handles with a white stroke) is applied to every
+  annotation object — loaded, drawn, pasted, or toolbar-created — so selected
+  objects stay legible over imagery. The dashed guides are black and wrap the
+  annotation's painted bounds including its stroke.
 - The canvas annotation toolbar starts flush against the top of the viewer
   frame, horizontally centred. Its left-edge grip handle moves it anywhere
   inside the frame: drag with a pointer (grab/grabbing cursor,

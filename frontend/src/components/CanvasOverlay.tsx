@@ -87,7 +87,8 @@ const DEFAULT_LINK_TEXTBOX_WIDTH = 240
  * faint against image content.
  */
 const ANNOTATION_SELECTION_STYLE = {
-  borderColor: '#263238',
+  borderColor: '#000000',
+  borderScaleFactor: 2,
   cornerColor: '#263238',
   cornerStrokeColor: '#ffffff',
   cornerSize: 10,
@@ -211,17 +212,25 @@ function createAnnotationGuide(obj: AnnotatedObject): fabric.Rect | null {
   if (!obj._annotationId) return null
 
   const { width, height } = annotationObjectDimensions(obj)
+  // Expand the guide by the object's rendered stroke so the dashed box wraps
+  // the visible annotation edge rather than sitting inside it. Centre-origin
+  // placement keeps the guide aligned when the object is rotated (the source
+  // object's left/top are post-rotation origin coordinates).
+  const sw = obj.stroke ? (obj.strokeWidth ?? 0) : 0
+  const swX = obj.strokeUniform ? sw : sw * Math.abs(obj.scaleX ?? 1)
+  const swY = obj.strokeUniform ? sw : sw * Math.abs(obj.scaleY ?? 1)
+  const centre = obj.getPointByOrigin('center', 'center')
   const guide = new fabric.Rect({
-    originX: 'left',
-    originY: 'top',
-    left: obj.left ?? 0,
-    top: obj.top ?? 0,
-    width,
-    height,
+    originX: 'center',
+    originY: 'center',
+    left: centre.x,
+    top: centre.y,
+    width: width + swX,
+    height: height + swY,
     angle: obj.angle ?? 0,
     fill: 'transparent',
-    stroke: '#455a64',
-    strokeWidth: 1.5,
+    stroke: '#000000',
+    strokeWidth: 2.5,
     strokeDashArray: [5, 3],
     strokeUniform: true,
     selectable: false,
@@ -980,8 +989,8 @@ export default function CanvasOverlay({
       height: h,
       selection: true,
     })
-    fc.selectionBorderColor = '#263238'
-    fc.selectionLineWidth = 2
+    fc.selectionBorderColor = '#000000'
+    fc.selectionLineWidth = 3
     fabricCanvasRef.current = fc
 
     for (const ann of annotationsRef.current) {
@@ -1106,6 +1115,12 @@ export default function CanvasOverlay({
     fc.on('text:editing:exited', handleTextEditingExited)
 
     const handleSelectionChanged = () => {
+      // The multi-select group box is created internally by fabric and keeps
+      // its faint default chrome — restyle it to match single-object borders.
+      const active = fc.getActiveObject()
+      if (active instanceof fabric.ActiveSelection) {
+        active.set(ANNOTATION_SELECTION_STYLE)
+      }
       refreshBoundingGuides(fc)
       fc.renderAll()
     }

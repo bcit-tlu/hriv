@@ -293,6 +293,14 @@ vi.mock('fabric', () => {
       })
     })
     this.getObjects = vi.fn(() => this.objects)
+    this.set = vi.fn((keyOrValues: string | Record<string, unknown>, value?: unknown) => {
+      if (typeof keyOrValues === 'string') {
+        this[keyOrValues] = value
+      } else {
+        Object.assign(this, keyOrValues)
+      }
+      return this
+    })
     this.restoreObjects = vi.fn(() => {
       this.objects.forEach((obj: { left?: number; top?: number }, index: number) => {
         Object.assign(obj, this.absolutePositions[index])
@@ -595,11 +603,47 @@ describe('CanvasOverlay', () => {
         guides.map((guide: { _annotationGuideFor: string }) => guide._annotationGuideFor),
       ).toEqual(['rect-guide', 'text-guide'])
       for (const guide of guides) {
+        expect(guide.stroke).toBe('#000000')
+        expect(guide.strokeWidth).toBe(2.5)
         expect(guide.strokeDashArray).toEqual([5, 3])
         expect(guide.selectable).toBe(false)
         expect(guide.evented).toBe(false)
         expect(guide.excludeFromExport).toBe(true)
       }
+    })
+
+    it('aligns the dashed guide with the annotation stroked bounds', () => {
+      render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[makeAnnotation({ id: 'guided', type: 'rect' })]}
+          onAnnotationsChange={noop}
+          canEdit={true}
+          editMode={true}
+          onEditModeChange={noop}
+        />,
+      )
+
+      const fc = fabricTestState.canvases.at(-1)
+      const annotation = fc
+        .getObjects()
+        .find((obj: { _annotationId?: string }) => obj._annotationId === 'guided')
+      const guide = fc
+        .getObjects()
+        .find((obj: { _annotationGuideFor?: string }) => obj._annotationGuideFor === 'guided')
+
+      // The guide is centred on the object and expanded by the rendered
+      // stroke, so its dashed outline wraps the painted edge.
+      const sw = annotation.strokeWidth ?? 0
+      const centre = (o: {
+        getPointByOrigin: (x: string, y: string) => { x: number; y: number }
+      }) => o.getPointByOrigin('center', 'center')
+      expect(centre(guide).x).toBeCloseTo(centre(annotation).x)
+      expect(centre(guide).y).toBeCloseTo(centre(annotation).y)
+      const guideTL = guide.getPointByOrigin('left', 'top')
+      expect(guideTL.x).toBeLessThanOrEqual((annotation.left ?? 0) - sw / 2 + 0.001)
+      expect(guideTL.y).toBeLessThanOrEqual((annotation.top ?? 0) - sw / 2 + 0.001)
+      expect(guide.stroke).toBe('#000000')
     })
 
     it('removes guides from selected annotations while preserving guides on unselected ones', () => {
@@ -670,14 +714,16 @@ describe('CanvasOverlay', () => {
         fc
           .getObjects()
           .find((obj: { _annotationGuideFor?: string }) => obj._annotationGuideFor === 'moving')
+      const centreX = (obj: { getPointByOrigin: (x: string, y: string) => { x: number } }) =>
+        obj.getPointByOrigin('center', 'center').x
 
-      expect(guide()?.left).toBe(annotation.left)
+      expect(centreX(guide()!)).toBeCloseTo(centreX(annotation))
       annotation.set({ left: 240 })
       act(() => {
         fc.fire('object:moving', { target: annotation })
       })
 
-      expect(guide()?.left).toBe(240)
+      expect(centreX(guide()!)).toBeCloseTo(centreX(annotation))
     })
 
     it('omits presentation guides from saved annotation snapshots', async () => {
@@ -742,7 +788,8 @@ describe('CanvasOverlay', () => {
     })
 
     const SELECTION_STYLE = {
-      borderColor: '#263238',
+      borderColor: '#000000',
+      borderScaleFactor: 2,
       cornerColor: '#263238',
       cornerStrokeColor: '#ffffff',
       cornerSize: 10,
