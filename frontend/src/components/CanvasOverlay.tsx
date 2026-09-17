@@ -80,6 +80,20 @@ const MIN_TEXTBOX_WIDTH = 40
 const DEFAULT_TEXTBOX_WIDTH = 180
 const DEFAULT_LINK_TEXTBOX_WIDTH = 240
 
+/**
+ * Selection chrome for editable annotation objects — dark, filled border and
+ * handles that stay legible over imagery. Applied at every creation site:
+ * fabric's defaults (light-blue 1px border, translucent corners) are too
+ * faint against image content.
+ */
+const ANNOTATION_SELECTION_STYLE = {
+  borderColor: '#263238',
+  cornerColor: '#263238',
+  cornerStrokeColor: '#ffffff',
+  cornerSize: 10,
+  transparentCorners: false,
+}
+
 type ArrowStyle = 'none' | 'standard' | 'triangle' | 'circle'
 type FillMode = 'outlined' | 'filled'
 type Tool = 'select' | 'rect' | 'circle' | 'arrow' | 'text' | 'link'
@@ -973,13 +987,7 @@ export default function CanvasOverlay({
     for (const ann of annotationsRef.current) {
       const obj = annotationToFabric(ann)
       if (obj) {
-        obj.set({
-          borderColor: '#263238',
-          cornerColor: '#263238',
-          cornerStrokeColor: '#ffffff',
-          cornerSize: 10,
-          transparentCorners: false,
-        })
+        obj.set(ANNOTATION_SELECTION_STYLE)
         fc.add(obj)
       }
     }
@@ -1057,6 +1065,7 @@ export default function CanvasOverlay({
           }
           const obj = annotationToFabric(shifted)
           if (obj) {
+            obj.set(ANNOTATION_SELECTION_STYLE)
             fc.add(obj)
             newObjs.push(obj)
           }
@@ -1261,7 +1270,7 @@ export default function CanvasOverlay({
       isDrawingRef.current = false
       const obj = drawObjRef.current
       if (obj) {
-        obj.set({ selectable: true, evented: true })
+        obj.set({ selectable: true, evented: true, ...ANNOTATION_SELECTION_STYLE })
         obj.setCoords()
         refreshBoundingGuides(fc)
         if (activeTool === 'rect' || activeTool === 'circle' || activeTool === 'arrow') {
@@ -1354,13 +1363,7 @@ export default function CanvasOverlay({
       for (const ann of annotations) {
         const obj = annotationToFabric(ann)
         if (obj) {
-          obj.set({
-            borderColor: '#263238',
-            cornerColor: '#263238',
-            cornerStrokeColor: '#ffffff',
-            cornerSize: 10,
-            transparentCorners: false,
-          })
+          obj.set(ANNOTATION_SELECTION_STYLE)
           fc.add(obj)
         }
       }
@@ -1455,6 +1458,7 @@ export default function CanvasOverlay({
     const aObj = text as AnnotatedObject
     aObj._annotationId = uid()
     aObj._annotationType = 'text'
+    text.set(ANNOTATION_SELECTION_STYLE)
     fc.add(text)
     fc.setActiveObject(text)
     refreshBoundingGuides(fc)
@@ -1490,6 +1494,7 @@ export default function CanvasOverlay({
     aObj._annotationId = uid()
     aObj._annotationType = 'link'
     aObj._linkUrl = linkUrl
+    text.set(ANNOTATION_SELECTION_STYLE)
     fc.add(text)
     fc.setActiveObject(text)
     refreshBoundingGuides(fc)

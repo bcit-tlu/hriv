@@ -157,6 +157,7 @@ vi.mock('fabric', () => {
     obj.getX = vi.fn(() => obj.getPointByOrigin(obj.originX ?? 'center', 'center').x)
     obj.getY = vi.fn(() => obj.getPointByOrigin('center', obj.originY ?? 'center').y)
     obj.calcTransformMatrix = vi.fn(() => objectMatrix(obj))
+    obj.setCoords = vi.fn()
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function FabricRect(this: any, options: Record<string, unknown> = {}) {
@@ -738,6 +739,81 @@ describe('CanvasOverlay', () => {
       })
 
       expect(onAnnotationsChange).toHaveBeenLastCalledWith([])
+    })
+
+    const SELECTION_STYLE = {
+      borderColor: '#263238',
+      cornerColor: '#263238',
+      cornerStrokeColor: '#ffffff',
+      cornerSize: 10,
+      transparentCorners: false,
+    }
+
+    it('applies the dark selection styling to loaded annotation objects', () => {
+      render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[makeAnnotation({ id: 'styled-rect', type: 'rect' })]}
+          onAnnotationsChange={noop}
+          canEdit={true}
+          editMode={true}
+          onEditModeChange={noop}
+        />,
+      )
+
+      const fc = fabricTestState.canvases.at(-1)
+      const obj = fc
+        .getObjects()
+        .find((o: { _annotationId?: string }) => o._annotationId === 'styled-rect')
+      expect(obj).toMatchObject(SELECTION_STYLE)
+    })
+
+    it('applies the dark selection styling to objects drawn during the session', () => {
+      render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[]}
+          onAnnotationsChange={noop}
+          canEdit={true}
+          editMode={true}
+          onEditModeChange={noop}
+        />,
+      )
+      fireEvent.click(screen.getByLabelText('Rectangle'))
+      fireEvent.click(screen.getByLabelText('Outlined Rectangle'))
+
+      const fc = fabricTestState.canvases.at(-1) as {
+        objects: Array<Record<string, unknown>>
+        fire: (event: string, payload?: unknown) => void
+        getScenePoint: Mock
+      }
+      fc.getScenePoint.mockReturnValueOnce({ x: 10, y: 10 }).mockReturnValue({ x: 60, y: 40 })
+      act(() => fc.fire('mouse:down', { e: {} }))
+      act(() => fc.fire('mouse:move', { e: {} }))
+      act(() => fc.fire('mouse:up', { e: {} }))
+
+      const drawn = fc.objects.find((o) => o._annotationType === 'rect')
+      expect(drawn).toMatchObject({ selectable: true, ...SELECTION_STYLE })
+    })
+
+    it('applies the dark selection styling to toolbar-created text annotations', () => {
+      render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[]}
+          onAnnotationsChange={noop}
+          canEdit={true}
+          editMode={true}
+          onEditModeChange={noop}
+        />,
+      )
+      fireEvent.click(screen.getByLabelText('Add Text'))
+
+      const fc = fabricTestState.canvases.at(-1)
+      const text = fc
+        .getObjects()
+        .find((o: { _annotationType?: string }) => o._annotationType === 'text')
+      expect(text).toMatchObject(SELECTION_STYLE)
     })
 
     it('creates text annotations as textboxes with independent dimension controls', () => {
