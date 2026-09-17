@@ -1391,6 +1391,15 @@ class BackupRunTestCase(_BackupTestCase):
             state["filesystem"]["last_success_archive_key"],
             f"hriv-backups/{result.name}",
         )
+        self.assertIsNotNone(state["database"]["last_success_size_bytes"])
+        self.assertEqual(
+            state["database"]["last_success_size_bytes"],
+            state["filesystem"]["last_success_size_bytes"],
+        )
+        self.assertEqual(
+            marker["types"]["database"]["size_bytes"],
+            marker["types"]["filesystem"]["size_bytes"],
+        )
 
     def test_run_backup_writes_local_manifest_sidecar(self):
         self._reload(
@@ -4942,13 +4951,13 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
                 "success": True,
                 "completed_at": completed,
                 "archive_key": database_key,
-                "size_bytes": None,
+                "size_bytes": len(payload),
                 "started_at": database_started,
                 "duration_seconds": 170.000001,
                 "last_success_started_at": database_started,
                 "last_success_completed_at": completed,
                 "last_success_duration_seconds": 170.000001,
-                "last_success_size_bytes": None,
+                "last_success_size_bytes": len(payload),
                 "last_success_archive_key": database_key,
             },
             "filesystem": {
@@ -5340,6 +5349,39 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
                 result = backup.validation_select(snapshot, container=container)
             self.assertEqual(result["run_id"], "run-1")
             self.assertEqual(result["snapshot_name"], snapshot)
+
+    def test_strict_select_accepts_legacy_none_database_size(self):
+        # Markers published before the database component recorded the shared
+        # archive payload size carry None; they must remain selectable.
+        snapshot, _manifest, _sidecar, blobs, container, _calls = self._fixture()
+        marker_name = "hriv-backups/LAST_SUCCESS.json"
+        state_name = "hriv-backups/BACKUP_STATE.json"
+        marker = json.loads(blobs[marker_name])
+        state = json.loads(blobs[state_name])
+        marker["types"]["database"]["size_bytes"] = None
+        state["database"]["size_bytes"] = None
+        state["database"]["last_success_size_bytes"] = None
+        blobs[marker_name] = json.dumps(marker).encode()
+        blobs[state_name] = json.dumps(state).encode()
+        self.assertTrue(backup.validation_select(snapshot, container=container)["success"])
+
+    def test_strict_select_rejects_non_integer_database_size(self):
+        for bad_size in (float(6), True):
+            snapshot, _manifest, _sidecar, blobs, container, _calls = self._fixture()
+            marker_name = "hriv-backups/LAST_SUCCESS.json"
+            state_name = "hriv-backups/BACKUP_STATE.json"
+            marker = json.loads(blobs[marker_name])
+            state = json.loads(blobs[state_name])
+            marker["types"]["database"]["size_bytes"] = bad_size
+            state["database"]["size_bytes"] = bad_size
+            state["database"]["last_success_size_bytes"] = bad_size
+            blobs[marker_name] = json.dumps(marker).encode()
+            blobs[state_name] = json.dumps(state).encode()
+            with self.subTest(bad_size=bad_size), self.assertRaises(
+                backup.ValidationFailure
+            ) as raised:
+                backup.validation_select(snapshot, container=container)
+            self.assertEqual(raised.exception.code, "COMPONENT_INCOHERENT")
 
     def test_strict_select_rejects_corrupt_component_last_success_fields(self):
         corruptions = {

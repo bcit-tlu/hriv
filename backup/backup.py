@@ -2698,13 +2698,17 @@ def _run_backup_inner() -> Path | None:
                 archive_key=archive_key,
             )
             if BACKUP_MODE == "production":
+                # The database component has no payload of its own: CNPG owns
+                # the database backup and this archive is the recovery-bound
+                # artifact, so report the archive payload size rather than
+                # leaving the database size metric permanently empty.
                 _mark_attempt_finished(
                     backup_state,
                     "database",
                     started_at=db_started_at,
                     completed_at=completed_at,
                     success=True,
-                    size_bytes=None,
+                    size_bytes=manifest["total_bytes"],
                     archive_key=database_archive_key,
                 )
             else:
@@ -3790,6 +3794,20 @@ def validation_list(*, container: _ReadContainer | None = None) -> dict:
     }
 
 
+def _legacy_or_archive_size(value: object, total_bytes: int) -> bool:
+    # Markers written before the database component recorded the shared
+    # archive payload size carry None; new documents carry the integer total.
+    # Membership in ``(None, total)`` is not used because Python equality
+    # would also admit floats and booleans.
+    if value is None:
+        return True
+    return (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and value == total_bytes
+    )
+
+
 def validation_select(
     snapshot_name: str | None = None, *, container: _ReadContainer | None = None
 ) -> dict:
@@ -4027,8 +4045,12 @@ def validation_select(
         filesystem.get("last_success_archive_key") != archive_blob
         or filesystem.get("last_success_size_bytes") != summary["total_bytes"]
         or marker["types"]["filesystem"].get("size_bytes") != summary["total_bytes"]
-        or database.get("last_success_size_bytes") is not None
-        or marker["types"]["database"].get("size_bytes") is not None
+        or not _legacy_or_archive_size(
+            database.get("last_success_size_bytes"), summary["total_bytes"]
+        )
+        or not _legacy_or_archive_size(
+            marker["types"]["database"].get("size_bytes"), summary["total_bytes"]
+        )
         or database.get("last_success_archive_key") != (
             f"cnpg://{manifest['database_recovery']['cluster']}?target_time="
             f"{manifest['database_recovery'].get('target_time')}"
