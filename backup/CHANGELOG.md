@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.15.1...backup-v0.16.0) (2026-09-17)
+
+
+### Features
+
+* **jobs:** instrument durable tile rebuild and add scale fixture ([#1189](https://github.com/bcit-tlu/hriv/issues/1189)) ([#1318](https://github.com/bcit-tlu/hriv/issues/1318)) ([c6faa86](https://github.com/bcit-tlu/hriv/commit/c6faa869bf6129a3fbbd8d685fa411cfbaafd0d3))
+
 ## [0.15.1](https://github.com/bcit-tlu/hriv/compare/backup-v0.15.0...backup-v0.15.1) (2026-09-13)
 
 
