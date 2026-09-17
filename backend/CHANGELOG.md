@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.60.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.59.0...backend-v0.60.0) (2026-09-17)
+
+
+### Features
+
+* **jobs:** instrument durable tile rebuild and add scale fixture ([#1189](https://github.com/bcit-tlu/hriv/issues/1189)) ([#1318](https://github.com/bcit-tlu/hriv/issues/1318)) ([c6faa86](https://github.com/bcit-tlu/hriv/commit/c6faa869bf6129a3fbbd8d685fa411cfbaafd0d3))
+
 ## [0.59.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.58.0...backend-v0.59.0) (2026-09-17)
 
 
