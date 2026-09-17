@@ -47,13 +47,39 @@ rebuild is already active), bounded keyset-paginated item inspection at
 the parallel endpoint only when `GET /api/jobs/rebuild-tiles` reports the
 capability enabled. The serial `AdminTask` endpoint is unchanged.
 
+Issue #1189 added the scale-validation observability contract and rehearsal
+tooling:
+
+- `tile_rebuild_metrics.py` emits `hriv.tile_rebuild.*` OTel instruments
+  (item duration and queue-wait histograms, supervisor duration,
+  cancellation latency, outcome/reason/state-labelled counters for item
+  terminals, retries, timeouts, lease reclaims, pump runs, enqueue failures,
+  and duplicate deliveries) plus PostgreSQL-derived `/api/metrics` gauges
+  for active supervisors, running children, and queued items. Job, item, and
+  source-image IDs stay in structured `rebuild.*` log events and span
+  attributes; metric labels carry only bounded `outcome`/`reason`/`state`
+  values.
+- `rebuild_fixture.py` is a deterministic seeder (`python -m
+app.rebuild_fixture --count N` / `--purge`) that creates N linked
+  completed `SourceImage`/`Image` pairs backed by tiny valid TIFFs under a
+  reserved `TRF-`/`rebuild-fixture` namespace. Cleanup recognizes them by the
+  exact `metadata.rebuild_fixture=true` image marker plus linked source path,
+  never by name or ID range alone. Seeding and purging refuse to run while a
+  rebuild is active so in-flight children never lose their rows or files. It
+  pads an environment to production item count so pump batching, lease churn, and aggregate updates
+  are measured at scale; real throughput percentiles still come from real
+  sources.
+- The production-shaped rehearsal procedure and its measurement record
+  template live in
+  [backup-restore-runbook.md](backup-restore-runbook.md#tile-rebuild-scale-rehearsal).
+
 Current scheduler controls are:
 
 | Setting                         | Default | Purpose                                      |
 | ------------------------------- | ------- | -------------------------------------------- |
 | `REBUILD_PARALLEL_ENABLED`      | `false` | Gates creation of durable parallel rebuilds  |
 | `REBUILD_PARALLELISM`           | `2`     | Independent PostgreSQL-derived child window  |
-| `REBUILD_CHILD_TIMEOUT_SECONDS` | `1800`  | Per-child arq timeout                        |
+| `REBUILD_CHILD_TIMEOUT_SECONDS` | `1800`  | Persisted timeout; maximum 24 hours          |
 | `REBUILD_LEASE_SECONDS`         | `2100`  | Ownership recovery horizon                   |
 | `REBUILD_HEARTBEAT_SECONDS`     | `30`    | Lease renewal cadence during tile generation |
 | `REBUILD_PUMP_CADENCE_SECONDS`  | `60`    | Periodic missed-trigger recovery cadence     |
@@ -61,8 +87,10 @@ Current scheduler controls are:
 `WORKER_MAX_JOBS` remains the worker's overall arq capacity and does not
 silently define rebuild parallelism.
 
-Cancellation/retry controls, public admin creation and item controls, scale
-rehearsal, measurement-based tuning, and default enablement remain later waves.
+Cancellation/retry controls and the public admin creation and item controls
+shipped in #1188/#1191; scale-rehearsal tooling and instrumentation shipped in
+#1189. Measurement-based default tuning and flag-flip rollout complete the
+epic.
 
 ## Problem
 
@@ -139,8 +167,11 @@ each short-lived and independently retryable:
   `SELECT ... FOR UPDATE SKIP LOCKED`, enqueue, repeat). This bounds both
   Redis queue depth and libvips memory/CPU pressure independently of
   `max_jobs`.
-- Child jobs are plain arq functions with a per-image `job_timeout` (e.g.
-  30 min) instead of the batch-wide 2 h bound.
+- Child jobs enforce the persisted per-image timeout (e.g. 30 min) through the
+  durable completion commit so timeouts finalize correctly. Retained-tree
+  cleanup runs after that deadline and cannot reclassify committed success; arq
+  retains a fixed 25-hour safety ceiling above the supported 24-hour child
+  maximum, so rollout setting changes cannot preempt existing jobs.
 - Worker isolation: a crashing/OOMing image kills one child job, not the
   batch. The item is marked `failed` with `attempts` incremented; the
   supervisor continues.

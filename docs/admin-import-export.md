@@ -396,6 +396,23 @@ the flag is off, the button keeps using the serial endpoint and the section
 notes that parallel rebuilds are disabled; already-running durable jobs still
 run to completion.
 
+Durable rebuilds emit the `hriv.tile_rebuild.*` metrics contract and
+`rebuild.*` structured events documented in
+[jobs.md](jobs.md#observability); `/api/metrics` exposes the
+PostgreSQL-derived `hriv_tile_rebuild_jobs_active`,
+`hriv_tile_rebuild_active_children`, and `hriv_tile_rebuild_queued_items`
+gauges. For a production-shaped scale rehearsal, `python -m
+app.rebuild_fixture --count N` seeds deterministic `TRF-` linked sources
+backed by tiny valid TIFFs (`--purge` removes their rows, source files, generated
+tiles, and rebuild temporary trees). Purge and database JSON export identify
+fixtures only through `metadata.rebuild_fixture=true`, the linked source, and its
+confined stored path; user-controlled `TRF-` names or high IDs alone never
+qualify. Fixture seeding/purging refuses to run while a rebuild is active.
+Filesystem exports and scheduled backups use a shared source-volume
+lock and fail closed while the fixture directory exists; the full procedure and
+measurement record live in
+[backup-restore-runbook.md](backup-restore-runbook.md#tile-rebuild-scale-rehearsal-opt-in-issue-1189).
+
 ## Per-file backup restore
 
 The admin area also exposes a manifest-browsing restore flow for restoring a

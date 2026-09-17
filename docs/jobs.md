@@ -124,8 +124,16 @@ Children recheck the authoritative source-image and tile-provenance state after
 reserving execution. Current or superseded targets are skipped. Ready targets
 reuse the same prepare/promote/rollback primitives as the serial rebuild,
 heartbeat their lease during processing, and finalize only with the current
-claim token. Child completion requests another pump after its database
-transaction commits; a periodic worker sweep is the backstop for lost triggers.
+claim token. The persisted child timeout is enforced inside this execution
+boundary so timeout cancellation becomes a durable retry/failure and metric.
+Post-commit retained-tree cleanup runs outside that deadline and cannot turn an
+already-completed item into a worker timeout. Worker-shutdown cancellation is
+propagated only after cancellation-safe cleanup; PostgreSQL remains completed
+and the attempt is not retried. arq keeps a fixed 25-hour safety
+timeout above the supported 24-hour child maximum, independent of rollout
+settings, for stuck cleanup. Child
+completion requests another pump after its database transaction commits; a
+periodic worker sweep is the backstop for lost triggers.
 
 Cancellation and retry requests lock the supervisor before mutating state. A
 cancellation request changes the supervisor to `cancelling` and cancels queued
@@ -148,7 +156,7 @@ The scheduler settings are:
 
 - `REBUILD_PARALLEL_ENABLED=false`
 - `REBUILD_PARALLELISM=2`
-- `REBUILD_CHILD_TIMEOUT_SECONDS=1800`
+- `REBUILD_CHILD_TIMEOUT_SECONDS=1800` (maximum `86400`)
 - `REBUILD_LEASE_SECONDS=2100`
 - `REBUILD_HEARTBEAT_SECONDS=30`
 - `REBUILD_PUMP_CADENCE_SECONDS=60`
@@ -160,6 +168,72 @@ Parallelism is independent of `WORKER_MAX_JOBS`. Heartbeat and child timeout
 must both be shorter than the lease, and pump cadence uses whole-minute
 intervals. PostgreSQL `retry_not_before` timestamps, rather than delayed Redis
 jobs, determine when retry work is claimable.
+
+Two small metadata timestamps drive the latency measurements below:
+
+- `job_items.metadata.claimed_at` — stamped after claim/recovery and aggregate
+  database work, immediately before the claim transaction flushes and commits;
+  the difference to execution reservation is the queue-wait histogram.
+- `jobs.metadata.cancel_requested_at` — set when a cancellation request first
+  moves the supervisor to `cancelling`; the difference to the terminal
+  `cancelled` transition is the cancellation-latency histogram.
+
+## Observability
+
+Issue #1189 added the `hriv.tile_rebuild.*` instrument contract, emitted from
+`tile_rebuild_metrics.py`. Counters and histograms are recorded in whichever
+process runs the code path (the arq worker for pump/child execution, the API
+for creation and cancellation) and exported via OTLP; durable-state gauges are
+rendered at `/api/metrics` from PostgreSQL so worker-side execution is visible
+on the API pod's scrape endpoint.
+
+OTel instruments:
+
+- `hriv.tile_rebuild.item.duration` — histogram (seconds), reservation to
+  terminal outcome per item.
+- `hriv.tile_rebuild.item.queue_wait` — histogram (seconds), claim commit to
+  execution reservation per attempt.
+- `hriv.tile_rebuild.supervisor.duration` — histogram (seconds), supervisor
+  start to terminal status.
+- `hriv.tile_rebuild.cancellation.latency` — histogram (seconds), cancellation
+  request to `cancelled` status.
+- `hriv.tile_rebuild.items.completed` — counter, `outcome` ∈ `completed` |
+  `skipped` | `failed` | `cancelled`.
+- `hriv.tile_rebuild.item.retries` — counter, `reason` ∈ `transient` |
+  `lease_expired` | `dispatch` | `manual`.
+- `hriv.tile_rebuild.item.timeouts` — counter for failures whose exception
+  chain contains a timeout.
+- `hriv.tile_rebuild.lease.reclaims` — counter, `state` ∈ `claimed` |
+  `started` (whether execution had begun when the lease was reclaimed).
+- `hriv.tile_rebuild.pump.runs` — counter, `outcome` ∈ `dispatched` | `idle` |
+  `locked` | `failed`.
+- `hriv.tile_rebuild.enqueue.failures` — counter, `reason` ∈
+  `queue_unavailable` | `submission_error`.
+- `hriv.tile_rebuild.duplicate_deliveries` — counter for deliveries that found
+  their claim already superseded.
+
+`/api/metrics` gauges (PostgreSQL-derived, `NaN` when the read fails):
+
+- `hriv_tile_rebuild_jobs_active` — supervisors in an active state.
+- `hriv_tile_rebuild_active_children` — executing items (`running` with a
+  stamped `started_at`) under active supervisors; this is the effective
+  parallelism gauge.
+- `hriv_tile_rebuild_queued_items` — items under active supervisors that are
+  queued or claimed but not yet delivered (`running` with `started_at`
+  still NULL).
+
+Structured-log events (`rebuild.*`): `rebuild.job_created`,
+`rebuild.job_terminal`, `rebuild.cancel_requested`,
+`rebuild.items_bulk_cancelled`, `rebuild.retry_requested`,
+`rebuild.item_reserved`, `rebuild.item_terminal`,
+`rebuild.leases_reclaimed`, and `rebuild.duplicate_delivery`. Job, item, and
+source-image IDs appear only in these events and in span attributes — never in
+metric labels (see
+[observability-conventions.md](observability-conventions.md)).
+
+Images-per-hour and throughput percentiles are derived dashboard values from
+`hriv.tile_rebuild.item.duration` and the `items.completed` counter rather
+than dedicated instruments.
 
 The existing admin rebuild endpoint and automatic post-import rebuild continue
 to create serial `AdminTask` work. Durable creation requires both

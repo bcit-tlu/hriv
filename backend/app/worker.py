@@ -38,7 +38,11 @@ from opentelemetry.propagate import extract, inject
 from opentelemetry.trace import Status, StatusCode
 
 from .component_versions import get_worker_version
-from .database import async_session, settings
+from .database import (
+    MAX_REBUILD_CHILD_TIMEOUT_SECONDS,
+    async_session,
+    settings,
+)
 from .logging_config import setup_logging
 from .models import ACTIVE_TASK_STATUSES, AdminTask
 from .queue_metrics import (
@@ -47,6 +51,7 @@ from .queue_metrics import (
     HEALTH_CHECK_KEY,
 )
 from .task_constants import WORKER_JOB_TIMEOUT_SECONDS
+from . import tile_rebuild_metrics
 from .tile_rebuild_jobs import (
     TileRebuildDispatch,
     active_tile_rebuild_job_ids,
@@ -56,6 +61,9 @@ from .tile_rebuild_jobs import (
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
+REBUILD_ARQ_SAFETY_TIMEOUT_SECONDS = (
+    MAX_REBUILD_CHILD_TIMEOUT_SECONDS + 3600
+)
 _pool: ArqRedis | None = None
 _pool_creation_locks: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
@@ -307,6 +315,7 @@ async def _submit_tile_rebuild_dispatch(
     """Submit one committed durable claim using its exact arq ID."""
     pool = await get_pool()
     if pool is None:
+        tile_rebuild_metrics.record_enqueue_failure("queue_unavailable")
         return False
     carrier: dict[str, str] = {}
     inject(carrier)
@@ -320,6 +329,7 @@ async def _submit_tile_rebuild_dispatch(
             _job_id=dispatch.arq_job_id,
         )
     except Exception:
+        tile_rebuild_metrics.record_enqueue_failure("submission_error")
         logger.warning(
             "Tile rebuild child queue submission failed",
             exc_info=True,
@@ -341,6 +351,7 @@ async def enqueue_tile_rebuild_pump(
     """Coalesce one pump trigger through arq's deterministic job IDs."""
     pool = await get_pool()
     if pool is None:
+        tile_rebuild_metrics.record_enqueue_failure("queue_unavailable")
         return False
     carrier: dict[str, str] = {}
     inject(carrier)
@@ -352,6 +363,7 @@ async def enqueue_tile_rebuild_pump(
             _job_id=f"rebuild-pump:{job_id}:{trigger_id}",
         )
     except Exception:
+        tile_rebuild_metrics.record_enqueue_failure("submission_error")
         logger.warning(
             "Tile rebuild pump submission failed",
             exc_info=True,
@@ -598,10 +610,20 @@ async def rebuild_tile_item(
             },
         ) as span:
             try:
-                await process_tile_rebuild_item(
+                outcome = await process_tile_rebuild_item(
                     job_id,
                     item_id,
                     claim_token,
+                )
+                span.set_attribute("rebuild.outcome", outcome)
+                logger.info(
+                    "Tile rebuild child finished",
+                    extra={
+                        "event": "rebuild.item_terminal",
+                        "job_id": job_id,
+                        "item_id": item_id,
+                        "outcome": outcome,
+                    },
                 )
             except Exception as exc:
                 span.set_status(Status(StatusCode.ERROR, str(exc)))
@@ -675,7 +697,7 @@ class WorkerSettings:
         func(rebuild_tile_pump_task, max_tries=1),
         func(
             rebuild_tile_item,
-            timeout=settings.rebuild_child_timeout_seconds,
+            timeout=REBUILD_ARQ_SAFETY_TIMEOUT_SECONDS,
             max_tries=1,
         ),
     ]

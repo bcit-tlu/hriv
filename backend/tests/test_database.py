@@ -69,6 +69,14 @@ def test_parallel_rebuild_scheduler_requires_timeout_below_lease() -> None:
         )
 
 
+def test_parallel_rebuild_scheduler_caps_supported_child_timeout() -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            rebuild_child_timeout_seconds=86401,
+            rebuild_lease_seconds=90000,
+        )
+
+
 def test_parallel_rebuild_scheduler_requires_heartbeat_below_lease() -> None:
     with pytest.raises(ValidationError):
         Settings(

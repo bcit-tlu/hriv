@@ -150,3 +150,143 @@ A cross-environment restore replaces the `users` table. Your current session
 may immediately start returning `401/403` after the restore commits because
 your JWT no longer matches the new user row. The restore still completes on the
 server; log back in and check Recent Tasks to confirm it finished.
+
+## 4) Tile-rebuild scale rehearsal (opt-in, issue #1189)
+
+This is the documented production-shaped rehearsal that validates the durable
+parallel rebuild scheduler before `REBUILD_PARALLEL_ENABLED` is flipped on for
+an environment. It is **opt-in and disruptive**: it force-rebuilds every
+linked source image and adds a large fixture population. Run it only on
+`latest` (or another non-production environment) inside a change window, with
+the serial rebuild path verified healthy first.
+
+The fixture is deliberately excluded from recoverable artifacts. Admin JSON
+exports omit only images carrying the exact `metadata.rebuild_fixture=true`
+marker and their linked sources inside the fixture directory; fixture mutation, admin filesystem export, and
+the backup service share an exclusive source-volume lock that closes the
+check/inventory race. Exports and backups fail closed before creating an archive
+while `source_images/rebuild-fixture/` exists, and blocked backup attempts are
+persisted for both components with `failure_reason=rebuild_fixture_active`.
+Confirm no
+backup is already running before seeding; backup attempts during the rehearsal
+will fail with `backup.rebuild_fixture_blocked` and must not be treated as
+recovery points.
+
+### Prepare the population
+
+1. Record the real linked-source count — these provide the real libvips
+   throughput measurements:
+
+   ```bash
+   kubectl -n hriv exec deploy/hriv-backend -- python - <<'PY'
+   import asyncio
+   from sqlalchemy import func, select
+   from app.database import get_async_session
+   from app.models import SourceImage
+   async def main():
+       async with get_async_session()() as s:
+           n = await s.scalar(select(func.count()).select_from(SourceImage).where(
+               SourceImage.status == "completed", SourceImage.image_id.is_not(None)))
+           print("real linked sources:", n)
+   asyncio.run(main())
+   PY
+   ```
+
+2. Top up to the target item count with the deterministic fixture (choose
+   `--count` so real + fixture ≥ 3,400; each fixture source is a tiny valid
+   TIFF under `source_images/rebuild-fixture/`):
+
+   ```bash
+   kubectl -n hriv exec deploy/hriv-backend -- \
+     python -m app.rebuild_fixture --count 2900
+   ```
+
+3. Verify disk headroom on the tile PVC before starting (each rebuilt source
+   materializes a full DZI tree plus the retained prior tree during
+   promotion).
+
+### Measure
+
+1. **Serial baseline** — run the serial `POST /api/admin/tasks/rebuild-tiles`
+   on a representative subset (`image_ids`) and record images/hour. Full
+   serial runs are allowed but expensive; the baseline exists to anchor the
+   parallel speedup, not to exhaust the environment.
+2. **Parallel candidates** — run `POST /api/jobs/rebuild-tiles` with
+   `scope=all` at `REBUILD_PARALLELISM=1`, then `2`, then `4` where worker
+   resources permit. Between runs, cancel or let each job reach a terminal
+   state before creating the next (only one rebuild may be active).
+3. **Fault drills** — during one candidate run each:
+   - delete the worker pod mid-run and confirm in-flight items are reclaimed
+     after their leases expire and retried by a replacement pod;
+   - restart Redis and confirm committed claims resume through
+     reconciliation (committed-before-enqueue gaps repump);
+   - request `POST /api/jobs/{id}/cancel` mid-run and confirm pending items
+     cancel while started children drain;
+   - retry failed items through `POST /api/jobs/{id}/retry-failed`.
+4. **Correctness invariants** — after every run verify:
+   - every `job_items` row is in exactly one terminal state;
+   - no duplicated logical rebuilds (each source's `image.dzi` reflects one
+     promotion);
+   - `hriv_tile_rebuild_queued_items` returns to 0 and
+     `hriv_tile_rebuild_active_children` returns to 0;
+   - the tile PVC contains no orphaned `.rebuild-*` temp trees.
+
+### Metrics to read
+
+- `histogram_quantile` over `hriv.tile_rebuild.item.duration` → p50/p95/p99
+  child duration.
+- `rate(hriv.tile_rebuild.items.completed[1h])` → images/hour.
+- `hriv.tile_rebuild.item.queue_wait` → scheduler handoff latency.
+- `hriv_tile_rebuild_active_children` → effective parallelism.
+- `hriv.tile_rebuild.cancellation.latency` → time to drain after cancel.
+- `hriv.tile_rebuild.lease.reclaims` → recovery after worker loss.
+- Platform dashboards → worker CPU/memory peaks, DB connections, Redis depth.
+- `hriv.tile_rebuild.item.timeouts`, `hriv.tile_rebuild.item.retries`,
+  `hriv.tile_rebuild.enqueue.failures` → failure/retry accounting.
+
+### Rehearsal record
+
+Append one row per run to the rehearsal log in the change ticket or a
+confluence attachment; copy this table:
+
+| Field                        | Value |
+| ---------------------------- | ----- |
+| Deployment version           |       |
+| Environment                  |       |
+| Fixture/source count + scope |       |
+| Worker CPU/memory limits     |       |
+| Database + Redis limits      |       |
+| Child timeout                |       |
+| Lease / heartbeat            |       |
+| Retry backoff                |       |
+| Parallelism                  |       |
+| Start / end (UTC)            |       |
+| Images/hour                  |       |
+| Item p50 / p95 / p99         |       |
+| Resource peaks               |       |
+| Failures / reclaims          |       |
+| Cancellation latency         |       |
+| Reclaim/recovery time        |       |
+| Selected next setting        |       |
+
+### Teardown
+
+```bash
+kubectl -n hriv exec deploy/hriv-backend -- \
+  python -m app.rebuild_fixture --purge
+```
+
+Both seeding and `--purge` refuse to run while a serial or durable rebuild
+is active, so fixture rows and tile trees are never deleted underneath
+in-flight children — let any running rebuild finish or cancel it first.
+
+This removes only exact `metadata.rebuild_fixture=true` images, their linked
+sources whose stored paths are inside `rebuild-fixture`, and tile/temp/`.old-*`
+trees for those exact source IDs. The fixture directory itself is swept of
+unreferenced files (including orphans left when fixture rows vanished without
+a purge, e.g. after a database import) and removed once empty; files still
+referenced by retained rows are preserved. Fixture filesystem work
+runs off the CLI event loop so thousands of small files do not block database
+or cancellation progress. Trigger or wait for the next scheduled backup after
+purge and confirm it succeeds; do not retain or use any failed backup attempt
+from the fixture window.

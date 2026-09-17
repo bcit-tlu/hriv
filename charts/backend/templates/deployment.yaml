@@ -13,6 +13,9 @@
 {{- if and .Values.tasks.rebuild.parallelEnabled (ne .Values.tasks.executionMode "required") }}
 {{- fail "tasks.rebuild.parallelEnabled requires tasks.executionMode=required" }}
 {{- end }}
+{{- if gt (.Values.tasks.rebuild.childTimeoutSeconds | int) 86400 }}
+{{- fail "tasks.rebuild.childTimeoutSeconds must not exceed 86400 seconds" }}
+{{- end }}
 {{- $backupVersionMountPath := trimSuffix "/" .Values.backupVersionConfigMap.mountPath -}}
 {{- $frontendVersionMountPath := trimSuffix "/" .Values.frontendVersionConfigMap.mountPath -}}
 {{- if and .Values.backupVersionConfigMap.enabled .Values.frontendVersionConfigMap.enabled (eq $backupVersionMountPath $frontendVersionMountPath) }}

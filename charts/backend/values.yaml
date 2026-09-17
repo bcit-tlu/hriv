@@ -180,7 +180,7 @@ tasks:
     # PostgreSQL-authoritative child execution window. This is independent
     # from redis.worker.maxJobs.
     parallelism: 2
-    childTimeoutSeconds: 1800
+    childTimeoutSeconds: 1800 # supported range: 60-86400
     leaseSeconds: 2100
     heartbeatSeconds: 30
     # arq cron expressions are minute-granular, so use whole-minute values.

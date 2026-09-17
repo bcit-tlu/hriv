@@ -254,8 +254,7 @@ async def test_on_startup_logs_worker_identity() -> None:
     )
 
 
-def test_worker_settings_only_extend_timeout_for_admin_tasks() -> None:
-    """Long timeout should apply to admin tasks without widening all jobs."""
+def test_worker_settings_apply_task_specific_timeouts() -> None:
     assert WorkerSettings.job_timeout == 7200
     assert WorkerSettings.max_jobs == 4
     assert WorkerSettings.allow_abort_jobs is True
@@ -282,7 +281,7 @@ def test_worker_settings_only_extend_timeout_for_admin_tasks() -> None:
     assert rebuild_pump_fn.max_tries == 1
     rebuild_child_fn = WorkerSettings.functions[5]
     assert rebuild_child_fn.name == "rebuild_tile_item"
-    assert rebuild_child_fn.timeout_s == settings.rebuild_child_timeout_seconds
+    assert rebuild_child_fn.timeout_s == 90000
     assert rebuild_child_fn.max_tries == 1
 
 

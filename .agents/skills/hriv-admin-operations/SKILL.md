@@ -85,7 +85,14 @@ Use this skill for administrator-facing operations and long-running task flows.
 rebuilds` section polls `GET /api/jobs/` every 2 s only while a rebuild job
   is active and lazy-loads failed items 50 per page. The serial
   `POST /api/admin/tasks/rebuild-tiles` path is unchanged and remains the
-  fallback. See `../../../docs/jobs.md`.
+  fallback. Durable rebuilds emit the `hriv.tile_rebuild.*` metrics and
+  `rebuild.*` log events documented in `../../../docs/jobs.md`; the
+  deterministic scale seeder is `python -m app.rebuild_fixture --count N`
+  (`--purge` to remove; both refuse while any rebuild is active). Admin JSON exports omit its rows, and fixture mutation,
+  filesystem export, and backup inventory share an exclusive source-volume lock
+  and fail closed while its source directory exists. See
+  `../../../docs/jobs.md` and
+  `../../../docs/backup-restore-runbook.md`.
 
 ## Validation
 

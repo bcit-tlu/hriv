@@ -23,7 +23,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import TypeVar
+from typing import TextIO, TypeVar
 
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
@@ -50,6 +50,13 @@ from .models import (
     Program,
     SourceImage,
     User,
+)
+from .rebuild_fixture import (
+    FIXTURE_ARCHIVE_LOCK_FILENAME as REBUILD_FIXTURE_ARCHIVE_LOCK_FILENAME,
+    FIXTURE_DIRNAME as REBUILD_FIXTURE_DIRNAME,
+    release_rebuild_fixture_archive_lock,
+    select_rebuild_fixture_rows,
+    try_acquire_rebuild_fixture_archive_lock,
 )
 from .rebuild_locks import (
     acquire_rebuild_creation_lock,
@@ -1010,6 +1017,26 @@ async def delete_files_import_archive(
 # ── Database Export ────────────────────────────────────────
 
 
+async def _acquire_fixture_archive_lock_for_task(
+    session: AsyncSession,
+    task: AdminTask,
+    source_images_dir: str | Path,
+) -> TextIO:
+    while True:
+        handle = await try_acquire_rebuild_fixture_archive_lock(
+            source_images_dir
+        )
+        if handle is not None:
+            return handle
+        await asyncio.sleep(_LOG_FLUSH_INTERVAL)
+        await session.refresh(task, attribute_names=["status"])
+        if task.status in ("cancelling", "cancelled"):
+            raise TaskCancelled("Task cancelled by admin")
+        if task.status != "running":
+            raise RuntimeError("Task stopped while waiting for archive lock")
+        await _heartbeat_task(session, task)
+
+
 async def run_db_export(task_id: int) -> None:
     """Export all database tables to a JSON file in the background."""
     async with get_async_session()() as session:
@@ -1019,12 +1046,18 @@ async def run_db_export(task_id: int) -> None:
             return
 
         filepath: str | None = None
+        fixture_lock: TextIO | None = None
         try:
             await _update_task(
                 session, task,
                 status="running", progress=0,
                 log_line="Starting database export…",
                 check_cancelled=True,
+            )
+            fixture_lock = await _acquire_fixture_archive_lock_for_task(
+                session,
+                task,
+                settings.source_images_dir,
             )
 
             # Programs
@@ -1045,7 +1078,7 @@ async def run_db_export(task_id: int) -> None:
             # Images
             await _update_task(session, task, log_line="Exporting images…", progress=40, check_cancelled=True)
             result = await session.execute(select(Image).order_by(Image.id))
-            images = result.scalars().all()
+            all_images = list(result.scalars().all())
 
             # Users
             await _update_task(session, task, log_line="Exporting users…", progress=55, check_cancelled=True)
@@ -1055,7 +1088,25 @@ async def run_db_export(task_id: int) -> None:
             # Source images
             await _update_task(session, task, log_line="Exporting source images…", progress=65, check_cancelled=True)
             result = await session.execute(select(SourceImage).order_by(SourceImage.id))
-            source_images = result.scalars().all()
+            all_source_images = list(result.scalars().all())
+            fixture_images, fixture_source_images = select_rebuild_fixture_rows(
+                all_images,
+                all_source_images,
+            )
+            fixture_image_ids = {image.id for image in fixture_images}
+            images = [
+                image
+                for image in all_images
+                if image.id not in fixture_image_ids
+            ]
+            fixture_source_ids = {
+                source.id for source in fixture_source_images
+            }
+            source_images = [
+                source
+                for source in all_source_images
+                if source.id not in fixture_source_ids
+            ]
 
             # Changelog entries
             await _update_task(session, task, log_line="Exporting changelog entries…", progress=70, check_cancelled=True)
@@ -1260,6 +1311,9 @@ async def run_db_export(task_id: int) -> None:
                 log_line=f"ERROR: {exc}",
                 error_message=str(exc),
             )
+        finally:
+            if fixture_lock is not None:
+                await release_rebuild_fixture_archive_lock(fixture_lock)
 
 
 def _write_file(path: str, content: str) -> None:
@@ -2143,6 +2197,8 @@ def _iter_export_entries(
 
         for fname in filenames:
             _check_cancel()
+            if fname == REBUILD_FIXTURE_ARCHIVE_LOCK_FILENAME:
+                continue
             fpath = os.path.join(dirpath, fname)
             arc_fpath = os.path.join(arcname, fname)
             try:
@@ -2384,6 +2440,7 @@ async def run_files_export(task_id: int) -> None:
 
         filepath: str | None = None
         tmp_name: str | None = None
+        fixture_lock: TextIO | None = None
         try:
             await _update_task(
                 session, task,
@@ -2391,11 +2448,21 @@ async def run_files_export(task_id: int) -> None:
                 log_line="Starting filesystem export…",
                 check_cancelled=True,
             )
-
             data_dir = Path(settings.tiles_dir).parent  # /data
-
             if not data_dir.exists() or not any(data_dir.iterdir()):
                 raise ValueError("Data directory is empty or missing — nothing to export")
+
+            source_images_dir = data_dir / "source_images"
+            fixture_lock = await _acquire_fixture_archive_lock_for_task(
+                session,
+                task,
+                source_images_dir,
+            )
+            if (source_images_dir / REBUILD_FIXTURE_DIRNAME).is_dir():
+                raise RuntimeError(
+                    "Filesystem export is blocked while the tile-rebuild "
+                    "scale fixture is active"
+                )
 
             await _update_task(
                 session, task, progress=10,
@@ -2640,6 +2707,9 @@ async def run_files_export(task_id: int) -> None:
                 log_line=f"ERROR: {exc}",
                 error_message=str(exc),
             )
+        finally:
+            if fixture_lock is not None:
+                await release_rebuild_fixture_archive_lock(fixture_lock)
 
 
 # ── Filesystem Import ──────────────────────────────────────

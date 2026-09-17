@@ -14,6 +14,7 @@ from app.admin_ops import (
     _run_rebuild_with_heartbeat,
     reconcile_stale_tasks,
 )
+from app.database import AppSession
 from app.job_state import (
     claim_job_items,
     finalize_job_item,
@@ -47,7 +48,11 @@ requires_db = pytest.mark.skipif(
 @pytest.fixture
 async def db_factory():
     engine = create_async_engine(DB_URL)
-    factory = async_sessionmaker(engine, expire_on_commit=False)
+    factory = async_sessionmaker(
+        engine,
+        expire_on_commit=False,
+        sync_session_class=AppSession,
+    )
     yield factory
     async with factory() as session:
         await session.execute(
@@ -803,3 +808,90 @@ async def test_cancellation_uses_locked_row_not_stale_identity(
         assert await request_job_cancellation(session, job_id) == 0
         assert stale.status == "completed"
         await session.rollback()
+
+
+@requires_db
+async def test_parallelism_bounds_claims_and_stamps_claimed_at(
+    db_factory,
+) -> None:
+    """Scale invariant: a 10-item job under parallelism=2 can never have
+    more than two claims outstanding, and every claim stamps the
+    ``claimed_at`` metadata used for the queue-wait histogram."""
+    job_id = await _create_job(db_factory, item_count=10)
+    async with db_factory() as session:
+        first, acquired = await claim_tile_rebuild_window(session, job_id)
+        assert acquired
+        assert len(first) == 2
+        await session.commit()
+
+    # The window is full: a second pump must claim nothing.
+    async with db_factory() as session:
+        second, acquired = await claim_tile_rebuild_window(session, job_id)
+        assert acquired
+        assert second == []
+        await session.commit()
+
+    async with db_factory() as session:
+        items = (
+            await session.execute(
+                select(JobItem)
+                .where(JobItem.job_id == job_id)
+                .order_by(JobItem.id)
+            )
+        ).scalars().all()
+        running = [item for item in items if item.status == "running"]
+        assert len(running) == 2
+        for item in running:
+            claimed_at = item.metadata_.get("claimed_at")
+            assert claimed_at is not None
+            assert datetime.fromisoformat(claimed_at).tzinfo is not None
+
+    # Completing one child frees exactly one slot for the next claim.
+    async with db_factory() as session:
+        assert await finalize_job_item(
+            session,
+            first[0].item_id,
+            first[0].claim_token,
+            "completed",
+        )
+        await session.commit()
+    async with db_factory() as session:
+        third, acquired = await claim_tile_rebuild_window(session, job_id)
+        assert acquired
+        assert len(third) == 1
+        assert third[0].item_id not in {d.item_id for d in first}
+        await session.commit()
+
+
+@requires_db
+async def test_active_children_gauge_counts_only_executing_items(
+    db_factory,
+    monkeypatch,
+) -> None:
+    """Claimed-but-undelivered items must not inflate the effective
+    parallelism gauge: ``running`` with ``started_at IS NULL`` counts as
+    queue backlog, not as an active child."""
+    job_id = await _create_job(db_factory, item_count=3)
+    async with db_factory() as session:
+        claimed = await claim_job_items(session, job_id, 2, 90)
+        assert len(claimed) == 2
+        assert await reserve_job_item_execution(
+            session,
+            job_id,
+            claimed[0].id,
+            claimed[0].claim_token,
+        )
+        await session.commit()
+
+    monkeypatch.setattr(
+        "app.tile_rebuild_metrics.get_async_session",
+        lambda: db_factory,
+    )
+    from app.tile_rebuild_metrics import collect_tile_rebuild_state
+
+    state = await collect_tile_rebuild_state()
+    assert state == {
+        "active_jobs": 1,
+        "running_items": 1,
+        "queued_items": 2,
+    }

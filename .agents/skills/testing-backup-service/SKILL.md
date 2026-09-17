@@ -7,7 +7,7 @@ description: Test the HRIV backup service for database and filesystem backup, lo
 
 ## Overview
 
-The backup service (`backup/`) publishes source-image recovery archives and supports component-selective restore. Production binds each source archive to an authoritative CNPG target LSN, commits a narrow WAL fence, waits for that fence to archive, and never runs `pg_dump`; local development retains the legacy logical database plus filesystem archive.
+The backup service (`backup/`) publishes source-image recovery archives and supports component-selective restore. Production binds each source archive to an authoritative CNPG target LSN, commits a narrow WAL fence, waits for that fence to archive, and never runs `pg_dump`; local development retains the legacy logical database plus filesystem archive. Both modes take the shared source-volume archive lock and fail closed without creating an archive while `source_images/rebuild-fixture/` exists, so concurrent scale-fixture mutation cannot enter a recovery set; the rejected attempt is persisted for both backup components with `failure_reason=rebuild_fixture_active`.
 
 For work on scheduled production-shaped restore testing, read
 [`../../../docs/restore-validation.md`](../../../docs/restore-validation.md). That contract

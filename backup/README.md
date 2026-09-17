@@ -1,6 +1,6 @@
 # HRIV Disaster Recovery Backup Service
 
-Standalone service that publishes HRIV recovery archives on a configurable schedule, stores archives in Azure Blob Storage, and supports component-selective restore after a fresh redeployment. In production, CloudNativePG backup and WAL archiving protect PostgreSQL while this service streams authoritative source images directly to Azure; generated DZI tiles are derived data that can be rebuilt from source images. Development mode retains the legacy logical database plus filesystem archive.
+Standalone service that publishes HRIV recovery archives on a configurable schedule, stores archives in Azure Blob Storage, and supports component-selective restore after a fresh redeployment. In production, CloudNativePG backup and WAL archiving protect PostgreSQL while this service streams authoritative source images directly to Azure; generated DZI tiles are derived data that can be rebuilt from source images. Development mode retains the legacy logical database plus filesystem archive. Backup inventory shares an exclusive source-volume lock with tile-rebuild fixture mutation and admin filesystem export.
 
 ## Quick Start
 
@@ -86,7 +86,7 @@ Each snapshot is a `.tar.gz` archive containing:
 > selection and stateless filesystem primitives. Kubernetes orchestration, deployment, and the
 > end-to-end validation component remain future work; no Kubernetes API access is added here.
 
-In production deployments, the Python backup service protects authoritative source images. Its supported role is:
+In production deployments, the Python backup service protects authoritative source images. It refuses to create an archive while the opt-in tile-rebuild scale fixture directory exists, preventing rehearsal-only rows and TIFFs from entering a recovery set. Its supported role is:
 
 - **Database recovery binding:** the manifest records the CNPG cluster, authoritative target LSN, audit target time, and an archived WAL fence; it does not run `pg_dump` or include `db.sql`.
 - **Source images:** DB-referenced files under `/data/source_images` are streamed directly to Azure without a complete local archive; missing references and orphan files are reported without reconciliation. After verifying that PostgreSQL `archive_timeout` is positive and below the fence wait timeout, one behaviorally read-only `BEGIN; LOCK TABLE ... IN SHARE MODE; COPY ...; COMMIT;` transaction waits out existing source writers and returns the UTC target time, `pg_current_wal_lsn()` capture-boundary LSN, and authoritative row inventory from its post-lock snapshot boundary. While maintenance still gates new mutations, the service performs its only production write—a bounded update of the singleton `public.backup_recovery_wal_fence` row that increments its generation and records `fenced_at`—then binds the post-commit WAL boundary LSN as `database_recovery.target_lsn`, queries its conservative at-or-after WAL segment upper bound, and waits after maintenance for that file to be archived before streaming or publication. Files from mutations committed after the snapshot are outside the fence boundary and are excluded as orphans. The configured drain is best effort, not the consistency boundary.

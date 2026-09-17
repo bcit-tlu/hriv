@@ -8,7 +8,14 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, Session
+
+
+MAX_REBUILD_CHILD_TIMEOUT_SECONDS = 86400
+
+
+class AppSession(Session):
+    pass
 
 
 class Settings(BaseSettings):
@@ -29,7 +36,11 @@ class Settings(BaseSettings):
     worker_max_jobs: int = Field(default=4, ge=2)
     rebuild_parallel_enabled: bool = False
     rebuild_parallelism: int = Field(default=2, ge=1)
-    rebuild_child_timeout_seconds: int = Field(default=1800, ge=60)
+    rebuild_child_timeout_seconds: int = Field(
+        default=1800,
+        ge=60,
+        le=MAX_REBUILD_CHILD_TIMEOUT_SECONDS,
+    )
     rebuild_lease_seconds: int = Field(default=2100, ge=120)
     rebuild_heartbeat_seconds: int = Field(default=30, ge=5)
     rebuild_pump_cadence_seconds: int = Field(default=60, ge=60, le=3600)
@@ -148,7 +159,10 @@ def get_async_session() -> async_sessionmaker[AsyncSession]:
     global _async_session
     if _async_session is None:
         _async_session = async_sessionmaker(
-            get_engine(), class_=AsyncSession, expire_on_commit=False
+            get_engine(),
+            class_=AsyncSession,
+            expire_on_commit=False,
+            sync_session_class=AppSession,
         )
     return _async_session
 

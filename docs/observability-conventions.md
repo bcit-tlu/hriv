@@ -299,6 +299,71 @@ hashes, and request IDs stay in logs/traces. Client-side, the equivalent
 poll-outcome counters are dev-mode only (`window.__hrivBrowseStats`,
 `docs/drag-and-drop.md` → Instrumentation) — they are not telemetry events.
 
+## Tile Rebuild Metrics
+
+The durable parallel tile-rebuild scheduler (issue #1189) emits the
+`hriv.tile_rebuild.*` instrument contract from `tile_rebuild_metrics.py`.
+Counters and histograms are recorded in whichever process runs the code path —
+the arq worker for pump and child execution, the API for creation and
+cancellation — and exported via OTLP. Durable-state gauges are rendered at
+`/api/metrics` from PostgreSQL so worker-side execution is visible on the API
+pod's scrape endpoint.
+
+OTel instruments:
+
+- `hriv.tile_rebuild.item.duration` — histogram (seconds), execution
+  reservation to terminal outcome.
+- `hriv.tile_rebuild.item.queue_wait` — histogram (seconds), claim commit
+  (`job_items.metadata.claimed_at`) to execution reservation.
+- `hriv.tile_rebuild.supervisor.duration` — histogram (seconds), supervisor
+  start to terminal status.
+- `hriv.tile_rebuild.cancellation.latency` — histogram (seconds),
+  `jobs.metadata.cancel_requested_at` to `cancelled` status.
+- `hriv.tile_rebuild.items.completed` — counter; `outcome` ∈ `completed` |
+  `skipped` | `failed` | `cancelled`.
+- `hriv.tile_rebuild.item.retries` — counter; `reason` ∈ `transient` |
+  `lease_expired` | `dispatch` | `manual`.
+- `hriv.tile_rebuild.item.timeouts` — counter; failures whose exception chain
+  contains a timeout.
+- `hriv.tile_rebuild.lease.reclaims` — counter; `state` ∈ `claimed` |
+  `started`.
+- `hriv.tile_rebuild.pump.runs` — counter; `outcome` ∈ `dispatched` | `idle` |
+  `locked` | `failed`.
+- `hriv.tile_rebuild.enqueue.failures` — counter; `reason` ∈
+  `queue_unavailable` | `submission_error`.
+- `hriv.tile_rebuild.duplicate_deliveries` — counter; deliveries that found
+  their claim already superseded.
+
+`/api/metrics` gauges (PostgreSQL-derived, `NaN` on read failure):
+
+- `hriv_tile_rebuild_jobs_active` — active supervisors.
+- `hriv_tile_rebuild_active_children` — executing items (`running` with a
+  stamped `started_at`) under active supervisors; the effective parallelism
+  gauge.
+- `hriv_tile_rebuild_queued_items` — items under active supervisors that are
+  queued or claimed but not yet delivered (`running` with `started_at`
+  still NULL).
+
+Structured-log events (`rebuild.*`): `rebuild.job_created`,
+`rebuild.job_terminal`, `rebuild.cancel_requested`,
+`rebuild.items_bulk_cancelled`, `rebuild.retry_requested`,
+`rebuild.item_reserved`, `rebuild.item_terminal`, `rebuild.leases_reclaimed`,
+`rebuild.duplicate_delivery`.
+
+Rules:
+
+- Metric labels carry only the bounded `outcome`/`reason`/`state` values
+  above. Job IDs, item IDs, source-image IDs, and filenames belong in
+  `rebuild.*` log events and span attributes — never in metric labels.
+- Throughput (images/hour) and per-item percentiles are derived dashboard
+  values from `hriv.tile_rebuild.items.completed` and
+  `hriv.tile_rebuild.item.duration`, not dedicated instruments.
+- Terminal metrics and durable state-transition events are emitted only after
+  the owning transaction commits. Hooks scoped to HRIV's required `AppSession`
+  emit callbacks only on the outer commit, discard all callbacks on an outer
+  rollback, and remove only savepoint-scoped callbacks on a nested rollback;
+  rebuild helpers reject independent plain `AsyncSession` factories.
+
 ## Privacy, Access, and Retention
 
 Observability data serves two different uses and must be treated differently:

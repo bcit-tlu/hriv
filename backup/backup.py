@@ -851,7 +851,7 @@ def _merge_attempt_history(existing: dict | None, incoming: dict) -> list[dict]:
     return ordered[:_MAX_ATTEMPT_HISTORY]
 
 
-def _merge_overlap_rejection(existing: dict | None, incoming: dict) -> dict:
+def _merge_rejected_attempt(existing: dict | None, incoming: dict) -> dict:
     if (
         isinstance(existing, dict)
         and existing.get("schema_version") == BACKUP_STATE_SCHEMA_VERSION
@@ -867,14 +867,14 @@ def _merge_overlap_rejection(existing: dict | None, incoming: dict) -> dict:
     return merged
 
 
-def _write_overlap_rejection(state: dict) -> bool:
+def _write_rejected_attempt(state: dict) -> bool:
     state["updated_at"] = datetime.now(timezone.utc).isoformat()
     return _commit_shared_json(
         local_path=_backup_state_path(),
         blob_name=_backup_state_blob_name(),
         incoming=state,
-        merge=_merge_overlap_rejection,
-        label="backup overlap rejection",
+        merge=_merge_rejected_attempt,
+        label="backup rejected attempt",
     )
 
 
@@ -1678,6 +1678,8 @@ def _tar_filter(
 
 _INCOMPLETE_NAMES = {"admin", "scratch", "maintenance", "staging", "incomplete"}
 _INCOMPLETE_SUFFIXES = (".part", ".partial", ".tmp", ".uploading")
+_REBUILD_FIXTURE_DIRNAME = "rebuild-fixture"
+_REBUILD_FIXTURE_ARCHIVE_LOCK_FILENAME = ".rebuild-fixture-archive.lock"
 _AZURE_BLOCK_SIZE = 4 * 1024 * 1024
 _MAX_LOGICAL_DUMP_BYTES = 16 * 1024 * 1024 * 1024
 
@@ -1704,7 +1706,7 @@ def _inventory_data_files(data_src: Path) -> tuple[list[dict], list[dict]]:
             is_file = path.is_file()
         except OSError as exc:
             raise RuntimeError(f"could not inventory {path}: {exc}") from exc
-        if not is_file:
+        if not is_file or path.name == _REBUILD_FIXTURE_ARCHIVE_LOCK_FILENAME:
             continue
         rel = path.relative_to(data_src).as_posix()
         if not _is_finalized_file(path, data_src):
@@ -2774,6 +2776,60 @@ def _run_backup_inner() -> Path | None:
         return Path(archive_key) if not _azure_configured() else Path(archive_name)
 
 
+def _source_images_root() -> Path:
+    """Locate the source-images root that hosts the fixture archive lock.
+
+    The backend creates ``source_images`` on demand and locks a file inside
+    it, so in production mode this path must be stable even before the
+    directory exists — falling back to ``data_dir`` would lock a different
+    file than a first-time fixture seed and lose mutual exclusion.
+    """
+    data_dir = Path(DATA_DIR)
+    if (data_dir / _REBUILD_FIXTURE_DIRNAME).is_dir():
+        return data_dir
+    if BACKUP_MODE == "production":
+        return data_dir / "source_images"
+    legacy_root = data_dir / "source_images"
+    return legacy_root if legacy_root.is_dir() else data_dir
+
+
+def _rebuild_fixture_present() -> bool:
+    data_dir = Path(DATA_DIR)
+    return (data_dir / _REBUILD_FIXTURE_DIRNAME).is_dir() or (
+        data_dir / "source_images" / _REBUILD_FIXTURE_DIRNAME
+    ).is_dir()
+
+
+@contextlib.contextmanager
+def _rebuild_fixture_archive_lock() -> Iterator[None]:
+    lock_path = _source_images_root() / _REBUILD_FIXTURE_ARCHIVE_LOCK_FILENAME
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _persist_rejected_attempt(failure_reason: str) -> tuple[dict, bool]:
+    now = datetime.now(timezone.utc)
+    state = _new_backup_state(failure_reason, _new_run_id())
+    _seed_last_success_history(state, _read_backup_state())
+    for backup_type in ("database", "filesystem"):
+        _mark_attempt_started(state, backup_type, started_at=now)
+        _mark_attempt_finished(
+            state,
+            backup_type,
+            started_at=now,
+            completed_at=now,
+            success=False,
+            size_bytes=None,
+        )
+    state["failure_reason"] = failure_reason
+    return state, _write_rejected_attempt(state)
+
+
 def run_backup() -> Path | None:
     """Run one backup while excluding overlapping scheduled or on-demand calls."""
     with _run_lock() as locked:
@@ -2781,29 +2837,33 @@ def run_backup() -> Path | None:
             log.error(
                 "Backup skipped because another backup run holds %s", _run_lock_path()
             )
-            now = datetime.now(timezone.utc)
-            state = _new_backup_state("overlap", _new_run_id())
-            _seed_last_success_history(state, _read_backup_state())
-            for backup_type in ("database", "filesystem"):
-                _mark_attempt_started(state, backup_type, started_at=now)
-                _mark_attempt_finished(
-                    state,
-                    backup_type,
-                    started_at=now,
-                    completed_at=now,
-                    success=False,
-                    size_bytes=None,
-                )
-            state["failure_reason"] = "overlapping_backup_run"
-            if not _write_overlap_rejection(state):
+            state, persisted = _persist_rejected_attempt(
+                "overlapping_backup_run"
+            )
+            if not persisted:
                 log.warning("Could not persist backup overlap rejection")
             log.warning(
                 "Overlap rejection was appended without changing active publication ownership",
                 extra={"event": "backup.overlap_rejected", "run_id": state["run_id"]},
             )
             return None
-        _reconcile_publications(lock_held=True)
-        return _run_backup_inner()
+        with _rebuild_fixture_archive_lock():
+            if _rebuild_fixture_present():
+                state, persisted = _persist_rejected_attempt(
+                    "rebuild_fixture_active"
+                )
+                if not persisted:
+                    log.warning("Could not persist fixture-blocked backup attempt")
+                log.error(
+                    "Backup blocked while the tile-rebuild scale fixture is active",
+                    extra={
+                        "event": "backup.rebuild_fixture_blocked",
+                        "run_id": state["run_id"],
+                    },
+                )
+                return None
+            _reconcile_publications(lock_held=True)
+            return _run_backup_inner()
 
 
 def _archive_is_selectable(blob) -> bool:
