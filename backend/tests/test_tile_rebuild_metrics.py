@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from app import tile_rebuild_metrics
 from app.tile_rebuild_metrics import (
@@ -205,13 +208,18 @@ async def test_render_tile_rebuild_metrics_degrades_to_nan() -> None:
     assert b"hriv_tile_rebuild_queued_items NaN" in content
 
 
-async def test_collect_tile_rebuild_state_swallows_read_errors() -> None:
+async def test_collect_tile_rebuild_state_swallows_read_errors(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     def failing_factory():
         raise RuntimeError("db down")
 
-    with patch(
-        "app.tile_rebuild_metrics.get_async_session",
-        return_value=failing_factory,
+    with (
+        patch(
+            "app.tile_rebuild_metrics.get_async_session",
+            return_value=failing_factory,
+        ),
+        caplog.at_level(logging.ERROR, "app.tile_rebuild_metrics"),
     ):
         state = await tile_rebuild_metrics.collect_tile_rebuild_state()
 
@@ -220,3 +228,7 @@ async def test_collect_tile_rebuild_state_swallows_read_errors() -> None:
         "running_items": None,
         "queued_items": None,
     }
+    assert any(
+        "durable state read failed" in record.message
+        for record in caplog.records
+    )

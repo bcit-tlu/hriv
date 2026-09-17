@@ -16,15 +16,18 @@ IDs stay in span attributes and structured logs — never in metric labels.
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime
 from typing import Any
 
 from opentelemetry import metrics
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Gauge, generate_latest
-from sqlalchemy import func, select
+from sqlalchemy import and_, case, func, select
 
 from .database import get_async_session
 from .models import ACTIVE_JOB_STATUSES, Job, JobItem
+
+logger = logging.getLogger(__name__)
 
 REBUILD_JOB_TYPE = "rebuild_tiles"
 
@@ -108,12 +111,12 @@ _active_jobs = Gauge(
 )
 _active_children = Gauge(
     "hriv_tile_rebuild_active_children",
-    "Running tile-rebuild items under active supervisors (effective parallelism)",
+    "Executing tile-rebuild items under active supervisors (effective parallelism)",
     registry=_registry,
 )
 _queued_items = Gauge(
     "hriv_tile_rebuild_queued_items",
-    "Queued tile-rebuild items under active supervisors",
+    "Queued or claimed-awaiting-delivery tile-rebuild items under active supervisors",
     registry=_registry,
 )
 
@@ -233,15 +236,29 @@ async def collect_tile_rebuild_state() -> dict[str, Any]:
                     )
                 ).scalar_one()
             )
+            # ``running`` with ``started_at IS NULL`` means claimed but not
+            # yet delivered/executing — count it as durable queue backlog so
+            # the active-children gauge reflects real parallelism and a
+            # stalled Redis delivery shows as queue depth instead.
+            state_bucket = case(
+                (
+                    and_(
+                        JobItem.status == "running",
+                        JobItem.started_at.is_(None),
+                    ),
+                    "queued",
+                ),
+                else_=JobItem.status,
+            )
             rows = (
                 await session.execute(
-                    select(JobItem.status, func.count())
+                    select(state_bucket, func.count())
                     .join(Job, JobItem.job_id == Job.id)
                     .where(
                         Job.job_type == REBUILD_JOB_TYPE,
                         Job.status.in_(ACTIVE_JOB_STATUSES),
                     )
-                    .group_by(JobItem.status)
+                    .group_by(state_bucket)
                 )
             ).all()
             return active_jobs, {status: int(count) for status, count in rows}
@@ -255,9 +272,12 @@ async def collect_tile_rebuild_state() -> dict[str, Any]:
         state["running_items"] = counts.get("running", 0)
         state["queued_items"] = counts.get("queued", 0)
     except Exception:
-        # Intentional: an unreadable PostgreSQL state must degrade to NaN
-        # gauges, never break the whole /api/metrics scrape.
-        pass
+        # An unreadable PostgreSQL state must degrade to NaN gauges, never
+        # break the whole /api/metrics scrape — but leave a log trail so a
+        # stuck NaN is diagnosable.
+        logger.exception(
+            "tile-rebuild durable state read failed; gauges degrade to NaN"
+        )
     return state
 
 

@@ -861,3 +861,37 @@ async def test_parallelism_bounds_claims_and_stamps_claimed_at(
         assert len(third) == 1
         assert third[0].item_id not in {d.item_id for d in first}
         await session.commit()
+
+
+@requires_db
+async def test_active_children_gauge_counts_only_executing_items(
+    db_factory,
+    monkeypatch,
+) -> None:
+    """Claimed-but-undelivered items must not inflate the effective
+    parallelism gauge: ``running`` with ``started_at IS NULL`` counts as
+    queue backlog, not as an active child."""
+    job_id = await _create_job(db_factory, item_count=3)
+    async with db_factory() as session:
+        claimed = await claim_job_items(session, job_id, 2, 90)
+        assert len(claimed) == 2
+        assert await reserve_job_item_execution(
+            session,
+            job_id,
+            claimed[0].id,
+            claimed[0].claim_token,
+        )
+        await session.commit()
+
+    monkeypatch.setattr(
+        "app.tile_rebuild_metrics.get_async_session",
+        lambda: db_factory,
+    )
+    from app.tile_rebuild_metrics import collect_tile_rebuild_state
+
+    state = await collect_tile_rebuild_state()
+    assert state == {
+        "active_jobs": 1,
+        "running_items": 1,
+        "queued_items": 2,
+    }

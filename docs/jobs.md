@@ -215,9 +215,12 @@ OTel instruments:
 `/api/metrics` gauges (PostgreSQL-derived, `NaN` when the read fails):
 
 - `hriv_tile_rebuild_jobs_active` — supervisors in an active state.
-- `hriv_tile_rebuild_active_children` — running items under active
-  supervisors; this is the effective parallelism gauge.
-- `hriv_tile_rebuild_queued_items` — queued items under active supervisors.
+- `hriv_tile_rebuild_active_children` — executing items (`running` with a
+  stamped `started_at`) under active supervisors; this is the effective
+  parallelism gauge.
+- `hriv_tile_rebuild_queued_items` — items under active supervisors that are
+  queued or claimed but not yet delivered (`running` with `started_at`
+  still NULL).
 
 Structured-log events (`rebuild.*`): `rebuild.job_created`,
 `rebuild.job_terminal`, `rebuild.cancel_requested`,

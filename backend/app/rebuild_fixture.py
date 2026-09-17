@@ -38,6 +38,7 @@ import fcntl
 import hashlib
 import os
 import shutil
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
@@ -109,6 +110,14 @@ class RebuildFixtureSpec:
     source_image_id: int
     name: str
     filename: str
+
+
+@dataclass(frozen=True)
+class PurgedFixtureSource:
+    """A deleted fixture source row's identity and file location."""
+
+    source_image_id: int
+    stored_path: str
 
 
 def is_rebuild_fixture_image(image: Image) -> bool:
@@ -244,9 +253,27 @@ def write_fixture_files(spec: list[RebuildFixtureSpec]) -> Path:
     return fixture_dir
 
 
-def purge_fixture_files(source_image_ids: set[int]) -> None:
-    """Remove fixture source files and exact linked tile trees."""
-    shutil.rmtree(fixture_source_dir(), ignore_errors=True)
+def purge_fixture_files(sources: Iterable[PurgedFixtureSource]) -> None:
+    """Remove the deleted sources' files and their exact tile trees.
+
+    Files are removed per deleted source row rather than by clearing the
+    fixture directory: a marked image retained because it gained a source
+    outside the fixture directory may still link a fixture-dir source whose
+    file must survive the purge. The directory itself is removed only once
+    it is empty.
+    """
+    fixture_dir = fixture_source_dir()
+    resolved_fixture_dir = fixture_dir.resolve(strict=False)
+    source_image_ids: set[int] = set()
+    for source in sources:
+        source_image_ids.add(source.source_image_id)
+        stored = Path(source.stored_path).resolve(strict=False)
+        if stored.is_relative_to(resolved_fixture_dir):
+            stored.unlink(missing_ok=True)
+    try:
+        fixture_dir.rmdir()
+    except OSError:
+        pass
     tiles_dir = Path(settings.tiles_dir)
     if not tiles_dir.is_dir():
         return
@@ -271,8 +298,16 @@ def purge_fixture_files(source_image_ids: set[int]) -> None:
                 shutil.rmtree(path)
 
 
-async def purge_rebuild_fixture(session: AsyncSession) -> set[int]:
-    """Delete rows carrying the exact fixture marker and path contract."""
+async def purge_rebuild_fixture(
+    session: AsyncSession,
+) -> list[PurgedFixtureSource]:
+    """Delete rows carrying the exact fixture marker and path contract.
+
+    Returns the deleted sources' ids and stored paths so file cleanup can
+    target exactly the rows removed here. Marked images retained because a
+    linked source escaped the fixture directory keep both their rows and
+    their fixture-dir files.
+    """
     image_result = await session.execute(
         select(Image)
         .where(
@@ -295,13 +330,23 @@ async def purge_rebuild_fixture(session: AsyncSession) -> set[int]:
         candidate_images,
         linked_sources,
     )
-    source_ids = {source.id for source in sources}
+    purged = [
+        PurgedFixtureSource(
+            source_image_id=source.id,
+            stored_path=source.stored_path,
+        )
+        for source in sources
+    ]
     image_ids = {image.id for image in images}
 
-    if source_ids:
+    if purged:
         await session.execute(
             delete(SourceImage)
-            .where(SourceImage.id.in_(source_ids))
+            .where(
+                SourceImage.id.in_(
+                    [source.source_image_id for source in purged]
+                )
+            )
             .execution_options(synchronize_session="fetch")
         )
     if image_ids:
@@ -312,7 +357,7 @@ async def purge_rebuild_fixture(session: AsyncSession) -> set[int]:
         )
         await bump_browse_revision(session)
     await session.commit()
-    return source_ids
+    return purged
 
 
 async def _seed_rebuild_fixture_locked(
@@ -321,8 +366,8 @@ async def _seed_rebuild_fixture_locked(
 ) -> list[RebuildFixtureSpec]:
     """Idempotently (re-)create *count* linked fixture sources."""
     spec = build_fixture_spec(count)
-    source_ids = await purge_rebuild_fixture(session)
-    await asyncio.to_thread(purge_fixture_files, source_ids)
+    purged = await purge_rebuild_fixture(session)
+    await asyncio.to_thread(purge_fixture_files, purged)
     fixture_dir = fixture_source_dir()
     if spec:
         fixture_dir = await asyncio.to_thread(write_fixture_files, spec)
@@ -400,7 +445,13 @@ def _resolve_database_url() -> str:
 
 
 async def _run_cli(*, count: int, purge_only: bool) -> None:
-    engine = create_async_engine(_resolve_database_url())
+    # Mirror get_engine()'s pool policy so the CLI behaves like the app.
+    engine = create_async_engine(
+        _resolve_database_url(),
+        pool_size=settings.db_pool_size,
+        max_overflow=settings.db_max_overflow,
+        pool_pre_ping=True,
+    )
     session_factory = async_sessionmaker(
         engine,
         expire_on_commit=False,
@@ -411,8 +462,8 @@ async def _run_cli(*, count: int, purge_only: bool) -> None:
             if purge_only:
                 lock = await acquire_rebuild_fixture_archive_lock()
                 try:
-                    source_ids = await purge_rebuild_fixture(session)
-                    await asyncio.to_thread(purge_fixture_files, source_ids)
+                    purged = await purge_rebuild_fixture(session)
+                    await asyncio.to_thread(purge_fixture_files, purged)
                 finally:
                     await release_rebuild_fixture_archive_lock(lock)
                 print("Rebuild fixture purged.")
