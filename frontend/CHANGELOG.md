@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.57.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.56.0...frontend-v0.57.0) (2026-09-17)
+
+
+### Features
+
+* **jobs:** expose durable parallel tile-rebuild controls to admins ([#1310](https://github.com/bcit-tlu/hriv/issues/1310)) ([50a8147](https://github.com/bcit-tlu/hriv/commit/50a8147fb75ff9bf3ba6ad1c0a66ad40a4e4f17a))
+* **viewer:** movable annotation toolbar and fullscreen canvas editing ([#1315](https://github.com/bcit-tlu/hriv/issues/1315)) ([8650cbe](https://github.com/bcit-tlu/hriv/commit/8650cbeaf7cab1e94aefaeacf82874162e47aca0))
+
+
+### Bug Fixes
+
+* **frontend:** show disabled-account message for inactive user login ([#1316](https://github.com/bcit-tlu/hriv/issues/1316)) ([f36dd19](https://github.com/bcit-tlu/hriv/commit/f36dd19a1bf4f6e003329c2f1752b560cffc9f96))
+
 ## [0.56.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.55.0...frontend-v0.56.0) (2026-09-15)
 
 
