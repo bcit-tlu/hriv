@@ -71,8 +71,15 @@ or links to label them.
   Shift-click to select several, or `Ctrl+C` / `Ctrl+V` to copy and paste.
 - **Remove:** select an object and press `Delete`, or use **Delete Selected**
   in the toolbar. **Clear All** removes everything.
+- **Move the toolbar:** if the annotation toolbar covers part of the image,
+  drag its grip handle (⠿, left end) to move it anywhere inside the viewer —
+  arrow keys nudge it when the handle is focused, and a double-click returns
+  it to the top edge. The position is remembered until you reload the page.
 - Click **Save** when finished — annotations are visible to everyone who can
   see the image. Press `Esc` or **Cancel** to discard your changes.
+
+Annotating also works in fullscreen — open the viewer's fullscreen mode first,
+then click the pencil.
 
 ## Hide an image
 

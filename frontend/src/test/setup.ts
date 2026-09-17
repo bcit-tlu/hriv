@@ -4,6 +4,11 @@ import { beforeAll } from 'vitest'
 // @dnd-kit/dom requires ResizeObserver which jsdom does not provide.
 if (typeof globalThis.ResizeObserver === 'undefined') {
   globalThis.ResizeObserver = class ResizeObserver {
+    // Signature kept faithful to the DOM API so call sites type-check.
+    callback: ResizeObserverCallback
+    constructor(callback: ResizeObserverCallback) {
+      this.callback = callback
+    }
     observe() {}
     unobserve() {}
     disconnect() {}

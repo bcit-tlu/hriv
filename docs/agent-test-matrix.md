@@ -34,7 +34,7 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
 ### Changed image metadata / versioning (annotations, overlays, measurement)
 
 - backend: `poetry run pytest tests/test_router_images.py tests/test_images.py tests/test_schemas.py`
-- frontend: `npm test -- useCanvasAnnotations useOverlayPersistence useImageActions ImageMetadataFields measurement CanvasOverlay api.test`
+- frontend: `npm test -- useCanvasAnnotations useOverlayPersistence useImageActions ImageMetadataFields measurement CanvasOverlay ImageViewer useDraggablePosition api.test`
 
 ### Changed image upload or processing pipeline
 

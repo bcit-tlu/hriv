@@ -39,7 +39,8 @@ zoom" — you can zoom in to see fine detail without losing quality.
 
 Drag to pan. The **mini-map** in the bottom right shows where you are, and
 the number on it is the current magnification when the image has a scale
-configured.
+configured. Both the toolbar and the mini-map sit flush against the bottom
+edge of the viewer frame.
 
 ::: tip Sharing what you see
 Your zoom position stays in the address bar — copy the URL to send a link
