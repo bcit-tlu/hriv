@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.58.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.57.0...frontend-v0.58.0) (2026-09-17)
+
+
+### Features
+
+* **frontend:** add 100 and 200 rows-per-page options to table paginators ([#1321](https://github.com/bcit-tlu/hriv/issues/1321)) ([0e6e6b4](https://github.com/bcit-tlu/hriv/commit/0e6e6b4d8be9dad4f8e3a44bb922bc401c0cf979))
+
 ## [0.57.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.56.0...frontend-v0.57.0) (2026-09-17)
 
 
