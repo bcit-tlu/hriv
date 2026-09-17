@@ -499,6 +499,12 @@ bootstrapAdmin:
   enabled: true
   name: 'Haruki Tanaka'
   email: 'admin@example.ca'
+  # Container image for the seed Job's psql client. Deliberately
+  # decoupled from ``postgres.cluster.image`` so BYO-database installs
+  # (``postgres.enabled: false``) do not pull the CNPG-ecosystem image
+  # just to run psql. Any image providing a PostgreSQL client
+  # compatible with the target server works.
+  image: 'postgres:16-alpine'
   # bcrypt hash of the bootstrap password.  Defaults to the same
   # development hash shared by docker-compose seed users (intended
   # to be rotated immediately after first login).  Override with

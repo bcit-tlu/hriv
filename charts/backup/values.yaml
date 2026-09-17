@@ -96,7 +96,6 @@ observability:
 # Override to true in Flux overlays (flux-fleet) for org deployments.
 vault:
   enabled: false
-  azureSecretPath: hriv/azure-storage
 
 # Strong restricted-pod defaults. Operators may override these maps only when
 # platform or storage evidence shows that different IDs/settings are required.

@@ -757,6 +757,23 @@ assert_not_contains "$frontend_override_deployment" "type: RollingUpdate" \
 assert_not_contains "$frontend_override_deployment" "maxSurge:" \
   "frontend deployment should not render rollingUpdate settings when updateStrategy explicitly requests Recreate"
 
+backend_seed_admin_job="$(extract_yaml_doc \
+  "$(helm template test charts/backend)" "Job" "test-hriv-backend-seed-admin")"
+assert_contains "$backend_seed_admin_job" "image: postgres:16-alpine" \
+  "seed-admin job should default to the dedicated bootstrapAdmin.image psql client"
+assert_not_contains "$backend_seed_admin_job" "cloudnative-pg" \
+  "seed-admin job should not use the CNPG cluster image by default"
+
+backend_seed_admin_override_job="$(extract_yaml_doc \
+  "$(helm template test charts/backend \
+    --set bootstrapAdmin.image=registry.example/psql:17 \
+    --set postgres.cluster.image=registry.example/cnpg:17)" \
+  "Job" "test-hriv-backend-seed-admin")"
+assert_contains "$backend_seed_admin_override_job" "image: registry.example/psql:17" \
+  "seed-admin job should honour the bootstrapAdmin.image override"
+assert_not_contains "$backend_seed_admin_override_job" "registry.example/cnpg:17" \
+  "seed-admin job should stay decoupled from postgres.cluster.image"
+
 # #1251 core plus simplified #1253 operational scheduling and fixed egress.
 # These are schema-valid representative reviewed values; operational mode is tested separately.
 restore_validation_helm_args=(
