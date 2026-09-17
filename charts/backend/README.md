@@ -232,6 +232,16 @@ These defaults are intentionally small because import staging now lives on the
 the chart defaults; no overlay change is required for the new storage keys to
 take effect.
 
+## Bootstrap admin seed (`bootstrapAdmin.*`)
+
+When `bootstrapAdmin.enabled=true` (the default), the chart renders a
+one-shot post-install Job (`templates/job-seed-admin.yaml`) that inserts a
+single admin user and bootstrap program on first install only. The Job's
+psql client image comes from `bootstrapAdmin.image` (default
+`postgres:16-alpine`), deliberately decoupled from `postgres.cluster.image`
+so installs with `postgres.enabled=false` (external database) do not pull
+the CNPG cluster image just to run psql.
+
 ## Upgrade Notes
 
 The legacy flat backend persistence keys are deprecated but still honored as
