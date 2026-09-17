@@ -98,6 +98,17 @@ describe('useDraggablePosition', () => {
     expect(handle.releasePointerCapture).toHaveBeenCalledWith(7)
   })
 
+  it('focuses the handle on pointerdown so arrow-key nudging is reachable', () => {
+    render(<Harness />)
+    stubLayout()
+    const handle = screen.getByTestId('handle')
+    fireEvent.pointerDown(handle, { pointerId: 1, button: 0, clientX: 0, clientY: 0 })
+    // pointerdown preventDefault suppresses the focus-granting mousedown;
+    // the handler must focus the handle itself.
+    expect(document.activeElement).toBe(handle)
+    fireEvent.pointerUp(handle, { pointerId: 1 })
+  })
+
   it('clamps the element inside the parent bounds', () => {
     render(<Harness />)
     const { target } = stubLayout()

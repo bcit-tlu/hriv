@@ -25,6 +25,10 @@ interface MockTrackerOptions {
     originalEvent?: { shiftKey?: boolean }
   }) => void
   releaseHandler: () => void
+  preProcessEventHandler?: (event: {
+    originalEvent?: { target?: EventTarget | null }
+    preventGesture: boolean
+  }) => void
 }
 
 interface MockViewer {
@@ -694,6 +698,33 @@ describe('ImageViewer selection rectangles', () => {
     })
 
     expect(viewer().addOverlay).not.toHaveBeenCalled()
+  })
+
+  it('marks presses inside the portaled canvas UI as preventGesture', () => {
+    // The toolbar/links are portaled into viewer.container; without this guard
+    // the tracker captures their presses to viewer.element, retargeting
+    // pointerup/click and suppressing focus — leaving the buttons inert.
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+    const preProcess = tracker().options.preProcessEventHandler
+    expect(preProcess).toBeDefined()
+
+    const uiRoot = document.createElement('div')
+    uiRoot.setAttribute('data-hriv-canvas-ui', '')
+    const uiButton = document.createElement('button')
+    uiRoot.appendChild(uiButton)
+
+    const uiEvent = { originalEvent: { target: uiButton }, preventGesture: false }
+    preProcess!(uiEvent)
+    expect(uiEvent.preventGesture).toBe(true)
+
+    const canvasTarget = document.createElement('div')
+    const viewerEvent = { originalEvent: { target: canvasTarget }, preventGesture: false }
+    preProcess!(viewerEvent)
+    expect(viewerEvent.preventGesture).toBe(false)
+
+    const noTarget = { originalEvent: {}, preventGesture: false }
+    preProcess!(noTarget)
+    expect(noTarget.preventGesture).toBe(false)
   })
 
   it('clears all overlays and notifies the parent', () => {

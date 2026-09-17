@@ -586,6 +586,18 @@ export default function ImageViewer({
 
     const selectionTracker = new OpenSeadragon.MouseTracker({
       element: viewer.element,
+      // CanvasOverlay portals its UI (edit toolbar, link annotations, fabric
+      // canvas) into viewer.container, inside this tracker's element. Without
+      // this guard the tracker would capture every such press to
+      // viewer.element — retargeting pointerup/click away from the real target
+      // — and preventDefault the pointerdown, which suppresses focus and
+      // breaks the toolbar's arrow-key nudge. preventGesture skips both.
+      preProcessEventHandler: (event: OpenSeadragon.PreProcessMouseTrackerEvent) => {
+        const target = event.originalEvent?.target
+        if (target instanceof Element && target.closest('[data-hriv-canvas-ui]')) {
+          event.preventGesture = true
+        }
+      },
       pressHandler: (event: OpenSeadragon.MouseTrackerEvent) => {
         if (!selectionModeRef.current || !event.position) return
         const overlayElement = document.createElement('div')

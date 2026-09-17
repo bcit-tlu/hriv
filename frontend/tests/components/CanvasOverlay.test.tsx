@@ -1283,6 +1283,16 @@ describe('CanvasOverlay', () => {
       expect(toolbar).toHaveStyle({ top: '0px', left: '50%', transform: 'translateX(-50%)' })
     })
 
+    it('wraps the portaled UI in the marker the selection tracker checks for', () => {
+      // ImageViewer's selection tracker skips capture/preventDefault for
+      // events inside [data-hriv-canvas-ui]; without the marker on the portal
+      // root the toolbar buttons would be left inert.
+      renderEditMode()
+      const marker = getToolbar().closest('[data-hriv-canvas-ui]')
+      expect(marker).not.toBeNull()
+      expect(viewer.container.contains(marker)).toBe(true)
+    })
+
     it('renders the drag handle with an accessible label', () => {
       renderEditMode()
       const handle = screen.getByLabelText('Move annotation toolbar')

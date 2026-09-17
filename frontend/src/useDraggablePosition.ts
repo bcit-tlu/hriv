@@ -148,6 +148,9 @@ export function useDraggablePosition(
       setDragging(true)
       e.currentTarget.setPointerCapture?.(e.pointerId)
       e.preventDefault()
+      // preventDefault suppresses the compat mousedown that would focus the
+      // handle — focus it explicitly so arrow-key nudging works after a press.
+      e.currentTarget.focus()
     },
     [position, measure, onDragStart],
   )

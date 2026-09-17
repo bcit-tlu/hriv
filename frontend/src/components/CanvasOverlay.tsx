@@ -1636,11 +1636,16 @@ export default function CanvasOverlay({
   // canvas, toolbar, status label) travels with the viewer when OSD full-page
   // mode reparents viewer.element to document.body. Positioned children anchor
   // to viewer.container, which is position:relative and viewport-sized.
+  // Each top-level child carries data-hriv-canvas-ui: ImageViewer's selection
+  // tracker must not capture/preventDefault presses inside them — doing so
+  // retargets pointerup/click to viewer.element and suppresses focus, leaving
+  // toolbar buttons and link annotations inert.
   return createPortal(
     <>
       {/* View-mode canvas */}
       {!editMode && (
         <Box
+          data-hriv-canvas-ui
           sx={{
             position: 'absolute',
             top: 0,
@@ -1680,6 +1685,7 @@ export default function CanvasOverlay({
       {editMode && (
         <Box
           ref={wrapperRef}
+          data-hriv-canvas-ui
           sx={{
             position: 'absolute',
             top: 0,
@@ -1698,6 +1704,7 @@ export default function CanvasOverlay({
       {editMode && (
         <Box
           ref={toolbarRef}
+          data-hriv-canvas-ui
           sx={{
             position: 'absolute',
             zIndex: 20,
@@ -2131,6 +2138,7 @@ export default function CanvasOverlay({
       {editMode && (
         <Typography
           variant="caption"
+          data-hriv-canvas-ui
           sx={{
             position: 'absolute',
             bottom: 48,

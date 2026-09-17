@@ -111,7 +111,12 @@ images> / Empty` format used on category tiles.
   editing work in OSD full-page mode — previously the overlay stayed under
   `#root`, which full-page hides (#1311). MUI submenus/dialogs portal to
   `document.body`, so they close on `full-page` transitions rather than
-  ending up hidden or detached. When the viewer container changes size during
+  ending up hidden or detached. Every top-level portaled child is tagged
+  `data-hriv-canvas-ui` so the selection `MouseTracker` on `viewer.element`
+  can skip gesture capture for overlay UI presses — otherwise the tracker
+  captures the pointer to `viewer.element`, retargeting `pointerup`/`click`
+  away from toolbar buttons and suppressing the focus that arrow-key nudging
+  relies on. When the viewer container changes size during
   edit mode (window resize, full-page transitions, layout shifts) the fabric
   canvas is resized and its objects are re-projected from the viewport-space
   draft, keeping annotations glued to the image.
