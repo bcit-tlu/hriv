@@ -37,7 +37,7 @@ spec:
                   key: uri
       containers:
         - name: seed-admin
-          image: {{ .Values.postgres.cluster.image }}
+          image: {{ .Values.bootstrapAdmin.image }}
           command:
             - sh
             - -c
