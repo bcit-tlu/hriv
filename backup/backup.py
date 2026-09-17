@@ -2777,9 +2777,18 @@ def _run_backup_inner() -> Path | None:
 
 
 def _source_images_root() -> Path:
+    """Locate the source-images root that hosts the fixture archive lock.
+
+    The backend creates ``source_images`` on demand and locks a file inside
+    it, so in production mode this path must be stable even before the
+    directory exists — falling back to ``data_dir`` would lock a different
+    file than a first-time fixture seed and lose mutual exclusion.
+    """
     data_dir = Path(DATA_DIR)
     if (data_dir / _REBUILD_FIXTURE_DIRNAME).is_dir():
         return data_dir
+    if BACKUP_MODE == "production":
+        return data_dir / "source_images"
     legacy_root = data_dir / "source_images"
     return legacy_root if legacy_root.is_dir() else data_dir
 

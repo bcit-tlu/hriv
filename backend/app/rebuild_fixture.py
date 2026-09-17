@@ -34,11 +34,11 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import errno
 import fcntl
 import hashlib
 import os
 import shutil
-from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
@@ -53,6 +53,7 @@ from sqlalchemy.ext.asyncio import (
 from .browse_state import bump_browse_revision
 from .database import AppSession, settings
 from .models import Image, SourceImage
+from .rebuild_locks import find_active_rebuild
 from .tile_provenance import current_tile_settings_hash
 
 FIXTURE_PREFIX = "TRF-"
@@ -118,6 +119,22 @@ class PurgedFixtureSource:
 
     source_image_id: int
     stored_path: str
+
+
+@dataclass(frozen=True)
+class FixturePurgePlan:
+    """What one fixture purge deleted and which fixture-dir files survive.
+
+    ``retained_stored_paths`` holds the fixture-directory files still
+    referenced by source rows that were *not* deleted (e.g. a marked image
+    retained because it gained a source outside the fixture directory).
+    File cleanup removes everything else under the reserved directory —
+    including orphans left when rows vanished without a purge — but never
+    a retained file.
+    """
+
+    purged_sources: tuple[PurgedFixtureSource, ...]
+    retained_stored_paths: frozenset[str]
 
 
 def is_rebuild_fixture_image(image: Image) -> bool:
@@ -253,27 +270,43 @@ def write_fixture_files(spec: list[RebuildFixtureSpec]) -> Path:
     return fixture_dir
 
 
-def purge_fixture_files(sources: Iterable[PurgedFixtureSource]) -> None:
-    """Remove the deleted sources' files and their exact tile trees.
+def purge_fixture_files(plan: FixturePurgePlan) -> None:
+    """Remove fixture artifacts while preserving files of retained rows.
 
-    Files are removed per deleted source row rather than by clearing the
-    fixture directory: a marked image retained because it gained a source
-    outside the fixture directory may still link a fixture-dir source whose
-    file must survive the purge. The directory itself is removed only once
-    it is empty.
+    Every entry under the reserved fixture directory that is not referenced
+    by a surviving source row is removed — including orphans left behind
+    when fixture rows disappeared without a purge (for example after a
+    database import replaced all source rows). Retained files keep the
+    directory alive; otherwise the directory is removed once empty.
     """
     fixture_dir = fixture_source_dir()
-    resolved_fixture_dir = fixture_dir.resolve(strict=False)
-    source_image_ids: set[int] = set()
-    for source in sources:
-        source_image_ids.add(source.source_image_id)
-        stored = Path(source.stored_path).resolve(strict=False)
-        if stored.is_relative_to(resolved_fixture_dir):
-            stored.unlink(missing_ok=True)
-    try:
-        fixture_dir.rmdir()
-    except OSError:
-        pass
+    retained = {
+        str(Path(path).resolve(strict=False))
+        for path in plan.retained_stored_paths
+    }
+    source_image_ids = {
+        source.source_image_id for source in plan.purged_sources
+    }
+    if fixture_dir.is_dir():
+        for path in fixture_dir.iterdir():
+            if str(path.resolve(strict=False)) in retained:
+                continue
+            if path.is_symlink() or not path.is_dir():
+                path.unlink(missing_ok=True)
+            else:
+                shutil.rmtree(path)
+        try:
+            fixture_dir.rmdir()
+        except OSError as exc:
+            # ENOENT/ENOTEMPTY/EEXIST mean the directory is already gone or
+            # still holds retained files — both expected. Anything else is
+            # a real filesystem failure and must surface.
+            if exc.errno not in (
+                errno.ENOENT,
+                errno.ENOTEMPTY,
+                errno.EEXIST,
+            ):
+                raise
     tiles_dir = Path(settings.tiles_dir)
     if not tiles_dir.is_dir():
         return
@@ -300,14 +333,27 @@ def purge_fixture_files(sources: Iterable[PurgedFixtureSource]) -> None:
 
 async def purge_rebuild_fixture(
     session: AsyncSession,
-) -> list[PurgedFixtureSource]:
+) -> FixturePurgePlan:
     """Delete rows carrying the exact fixture marker and path contract.
 
-    Returns the deleted sources' ids and stored paths so file cleanup can
-    target exactly the rows removed here. Marked images retained because a
-    linked source escaped the fixture directory keep both their rows and
-    their fixture-dir files.
+    Returns a purge plan describing the deleted sources (ids + stored
+    paths) and the fixture-directory files still referenced by retained
+    rows, so file cleanup shares this function's selection. Marked images
+    retained because a linked source escaped the fixture directory keep
+    both their rows and their fixture-dir files.
+
+    Refuses to run while any serial or durable rebuild is active: deleting
+    fixture rows and tile trees underneath in-flight children would fail
+    their items, and a reseed could reissue deterministic IDs still held by
+    old claims.
     """
+    active = await find_active_rebuild(session)
+    if active is not None:
+        raise RuntimeError(
+            "Refusing to mutate the rebuild fixture while a rebuild is "
+            f"active ({active.kind} {active.id}, status={active.status}); "
+            "let it finish or cancel it first"
+        )
     image_result = await session.execute(
         select(Image)
         .where(
@@ -338,6 +384,15 @@ async def purge_rebuild_fixture(
         for source in sources
     ]
     image_ids = {image.id for image in images}
+    resolved_fixture_dir = fixture_source_dir().resolve(strict=False)
+    retained_stored_paths = frozenset(
+        source.stored_path
+        for source in linked_sources
+        if source.image_id not in image_ids
+        and Path(source.stored_path)
+        .resolve(strict=False)
+        .is_relative_to(resolved_fixture_dir)
+    )
 
     if purged:
         await session.execute(
@@ -357,7 +412,10 @@ async def purge_rebuild_fixture(
         )
         await bump_browse_revision(session)
     await session.commit()
-    return purged
+    return FixturePurgePlan(
+        purged_sources=tuple(purged),
+        retained_stored_paths=retained_stored_paths,
+    )
 
 
 async def _seed_rebuild_fixture_locked(
@@ -366,8 +424,8 @@ async def _seed_rebuild_fixture_locked(
 ) -> list[RebuildFixtureSpec]:
     """Idempotently (re-)create *count* linked fixture sources."""
     spec = build_fixture_spec(count)
-    purged = await purge_rebuild_fixture(session)
-    await asyncio.to_thread(purge_fixture_files, purged)
+    plan = await purge_rebuild_fixture(session)
+    await asyncio.to_thread(purge_fixture_files, plan)
     fixture_dir = fixture_source_dir()
     if spec:
         fixture_dir = await asyncio.to_thread(write_fixture_files, spec)
@@ -462,8 +520,8 @@ async def _run_cli(*, count: int, purge_only: bool) -> None:
             if purge_only:
                 lock = await acquire_rebuild_fixture_archive_lock()
                 try:
-                    purged = await purge_rebuild_fixture(session)
-                    await asyncio.to_thread(purge_fixture_files, purged)
+                    plan = await purge_rebuild_fixture(session)
+                    await asyncio.to_thread(purge_fixture_files, plan)
                 finally:
                     await release_rebuild_fixture_archive_lock(lock)
                 print("Rebuild fixture purged.")

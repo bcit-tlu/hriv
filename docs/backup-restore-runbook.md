@@ -276,9 +276,16 @@ kubectl -n hriv exec deploy/hriv-backend -- \
   python -m app.rebuild_fixture --purge
 ```
 
+Both seeding and `--purge` refuse to run while a serial or durable rebuild
+is active, so fixture rows and tile trees are never deleted underneath
+in-flight children — let any running rebuild finish or cancel it first.
+
 This removes only exact `metadata.rebuild_fixture=true` images, their linked
 sources whose stored paths are inside `rebuild-fixture`, and tile/temp/`.old-*`
-trees for those exact source IDs. Fixture filesystem work
+trees for those exact source IDs. The fixture directory itself is swept of
+unreferenced files (including orphans left when fixture rows vanished without
+a purge, e.g. after a database import) and removed once empty; files still
+referenced by retained rows are preserved. Fixture filesystem work
 runs off the CLI event loop so thousands of small files do not block database
 or cancellation progress. Trigger or wait for the next scheduled backup after
 purge and confirm it succeeds; do not retain or use any failed backup attempt

@@ -15,6 +15,7 @@ from app.rebuild_fixture import (
     FIXTURE_TIFF_BYTES,
     IMAGE_ID_BASE,
     SOURCE_IMAGE_ID_BASE,
+    FixturePurgePlan,
     PurgedFixtureSource,
     build_fixture_spec,
     purge_fixture_files,
@@ -155,15 +156,17 @@ def test_write_and_purge_fixture_files(tmp_path: Path) -> None:
         write_fixture_files(spec)
         assert marker.read_bytes() == FIXTURE_TIFF_BYTES
 
-        purge_fixture_files(
-            [
+        plan = FixturePurgePlan(
+            purged_sources=tuple(
                 PurgedFixtureSource(
                     source_image_id=item.source_image_id,
                     stored_path=str(fixture_dir / item.filename),
                 )
                 for item in spec
-            ]
+            ),
+            retained_stored_paths=frozenset(),
         )
+        purge_fixture_files(plan)
         assert not fixture_dir.exists()
         assert not fixture_tiles.exists()
         assert not fixture_temp.exists()
@@ -171,31 +174,56 @@ def test_write_and_purge_fixture_files(tmp_path: Path) -> None:
         assert preserved_tiles.exists()
         assert preserved_high_tiles.exists()
         # Purge is idempotent and must not touch the parent directory.
-        purge_fixture_files(
-            [
-                PurgedFixtureSource(
-                    source_image_id=item.source_image_id,
-                    stored_path=str(fixture_dir / item.filename),
-                )
-                for item in spec
-            ]
-        )
+        purge_fixture_files(plan)
         assert tmp_path.exists()
+
+
+def test_purge_sweeps_orphan_files_after_rows_vanish(tmp_path: Path) -> None:
+    """When fixture rows disappeared without a purge (e.g. after a database
+    import), an empty purge plan still clears the reserved directory so
+    backups and filesystem exports are not blocked forever."""
+    fixture_dir = tmp_path / "rebuild-fixture"
+    fixture_dir.mkdir(parents=True)
+    orphan = fixture_dir / "TRF-00000.tif"
+    orphan.write_bytes(FIXTURE_TIFF_BYTES)
+
+    with (
+        patch.object(
+            rebuild_fixture,
+            "fixture_source_dir",
+            return_value=fixture_dir,
+        ),
+        patch.object(
+            rebuild_fixture.settings,
+            "tiles_dir",
+            str(tmp_path / "tiles"),
+        ),
+    ):
+        purge_fixture_files(
+            FixturePurgePlan(
+                purged_sources=(),
+                retained_stored_paths=frozenset(),
+            )
+        )
+
+    assert not fixture_dir.exists()
 
 
 def test_purge_preserves_files_of_retained_fixture_rows(
     tmp_path: Path,
 ) -> None:
     """A marked image retained because it gained an outside source keeps
-    its remaining fixture-dir source's file."""
+    its remaining fixture-dir source's file, while unreferenced orphans
+    are still swept."""
     fixture_dir = tmp_path / "rebuild-fixture"
     tiles_dir = tmp_path / "tiles"
     tiles_dir.mkdir(parents=True)
     fixture_dir.mkdir(parents=True)
     deleted_file = fixture_dir / "TRF-00000.tif"
     retained_file = fixture_dir / "TRF-00001.tif"
-    deleted_file.write_bytes(FIXTURE_TIFF_BYTES)
-    retained_file.write_bytes(FIXTURE_TIFF_BYTES)
+    orphan_file = fixture_dir / "TRF-00099.tif"
+    for path in (deleted_file, retained_file, orphan_file):
+        path.write_bytes(FIXTURE_TIFF_BYTES)
     retained_tiles = tiles_dir / str(SOURCE_IMAGE_ID_BASE + 1)
     retained_tiles.mkdir()
     (retained_tiles / "marker").write_text("present")
@@ -209,15 +237,19 @@ def test_purge_preserves_files_of_retained_fixture_rows(
         patch.object(rebuild_fixture.settings, "tiles_dir", str(tiles_dir)),
     ):
         purge_fixture_files(
-            [
-                PurgedFixtureSource(
-                    source_image_id=SOURCE_IMAGE_ID_BASE,
-                    stored_path=str(deleted_file),
-                )
-            ]
+            FixturePurgePlan(
+                purged_sources=(
+                    PurgedFixtureSource(
+                        source_image_id=SOURCE_IMAGE_ID_BASE,
+                        stored_path=str(deleted_file),
+                    ),
+                ),
+                retained_stored_paths=frozenset({str(retained_file)}),
+            )
         )
 
     assert not deleted_file.exists()
+    assert not orphan_file.exists()
     assert retained_file.read_bytes() == FIXTURE_TIFF_BYTES
     assert fixture_dir.is_dir()
     assert retained_tiles.exists()
@@ -247,11 +279,17 @@ async def test_purge_uses_exact_marker_link_and_path(tmp_path: Path) -> None:
     def rows_result(rows: list[object]) -> MagicMock:
         result = MagicMock()
         result.scalars.return_value.all.return_value = rows
+        result.scalars.return_value.first.return_value = (
+            rows[0] if rows else None
+        )
         return result
 
     session = AsyncMock()
     session.execute = AsyncMock(
         side_effect=[
+            # find_active_rebuild: serial task probe, durable job probe.
+            rows_result([]),
+            rows_result([]),
             rows_result([fixture_image, real_high_image]),
             rows_result([fixture_source, outside_source]),
             MagicMock(),
@@ -270,17 +308,85 @@ async def test_purge_uses_exact_marker_link_and_path(tmp_path: Path) -> None:
             new_callable=AsyncMock,
         ) as bump_revision,
     ):
-        purged = await rebuild_fixture.purge_rebuild_fixture(session)
+        plan = await rebuild_fixture.purge_rebuild_fixture(session)
 
-    assert purged == [
+    assert plan.purged_sources == (
         PurgedFixtureSource(
             source_image_id=SOURCE_IMAGE_ID_BASE,
             stored_path=str(fixture_dir / "TRF-00000.tif"),
-        )
-    ]
-    assert session.execute.await_count == 4
+        ),
+    )
+    assert plan.retained_stored_paths == frozenset()
+    assert session.execute.await_count == 6
     bump_revision.assert_awaited_once_with(session)
     session.commit.assert_awaited_once()
+
+
+async def test_purge_retained_fixture_source_paths_survive(
+    tmp_path: Path,
+) -> None:
+    """A marked image retained for an outside source keeps its remaining
+    fixture-dir stored_path in the purge plan's retained set."""
+    fixture_dir = tmp_path / "rebuild-fixture"
+    marked_image = SimpleNamespace(
+        id=IMAGE_ID_BASE,
+        metadata_={"rebuild_fixture": True},
+    )
+    retained_source = SimpleNamespace(
+        id=SOURCE_IMAGE_ID_BASE,
+        image_id=IMAGE_ID_BASE,
+        stored_path=str(fixture_dir / "TRF-00000.tif"),
+    )
+    outside_source = SimpleNamespace(
+        id=SOURCE_IMAGE_ID_BASE + 1,
+        image_id=IMAGE_ID_BASE,
+        stored_path=str(tmp_path / "outside" / "real.tif"),
+    )
+
+    def rows_result(rows: list[object]) -> MagicMock:
+        result = MagicMock()
+        result.scalars.return_value.all.return_value = rows
+        result.scalars.return_value.first.return_value = (
+            rows[0] if rows else None
+        )
+        return result
+
+    session = AsyncMock()
+    session.execute = AsyncMock(
+        side_effect=[
+            rows_result([]),
+            rows_result([]),
+            rows_result([marked_image]),
+            rows_result([retained_source, outside_source]),
+        ]
+    )
+    with patch.object(
+        rebuild_fixture,
+        "fixture_source_dir",
+        return_value=fixture_dir,
+    ):
+        plan = await rebuild_fixture.purge_rebuild_fixture(session)
+
+    assert plan.purged_sources == ()
+    assert plan.retained_stored_paths == frozenset(
+        {str(fixture_dir / "TRF-00000.tif")}
+    )
+    session.commit.assert_awaited_once()
+
+
+async def test_purge_refuses_during_active_rebuild() -> None:
+    """Fixture mutation must not delete rows/tiles under in-flight children."""
+    session = AsyncMock()
+    with patch.object(
+        rebuild_fixture,
+        "find_active_rebuild",
+        new_callable=AsyncMock,
+        return_value=SimpleNamespace(kind="job", id=7, status="running"),
+    ):
+        with pytest.raises(RuntimeError, match="while a rebuild is active"):
+            await rebuild_fixture.purge_rebuild_fixture(session)
+
+    session.commit.assert_not_called()
 
 
 async def test_seed_rebuild_fixture_inserts_linked_pairs(tmp_path: Path) -> None:
@@ -300,7 +406,7 @@ async def test_seed_rebuild_fixture_inserts_linked_pairs(tmp_path: Path) -> None
             rebuild_fixture,
             "purge_rebuild_fixture",
             new_callable=AsyncMock,
-            return_value=[],
+            return_value=FixturePurgePlan((), frozenset()),
         ),
         patch.object(
             rebuild_fixture,
@@ -348,7 +454,7 @@ async def test_seed_zero_leaves_no_active_fixture_directory(
             rebuild_fixture,
             "purge_rebuild_fixture",
             new_callable=AsyncMock,
-            return_value=[],
+            return_value=FixturePurgePlan((), frozenset()),
         ),
         patch.object(
             rebuild_fixture,

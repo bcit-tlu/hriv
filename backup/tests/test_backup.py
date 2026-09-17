@@ -1095,6 +1095,25 @@ class BackupRunTestCase(_BackupTestCase):
                 self.assertTrue(backup._rebuild_fixture_present())
                 fixture_dir.rmdir()
 
+    def test_fixture_lock_root_is_stable_before_source_dir_exists(self):
+        """In production mode the lock must live under ``source_images``
+        even before that directory exists — the backend creates it on
+        demand and locks inside it, so falling back to ``data_dir`` would
+        lock a different file than a first-time fixture seed."""
+        shutil.rmtree(self.data_dir / "source_images")
+        self._reload(
+            {"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)}
+        )
+        self.assertEqual(
+            backup._source_images_root(),
+            self.data_dir / "source_images",
+        )
+        # Non-production layouts keep the data-dir fallback.
+        self._reload(
+            {"BACKUP_MODE": "development", "DATA_DIR": str(self.data_dir)}
+        )
+        self.assertEqual(backup._source_images_root(), self.data_dir)
+
     def test_backup_is_blocked_while_rebuild_fixture_is_active(self):
         fixture_dir = self.data_dir / "rebuild-fixture"
         fixture_dir.mkdir()

@@ -407,7 +407,8 @@ backed by tiny valid TIFFs (`--purge` removes their rows, source files, generate
 tiles, and rebuild temporary trees). Purge and database JSON export identify
 fixtures only through `metadata.rebuild_fixture=true`, the linked source, and its
 confined stored path; user-controlled `TRF-` names or high IDs alone never
-qualify. Filesystem exports and scheduled backups use a shared source-volume
+qualify. Fixture seeding/purging refuses to run while a rebuild is active.
+Filesystem exports and scheduled backups use a shared source-volume
 lock and fail closed while the fixture directory exists; the full procedure and
 measurement record live in
 [backup-restore-runbook.md](backup-restore-runbook.md#tile-rebuild-scale-rehearsal-opt-in-issue-1189).
