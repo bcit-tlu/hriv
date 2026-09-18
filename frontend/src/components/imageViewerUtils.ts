@@ -217,6 +217,37 @@ export function createPinchRotationTracker({
   }
 }
 
+/**
+ * OpenSeadragon's `WebGLDrawer.isSupported()` verifies WebGL support by
+ * creating a real context and releasing it through `WEBGL_lose_context`,
+ * which browsers (notably Firefox) surface as a "WebGL context was lost"
+ * console warning. OSD runs the probe on every `Viewer` construction —
+ * including the navigator minimap — so each image mount emitted several
+ * warnings.
+ *
+ * The verdict is an environment capability that cannot change within a
+ * session, so this wraps `isSupported` to return a cached `true` once the
+ * probe has succeeded. `false` is never cached so transient failures keep
+ * the original retry behaviour. Repeated calls are safe, and a missing
+ * drawer class (e.g. when the openseadragon module is mocked) is a no-op.
+ */
+const memoizedWebGLDrawers = new WeakSet<object>()
+
+export function memoizeWebGLDrawerSupport(
+  WebGLDrawer: { isSupported: (options?: unknown) => boolean } | null | undefined,
+): void {
+  if (!WebGLDrawer || memoizedWebGLDrawers.has(WebGLDrawer)) return
+  memoizedWebGLDrawers.add(WebGLDrawer)
+  const original = WebGLDrawer.isSupported
+  let supported = false
+  WebGLDrawer.isSupported = (options?: unknown) => {
+    if (!supported) {
+      supported = original.call(WebGLDrawer, options)
+    }
+    return supported
+  }
+}
+
 /** Create a styled label element for measurement display */
 export function createMeasurementLabel(): HTMLDivElement {
   const label = document.createElement('div')
