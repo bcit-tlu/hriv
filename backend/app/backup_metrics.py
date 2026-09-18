@@ -4,11 +4,17 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from math import isfinite
 from threading import Lock
 from time import monotonic
 from typing import Any
 
-from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Gauge, generate_latest
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    CollectorRegistry,
+    Gauge,
+    generate_latest,
+)
 
 from .backup_access import (
     BackupRestoreNotConfiguredError,
@@ -51,7 +57,8 @@ def _parse_numeric(value: object) -> float | None:
     if isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
-        return float(value)
+        parsed = float(value)
+        return parsed if isfinite(parsed) else None
     return None
 
 
@@ -64,6 +71,33 @@ def _attempt_outcome_value(section: dict[str, object] | None) -> float:
     if success is False:
         return 0.0
     return -1.0
+
+
+def _last_success_size(state: dict | None, backup_type: str) -> float | None:
+    if not isinstance(state, dict):
+        return None
+    section = state.get(backup_type)
+    if not isinstance(section, dict):
+        return None
+
+    raw_size = section.get("last_success_size_bytes")
+    if raw_size is not None:
+        return _parse_numeric(raw_size)
+
+    if backup_type != "database" or state.get("backup_mode") != "production":
+        return None
+    filesystem = state.get("filesystem")
+    database_archive = section.get("last_success_archive_key")
+    if not isinstance(filesystem, dict) or not (
+        isinstance(database_archive, str) and database_archive.startswith("cnpg://")
+    ):
+        return None
+
+    database_completed = _parse_timestamp(section.get("last_success_completed_at"))
+    filesystem_completed = _parse_timestamp(filesystem.get("last_success_completed_at"))
+    if database_completed is None or database_completed != filesystem_completed:
+        return None
+    return _parse_numeric(filesystem.get("last_success_size_bytes"))
 
 
 def _set_or_nan(gauge: Gauge, value: float | None) -> None:
@@ -190,7 +224,7 @@ _backup_last_duration = Gauge(
 
 _backup_last_size = Gauge(
     "hriv_backup_last_size_bytes",
-    "Payload size in bytes recorded for the latest backup attempt for this backup type",
+    "Payload size in bytes recorded for the latest successful backup for this backup type",
     labelnames=("backup_type",),
     registry=_registry,
 )
@@ -358,7 +392,7 @@ def render_backup_metrics() -> tuple[bytes, str]:
             )
             _set_or_nan(
                 _backup_last_size.labels(backup_type=backup_type),
-                _parse_numeric(section.get("size_bytes")) if isinstance(section, dict) else None,
+                _last_success_size(backup_state, backup_type),
             )
             _backup_archives_retained.labels(backup_type=backup_type).set(float(summary.get("count", 0) or 0))
             _set_or_nan(

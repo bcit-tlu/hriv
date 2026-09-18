@@ -553,12 +553,17 @@ Published backup gauges:
 - `hriv_backup_oldest_archive_timestamp_seconds{backup_type}`
 - `hriv_backup_newest_archive_timestamp_seconds{backup_type}`
 
-In production mode the database component has no payload of its own — CNPG
-owns the database backup and the published archive is bound to that recovery
-point — so `hriv_backup_last_size_bytes{backup_type="database"}` reports the
-shared recovery archive's payload size, and retained-archive classification
-counts CNPG-bound (format-2, `capture_boundary_lsn`) archives toward both
-`database` and `filesystem` even though they contain no `db.sql` member.
+`hriv_backup_last_size_bytes` reports the latest successful size rather than
+the latest attempt's size, so a failed or interrupted attempt does not erase a
+previous success from the dashboard. In production mode the database component
+has no payload of its own — CNPG owns the database backup and the published
+archive is bound to that recovery point — so the database series reports the
+shared recovery archive's payload size. For markers written before that size
+was recorded, the exporter uses the filesystem success size only when both
+components have the same completion time and the database success is CNPG-bound.
+Retained-archive classification counts CNPG-bound (format-2,
+`capture_boundary_lsn`) archives toward both `database` and `filesystem` even
+though they contain no `db.sql` member.
 
 `hriv_backup_archive_listing_last_refresh_timestamp_seconds` records when the
 retained-archive classification cache was last refreshed successfully, and
