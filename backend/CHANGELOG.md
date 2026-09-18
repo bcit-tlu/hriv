@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.60.3](https://github.com/bcit-tlu/hriv/compare/backend-v0.60.2...backend-v0.60.3) (2026-09-18)
+
+
+### Bug Fixes
+
+* **rebuild:** harden scale rehearsal safety ([#1331](https://github.com/bcit-tlu/hriv/issues/1331)) ([d192db3](https://github.com/bcit-tlu/hriv/commit/d192db3fff315c364f24311e6f45ae023db0336b))
+* **rebuild:** raise measured timeout budget ([#1333](https://github.com/bcit-tlu/hriv/issues/1333)) ([b85eedf](https://github.com/bcit-tlu/hriv/commit/b85eedfdda6802555372d210f045a5cd218e2b8f))
+
 ## [0.60.2](https://github.com/bcit-tlu/hriv/compare/backend-v0.60.1...backend-v0.60.2) (2026-09-18)
 
 
