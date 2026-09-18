@@ -156,8 +156,8 @@ The scheduler settings are:
 
 - `REBUILD_PARALLEL_ENABLED=false`
 - `REBUILD_PARALLELISM=2`
-- `REBUILD_CHILD_TIMEOUT_SECONDS=1800` (maximum `86400`)
-- `REBUILD_LEASE_SECONDS=2100`
+- `REBUILD_CHILD_TIMEOUT_SECONDS=3600` (maximum `86400`)
+- `REBUILD_LEASE_SECONDS=3900`
 - `REBUILD_HEARTBEAT_SECONDS=30`
 - `REBUILD_PUMP_CADENCE_SECONDS=60`
 - `REBUILD_MAX_ATTEMPTS=2`
@@ -249,9 +249,15 @@ worked without duplicated rows or terminal outcomes, but one item resumed about
 39 minutes after its last heartbeat. Cancellation then drained in about nine
 minutes and ended with exact accounting: 13 completed and 3,386 cancelled.
 Because worker scale-down was unsafe and the run did not demonstrate an accepted
-DR-RTO improvement, parallel creation was disabled again. The chart's
-3600-second worker HPA scale-down stabilization window must be deployed and the
-production-shaped rehearsal repeated before enabling new parallel jobs.
+DR-RTO improvement, parallel creation was disabled again.
+
+The repeat rehearsal deployed the chart's 3600-second worker HPA scale-down
+stabilization window. It improved the observed pace to about 14 images/hour and
+prevented involuntary HPA loss of active workers, but two representative sources
+still exhausted the former 1800-second child timeout. The next candidate keeps
+parallelism 2 and the HPA window, with a 3600-second child timeout and
+3900-second lease. Parallel creation remains disabled until that candidate
+completes without timeout failures and meets the agreed RTO.
 
 The existing admin rebuild endpoint and automatic post-import rebuild continue
 to create serial `AdminTask` work. Durable creation requires both
