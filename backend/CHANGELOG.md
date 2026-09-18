@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.60.2](https://github.com/bcit-tlu/hriv/compare/backend-v0.60.1...backend-v0.60.2) (2026-09-18)
+
+
+### Bug Fixes
+
+* preserve successful backup sizes in metrics ([#1329](https://github.com/bcit-tlu/hriv/issues/1329)) ([a2a30b5](https://github.com/bcit-tlu/hriv/commit/a2a30b51e5c627ae35c0236dd4f9077041fe9f8e))
+
 ## [0.60.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.60.0...backend-v0.60.1) (2026-09-18)
 
 
