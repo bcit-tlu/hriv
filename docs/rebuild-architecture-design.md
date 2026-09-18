@@ -79,8 +79,8 @@ Current scheduler controls are:
 | ------------------------------- | ------- | -------------------------------------------- |
 | `REBUILD_PARALLEL_ENABLED`      | `false` | Gates creation of durable parallel rebuilds  |
 | `REBUILD_PARALLELISM`           | `2`     | Independent PostgreSQL-derived child window  |
-| `REBUILD_CHILD_TIMEOUT_SECONDS` | `1800`  | Persisted timeout; maximum 24 hours          |
-| `REBUILD_LEASE_SECONDS`         | `2100`  | Ownership recovery horizon                   |
+| `REBUILD_CHILD_TIMEOUT_SECONDS` | `3600`  | Persisted timeout; maximum 24 hours          |
+| `REBUILD_LEASE_SECONDS`         | `3900`  | Ownership recovery horizon                   |
 | `REBUILD_HEARTBEAT_SECONDS`     | `30`    | Lease renewal cadence during tile generation |
 | `REBUILD_PUMP_CADENCE_SECONDS`  | `60`    | Periodic missed-trigger recovery cadence     |
 
@@ -101,7 +101,12 @@ after lease expiry), but that delay and HPA behavior were not acceptable as the
 deployed default. Parallel creation was therefore disabled again in `latest`;
 the persisted job was not converted or rolled back. The worker HPA now defaults
 to a 3600-second scale-down stabilization window. A successful repeat rehearsal
-with that protection deployed remains required before re-enablement.
+with that protection deployed remained required before re-enablement. The repeat
+rehearsal confirmed that the HPA protection prevents involuntary worker loss, but
+two representative sources exceeded the prior 1800-second child timeout. The
+next candidate therefore uses a 3600-second timeout and a 3900-second lease at
+parallelism 2; keep the feature flag off until it passes the RTO and timeout
+criteria.
 
 ## Problem
 

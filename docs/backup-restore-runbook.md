@@ -296,6 +296,34 @@ also exposed an invalid embedded fixture TIFF; corrected fixture tooling now
 verifies the payload with runtime libvips before seeding. Do not repeat using a
 backend image older than the fix.
 
+#### Recorded repeat rehearsal: `latest`, 2026-09-18
+
+| Field                        | Value                                                                                                                                 |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Deployment version           | Backend `0.60.3-rc.20260918174419.gd192db3`                                                                                           |
+| Environment                  | `latest` / cluster03                                                                                                                  |
+| Fixture/source count + scope | 2,875 fixture + 525 real linked sources; 3,399 authoritative `scope=all` targets                                                      |
+| Worker CPU/memory limits     | Request `250m` / `2Gi`; limit `2` / `4Gi`; HPA 1–6 with 3,600-second scale-down stabilization                                         |
+| Database + Redis limits      | PostgreSQL 100 connections; Redis 256 MiB `maxmemory`, 512 MiB pod limit                                                              |
+| Child timeout                | 1,800 seconds (superseded candidate: 3,600 seconds)                                                                                   |
+| Lease / heartbeat            | 2,100 / 30 seconds (superseded candidate lease: 3,900 seconds)                                                                        |
+| Retry backoff                | 60–900 seconds; max 2 attempts                                                                                                        |
+| Parallelism                  | 2                                                                                                                                     |
+| Start / end (UTC)            | 2026-09-18 17:49:24 / cancellation terminal 20:42:46                                                                                  |
+| Images/hour                  | About 14 during the 90-minute undisturbed observation                                                                                 |
+| Item p50 / p95 / p99         | Not accepted: insufficient completed heterogeneous sources for representative percentiles                                             |
+| Resource peaks               | Worker 998m CPU / 2.8 GiB RSS; DB 27–31 connections; Redis queue depth 2–3 and ~2 MiB; tile PVC 19%                                   |
+| Failures / reclaims          | Worker-loss reclaim 36 seconds after lease expiry; two representative sources exhausted their second 1,800-second attempt             |
+| Cancellation latency         | About 7 minutes; 23 completed + 2 failed + 3,374 cancelled = 3,399                                                                    |
+| Reclaim/recovery time        | Controlled worker loss resumed in 37m37s from deletion; Redis accepted connections ~40 seconds after restart                          |
+| Selected next setting        | Retain parallelism 2 and HPA stabilization; test child timeout 3,600 seconds and lease 3,900 seconds with the flag otherwise disabled |
+
+The HPA/resource gate passed in this repeat run: it scaled up without
+involuntarily removing a worker during the 90-minute observation and all sampled
+resource ceilings remained within limits. The timeout/RTO gate remains open;
+the next candidate must show that the 3,600-second timeout eliminates these
+representative-source failures and establish its RTO improvement against serial.
+
 ### Teardown
 
 ```bash

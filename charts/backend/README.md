@@ -167,8 +167,8 @@ The remaining values render the independently tunable PostgreSQL-authoritative
 execution window and recovery settings:
 
 - `parallelism` (`REBUILD_PARALLELISM`, default `2`);
-- `childTimeoutSeconds` (`REBUILD_CHILD_TIMEOUT_SECONDS`, default `1800`, maximum `86400`);
-- `leaseSeconds` (`REBUILD_LEASE_SECONDS`, default `2100`);
+- `childTimeoutSeconds` (`REBUILD_CHILD_TIMEOUT_SECONDS`, default `3600`, maximum `86400`);
+- `leaseSeconds` (`REBUILD_LEASE_SECONDS`, default `3900`);
 - `heartbeatSeconds` (`REBUILD_HEARTBEAT_SECONDS`, default `30`);
 - `pumpCadenceSeconds` (`REBUILD_PUMP_CADENCE_SECONDS`, default `60`);
 - `maxAttempts` (`REBUILD_MAX_ATTEMPTS`, default `2`);

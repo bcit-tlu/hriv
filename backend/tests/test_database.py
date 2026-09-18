@@ -56,6 +56,8 @@ def test_parallel_rebuild_scheduler_is_disabled_by_default() -> None:
     assert settings.rebuild_parallel_enabled is False
     assert settings.rebuild_parallelism == 2
     assert settings.rebuild_parallelism != settings.worker_max_jobs
+    assert settings.rebuild_child_timeout_seconds == 3600
+    assert settings.rebuild_lease_seconds == 3900
     assert settings.rebuild_max_attempts == 2
     assert settings.rebuild_retry_backoff_base_seconds == 60
     assert settings.rebuild_retry_backoff_cap_seconds == 900
