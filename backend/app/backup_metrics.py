@@ -84,7 +84,7 @@ def _last_success_size(state: dict | None, backup_type: str) -> float | None:
     if raw_size is not None:
         return _parse_numeric(raw_size)
 
-    if backup_type != "database" or state.get("backup_mode") != "production":
+    if backup_type != "database":
         return None
     filesystem = state.get("filesystem")
     database_archive = section.get("last_success_archive_key")

@@ -163,12 +163,12 @@ async def test_render_backup_metrics_uses_legacy_production_archive_size_for_dat
     assert b'hriv_backup_last_size_bytes{backup_type="database"} 9.87654321e+08' in content
 
 
-def test_legacy_database_size_fallback_requires_coherent_production_state() -> None:
+def test_legacy_database_size_fallback_requires_coherent_success_state() -> None:
     completed_at = "2026-07-13T08:09:00+00:00"
 
     state = _state(db_size=None, db_completed_at=completed_at, fs_completed_at=completed_at)
     state["backup_mode"] = "development"
-    assert backup_metrics._last_success_size(state, "database") is None
+    assert backup_metrics._last_success_size(state, "database") == 987654321
 
     state = _state(db_size=None, db_completed_at=completed_at, fs_completed_at=completed_at)
     state["database"]["last_success_archive_key"] = "hriv-backups/database.sql"

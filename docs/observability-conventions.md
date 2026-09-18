@@ -561,7 +561,8 @@ archive is bound to that recovery point — so the database series reports the
 shared recovery archive's payload size. For markers written before that size
 was recorded, the exporter uses the filesystem success size only when both
 components have the same completion time and the database success is CNPG-bound.
-Retained-archive classification counts CNPG-bound (format-2,
+The retained success fields provide this evidence independently of the latest
+attempt's top-level mode. Retained-archive classification counts CNPG-bound (format-2,
 `capture_boundary_lsn`) archives toward both `database` and `filesystem` even
 though they contain no `db.sql` member.
 
