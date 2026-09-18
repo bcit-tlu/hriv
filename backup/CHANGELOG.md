@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.1](https://github.com/bcit-tlu/hriv/compare/backup-v0.16.0...backup-v0.16.1) (2026-09-18)
+
+
+### Bug Fixes
+
+* report database metrics for production recovery archives ([#1325](https://github.com/bcit-tlu/hriv/issues/1325)) ([31cab2b](https://github.com/bcit-tlu/hriv/commit/31cab2b83776072e3ed01f0b82b9cb8043e4c3d3))
+
 ## [0.16.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.15.1...backup-v0.16.0) (2026-09-17)
 
 

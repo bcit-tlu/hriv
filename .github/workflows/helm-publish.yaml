@@ -45,6 +45,8 @@ jobs:
 
       - uses: azure/setup-helm@v5
         if: steps.parse.outputs.publish == 'true'
+        with:
+          version: v4.3.0
 
       - uses: sigstore/cosign-installer@v3
         if: steps.parse.outputs.publish == 'true'
