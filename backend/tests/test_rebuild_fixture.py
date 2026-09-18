@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -50,7 +51,10 @@ def test_build_fixture_spec_rejects_negative_count() -> None:
 def test_fixture_tiff_blob_is_a_valid_tiff() -> None:
     # II*\0 little-endian TIFF magic; pyvips reads it via new_from_file.
     assert FIXTURE_TIFF_BYTES[:4] == b"II*\x00"
-    assert len(FIXTURE_TIFF_BYTES) < 4096
+    assert len(FIXTURE_TIFF_BYTES) == 944
+    assert hashlib.sha256(FIXTURE_TIFF_BYTES).hexdigest() == (
+        "95fd940835623dd3867a92055d30836fd5f739b5b62b9bd38cf9042291cf9b7f"
+    )
 
 
 def test_fixture_tiff_blob_decodes_with_pyvips(tmp_path: Path) -> None:
@@ -73,6 +77,7 @@ def test_fixture_tiff_blob_decodes_with_pyvips(tmp_path: Path) -> None:
     path.write_bytes(FIXTURE_TIFF_BYTES)
     image = pyvips.Image.new_from_file(str(path), access="sequential")
     assert (image.width, image.height) == (256, 256)
+    rebuild_fixture.validate_fixture_tiff()
 
 
 def _tile_source_id_from_url(tile_sources: str) -> int | None:

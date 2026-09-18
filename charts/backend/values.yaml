@@ -300,6 +300,11 @@ redis:
       maxReplicas: 5
       targetCPUUtilizationPercentage: 70
       targetMemoryUtilizationPercentage: 80
+      # Keep scale-down from terminating long-running libvips children during
+      # brief utilization dips. Kubernetes permits at most 3600 seconds; this
+      # exceeds the default rebuild child timeout and observed lease recovery
+      # horizon from the #1189 latest-cluster rehearsal.
+      scaleDownStabilizationWindowSeconds: 3600
 
 # ── Feedback delivery ────────────────────────────────────────
 # The backend accepts in-app feedback submissions via

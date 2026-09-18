@@ -269,6 +269,33 @@ confluence attachment; copy this table:
 | Reclaim/recovery time        |       |
 | Selected next setting        |       |
 
+#### Recorded rehearsal: `latest`, 2026-09-18
+
+| Field                        | Value                                                                                                                       |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Deployment version           | Backend `0.60.2-rc.20260918144214.gc109ed9` (the serial preflight began on `0.60.1-rc` and was interrupted by this rollout) |
+| Environment                  | `latest` / cluster03                                                                                                        |
+| Fixture/source count + scope | 2,875 fixture + 525 real linked sources; 3,399 authoritative `scope=all` targets                                            |
+| Worker CPU/memory limits     | Request `250m` / `2Gi`; limit `2` / `4Gi`; HPA 1–6                                                                          |
+| Database + Redis limits      | PostgreSQL 100 connections; Redis 256 MiB `maxmemory`, 512 MiB pod limit                                                    |
+| Child timeout                | 1,800 seconds                                                                                                               |
+| Lease / heartbeat            | 2,100 / 30 seconds                                                                                                          |
+| Retry backoff                | 60–900 seconds; max 2 attempts                                                                                              |
+| Parallelism                  | 2                                                                                                                           |
+| Start / end (UTC)            | 2026-09-18 15:28:41 / cancellation terminal 17:09:20                                                                        |
+| Images/hour                  | About 8 overall during the 90-minute observation window                                                                     |
+| Item p50 / p95 / p99         | Not accepted: the short, heterogeneous sample and interrupted claims were insufficient for representative percentiles       |
+| Resource peaks               | Worker 743m CPU / 3.2 GiB RSS; DB 30 connections; Redis queue depth 2 and ~2 MiB; tile PVC 18%                              |
+| Failures / reclaims          | No terminal failures; 2 retried items after HPA scale-down removed workers with active claims                               |
+| Cancellation latency         | About 9 minutes; 13 completed + 3,386 cancelled = 3,399                                                                     |
+| Reclaim/recovery time        | One item resumed ~39m25s after last heartbeat, ~4m25s after lease expiry                                                    |
+| Selected next setting        | Roll back new parallel creation; deploy 3,600-second HPA scale-down stabilization and repeat rehearsal before re-enabling   |
+
+This run is a **failed rollout gate**, not evidence to enable parallel mode. It
+also exposed an invalid embedded fixture TIFF; corrected fixture tooling now
+verifies the payload with runtime libvips before seeding. Do not repeat using a
+backend image older than the fix.
+
 ### Teardown
 
 ```bash
