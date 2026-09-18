@@ -88,11 +88,18 @@ rebuilds` section polls `GET /api/jobs/` every 2 s only while a rebuild job
   fallback. Durable rebuilds emit the `hriv.tile_rebuild.*` metrics and
   `rebuild.*` log events documented in `../../../docs/jobs.md`; the
   deterministic scale seeder is `python -m app.rebuild_fixture --count N`
-  (`--purge` to remove; both refuse while any rebuild is active). Admin JSON exports omit its rows, and fixture mutation,
+  (`--purge` to remove; both refuse while any rebuild is active). Seeding first
+  decodes the embedded TIFF with runtime libvips and must fail before mutation if
+  the payload is invalid. Admin JSON exports omit its rows, and fixture mutation,
   filesystem export, and backup inventory share an exclusive source-volume lock
   and fail closed while its source directory exists. See
   `../../../docs/jobs.md` and
   `../../../docs/backup-restore-runbook.md`.
+- Production-shaped rebuild rehearsals must treat worker HPA scale-down as a
+  worker-loss scenario. Keep the chart's 3600-second scale-down stabilization
+  while default child timeout is 1800 seconds; the 2026-09-18 `latest` rehearsal
+  observed shorter/default HPA behavior terminate active claims and add about 39
+  minutes from last heartbeat to resumed execution.
 
 ## Validation
 

@@ -235,6 +235,24 @@ Images-per-hour and throughput percentiles are derived dashboard values from
 `hriv.tile_rebuild.item.duration` and the `items.completed` counter rather
 than dedicated instruments.
 
+### First scale-rehearsal result (2026-09-18)
+
+The first `latest` rehearsal reached the 3,400-linked-source population (3,399
+authoritative targets after excluding one superseded source) and ran the durable
+scheduler at parallelism 2 for 90 minutes. It completed 13 items at an observed
+overall pace of about 8 images/hour. Worker CPU peaked at 743m, worker RSS at
+3.2 GiB, PostgreSQL connections at 30/100, Redis queue depth at 2, and tile PVC
+usage at 18%.
+
+The worker HPA scaled down pods that owned active claims. Durable lease recovery
+worked without duplicated rows or terminal outcomes, but one item resumed about
+39 minutes after its last heartbeat. Cancellation then drained in about nine
+minutes and ended with exact accounting: 13 completed and 3,386 cancelled.
+Because worker scale-down was unsafe and the run did not demonstrate an accepted
+DR-RTO improvement, parallel creation was disabled again. The chart's
+3600-second worker HPA scale-down stabilization window must be deployed and the
+production-shaped rehearsal repeated before enabling new parallel jobs.
+
 The existing admin rebuild endpoint and automatic post-import rebuild continue
 to create serial `AdminTask` work. Durable creation requires both
 `REBUILD_PARALLEL_ENABLED=true` and `TASK_EXECUTION_MODE=required`; when the

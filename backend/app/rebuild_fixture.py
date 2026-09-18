@@ -71,36 +71,42 @@ DEFAULT_FIXTURE_COUNT = 3000
 # .tiffsave_buffer(compression="deflate")``. Valid input for the real
 # decode/dzsave path while costing almost nothing to store or rebuild.
 _FIXTURE_TIFF_B64 = (
-    "SUkqAL4CAAB4nO3SAQEAMAjAIKMZzWiP9iCDDOy9gar1nzD/KfOfMv8p858y/ynznzL/"
-    "KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p85"
-    "8y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/"
-    "KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y"
-    "/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOf"
-    "Mv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynz"
-    "nzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p"
-    "858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/"
-    "KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y"
-    "/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOf"
-    "Mv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynz"
-    "nzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p"
-    "858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/"
-    "KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynzn7IPAWfAAXic7dIB"
-    "AQAwCMAgoxnNaI/2IIMM7L2BqvWfMP8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p"
-    "858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/"
-    "KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y"
-    "/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOf"
-    "Mv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynz"
-    "nzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p"
-    "858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/"
-    "KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y"
-    "/ynznzL/KfOfsg8BZ8ABEAAAAQMAAQAAAAABAAABAQMAAQAAAAABAAACAQMAAwAAAJQDAAAD"
-    "AQMAAQAAAAgAAAAGAQMAAQAAAAIAAAARAQQAAgAAAKIDAAASAQMAAQAAAAEAAAAVAQMAAQAA"
-    "AAMAAAAWAQMAAQAAAIAAAAAXAQQAAgAAAJoDAAAaAQUAAQAAAIQDAAAbAQUAAQAAAIwDAAAc"
-    "AQMAAQAAAAEAAAAoAQMAAQAAAAIAAAA9AQMAAQAAAAIAAABTAQMAAwAAAKoDAAAAAAAAMzPL"
-    "AAAACAAzM8sAAAAIAAgACAAIAFsBAABbAQAACAAAAGMBAAABAAEAAQA="
+    "SUkqAL4CAAB4nO3SAQEAMAjAIKMZzWiP9iCDDOy9gar1nzD/KfOfMv8p858y/ynznzL/KfOfMv8p"
+    "858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOf"
+    "Mv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/"
+    "KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynz"
+    "nzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y"
+    "/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p"
+    "858y/ynzn7IPAWfAAXic7dIBAQAwCMAgoxnNaI/2IIMM7L2BqvWfMP8p858y/ynznzL/KfOfMv8p"
+    "858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOf"
+    "Mv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/"
+    "KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynz"
+    "nzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y"
+    "/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p858y/ynznzL/KfOfMv8p"
+    "858y/ynznzL/KfOfsg8BZ8ABEAAAAQMAAQAAAAABAAABAQMAAQAAAAABAAACAQMAAwAAAJQDAAAD"
+    "AQMAAQAAAAgAAAAGAQMAAQAAAAIAAAARAQQAAgAAAKIDAAASAQMAAQAAAAEAAAAVAQMAAQAAAAMA"
+    "AAAWAQMAAQAAAIAAAAAXAQQAAgAAAJoDAAAaAQUAAQAAAIQDAAAbAQUAAQAAAIwDAAAcAQMAAQAA"
+    "AAEAAAAoAQMAAQAAAAIAAAA9AQMAAQAAAAIAAABTAQMAAwAAAKoDAAAAAAAAMzPLAAAACAAzM8sA"
+    "AAAIAAgACAAIAFsBAABbAQAACAAAAGMBAAABAAEAAQA="
 )
 
 FIXTURE_TIFF_BYTES = base64.b64decode(_FIXTURE_TIFF_B64)
+
+
+def validate_fixture_tiff() -> None:
+    """Fail before seeding if the runtime libvips cannot decode the payload."""
+    import pyvips
+
+    image = pyvips.Image.new_from_buffer(
+        FIXTURE_TIFF_BYTES,
+        "",
+        access="sequential",
+    )
+    if (image.width, image.height) != (256, 256):
+        raise RuntimeError(
+            "Rebuild fixture TIFF decoded with unexpected dimensions: "
+            f"{image.width}x{image.height}"
+        )
 
 
 @dataclass(frozen=True)
@@ -503,6 +509,9 @@ def _resolve_database_url() -> str:
 
 
 async def _run_cli(*, count: int, purge_only: bool) -> None:
+    if not purge_only and count > 0:
+        validate_fixture_tiff()
+
     # Mirror get_engine()'s pool policy so the CLI behaves like the app.
     engine = create_async_engine(
         _resolve_database_url(),

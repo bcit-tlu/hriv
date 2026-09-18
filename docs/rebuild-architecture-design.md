@@ -89,8 +89,19 @@ silently define rebuild parallelism.
 
 Cancellation/retry controls and the public admin creation and item controls
 shipped in #1188/#1191; scale-rehearsal tooling and instrumentation shipped in
-#1189. Measurement-based default tuning and flag-flip rollout complete the
-epic.
+#1189.
+
+The first production-shaped `latest` rehearsal on 2026-09-18 did **not** clear
+the rollout gate. It found and corrected an invalid embedded fixture TIFF,
+measured about 8 completed images/hour at parallelism 2 across the sampled real
+source mix, observed 3.2 GiB peak worker RSS under the 4 GiB limit, and proved
+lease recovery after the worker HPA removed pods holding active claims. Recovery
+resumed one item about 39 minutes after its last heartbeat (about four minutes
+after lease expiry), but that delay and HPA behavior were not acceptable as the
+deployed default. Parallel creation was therefore disabled again in `latest`;
+the persisted job was not converted or rolled back. The worker HPA now defaults
+to a 3600-second scale-down stabilization window. A successful repeat rehearsal
+with that protection deployed remains required before re-enablement.
 
 ## Problem
 

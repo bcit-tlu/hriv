@@ -200,6 +200,13 @@ Beyond resources, the worker Deployment exposes:
 - `redis.worker.terminationGracePeriodSeconds` (default `300`) — the
   Kubernetes default of 30s interrupts in-flight tile-generation and
   import/export jobs on every rollout.
+- `redis.worker.autoscaling.scaleDownStabilizationWindowSeconds` (default
+  `3600`) — delays HPA scale-down long enough for default-timeout tile-rebuild
+  children to drain. The #1189 `latest` rehearsal observed ordinary HPA
+  scale-down terminate workers holding active claims; PostgreSQL lease recovery
+  succeeded, but added about 39 minutes from last heartbeat to resumed execution.
+  Do not shorten this below the measured child execution/recovery horizon without
+  another worker-loss rehearsal.
 - `redis.worker.probes.liveness` (enabled by default) — an exec probe running
   `arq --check app.worker.WorkerSettings`, which verifies the arq health key
   in Redis is fresh. A wedged worker main loop gets restarted instead of
