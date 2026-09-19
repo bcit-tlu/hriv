@@ -155,7 +155,10 @@ server; log back in and check Recent Tasks to confirm it finished.
 
 This is the documented production-shaped rehearsal that validates the durable
 parallel rebuild scheduler before `REBUILD_PARALLEL_ENABLED` is flipped on for
-an environment. It is **opt-in and disruptive**: it force-rebuilds every
+an environment. As of the third rehearsal (2026-09-19), the flag is enabled as
+the deployed default for `latest` via the `flux-fleet` cluster overlay;
+`stable` remains on the serial path pending its own validation pass. It is
+**opt-in and disruptive**: it force-rebuilds every
 linked source image and adds a large fixture population. Run it only on
 `latest` (or another non-production environment) inside a change window, with
 the serial rebuild path verified healthy first.
@@ -323,6 +326,35 @@ involuntarily removing a worker during the 90-minute observation and all sampled
 resource ceilings remained within limits. The timeout/RTO gate remains open;
 the next candidate must show that the 3,600-second timeout eliminates these
 representative-source failures and establish its RTO improvement against serial.
+
+#### Recorded rehearsal 3: `latest`, 2026-09-18/19 — rollout gate cleared
+
+| Field                        | Value                                                                                                                                                                                                                   |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Deployment version           | Backend `0.60.3-rc.20260918215608.gb85eedf` (PR #1333 merge commit)                                                                                                                                                     |
+| Environment                  | `latest` / cluster03                                                                                                                                                                                                    |
+| Fixture/source count + scope | 2,825 fixture + 575 real linked sources; 3,349 authoritative `scope=all` targets                                                                                                                                        |
+| Worker CPU/memory limits     | Request `250m` / `2Gi`; limit `2` / `4Gi`; HPA 1–6 with 3,600-second scale-down stabilization                                                                                                                           |
+| Database + Redis limits      | PostgreSQL 100 connections; Redis 256 MiB `maxmemory`, 512 MiB pod limit                                                                                                                                                |
+| Child timeout                | 3,600 seconds                                                                                                                                                                                                           |
+| Lease / heartbeat            | 3,900 / 30 seconds                                                                                                                                                                                                      |
+| Retry backoff                | 60–900 seconds; max 2 attempts                                                                                                                                                                                          |
+| Parallelism                  | 2                                                                                                                                                                                                                       |
+| Start / end (UTC)            | 2026-09-18 22:00:02 / cancellation terminal 2026-09-19 00:13:40                                                                                                                                                         |
+| Images/hour                  | About 14–20 across the ~2h9m observation                                                                                                                                                                                |
+| Item p50 / p95 / p99         | Not accepted: insufficient completed heterogeneous sources for representative percentiles                                                                                                                               |
+| Resource peaks               | Worker ~1062m CPU / ~2.64 GiB RSS; DB 30–31 connections; Redis memory ~1.9 MiB, dbsize 15→46; tile PVC 14%                                                                                                              |
+| Failures / reclaims          | Zero terminal failures. The two representative sources that exhausted both attempts in the repeat rehearsal (source ids 106/109) both completed on their first attempt — one after ~56 minutes (~93% of the new budget) |
+| Cancellation latency         | About 4 minutes; 27 completed + 0 failed + 3,322 cancelled = 3,349                                                                                                                                                      |
+| Reclaim/recovery time        | Not exercised this round (no fault drills; focus was the timeout regression test)                                                                                                                                       |
+| Selected next setting        | Both rollout gates cleared. `REBUILD_PARALLEL_ENABLED` enabled as the deployed default for `latest` via the `flux-fleet` overlay; `stable` remains serial pending its own validation                                    |
+
+This run cleared both outstanding rollout gates. The two direct regression
+items for the prior timeout failures completed cleanly, one using nearly the
+full new timeout budget, and no new failure modes appeared across zero worker
+restarts, a steady 6/6 HPA plateau, and flat DB/Redis/PVC metrics. Throughput
+remains modest (~14–20 images/hour at parallelism 2); raising parallelism is a
+follow-up candidate for improving DR-RTO, not a blocker for this rollout.
 
 ### Teardown
 

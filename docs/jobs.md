@@ -8,7 +8,10 @@ Issue #1067 introduced the generic `Job` / `JobItem` schema foundation.
 Existing `AdminTask` and `BulkImportJob` flows remain separate. Durable tile
 rebuild scheduling is the first workflow integration: admin-only creation,
 cancellation, bounded item inspection, and retry controls shipped in #1191,
-still behind the default-off `REBUILD_PARALLEL_ENABLED` feature flag.
+gated by the `REBUILD_PARALLEL_ENABLED` feature flag (chart default `false`).
+Following the #1189 rehearsal series, `latest` overrides this flag to `true`
+via the cluster's `flux-fleet` overlay (not the chart default); `stable`
+remains on the serial path pending its own validation.
 
 ## State model
 
@@ -235,6 +238,14 @@ Images-per-hour and throughput percentiles are derived dashboard values from
 `hriv.tile_rebuild.item.duration` and the `items.completed` counter rather
 than dedicated instruments.
 
+### Rehearsal timeline (2026-09-18/19)
+
+Rehearsals 1-3 exercised the durable parallel scheduler on `latest` against a
+3,400-source population (real linked sources plus a deterministic fixture) at
+parallelism 2, iterating on the worker HPA and scheduler settings after each
+failed gate. The full measurement record for all three runs lives in
+[backup-restore-runbook.md](backup-restore-runbook.md#tile-rebuild-scale-rehearsal).
+
 ### First scale-rehearsal result (2026-09-18)
 
 The first `latest` rehearsal reached the 3,400-linked-source population (3,399
@@ -256,8 +267,26 @@ stabilization window. It improved the observed pace to about 14 images/hour and
 prevented involuntary HPA loss of active workers, but two representative sources
 still exhausted the former 1800-second child timeout. The next candidate keeps
 parallelism 2 and the HPA window, with a 3600-second child timeout and
-3900-second lease. Parallel creation remains disabled until that candidate
-completes without timeout failures and meets the agreed RTO.
+3900-second lease. Parallel creation remained disabled until that candidate
+completed without timeout failures and met the agreed RTO.
+
+### Third scale-rehearsal result (2026-09-19) — rollout gate cleared
+
+The third `latest` rehearsal reused parallelism 2, the HPA stabilization
+window, and PR #1333's 3600-second child timeout / 3900-second lease across a
+3,349-item `scope=all` run. The two representative sources that exhausted
+both attempts in the repeat rehearsal (source ids 106 and 109) both completed
+on their first attempt this time — one after about 56 minutes, using roughly
+93% of the new timeout budget — and no item anywhere in the job reached a
+terminal `failed` state across the ~2h9m observation. The worker HPA again
+held steady with no involuntary loss of workers holding active claims.
+Observed pace was about 14-20 images/hour. Cancellation ended with exact
+accounting: 27 completed and 3,322 cancelled of 3,349 total.
+
+This cleared both outstanding rollout gates (HPA safety and timeout/RTO).
+`REBUILD_PARALLEL_ENABLED` was enabled as the deployed default for `latest` on
+2026-09-19 via the `flux-fleet` cluster overlay (`stable` remains serial
+pending its own validation pass); the chart-level default remains `false`.
 
 The existing admin rebuild endpoint and automatic post-import rebuild continue
 to create serial `AdminTask` work. Durable creation requires both
