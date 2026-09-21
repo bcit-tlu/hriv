@@ -439,6 +439,17 @@ async def test_update_user_invalid_role_rejected() -> None:
     assert "Invalid role" in exc.value.detail
 
 
+async def test_update_user_null_role_rejected() -> None:
+    user = _make_user()
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=user)
+
+    with pytest.raises(HTTPException) as exc:
+        await update_user(1, UserUpdate(role=None), MagicMock(), db)
+    assert exc.value.status_code == 422
+    assert "Invalid role" in exc.value.detail
+
+
 async def test_update_user_success() -> None:
     user = _make_user()
 

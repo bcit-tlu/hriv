@@ -277,7 +277,7 @@ async def update_user(
     if "active" in body.model_fields_set and body.active is None:
         raise HTTPException(status_code=422, detail="active must be true or false")
     update_data = body.model_dump(exclude_unset=True)
-    if update_data.get("role") is not None and update_data["role"] not in VALID_ROLES:
+    if "role" in update_data and update_data["role"] not in VALID_ROLES:
         raise HTTPException(422, f"Invalid role: {update_data['role']}")
     program_ids = update_data.pop("program_ids", None)
     if "metadata_extra" in update_data:
