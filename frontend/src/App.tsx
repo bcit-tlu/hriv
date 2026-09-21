@@ -144,6 +144,7 @@ export default function App() {
     logout,
     canManageUsers,
     canEditContent,
+    canViewPeople,
   } = useAuth()
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
@@ -160,7 +161,7 @@ export default function App() {
   const effectivePage: FrontendPage =
     (page === 'guide' || page === 'manage') && !canEditContent
       ? 'browse'
-      : (page === 'admin' || page === 'people') && !canManageUsers
+      : (page === 'admin' && !canManageUsers) || (page === 'people' && !canViewPeople)
         ? 'browse'
         : page
 
@@ -1465,6 +1466,7 @@ export default function App() {
       onHomeClick={handleHomeClick}
       canEditContent={canEditContent}
       canManageUsers={canManageUsers}
+      canViewPeople={canViewPeople}
       currentUser={currentUser}
       announcement={announcement}
       annMessage={annMessage}
@@ -1517,8 +1519,9 @@ export default function App() {
             <GuidePage docRequest={guideDocRequest} />
           ) : page === 'admin' && canManageUsers ? (
             <AdminPage onChangelogEntriesChanged={bumpChangelogVersion} />
-          ) : page === 'people' && canManageUsers ? (
+          ) : page === 'people' && canViewPeople ? (
             <PeoplePage
+              readOnly={!canManageUsers}
               programs={programs}
               groups={groups}
               initialEditUserId={editUserId}
@@ -2564,7 +2567,8 @@ export default function App() {
         uncategorizedImages={uncategorizedImages}
         programs={programs}
         users={searchUsers}
-        isStudent={isStudent}
+        excludeHidden={isStudent}
+        suppressExtendedResults={isStudent || currentUser?.role === 'staff'}
         onSelectCategory={(catPath) => {
           runCanvasNavigation(() => {
             setPage('browse')

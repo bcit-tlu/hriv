@@ -1271,4 +1271,63 @@ describe('PeoplePage', () => {
       expect(screen.getByText('Failed to update programs. Please try again.')).toBeInTheDocument()
     })
   })
+
+  describe('readOnly mode (staff)', () => {
+    it('renders the user table read-only for staff', async () => {
+      render(<PeoplePage programs={programs} groups={groups} readOnly />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Admin User')).toBeInTheDocument()
+      })
+      expect(screen.getByText('Test Student')).toBeInTheDocument()
+      expect(fetchUsers).toHaveBeenCalledOnce()
+    })
+
+    it('hides all mutation controls in readOnly mode', async () => {
+      render(<PeoplePage programs={programs} groups={groups} readOnly />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Admin User')).toBeInTheDocument()
+      })
+
+      // No Add Person, no row Delete buttons, no selection checkboxes.
+      expect(screen.queryByRole('button', { name: /add person/i })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument()
+      expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+      // No Actions column header.
+      expect(screen.queryByText('Actions')).not.toBeInTheDocument()
+    })
+
+    it('does not open the edit modal on row click in readOnly mode', async () => {
+      const user = userEvent.setup()
+      render(<PeoplePage programs={programs} groups={groups} readOnly />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Admin User')).toBeInTheDocument()
+      })
+
+      await user.click(screen.getByText('Admin User'))
+      expect(screen.queryByText('Edit Person')).not.toBeInTheDocument()
+    })
+
+    it('ignores initialEditUserId in readOnly mode', async () => {
+      render(<PeoplePage programs={programs} groups={groups} readOnly initialEditUserId={2} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Test Student')).toBeInTheDocument()
+      })
+      expect(screen.queryByText('Edit Person')).not.toBeInTheDocument()
+    })
+
+    it('still offers filtering in readOnly mode', async () => {
+      render(<PeoplePage programs={programs} groups={groups} readOnly />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Admin User')).toBeInTheDocument()
+      })
+      // Filter popovers remain available for read-only browsing.
+      const filterBar = screen.getByLabelText('Filter by')
+      expect(within(filterBar).getByRole('button', { name: 'Role' })).toBeInTheDocument()
+    })
+  })
 })

@@ -264,6 +264,9 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
 
   const canManageUsers = currentUser?.role === 'admin'
   const canEditContent = currentUser?.role === 'admin' || currentUser?.role === 'instructor'
+  // Staff get a read-only view of the People directory; admins get the
+  // full management view (gated by canManageUsers inside the page).
+  const canViewPeople = currentUser?.role === 'admin' || currentUser?.role === 'staff'
 
   return (
     <AuthContext.Provider
@@ -278,6 +281,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         refreshUsers: loadUsers,
         canManageUsers,
         canEditContent,
+        canViewPeople,
         oidcError,
         clearOidcError,
       }}

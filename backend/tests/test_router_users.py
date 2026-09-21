@@ -145,6 +145,68 @@ async def test_list_users_instructor_cannot_list_admins() -> None:
     assert exc.value.status_code == 403
 
 
+async def test_list_users_instructor_cannot_list_staff() -> None:
+    """Instructors are scoped to students/instructors — staff are excluded."""
+    db = AsyncMock()
+    instructor = _make_user(id=99, role="instructor")
+    with pytest.raises(HTTPException) as exc:
+        await list_users(instructor, db, role="staff")
+    assert exc.value.status_code == 403
+
+
+async def test_list_users_as_staff_gets_full_projection() -> None:
+    """Staff receive the full ``UserOut`` projection (unlike the instructor
+    mini projection) — the People tab is their read-only directory view."""
+    users = [_make_user(id=1), _make_user(id=2, email="two@example.com")]
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.unique.return_value.all.return_value = users
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+
+    staff = _make_user(id=98, role="staff")
+    result = await list_users(staff, db)
+    assert len(result) == 2
+    # Full projection exposes metadata/last_access fields; mini would not.
+    assert "last_access" in result[0]
+    assert "metadata_extra" in result[0]
+
+
+async def test_list_users_staff_can_filter_any_role() -> None:
+    """Staff may filter by any valid role, including admin — read-only."""
+    users = [_make_user(id=1, role="admin")]
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.unique.return_value.all.return_value = users
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+
+    staff = _make_user(id=98, role="staff")
+    result = await list_users(staff, db, role="admin")
+    assert len(result) == 1
+
+
+async def test_list_users_staff_does_not_filter_admin_program() -> None:
+    """Staff see every user, including Admin-program members — same
+    unrestricted query shape as admins."""
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.unique.return_value.all.return_value = []
+    mock_result.scalar_one.return_value = 0
+
+    statements: list = []
+
+    async def mock_execute(stmt):
+        statements.append(stmt)
+        return mock_result
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=mock_execute)
+
+    await list_users(_make_user(role="staff"), db)
+
+    compiled = str(statements[1].compile(compile_kwargs={"literal_binds": True}))
+    assert "Admin" not in compiled
+
+
 async def test_list_users_invalid_role_422() -> None:
     db = AsyncMock()
     with pytest.raises(HTTPException) as exc:
@@ -321,6 +383,60 @@ async def test_create_user_success() -> None:
     # the groups relationship expired and raise MissingGreenlet on access.
     assert db.refresh.await_args_list[-1].args[1] == ["programs", "groups"]
     assert result["group_ids"] == []
+
+
+async def test_create_user_staff_role_accepted() -> None:
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.flush = AsyncMock()
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    body = UserCreate(
+        name="Staff User", email="staff@example.com",
+        password="pass123", role="staff",
+    )
+
+    with patch("app.routers.users.hash_password", return_value="hashed"):
+        result = await create_user(body, MagicMock(), db)
+
+    assert result["role"] == "staff"
+
+
+async def test_create_user_invalid_role_rejected() -> None:
+    db = AsyncMock()
+    body = UserCreate(
+        name="Bogus", email="bogus@example.com",
+        password="pass123", role="superuser",
+    )
+    with pytest.raises(HTTPException) as exc:
+        await create_user(body, MagicMock(), db)
+    assert exc.value.status_code == 422
+    assert "Invalid role" in exc.value.detail
+
+
+async def test_update_user_staff_role_accepted() -> None:
+    user = _make_user()
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=user)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    result = await update_user(1, UserUpdate(role="staff"), MagicMock(), db)
+    assert user.role == "staff"
+    assert result["role"] == "staff"
+
+
+async def test_update_user_invalid_role_rejected() -> None:
+    user = _make_user()
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=user)
+
+    with pytest.raises(HTTPException) as exc:
+        await update_user(1, UserUpdate(role="superuser"), MagicMock(), db)
+    assert exc.value.status_code == 422
+    assert "Invalid role" in exc.value.detail
 
 
 async def test_update_user_success() -> None:
@@ -530,6 +646,25 @@ async def test_bulk_update_role_success() -> None:
     assert len(result) == 2
     assert users[0].role == "instructor"
     assert users[1].role == "instructor"
+
+
+async def test_bulk_update_role_staff_accepted() -> None:
+    users = [_make_user(id=1, role="student")]
+
+    async def mock_execute(_stmt):
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.unique.return_value.all.return_value = users
+        return mock_result
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=mock_execute)
+    db.commit = AsyncMock()
+
+    body = UserBulkRoleUpdate(user_ids=[1], role="staff")
+    result = await bulk_update_role(body, MagicMock(), db)
+
+    assert len(result) == 1
+    assert users[0].role == "staff"
 
 
 async def test_bulk_update_role_invalid_role() -> None:

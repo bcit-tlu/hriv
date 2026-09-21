@@ -45,9 +45,16 @@ in development.
 
 ## Role Mapping
 
-HRIV maps IdP group memberships to its three roles: `admin`,
-`instructor`, and `student`. Users whose groups do not match any entry
-default to `student`.
+HRIV maps IdP group memberships to its four roles: `admin`,
+`instructor`, `staff`, and `student`. Users whose groups do not match
+any entry default to `student`.
+
+`staff` is a view-only role for authenticated users who are not
+students — staff browse all content without the student visibility
+filter and get a read-only **People** tab, but cannot edit content or
+manage users, groups, or programs. Map a distinct IdP group to `staff`
+(e.g. an employees group) to separate these users from the student
+population.
 
 Configure `OIDC_ROLE_MAPPING` as a JSON object where keys are IdP group
 names (or Object IDs — see [Azure AD / Entra ID](#azure-ad--entra-id)
@@ -57,15 +64,17 @@ below) and values are HRIV roles:
 {
   "hriv-admins": "admin",
   "hriv-instructors": "instructor",
+  "hriv-staff": "staff",
   "hriv-students": "student"
 }
 ```
 
 When a user belongs to **multiple** mapped groups, the highest-privilege
-role wins: `admin` > `instructor` > `student`. This is important for
-IdPs like Azure AD where users are typically members of several groups
-simultaneously (e.g. both `Current_Employee` → student and
-`HRIV_Admins` → admin).
+role wins: `admin` > `instructor` > `staff` > `student`. This is
+important for IdPs like Azure AD where users are typically members of
+several groups simultaneously (e.g. both `Current_Employee` → staff and
+`HRIV_Admins` → admin). `staff` outranks `student` so an employee who is
+also in a student group still resolves to `staff`.
 
 > **Tip:** If the IdP does not emit a `groups` claim in the ID token,
 > existing users keep their current role and new users default to
@@ -149,6 +158,7 @@ display names. Map the Object IDs in `OIDC_ROLE_MAPPING`:
 {
   "326e8c08-3c6d-476e-8822-d32807a4f50c": "admin",
   "751cf57b-b100-4964-a905-c5e09f383f1b": "instructor",
+  "7f888b22-e5df-4e1e-a010-5a6958781349": "staff",
   "3a855564-3401-464c-b752-ba0697682ac6": "student"
 }
 ```
@@ -177,7 +187,7 @@ Users in a corporate directory typically belong to several groups at
 once (e.g. `Current_Employee` _and_ `HRIV_Admins`). Because HRIV
 resolves the **highest-privilege** role across all matched groups,
 an admin who is also an employee correctly receives the `admin` role
-even if `Current_Employee` → `student` appears first in the token.
+even if `Current_Employee` → `staff` appears first in the token.
 
 ---
 

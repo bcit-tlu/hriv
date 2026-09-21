@@ -261,6 +261,16 @@ async def test_add_member_role_mismatch_422() -> None:
     assert exc.value.status_code == 422
 
 
+async def test_add_member_staff_rejected_422() -> None:
+    """Staff are not group members — groups remain student-only."""
+    group = _group(1, instructors=[_user("instructor", id=7)])
+    staff = _user("staff", id=2)
+    db = _mock_db(group=group, users=[staff])
+    with pytest.raises(HTTPException) as exc:
+        await add_member(1, 2, _user("instructor", id=7), db=db)
+    assert exc.value.status_code == 422
+
+
 async def test_add_member_missing_user_422() -> None:
     group = _group(1, instructors=[_user("instructor", id=7)])
     db = _mock_db(group=group, users=[])
@@ -324,6 +334,16 @@ async def test_add_instructor_role_mismatch_422() -> None:
     group = _group(1, instructors=[_user("instructor", id=7)])
     student = _user("student", id=8)
     db = _mock_db(group=group, users=[student])
+    with pytest.raises(HTTPException) as exc:
+        await add_instructor(1, 8, _user("instructor", id=7), db=db)
+    assert exc.value.status_code == 422
+
+
+async def test_add_instructor_staff_rejected_422() -> None:
+    """Staff cannot be group instructors — instructors must be instructors."""
+    group = _group(1, instructors=[_user("instructor", id=7)])
+    staff = _user("staff", id=8)
+    db = _mock_db(group=group, users=[staff])
     with pytest.raises(HTTPException) as exc:
         await add_instructor(1, 8, _user("instructor", id=7), db=db)
     assert exc.value.status_code == 422

@@ -428,7 +428,11 @@ interface SearchModalProps {
   uncategorizedImages: ImageItem[]
   programs: Program[]
   users: ApiUser[]
-  isStudent: boolean
+  /** Hide categories/images with a non-published status (students only). */
+  excludeHidden: boolean
+  /** Restrict results to categories/images — no program, user, or guide
+   *  result kinds and no related filters (students and staff). */
+  suppressExtendedResults: boolean
   onSelectCategory: (path: Category[]) => void
   onSelectImage: (image: ImageItem, path: Category[]) => void
   onImageRenewed?: (image: ApiImage) => void
@@ -448,7 +452,8 @@ export default function SearchModal({
   uncategorizedImages,
   programs,
   users,
-  isStudent,
+  excludeHidden,
+  suppressExtendedResults,
   onSelectCategory,
   onSelectImage,
   onImageRenewed,
@@ -516,18 +521,18 @@ export default function SearchModal({
       const results: SearchResult[] = []
 
       // 1. Categories
-      collectCategoryResults(categories, terms, [], results, isStudent, programMap)
+      collectCategoryResults(categories, terms, [], results, excludeHidden, programMap)
 
       // 2. Images within category tree
-      collectImageResults(categories, terms, [], results, isStudent, programMap)
+      collectImageResults(categories, terms, [], results, excludeHidden, programMap)
 
       // 3. Uncategorized images
       for (const img of uncategorizedImages) {
         addImageMatches(img, terms, [], results, programMap)
       }
 
-      // 4. Programs (hidden from students)
-      if (!isStudent) {
+      // 4. Programs (hidden from students and staff)
+      if (!suppressExtendedResults) {
         for (const prog of programs) {
           const m = findFirstTermMatch(prog.name, terms)
           if (m) {
@@ -545,13 +550,13 @@ export default function SearchModal({
         }
       }
 
-      // 5. Guide pages (staff-only content)
-      if (!isStudent) {
+      // 5. Guide pages (editor-only content)
+      if (!suppressExtendedResults) {
         collectGuideResults(terms, results)
       }
 
-      // 6. Users (hidden from students)
-      if (!isStudent) {
+      // 6. Users (hidden from students and staff)
+      if (!suppressExtendedResults) {
         for (const user of users) {
           const userFields: { field: string; value: string }[] = [
             { field: 'Name', value: user.name },
@@ -582,7 +587,15 @@ export default function SearchModal({
 
       return results
     },
-    [categories, uncategorizedImages, programs, users, isStudent, programMap],
+    [
+      categories,
+      uncategorizedImages,
+      programs,
+      users,
+      excludeHidden,
+      suppressExtendedResults,
+      programMap,
+    ],
   )
 
   const allResults = useMemo(() => buildResults(query), [query, buildResults])
@@ -676,7 +689,7 @@ export default function SearchModal({
           autoFocus
           fullWidth
           placeholder={
-            isStudent
+            suppressExtendedResults
               ? 'Search categories and images — "quotes" for exact phrases'
               : 'Search categories, images, programs, people, the guide — "quotes" for exact phrases'
           }
@@ -704,7 +717,11 @@ export default function SearchModal({
               Type:
             </Typography>
             {TYPE_FILTERS.filter(
-              (f) => !(isStudent && (f.key === 'program' || f.key === 'user' || f.key === 'guide')),
+              (f) =>
+                !(
+                  suppressExtendedResults &&
+                  (f.key === 'program' || f.key === 'user' || f.key === 'guide')
+                ),
             ).map((f) => (
               <Tooltip key={f.key} title={f.tooltip}>
                 <Chip
@@ -727,20 +744,22 @@ export default function SearchModal({
             >
               Field:
             </Typography>
-            {FIELD_FILTERS.filter((f) => !(isStudent && f.key === 'Role')).map((f) => (
-              <Tooltip key={f.key} title={f.tooltip}>
-                <Chip
-                  data-testid="field-filter-chip"
-                  icon={f.icon}
-                  label={f.label}
-                  size="small"
-                  sx={{ px: 0.5 }}
-                  variant={fieldFilters.has(f.key) ? 'filled' : 'outlined'}
-                  color={fieldFilters.has(f.key) ? 'primary' : 'default'}
-                  onClick={() => toggleFieldFilter(f.key)}
-                />
-              </Tooltip>
-            ))}
+            {FIELD_FILTERS.filter((f) => !(suppressExtendedResults && f.key === 'Role')).map(
+              (f) => (
+                <Tooltip key={f.key} title={f.tooltip}>
+                  <Chip
+                    data-testid="field-filter-chip"
+                    icon={f.icon}
+                    label={f.label}
+                    size="small"
+                    sx={{ px: 0.5 }}
+                    variant={fieldFilters.has(f.key) ? 'filled' : 'outlined'}
+                    color={fieldFilters.has(f.key) ? 'primary' : 'default'}
+                    onClick={() => toggleFieldFilter(f.key)}
+                  />
+                </Tooltip>
+              ),
+            )}
           </Box>
         )}
 
@@ -840,7 +859,7 @@ export default function SearchModal({
                           >
                             {labelForKind(result.kind)}
                           </Typography>
-                          {!isStudent && chipNames.length > 0 && (
+                          {!suppressExtendedResults && chipNames.length > 0 && (
                             <Box
                               sx={{
                                 display: 'flex',
