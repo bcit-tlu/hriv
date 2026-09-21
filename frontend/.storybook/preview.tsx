@@ -4,6 +4,7 @@ import { ThemeProvider } from '@mui/material/styles'
 import { withThemeFromJSXProvider } from '@storybook/addon-themes'
 import { buildTheme } from '../src/theme'
 import { ColorModeContext, type ColorMode } from '../src/colorModeContext'
+import { responsiveModes, viewportOptions } from './modes'
 
 const preview: Preview = {
   decorators: [
@@ -39,6 +40,15 @@ const preview: Preview = {
         order: ['Foundations', ['Theme', 'Typography'], 'Components'],
       },
     },
+    // Named viewports used by the toolbar and referenced by responsiveModes.
+    viewport: {
+      options: viewportOptions,
+    },
+    // Desktop-first: capture every story at desktop width in both colour
+    // schemes. Individual stories can override `chromatic.modes`.
+    chromatic: {
+      modes: responsiveModes,
+    },
     controls: {
       expanded: true,
       matchers: {
@@ -49,6 +59,10 @@ const preview: Preview = {
     backgrounds: {
       disable: true,
     },
+  },
+  // Desktop-first: open every story at the desktop viewport in the Storybook UI.
+  initialGlobals: {
+    viewport: { value: 'desktop', isRotated: false },
   },
 }
 

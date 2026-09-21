@@ -20,7 +20,7 @@ export default function NoteDisplay({ note, collapsedLines = 2 }: NoteDisplayPro
   const shouldTruncate = !expanded && (lineCount > collapsedLines || isLongByChars)
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <Box
         sx={{
           whiteSpace: 'pre-wrap',

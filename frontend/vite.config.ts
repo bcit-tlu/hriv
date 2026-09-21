@@ -39,6 +39,7 @@ export default defineConfig({
         'src/vite-env.d.ts',
         'src/test/**',
         'src/**/*.stories.{ts,tsx}',
+        'src/components/storyFixtures.ts',
       ],
       // Floor — not target.  Ratchet upward as component-level tests
       // are filled in.  The >80 % AGENTS.md target is the goal.
