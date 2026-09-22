@@ -70,10 +70,13 @@ for local login.
 Token validation checks both existence and `active == true`. A deactivated user
 with a previously issued token is rejected on protected endpoints.
 
-### Admin download tokens
+### Admin download credentials
 
-`GET /api/admin/tasks/{id}/download` re-checks that the token subject is still
-an active admin account before serving the file.
+`GET /api/admin/tasks/{id}/download` authenticates via a short-lived JWT
+carried in a path-scoped `HttpOnly` cookie (minted by
+`POST /api/admin/tasks/{id}/download-token`, cleared on successful download)
+and re-checks that the token subject is still an active admin account before
+serving the file.
 
 ## Backup export/import behavior
 

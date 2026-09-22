@@ -326,3 +326,68 @@ def test_check_storage_writable_fails(tmp_path, monkeypatch) -> None:
         assert _check_storage_writable() is False
     finally:
         read_only_dir.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+
+
+# ── _resolve_cors_config ──────────────────────────────────
+
+
+def test_resolve_cors_config_explicit_origins() -> None:
+    from app.main import _resolve_cors_config
+
+    origins, credentials = _resolve_cors_config(
+        "https://hriv.example.ca, https://hriv-dev.example.ca ", "required"
+    )
+    assert origins == [
+        "https://hriv.example.ca",
+        "https://hriv-dev.example.ca",
+    ]
+    assert credentials is True
+
+
+def test_resolve_cors_config_wildcard_local_disables_credentials() -> None:
+    """A bare ``*`` must never carry credentials — even in local mode."""
+    from app.main import _resolve_cors_config
+
+    origins, credentials = _resolve_cors_config("*", "local")
+    assert origins == ["*"]
+    assert credentials is False
+
+
+def test_resolve_cors_config_unset_local_disables_credentials(
+    caplog,
+) -> None:
+    """Unset CORS_ORIGINS in local mode warns loudly and drops credentials."""
+    import logging
+
+    from app.main import _resolve_cors_config
+
+    with caplog.at_level(logging.WARNING):
+        origins, credentials = _resolve_cors_config("", "local")
+    assert origins == ["*"]
+    assert credentials is False
+    assert "credentials DISABLED" in caplog.text
+
+
+def test_resolve_cors_config_mixed_wildcard_treated_as_wildcard() -> None:
+    """``*`` anywhere in the list collapses to wildcard semantics."""
+    from app.main import _resolve_cors_config
+
+    origins, credentials = _resolve_cors_config(
+        "*, https://hriv.example.ca", "local"
+    )
+    assert origins == ["*"]
+    assert credentials is False
+
+
+def test_resolve_cors_config_wildcard_required_fails_fast() -> None:
+    from app.main import _resolve_cors_config
+
+    with pytest.raises(RuntimeError, match="CORS_ORIGINS"):
+        _resolve_cors_config("*", "required")
+
+
+def test_resolve_cors_config_unset_required_fails_fast() -> None:
+    from app.main import _resolve_cors_config
+
+    with pytest.raises(RuntimeError, match="CORS_ORIGINS"):
+        _resolve_cors_config("", "required")

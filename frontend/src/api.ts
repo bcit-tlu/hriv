@@ -2046,10 +2046,15 @@ export async function fetchFrontendVersion(): Promise<FrontendVersionResponse> {
 }
 
 export async function downloadAdminTaskResult(taskId: number): Promise<void> {
-  // Obtain a short-lived download token, then navigate the browser to the
-  // token-authenticated download URL (no JS buffering needed).
-  const { token } = await request<{ token: string }>(`/admin/tasks/${taskId}/download-token`, {
+  // The POST mints the short-lived download credential as an HttpOnly
+  // cookie scoped to the download path — the token never enters a URL, so
+  // it stays out of access logs, trace spans, and browser history. The
+  // navigation then performs a native download (no JS buffering).
+  await request(`/admin/tasks/${taskId}/download-token`, {
     method: 'POST',
+    // No-op for the normal same-origin deployment; required when
+    // VITE_API_URL points the SPA at a cross-origin backend in dev.
+    credentials: 'include',
   })
-  window.location.href = `${BASE}/api/admin/tasks/${taskId}/download?token=${encodeURIComponent(token)}`
+  window.location.href = `${BASE}/api/admin/tasks/${taskId}/download`
 }

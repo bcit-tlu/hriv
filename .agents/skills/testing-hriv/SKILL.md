@@ -907,7 +907,11 @@ instead of `:29229`.
 2. Task appears in "Recent Tasks" at the bottom.
 3. Click the info (i) icon to open the log dialog (status badge, determinate
    progress bar, streaming logs, CANCEL/CLOSE).
-4. Completed tasks show a download (↓) icon in the task row.
+4. Completed tasks show a download (↓) icon in the task row. Clicking it
+   POSTs for a short-lived `HttpOnly` download cookie and then navigates to
+   `/api/admin/tasks/{id}/download` — the credential never appears in the
+   URL, so copying the download link does not copy any credential (a second
+   navigation without the cookie 401s).
 
 ### Seeding Test Data for Export Testing
 
