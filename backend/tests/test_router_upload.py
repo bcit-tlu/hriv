@@ -1,8 +1,10 @@
 """Tests for the upload router endpoints."""
 
+import asyncio
 import errno
 import os
 import sys
+import time
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -17,6 +19,10 @@ if "pyvips" not in sys.modules:
 
 from app.image_validation import is_valid_image
 from app.routers.upload import list_source_images, get_source_image, upload_source_image
+from app.upload_staging import (
+    reconcile_staging_artifacts,
+    staging_path_for,
+)
 from app.worker import TaskQueueUnavailableError
 
 
@@ -254,10 +260,9 @@ async def test_upload_source_image_rejection_uses_fresh_session_when_bookkeeping
     recovery_db.commit.assert_awaited_once()
     statement = recovery_db.execute.await_args.args[0]
     assert statement.compile().params["status_1"] == "pending"
-    if recovery_succeeds:
-        unlink.assert_called_once()
-    else:
-        unlink.assert_not_called()
+    # The committed failed row owns stored_path, so the file is retained
+    # (#1248): an owned file must never be unlinked.
+    unlink.assert_not_called()
     background_tasks.add_task.assert_not_called()
 
 
@@ -392,3 +397,202 @@ async def test_upload_source_image_bounds_stored_extension(tmp_path) -> None:
     assert src.original_filename == f"slide.{long_suffix}"
     assert src.stored_path.endswith(".bin")
     assert len(os.path.basename(src.stored_path)) <= 255
+
+
+def _mock_recovery_session(*, owned: bool | None = None, raises: bool = False):
+    """Return a patched ``app.upload_staging.async_session`` context manager.
+
+    *owned* controls the ownership probe's scalar result; *raises* simulates
+    the database being unreachable during the check.
+    """
+    recovery_db = AsyncMock()
+    if raises:
+        recovery_db.scalar = AsyncMock(side_effect=RuntimeError("db unreachable"))
+    else:
+        recovery_db.scalar = AsyncMock(return_value=owned)
+    recovery_db.__aenter__ = AsyncMock(return_value=recovery_db)
+    recovery_db.__aexit__ = AsyncMock(return_value=False)
+    return patch("app.upload_staging.async_session", return_value=recovery_db)
+
+
+async def test_upload_source_image_cancellation_leaves_no_final_file(tmp_path) -> None:
+    """A cancelled upload must not leave an apparently authoritative file."""
+    file = AsyncMock()
+    file.filename = "cancelled.png"
+    file.content_type = "image/png"
+    file.read = AsyncMock(side_effect=[b"partial", asyncio.CancelledError()])
+
+    db = AsyncMock()
+    with patch("app.routers.upload.settings") as mock_settings:
+        mock_settings.source_images_dir = str(tmp_path)
+        with pytest.raises(asyncio.CancelledError):
+            await upload_source_image(
+                file=file,
+                background_tasks=MagicMock(),
+                user=MagicMock(),
+                db=db,
+            )
+
+    # No final-path file and no leftover staging artifact.
+    assert os.listdir(tmp_path) == []
+    db.add.assert_not_called()
+
+
+async def test_upload_source_image_commit_failure_removes_unowned_file(tmp_path) -> None:
+    """An unambiguous commit failure deletes the unowned final-path file."""
+    file = AsyncMock()
+    file.filename = "commitfail.png"
+    file.content_type = "image/png"
+    file.read = AsyncMock(side_effect=[b"fake-png-data", b""])
+
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.commit = AsyncMock(side_effect=RuntimeError("commit failed"))
+
+    with (
+        patch("app.routers.upload.settings") as mock_settings,
+        _mock_recovery_session(owned=False),
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        with pytest.raises(RuntimeError, match="commit failed"):
+            await upload_source_image(
+                file=file,
+                background_tasks=MagicMock(),
+                user=MagicMock(),
+                db=db,
+            )
+
+    # Final file deleted after proving no committed row owns it.
+    assert os.listdir(tmp_path) == []
+
+
+async def test_upload_source_image_ambiguous_commit_retains_owned_file(tmp_path) -> None:
+    """When a row owns the path despite the raised error, retain the file."""
+    file = AsyncMock()
+    file.filename = "ambiguous.png"
+    file.content_type = "image/png"
+    file.read = AsyncMock(side_effect=[b"fake-png-data", b""])
+
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.commit = AsyncMock(side_effect=RuntimeError("ambiguous commit"))
+
+    with (
+        patch("app.routers.upload.settings") as mock_settings,
+        _mock_recovery_session(owned=True),
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        with pytest.raises(RuntimeError, match="ambiguous commit"):
+            await upload_source_image(
+                file=file,
+                background_tasks=MagicMock(),
+                user=MagicMock(),
+                db=db,
+            )
+
+    # A committed row owns the path: the file stays.
+    remaining = os.listdir(tmp_path)
+    assert len(remaining) == 1
+    assert not remaining[0].startswith(".staging-")
+
+
+async def test_upload_source_image_ownership_check_failure_retains_file(tmp_path) -> None:
+    """If ownership cannot be determined, fail safe by retaining the file."""
+    file = AsyncMock()
+    file.filename = "unknown.png"
+    file.content_type = "image/png"
+    file.read = AsyncMock(side_effect=[b"fake-png-data", b""])
+
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.commit = AsyncMock(side_effect=RuntimeError("commit failed"))
+
+    with (
+        patch("app.routers.upload.settings") as mock_settings,
+        _mock_recovery_session(raises=True),
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        with pytest.raises(RuntimeError, match="commit failed"):
+            await upload_source_image(
+                file=file,
+                background_tasks=MagicMock(),
+                user=MagicMock(),
+                db=db,
+            )
+
+    assert len(os.listdir(tmp_path)) == 1
+
+
+async def test_upload_source_image_cleanup_failure_propagates_original(tmp_path) -> None:
+    """A cleanup unlink failure must not mask the original commit error."""
+    file = AsyncMock()
+    file.filename = "cleanupfail.png"
+    file.content_type = "image/png"
+    file.read = AsyncMock(side_effect=[b"fake-png-data", b""])
+
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.commit = AsyncMock(side_effect=RuntimeError("commit failed"))
+
+    with (
+        patch("app.routers.upload.settings") as mock_settings,
+        _mock_recovery_session(owned=False),
+        patch("os.unlink", side_effect=OSError(errno.EACCES, "denied")),
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        with pytest.raises(RuntimeError, match="commit failed"):
+            await upload_source_image(
+                file=file,
+                background_tasks=MagicMock(),
+                user=MagicMock(),
+                db=db,
+            )
+
+
+async def test_upload_source_image_success_writes_via_staging(tmp_path) -> None:
+    """The happy path streams to a staging name then renames into place."""
+    file = AsyncMock()
+    file.filename = "happy.png"
+    file.content_type = "image/png"
+    file.read = AsyncMock(side_effect=[b"fake-png-data", b""])
+
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    with patch("app.routers.upload.settings") as mock_settings:
+        mock_settings.source_images_dir = str(tmp_path)
+        await upload_source_image(
+            file=file,
+            background_tasks=MagicMock(),
+            user=MagicMock(),
+            db=db,
+        )
+
+    src = db.add.call_args.args[0]
+    final_name = os.path.basename(src.stored_path)
+    assert staging_path_for(src.stored_path).endswith(f".staging-{final_name}")
+    # File landed at the final path; no staging artifact remains.
+    assert os.listdir(tmp_path) == [final_name]
+
+
+async def test_reconcile_staging_artifacts_removes_only_aged_staging(tmp_path) -> None:
+    """The sweep removes aged .staging-* files and nothing else."""
+    old_staging = tmp_path / ".staging-old.png"
+    fresh_staging = tmp_path / ".staging-fresh.png"
+    normal_file = tmp_path / "committed.png"
+    old_staging.write_bytes(b"partial")
+    fresh_staging.write_bytes(b"inflight")
+    normal_file.write_bytes(b"real")
+
+    old_mtime = time.time() - 7200
+    os.utime(old_staging, (old_mtime, old_mtime))
+
+    removed = await reconcile_staging_artifacts(str(tmp_path))
+
+    assert removed == 1
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        ".staging-fresh.png",
+        "committed.png",
+    ]

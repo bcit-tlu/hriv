@@ -58,6 +58,30 @@ The on-disk copy is named from a UUID plus a bounded suffix
 (`storage_extension()`); a client suffix longer than 32 bytes falls back to
 `.bin`, so an over-long display name cannot produce an invalid path component.
 
+## Staged writes and orphan prevention
+
+Single uploads and image replacements stream the request body to a
+`.staging-<uuid>.<ext>` sibling of the final stored path
+(`backend/app/upload_staging.py`), then atomically rename it into place just
+before the `SourceImage` row commits. Because staging names are never
+persisted, a request cancelled or killed mid-stream can only leave a staging
+artifact — never a final-path file that looks like a committed upload (#1248).
+
+The rename deliberately precedes the commit so a committed row always has its
+file; a failure in the narrow rename→commit window is handled by
+`cleanup_unowned_final()`, which deletes the final-path file only after a
+fresh-session query proves no committed `SourceImage.stored_path` owns it.
+When ownership cannot be determined (database unreachable, ambiguous commit
+outcome) the file is retained — an orphaned file is recoverable, a wrongly
+deleted owned file is not. Queue rejections follow the same rule: once the
+bookkeeping row is committed with `status="failed"`, that row owns the file,
+so it stays on disk and consistent with the record.
+
+The shared reconciliation sweep (`run_reconciliation_sweep`) removes
+`.staging-*` artifacts whose mtime is older than one hour
+(`STAGING_MAX_AGE_SECONDS`); an in-flight upload refreshes its staging file's
+mtime on every chunk write, so only dead requests age out.
+
 ## Status transitions
 
 | Status       | Progress | Description                                          |

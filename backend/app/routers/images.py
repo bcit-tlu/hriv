@@ -17,7 +17,13 @@ from ..auth_events import actor_log_fields
 from ..browse_state import bump_browse_revision
 from ..database import async_session, get_db, settings
 from ..filenames import sanitize_upload_filename, storage_extension
-from ..image_validation import UPLOAD_CHUNK_SIZE, is_valid_image
+from ..image_validation import is_valid_image
+from ..upload_staging import (
+    cleanup_unowned_final,
+    discard_staging,
+    staging_path_for,
+    write_upload_to_staging,
+)
 from ..models import Category, Image, SourceImage, User
 from ..schemas import (
     MAX_NOTE_LENGTH,
@@ -388,17 +394,18 @@ async def replace_image(
             ext = storage_extension(original_filename)
             unique_name = f"{uuid.uuid4().hex}{ext}"
             stored_path = os.path.join(settings.source_images_dir, unique_name)
+            staging_path = staging_path_for(stored_path)
 
+            # Stream to a staging name that is never committed to the
+            # database: a request cancelled or killed mid-stream leaves a
+            # sweepable artifact, not an apparently authoritative file
+            # (#1248). The rename precedes the commit so a committed row
+            # always has its file.
             try:
-                with open(stored_path, "wb") as f:
-                    while True:
-                        chunk = await file.read(UPLOAD_CHUNK_SIZE)
-                        if not chunk:
-                            break
-                        f.write(chunk)
+                file_size = await write_upload_to_staging(file, staging_path)
+                os.replace(staging_path, stored_path)
             except OSError as exc:
-                with contextlib.suppress(OSError):
-                    os.unlink(stored_path)
+                discard_staging(staging_path)
                 if exc.errno == errno.ENOSPC:
                     logger.error(
                         "Replace upload failed: no space left on device",
@@ -414,8 +421,10 @@ async def replace_image(
                         detail="Insufficient storage \u2014 the data volume is full",
                     )
                 raise
-
-            file_size = os.path.getsize(stored_path)
+            except BaseException:
+                # Cancellation or any other non-OSError exit mid-stream.
+                discard_staging(staging_path)
+                raise
 
             metadata_snapshot = {
                 "name": img.name,
@@ -427,52 +436,63 @@ async def replace_image(
                 "version": img.version,
             }
 
-            # Apply metadata before creating the SourceImage so the target
-            # update and source-image insert remain one transaction.
-            if has_metadata:
-                if category_id is not None and parsed_cat != img.category_id:
-                    # A category move changes scope membership: invalidate
-                    # both scopes' tile-order revisions so clients holding
-                    # older revisions get a 409 instead of silently
-                    # overwriting (same rule as PATCH /images/{id}).
-                    await bump_scopes(
-                        db,
-                        {scope_key_for(img.category_id), scope_key_for(parsed_cat)},
-                    )
-                if category_id is not None:
-                    img.category_id = parsed_cat
-                if name is not None:
-                    img.name = name
-                if copyright is not None:
-                    img.copyright = copyright if copyright != "" else None
-                if note is not None:
-                    img.note = parsed_note
-                if active is not None:
-                    img.active = active.lower() in ("true", "1")
-                if metadata_extra is not None:
-                    img.metadata_ = parsed_metadata
-                img.version = img.version + 1
+            # Everything below runs after the staged file was renamed to
+            # its final path; any failure (including cancellation during
+            # the metadata-bump awaits or an ambiguous commit) must only
+            # remove the file when no committed row owns it (#1248).
+            try:
+                # Apply metadata before creating the SourceImage so the target
+                # update and source-image insert remain one transaction.
+                if has_metadata:
+                    if category_id is not None and parsed_cat != img.category_id:
+                        # A category move changes scope membership: invalidate
+                        # both scopes' tile-order revisions so clients holding
+                        # older revisions get a 409 instead of silently
+                        # overwriting (same rule as PATCH /images/{id}).
+                        await bump_scopes(
+                            db,
+                            {scope_key_for(img.category_id), scope_key_for(parsed_cat)},
+                        )
+                    if category_id is not None:
+                        img.category_id = parsed_cat
+                    if name is not None:
+                        img.name = name
+                    if copyright is not None:
+                        img.copyright = copyright if copyright != "" else None
+                    if note is not None:
+                        img.note = parsed_note
+                    if active is not None:
+                        img.active = active.lower() in ("true", "1")
+                    if metadata_extra is not None:
+                        img.metadata_ = parsed_metadata
+                    img.version = img.version + 1
 
-            src = SourceImage(
-                original_filename=original_filename,
-                stored_path=stored_path,
-                status="pending",
-                name=img.name,
-                category_id=img.category_id,
-                copyright=img.copyright,
-                note=img.note,
-                active=img.active,
-                file_size=file_size,
-                uploaded_by=_user.id,
-                image_id=image_id,
-            )
-            db.add(src)
-            if has_metadata and (
-                metadata_snapshot["category_id"] is not None or img.category_id is not None
-            ):
-                await bump_browse_revision(db)
-            await db.commit()
-            await db.refresh(src)
+                src = SourceImage(
+                    original_filename=original_filename,
+                    stored_path=stored_path,
+                    status="pending",
+                    name=img.name,
+                    category_id=img.category_id,
+                    copyright=img.copyright,
+                    note=img.note,
+                    active=img.active,
+                    file_size=file_size,
+                    uploaded_by=_user.id,
+                    image_id=image_id,
+                )
+                db.add(src)
+                if has_metadata and (
+                    metadata_snapshot["category_id"] is not None
+                    or img.category_id is not None
+                ):
+                    await bump_browse_revision(db)
+                await db.commit()
+                await db.refresh(src)
+            except BaseException:
+                # The commit outcome may be ambiguous; remove the file
+                # only when no committed row owns the path.
+                await cleanup_unowned_final(stored_path)
+                raise
 
             span.set_attribute("source_image.id", src.id)
             span.set_attribute("image.enqueued", False)
@@ -498,7 +518,6 @@ async def replace_image(
                     target_image_id,
                 )
             except TaskQueueUnavailableError:
-                bookkeeping_committed = False
                 try:
                     src.status = "failed"
                     src.status_message = "Failed"
@@ -506,7 +525,6 @@ async def replace_image(
                         "Task queue unavailable; image replacement was not started."
                     )
                     await db.commit()
-                    bookkeeping_committed = True
                 except Exception:
                     logger.exception(
                         "Failed to mark replacement source image after queue rejection",
@@ -536,7 +554,6 @@ async def replace_image(
                                 )
                             )
                             await recovery_db.commit()
-                            bookkeeping_committed = True
                     except Exception:
                         logger.exception(
                             "Fresh-session replacement source-image bookkeeping failed",
@@ -598,9 +615,8 @@ async def replace_image(
                                 "target_image_id": target_image_id,
                             },
                         )
-                if bookkeeping_committed:
-                    with contextlib.suppress(OSError):
-                        os.unlink(stored_path)
+                # The committed failed row owns stored_path, so the file
+                # is retained to keep row and file consistent (#1248).
                 raise
             span.set_attribute("image.enqueued", enqueue_result.queued)
             if not enqueue_result.queued:
