@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.60.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.59.0...frontend-v0.60.0) (2026-09-22)
+
+
+### Features
+
+* **frontend:** gate Storybook tests on axe accessibility checks ([#1346](https://github.com/bcit-tlu/hriv/issues/1346)) ([ad94c16](https://github.com/bcit-tlu/hriv/commit/ad94c16fcc318f8d015e412c6b2d1df043a276a1))
+
 ## [0.59.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.58.0...frontend-v0.59.0) (2026-09-22)
 
 
