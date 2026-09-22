@@ -262,3 +262,26 @@ async def test_require_role_rejects_unauthorized_user() -> None:
 
     assert exc.value.status_code == 403
     assert "not permitted" in exc.value.detail
+
+
+async def test_require_role_rejects_staff_for_editor_endpoints() -> None:
+    """Staff are view-only: admin/instructor guards must reject them."""
+    editor_guard = auth.require_role("admin", "instructor")
+    admin_guard = auth.require_role("admin")
+    staff = SimpleNamespace(role="staff")
+
+    for guard in (editor_guard, admin_guard):
+        with pytest.raises(HTTPException) as exc:
+            await guard(staff)  # type: ignore[arg-type]
+        assert exc.value.status_code == 403
+        assert "not permitted" in exc.value.detail
+
+
+async def test_require_role_allows_staff_for_people_listing() -> None:
+    """The users-listing dependency admits staff (read-only People view)."""
+    guard = auth.require_role("admin", "instructor", "staff")
+    staff = SimpleNamespace(role="staff")
+
+    result = await guard(staff)  # type: ignore[arg-type]
+
+    assert result is staff

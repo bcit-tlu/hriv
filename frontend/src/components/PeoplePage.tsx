@@ -97,7 +97,7 @@ type SortDirection = 'asc' | 'desc'
 type PeopleTableColumn =
   'id' | 'name' | 'email' | 'role' | 'active' | 'program' | 'group' | 'last_access' | 'created_at'
 
-const ROLES: Role[] = ['admin', 'instructor', 'student']
+const ROLES: Role[] = ['admin', 'instructor', 'staff', 'student']
 const PEOPLE_COLUMN_OPTIONS: readonly ColumnVisibilityOption<PeopleTableColumn>[] = [
   { key: 'id', label: 'ID' },
   { key: 'name', label: 'Name' },
@@ -139,6 +139,9 @@ type AppliedPeopleFilter =
 interface PeoplePageProps {
   programs: Program[]
   groups: Group[]
+  /** Read-only directory view (staff role): hides all mutation affordances —
+   *  selection checkboxes, Add/Edit/Delete, and bulk actions. */
+  readOnly?: boolean
   initialEditUserId?: number | null
   onEditUserHandled?: () => void
 }
@@ -146,6 +149,7 @@ interface PeoplePageProps {
 export default function PeoplePage({
   programs,
   groups,
+  readOnly = false,
   initialEditUserId,
   onEditUserHandled,
 }: PeoplePageProps) {
@@ -241,9 +245,26 @@ export default function PeoplePage({
     () => programs.filter((program) => selectedPrograms.has(program.id)),
     [programs, selectedPrograms],
   )
+  // Staff don't have access to GET /api/groups/; when the groups prop is
+  // empty, derive the filter options from the group ids/names embedded in
+  // the loaded user rows instead.
+  const groupFilterOptions = useMemo(() => {
+    if (groups.length > 0) {
+      return groups.map((g) => ({ id: g.id, name: g.name }))
+    }
+    const map = new Map<number, string>()
+    for (const u of users) {
+      u.group_ids.forEach((id, i) => {
+        if (!map.has(id)) map.set(id, u.group_names[i] ?? `Group #${id}`)
+      })
+    }
+    return [...map.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [groups, users])
   const selectedGroupOptions = useMemo(
-    () => groups.filter((group) => selectedGroups.has(group.id)),
-    [groups, selectedGroups],
+    () => groupFilterOptions.filter((group) => selectedGroups.has(group.id)),
+    [groupFilterOptions, selectedGroups],
   )
   const filterSnapshot = useMemo(
     () => buildPeopleFilterSnapshot(filters, selectedRoles, selectedPrograms, selectedGroups),
@@ -365,6 +386,7 @@ export default function PeoplePage({
   }, [loadData])
 
   useEffect(() => {
+    if (readOnly) return
     if (initialEditUserId != null && !loading && users.length > 0) {
       const target = users.find((u) => u.id === initialEditUserId)
       if (target) {
@@ -375,7 +397,7 @@ export default function PeoplePage({
       }
       onEditUserHandled?.()
     }
-  }, [initialEditUserId, loading, users, onEditUserHandled])
+  }, [initialEditUserId, loading, users, onEditUserHandled, readOnly])
 
   useEffect(() => {
     const validIds = new Set(programs.map((p) => p.id))
@@ -387,13 +409,13 @@ export default function PeoplePage({
   }, [programs])
 
   useEffect(() => {
-    const validIds = new Set(groups.map((g) => g.id))
+    const validIds = new Set(groupFilterOptions.map((g) => g.id))
     // eslint-disable-next-line react-hooks/set-state-in-effect -- keep selections aligned with available groups
     setSelectedGroups((prev) => {
       const pruned = new Set([...prev].filter((id) => validIds.has(id)))
       return pruned.size === prev.size ? prev : pruned
     })
-  }, [groups])
+  }, [groupFilterOptions])
 
   useEffect(() => {
     const validRoles = new Set(ROLES)
@@ -573,6 +595,7 @@ export default function PeoplePage({
   }
 
   const handleRowClick = (user: ApiUser) => {
+    if (readOnly) return
     setEditingUser(user)
     setAddEditOpen(true)
   }
@@ -841,7 +864,7 @@ export default function PeoplePage({
       >
         <Typography variant="h5">People</Typography>
         <Box sx={{ display: 'flex', gap: 2, flexShrink: 0, alignItems: 'center' }}>
-          {selected.size > 0 && (
+          {!readOnly && selected.size > 0 && (
             <>
               <Button
                 variant="contained"
@@ -885,9 +908,11 @@ export default function PeoplePage({
               </Button>
             </>
           )}
-          <Button variant="contained" startIcon={<PersonAddIcon />} onClick={handleOpenAdd}>
-            Add Person
-          </Button>
+          {!readOnly && (
+            <Button variant="contained" startIcon={<PersonAddIcon />} onClick={handleOpenAdd}>
+              Add Person
+            </Button>
+          )}
         </Box>
       </Box>
 
@@ -1019,14 +1044,17 @@ export default function PeoplePage({
             />
           </FilterPopoverButton>
         )}
-        {isColumnVisible('group') && groups.length > 0 && (
+        {isColumnVisible('group') && groupFilterOptions.length > 0 && (
           <FilterPopoverButton
             label="Group"
             activeCount={selectedGroupOptions.length}
             panelWidth={280}
           >
             <FilterOptionPanel
-              options={groups.map((group) => ({ value: String(group.id), label: group.name }))}
+              options={groupFilterOptions.map((group) => ({
+                value: String(group.id),
+                label: group.name,
+              }))}
               selectedValues={selectedGroupOptions.map((group) => String(group.id))}
               onChange={(values) => {
                 setSelectedGroups(new Set(values.map((value) => Number(value))))
@@ -1057,13 +1085,15 @@ export default function PeoplePage({
               sx={{ '& .MuiTableCell-head': { bgcolor: (theme) => filterSurfaceBg(theme) } }}
             >
               <TableRow>
-                <TableCell padding="checkbox">
-                  <Checkbox
-                    indeterminate={selectedInView > 0 && selectedInView < pageUsers.length}
-                    checked={pageUsers.length > 0 && selectedInView === pageUsers.length}
-                    onChange={(e) => handleSelectAll(e.target.checked)}
-                  />
-                </TableCell>
+                {!readOnly && (
+                  <TableCell padding="checkbox">
+                    <Checkbox
+                      indeterminate={selectedInView > 0 && selectedInView < pageUsers.length}
+                      checked={pageUsers.length > 0 && selectedInView === pageUsers.length}
+                      onChange={(e) => handleSelectAll(e.target.checked)}
+                    />
+                  </TableCell>
+                )}
                 {isColumnVisible('id') && (
                   <TableCell sortDirection={sortColumn === 'id' ? sortDirection : false}>
                     <TableSortLabel
@@ -1163,7 +1193,7 @@ export default function PeoplePage({
                     </TableSortLabel>
                   </TableCell>
                 )}
-                <TableCell align="right">Actions</TableCell>
+                {!readOnly && <TableCell align="right">Actions</TableCell>}
               </TableRow>
             </TableHead>
             <TableBody>
@@ -1171,16 +1201,18 @@ export default function PeoplePage({
                 <TableRow
                   key={user.id}
                   hover
-                  selected={selected.has(user.id)}
-                  sx={{ cursor: 'pointer' }}
+                  selected={!readOnly && selected.has(user.id)}
+                  sx={readOnly ? undefined : { cursor: 'pointer' }}
                   onClick={() => handleRowClick(user)}
                 >
-                  <TableCell padding="checkbox" onClick={(e) => e.stopPropagation()}>
-                    <Checkbox
-                      checked={selected.has(user.id)}
-                      onChange={(e) => handleSelectOne(user.id, e.target.checked)}
-                    />
-                  </TableCell>
+                  {!readOnly && (
+                    <TableCell padding="checkbox" onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selected.has(user.id)}
+                        onChange={(e) => handleSelectOne(user.id, e.target.checked)}
+                      />
+                    </TableCell>
+                  )}
                   {isColumnVisible('id') && <TableCell>{user.id}</TableCell>}
                   {isColumnVisible('name') && <TableCell>{user.name}</TableCell>}
                   {isColumnVisible('email') && <TableCell>{user.email}</TableCell>}
@@ -1240,23 +1272,29 @@ export default function PeoplePage({
                   {isColumnVisible('created_at') && (
                     <TableCell>{new Date(user.created_at).toLocaleDateString()}</TableCell>
                   )}
-                  <TableCell align="right" onClick={(e) => e.stopPropagation()}>
-                    <Button
-                      size="small"
-                      color="error"
-                      onClick={() => {
-                        setDeleteConfirmUser(user)
-                        setDeleteConfirmOpen(true)
-                      }}
-                    >
-                      Delete
-                    </Button>
-                  </TableCell>
+                  {!readOnly && (
+                    <TableCell align="right" onClick={(e) => e.stopPropagation()}>
+                      <Button
+                        size="small"
+                        color="error"
+                        onClick={() => {
+                          setDeleteConfirmUser(user)
+                          setDeleteConfirmOpen(true)
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
               {pageUsers.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={visibleColumnCount + 2} align="center" sx={{ py: 6 }}>
+                  <TableCell
+                    colSpan={visibleColumnCount + (readOnly ? 0 : 2)}
+                    align="center"
+                    sx={{ py: 6 }}
+                  >
                     <Typography variant="body2" color="text.secondary">
                       No people match the selected filters.
                     </Typography>

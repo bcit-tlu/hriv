@@ -22,34 +22,46 @@ All seed users share the password `password`.
 | --------------------- | ---------------------------- | ------------ | ---------- |
 | Haruki Tanaka         | admin@example.ca             | password     | admin      |
 | Carlos Henrique Souza | instructor@example.ca        | password     | instructor |
+| Devon Staff           | staff@example.ca             | password     | staff      |
 | Mira Patel            | student@example.ca           | password     | student    |
 | Synthetic Student     | synthetic.student@example.ca | password     | student    |
 
 ### Role Capabilities
 
-| Capability                      | Admin | Instructor | Student |
-| ------------------------------- | ----- | ---------- | ------- |
-| Browse categories & view images | Yes   | Yes        | Yes     |
-| Create/update categories        | Yes   | Yes        | No      |
-| Delete categories               | Yes   | Yes        | No      |
-| Manage page (image table)       | Yes   | Yes        | No      |
-| Bulk import images              | Yes   | Yes        | No      |
-| Manage programs                 | Yes   | No         | No      |
-| Manage groups                   | Yes   | Yes\*      | No      |
-| Restrict categories to groups   | Yes   | Yes\*      | No      |
-| Manage announcement             | Yes   | Yes        | No      |
-| View changelog notifications    | Yes   | Yes        | No      |
-| View component versions (About) | Yes   | Yes        | No      |
-| Manage changelog entries        | Yes   | No         | No      |
-| Admin tab (changelog + backups) | Yes   | No         | No      |
-| User management (add/delete)    | Yes   | No         | No      |
-| List users                      | Yes   | Yes        | No      |
+| Capability                      | Admin | Instructor | Staff | Student |
+| ------------------------------- | ----- | ---------- | ----- | ------- |
+| Browse categories & view images | Yes   | Yes        | Yes   | Yes†    |
+| Create/update categories        | Yes   | Yes        | No    | No      |
+| Delete categories               | Yes   | Yes        | No    | No      |
+| Manage page (image table)       | Yes   | Yes        | No    | No      |
+| Bulk import images              | Yes   | Yes        | No    | No      |
+| Manage programs                 | Yes   | No         | No    | No      |
+| Manage groups                   | Yes   | Yes\*      | No    | No      |
+| Restrict categories to groups   | Yes   | Yes\*      | No    | No      |
+| Manage announcement             | Yes   | Yes        | No    | No      |
+| View changelog notifications    | Yes   | Yes        | No    | No      |
+| View component versions (About) | Yes   | Yes        | No    | No      |
+| Manage changelog entries        | Yes   | No         | No    | No      |
+| Admin tab (changelog + backups) | Yes   | No         | No    | No      |
+| User management (add/delete)    | Yes   | No         | No    | No      |
+| People tab (view users)         | Yes   | No         | Yes‡  | No      |
+| List users (API)                | Yes   | Yes§       | Yes‡  | No      |
 
 \* Instructors manage only the groups they co-own and may attach only groups
 they manage; admins manage and attach any group. Inherited program and group
 restrictions are treated as pre-existing when an instructor creates a child
 category, so carrying an ancestor restriction does not require new attach
 authority. See [docs/groups.md](docs/groups.md).
+
+† Students are subject to the program/group dual-gate visibility filter.
+
+‡ Staff are a view-only role for authenticated non-students. They see all
+content (no program/group visibility filter) and get a **read-only** People
+tab — the full user list with filters, but no add/edit/delete, bulk actions,
+or selection controls. They cannot be group members or group instructors.
+
+§ Instructors list only students and other instructors, with a minimal
+projection (no metadata/last_access) — enough to populate group pickers.
 
 ### Programs
 

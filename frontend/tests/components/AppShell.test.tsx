@@ -15,6 +15,7 @@ function makeProps(overrides: Partial<AppShellProps> = {}): AppShellProps {
     onHomeClick: vi.fn(),
     canEditContent: true,
     canManageUsers: true,
+    canViewPeople: true,
     currentUser: {
       name: 'Test User',
       email: 'test@example.com',
@@ -153,6 +154,7 @@ describe('AppShell', () => {
           {...makeProps({
             canEditContent: false,
             canManageUsers: false,
+            canViewPeople: false,
           })}
         />,
       )
@@ -172,15 +174,31 @@ describe('AppShell', () => {
     })
 
     it('renders People and Admin tabs when canManageUsers', () => {
-      render(<AppShell {...makeProps({ canManageUsers: true })} />)
+      render(<AppShell {...makeProps({ canManageUsers: true, canViewPeople: true })} />)
       expect(screen.getByRole('tab', { name: 'People' })).toBeInTheDocument()
       expect(screen.getByRole('tab', { name: 'Admin' })).toBeInTheDocument()
     })
 
-    it('hides People and Admin tabs when not canManageUsers', () => {
-      render(<AppShell {...makeProps({ canManageUsers: false })} />)
+    it('hides People and Admin tabs when neither capability is granted', () => {
+      render(<AppShell {...makeProps({ canManageUsers: false, canViewPeople: false })} />)
       expect(screen.queryByRole('tab', { name: 'People' })).not.toBeInTheDocument()
       expect(screen.queryByRole('tab', { name: 'Admin' })).not.toBeInTheDocument()
+    })
+
+    it('renders People but not Admin for staff (canViewPeople only)', () => {
+      render(
+        <AppShell
+          {...makeProps({
+            canEditContent: false,
+            canManageUsers: false,
+            canViewPeople: true,
+          })}
+        />,
+      )
+      expect(screen.getByRole('tab', { name: 'People' })).toBeInTheDocument()
+      expect(screen.queryByRole('tab', { name: 'Admin' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('tab', { name: 'Images' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('tab', { name: 'Manage' })).not.toBeInTheDocument()
     })
 
     it('calls onHomeClick when Home tab is clicked while already on browse', () => {
@@ -234,6 +252,7 @@ describe('AppShell', () => {
           {...makeProps({
             canEditContent: true,
             canManageUsers: false,
+            canViewPeople: false,
           })}
         />,
       )
@@ -265,6 +284,7 @@ describe('AppShell', () => {
           {...makeProps({
             canEditContent: true,
             canManageUsers: false,
+            canViewPeople: false,
           })}
         />,
       )
@@ -514,6 +534,23 @@ describe('AppShell', () => {
       }
     })
 
+    it('exposes Home and People but not Admin for staff in the menu', () => {
+      render(
+        <AppShell
+          {...makeProps({
+            canEditContent: false,
+            canManageUsers: false,
+            canViewPeople: true,
+          })}
+        />,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
+      expect(screen.getByRole('menuitem', { name: 'Home' })).toBeInTheDocument()
+      expect(screen.getByRole('menuitem', { name: 'People' })).toBeInTheDocument()
+      expect(screen.queryByRole('menuitem', { name: 'Admin' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('menuitem', { name: 'Categories' })).not.toBeInTheDocument()
+    })
+
     it('renders the Manage section heading as a distinct uppercased label', () => {
       render(<AppShell {...makeProps()} />)
       fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
@@ -569,7 +606,15 @@ describe('AppShell', () => {
     })
 
     it('keeps a single Home tab inline for students instead of collapsing', () => {
-      render(<AppShell {...makeProps({ canEditContent: false, canManageUsers: false })} />)
+      render(
+        <AppShell
+          {...makeProps({
+            canEditContent: false,
+            canManageUsers: false,
+            canViewPeople: false,
+          })}
+        />,
+      )
       expect(screen.queryByRole('button', { name: 'Open navigation menu' })).not.toBeInTheDocument()
       expect(screen.getByRole('tab', { name: 'Home' })).toBeInTheDocument()
     })

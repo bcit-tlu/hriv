@@ -11,6 +11,7 @@ export interface NavigationItem {
   page?: NavigationPage
   requiresEditContent?: boolean
   requiresManageUsers?: boolean
+  requiresViewPeople?: boolean
 }
 
 const navigationItems: readonly NavigationItem[] = [
@@ -58,7 +59,7 @@ const navigationItems: readonly NavigationItem[] = [
     section: 'account',
     icon: 'people',
     page: 'people',
-    requiresManageUsers: true,
+    requiresViewPeople: true,
   },
   {
     id: 'admin',
@@ -73,13 +74,16 @@ const navigationItems: readonly NavigationItem[] = [
 export function getNavigationItems({
   canEditContent,
   canManageUsers,
+  canViewPeople,
 }: {
   canEditContent: boolean
   canManageUsers: boolean
+  canViewPeople: boolean
 }): NavigationItem[] {
   return navigationItems.filter(
     (item) =>
       (!item.requiresEditContent || canEditContent) &&
-      (!item.requiresManageUsers || canManageUsers),
+      (!item.requiresManageUsers || canManageUsers) &&
+      (!item.requiresViewPeople || canViewPeople),
   )
 }

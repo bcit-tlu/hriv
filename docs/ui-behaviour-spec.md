@@ -14,36 +14,40 @@ for where each feature lives.
 
 ## Role-gated behaviour (who sees what)
 
-Two capability flags in `AuthContext.tsx` drive all gating:
+Three capability flags in `AuthContext.tsx` drive all gating:
 
 - `canEditContent = role ∈ {admin, instructor}`
 - `canManageUsers = role === admin`
+- `canViewPeople = role ∈ {admin, staff}`
 
 ### Tab / navigation visibility (`AppShell.tsx` — `AppShell.test.tsx`)
 
-| Surface               | Student | Instructor | Admin |
-| --------------------- | ------- | ---------- | ----- |
-| Home                  | ✓       | ✓          | ✓     |
-| Images tab            | —       | ✓          | ✓     |
-| Manage dropdown       | —       | ✓          | ✓     |
-| Manage → Categories   | —       | ✓          | ✓     |
-| Manage → Programs     | —       | —          | ✓     |
-| Manage → Groups       | —       | ✓          | ✓     |
-| Manage → Announcement | —       | ✓          | ✓     |
-| People tab            | —       | —          | ✓     |
-| Admin tab             | —       | —          | ✓     |
+| Surface               | Student | Staff | Instructor | Admin |
+| --------------------- | ------- | ----- | ---------- | ----- |
+| Home                  | ✓       | ✓     | ✓          | ✓     |
+| Images tab            | —       | —     | ✓          | ✓     |
+| Manage dropdown       | —       | —     | ✓          | ✓     |
+| Manage → Categories   | —       | —     | ✓          | ✓     |
+| Manage → Programs     | —       | —     | —          | ✓     |
+| Manage → Groups       | —       | —     | ✓          | ✓     |
+| Manage → Announcement | —       | —     | ✓          | ✓     |
+| People tab            | —       | ✓     | —          | ✓     |
+| Admin tab             | —       | —     | —          | ✓     |
 
 - **Given** a student is logged in, **When** the app bar renders, **Then** only
   Home is shown (no Images, Manage, People, or Admin).
+- **Given** a staff user, **Then** Home + **People** appear — the People page
+  renders read-only (no add/edit/delete/bulk controls; filters, sorting, and
+  pagination still work).
 - **Given** an instructor, **Then** Images + the Manage dropdown appear, but the
   **Programs** item inside Manage is hidden (admin-only) while **Groups** is shown.
 - **Given** an admin, **Then** all tabs and all Manage items appear.
 
 > **This table covers navigation/tab visibility only — not API-level access.**
 > Tab gating and API authorization are independent. Notably, the **People** tab
-> is admin-only (`AppShell.tsx` `canManageUsers`), but instructors _can_ still
+> is gated by `canViewPeople` (`AppShell.tsx`), but instructors _can_ still
 > list users via the API (`GET /api/users/` is gated by
-> `require_role("admin", "instructor")` in `backend/app/routers/users.py`) — the
+> `require_role("admin", "instructor", "staff")` in `backend/app/routers/users.py`) — the
 > Manage Groups detail panel relies on this. So an instructor not seeing the People
 > tab does **not** mean they cannot list users. For the authoritative
 > endpoint → minimum-role mapping, see

@@ -145,6 +145,18 @@ VALUES
   (4, 'Synthetic Student',  'synthetic.student@example.ca', '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'student',    NULL, '{"synthetic": true}')
 ON CONFLICT (id) DO NOTHING;
 
+-- The staff user is inserted by email rather than a fixed id so that a
+-- persistent dev database that already has an unrelated user at the next
+-- id still gains the documented staff@example.ca login.
+
+INSERT INTO users (name, email, password_hash, role, last_access, metadata)
+SELECT 'Devon Staff', 'staff@example.ca',
+       '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C',
+       'staff', NULL, '{}'
+WHERE NOT EXISTS (
+  SELECT 1 FROM users WHERE lower(email) = 'staff@example.ca'
+);
+
 SELECT setval('users_id_seq', GREATEST((SELECT MAX(id) FROM users), 1));
 
 -- ── User–Program associations ───────────────────────────

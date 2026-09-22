@@ -74,6 +74,29 @@ def test_resolve_role_priority_across_multiple_groups() -> None:
         assert _resolve_role(["employees"]) == "student"
 
 
+def test_resolve_role_staff_group() -> None:
+    """A mapped staff group resolves to the staff role."""
+    mapping = {"employees": "staff", "students": "student"}
+    with patch("app.routers.oidc._parse_role_mapping", return_value=mapping):
+        assert _resolve_role(["employees"]) == "staff"
+
+
+def test_resolve_role_staff_beats_student() -> None:
+    """Staff outranks student — a user in both groups is staff."""
+    mapping = {"employees": "staff", "students": "student"}
+    with patch("app.routers.oidc._parse_role_mapping", return_value=mapping):
+        assert _resolve_role(["students", "employees"]) == "staff"
+        assert _resolve_role(["employees", "students"]) == "staff"
+
+
+def test_resolve_role_admin_and_instructor_beat_staff() -> None:
+    """Staff never overrides admin or instructor membership."""
+    mapping = {"employees": "staff", "instructors": "instructor", "admins": "admin"}
+    with patch("app.routers.oidc._parse_role_mapping", return_value=mapping):
+        assert _resolve_role(["employees", "admins"]) == "admin"
+        assert _resolve_role(["employees", "instructors"]) == "instructor"
+
+
 def test_resolve_role_invalid_role_skipped() -> None:
     with patch("app.routers.oidc._parse_role_mapping", return_value={"grp": "superuser"}):
         assert _resolve_role(["grp"]) is None
