@@ -179,9 +179,13 @@ async def list_orphaned_final_files(
     if not candidates:
         return []
     async with async_session() as db:
+        # One round trip: fetch every owned path under the directory rather
+        # than binding candidates into an IN clause, which would exceed
+        # asyncpg's argument limit on fixture-scale volumes.
+        prefix = directory.rstrip(os.sep) + os.sep
         result = await db.execute(
             select(SourceImage.stored_path).where(
-                SourceImage.stored_path.in_(candidates)
+                SourceImage.stored_path.startswith(prefix)
             )
         )
         owned_paths = set(result.scalars().all())
