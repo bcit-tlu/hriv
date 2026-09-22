@@ -126,14 +126,30 @@ async def upload_source_image(
                 file_size=file_size,
                 uploaded_by=user.id,
             )
-            db.add(src)
+            commit_attempted = False
             try:
+                db.add(src)
+                commit_attempted = True
                 await db.commit()
                 await db.refresh(src)
             except BaseException:
-                # The commit outcome may be ambiguous; remove the file
-                # only when no committed row owns the path.
-                await cleanup_unowned_final(stored_path)
+                if commit_attempted:
+                    # A commit error does not prove the server rolled
+                    # the transaction back — the connection can drop
+                    # after COMMIT is sent while the server still
+                    # commits. A fresh ownership query can race that
+                    # in-flight transaction, so never delete a
+                    # final-path file here (#1248); an orphan is
+                    # reconcilable, a wrongly deleted owned file is not.
+                    logger.warning(
+                        "Upload commit outcome unknown; retaining file",
+                        extra={
+                            "event": "upload.commit_outcome_unknown",
+                            "stored_path": stored_path,
+                        },
+                    )
+                else:
+                    await cleanup_unowned_final(stored_path)
                 raise
 
             span.set_attribute("source_image.id", src.id)

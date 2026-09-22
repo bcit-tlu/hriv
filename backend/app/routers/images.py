@@ -437,9 +437,11 @@ async def replace_image(
             }
 
             # Everything below runs after the staged file was renamed to
-            # its final path; any failure (including cancellation during
-            # the metadata-bump awaits or an ambiguous commit) must only
-            # remove the file when no committed row owns it (#1248).
+            # its final path; failures before the commit attempt may only
+            # remove the file when no committed row owns it, and once
+            # commit is attempted the file is always retained — a commit
+            # error does not prove the server rolled back (#1248).
+            commit_attempted = False
             try:
                 # Apply metadata before creating the SourceImage so the target
                 # update and source-image insert remain one transaction.
@@ -486,12 +488,25 @@ async def replace_image(
                     or img.category_id is not None
                 ):
                     await bump_browse_revision(db)
+                commit_attempted = True
                 await db.commit()
                 await db.refresh(src)
             except BaseException:
-                # The commit outcome may be ambiguous; remove the file
-                # only when no committed row owns the path.
-                await cleanup_unowned_final(stored_path)
+                if commit_attempted:
+                    # Same rule as the upload route: retain the file
+                    # unconditionally once COMMIT may have reached the
+                    # server; an ownership query can race the in-flight
+                    # transaction.
+                    logger.warning(
+                        "Replace commit outcome unknown; retaining file",
+                        extra={
+                            "event": "replace.commit_outcome_unknown",
+                            "stored_path": stored_path,
+                            "image_id": image_id,
+                        },
+                    )
+                else:
+                    await cleanup_unowned_final(stored_path)
                 raise
 
             span.set_attribute("source_image.id", src.id)

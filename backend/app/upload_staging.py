@@ -8,12 +8,15 @@ can only leave a staging artifact — swept by
 :func:`reconcile_staging_artifacts` — and never a final-path file that
 looks like a committed upload.
 
-Failures after the rename (commit error, cancellation) are handled by
+Failures before the commit attempt are handled by
 :func:`cleanup_unowned_final`, which deletes the final-path file only
-after proving that no committed ``SourceImage.stored_path`` owns it. When
-ownership cannot be determined — for example the commit outcome is
-ambiguous and the database is unreachable — the file is retained: an
-orphaned file is recoverable, a wrongly deleted owned file is not.
+after proving that no committed ``SourceImage.stored_path`` owns it.
+Once ``commit()`` has been attempted the outcome is ambiguous — the
+server can still commit after the client sees an error — so callers must
+retain the file unconditionally; a wrongly deleted owned file is
+unrecoverable while an orphan is merely reconcilable. Aged unowned
+final-path files are surfaced (not deleted) by
+:func:`list_orphaned_final_files` for operator reconciliation.
 """
 
 import asyncio
@@ -34,7 +37,10 @@ STAGING_PREFIX = ".staging-"
 
 # A staging artifact older than this can only belong to a dead request:
 # an in-flight upload refreshes the file's mtime on every chunk write.
-STAGING_MAX_AGE_SECONDS = 3600
+# The bound deliberately exceeds the 7200-second ingress upload timeout
+# (charts/frontend/values.yaml proxy-read/send-timeout) so a stalled but
+# still-connected request can never outlive the sweep threshold.
+STAGING_MAX_AGE_SECONDS = 4 * 3600
 
 
 def staging_path_for(stored_path: str) -> str:
@@ -77,9 +83,13 @@ def discard_staging(staging_path: str) -> None:
 async def cleanup_unowned_final(stored_path: str) -> None:
     """Best-effort delete of *stored_path* unless a committed row owns it.
 
-    Used after a post-rename failure where the commit outcome may be
-    ambiguous. Retains the file when a ``SourceImage`` row references it
-    or when ownership cannot be determined. Never raises.
+    Only safe for failures that happen **before** ``db.commit()`` is
+    attempted: with no commit sent, no row can own the path, and the
+    ownership query cannot race an in-flight transaction. After a commit
+    attempt the outcome is ambiguous (the server may commit after the
+    client sees an error) — callers must retain the file instead of
+    calling this. Retains the file when a ``SourceImage`` row references
+    it or when ownership cannot be determined. Never raises.
     """
     if not os.path.exists(stored_path):
         return
@@ -131,6 +141,61 @@ def _stale_staging_files(directory: str, cutoff: float) -> list[str]:
         except OSError:
             continue
     return stale
+
+
+async def list_orphaned_final_files(
+    directory: str,
+    *,
+    min_age_seconds: int = STAGING_MAX_AGE_SECONDS,
+) -> list[str]:
+    """Return final-path files with no owning row, older than *min_age_seconds*.
+
+    Detection only — never deletes. Files in the narrow window between a
+    completed upload and its (possibly still in-flight) commit are younger
+    than the bound, so an aged unowned final file is a reconcilable orphan
+    rather than a race victim. Surfaced via a warning for operators to
+    triage like the #1240 reconciliation.
+    """
+    cutoff = time.time() - min_age_seconds
+    try:
+        entries = await asyncio.to_thread(lambda: list(os.scandir(directory)))
+    except OSError:
+        return []
+    candidates: list[str] = []
+    for entry in entries:
+        try:
+            if (
+                entry.is_file()
+                and not is_staging_artifact(entry.name)
+                and entry.stat().st_mtime < cutoff
+            ):
+                candidates.append(entry.path)
+        except OSError:
+            continue
+    if not candidates:
+        return []
+    orphans: list[str] = []
+    async with async_session() as db:
+        for path in candidates:
+            owned = bool(
+                await db.scalar(
+                    select(exists().where(SourceImage.stored_path == path))
+                )
+            )
+            if not owned:
+                orphans.append(path)
+    if orphans:
+        logger.warning(
+            "Detected %d unowned source-image file(s) older than %ds; "
+            "retained for manual reconciliation",
+            len(orphans),
+            min_age_seconds,
+            extra={
+                "event": "upload.unowned_final_detected",
+                "paths": orphans,
+            },
+        )
+    return orphans
 
 
 async def reconcile_staging_artifacts(

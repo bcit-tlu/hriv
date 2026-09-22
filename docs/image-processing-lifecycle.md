@@ -68,19 +68,26 @@ persisted, a request cancelled or killed mid-stream can only leave a staging
 artifact — never a final-path file that looks like a committed upload (#1248).
 
 The rename deliberately precedes the commit so a committed row always has its
-file; a failure in the narrow rename→commit window is handled by
-`cleanup_unowned_final()`, which deletes the final-path file only after a
-fresh-session query proves no committed `SourceImage.stored_path` owns it.
-When ownership cannot be determined (database unreachable, ambiguous commit
-outcome) the file is retained — an orphaned file is recoverable, a wrongly
-deleted owned file is not. Queue rejections follow the same rule: once the
-bookkeeping row is committed with `status="failed"`, that row owns the file,
-so it stays on disk and consistent with the record.
+file. Failures before the commit attempt (metadata bumps, queue work staged
+in the same transaction) are handled by `cleanup_unowned_final()`, which
+deletes the final-path file only after a fresh-session query proves no
+committed `SourceImage.stored_path` owns it. Once `commit()` has been
+attempted the outcome is ambiguous — the server can still commit after the
+client sees an error — and a fresh ownership query could race that in-flight
+transaction, so the file is retained unconditionally. An orphaned file is
+recoverable; a wrongly deleted owned file is not. Queue rejections follow
+the same rule: once the bookkeeping row is committed with `status="failed"`,
+that row owns the file, so it stays on disk and consistent with the record.
 
 The shared reconciliation sweep (`run_reconciliation_sweep`) removes
-`.staging-*` artifacts whose mtime is older than one hour
-(`STAGING_MAX_AGE_SECONDS`); an in-flight upload refreshes its staging file's
-mtime on every chunk write, so only dead requests age out.
+`.staging-*` artifacts whose mtime is older than four hours
+(`STAGING_MAX_AGE_SECONDS` — deliberately above the 7200-second ingress
+upload timeout so a stalled but still-connected request can never outlive
+the bound); an in-flight upload refreshes its staging file's mtime on every
+chunk write, so only dead requests age out. The same sweep also _reports_
+aged final-path files that no `SourceImage` row owns
+(`upload.unowned_final_detected`) for operator reconciliation — it never
+deletes them automatically.
 
 ## Status transitions
 
@@ -233,8 +240,9 @@ as unreasonable for microscopy.
 5. Removes old tile directory from disk **after** the DB commit succeeds
 
 In `required` task-execution mode, a queue rejection marks the replacement
-source as failed and removes its staged file, but applies no metadata or
-version changes to the target image.
+source as failed and retains its file (the committed failed row owns the
+path — see the staged-writes section), but applies no metadata or version
+changes to the target image.
 
 See [image-metadata-and-versioning.md](image-metadata-and-versioning.md)
 for the full metadata preservation/clearing rules.

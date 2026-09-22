@@ -1415,14 +1415,15 @@ async def test_replace_image_reraises_non_enospc_oserror(
 @patch("os.replace")
 @patch("os.makedirs")
 @patch("builtins.open", new_callable=MagicMock)
-async def test_replace_image_commit_failure_routes_through_ownership_cleanup(
+async def test_replace_image_commit_failure_retains_file_unconditionally(
     mock_open: MagicMock,
     mock_makedirs: MagicMock,
     mock_replace: MagicMock,
     mock_getsize: MagicMock,
 ) -> None:
-    """A post-rename commit failure must defer deletion to the ownership
-    check — the file is never unconditionally unlinked (#1248)."""
+    """Once commit is attempted the file is always retained — the server
+    may still commit after the client sees an error, so no ownership query
+    is made that could race the in-flight transaction (#1248)."""
     cleanup = AsyncMock()
 
     db = AsyncMock()
@@ -1447,6 +1448,46 @@ async def test_replace_image_commit_failure_routes_through_ownership_cleanup(
                 db=db,
             )
 
+    cleanup.assert_not_called()
+
+
+@patch("os.path.getsize", return_value=1024)
+@patch("os.replace")
+@patch("os.makedirs")
+@patch("builtins.open", new_callable=MagicMock)
+async def test_replace_image_pre_commit_failure_routes_through_ownership_cleanup(
+    mock_open: MagicMock,
+    mock_makedirs: MagicMock,
+    mock_replace: MagicMock,
+    mock_getsize: MagicMock,
+) -> None:
+    """A failure before the commit attempt still defers deletion to the
+    ownership check — the file is never unconditionally unlinked (#1248)."""
+    cleanup = AsyncMock()
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=_make_image())
+    db.add = MagicMock(side_effect=RuntimeError("pre-commit failed"))
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    with (
+        patch.dict("sys.modules", {
+            "app.processing": MagicMock(process_replace_image=MagicMock()),
+            "app.worker": MagicMock(),
+        }),
+        patch("app.routers.images.cleanup_unowned_final", new=cleanup),
+    ):
+        with pytest.raises(RuntimeError, match="pre-commit failed"):
+            await replace_image(
+                image_id=1,
+                file=_make_upload_file(filename="commitfail.png", content_type="image/png"),
+                background_tasks=MagicMock(),
+                _user=_make_user(),
+                db=db,
+            )
+
+    db.commit.assert_not_awaited()
     cleanup.assert_awaited_once()
     # The cleanup received the final stored path of the staged upload.
     assert cleanup.await_args.args[0].endswith(".png")
