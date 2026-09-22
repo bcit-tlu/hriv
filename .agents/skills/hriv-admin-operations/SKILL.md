@@ -103,7 +103,8 @@ rebuilds` section polls `GET /api/jobs/` every 2 s only while a rebuild job
   terminal failures and no involuntary worker loss across a ~2h9m
   observation. `REBUILD_PARALLEL_ENABLED` is now the deployed default for
   `latest` via the `flux-fleet` cluster overlay (chart default remains
-  `false`; `stable` remains serial pending its own validation pass). Do not
+  `false`; `stable` passed a bounded validation 2026-09-22 and awaits a
+  weekend `scope=all` run before the overlay decision). Do not
   shorten the HPA window or the timeout/lease pair below these measured
   values without another worker-loss/timeout rehearsal.
 

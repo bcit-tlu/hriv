@@ -116,7 +116,9 @@ again held steady with no involuntary worker loss. This cleared both the HPA
 safety gate and the timeout/RTO gate. `REBUILD_PARALLEL_ENABLED` was enabled
 as the deployed default for `latest` on 2026-09-19 via the `flux-fleet`
 cluster overlay; the chart-level default in this repository remains `false`,
-and `stable` remains on the serial path pending its own validation pass. See
+`stable` passed its bounded validation pass on 2026-09-22 (see the
+recorded stable bounded validation table in the runbook); a full `scope=all`
+run is scheduled for a weekend window and the overlay decision follows it. See
 [backup-restore-runbook.md](backup-restore-runbook.md#tile-rebuild-scale-rehearsal)
 for the full three-rehearsal measurement record.
 

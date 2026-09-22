@@ -285,8 +285,9 @@ accounting: 27 completed and 3,322 cancelled of 3,349 total.
 
 This cleared both outstanding rollout gates (HPA safety and timeout/RTO).
 `REBUILD_PARALLEL_ENABLED` was enabled as the deployed default for `latest` on
-2026-09-19 via the `flux-fleet` cluster overlay (`stable` remains serial
-pending its own validation pass); the chart-level default remains `false`.
+2026-09-19 via the `flux-fleet` cluster overlay (`stable`'s bounded validation passed 2026-09-22;
+full `scope=all` validation is scheduled for a weekend window, with the
+serial/parallel overlay decision to follow); the chart-level default remains `false`.
 
 The existing admin rebuild endpoint and automatic post-import rebuild continue
 to create serial `AdminTask` work. Durable creation requires both
