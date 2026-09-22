@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.59.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.58.0...frontend-v0.59.0) (2026-09-22)
+
+
+### Features
+
+* **auth:** add staff role with read-only People access ([#1337](https://github.com/bcit-tlu/hriv/issues/1337)) ([43f1986](https://github.com/bcit-tlu/hriv/commit/43f19862babb91197e43e12cea07fceddb4a3996))
+
 ## [0.58.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.57.0...frontend-v0.58.0) (2026-09-17)
 
 
