@@ -163,7 +163,10 @@ overlays should set `required`; leave `local` everywhere else.
 `tasks.rebuild.parallelEnabled` renders `REBUILD_PARALLEL_ENABLED` on both the
 API and worker pods and defaults to `false`. Enabling it requires
 `tasks.executionMode=required`; serial admin rebuilds remain the rollback path.
-The remaining values render the independently tunable PostgreSQL-authoritative
+Following the #1189 rehearsal series, the `latest` cluster overrides this to
+`true` in its `flux-fleet` overlay (the chart default here stays `false`);
+`stable` remains on the serial path pending its own validation pass. The
+remaining values render the independently tunable PostgreSQL-authoritative
 execution window and recovery settings:
 
 - `parallelism` (`REBUILD_PARALLELISM`, default `2`);
