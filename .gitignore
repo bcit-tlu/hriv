@@ -71,6 +71,9 @@ output*.txt
 .direnv/
 .envrc.local
 
+# Local git worktrees (convention: <repo>/.worktrees/<name>)
+.worktrees/
+
 # Kubernetes
 charts/**/.tgz
 
