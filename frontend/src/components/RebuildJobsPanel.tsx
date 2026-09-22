@@ -245,7 +245,12 @@ export default function RebuildJobsPanel({
                     </Button>
                   )}
                 </Box>
-                <LinearProgress variant="determinate" value={job.progress} sx={{ mt: 1 }} />
+                <LinearProgress
+                  variant="determinate"
+                  value={job.progress}
+                  aria-label={`Rebuild progress for job ${job.id}`}
+                  sx={{ mt: 1 }}
+                />
                 <Typography
                   variant="caption"
                   color="text.secondary"

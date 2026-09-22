@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import Box from '@mui/material/Box'
+import List from '@mui/material/List'
 import ListItem from '@mui/material/ListItem'
 import ListItemText from '@mui/material/ListItemText'
 import Paper from '@mui/material/Paper'
@@ -188,48 +189,50 @@ export const InCategoryPickerRow: Story = {
   },
   render: () => (
     <Paper sx={{ width: 520, maxWidth: '90vw' }} variant="outlined">
-      <ListItem>
-        <ListItemText>
-          <CategoryRestrictionIconsExample
-            clickable={false}
-            hasGroupRestriction
-            hasProgramRestriction
-            hidden={false}
-            imageCount={12}
-            inheritedGroupRestriction={false}
-            inheritedProgramRestriction={false}
-            label="Architecture"
-          />
-        </ListItemText>
-      </ListItem>
-      <ListItem>
-        <ListItemText>
-          <CategoryRestrictionIconsExample
-            clickable={false}
-            hasGroupRestriction
-            hasProgramRestriction
-            hidden={false}
-            imageCount={4}
-            inheritedGroupRestriction
-            inheritedProgramRestriction
-            label="└ Italian"
-          />
-        </ListItemText>
-      </ListItem>
-      <ListItem>
-        <ListItemText>
-          <CategoryRestrictionIconsExample
-            clickable={false}
-            hasGroupRestriction
-            hasProgramRestriction
-            hidden
-            imageCount={0}
-            inheritedGroupRestriction
-            inheritedProgramRestriction={false}
-            label="Hidden archive"
-          />
-        </ListItemText>
-      </ListItem>
+      <List disablePadding>
+        <ListItem>
+          <ListItemText>
+            <CategoryRestrictionIconsExample
+              clickable={false}
+              hasGroupRestriction
+              hasProgramRestriction
+              hidden={false}
+              imageCount={12}
+              inheritedGroupRestriction={false}
+              inheritedProgramRestriction={false}
+              label="Architecture"
+            />
+          </ListItemText>
+        </ListItem>
+        <ListItem>
+          <ListItemText>
+            <CategoryRestrictionIconsExample
+              clickable={false}
+              hasGroupRestriction
+              hasProgramRestriction
+              hidden={false}
+              imageCount={4}
+              inheritedGroupRestriction
+              inheritedProgramRestriction
+              label="└ Italian"
+            />
+          </ListItemText>
+        </ListItem>
+        <ListItem>
+          <ListItemText>
+            <CategoryRestrictionIconsExample
+              clickable={false}
+              hasGroupRestriction
+              hasProgramRestriction
+              hidden
+              imageCount={0}
+              inheritedGroupRestriction
+              inheritedProgramRestriction={false}
+              label="Hidden archive"
+            />
+          </ListItemText>
+        </ListItem>
+      </List>
     </Paper>
   ),
 }
