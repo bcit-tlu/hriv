@@ -9,9 +9,21 @@ on:
   # Do not add a paths filter: branch builds maintain Chromatic's baseline
   # chain. TurboSnap's `untraced` setting instead bypasses snapshot capture
   # for changes outside `frontend/`, without fragmenting that history.
+  #
+  # release-please--* branches are exempt: they are bot-owned version/changelog
+  # bumps, never carry story changes, and are never UI Review targets. Skipping
+  # them cannot break a baseline chain (branches-ignore still scopes the
+  # trigger to branch pushes only, so tag pushes do not run either).
   push:
-    branches: ['**']
+    branches-ignore:
+      - 'release-please--**'
   workflow_dispatch:
+
+concurrency:
+  # Rapid pushes to the same branch supersede the in-flight build. Scoped per
+  # ref so runs on other branches continue independently.
+  group: chromatic-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
