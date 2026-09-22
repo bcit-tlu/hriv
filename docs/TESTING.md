@@ -265,6 +265,9 @@ curl -s http://localhost:8000/api/categories/ -H "Authorization: Bearer $TOKEN"
 3. Click the `Backups` sub-tab.
 4. **Assert:** The export and import cards are grouped in a single card grid above the `Recent Tasks` accordion, and the archive-history panels are at the bottom.
 5. Click "Export" on the database export card to download the database as JSON.
+   (The UI POSTs `/api/admin/tasks/{id}/download-token` — which mints a
+   short-lived `HttpOnly` cookie — then navigates to
+   `/api/admin/tasks/{id}/download`; no credential appears in the URL.)
 6. **Assert:** JSON file downloads containing categories, images, and users.
 7. Navigate to Browse, create a new test category (to dirty the database).
 8. Go back to Admin tab, open `Backups`, click "Import" on the database import card, and select the previously exported JSON file.
@@ -350,6 +353,8 @@ All endpoints except login require a valid JWT bearer token in the `Authorizatio
 | GET    | /api/admin/export                                                                                         | Yes           | admin                                                                       |
 | POST   | /api/admin/import                                                                                         | Yes           | admin                                                                       |
 | POST   | /api/admin/tasks/rebuild-tiles                                                                            | Yes           | admin                                                                       |
+| POST   | /api/admin/tasks/{task_id}/download-token (mints path-scoped `HttpOnly` download cookie; 204)             | Yes           | admin                                                                       |
+| GET    | /api/admin/tasks/{task_id}/download (streams result file)                                                 | Yes           | valid admin download cookie (task-bound, 60 s TTL, cleared on success)      |
 | GET    | /api/admin/backups/snapshots                                                                              | Yes           | admin                                                                       |
 | GET    | /api/admin/backups/snapshots/{name}/manifest                                                              | Yes           | admin                                                                       |
 | POST   | /api/admin/tasks/file-restore                                                                             | Yes           | admin                                                                       |

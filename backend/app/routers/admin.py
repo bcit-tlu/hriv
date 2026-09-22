@@ -21,7 +21,7 @@ from fastapi import (
     Request,
     UploadFile,
 )
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from jose import JWTError, jwt
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -93,6 +93,7 @@ _admin = require_role("admin")
 
 _CHUNK_SIZE = 1024 * 1024  # 1 MiB streaming chunks
 _DOWNLOAD_TOKEN_EXPIRE_SECONDS = 60
+_DOWNLOAD_COOKIE_PREFIX = "hriv_task_download_"
 _ACTIVE_STATUSES = frozenset(ACTIVE_TASK_STATUSES)
 _EXPORT_TASK_TYPES = ("db_export", "files_export")
 
@@ -1436,16 +1437,53 @@ async def cancel_task(
     return _task_to_dict(task)
 
 
-@router.post("/tasks/{task_id}/download-token")
+def _download_cookie_name(task_id: int) -> str:
+    return f"{_DOWNLOAD_COOKIE_PREFIX}{task_id}"
+
+
+def _download_cookie_path(task_id: int) -> str:
+    return f"/api/admin/tasks/{task_id}/download"
+
+
+def _validate_download_token(token: str, task_id: int) -> dict:
+    """Validate the signed task-download JWT (signature, expiry, purpose,
+    task binding) and return its claims. Raises 401 on any failure."""
+    try:
+        payload = jwt.decode(
+            token,
+            auth_settings.jwt_secret,
+            algorithms=[auth_settings.jwt_algorithm],
+        )
+    except JWTError:
+        raise HTTPException(
+            status_code=401, detail="Invalid or expired download token"
+        )
+    if payload.get("purpose") != "task-download":
+        raise HTTPException(
+            status_code=401, detail="Invalid or expired download token"
+        )
+    if payload.get("task_id") != task_id:
+        raise HTTPException(
+            status_code=401, detail="Token does not match this task"
+        )
+    return payload
+
+
+@router.post("/tasks/{task_id}/download-token", status_code=204)
 async def create_task_download_token(
     task_id: int,
+    request: Request,
+    response: Response,
     user: Annotated[User, Depends(_admin)],
     db: AsyncSession = Depends(get_db),
 ):
-    """Create a short-lived signed JWT for downloading a task result.
+    """Authorize a short-lived download of a task result via cookie.
 
-    The token is valid for 60 seconds and allows a single browser-native
-    download via ``GET /admin/tasks/{id}/download?token=<token>``.
+    The credential is a 60-second JWT delivered as a path-scoped
+    ``HttpOnly`` cookie rather than a URL query parameter, so it never
+    enters access logs, trace span attributes, or browser history. The
+    browser then performs a native download via
+    ``GET /admin/tasks/{id}/download`` — no JS buffering.
     """
     task = await db.get(AdminTask, task_id)
     if task is None:
@@ -1465,40 +1503,38 @@ async def create_task_download_token(
     token = jwt.encode(
         payload, auth_settings.jwt_secret, algorithm=auth_settings.jwt_algorithm
     )
-    return {"token": token}
+    response.set_cookie(
+        _download_cookie_name(task_id),
+        token,
+        max_age=_DOWNLOAD_TOKEN_EXPIRE_SECONDS,
+        httponly=True,
+        samesite="strict",
+        path=_download_cookie_path(task_id),
+        # ``secure`` follows the effective request scheme (X-Forwarded-Proto
+        # is trusted via --proxy-headers) so plain-http local dev still works.
+        secure=request.url.scheme == "https",
+    )
 
 
 @router.get("/tasks/{task_id}/download")
 async def download_task_result(
     task_id: int,
-    token: str = Query(...),
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Download the result file of a completed export task.
 
-    Authentication is via a short-lived download token obtained from
+    Authentication is via the short-lived download cookie set by
     ``POST /admin/tasks/{id}/download-token``.  This allows the browser
-    to perform a native download without buffering in JS memory.
+    to perform a native download without buffering in JS memory, while
+    keeping the credential out of URLs (access logs, traces, history).
     """
-    # Validate the signed download token (JWT)
-    try:
-        payload = jwt.decode(
-            token,
-            auth_settings.jwt_secret,
-            algorithms=[auth_settings.jwt_algorithm],
-        )
-    except JWTError:
+    token = request.cookies.get(_download_cookie_name(task_id))
+    if not token:
         raise HTTPException(
             status_code=401, detail="Invalid or expired download token"
         )
-    if payload.get("purpose") != "task-download":
-        raise HTTPException(
-            status_code=401, detail="Invalid or expired download token"
-        )
-    if payload.get("task_id") != task_id:
-        raise HTTPException(
-            status_code=401, detail="Token does not match this task"
-        )
+    payload = _validate_download_token(token, task_id)
     user_id_str = payload.get("sub")
     if not user_id_str:
         raise HTTPException(
@@ -1531,8 +1567,14 @@ async def download_task_result(
                     break
                 yield chunk
 
-    return StreamingResponse(
+    response = StreamingResponse(
         _stream(),
         media_type=media,
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+    # Consume the cookie so a completed download cannot be replayed from
+    # this browser; the JWT's 60-second TTL still bounds any replay.
+    response.delete_cookie(
+        _download_cookie_name(task_id), path=_download_cookie_path(task_id)
+    )
+    return response

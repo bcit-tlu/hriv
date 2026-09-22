@@ -205,11 +205,45 @@ async def task_queue_unavailable_handler(
     )
 
 # CORS: read allowed origins from the CORS_ORIGINS env var (comma-separated).
-# Defaults to "*" for local development; production deployments should set
-# this to the actual frontend origin(s), e.g. "https://hriv.example.ca".
-_cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()] or [
-    "*"
-]
+# Unset or "*" is a dev convenience only — it must never carry credentials
+# (browsers reject "Access-Control-Allow-Origin: *" with credentials, so
+# Starlette mirrors the request Origin instead, silently allowing any site
+# to make credentialed requests). TASK_EXECUTION_MODE=required marks a
+# production-shaped deployment, where a concrete frontend origin is
+# mandatory; refusing to boot surfaces the misconfiguration immediately,
+# like REQUIRE_JWT_SECRET does for JWT_SECRET.
+def _resolve_cors_config(
+    cors_origins: str, task_execution_mode: str
+) -> tuple[list[str], bool]:
+    """Return ``(allow_origins, allow_credentials)`` for CORSMiddleware.
+
+    An explicit comma-separated origin list is honoured as-is (credentials
+    enabled). An empty or wildcard-containing value is dev-only: it serves
+    ``*`` *without* credentials in ``local`` mode and fails fast in
+    ``required`` mode.
+    """
+    origins = [o.strip() for o in cors_origins.split(",") if o.strip()]
+    if origins and "*" not in origins:
+        return origins, True
+    if task_execution_mode == "required":
+        raise RuntimeError(
+            "CORS_ORIGINS must name the frontend origin(s) (e.g. "
+            '"https://hriv.example.ca") when TASK_EXECUTION_MODE=required — '
+            "wildcard or empty CORS with credentials is not permitted."
+        )
+    logger.warning(
+        "CORS_ORIGINS unset or wildcard — serving wildcard CORS with "
+        "credentials DISABLED (dev mode). Set CORS_ORIGINS to the frontend "
+        "origin (e.g. http://localhost:5173) for credentialed cross-origin "
+        "requests.",
+        extra={"event": "cors.wildcard_dev"},
+    )
+    return ["*"], False
+
+
+_cors_origins, _cors_allow_credentials = _resolve_cors_config(
+    settings.cors_origins, settings.task_execution_mode
+)
 
 app.add_middleware(MaintenanceMiddleware)
 app.add_middleware(AuditMiddleware)
@@ -221,7 +255,7 @@ app.add_middleware(SessionMiddleware, secret_key=auth_settings.jwt_secret)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_credentials=True,
+    allow_credentials=_cors_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*", "X-Request-ID", "X-Session-ID", "If-None-Match"],
     expose_headers=["X-Request-ID", "X-Total-Count", "ETag", "X-Browse-Revision"],

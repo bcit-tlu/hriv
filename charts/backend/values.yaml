@@ -103,6 +103,19 @@ observability:
 # refuses to start if the secret is missing at runtime.
 jwtSecret: ''
 
+# ── CORS ──────────────────────────────────────────────────
+# Comma-separated list of allowed cross-origin frontend origins, rendered
+# as the backend's CORS_ORIGINS env var. Credentialed CORS is only ever
+# enabled for these explicit origins.
+#
+# Required when tasks.executionMode=required: the chart fails to render
+# (and the backend refuses to boot) with an empty or wildcard value, so a
+# production deployment can never silently run permissive credentialed
+# CORS. In local mode an empty value falls back to a wildcard WITHOUT
+# credentials — dev compose and the Vite dev-server proxy are same-origin
+# and unaffected; only set this for cross-origin dev or deployment.
+corsOrigins: ''
+
 # ── OpenID Connect / OAuth 2.0 authentication ───────────────
 # Disabled by default so chart consumers can start with local
 # email/password login (see bootstrapAdmin below). Enable and supply
@@ -133,8 +146,10 @@ auth:
     # Trust email from IdP without requiring email_verified claim.
     # Enable when your IdP does not emit the email_verified claim.
     trustEmail: false
-    # CORS origins (comma-separated). Used as fallback redirect target when
-    # postLoginRedirect is empty.
+    # DEPRECATED fallback for the top-level corsOrigins value above. Kept
+    # so existing overlays keep working; prefer corsOrigins for new
+    # deployments — this nested key only existed because CORS_ORIGINS used
+    # to be rendered inside the OIDC-gated ConfigMap.
     corsOrigins: ''
 
 # ── PostgreSQL database configuration ───────────────────────
