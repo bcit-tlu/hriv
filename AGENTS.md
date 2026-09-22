@@ -82,7 +82,9 @@
 - Aim for >80% code coverage
 - Run tests before committing (`npm test`)
 - **Storybook stories for visual coverage.** Chromatic snapshots every story on
-  each push, so stories are permanent baselines — target meaningfully distinct
+  each push (release-please bot branches excluded; TurboSnap skips pushes that
+  only touch untraced/non-frontend files), so stories are permanent baselines —
+  target meaningfully distinct
   visual states, not one story per code path:
   - New components in `src/components/` need a `*.stories.tsx` covering each
     meaningfully distinct visual state.

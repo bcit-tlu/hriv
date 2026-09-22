@@ -2,6 +2,19 @@
   "onlyChanged": true,
   "projectId": "Project:6a88c77abb97a4f8c1f835e7",
   "storybookBaseDir": "frontend",
-  "untraced": ["./!(frontend)/**"],
+  "untraced": [
+    "./!(frontend)/**",
+    "frontend/tests/**",
+    "frontend/scripts/**",
+    "frontend/*.md",
+    "frontend/Dockerfile",
+    "frontend/.dockerignore",
+    "frontend/.prettierignore",
+    "frontend/eslint.config.js",
+    "frontend/vitest.config.ts",
+    "frontend/vitest.shims.d.ts",
+    "frontend/index.html",
+    "frontend/dns-resolver.envsh"
+  ],
   "zip": true
 }
