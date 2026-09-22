@@ -2052,8 +2052,10 @@ export async function downloadAdminTaskResult(taskId: number): Promise<void> {
   // navigation then performs a native download (no JS buffering).
   await request(`/admin/tasks/${taskId}/download-token`, {
     method: 'POST',
-    // No-op for the normal same-origin deployment; required when
-    // VITE_API_URL points the SPA at a cross-origin backend in dev.
+    // Lets the minted cookie be stored when the POST is cross-origin in
+    // dev (VITE_API_URL). Note downloads still require a same-site SPA/API
+    // pair: the cookie is SameSite=Strict, and browsers will not store a
+    // cookie minted in a third-party response at all.
     credentials: 'include',
   })
   window.location.href = `${BASE}/api/admin/tasks/${taskId}/download`
