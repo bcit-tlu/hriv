@@ -262,6 +262,26 @@ To supply your own pre-existing secret, set `jwtSecret` in `values.yaml` (or
 manage the `<release>-jwt` Secret out-of-band and the chart will honour the
 existing value).
 
+## CORS_ORIGINS
+
+`CORS_ORIGINS` is a comma-separated list of frontend origins allowed to make
+credentialed cross-origin requests. Resolution happens once at startup in
+`_resolve_cors_config` (`app/main.py`):
+
+| `CORS_ORIGINS`               | `local` mode                                 | `required` mode                     |
+| ---------------------------- | -------------------------------------------- | ----------------------------------- |
+| explicit origin list         | honoured, `allow_credentials=True`           | honoured, `allow_credentials=True`  |
+| unset / empty / contains `*` | serves `*` **without** credentials + warning | startup fails with a `RuntimeError` |
+
+Local development needs nothing: compose and the Vite dev server proxy
+`/api` same-origin, so wildcard-without-credentials is sufficient and a
+warning in the logs makes the posture obvious. Production deployments must
+set a concrete origin — the Helm chart's top-level `corsOrigins` value is
+rendered as `CORS_ORIGINS` unconditionally (not via the OIDC ConfigMap) and
+`tasks.executionMode=required` fails chart rendering without it. The nested
+`auth.openidConnect.corsOrigins` value is a deprecated fallback kept for
+existing overlays.
+
 ## Deployment rollout strategy
 
 The backend Deployment auto-selects a rollout strategy from chart values.
