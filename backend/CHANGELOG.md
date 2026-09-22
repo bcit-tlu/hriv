@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.61.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.61.0...backend-v0.61.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* **upload:** stage uploads and make file cleanup ownership-safe ([#1340](https://github.com/bcit-tlu/hriv/issues/1340)) ([ee72b9b](https://github.com/bcit-tlu/hriv/commit/ee72b9b711e6f045379fc11d964c67190df7411e))
+
 ## [0.61.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.60.2...backend-v0.61.0) (2026-09-22)
 
 
