@@ -146,6 +146,16 @@ change only on release.
   `APP_VERSION`/`VITE_APP_VERSION` are runtime-injected by Helm, not
   baked into the image (see `charts/<component>/templates/_helpers.tpl`
   `displayVersion` helper).
+- **`images.backupChild` in flux-fleet is a manual pin.** The
+  restore-validation select/restore child Jobs run a digest-pinned
+  `hriv-backup` image from the env overlay values
+  (`apps/overlays/*/hriv-restore-validation/values-*.yaml`), not the tag
+  the backup Deployment runs. When a `backup` release changes the
+  published marker/state/manifest documents, bump `images.backupChild`
+  in both overlays to a reviewed released digest in the same rollout —
+  otherwise `validation-select` rejects new backups with
+  `COMPONENT_INCOHERENT`. Newer readers accept older documents, so
+  bumping forward is safe.
 - **`pr-title-lint` skips bot-authored PRs.** Release-please's own PRs
   (author type `Bot`) bypass the lint. Without this guard every
   release-please PR would be held under "1 workflow awaiting approval"
@@ -159,11 +169,12 @@ change only on release.
 
 ## Where to look when something breaks
 
-| Symptom                                                     | First place to look                                                                                  |
-| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| No release PR opened after merging a `feat:`/`fix:`         | release-please logs on the main-push workflow; check that the component path was touched             |
-| `release-please` workflow failing with "Stale `release-as`" | `release-please-config.json` — remove the `release-as` field for the named package                   |
-| `latest` env not picking up a new main push                 | `ImagePolicy.hriv-<component>-latest` status; verify a tag matching the rc regex was actually pushed |
-| `latest` env running stale chart logic                      | no release has been cut since the chart edit; cut one                                                |
-| Image retag didn't happen after release                     | `release-retag.yaml` run for the release; it waits up to 30 min for the rc image, then times out     |
-| Chart artifact missing for a release                        | `helm-publish.yaml` run for the release tag; parse step rejects malformed tags                       |
+| Symptom                                                                 | First place to look                                                                                    |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| No release PR opened after merging a `feat:`/`fix:`                     | release-please logs on the main-push workflow; check that the component path was touched               |
+| `release-please` workflow failing with "Stale `release-as`"             | `release-please-config.json` — remove the `release-as` field for the named package                     |
+| `latest` env not picking up a new main push                             | `ImagePolicy.hriv-<component>-latest` status; verify a tag matching the rc regex was actually pushed   |
+| `latest` env running stale chart logic                                  | no release has been cut since the chart edit; cut one                                                  |
+| Image retag didn't happen after release                                 | `release-retag.yaml` run for the release; it waits up to 30 min for the rc image, then times out       |
+| Chart artifact missing for a release                                    | `helm-publish.yaml` run for the release tag; parse step rejects malformed tags                         |
+| `validation-select` fails `COMPONENT_INCOHERENT` after a backup release | flux-fleet `images.backupChild` pin — likely older than the deployed backup writer; bump both overlays |

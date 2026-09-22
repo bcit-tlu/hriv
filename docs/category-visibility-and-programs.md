@@ -56,9 +56,10 @@ Two further rules apply on top of the dual gate, both enforced by
    descendant's own restrictions. The group gate cascades **identically** to the
    program gate.
 
-Admins and instructors **bypass** all student visibility filtering entirely
-(guarded by `if user.role == "student"` in the routers); they always see every
-category and image.
+Admins, instructors, and staff **bypass** all student visibility filtering
+entirely (guarded by `if user.role == "student"` in the routers); they always
+see every category and image, including hidden ones. Staff are read-only —
+they get unrestricted browse visibility but none of the editor routes.
 
 ## Worked examples
 

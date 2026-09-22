@@ -351,6 +351,7 @@ describe('EditCategoryDialog', () => {
         refreshUsers: vi.fn(),
         canManageUsers: false,
         canEditContent: true,
+        canViewPeople: false,
         oidcError: null,
         clearOidcError: vi.fn(),
       } as unknown as AuthContextValue

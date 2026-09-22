@@ -114,7 +114,8 @@ const defaultProps = {
   uncategorizedImages: [],
   programs: testPrograms,
   users: testUsers,
-  isStudent: false,
+  excludeHidden: false,
+  suppressExtendedResults: false,
   onSelectCategory: vi.fn(),
   onSelectImage: vi.fn(),
   onSelectProgram: vi.fn(),
@@ -578,7 +579,14 @@ describe('SearchModal', () => {
 
   it('hides program and people results from student role', async () => {
     const user = userEvent.setup()
-    render(<SearchModal {...defaultProps} isStudent={true} open={true} />)
+    render(
+      <SearchModal
+        {...defaultProps}
+        excludeHidden={true}
+        suppressExtendedResults={true}
+        open={true}
+      />,
+    )
 
     const input = screen.getByPlaceholderText(
       'Search categories and images — "quotes" for exact phrases',
@@ -629,9 +637,51 @@ describe('SearchModal', () => {
     expect(onSelectProgram).toHaveBeenCalledWith('Medical Lab Science')
   })
 
+  it('staff mode shows hidden categories but suppresses extended results', async () => {
+    const user = userEvent.setup()
+    const hiddenCat: Category = {
+      ...testCategory,
+      id: 9,
+      label: 'Hidden Anatomy',
+      status: 'hidden',
+      images: [],
+    }
+    render(
+      <SearchModal
+        {...defaultProps}
+        categories={[hiddenCat]}
+        excludeHidden={false}
+        suppressExtendedResults={true}
+        open={true}
+      />,
+    )
+
+    // Staff share the restricted student search surface (no programs,
+    // people, role filters, or guide results)…
+    const input = screen.getByPlaceholderText(
+      'Search categories and images — "quotes" for exact phrases',
+    )
+    await user.type(input, 'Hidden Anatomy')
+
+    // …but unlike students they DO see hidden categories.
+    expect(screen.getByText('Hidden Anatomy')).toBeInTheDocument()
+    expect(screen.queryByText('Programs')).not.toBeInTheDocument()
+    expect(screen.queryByText('People')).not.toBeInTheDocument()
+    expect(
+      screen.queryAllByText('Role').filter((el) => el.closest('[data-testid="field-filter-chip"]')),
+    ).toHaveLength(0)
+  })
+
   it('hides user results from student role', async () => {
     const user = userEvent.setup()
-    render(<SearchModal {...defaultProps} isStudent={true} open={true} />)
+    render(
+      <SearchModal
+        {...defaultProps}
+        excludeHidden={true}
+        suppressExtendedResults={true}
+        open={true}
+      />,
+    )
 
     const input = screen.getByPlaceholderText(
       'Search categories and images — "quotes" for exact phrases',
@@ -644,7 +694,14 @@ describe('SearchModal', () => {
 
   it('hides program chips on results from student role', async () => {
     const user = userEvent.setup()
-    render(<SearchModal {...defaultProps} isStudent={true} open={true} />)
+    render(
+      <SearchModal
+        {...defaultProps}
+        excludeHidden={true}
+        suppressExtendedResults={true}
+        open={true}
+      />,
+    )
 
     const input = screen.getByPlaceholderText(
       'Search categories and images — "quotes" for exact phrases',
@@ -727,7 +784,14 @@ describe('SearchModal', () => {
 
   it('hides guide results and the Guide chip from students', async () => {
     const user = userEvent.setup()
-    render(<SearchModal {...defaultProps} isStudent={true} open={true} />)
+    render(
+      <SearchModal
+        {...defaultProps}
+        excludeHidden={true}
+        suppressExtendedResults={true}
+        open={true}
+      />,
+    )
 
     const input = screen.getByPlaceholderText(
       'Search categories and images — "quotes" for exact phrases',

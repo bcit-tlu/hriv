@@ -683,6 +683,23 @@ describe('useBrowseData', () => {
       expect(result.current.currentCategories[0].label).toBe('Visible')
     })
 
+    it('does not filter hidden categories for staff', async () => {
+      const cats = [
+        makeApiTree({ id: 1, label: 'Visible', status: null }),
+        makeApiTree({ id: 2, label: 'Hidden', status: 'hidden' }),
+      ]
+      mockFetchCategoryTree.mockResolvedValue(cats)
+
+      const deps = makeDeps({
+        currentUser: makeUser({ role: 'staff' }),
+      })
+      const { result } = renderHook(() => useBrowseData(deps))
+
+      await triggerInitialLoad(result)
+
+      expect(result.current.currentCategories).toHaveLength(2)
+    })
+
     it('does not filter hidden categories for admins', async () => {
       const cats = [
         makeApiTree({ id: 1, label: 'Visible', status: null }),

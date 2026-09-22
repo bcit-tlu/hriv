@@ -75,6 +75,7 @@ export interface AppShellProps {
   onHomeClick: () => void
   canEditContent: boolean
   canManageUsers: boolean
+  canViewPeople: boolean
   currentUser: {
     name: string
     email: string
@@ -117,6 +118,7 @@ export default function AppShell(props: AppShellProps) {
     onHomeClick,
     canEditContent,
     canManageUsers,
+    canViewPeople,
     currentUser,
     announcement,
     annMessage,
@@ -147,7 +149,8 @@ export default function AppShell(props: AppShellProps) {
   // narrow to show them inline. Guarded by tab count so a single-tab
   // (student) layout keeps its inline Home tab instead of a lone hamburger.
   const isCompactViewport = useMediaQuery(theme.breakpoints.down('md'))
-  const navTabCount = 1 + (canEditContent ? 2 : 0) + (canManageUsers ? 2 : 0)
+  const navTabCount =
+    1 + (canEditContent ? 2 : 0) + (canViewPeople ? 1 : 0) + (canManageUsers ? 1 : 0)
   const collapseNav = isCompactViewport && navTabCount > 1
   // Reset the breakpoint-specific menus on a viewport transition so a resize
   // round-trip doesn't leave one open against an unmounted trigger:
@@ -244,7 +247,7 @@ export default function AppShell(props: AppShellProps) {
     }
 
     const sections = new Map<string, ReactNode[]>()
-    for (const item of getNavigationItems({ canEditContent, canManageUsers })) {
+    for (const item of getNavigationItems({ canEditContent, canManageUsers, canViewPeople })) {
       const section = sections.get(item.section) ?? []
       section.push(makeItem(item))
       sections.set(item.section, section)
@@ -350,7 +353,7 @@ export default function AppShell(props: AppShellProps) {
                   onClick={(e) => setManageMenuAnchor(e.currentTarget)}
                 />
               )}
-              {canManageUsers && <Tab label="People" value="people" />}
+              {canViewPeople && <Tab label="People" value="people" />}
               {canManageUsers && <Tab label="Admin" value="admin" />}
             </Tabs>
           )}

@@ -162,6 +162,42 @@ async def test_list_images_student_filters() -> None:
     assert len(result) == 1
 
 
+async def test_list_images_staff_unfiltered() -> None:
+    """Staff take the unrestricted path — no visibility helper call, no
+    active-only filter."""
+    imgs = [_make_image(id=1, active=True), _make_image(id=2, active=False)]
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = imgs
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+
+    result = await list_images(_make_user("staff"), db=db)
+    assert len(result) == 2
+    # Only one query — no categories visibility pre-query like students.
+    assert db.execute.await_count == 1
+
+
+async def test_get_image_staff_inactive_visible() -> None:
+    img = _make_image(active=False)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+
+    result = await get_image(1, _make_user("staff"), db)
+    assert result.name == "test-img"
+
+
+async def test_get_image_staff_hidden_category_visible() -> None:
+    img = _make_image(category_id=5)
+    cat = SimpleNamespace(id=5, status="hidden", programs=[], groups=[], parent_id=None)
+
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=lambda model, id_val: img if id_val == 1 else cat)
+
+    result = await get_image(1, _make_user("staff"), db)
+    assert result.name == "test-img"
+
+
 async def test_get_image_found() -> None:
     img = _make_image()
     db = AsyncMock()

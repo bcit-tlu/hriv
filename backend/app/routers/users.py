@@ -22,9 +22,11 @@ from ..serializers import user_to_mini_out, user_to_out
 router = APIRouter(prefix="/users", tags=["users"])
 
 _admin = require_role("admin")
-_editor = require_role("admin", "instructor")
+# Staff get read-only user listings for the People tab; instructors get a
+# scoped/minimal projection for group-management pickers.
+_people_viewer = require_role("admin", "instructor", "staff")
 
-VALID_ROLES = {"admin", "instructor", "student"}
+VALID_ROLES = {"admin", "instructor", "staff", "student"}
 
 
 async def _set_user_programs(
@@ -46,7 +48,7 @@ async def _set_user_programs(
 
 @router.get("/", response_model=list[UserOut])
 async def list_users(
-    _user: Annotated[User, Depends(_editor)],
+    _user: Annotated[User, Depends(_people_viewer)],
     db: AsyncSession = Depends(get_db),
     role: str | None = None,
     program_id: Annotated[list[int] | None, Query()] = None,
@@ -57,13 +59,14 @@ async def list_users(
 ):
     """List users, optionally filtered by ``role``, ``program_id`` and ``q``.
 
-    The response shape is role-dependent. Admins receive full ``UserOut``
-    objects (programs, metadata, last_access). Instructors receive a
-    **minimal** projection — ``id, name, email, role`` plus the user's
+    The response shape is role-dependent. Admins and staff receive full
+    ``UserOut`` objects (programs, metadata, last_access). Instructors receive
+    a **minimal** projection — ``id, name, email, role`` plus the user's
     ``program_ids``/``program_names`` (so the membership picker can filter
     by program and render program chips); ``metadata_extra``/``last_access``
     remain hidden. Instructors only ever see students and other instructors,
-    never admins.
+    never admins or staff. Staff see all users — the People tab is their
+    read-only view into the full directory.
 
     Filtering / pagination (applied for every role):
 
@@ -97,8 +100,9 @@ async def list_users(
         conditions.append(User.role == role)
 
     # Users associated with the special Admin program are hidden from
-    # non-admin callers (instructors and students).
-    if _user.role != "admin":
+    # instructors. Staff get the same unrestricted view as admins (the
+    # People tab is their read-only directory view).
+    if _user.role == "instructor":
         conditions.append(
             not_(User.programs.any(Program.name == ADMIN_PROGRAM_NAME))
         )
@@ -138,6 +142,8 @@ async def create_user(
     _user: Annotated[User, Depends(_admin)],
     db: AsyncSession = Depends(get_db),
 ):
+    if body.role not in VALID_ROLES:
+        raise HTTPException(422, f"Invalid role: {body.role}")
     user = User(
         name=body.name,
         email=body.email.lower(),
@@ -271,6 +277,8 @@ async def update_user(
     if "active" in body.model_fields_set and body.active is None:
         raise HTTPException(status_code=422, detail="active must be true or false")
     update_data = body.model_dump(exclude_unset=True)
+    if "role" in update_data and update_data["role"] not in VALID_ROLES:
+        raise HTTPException(422, f"Invalid role: {update_data['role']}")
     program_ids = update_data.pop("program_ids", None)
     if "metadata_extra" in update_data:
         update_data["metadata_"] = update_data.pop("metadata_extra")

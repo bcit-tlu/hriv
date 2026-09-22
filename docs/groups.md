@@ -75,7 +75,7 @@ authority vs. attach/manage authority**:
   they manage (`can_attach_group_to_category`); admins may attach anything.
 
 Every `/api/groups` endpoint requires at least the **instructor** role
-(`require_role("admin", "instructor")`); students receive **403**. Read
+(`require_role("admin", "instructor")`); students and staff receive **403**. Read
 endpoints (`list`/`get`/list members/instructors) are open to any instructor;
 _mutations_ additionally require manage authority on that specific group.
 
