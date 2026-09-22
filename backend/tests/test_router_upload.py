@@ -608,23 +608,39 @@ async def test_reconcile_staging_artifacts_removes_only_aged_staging(tmp_path) -
     ]
 
 
+def _mock_ownership_probe(owned_paths: list[str]):
+    """Patch ``app.upload_staging.async_session`` so the batched ownership
+    query returns *owned_paths*."""
+    session = AsyncMock()
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = owned_paths
+    session.execute = AsyncMock(return_value=result)
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock(return_value=False)
+    return patch("app.upload_staging.async_session", return_value=session)
+
+
 async def test_list_orphaned_final_files_reports_aged_unowned(tmp_path) -> None:
     """Aged final-path files with no owning row are reported, never deleted;
-    fresh files and staging artifacts are ignored."""
+    fresh files and dot-prefixed artifacts (staging files, the
+    rebuild-fixture archive lock) are ignored."""
     aged_orphan = tmp_path / "dead-request.png"
     fresh_unowned = tmp_path / "just-renamed.png"
     staging = tmp_path / ".staging-inflight.png"
-    for p in (aged_orphan, fresh_unowned, staging):
+    archive_lock = tmp_path / ".rebuild-fixture-archive.lock"
+    for p in (aged_orphan, fresh_unowned, staging, archive_lock):
         p.write_bytes(b"data")
     old_mtime = time.time() - 5 * 3600
-    os.utime(aged_orphan, (old_mtime, old_mtime))
+    for p in (aged_orphan, archive_lock):
+        os.utime(p, (old_mtime, old_mtime))
 
-    with _mock_recovery_session(owned=False):
+    with _mock_ownership_probe([]):
         orphans = await list_orphaned_final_files(str(tmp_path))
 
     assert orphans == [str(aged_orphan)]
     # Detection only: every file survives.
     assert sorted(p.name for p in tmp_path.iterdir()) == [
+        ".rebuild-fixture-archive.lock",
         ".staging-inflight.png",
         "dead-request.png",
         "just-renamed.png",
@@ -638,7 +654,7 @@ async def test_list_orphaned_final_files_skips_owned_paths(tmp_path) -> None:
     old_mtime = time.time() - 5 * 3600
     os.utime(owned, (old_mtime, old_mtime))
 
-    with _mock_recovery_session(owned=True):
+    with _mock_ownership_probe([str(owned)]):
         orphans = await list_orphaned_final_files(str(tmp_path))
 
     assert orphans == []

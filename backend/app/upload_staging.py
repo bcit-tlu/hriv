@@ -164,9 +164,13 @@ async def list_orphaned_final_files(
     candidates: list[str] = []
     for entry in entries:
         try:
+            # Dot-prefixed names are never stored uploads (real names are
+            # uuid4-hex + extension): this skips ``.staging-*`` artifacts
+            # and infrastructure files like the rebuild-fixture archive
+            # lock, which has no owning row by design.
             if (
                 entry.is_file()
-                and not is_staging_artifact(entry.name)
+                and not entry.name.startswith(".")
                 and entry.stat().st_mtime < cutoff
             ):
                 candidates.append(entry.path)
@@ -174,16 +178,14 @@ async def list_orphaned_final_files(
             continue
     if not candidates:
         return []
-    orphans: list[str] = []
     async with async_session() as db:
-        for path in candidates:
-            owned = bool(
-                await db.scalar(
-                    select(exists().where(SourceImage.stored_path == path))
-                )
+        result = await db.execute(
+            select(SourceImage.stored_path).where(
+                SourceImage.stored_path.in_(candidates)
             )
-            if not owned:
-                orphans.append(path)
+        )
+        owned_paths = set(result.scalars().all())
+    orphans = [p for p in candidates if p not in owned_paths]
     if orphans:
         logger.warning(
             "Detected %d unowned source-image file(s) older than %ds; "
