@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.testclient import TestClient
 
 import app.auth as auth
@@ -1396,6 +1396,26 @@ async def test_cancel_task_already_cancelled() -> None:
     assert result["status"] == "cancelled"
 
 
+def _download_request(
+    task_id: int, token: str | None = None, scheme: str = "http"
+) -> Request:
+    """Build a minimal ASGI request, optionally carrying the download cookie."""
+    headers: list[tuple[bytes, bytes]] = []
+    if token is not None:
+        headers.append(
+            (b"cookie", f"hriv_task_download_{task_id}={token}".encode())
+        )
+    return Request(
+        {
+            "type": "http",
+            "scheme": scheme,
+            "path": "/",
+            "server": ("testserver", 443 if scheme == "https" else 80),
+            "headers": headers,
+        }
+    )
+
+
 async def test_create_task_download_token_success(tmp_path) -> None:
     filepath = tmp_path / "export.json"
     filepath.write_text('{"data": true}')
@@ -1407,13 +1427,46 @@ async def test_create_task_download_token_success(tmp_path) -> None:
     user = SimpleNamespace(id=1, role="admin")
     db = AsyncMock()
     db.get = AsyncMock(return_value=task)
+    response = Response()
 
     with patch("app.routers.admin.auth_settings") as mock_settings:
         mock_settings.jwt_secret = "test-secret"
         mock_settings.jwt_algorithm = "HS256"
-        result = await create_task_download_token(1, user, db=db)
+        result = await create_task_download_token(
+            1, _download_request(1), response, user, db=db
+        )
 
-    assert "token" in result
+    assert result is None  # 204 — the credential travels only via cookie
+    cookie = response.headers["set-cookie"]
+    assert cookie.startswith("hriv_task_download_1=")
+    assert "HttpOnly" in cookie
+    assert "SameSite=strict" in cookie
+    assert "Max-Age=60" in cookie
+    assert "Path=/api/admin/tasks/1/download" in cookie
+    assert "Secure" not in cookie  # plain-http dev requests stay usable
+
+
+async def test_create_task_download_token_secure_over_https(tmp_path) -> None:
+    filepath = tmp_path / "export.json"
+    filepath.write_text('{"data": true}')
+    task = _make_admin_task(
+        status="completed",
+        result_path=str(filepath),
+        result_filename="export.json",
+    )
+    user = SimpleNamespace(id=1, role="admin")
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+    response = Response()
+
+    with patch("app.routers.admin.auth_settings") as mock_settings:
+        mock_settings.jwt_secret = "test-secret"
+        mock_settings.jwt_algorithm = "HS256"
+        await create_task_download_token(
+            1, _download_request(1, scheme="https"), response, user, db=db
+        )
+
+    assert "Secure" in response.headers["set-cookie"]
 
 
 async def test_create_task_download_token_not_completed() -> None:
@@ -1423,7 +1476,9 @@ async def test_create_task_download_token_not_completed() -> None:
     db.get = AsyncMock(return_value=task)
 
     with pytest.raises(HTTPException) as exc:
-        await create_task_download_token(1, user, db=db)
+        await create_task_download_token(
+            1, _download_request(1), Response(), user, db=db
+        )
     assert exc.value.status_code == 400
 
 
@@ -1438,6 +1493,14 @@ def _make_download_token(task_id: int, user_id: int = 1) -> str:
     )
 
 
+async def test_download_task_no_cookie() -> None:
+    db = AsyncMock()
+
+    with pytest.raises(HTTPException) as exc:
+        await download_task_result(1, _download_request(1), db=db)
+    assert exc.value.status_code == 401
+
+
 async def test_download_task_invalid_token() -> None:
     db = AsyncMock()
 
@@ -1445,7 +1508,9 @@ async def test_download_task_invalid_token() -> None:
         mock_settings.jwt_secret = "test-secret"
         mock_settings.jwt_algorithm = "HS256"
         with pytest.raises(HTTPException) as exc:
-            await download_task_result(1, token="invalid-jwt", db=db)
+            await download_task_result(
+                1, _download_request(1, "invalid-jwt"), db=db
+            )
         assert exc.value.status_code == 401
 
 
@@ -1463,7 +1528,7 @@ async def test_download_task_wrong_purpose() -> None:
         mock_settings.jwt_secret = "test-secret"
         mock_settings.jwt_algorithm = "HS256"
         with pytest.raises(HTTPException) as exc:
-            await download_task_result(1, token=token, db=db)
+            await download_task_result(1, _download_request(1, token), db=db)
         assert exc.value.status_code == 401
 
 
@@ -1475,7 +1540,8 @@ async def test_download_task_wrong_task_id() -> None:
         mock_settings.jwt_secret = "test-secret"
         mock_settings.jwt_algorithm = "HS256"
         with pytest.raises(HTTPException) as exc:
-            await download_task_result(1, token=token, db=db)
+            # Cookie is present for task 1, but its JWT is bound to task 99.
+            await download_task_result(1, _download_request(1, token), db=db)
         assert exc.value.status_code == 401
 
 
@@ -1489,7 +1555,9 @@ async def test_download_task_not_found() -> None:
         mock_settings.jwt_secret = "test-secret"
         mock_settings.jwt_algorithm = "HS256"
         with pytest.raises(HTTPException) as exc:
-            await download_task_result(999, token=token, db=db)
+            await download_task_result(
+                999, _download_request(999, token), db=db
+            )
         assert exc.value.status_code == 404
 
 
@@ -1514,7 +1582,7 @@ async def test_download_task_not_completed() -> None:
         mock_settings.jwt_secret = "test-secret"
         mock_settings.jwt_algorithm = "HS256"
         with pytest.raises(HTTPException) as exc:
-            await download_task_result(1, token=token, db=db)
+            await download_task_result(1, _download_request(1, token), db=db)
         assert exc.value.status_code == 400
 
 
@@ -1543,7 +1611,7 @@ async def test_download_task_result_file_missing() -> None:
         mock_settings.jwt_secret = "test-secret"
         mock_settings.jwt_algorithm = "HS256"
         with pytest.raises(HTTPException) as exc:
-            await download_task_result(1, token=token, db=db)
+            await download_task_result(1, _download_request(1, token), db=db)
         assert exc.value.status_code == 404
 
 
@@ -1574,9 +1642,16 @@ async def test_download_task_success(tmp_path) -> None:
     with patch("app.routers.admin.auth_settings") as mock_settings:
         mock_settings.jwt_secret = "test-secret"
         mock_settings.jwt_algorithm = "HS256"
-        response = await download_task_result(1, token=token, db=db)
+        response = await download_task_result(
+            1, _download_request(1, token), db=db
+        )
     assert response.media_type == "application/json"
     assert "export.json" in response.headers.get("content-disposition", "")
+    # The cookie is consumed: the response clears it so a completed
+    # download cannot be replayed from the same browser.
+    cleared = response.headers.get("set-cookie", "")
+    assert "hriv_task_download_1=" in cleared
+    assert "Max-Age=0" in cleared
 
 
 async def test_download_task_tar_gz(tmp_path) -> None:
@@ -1606,7 +1681,9 @@ async def test_download_task_tar_gz(tmp_path) -> None:
     with patch("app.routers.admin.auth_settings") as mock_settings:
         mock_settings.jwt_secret = "test-secret"
         mock_settings.jwt_algorithm = "HS256"
-        response = await download_task_result(1, token=token, db=db)
+        response = await download_task_result(
+            1, _download_request(1, token), db=db
+        )
     assert response.media_type == "application/gzip"
 
 
@@ -1638,7 +1715,7 @@ async def test_download_task_inactive_admin_forbidden(tmp_path) -> None:
         mock_settings.jwt_secret = "test-secret"
         mock_settings.jwt_algorithm = "HS256"
         with pytest.raises(HTTPException) as exc:
-            await download_task_result(1, token=token, db=db)
+            await download_task_result(1, _download_request(1, token), db=db)
     assert exc.value.status_code == 403
 
 

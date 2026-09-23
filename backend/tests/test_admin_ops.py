@@ -928,8 +928,8 @@ async def test_reconcile_stale_tasks_no_stale_returns_zero() -> None:
     session.commit.assert_awaited_once()
 
 
-async def test_poll_rebuild_task_heartbeats_until_cancellation() -> None:
-    """Serial rebuild liveness uses its own session and active status."""
+async def test_poll_task_heartbeat_heartbeats_until_cancellation() -> None:
+    """Task liveness heartbeat uses its own session and active status."""
     session = AsyncMock()
     result = MagicMock()
     result.scalar_one_or_none = MagicMock(
@@ -945,7 +945,7 @@ async def test_poll_rebuild_task_heartbeats_until_cancellation() -> None:
         patch("app.admin_ops.get_async_session", return_value=factory),
         patch("app.admin_ops.asyncio.sleep", new=AsyncMock()),
     ):
-        await admin_ops._poll_rebuild_task(17)
+        await admin_ops._poll_task_heartbeat(17)
 
     assert session.execute.await_count == 2
     stmt = session.execute.await_args.args[0]
@@ -957,8 +957,8 @@ async def test_poll_rebuild_task_heartbeats_until_cancellation() -> None:
     assert session.commit.await_count == 2
 
 
-async def test_run_rebuild_with_heartbeat_prefers_completed_operation() -> None:
-    """A completed rebuild wins a simultaneous cancellation poll."""
+async def test_run_with_task_heartbeat_prefers_completed_operation() -> None:
+    """A completed operation wins a simultaneous cancellation poll."""
     operation = AsyncMock()
     poll = AsyncMock()
 
@@ -967,13 +967,29 @@ async def test_run_rebuild_with_heartbeat_prefers_completed_operation() -> None:
         return set(tasks), set()
 
     with (
-        patch("app.admin_ops._poll_rebuild_task", poll),
+        patch("app.admin_ops._poll_task_heartbeat", poll),
         patch("app.admin_ops.asyncio.wait", side_effect=complete_both),
     ):
-        await admin_ops._run_rebuild_with_heartbeat(17, operation())
+        await admin_ops._run_with_task_heartbeat(17, operation())
 
     operation.assert_awaited_once()
     poll.assert_awaited_once_with(17)
+
+
+async def test_run_with_task_heartbeat_returns_operation_result() -> None:
+    """The shared heartbeat wrapper returns the operation's result."""
+    operation = AsyncMock(return_value="sha256-digest")
+
+    async def never(task_id: int) -> None:
+        await asyncio.Event().wait()
+
+    poll = AsyncMock(side_effect=never)
+    with patch("app.admin_ops._poll_task_heartbeat", new=poll):
+        result = await admin_ops._run_with_task_heartbeat(17, operation())
+
+    assert result == "sha256-digest"
+    operation.assert_awaited_once()
+    poll.assert_called_once_with(17)
 
 
 async def test_update_task_check_cancelled_also_raises_on_cancelled_status() -> None:
@@ -2441,6 +2457,16 @@ def test_compute_archive_sha256(tmp_path) -> None:
     assert compute_archive_sha256(archive) == hashlib.sha256(payload).hexdigest()
 
 
+def test_compute_archive_sha256_cancel_event_aborts(tmp_path) -> None:
+    """A set cancel event stops the hash pass instead of finishing the file."""
+    archive = tmp_path / "a.tar.gz"
+    archive.write_bytes(b"archive-bytes" * 1000)
+    cancel_event = threading.Event()
+    cancel_event.set()
+    with pytest.raises(TaskCancelled):
+        compute_archive_sha256(archive, cancel_event=cancel_event)
+
+
 def _files_import_task_env(tmp_path):
     """Build dirs, a valid archive, and a runnable files_import task env."""
     data_dir = tmp_path / "data"
@@ -2519,6 +2545,52 @@ async def test_run_files_import_rejects_checksum_mismatch(tmp_path) -> None:
         task.error_message or ""
     )
     assert not (source_dir / "new.tiff").exists()
+
+
+async def test_run_files_import_heartbeats_checksum_pass(tmp_path) -> None:
+    """The archive SHA-256 pass runs under the task heartbeat wrapper."""
+    data_dir, tiles_dir, source_dir, tasks_dir, archive = _files_import_task_env(
+        tmp_path
+    )
+    task = SimpleNamespace(
+        id=1, task_type="files_import", status="pending", progress=0, log="",
+        result_filename=None, result_path=None, input_path=archive,
+        input_checksum=None, error_message=None,
+    )
+
+    mock_session = AsyncMock()
+    mock_session.get = AsyncMock(return_value=task)
+    mock_session.commit = AsyncMock()
+    exec_result = MagicMock()
+    exec_result.scalar.return_value = 99
+    exec_result.scalars.return_value.first.return_value = None
+    mock_session.execute.return_value = exec_result
+    mock_session_factory = MagicMock()
+    mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    async def pending_poll(task_id: int) -> None:
+        await asyncio.Event().wait()
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=mock_session_factory),
+        patch("app.admin_ops.settings") as mock_settings,
+        patch("app.admin_ops._IMPORT_STAGING_DIR", str(data_dir / ".import-staging")),
+        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=EnqueueResult("queued", "submitted")),
+        patch("app.admin_ops._ensure_tasks_dir", return_value=str(tasks_dir)),
+        patch(
+            "app.admin_ops._poll_task_heartbeat",
+            new=AsyncMock(side_effect=pending_poll),
+        ) as poll,
+    ):
+        mock_settings.data_dir = str(data_dir)
+        mock_settings.tiles_dir = str(tiles_dir)
+        mock_settings.source_images_dir = str(source_dir)
+        await run_files_import(1)
+
+    assert task.status == "completed"
+    poll.assert_called_once_with(1)
+    assert task.input_checksum == compute_archive_sha256(archive)
 
 
 async def test_list_files_import_archives_returns_retained_uploads(tmp_path) -> None:
@@ -3063,7 +3135,7 @@ async def test_run_rebuild_tiles_heartbeats_during_long_image() -> None:
             side_effect=rebuild_source_image_tiles,
         ),
         patch(
-            "app.admin_ops._poll_rebuild_task",
+            "app.admin_ops._poll_task_heartbeat",
             side_effect=poll_rebuild_task,
         ) as poll,
     ):

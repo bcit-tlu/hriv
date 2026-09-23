@@ -1,6 +1,5 @@
 """Source image upload and processing status endpoints."""
 
-import asyncio
 import contextlib
 import errno
 import logging
@@ -25,11 +24,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth import require_role
 from ..database import async_session, get_db, settings
 from ..filenames import sanitize_upload_filename, storage_extension
-from ..image_validation import UPLOAD_CHUNK_SIZE, is_valid_image
+from ..image_validation import is_valid_image
 from ..models import SourceImage, User
 from ..processing import process_source_image
 from ..schemas import MAX_NOTE_LENGTH, SourceImageOut, normalize_note_value
 from ..tracing import record_exception_if_server_error
+from ..upload_staging import (
+    cleanup_unowned_final,
+    discard_staging,
+    staging_path_for,
+    write_upload_to_staging,
+)
 from ..worker import TaskQueueUnavailableError, enqueue_process_source_image
 
 logger = logging.getLogger(__name__)
@@ -77,22 +82,18 @@ async def upload_source_image(
             ext = storage_extension(original_filename)
             unique_name = f"{uuid.uuid4().hex}{ext}"
             stored_path = os.path.join(settings.source_images_dir, unique_name)
+            staging_path = staging_path_for(stored_path)
 
-            # Stream the uploaded file to disk in chunks (handles large files).
-            # Each write is offloaded via asyncio.to_thread: f.write() is a
-            # blocking syscall, and on a networked PVC a multi-GB upload can
-            # stall the event loop long enough to starve concurrent requests
-            # (including the /api/health/ready readiness probe) if run inline.
+            # Stream to a staging name that is never committed to the
+            # database: a request cancelled or killed mid-stream leaves a
+            # sweepable artifact, not an apparently authoritative file
+            # (#1248). The rename precedes the commit so a committed row
+            # always has its file.
             try:
-                with open(stored_path, "wb") as f:
-                    while True:
-                        chunk = await file.read(UPLOAD_CHUNK_SIZE)
-                        if not chunk:
-                            break
-                        await asyncio.to_thread(f.write, chunk)
+                file_size = await write_upload_to_staging(file, staging_path)
+                os.replace(staging_path, stored_path)
             except OSError as exc:
-                with contextlib.suppress(OSError):
-                    os.unlink(stored_path)
+                discard_staging(staging_path)
                 if exc.errno == errno.ENOSPC:
                     logger.error(
                         "Upload failed: no space left on device",
@@ -107,9 +108,10 @@ async def upload_source_image(
                         detail="Insufficient storage \u2014 the data volume is full",
                     )
                 raise
-
-            # Get file size from what was written to disk
-            file_size = os.path.getsize(stored_path)
+            except BaseException:
+                # Cancellation or any other non-OSError exit mid-stream.
+                discard_staging(staging_path)
+                raise
 
             # Create the source image record
             src = SourceImage(
@@ -124,9 +126,31 @@ async def upload_source_image(
                 file_size=file_size,
                 uploaded_by=user.id,
             )
-            db.add(src)
-            await db.commit()
-            await db.refresh(src)
+            commit_attempted = False
+            try:
+                db.add(src)
+                commit_attempted = True
+                await db.commit()
+                await db.refresh(src)
+            except BaseException:
+                if commit_attempted:
+                    # A commit error does not prove the server rolled
+                    # the transaction back — the connection can drop
+                    # after COMMIT is sent while the server still
+                    # commits. A fresh ownership query can race that
+                    # in-flight transaction, so never delete a
+                    # final-path file here (#1248); an orphan is
+                    # reconcilable, a wrongly deleted owned file is not.
+                    logger.warning(
+                        "Upload commit outcome unknown; retaining file",
+                        extra={
+                            "event": "upload.commit_outcome_unknown",
+                            "stored_path": stored_path,
+                        },
+                    )
+                else:
+                    await cleanup_unowned_final(stored_path)
+                raise
 
             span.set_attribute("source_image.id", src.id)
             span.set_attribute("source_image.original_filename", original_filename)
@@ -148,7 +172,6 @@ async def upload_source_image(
             try:
                 enqueue_result = await enqueue_process_source_image(source_image_id)
             except TaskQueueUnavailableError:
-                bookkeeping_committed = False
                 try:
                     src.status = "failed"
                     src.status_message = "Failed"
@@ -156,7 +179,6 @@ async def upload_source_image(
                         "Task queue unavailable; image processing was not started."
                     )
                     await db.commit()
-                    bookkeeping_committed = True
                 except Exception:
                     logger.exception(
                         "Failed to mark uploaded source image after queue rejection",
@@ -185,7 +207,6 @@ async def upload_source_image(
                                 )
                             )
                             await recovery_db.commit()
-                            bookkeeping_committed = True
                     except Exception:
                         logger.exception(
                             "Fresh-session uploaded source-image bookkeeping failed",
@@ -194,9 +215,8 @@ async def upload_source_image(
                                 "source_image_id": source_image_id,
                             },
                         )
-                if bookkeeping_committed:
-                    with contextlib.suppress(OSError):
-                        os.unlink(stored_path)
+                # The committed failed row owns stored_path, so the file
+                # is retained to keep row and file consistent (#1248).
                 raise
             span.set_attribute("source_image.enqueued", enqueue_result.queued)
             if not enqueue_result.queued:

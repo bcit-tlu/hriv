@@ -80,6 +80,7 @@ let authState = {
   logout: vi.fn(),
   canManageUsers: false,
   canEditContent: true,
+  canViewPeople: false,
 }
 
 const mockGroups = [
@@ -171,6 +172,7 @@ function resetFixtures() {
     logout: vi.fn(),
     canManageUsers: false,
     canEditContent: true,
+    canViewPeople: false,
   }
   mockInitialPath = []
   visibleJobsMock = []
@@ -386,6 +388,9 @@ vi.mock('../src/components/AppShell', () => ({
       <button type="button" onClick={() => onTabChange('admin')}>
         Shell tab admin
       </button>
+      <button type="button" onClick={() => onTabChange('people')}>
+        Shell tab people
+      </button>
       <button type="button" onClick={() => onTabChange('manage')}>
         Shell tab manage
       </button>
@@ -525,8 +530,14 @@ vi.mock('../src/components/ManageCategoriesDialog', () => ({
     </>
   ),
 }))
-vi.mock('../src/components/AdminPage', () => ({ default: () => null }))
-vi.mock('../src/components/PeoplePage', () => ({ default: () => null }))
+vi.mock('../src/components/AdminPage', () => ({
+  default: () => <div data-testid="admin-page" />,
+}))
+vi.mock('../src/components/PeoplePage', () => ({
+  default: ({ readOnly }: { readOnly?: boolean }) => (
+    <div data-testid="people-page" data-readonly={String(readOnly)} />
+  ),
+}))
 vi.mock('../src/components/ManagePage', () => ({ default: () => null }))
 vi.mock('../src/components/LoginScreen', () => ({ default: () => null }))
 vi.mock('../src/components/EditImageModal', () => ({ default: () => null }))
@@ -1307,6 +1318,63 @@ describe('App shell interactions', () => {
 
     await waitFor(() => expect(fetchFrontendVersion).toHaveBeenCalledOnce())
     expect(screen.getByText('versions: null/1.0.0')).toBeInTheDocument()
+  })
+
+  it('renders PeoplePage read-only for staff', () => {
+    authState = {
+      ...authState,
+      currentUser: { ...mockCurrentUser, role: 'staff' },
+      canEditContent: false,
+      canManageUsers: false,
+      canViewPeople: true,
+    }
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab people' }))
+    const page = screen.getByTestId('people-page')
+    expect(page).toHaveAttribute('data-readonly', 'true')
+  })
+
+  it('does not render PeoplePage for students (no canViewPeople)', () => {
+    authState = {
+      ...authState,
+      currentUser: { ...mockCurrentUser, role: 'student' },
+      canEditContent: false,
+      canManageUsers: false,
+      canViewPeople: false,
+    }
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab people' }))
+    expect(screen.queryByTestId('people-page')).not.toBeInTheDocument()
+  })
+
+  it('does not render AdminPage for staff (no canManageUsers)', () => {
+    authState = {
+      ...authState,
+      currentUser: { ...mockCurrentUser, role: 'staff' },
+      canEditContent: false,
+      canManageUsers: false,
+      canViewPeople: true,
+    }
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab admin' }))
+    expect(screen.queryByTestId('admin-page')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('people-page')).not.toBeInTheDocument()
+  })
+
+  it('renders PeoplePage editable for admins', () => {
+    authState = {
+      ...authState,
+      currentUser: { ...mockCurrentUser, role: 'admin' },
+      canManageUsers: true,
+      canViewPeople: true,
+    }
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab people' }))
+    expect(screen.getByTestId('people-page')).toHaveAttribute('data-readonly', 'false')
   })
 })
 

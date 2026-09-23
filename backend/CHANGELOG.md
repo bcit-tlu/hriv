@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.61.2](https://github.com/bcit-tlu/hriv/compare/backend-v0.61.1...backend-v0.61.2) (2026-09-23)
+
+
+### Documentation
+
+* split AGENTS.md into per-directory rules and modularize testing-hriv skill ([#1349](https://github.com/bcit-tlu/hriv/issues/1349)) ([c472292](https://github.com/bcit-tlu/hriv/commit/c4722924ccb04f03ffd6c2a602e7f74fb23c061e))
+
+## [0.61.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.61.0...backend-v0.61.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* **upload:** stage uploads and make file cleanup ownership-safe ([#1340](https://github.com/bcit-tlu/hriv/issues/1340)) ([ee72b9b](https://github.com/bcit-tlu/hriv/commit/ee72b9b711e6f045379fc11d964c67190df7411e))
+
+## [0.61.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.60.2...backend-v0.61.0) (2026-09-22)
+
+
+### Features
+
+* **auth:** add staff role with read-only People access ([#1337](https://github.com/bcit-tlu/hriv/issues/1337)) ([43f1986](https://github.com/bcit-tlu/hriv/commit/43f19862babb91197e43e12cea07fceddb4a3996))
+
+
+### Bug Fixes
+
+* **rebuild:** harden scale rehearsal safety ([#1331](https://github.com/bcit-tlu/hriv/issues/1331)) ([d192db3](https://github.com/bcit-tlu/hriv/commit/d192db3fff315c364f24311e6f45ae023db0336b))
+* **rebuild:** raise measured timeout budget ([#1333](https://github.com/bcit-tlu/hriv/issues/1333)) ([b85eedf](https://github.com/bcit-tlu/hriv/commit/b85eedfdda6802555372d210f045a5cd218e2b8f))
+
 ## [0.60.2](https://github.com/bcit-tlu/hriv/compare/backend-v0.60.1...backend-v0.60.2) (2026-09-18)
 
 

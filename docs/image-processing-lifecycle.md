@@ -58,6 +58,37 @@ The on-disk copy is named from a UUID plus a bounded suffix
 (`storage_extension()`); a client suffix longer than 32 bytes falls back to
 `.bin`, so an over-long display name cannot produce an invalid path component.
 
+## Staged writes and orphan prevention
+
+Single uploads and image replacements stream the request body to a
+`.staging-<uuid>.<ext>` sibling of the final stored path
+(`backend/app/upload_staging.py`), then atomically rename it into place just
+before the `SourceImage` row commits. Because staging names are never
+persisted, a request cancelled or killed mid-stream can only leave a staging
+artifact — never a final-path file that looks like a committed upload (#1248).
+
+The rename deliberately precedes the commit so a committed row always has its
+file. Failures before the commit attempt (metadata bumps, queue work staged
+in the same transaction) are handled by `cleanup_unowned_final()`, which
+deletes the final-path file only after a fresh-session query proves no
+committed `SourceImage.stored_path` owns it. Once `commit()` has been
+attempted the outcome is ambiguous — the server can still commit after the
+client sees an error — and a fresh ownership query could race that in-flight
+transaction, so the file is retained unconditionally. An orphaned file is
+recoverable; a wrongly deleted owned file is not. Queue rejections follow
+the same rule: once the bookkeeping row is committed with `status="failed"`,
+that row owns the file, so it stays on disk and consistent with the record.
+
+The shared reconciliation sweep (`run_reconciliation_sweep`) removes
+`.staging-*` artifacts whose mtime is older than four hours
+(`STAGING_MAX_AGE_SECONDS` — deliberately above the 7200-second ingress
+upload timeout so a stalled but still-connected request can never outlive
+the bound); an in-flight upload refreshes its staging file's mtime on every
+chunk write, so only dead requests age out. The same sweep also _reports_
+aged final-path files that no `SourceImage` row owns
+(`upload.unowned_final_detected`) for operator reconciliation — it never
+deletes them automatically.
+
 ## Status transitions
 
 | Status       | Progress | Description                                          |
@@ -83,9 +114,14 @@ polls the source image and shows that message in the processing snackbar; for
 bulk imports the per-file entries of `BulkImportJob.errors` are listed instead.
 
 Progress values in the 10-78% range come from pyvips eval signal
-callbacks mapped via `ProgressTracker`. The async `_flush_progress()`
+callbacks mapped via `ProgressTracker`. The async `_flush_tracker_progress()`
 coroutine writes tracker state to the database every 1.5 seconds
-without blocking tile generation.
+without blocking tile generation. Polls whose tracker values are
+unchanged still touch `SourceImage.updated_at`, and the flusher stays
+alive through the provenance checksum pass, so a live `processing` row
+never ages past the stale-source-image cutoff during one flat-progress
+stretch (a huge single image, a pyvips build without progress signals,
+or a slow multi-GB source hash).
 
 ## Worker configuration
 
@@ -209,8 +245,9 @@ as unreasonable for microscopy.
 5. Removes old tile directory from disk **after** the DB commit succeeds
 
 In `required` task-execution mode, a queue rejection marks the replacement
-source as failed and removes its staged file, but applies no metadata or
-version changes to the target image.
+source as failed and retains its file (the committed failed row owns the
+path — see the staged-writes section), but applies no metadata or version
+changes to the target image.
 
 See [image-metadata-and-versioning.md](image-metadata-and-versioning.md)
 for the full metadata preservation/clearing rules.

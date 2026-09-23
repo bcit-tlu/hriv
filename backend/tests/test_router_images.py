@@ -162,6 +162,42 @@ async def test_list_images_student_filters() -> None:
     assert len(result) == 1
 
 
+async def test_list_images_staff_unfiltered() -> None:
+    """Staff take the unrestricted path — no visibility helper call, no
+    active-only filter."""
+    imgs = [_make_image(id=1, active=True), _make_image(id=2, active=False)]
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = imgs
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+
+    result = await list_images(_make_user("staff"), db=db)
+    assert len(result) == 2
+    # Only one query — no categories visibility pre-query like students.
+    assert db.execute.await_count == 1
+
+
+async def test_get_image_staff_inactive_visible() -> None:
+    img = _make_image(active=False)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+
+    result = await get_image(1, _make_user("staff"), db)
+    assert result.name == "test-img"
+
+
+async def test_get_image_staff_hidden_category_visible() -> None:
+    img = _make_image(category_id=5)
+    cat = SimpleNamespace(id=5, status="hidden", programs=[], groups=[], parent_id=None)
+
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=lambda model, id_val: img if id_val == 1 else cat)
+
+    result = await get_image(1, _make_user("staff"), db)
+    assert result.name == "test-img"
+
+
 async def test_get_image_found() -> None:
     img = _make_image()
     db = AsyncMock()
@@ -811,11 +847,13 @@ def _make_upload_file(
 
 
 @patch("os.path.getsize", return_value=1024)
+@patch("os.replace")
 @patch("os.makedirs")
 @patch("builtins.open", new_callable=MagicMock)
 async def test_replace_image_success(
     mock_open: MagicMock,
     mock_makedirs: MagicMock,
+    mock_replace: MagicMock,
     mock_getsize: MagicMock,
 ) -> None:
     """Replacement endpoint creates SourceImage and enqueues processing."""
@@ -855,11 +893,13 @@ async def test_replace_image_success(
 
 
 @patch("os.path.getsize", return_value=1024)
+@patch("os.replace")
 @patch("os.makedirs")
 @patch("builtins.open", new_callable=MagicMock)
 async def test_replace_image_normalizes_original_filename(
     mock_open: MagicMock,
     mock_makedirs: MagicMock,
+    mock_replace: MagicMock,
     mock_getsize: MagicMock,
 ) -> None:
     """The replacement path stores a normalized client-supplied filename."""
@@ -889,11 +929,13 @@ async def test_replace_image_normalizes_original_filename(
 
 
 @patch("os.path.getsize", return_value=1024)
+@patch("os.replace")
 @patch("os.makedirs")
 @patch("builtins.open", new_callable=MagicMock)
 async def test_replace_image_fallback_to_background_tasks(
     mock_open: MagicMock,
     mock_makedirs: MagicMock,
+    mock_replace: MagicMock,
     mock_getsize: MagicMock,
 ) -> None:
     """When arq enqueue fails, replacement falls back to BackgroundTasks."""
@@ -925,11 +967,13 @@ async def test_replace_image_fallback_to_background_tasks(
 
 
 @patch("os.path.getsize", return_value=1024)
+@patch("os.replace")
 @patch("os.makedirs")
 @patch("builtins.open", new_callable=MagicMock)
 async def test_replace_image_applies_metadata_updates(
     mock_open: MagicMock,
     mock_makedirs: MagicMock,
+    mock_replace: MagicMock,
     mock_getsize: MagicMock,
 ) -> None:
     """Multipart metadata updates are applied before creating the SourceImage."""
@@ -991,11 +1035,13 @@ async def test_replace_image_applies_metadata_updates(
 
 
 @patch("os.path.getsize", return_value=1024)
+@patch("os.replace")
 @patch("os.makedirs")
 @patch("builtins.open", new_callable=MagicMock)
 async def test_replace_image_rejection_preserves_metadata_and_version(
     mock_open: MagicMock,
     mock_makedirs: MagicMock,
+    mock_replace: MagicMock,
     mock_getsize: MagicMock,
 ) -> None:
     """Required-mode queue rejection leaves the target image unchanged."""
@@ -1067,11 +1113,13 @@ async def test_replace_image_rejection_preserves_metadata_and_version(
 
 @pytest.mark.parametrize("recovery_succeeds", [True, False])
 @patch("os.path.getsize", return_value=1024)
+@patch("os.replace")
 @patch("os.makedirs")
 @patch("builtins.open", new_callable=MagicMock)
 async def test_replace_image_rejection_uses_fresh_session_when_bookkeeping_fails(
     mock_open: MagicMock,
     mock_makedirs: MagicMock,
+    mock_replace: MagicMock,
     mock_getsize: MagicMock,
     recovery_succeeds: bool,
 ) -> None:
@@ -1126,19 +1174,20 @@ async def test_replace_image_rejection_uses_fresh_session_when_bookkeeping_fails
 
     recovery_db.execute.assert_awaited_once()
     recovery_db.commit.assert_awaited_once()
-    if recovery_succeeds:
-        unlink.assert_called_once()
-    else:
-        unlink.assert_not_called()
+    # The committed failed row owns stored_path, so the file is retained
+    # (#1248): an owned file must never be unlinked.
+    unlink.assert_not_called()
     background_tasks.add_task.assert_not_called()
 
 
 @patch("os.path.getsize", return_value=1024)
+@patch("os.replace")
 @patch("os.makedirs")
 @patch("builtins.open", new_callable=MagicMock)
 async def test_replace_image_unchanged_category_does_not_bump_scopes(
     mock_open: MagicMock,
     mock_makedirs: MagicMock,
+    mock_replace: MagicMock,
     mock_getsize: MagicMock,
 ) -> None:
     """Echoing the current category_id back on replace must not bump revisions."""
@@ -1171,11 +1220,13 @@ async def test_replace_image_unchanged_category_does_not_bump_scopes(
 
 
 @patch("os.path.getsize", return_value=1024)
+@patch("os.replace")
 @patch("os.makedirs")
 @patch("builtins.open", new_callable=MagicMock)
 async def test_replace_image_empty_note_clears_note(
     mock_open: MagicMock,
     mock_makedirs: MagicMock,
+    mock_replace: MagicMock,
     mock_getsize: MagicMock,
 ) -> None:
     """An explicit note="" on replace must erase the stored note."""
@@ -1358,3 +1409,85 @@ async def test_replace_image_reraises_non_enospc_oserror(
         )
 
     mock_unlink.assert_called_once()
+
+
+@patch("os.path.getsize", return_value=1024)
+@patch("os.replace")
+@patch("os.makedirs")
+@patch("builtins.open", new_callable=MagicMock)
+async def test_replace_image_commit_failure_retains_file_unconditionally(
+    mock_open: MagicMock,
+    mock_makedirs: MagicMock,
+    mock_replace: MagicMock,
+    mock_getsize: MagicMock,
+) -> None:
+    """Once commit is attempted the file is always retained — the server
+    may still commit after the client sees an error, so no ownership query
+    is made that could race the in-flight transaction (#1248)."""
+    cleanup = AsyncMock()
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=_make_image())
+    db.add = MagicMock()
+    db.commit = AsyncMock(side_effect=RuntimeError("ambiguous commit"))
+    db.refresh = AsyncMock()
+
+    with (
+        patch.dict("sys.modules", {
+            "app.processing": MagicMock(process_replace_image=MagicMock()),
+            "app.worker": MagicMock(),
+        }),
+        patch("app.routers.images.cleanup_unowned_final", new=cleanup),
+    ):
+        with pytest.raises(RuntimeError, match="ambiguous commit"):
+            await replace_image(
+                image_id=1,
+                file=_make_upload_file(filename="commitfail.png", content_type="image/png"),
+                background_tasks=MagicMock(),
+                _user=_make_user(),
+                db=db,
+            )
+
+    cleanup.assert_not_called()
+
+
+@patch("os.path.getsize", return_value=1024)
+@patch("os.replace")
+@patch("os.makedirs")
+@patch("builtins.open", new_callable=MagicMock)
+async def test_replace_image_pre_commit_failure_routes_through_ownership_cleanup(
+    mock_open: MagicMock,
+    mock_makedirs: MagicMock,
+    mock_replace: MagicMock,
+    mock_getsize: MagicMock,
+) -> None:
+    """A failure before the commit attempt still defers deletion to the
+    ownership check — the file is never unconditionally unlinked (#1248)."""
+    cleanup = AsyncMock()
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=_make_image())
+    db.add = MagicMock(side_effect=RuntimeError("pre-commit failed"))
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    with (
+        patch.dict("sys.modules", {
+            "app.processing": MagicMock(process_replace_image=MagicMock()),
+            "app.worker": MagicMock(),
+        }),
+        patch("app.routers.images.cleanup_unowned_final", new=cleanup),
+    ):
+        with pytest.raises(RuntimeError, match="pre-commit failed"):
+            await replace_image(
+                image_id=1,
+                file=_make_upload_file(filename="commitfail.png", content_type="image/png"),
+                background_tasks=MagicMock(),
+                _user=_make_user(),
+                db=db,
+            )
+
+    db.commit.assert_not_awaited()
+    cleanup.assert_awaited_once()
+    # The cleanup received the final stored path of the staged upload.
+    assert cleanup.await_args.args[0].endswith(".png")

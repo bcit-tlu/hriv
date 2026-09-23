@@ -34,7 +34,7 @@ export interface Category {
 
 export const MAX_DEPTH = 6
 
-export type Role = 'admin' | 'instructor' | 'student'
+export type Role = 'admin' | 'instructor' | 'staff' | 'student'
 
 export interface User {
   id: number

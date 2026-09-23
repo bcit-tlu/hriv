@@ -249,6 +249,25 @@ async def test_load_tree_admin_sees_all_images() -> None:
     assert len(tree[0].images) == 2
 
 
+async def test_load_tree_staff_sees_hidden_and_inactive() -> None:
+    """Staff take the unrestricted (non-student) path: hidden categories
+    and inactive images are visible."""
+    cats = [
+        _make_category(1, "Visible"),
+        _make_category(2, "Hidden", status="hidden"),
+    ]
+    imgs = [
+        _make_image(10, "active-img", category_id=1, active=True),
+        _make_image(11, "inactive-img", category_id=1, active=False),
+    ]
+    db = _mock_db(cats, imgs)
+
+    tree = await _load_tree(db, None, user_role="staff")
+
+    assert len(tree) == 2
+    assert len(tree[0].images) == 2
+
+
 async def test_load_tree_uses_exactly_two_queries() -> None:
     """The optimised approach must issue exactly 2 DB queries regardless
     of tree depth."""
@@ -916,6 +935,42 @@ async def test_list_categories_admin_sees_all() -> None:
     admin = SimpleNamespace(id=1, role="admin", email="a@example.com", programs=[])
     result = await list_categories(admin, parent_id=None, db=db)
     assert len(result) == 2
+
+
+async def test_list_categories_staff_sees_all() -> None:
+    """Staff are not filtered by program/group restrictions or hidden status."""
+    prog = _make_program(10)
+    cats = [
+        _make_category(1, "Open"),
+        _make_category(2, "Restricted", programs=[prog]),
+    ]
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = cats
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+
+    result = await list_categories(_make_user("staff"), parent_id=None, db=db)
+    assert len(result) == 2
+
+
+async def test_get_category_staff_sees_hidden() -> None:
+    """Staff can fetch hidden categories — visibility is unrestricted."""
+    cat = _make_category(1, "Hidden", status="hidden")
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=cat)
+
+    result = await get_category(1, _make_user("staff"), db=db)
+    assert result.label == "Hidden"
+
+
+async def test_get_category_staff_sees_program_restricted() -> None:
+    cat = _make_category(1, "Restricted", programs=[_make_program(10)])
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=cat)
+
+    result = await get_category(1, _make_user("staff"), db=db)
+    assert result.label == "Restricted"
 
 
 async def test_get_category_student_hidden() -> None:

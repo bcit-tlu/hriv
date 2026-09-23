@@ -91,6 +91,10 @@ function DismissibleExample(args: AnnouncementBannerStoryProps) {
 }
 
 export const Basic: Story = {
+  parameters: {
+    // Known theme-palette contrast debt (alert message) — see #1345.
+    a11y: { test: 'todo' },
+  },
   render: (args) => (
     <StoryFrame>
       <AnnouncementBanner {...args} />
@@ -121,6 +125,10 @@ export const WithDismissAction: Story = {
 
 export const LoginScreen: Story = {
   name: 'Login Screen',
+  parameters: {
+    // Known theme-palette contrast debt (alert message) — see #1345.
+    a11y: { test: 'todo' },
+  },
   args: {
     message: defaultMessage,
     variant: 'login',

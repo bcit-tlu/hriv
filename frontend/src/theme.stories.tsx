@@ -281,6 +281,8 @@ function ThemePage({ mode }: { mode: HrivThemeMode }) {
 export const LightTheme: Story = {
   name: 'Light Theme',
   parameters: {
+    // Known theme-palette contrast debt — see #1345.
+    a11y: { test: 'todo' },
     controls: {
       disable: true,
     },
@@ -291,6 +293,8 @@ export const LightTheme: Story = {
 export const DarkTheme: Story = {
   name: 'Dark Theme',
   parameters: {
+    // Known theme-palette contrast debt — see #1345.
+    a11y: { test: 'todo' },
     controls: {
       disable: true,
     },

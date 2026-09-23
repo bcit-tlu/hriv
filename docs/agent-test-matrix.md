@@ -51,7 +51,7 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
 
 - backend: `poetry run pytest tests/test_router_bulk_import.py tests/test_processing.py tests/test_worker.py`
 - frontend: `npm test -- ConfirmImportDialog UploadImageModal`
-- skill: [`.agents/skills/testing-hriv/SKILL.md`](../.agents/skills/testing-hriv/SKILL.md) (bulk import section)
+- skill: [`.agents/skills/testing-hriv/SKILL.md`](../.agents/skills/testing-hriv/SKILL.md) → `references/upload-processing.md` (bulk import section)
 
 ### Changed drag-and-drop (SortableTileGrid)
 
@@ -67,7 +67,7 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
 
 - backend: `poetry run pytest tests/test_admin_ops.py tests/test_router_admin.py tests/test_processing.py`
 - note: include `tests/test_processing.py` when touching the rebuild-tiles task — `select_rebuild_targets` / `rebuild_source_image_tiles` live in `processing.py`.
-- skill: [`.agents/skills/testing-hriv/SKILL.md`](../.agents/skills/testing-hriv/SKILL.md) (admin export/import section)
+- skill: [`.agents/skills/testing-hriv/SKILL.md`](../.agents/skills/testing-hriv/SKILL.md) → `references/admin-export-import.md` (admin export/import section)
 - See [admin-import-export.md](admin-import-export.md).
 
 ### Changed durable jobs / parallel tile rebuilds
@@ -133,6 +133,7 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
 - lint: `for chart in charts/*/; do helm lint "$chart"; done`
 - validate: `for chart in charts/*/; do helm template test "$chart" | kubeconform -strict -summary -schema-location default -ignore-missing-schemas; done`
 - regression: `bash scripts/test-helm-chart-regressions.sh`
+- tiles sidecar runtime: `bash scripts/test-tiles-nginx-runtime.sh` (requires docker; runs the rendered nginx config against a stub validator — covers auth_request subrequest scope and verdict caching)
 
 ### Changed release / CI workflows
 

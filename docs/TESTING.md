@@ -18,6 +18,7 @@ All seed users share the password `password`.
 | --------------------- | ---------------------------- | -------- | ---------- |
 | Haruki Tanaka         | admin@example.ca             | password | admin      |
 | Carlos Henrique Souza | instructor@example.ca        | password | instructor |
+| Devon Staff           | staff@example.ca             | password | staff      |
 | Mira Patel            | student@example.ca           | password | student    |
 | Synthetic Student     | synthetic.student@example.ca | password | student    |
 
@@ -57,6 +58,17 @@ All seed users share the password `password`.
 7. Click Logout.
 8. Login as `instructor@example.ca` / `password` (instructor).
 9. **Assert:** 2 tabs visible: Home and Images. No Admin tab, no People tab.
+10. Click Logout.
+11. Login as `staff@example.ca` / `password` (staff).
+12. **Assert:** 2 tabs visible: Home and People. No Images/Manage tab, no Admin tab.
+13. Open the `People` tab.
+14. **Assert:** The user table lists all accounts, but there is no `Add Person`
+    button, no row `Delete` buttons, no selection checkboxes, and no bulk
+    action bar — the table is read-only. Clicking a row does not open an
+    edit dialog.
+15. **Assert:** Hidden categories and inactive images are visible to staff
+    while browsing (staff are not subject to the student visibility filter).
+16. Click Logout.
 
 ---
 
@@ -160,7 +172,31 @@ curl -s http://localhost:8000/api/admin/export -H "Authorization: Bearer $STUDEN
 
 **Assert:** Response contains `"not permitted"` with HTTP 403.
 
-### 4e: One-liner to get a token and use it
+### 4e: RBAC enforcement — staff can list users but cannot mutate them
+
+```bash
+# Get a staff token
+STAFF_TOKEN=$(curl -s http://localhost:8000/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"staff@example.ca","password":"password"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+# Staff CAN list users (read-only People tab backend)
+curl -s http://localhost:8000/api/users/ -H "Authorization: Bearer $STAFF_TOKEN"
+
+# But CANNOT create, edit, or delete users
+curl -s -X POST http://localhost:8000/api/users/ \
+  -H "Authorization: Bearer $STAFF_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name":"X","email":"x@example.ca","password":"pw","role":"student"}'
+
+# And CANNOT use admin routes
+curl -s http://localhost:8000/api/admin/export -H "Authorization: Bearer $STAFF_TOKEN"
+```
+
+**Assert:** The `GET` returns a JSON array of users; the `POST` returns 403
+`"not permitted"`; the admin export also returns 403.
+
+### 4f: One-liner to get a token and use it
 
 ```bash
 TOKEN=$(curl -s http://localhost:8000/api/auth/login \
@@ -229,6 +265,9 @@ curl -s http://localhost:8000/api/categories/ -H "Authorization: Bearer $TOKEN"
 3. Click the `Backups` sub-tab.
 4. **Assert:** The export and import cards are grouped in a single card grid above the `Recent Tasks` accordion, and the archive-history panels are at the bottom.
 5. Click "Export" on the database export card to download the database as JSON.
+   (The UI POSTs `/api/admin/tasks/{id}/download-token` — which mints a
+   short-lived `HttpOnly` cookie — then navigates to
+   `/api/admin/tasks/{id}/download`; no credential appears in the URL.)
 6. **Assert:** JSON file downloads containing categories, images, and users.
 7. Navigate to Browse, create a new test category (to dirty the database).
 8. Go back to Admin tab, open `Backups`, click "Import" on the database import card, and select the previously exported JSON file.
@@ -276,7 +315,7 @@ All endpoints except login require a valid JWT bearer token in the `Authorizatio
 | PUT    | /api/tile-order                                                                                           | Yes           | instructor                                                                  |
 | GET    | /api/tiles/{source_image_id}/{path}                                                                       | Yes           | valid tile token (image-scoped, from tokenized `tile_sources`/`thumb` URLs) |
 | GET    | /api/tiles-auth (nginx `auth_request` validator; 204/401/403)                                             | Yes           | valid tile token                                                            |
-| GET    | /api/users/                                                                                               | Yes           | instructor                                                                  |
+| GET    | /api/users/                                                                                               | Yes           | staff ¶                                                                     |
 | POST   | /api/users/                                                                                               | Yes           | admin                                                                       |
 | GET    | /api/users/{id}                                                                                           | Yes           | admin                                                                       |
 | PATCH  | /api/users/{id}                                                                                           | Yes           | admin                                                                       |
@@ -314,6 +353,8 @@ All endpoints except login require a valid JWT bearer token in the `Authorizatio
 | GET    | /api/admin/export                                                                                         | Yes           | admin                                                                       |
 | POST   | /api/admin/import                                                                                         | Yes           | admin                                                                       |
 | POST   | /api/admin/tasks/rebuild-tiles                                                                            | Yes           | admin                                                                       |
+| POST   | /api/admin/tasks/{task_id}/download-token (mints path-scoped `HttpOnly` download cookie; 204)             | Yes           | admin                                                                       |
+| GET    | /api/admin/tasks/{task_id}/download (streams result file)                                                 | Yes           | valid admin download cookie (task-bound, 60 s TTL, cleared on success)      |
 | GET    | /api/admin/backups/snapshots                                                                              | Yes           | admin                                                                       |
 | GET    | /api/admin/backups/snapshots/{name}/manifest                                                              | Yes           | admin                                                                       |
 | POST   | /api/admin/tasks/file-restore                                                                             | Yes           | admin                                                                       |
@@ -355,7 +396,13 @@ Filesystem-import uploads use raw request bodies only. `PUT /api/admin/tasks/{ta
 
 Files larger than the 10 MiB chunk size use the resumable chunked flow: `GET /api/admin/tasks/{task_id}/upload` returns `bytes_received` for the client to resume; `PATCH /api/admin/tasks/{task_id}/upload` appends a raw chunk with `Upload-Offset` and `Upload-Length` headers; and `POST /api/admin/tasks/{task_id}/upload/finalize` transitions the task to `pending` once the total size matches. The same fail-fast 507 preflight and guarded `uploading → pending` update apply to each chunk.
 
-Programs are a flat, admin/OIDC-managed entity: only admins may create, rename, or delete a program (optionally setting an `oidc_group`); all roles may read them. `GET /api/users/` returns all users to admins, but instructors and students see only users who are **not** associated with the special `Admin` program. Programs are not hierarchical.
+Programs are a flat, admin/OIDC-managed entity: only admins may create, rename, or delete a program (optionally setting an `oidc_group`); all roles may read them. `GET /api/users/` returns all users to admins and staff, but instructors see only students and other instructors — and never users associated with the special `Admin` program. Programs are not hierarchical.
+
+Rows marked **¶**: `GET /api/users/` is open to `admin`, `instructor`, and
+`staff`. Admins and staff receive the full `UserOut` projection; instructors
+receive a minimal projection (no `metadata_extra`/`last_access`) and cannot
+list admins or staff. All mutation endpoints under `/api/users/` remain
+admin-only — staff use the listing strictly read-only.
 
 `GET /api/users/` accepts optional filter/search/pagination query params (applied for every role):
 

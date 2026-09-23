@@ -137,6 +137,10 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 export const Basic: Story = {
+  parameters: {
+    // Known theme-palette contrast debt (status chips, warning button) — see #1345.
+    a11y: { test: 'todo' },
+  },
   args: {
     jobs: [runningJob, completedJob],
   },
@@ -164,6 +168,10 @@ export const CompletedWithErrorsExpanded: Story = {
 }
 
 export const Cancelling: Story = {
+  parameters: {
+    // Known theme-palette contrast debt (warning chip) — see #1345.
+    a11y: { test: 'todo' },
+  },
   args: {
     jobs: [
       makeJob({

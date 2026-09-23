@@ -16,6 +16,10 @@
 {{- if gt (.Values.tasks.rebuild.childTimeoutSeconds | int) 86400 }}
 {{- fail "tasks.rebuild.childTimeoutSeconds must not exceed 86400 seconds" }}
 {{- end }}
+{{- $corsOrigins := .Values.corsOrigins | default .Values.auth.openidConnect.corsOrigins -}}
+{{- if and (eq .Values.tasks.executionMode "required") (or (not $corsOrigins) (contains "*" $corsOrigins)) }}
+{{- fail "tasks.executionMode=required requires a concrete corsOrigins value naming the frontend origin (e.g. https://hriv.example.ca) — empty or wildcard CORS is not permitted in production" }}
+{{- end }}
 {{- $backupVersionMountPath := trimSuffix "/" .Values.backupVersionConfigMap.mountPath -}}
 {{- $frontendVersionMountPath := trimSuffix "/" .Values.frontendVersionConfigMap.mountPath -}}
 {{- if and .Values.backupVersionConfigMap.enabled .Values.frontendVersionConfigMap.enabled (eq $backupVersionMountPath $frontendVersionMountPath) }}
@@ -269,6 +273,12 @@ spec:
             # concurrency used by local-mode bulk imports.
             - name: WORKER_MAX_JOBS
               value: {{ .Values.redis.worker.maxJobs | quote }}
+            # Rendered unconditionally (not via the OIDC-gated ConfigMap)
+            # so non-OIDC deployments can also pin explicit CORS origins.
+            # Empty is only legal in tasks.executionMode=local (dev); the
+            # backend fails fast in required mode without a concrete value.
+            - name: CORS_ORIGINS
+              value: {{ $corsOrigins | quote }}
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:

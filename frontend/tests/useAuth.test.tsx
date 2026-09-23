@@ -16,6 +16,7 @@ const mockValue: AuthContextValue = {
   refreshUsers: () => {},
   canManageUsers: false,
   canEditContent: false,
+  canViewPeople: false,
   oidcError: null,
   clearOidcError: () => {},
 }

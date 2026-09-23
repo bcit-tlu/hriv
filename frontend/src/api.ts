@@ -2046,10 +2046,17 @@ export async function fetchFrontendVersion(): Promise<FrontendVersionResponse> {
 }
 
 export async function downloadAdminTaskResult(taskId: number): Promise<void> {
-  // Obtain a short-lived download token, then navigate the browser to the
-  // token-authenticated download URL (no JS buffering needed).
-  const { token } = await request<{ token: string }>(`/admin/tasks/${taskId}/download-token`, {
+  // The POST mints the short-lived download credential as an HttpOnly
+  // cookie scoped to the download path — the token never enters a URL, so
+  // it stays out of access logs, trace spans, and browser history. The
+  // navigation then performs a native download (no JS buffering).
+  await request(`/admin/tasks/${taskId}/download-token`, {
     method: 'POST',
+    // Lets the minted cookie be stored when the POST is cross-origin in
+    // dev (VITE_API_URL). Note downloads still require a same-site SPA/API
+    // pair: the cookie is SameSite=Strict, and browsers will not store a
+    // cookie minted in a third-party response at all.
+    credentials: 'include',
   })
-  window.location.href = `${BASE}/api/admin/tasks/${taskId}/download?token=${encodeURIComponent(token)}`
+  window.location.href = `${BASE}/api/admin/tasks/${taskId}/download`
 }
