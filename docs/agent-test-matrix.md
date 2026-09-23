@@ -133,6 +133,7 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
 - lint: `for chart in charts/*/; do helm lint "$chart"; done`
 - validate: `for chart in charts/*/; do helm template test "$chart" | kubeconform -strict -summary -schema-location default -ignore-missing-schemas; done`
 - regression: `bash scripts/test-helm-chart-regressions.sh`
+- tiles sidecar runtime: `bash scripts/test-tiles-nginx-runtime.sh` (requires docker; runs the rendered nginx config against a stub validator — covers auth_request subrequest scope and verdict caching)
 
 ### Changed release / CI workflows
 
