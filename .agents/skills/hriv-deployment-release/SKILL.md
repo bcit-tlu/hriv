@@ -61,6 +61,10 @@ For chart changes:
 ```bash
 for chart in charts/*/; do helm lint "$chart"; done
 for chart in charts/*/; do helm template test "$chart" | kubeconform -strict -summary -schema-location default -ignore-missing-schemas; done
+bash scripts/test-helm-chart-regressions.sh
+# Tiles sidecar nginx auth boundary — needs docker; run when touching
+# charts/backend/templates/configmap-nginx-tiles.yaml:
+bash scripts/test-tiles-nginx-runtime.sh
 ```
 
 For backup changes, use `$testing-backup-service`.

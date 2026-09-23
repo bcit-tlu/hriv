@@ -342,6 +342,9 @@ jobs:
       - name: Run Helm chart regression checks
         run: bash scripts/test-helm-chart-regressions.sh
 
+      - name: Run tiles sidecar runtime checks
+        run: bash scripts/test-tiles-nginx-runtime.sh
+
   # Container image builds (reusable workflow)
 
   build-frontend:
