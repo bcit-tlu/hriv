@@ -140,6 +140,39 @@ server {
 }
 STUB
 
+# Pull explicitly with retries and registry fallbacks: fresh runners pull
+# anonymously from Docker Hub, and a throttled 429 must not fail the
+# always-required helm-lint gate. The mirrors serve the identical
+# manifest digest, so the container still runs the chart's own image
+# reference.
+pull_attempt=0
+until docker image inspect "$nginx_image" >/dev/null 2>&1 || docker pull "$nginx_image"; do
+  pull_attempt=$((pull_attempt + 1))
+  [[ "$pull_attempt" -lt 4 ]] || break
+  sleep $((pull_attempt * 10))
+done
+if ! docker image inspect "$nginx_image" >/dev/null 2>&1; then
+  image_repo="${nginx_image%:*}"
+  image_tag="${nginx_image##*:}"
+  case "$image_repo" in
+    */*) mirror_repo="$image_repo" ;;
+    *) mirror_repo="library/$image_repo" ;;
+  esac
+  mirror_ref=""
+  for mirror in \
+    "mirror.gcr.io/$mirror_repo:$image_tag" \
+    "public.ecr.aws/docker/$mirror_repo:$image_tag"; do
+    if docker pull "$mirror"; then
+      docker tag "$mirror" "$nginx_image"
+      mirror_ref="$mirror"
+      break
+    fi
+  done
+  [[ -n "$mirror_ref" ]] || \
+    fail "could not pull $nginx_image from Docker Hub or its mirrors"
+  echo "Pulled $mirror_ref as $nginx_image"
+fi
+
 container_id="$(docker run -d \
   -v "$work/default.conf:/etc/nginx/conf.d/default.conf:ro" \
   -v "$work/stub.conf:/etc/nginx/conf.d/zz-auth-stub.conf:ro" \
