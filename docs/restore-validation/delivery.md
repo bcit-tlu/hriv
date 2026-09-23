@@ -66,7 +66,8 @@ Until every phase is deployed and a full clean run updates durable last-success 
 ## Simplified #1253 operational contract (supersedes prior level-5 sections)
 
 This section is the current contract for #1253. It **supersedes** every earlier statement across the
-`docs/restore-validation/` documents (contract, lifecycle, validation, operations) that requires #1252, application/viewer validation, credential-init, Redis, tile rebuild,
+`docs/restore-validation/` documents (contract, lifecycle, validation, operations, and earlier sections
+of this delivery file) that requires #1252, application/viewer validation, credential-init, Redis, tile rebuild,
 OIDC, a status exporter, dashboard, autonomous failed-child/Job reaper, multiple retained runs, or
 exact whole-cluster database/role equality. Those older level-5 passages remain only as design
 history and are not implementation or rollout requirements.
