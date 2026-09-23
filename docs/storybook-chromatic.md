@@ -171,6 +171,11 @@ Storybook should complement, not replace, existing tests:
   as opening menus, filtering options, selecting tiles, and dialog validation.
 - Chromatic: visual diffs, responsive snapshots, interaction completion, and
   accessibility checks from the story catalog.
+- axe accessibility checks run in `npm run test:storybook` via
+  `parameters.a11y.test` in `frontend/.storybook/preview.tsx`. The global
+  default is `'error'` (violations fail the run); stories carrying known,
+  tracked debt opt down to `'todo'` with a comment linking the tracking issue —
+  do not use `'todo'` to silence new violations.
 
 ## Current implementation
 
@@ -236,9 +241,11 @@ Dismiss Action`, `Login Screen`, and `Empty Message`.
 
 ## Story coverage convention
 
-Chromatic snapshots every story on each push, so each story is a permanent
-baseline that someone must review — target meaningfully distinct visual states,
-not one story per code path:
+Chromatic snapshots every story on each push to a branch (release-please bot
+branches are excluded, and TurboSnap skips pushes that only touch
+untraced/non-frontend files), so each story is a permanent baseline that
+someone must review — target meaningfully distinct visual states, not one story
+per code path:
 
 - New components in `src/components/` require a `*.stories.tsx` covering each
   meaningfully distinct visual state.

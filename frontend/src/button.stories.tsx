@@ -89,7 +89,11 @@ export const Basic: Story = {
 }
 
 export const Variants: Story = {
-  parameters: { controls: { disable: true } },
+  parameters: {
+    // Known theme-palette contrast debt — see #1345.
+    a11y: { test: 'todo' },
+    controls: { disable: true },
+  },
   render: () => (
     <Stack alignItems="center" direction="row" flexWrap="wrap" gap={2}>
       <Button variant="contained">Contained</Button>
@@ -124,7 +128,11 @@ export const Sizes: Story = {
 
 export const DialogActions: Story = {
   name: 'Dialog Actions',
-  parameters: { controls: { disable: true } },
+  parameters: {
+    // Known theme-palette contrast debt — see #1345.
+    a11y: { test: 'todo' },
+    controls: { disable: true },
+  },
   render: () => (
     <Stack alignItems="center" direction="row" gap={2}>
       <Button>Cancel</Button>
@@ -163,7 +171,11 @@ export const ThemePickerButton: Story = {
 
 export const LoginActions: Story = {
   name: 'Login Actions',
-  parameters: { controls: { disable: true } },
+  parameters: {
+    // Known theme-palette contrast debt — see #1345.
+    a11y: { test: 'todo' },
+    controls: { disable: true },
+  },
   render: () => (
     <Stack direction="row" justifyContent="space-between" sx={{ width: 400 }}>
       <Button

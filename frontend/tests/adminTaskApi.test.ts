@@ -6,7 +6,7 @@
  * - startDbImport / startFilesImport (FormData POST with file upload)
  * - fetchAdminTasks / fetchAdminTask (GET requests)
  * - cancelAdminTask (POST with task ID)
- * - downloadAdminTaskResult (token fetch + navigation)
+ * - downloadAdminTaskResult (cookie mint + navigation)
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -586,8 +586,9 @@ describe('Background Admin Task API', () => {
   // ── downloadAdminTaskResult ──────────────────────────────────────────
 
   describe('downloadAdminTaskResult', () => {
-    it('fetches token then navigates to download URL', async () => {
-      mockFetch.mockReturnValueOnce(jsonResponse({ token: 'dl-token-abc' }))
+    it('mints the download cookie then navigates to the cookie-authed URL', async () => {
+      // POST now returns 204 — the credential is an HttpOnly cookie, not a body.
+      mockFetch.mockReturnValueOnce(jsonResponse(undefined, 204))
 
       // Replace window.location with a writable mock
       const origLocation = window.location
@@ -600,13 +601,15 @@ describe('Background Admin Task API', () => {
 
       await downloadAdminTaskResult(7)
 
-      // First call: POST to get download token
+      // First call: POST mints the HttpOnly download cookie
       const [url, init] = mockFetch.mock.calls[0]
       expect(url).toBe('/api/admin/tasks/7/download-token')
       expect(init.method).toBe('POST')
+      expect(init.credentials).toBe('include')
 
-      // Then navigates browser to the token-authenticated download URL
-      expect(mockLocation.href).toBe('/api/admin/tasks/7/download?token=dl-token-abc')
+      // Then navigates browser to the download URL — no token in the URL,
+      // so the credential never enters access logs or browser history
+      expect(mockLocation.href).toBe('/api/admin/tasks/7/download')
 
       // Restore
       Object.defineProperty(window, 'location', {

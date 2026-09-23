@@ -13,5 +13,7 @@ data:
   OIDC_ROLE_MAPPING: {{ .Values.auth.openidConnect.roleMapping | quote }}
   OIDC_POST_LOGIN_REDIRECT: {{ .Values.auth.openidConnect.postLoginRedirect | quote }}
   OIDC_TRUST_EMAIL: {{ .Values.auth.openidConnect.trustEmail | quote }}
-  CORS_ORIGINS: {{ .Values.auth.openidConnect.corsOrigins | quote }}
+  # CORS_ORIGINS is intentionally NOT rendered here: it is a dedicated pod
+  # env var in the Deployment (top-level `corsOrigins` value, falling back
+  # to auth.openidConnect.corsOrigins) so non-OIDC deployments can set it.
 {{- end }}

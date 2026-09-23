@@ -64,8 +64,9 @@ client ──GET /api/tiles/<id>/…?tile_token=…──▶ frontend nginx ─�
 ### Token
 
 - HMAC-SHA256 over `source_image_id` + expiry (compact `<id>.<exp>.<sig>`
-  or JWT with `purpose="tile"`, following the existing task-download token
-  precedent in `routers/admin.py`), signed with the backend's secret.
+  or JWT with `purpose="tile"`, the same purpose-claim convention as the
+  admin task-download credential in `routers/admin.py`), signed with the
+  backend's secret.
 - Scope: a single `source_image_id` — a leaked token exposes one image for
   minutes, not the corpus.
 - TTL: configurable, default ~15 minutes.
@@ -168,22 +169,25 @@ client ──GET /api/tiles/<id>/…?tile_token=…──▶ frontend nginx ─�
 
 ## Alternatives considered
 
-| Alternative                                                            | Why rejected                                                                                                                                                                                                                                                                            |
-| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Per-tile signed URLs** (sign every `<level>/<col>_<row>.jpeg` URL)   | The `.dzi` descriptor drives OSD's tile URL construction, so per-tile signing requires a custom OSD tile source and re-signing on every pan/zoom; enormous URL churn defeats browser caching. Image-scoped tokens give the same boundary at a fraction of the complexity.               |
-| **FastAPI + `X-Accel-Redirect`**                                       | Puts FastAPI back into the per-tile hot path (one app request per tile even though nginx serves the bytes), and couples the sidecar's lifecycle to API pod internals. Chosen design touches FastAPI ~once per image per auth-cache window.                                              |
-| **nginx `secure_link`** (validate HMAC in nginx itself, no subrequest) | The stock `secure_link` module is MD5-based with awkward expiry encoding; an HMAC variant needs OpenResty/njs, breaking the vanilla-nginx constraint. `auth_request` + cache achieves near-identical per-tile cost with the validation logic kept in one place (Python, unit-testable). |
-| **Session cookie scoped to `/api/tiles`**                              | Works transparently for `<img>`, but is per-user rather than per-image (violates least privilege), complicates dev (cross-origin Vite:5173 → backend:8000 cookies), and CSRF-adjacent review burden. Query-param tokens follow the existing task-download precedent.                    |
-| **Optional-auth on the static mount**                                  | Forbidden by the standing rule in [`docs/unauthenticated-routes.md`](unauthenticated-routes.md) (no optional-auth pattern), and `StaticFiles` cannot express per-image authorization anyway.                                                                                            |
+| Alternative                                                            | Why rejected                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Per-tile signed URLs** (sign every `<level>/<col>_<row>.jpeg` URL)   | The `.dzi` descriptor drives OSD's tile URL construction, so per-tile signing requires a custom OSD tile source and re-signing on every pan/zoom; enormous URL churn defeats browser caching. Image-scoped tokens give the same boundary at a fraction of the complexity.                                                                                                                                                                                     |
+| **FastAPI + `X-Accel-Redirect`**                                       | Puts FastAPI back into the per-tile hot path (one app request per tile even though nginx serves the bytes), and couples the sidecar's lifecycle to API pod internals. Chosen design touches FastAPI ~once per image per auth-cache window.                                                                                                                                                                                                                    |
+| **nginx `secure_link`** (validate HMAC in nginx itself, no subrequest) | The stock `secure_link` module is MD5-based with awkward expiry encoding; an HMAC variant needs OpenResty/njs, breaking the vanilla-nginx constraint. `auth_request` + cache achieves near-identical per-tile cost with the validation logic kept in one place (Python, unit-testable).                                                                                                                                                                       |
+| **Session cookie scoped to `/api/tiles`**                              | Works transparently for `<img>`, but is per-user rather than per-image (violates least privilege), complicates dev (cross-origin Vite:5173 → backend:8000 cookies), and CSRF-adjacent review burden. Note the task-download precedent moved to a cookie in #1302 — but that credential is task-bound, minted on demand, whereas tiles need per-image tokens embedded in serialized API responses, so the query-param design here stands on its own reasoning. |
+| **Optional-auth on the static mount**                                  | Forbidden by the standing rule in [`docs/unauthenticated-routes.md`](unauthenticated-routes.md) (no optional-auth pattern), and `StaticFiles` cannot express per-image authorization anyway.                                                                                                                                                                                                                                                                  |
 
 ## Consequences
 
 - The `/api/tiles` route moves from "unauthenticated mismatch" to
   **app-credential** in [`docs/unauthenticated-routes.md`](unauthenticated-routes.md).
-- Tokens appear in query strings and therefore may appear in access logs;
-  tile locations keep `access_log off` (already the case in the sidecar), and
-  the tokens are single-image, short-TTL — same accepted posture as the
-  task-download token (#1153 tracks hardening for both patterns).
+- Tokens appear in query strings and therefore may appear in access logs and
+  trace `http.url` attributes; tile locations keep `access_log off` (already
+  the case in the sidecar), and the tokens are single-image, short-TTL. The
+  admin task-download credential shed this exposure in #1302 by moving to a
+  path-scoped cookie — an option unavailable to per-image tile URLs embedded
+  in API responses — so the query-param exposure here remains a deliberate
+  residual (formerly tracked under #1153 for both patterns).
 - Tile URLs stop being shareable across users; any consumer that hotlinked
   tile paths (none known beyond the app itself and synthetic monitoring) must
   authenticate. Synthetic monitoring flows through the app and receives

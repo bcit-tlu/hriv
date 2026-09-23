@@ -1410,8 +1410,9 @@ describe('downloadAdminTaskResult', () => {
   })
   afterEach(() => setToken(null))
 
-  it('fetches download token then navigates to download URL', async () => {
-    mockFetch.mockReturnValueOnce(jsonResponse({ token: 'dl-token-abc' }))
+  it('mints the download cookie then navigates to the cookie-authed URL', async () => {
+    // POST returns 204 — the credential is an HttpOnly cookie, not a body.
+    mockFetch.mockReturnValueOnce(noContentResponse())
 
     const originalLocation = window.location
     let assignedHref = ''
@@ -1435,7 +1436,9 @@ describe('downloadAdminTaskResult', () => {
       const [url, init] = mockFetch.mock.calls[0]
       expect(url).toBe('/api/admin/tasks/42/download-token')
       expect(init.method).toBe('POST')
-      expect(assignedHref).toBe('/api/admin/tasks/42/download?token=dl-token-abc')
+      expect(init.credentials).toBe('include')
+      // No token in the URL — the credential never enters logs/history
+      expect(assignedHref).toBe('/api/admin/tasks/42/download')
     } finally {
       Object.defineProperty(window, 'location', {
         value: originalLocation,
