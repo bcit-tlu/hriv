@@ -442,14 +442,16 @@ sibling pod actively running a task keeps writing progress to `updated_at`, so a
 newly starting pod won't clobber it.
 
 Runners also keep `updated_at` fresh through individual checkpoints that
-cannot write progress themselves. A shared `_run_with_task_heartbeat` wrapper
-in `admin_ops.py` (with its `_poll_task_heartbeat` companion on a separate
-session) covers both the serial per-image tile rebuild and the filesystem
-import's archive SHA-256 pass — and observes cancellation while it polls, so
-a cancel request lands mid-checkpoint instead of at the next progress write.
-The remaining long spans (archive scanning/extraction, per-file restore) use
-dedicated cancellation pollers that call `_heartbeat_task` on the same
-cadence.
+cannot write progress themselves. A shared `_poll_task_heartbeat` poll in
+`admin_ops.py` heartbeats from a separate session while observing
+cancellation: the serial per-image tile rebuild runs it via
+`_run_with_task_heartbeat`, and the filesystem import's archive SHA-256
+pass runs it via `_run_with_cancel_poll` so a cancel request also signals
+the `threading.Event` the hash loop checks between chunk reads (the
+thread exits promptly instead of reading the rest of a large archive).
+The remaining long spans (archive scanning/extraction, per-file restore)
+use dedicated cancellation pollers that call `_heartbeat_task` on the
+same cadence.
 
 ## Tests to run after touching this area
 

@@ -100,11 +100,21 @@ FILES_IMPORT_CHECKSUM_MISMATCH_MESSAGE = (
 )
 
 
-def compute_archive_sha256(path: str | Path) -> str:
-    """Return the hex SHA-256 digest of *path*, read in chunks."""
+def compute_archive_sha256(
+    path: str | Path,
+    cancel_event: threading.Event | None = None,
+) -> str:
+    """Return the hex SHA-256 digest of *path*, read in chunks.
+
+    When *cancel_event* is provided it is checked between reads so a
+    cancelled caller can stop the pass early instead of reading the rest
+    of a multi-GB archive; :class:`TaskCancelled` is raised once set.
+    """
     digest = hashlib.sha256()
     with open(path, "rb") as fh:
         for chunk in iter(lambda: fh.read(_CHUNK_SIZE), b""):
+            if cancel_event is not None and cancel_event.is_set():
+                raise TaskCancelled("Task cancelled by admin")
             digest.update(chunk)
     return digest.hexdigest()
 
@@ -2859,10 +2869,23 @@ async def run_files_import(
             )
             # Hashing a very large archive can exceed
             # ADMIN_TASK_STALE_SECONDS on slow storage, so the pass runs
-            # under the shared heartbeat/cancellation wrapper.
-            checksum = await _run_with_task_heartbeat(
-                task_id,
-                asyncio.to_thread(compute_archive_sha256, input_path),
+            # under the shared heartbeat poll; cancellation sets the
+            # event the hash loop checks between chunk reads.
+            cancel_event = threading.Event()
+            checksum = await _run_with_cancel_poll(
+                asyncio.ensure_future(
+                    asyncio.to_thread(
+                        compute_archive_sha256,
+                        input_path,
+                        cancel_event=cancel_event,
+                    )
+                ),
+                asyncio.ensure_future(_poll_task_heartbeat(task_id)),
+                cancel_event=cancel_event,
+                grace_timeout_log=(
+                    "Archive checksum did not stop within the "
+                    "shutdown grace period"
+                ),
             )
             if task.input_checksum:
                 if checksum != task.input_checksum:

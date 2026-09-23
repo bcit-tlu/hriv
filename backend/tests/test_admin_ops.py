@@ -2457,6 +2457,16 @@ def test_compute_archive_sha256(tmp_path) -> None:
     assert compute_archive_sha256(archive) == hashlib.sha256(payload).hexdigest()
 
 
+def test_compute_archive_sha256_cancel_event_aborts(tmp_path) -> None:
+    """A set cancel event stops the hash pass instead of finishing the file."""
+    archive = tmp_path / "a.tar.gz"
+    archive.write_bytes(b"archive-bytes" * 1000)
+    cancel_event = threading.Event()
+    cancel_event.set()
+    with pytest.raises(TaskCancelled):
+        compute_archive_sha256(archive, cancel_event=cancel_event)
+
+
 def _files_import_task_env(tmp_path):
     """Build dirs, a valid archive, and a runnable files_import task env."""
     data_dir = tmp_path / "data"
@@ -2559,13 +2569,6 @@ async def test_run_files_import_heartbeats_checksum_pass(tmp_path) -> None:
     mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
     mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
-    heartbeat_calls: list[int] = []
-    real_wrapper = admin_ops._run_with_task_heartbeat
-
-    async def recording_wrapper(task_id, operation):
-        heartbeat_calls.append(task_id)
-        return await real_wrapper(task_id, operation)
-
     async def pending_poll(task_id: int) -> None:
         await asyncio.Event().wait()
 
@@ -2575,10 +2578,6 @@ async def test_run_files_import_heartbeats_checksum_pass(tmp_path) -> None:
         patch("app.admin_ops._IMPORT_STAGING_DIR", str(data_dir / ".import-staging")),
         patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=EnqueueResult("queued", "submitted")),
         patch("app.admin_ops._ensure_tasks_dir", return_value=str(tasks_dir)),
-        patch(
-            "app.admin_ops._run_with_task_heartbeat",
-            side_effect=recording_wrapper,
-        ),
         patch(
             "app.admin_ops._poll_task_heartbeat",
             new=AsyncMock(side_effect=pending_poll),
@@ -2590,7 +2589,6 @@ async def test_run_files_import_heartbeats_checksum_pass(tmp_path) -> None:
         await run_files_import(1)
 
     assert task.status == "completed"
-    assert heartbeat_calls == [1]
     poll.assert_called_once_with(1)
     assert task.input_checksum == compute_archive_sha256(archive)
 
