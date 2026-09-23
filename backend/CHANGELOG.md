@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.61.2](https://github.com/bcit-tlu/hriv/compare/backend-v0.61.1...backend-v0.61.2) (2026-09-23)
+
+
+### Documentation
+
+* split AGENTS.md into per-directory rules and modularize testing-hriv skill ([#1349](https://github.com/bcit-tlu/hriv/issues/1349)) ([c472292](https://github.com/bcit-tlu/hriv/commit/c4722924ccb04f03ffd6c2a602e7f74fb23c061e))
+
 ## [0.61.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.61.0...backend-v0.61.1) (2026-09-22)
 
 
