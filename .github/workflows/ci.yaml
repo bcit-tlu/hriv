@@ -77,6 +77,8 @@ jobs:
               - 'synthetic-monitoring/**'
               - '.github/workflows/ci.yaml'
             agent-docs:
+              - '.github/workflows/ci.yaml'
+              - '.gitignore'
               - 'AGENTS.md'
               - '*/AGENTS.md'
               - '.agents/**'
