@@ -39,6 +39,7 @@ jobs:
       restore-validation: ${{ steps.filter.outputs.restore-validation }}
       restore-validation-image: ${{ steps.filter.outputs.restore-validation-image }}
       synthetic: ${{ steps.filter.outputs.synthetic }}
+      agent-docs: ${{ steps.filter.outputs.agent-docs }}
     steps:
       - uses: actions/checkout@v6
 
@@ -75,8 +76,24 @@ jobs:
             synthetic:
               - 'synthetic-monitoring/**'
               - '.github/workflows/ci.yaml'
+            agent-docs:
+              - 'AGENTS.md'
+              - '*/AGENTS.md'
+              - '.agents/**'
+              - 'docs/**'
+              - 'scripts/check-agent-docs.sh'
+              - 'README.md'
+              - '*/README.md'
 
   # Quality gates
+
+  agent-docs:
+    needs: [changes]
+    if: needs.changes.outputs.agent-docs == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: bash scripts/check-agent-docs.sh
 
   backend-tests:
     needs: [changes]

@@ -26,7 +26,10 @@ while IFS= read -r line; do
   p=$(printf '%s' "$line" | sed -n 's/^- `\(\/[^`]*\)`.*$/\1/p')
   [ -n "$p" ] || continue
   p=${p%/}
-  [ -e ".${p}" ] || err "AGENTS.md Project Structure lists missing path: $p"
+  # Intentionally-local dirs (e.g. /.worktrees) are absent on clean checkouts;
+  # accept a missing path only when gitignore explains the absence.
+  [ -e ".${p}" ] || git check-ignore -q -- "${p#/}/" ||
+    err "AGENTS.md Project Structure lists missing path: $p"
 done < AGENTS.md
 
 # --- 2. Markdown links to repo files ----------------------------------------

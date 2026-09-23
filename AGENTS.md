@@ -50,7 +50,7 @@ per-directory `AGENTS.md` files that load when you work under them:
 ## Documentation & Skill Files
 
 - **Edits to existing docs must be additive.** When updating SKILL.md, README.md, or other documentation files, append or modify specific sections — never replace the entire file contents. Read the file first, then apply targeted edits.
-- **Verify line counts after doc edits.** If the original file was N lines and you added content, the result should be ≥ N lines. A dramatic reduction (e.g., 822 → 220 lines) indicates accidental replacement.
+- **Verify line counts after doc edits.** If the original file was N lines and you added content, the result should be ≥ N lines. A dramatic reduction (e.g., 822 → 220 lines) indicates accidental replacement — unless the edit is a deliberate split that moves content into linked reference files, in which case verify the removed sections exist at the link targets.
 - **Update documentation in the same PR as the feature.** Any PR that adds or changes user-facing behavior, roles/permissions, API endpoints, or env/config MUST update the relevant docs in that same PR (do not defer to a follow-up). Reviewers should treat missing doc updates as a blocking change-request. Check this list and update every file that applies:
   - `README.md` — **Role Capabilities** table and **Test Credentials** when roles, permissions, or seed accounts change.
   - `docs/TESTING.md` — the **API endpoint → minimum role** table and relevant test cases when endpoints, roles, or auth rules change.
