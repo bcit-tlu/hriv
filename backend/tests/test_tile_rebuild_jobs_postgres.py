@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.admin_ops import (
-    _run_rebuild_with_heartbeat,
+    _run_with_task_heartbeat,
     reconcile_stale_tasks,
 )
 from app.database import AppSession
@@ -199,11 +199,11 @@ async def test_serial_rebuild_heartbeat_prevents_stale_overlap(
         lambda: db_factory,
     )
     monkeypatch.setattr(
-        "app.admin_ops._REBUILD_HEARTBEAT_INTERVAL_SECONDS",
+        "app.admin_ops._TASK_HEARTBEAT_INTERVAL_SECONDS",
         0.01,
     )
     runner = asyncio.create_task(
-        _run_rebuild_with_heartbeat(task_id, long_image_rebuild())
+        _run_with_task_heartbeat(task_id, long_image_rebuild())
     )
     await work_started.wait()
     await asyncio.sleep(0.05)

@@ -563,7 +563,9 @@ def _swap_imported_entries(
 _STALE_TASK_THRESHOLD_SECONDS = int(
     os.environ.get("ADMIN_TASK_STALE_SECONDS", "900")
 )
-_REBUILD_HEARTBEAT_INTERVAL_SECONDS = 2
+_TASK_HEARTBEAT_INTERVAL_SECONDS = 2
+
+_T = TypeVar("_T")
 
 
 # ── Helpers ────────────────────────────────────────────────
@@ -724,11 +726,19 @@ async def _heartbeat_task(session: AsyncSession, task: AdminTask) -> None:
     await session.commit()
 
 
-async def _poll_rebuild_task(task_id: int) -> None:
-    """Heartbeat a serial rebuild and return when cancellation is requested."""
+async def _poll_task_heartbeat(task_id: int) -> None:
+    """Heartbeat an active task and return when cancellation is requested.
+
+    Used by ``_run_with_task_heartbeat`` for runners that hand a single
+    long checkpoint off to a thread (a per-image tile rebuild, an import
+    archive checksum): the poll keeps ``updated_at`` fresh on its own
+    session so the periodic reconciliation sweep does not mark the task
+    ``failed`` while real work is still in flight, and returns once the
+    task leaves the active statuses so the wrapper can abort.
+    """
     async with get_async_session()() as session:
         while True:
-            await asyncio.sleep(_REBUILD_HEARTBEAT_INTERVAL_SECONDS)
+            await asyncio.sleep(_TASK_HEARTBEAT_INTERVAL_SECONDS)
             result = await session.execute(
                 update(AdminTask)
                 .where(
@@ -744,13 +754,19 @@ async def _poll_rebuild_task(task_id: int) -> None:
                 return
 
 
-async def _run_rebuild_with_heartbeat(
+async def _run_with_task_heartbeat(
     task_id: int,
-    operation: Awaitable[None],
-) -> None:
-    """Run one serial image rebuild with independent status heartbeats."""
+    operation: Awaitable[_T],
+) -> _T:
+    """Run *operation* while heartbeating the task's ``updated_at``.
+
+    Returns the operation's result. When the task's status changes to a
+    cancellation state while *operation* is in flight, the operation is
+    cancelled (best effort: work already inside a thread may still run to
+    completion) and :class:`TaskCancelled` is raised.
+    """
     operation_task = asyncio.ensure_future(operation)
-    poll_task = asyncio.create_task(_poll_rebuild_task(task_id))
+    poll_task = asyncio.create_task(_poll_task_heartbeat(task_id))
     try:
         done, _pending = await asyncio.wait(
             [operation_task, poll_task],
@@ -758,21 +774,19 @@ async def _run_rebuild_with_heartbeat(
         )
         if operation_task in done:
             poll_task.cancel()
-            operation_task.result()
-            return
+            return operation_task.result()
 
-        if poll_task in done:
-            poll_error = (
-                poll_task.exception()
-                if not poll_task.cancelled()
-                else None
-            )
-            if not operation_task.done():
-                operation_task.cancel()
-            await asyncio.gather(operation_task, return_exceptions=True)
-            if poll_error is not None:
-                raise poll_error
-            raise TaskCancelled("Task cancelled by admin")
+        poll_error = (
+            poll_task.exception()
+            if not poll_task.cancelled()
+            else None
+        )
+        if not operation_task.done():
+            operation_task.cancel()
+        await asyncio.gather(operation_task, return_exceptions=True)
+        if poll_error is not None:
+            raise poll_error
+        raise TaskCancelled("Task cancelled by admin")
     finally:
         if not operation_task.done():
             operation_task.cancel()
@@ -1848,7 +1862,7 @@ async def run_rebuild_tiles(task_id: int) -> None:
                             ),
                         )
                     else:
-                        await _run_rebuild_with_heartbeat(
+                        await _run_with_task_heartbeat(
                             task_id,
                             processing.rebuild_source_image_tiles(session, src),
                         )
@@ -2349,8 +2363,6 @@ def _create_tar_file(
 
 _LOG_FLUSH_INTERVAL = 2  # seconds between verbose-log DB flushes
 
-_T = TypeVar("_T")
-
 
 async def _run_with_cancel_poll(
     worker_task: "asyncio.Task[_T]",
@@ -2845,8 +2857,12 @@ async def run_files_import(
                 log_line="Computing archive SHA-256 for integrity verification…",
                 check_cancelled=True,
             )
-            checksum = await asyncio.to_thread(
-                compute_archive_sha256, input_path
+            # Hashing a very large archive can exceed
+            # ADMIN_TASK_STALE_SECONDS on slow storage, so the pass runs
+            # under the shared heartbeat/cancellation wrapper.
+            checksum = await _run_with_task_heartbeat(
+                task_id,
+                asyncio.to_thread(compute_archive_sha256, input_path),
             )
             if task.input_checksum:
                 if checksum != task.input_checksum:
@@ -2941,6 +2957,7 @@ async def run_files_import(
                     if task.status in ("cancelling", "cancelled"):
                         cancel_event.set()
                         return
+                    await _heartbeat_task(session, task)
 
             with tempfile.TemporaryDirectory(
                 prefix="hriv-import-",

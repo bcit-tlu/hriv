@@ -30,6 +30,7 @@ from app.processing import (
     _detect_tiff_pyramid,
     _estimate_tile_count,
     _extract_tiff_resolution,
+    _flush_tracker_progress,
     _get_float_field,
     _processing_failure_message,
     _tile_source_id_from_url,
@@ -76,6 +77,70 @@ def test_progress_tracker_empty_message_preserves_previous() -> None:
     progress, message = tracker.get()
     assert progress == 50
     assert message == "Loading"
+
+
+async def test_flush_tracker_progress_writes_changed_progress() -> None:
+    """Changed tracker values are persisted to the SourceImage row."""
+    src = SimpleNamespace(
+        progress=0, status_message="", updated_at=None,
+    )
+    progress_db = AsyncMock()
+    progress_db.get = AsyncMock(return_value=src)
+    progress_db.commit = AsyncMock()
+    progress_db.__aenter__ = AsyncMock(return_value=progress_db)
+    progress_db.__aexit__ = AsyncMock(return_value=False)
+
+    tracker = ProgressTracker()
+    tracker.set(42, "Generating tiles")
+    stop_event = asyncio.Event()
+
+    with patch("app.processing.async_session", return_value=progress_db):
+        flusher = asyncio.create_task(
+            _flush_tracker_progress(
+                1, tracker, stop_event,
+                flush_failed_event="processing.progress_flush_failed",
+            )
+        )
+        await asyncio.sleep(1.7)  # allow one flush interval to run
+        stop_event.set()
+        await flusher
+
+    assert src.progress == 42
+    assert src.status_message == "Generating tiles"
+    progress_db.commit.assert_awaited()
+
+
+async def test_flush_tracker_progress_heartbeats_unchanged_progress() -> None:
+    """Flat progress still bumps updated_at so the row never goes stale."""
+    src = SimpleNamespace(
+        progress=10, status_message="Generating tiles", updated_at=None,
+    )
+    progress_db = AsyncMock()
+    progress_db.get = AsyncMock(return_value=src)
+    progress_db.commit = AsyncMock()
+    progress_db.__aenter__ = AsyncMock(return_value=progress_db)
+    progress_db.__aexit__ = AsyncMock(return_value=False)
+
+    # Tracker matches the flusher's initial last-seen values, so every
+    # poll takes the heartbeat-only path.
+    tracker = ProgressTracker()
+    stop_event = asyncio.Event()
+
+    with patch("app.processing.async_session", return_value=progress_db):
+        flusher = asyncio.create_task(
+            _flush_tracker_progress(
+                1, tracker, stop_event,
+                flush_failed_event="processing.progress_flush_failed",
+            )
+        )
+        await asyncio.sleep(1.7)  # allow one flush interval to run
+        stop_event.set()
+        await flusher
+
+    assert src.updated_at is not None
+    assert src.progress == 10
+    assert src.status_message == "Generating tiles"
+    progress_db.commit.assert_awaited()
 
 
 def test_progress_tracker_thread_safety() -> None:
