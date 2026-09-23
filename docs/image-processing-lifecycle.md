@@ -114,9 +114,14 @@ polls the source image and shows that message in the processing snackbar; for
 bulk imports the per-file entries of `BulkImportJob.errors` are listed instead.
 
 Progress values in the 10-78% range come from pyvips eval signal
-callbacks mapped via `ProgressTracker`. The async `_flush_progress()`
+callbacks mapped via `ProgressTracker`. The async `_flush_tracker_progress()`
 coroutine writes tracker state to the database every 1.5 seconds
-without blocking tile generation.
+without blocking tile generation. Polls whose tracker values are
+unchanged still touch `SourceImage.updated_at`, and the flusher stays
+alive through the provenance checksum pass, so a live `processing` row
+never ages past the stale-source-image cutoff during one flat-progress
+stretch (a huge single image, a pyvips build without progress signals,
+or a slow multi-GB source hash).
 
 ## Worker configuration
 
