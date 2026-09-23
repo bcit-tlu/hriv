@@ -103,7 +103,7 @@ async def test_flush_tracker_progress_writes_changed_progress() -> None:
         )
         await asyncio.sleep(1.7)  # allow one flush interval to run
         stop_event.set()
-        await flusher
+        assert (await flusher) is None
 
     assert src.progress == 42
     assert src.status_message == "Generating tiles"
@@ -135,7 +135,7 @@ async def test_flush_tracker_progress_heartbeats_unchanged_progress() -> None:
         )
         await asyncio.sleep(1.7)  # allow one flush interval to run
         stop_event.set()
-        await flusher
+        assert (await flusher) is None
 
     assert src.updated_at is not None
     assert src.progress == 10
