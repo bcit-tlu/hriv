@@ -96,10 +96,17 @@ rebuilds` section polls `GET /api/jobs/` every 2 s only while a rebuild job
   `../../../docs/jobs.md` and
   `../../../docs/backup-restore-runbook.md`.
 - Production-shaped rebuild rehearsals must treat worker HPA scale-down as a
-  worker-loss scenario. Keep the chart's 3600-second scale-down stabilization
-  while default child timeout is 1800 seconds; the 2026-09-18 `latest` rehearsal
-  observed shorter/default HPA behavior terminate active claims and add about 39
-  minutes from last heartbeat to resumed execution.
+  worker-loss scenario. The chart's 3600-second scale-down stabilization
+  window and the 3600-second child timeout / 3900-second lease (raised from
+  1800/2100 in #1333 after the repeat rehearsal exhausted the shorter
+  timeout) both passed the third #1189 rehearsal (2026-09-19) with zero
+  terminal failures and no involuntary worker loss across a ~2h9m
+  observation. `REBUILD_PARALLEL_ENABLED` is now the deployed default for
+  `latest` via the `flux-fleet` cluster overlay (chart default remains
+  `false`; `stable` passed a bounded validation 2026-09-22 and awaits a
+  weekend `scope=all` run before the overlay decision). Do not
+  shorten the HPA window or the timeout/lease pair below these measured
+  values without another worker-loss/timeout rehearsal.
 
 ## Validation
 
