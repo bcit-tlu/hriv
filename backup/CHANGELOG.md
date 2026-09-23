@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.3](https://github.com/bcit-tlu/hriv/compare/backup-v0.16.2...backup-v0.16.3) (2026-09-23)
+
+
+### Documentation
+
+* note backupChild pin bump in release flow ([#1336](https://github.com/bcit-tlu/hriv/issues/1336)) ([6410d97](https://github.com/bcit-tlu/hriv/commit/6410d97e2290f98cc563527709b309e253da9922))
+
 ## [0.16.2](https://github.com/bcit-tlu/hriv/compare/backup-v0.16.1...backup-v0.16.2) (2026-09-23)
 
 
