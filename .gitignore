@@ -74,6 +74,9 @@ output*.txt
 # Local git worktrees (convention: <repo>/.worktrees/<name>)
 .worktrees/
 
+# Devin CLI local overrides (per-machine permissions; never commit)
+.devin/*.local.json
+
 # Kubernetes
 charts/**/.tgz
 
