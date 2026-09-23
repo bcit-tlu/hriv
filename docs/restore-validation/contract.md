@@ -9,8 +9,8 @@ normative in [the recovery-set contract](../recovery-set-contract.md).
 
 The original sections retain the level-5 design and threat analysis for reference, but they are no
 longer the deployment contract. The current proportionate scope is the
-[weekly core recovery contract](#simplified-1253-operational-contract-supersedes-prior-level-5-sections)
-at the end of this document. That section explicitly supersedes requirements for #1252,
+[weekly core recovery contract](delivery.md#simplified-1253-operational-contract-supersedes-prior-level-5-sections)
+in the delivery contract. That section explicitly supersedes requirements for #1252,
 application/viewer infrastructure, custom exporters, autonomous reapers, and multiple retained
 runs. The #1250 read-only primitives and #1251 core recovery safety guarantees remain applicable.
 
