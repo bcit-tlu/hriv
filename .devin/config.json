@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Exec(git)",
+      "Exec(gh)",
+      "Exec(ls)",
+      "Exec(cat)",
+      "Exec(find)",
+      "Exec(grep)",
+      "Exec(command)",
+      "Exec(npm ci)",
+      "Exec(npm test)",
+      "Exec(npm run dev)",
+      "Exec(npm run build)",
+      "Exec(npm run format)",
+      "Exec(npm run lint)",
+      "Exec(npm run licenses)",
+      "Exec(poetry install)",
+      "Exec(poetry env)",
+      "Exec(poetry run pytest)",
+      "Exec(poetry run alembic)",
+      "Exec(poetry run uvicorn)",
+      "Exec(poetry run python -m app.migrations_bootstrap)",
+      "Exec(poetry run python -m unittest)",
+      "Exec(poetry run python -m compileall)",
+      "Exec(poetry run python scripts/)",
+      "Exec(helm lint)",
+      "Exec(helm template)",
+      "Exec(kubeconform)",
+      "Exec(kustomize build)",
+      "Exec(nix-shell)",
+      "Exec(bash scripts/test-helm-chart-regressions.sh)",
+      "Exec(bash scripts/check-agent-docs.sh)"
+    ]
+  }
+}
