@@ -246,9 +246,10 @@ backend-created subdirectories. The lock contract therefore is:
   the write goes through the normal state merge and advances the current
   `database` / `filesystem` outcomes (which the metrics read) rather than the
   history-only path used for overlap / fixture-blocked rejections. If the run
-  had already recorded its own outcomes (a failure after publication, such as
-  local retention cleanup), those stay authoritative and the exception is only
-  appended to the attempt history. Thus
+  had already recorded state of its own, components it finished (a published
+  success before local retention cleanup raised, say) stay authoritative while
+  any it started but never completed — or never started — are finalized as
+  failed rather than left in progress. Thus
   `HRIVDatabaseBackupFailed` / `HRIVFilesystemBackupFailed` fire on the next
   scrape instead of only `HRIVDatabaseBackupOverdue` ~26h
   later.

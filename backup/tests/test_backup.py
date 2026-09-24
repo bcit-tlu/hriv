@@ -1279,10 +1279,43 @@ class BackupRunTestCase(_BackupTestCase):
         self.assertEqual(state["run_id"], "this-run")
         self.assertTrue(state["database"]["success"])
         self.assertTrue(state["filesystem"]["success"])
-        self.assertIn(
-            "unexpected_error",
-            {attempt["failure_reason"] for attempt in state["attempts"]},
+        self.assertEqual(state["failure_reason"], "unexpected_error")
+
+    def test_exception_mid_run_finalizes_unfinished_components_as_failed(self):
+        """A crash after the run recorded an in-progress attempt must not
+        leave that component with ``success=None`` forever."""
+        local_dir = self.tmp / "mid-crash-backups"
+        local_dir.mkdir()
+        self._reload(
+            {"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)}
         )
+
+        def start_db_then_crash():
+            state = backup._new_backup_state("", "this-run")
+            backup._mark_attempt_started(
+                state, "database", started_at=datetime.now(timezone.utc)
+            )
+            backup._write_backup_state(state)
+            raise RuntimeError("pg_dump exploded")
+
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=local_dir),
+            patch.object(backup, "_reconcile_publications"),
+            patch.object(
+                backup, "_run_backup_inner", side_effect=start_db_then_crash
+            ),
+            self.assertLogs("hriv-backup", level="ERROR"),
+        ):
+            with self.assertRaises(RuntimeError):
+                backup.run_backup()
+
+        state = json.loads((local_dir / "BACKUP_STATE.json").read_text())
+        self.assertEqual(state["run_id"], "this-run")
+        for component in ("database", "filesystem"):
+            self.assertEqual(state[component]["run_id"], "this-run")
+            self.assertFalse(state[component]["success"])
+            self.assertIsNotNone(state[component]["completed_at"])
+        self.assertEqual(state["failure_reason"], "unexpected_error")
 
     def test_backup_is_blocked_while_rebuild_fixture_is_active(self):
         fixture_dir = self.data_dir / "rebuild-fixture"
