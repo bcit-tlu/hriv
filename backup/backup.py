@@ -47,7 +47,7 @@ import uuid
 from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import NoReturn, Protocol
+from typing import NoReturn, Protocol, TextIO
 from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -2804,11 +2804,43 @@ def _rebuild_fixture_present() -> bool:
     ).is_dir()
 
 
+class ArchiveLockUnavailable(RuntimeError):
+    """The shared fixture archive lock file could not be opened."""
+
+
+def _open_rebuild_fixture_archive_lock(lock_path: Path) -> TextIO:
+    """Open the shared lock file, tolerating a read-only source directory.
+
+    The backend owns ``source_images`` and runs as a different uid, so this
+    process may be unable to create files there. ``flock`` only needs an
+    open descriptor, so an existing lock file is opened read-only when the
+    read-write path is denied. A lock file that is missing *and* cannot be
+    created is a hard failure: proceeding without the lock would silently
+    drop mutual exclusion with fixture mutation.
+    """
+    try:
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+    except PermissionError:
+        pass
+    try:
+        return lock_path.open("a+")
+    except PermissionError as exc:
+        if not lock_path.exists():
+            raise ArchiveLockUnavailable(
+                f"Cannot create fixture archive lock {lock_path}: {exc.strerror}"
+            ) from exc
+        try:
+            return lock_path.open("r")
+        except PermissionError as read_exc:
+            raise ArchiveLockUnavailable(
+                f"Cannot open fixture archive lock {lock_path}: {read_exc.strerror}"
+            ) from read_exc
+
+
 @contextlib.contextmanager
 def _rebuild_fixture_archive_lock() -> Iterator[None]:
     lock_path = _source_images_root() / _REBUILD_FIXTURE_ARCHIVE_LOCK_FILENAME
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with lock_path.open("a+") as handle:
+    with _open_rebuild_fixture_archive_lock(lock_path) as handle:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         try:
             yield
@@ -2851,23 +2883,58 @@ def run_backup() -> Path | None:
                 extra={"event": "backup.overlap_rejected", "run_id": state["run_id"]},
             )
             return None
-        with _rebuild_fixture_archive_lock():
-            if _rebuild_fixture_present():
-                state, persisted = _persist_rejected_attempt(
-                    "rebuild_fixture_active"
-                )
-                if not persisted:
-                    log.warning("Could not persist fixture-blocked backup attempt")
-                log.error(
-                    "Backup blocked while the tile-rebuild scale fixture is active",
-                    extra={
-                        "event": "backup.rebuild_fixture_blocked",
-                        "run_id": state["run_id"],
-                    },
-                )
-                return None
-            _reconcile_publications(lock_held=True)
-            return _run_backup_inner()
+        try:
+            with _rebuild_fixture_archive_lock():
+                return _run_backup_excluding_fixture()
+        except ArchiveLockUnavailable as exc:
+            _fail_closed("archive_lock_unavailable", exc)
+            raise
+        except Exception as exc:
+            _fail_closed("unexpected_error", exc)
+            raise
+
+
+def _fail_closed(failure_reason: str, exc: BaseException) -> None:
+    """Persist a failed attempt for an exception that escaped a backup run.
+
+    ``_run_backup_inner`` records the outcomes it anticipates; anything that
+    escapes it, or fails before it starts (lock acquisition, publication
+    reconciliation), would otherwise leave no failure state behind and only
+    surface through the much later overdue alert.
+    """
+    try:
+        state, persisted = _persist_rejected_attempt(failure_reason)
+    except Exception:
+        log.exception("Could not persist failed backup attempt after %s", exc)
+        return
+    if not persisted:
+        log.warning("Could not persist failed backup attempt")
+    log.error(
+        "Backup failed: %s",
+        exc,
+        extra={
+            "event": "backup.failed_closed",
+            "run_id": state["run_id"],
+            "failure_reason": failure_reason,
+        },
+    )
+
+
+def _run_backup_excluding_fixture() -> Path | None:
+    if _rebuild_fixture_present():
+        state, persisted = _persist_rejected_attempt("rebuild_fixture_active")
+        if not persisted:
+            log.warning("Could not persist fixture-blocked backup attempt")
+        log.error(
+            "Backup blocked while the tile-rebuild scale fixture is active",
+            extra={
+                "event": "backup.rebuild_fixture_blocked",
+                "run_id": state["run_id"],
+            },
+        )
+        return None
+    _reconcile_publications(lock_held=True)
+    return _run_backup_inner()
 
 
 def _archive_is_selectable(blob) -> bool:

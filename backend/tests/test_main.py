@@ -80,6 +80,42 @@ async def test_lifespan_skips_reconciliation_sweep_in_required_mode(monkeypatch)
     sweep.assert_not_awaited()
 
 
+async def test_lifespan_precreates_archive_lock_file(monkeypatch) -> None:
+    """The backup service locks the same file from a non-root uid, so the
+    backend must leave a world-writable lock behind at startup."""
+    from app import main
+    from app.database import settings
+    from app.rebuild_fixture import FIXTURE_ARCHIVE_LOCK_FILENAME
+
+    monkeypatch.setattr(settings, "task_execution_mode", "required")
+    monkeypatch.setattr(main, "setup_logging", MagicMock())
+    monkeypatch.setattr(main, "_check_oidc_connectivity", AsyncMock())
+    monkeypatch.setattr(main, "get_pool", AsyncMock(return_value=MagicMock()))
+
+    async with main.lifespan(main.app):
+        pass
+
+    lock_path = os.path.join(settings.source_images_dir, FIXTURE_ARCHIVE_LOCK_FILENAME)
+    assert os.path.isfile(lock_path)
+    assert os.stat(lock_path).st_mode & 0o777 == 0o666
+
+
+async def test_lifespan_survives_archive_lock_precreate_failure(monkeypatch) -> None:
+    from app import main
+    from app.database import settings
+
+    monkeypatch.setattr(settings, "task_execution_mode", "required")
+    monkeypatch.setattr(main, "setup_logging", MagicMock())
+    monkeypatch.setattr(main, "_check_oidc_connectivity", AsyncMock())
+    monkeypatch.setattr(main, "get_pool", AsyncMock(return_value=MagicMock()))
+    monkeypatch.setattr(
+        main, "ensure_archive_lock_file", MagicMock(side_effect=PermissionError)
+    )
+
+    async with main.lifespan(main.app):
+        pass
+
+
 async def test_queue_health_returns_minimal_status(monkeypatch) -> None:
     from app.main import queue_health_endpoint
     from app.database import settings

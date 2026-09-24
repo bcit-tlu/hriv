@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import io
 import importlib
+import fcntl
 import json
 import logging
 import os
@@ -1113,6 +1114,91 @@ class BackupRunTestCase(_BackupTestCase):
             {"BACKUP_MODE": "development", "DATA_DIR": str(self.data_dir)}
         )
         self.assertEqual(backup._source_images_root(), self.data_dir)
+
+    def test_fixture_lock_opens_read_only_when_source_dir_is_unwritable(self):
+        """The backend owns ``source_images``; when this process cannot
+        create files there it must still lock an existing lock file."""
+        source_dir = self.data_dir / "source_images"
+        lock_path = source_dir / backup._REBUILD_FIXTURE_ARCHIVE_LOCK_FILENAME
+        lock_path.touch()
+        real_open = Path.open
+
+        def deny_write(path, mode="r", *args, **kwargs):
+            if path == lock_path and mode != "r":
+                raise PermissionError(13, "Permission denied")
+            return real_open(path, mode, *args, **kwargs)
+
+        self._reload(
+            {"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)}
+        )
+        with patch.object(Path, "open", deny_write):
+            with backup._rebuild_fixture_archive_lock():
+                with real_open(lock_path, "a+") as other:
+                    with self.assertRaises(BlockingIOError):
+                        fcntl.flock(other.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def test_fixture_lock_missing_and_uncreatable_fails_closed(self):
+        source_dir = self.data_dir / "source_images"
+        lock_path = source_dir / backup._REBUILD_FIXTURE_ARCHIVE_LOCK_FILENAME
+        local_dir = self.tmp / "unwritable-backups"
+        local_dir.mkdir()
+        real_open = Path.open
+
+        def deny_create(path, mode="r", *args, **kwargs):
+            if path == lock_path:
+                raise PermissionError(13, "Permission denied")
+            return real_open(path, mode, *args, **kwargs)
+
+        self._reload(
+            {"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)}
+        )
+        with (
+            patch.object(Path, "open", deny_create),
+            patch.object(backup, "_local_backup_dir", return_value=local_dir),
+            patch.object(backup, "_run_backup_inner") as run_inner,
+            self.assertLogs("hriv-backup", level="ERROR") as captured_logs,
+        ):
+            with self.assertRaises(backup.ArchiveLockUnavailable):
+                backup.run_backup()
+
+        run_inner.assert_not_called()
+        state = json.loads((local_dir / "BACKUP_STATE.json").read_text())
+        attempts = [
+            attempt
+            for attempt in state["attempts"]
+            if attempt["failure_reason"] == "archive_lock_unavailable"
+        ]
+        self.assertEqual(len(attempts), 2)
+        self.assertTrue(all(attempt["success"] is False for attempt in attempts))
+        self.assertTrue(
+            any("Backup failed:" in line for line in captured_logs.output)
+        )
+
+    def test_unexpected_setup_exception_persists_failed_attempt(self):
+        local_dir = self.tmp / "crash-backups"
+        local_dir.mkdir()
+        self._reload(
+            {"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)}
+        )
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=local_dir),
+            patch.object(
+                backup,
+                "_reconcile_publications",
+                side_effect=RuntimeError("boom"),
+            ),
+            patch.object(backup, "_run_backup_inner") as run_inner,
+            self.assertLogs("hriv-backup", level="ERROR"),
+        ):
+            with self.assertRaises(RuntimeError):
+                backup.run_backup()
+
+        run_inner.assert_not_called()
+        state = json.loads((local_dir / "BACKUP_STATE.json").read_text())
+        self.assertEqual(
+            {attempt["failure_reason"] for attempt in state["attempts"]},
+            {"unexpected_error"},
+        )
 
     def test_backup_is_blocked_while_rebuild_fixture_is_active(self):
         fixture_dir = self.data_dir / "rebuild-fixture"

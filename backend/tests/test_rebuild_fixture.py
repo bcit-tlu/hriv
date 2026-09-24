@@ -122,6 +122,39 @@ async def test_archive_lock_serializes_fixture_mutations(tmp_path: Path) -> None
         await rebuild_fixture.release_rebuild_fixture_archive_lock(second)
 
 
+def test_ensure_archive_lock_file_is_world_writable(tmp_path: Path) -> None:
+    source_dir = tmp_path / "source_images"
+    lock_path = rebuild_fixture.ensure_archive_lock_file(source_dir)
+
+    assert lock_path == source_dir / rebuild_fixture.FIXTURE_ARCHIVE_LOCK_FILENAME
+    assert lock_path.is_file()
+    assert lock_path.stat().st_mode & 0o777 == 0o666
+
+    # Existing file with a restrictive mode is widened, not truncated.
+    lock_path.write_text("x")
+    lock_path.chmod(0o644)
+    rebuild_fixture.ensure_archive_lock_file(source_dir)
+    assert lock_path.stat().st_mode & 0o777 == 0o666
+    assert lock_path.read_text() == "x"
+
+
+def test_ensure_archive_lock_file_tolerates_chmod_denied(tmp_path: Path) -> None:
+    source_dir = tmp_path / "source_images"
+    with patch.object(rebuild_fixture.os, "chmod", side_effect=PermissionError):
+        lock_path = rebuild_fixture.ensure_archive_lock_file(source_dir)
+    assert lock_path.is_file()
+
+
+async def test_archive_lock_helpers_create_permissive_lock(tmp_path: Path) -> None:
+    source_dir = tmp_path / "source_images"
+    handle = await rebuild_fixture.acquire_rebuild_fixture_archive_lock(source_dir)
+    try:
+        lock_path = source_dir / rebuild_fixture.FIXTURE_ARCHIVE_LOCK_FILENAME
+        assert lock_path.stat().st_mode & 0o777 == 0o666
+    finally:
+        await rebuild_fixture.release_rebuild_fixture_archive_lock(handle)
+
+
 def test_write_and_purge_fixture_files(tmp_path: Path) -> None:
     spec = build_fixture_spec(4)
     fixture_dir = tmp_path / "rebuild-fixture"

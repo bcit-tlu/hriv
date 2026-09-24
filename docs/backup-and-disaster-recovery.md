@@ -218,6 +218,80 @@ restorable, and conditional Azure creation prevents replacement on a genuine
 key collision. Restore accepts a full name, a name without `.tar.gz`, or an
 unambiguous prefix.
 
+### Shared source-volume archive lock
+
+Backup inventory, tile-rebuild fixture mutation
+(`backend/app/rebuild_fixture.py`), and admin filesystem export serialize on
+one exclusive `flock` at `<source_images>/.rebuild-fixture-archive.lock`. The
+file lives inside `source_images` because the backend creates that directory
+on demand; locking anywhere else would let a first-time fixture seed and a
+backup lock different files.
+
+The two sides run as different users on the shared PVC. The backend (and its
+worker) own `source_images` (`0755`), while the backup pod runs as UID `10001`
+and `fsGroupChangePolicy: OnRootMismatch` only adjusts the volume root, not
+backend-created subdirectories. The lock contract therefore is:
+
+- The backend pre-creates the lock file at startup and whenever it takes the
+  lock, with mode `0666` (`ensure_archive_lock_file`). Chmod is best-effort so
+  a non-owner never fails on it.
+- The backup service opens the file read-write when it can, and falls back to a
+  read-only open when `source_images` denies creation — `flock` needs only an
+  open descriptor. A lock file that is missing *and* cannot be created raises
+  `ArchiveLockUnavailable`; the run never proceeds unlocked.
+- Any exception that escapes `run_backup()` before or around
+  `_run_backup_inner` is persisted as a failed attempt for both components
+  (`failure_reason=archive_lock_unavailable` or `unexpected_error`) before it
+  is re-raised, so `HRIVDatabaseBackupFailed` / `HRIVFilesystemBackupFailed`
+  fire on the next scrape instead of only `HRIVDatabaseBackupOverdue` ~26h
+  later.
+
+On a fresh volume where the backend has never started, the lock cannot be
+created by the backup pod and the run fails closed with
+`archive_lock_unavailable`; starting the backend once resolves it. Existing
+volumes whose lock predates this contract keep working: the backend widens the
+mode on its next start.
+
+### Scheduler placement: in-process cron vs `batch/v1` CronJob
+
+The scheduled run currently executes inside the long-lived Deployment
+(`backup.py cron`), while operators trigger on-demand runs as Jobs from the
+suspended `<fullname>-on-demand` CronJob. Incident #1324 (every scheduled run
+crashing at lock acquisition for ~26h with no failure state) prompted an
+evaluation of moving the schedule to a real CronJob reusing that Job template.
+
+What a CronJob would add:
+
+- Job-level failure status (`kubectl get jobs`, `kube_job_status_failed`) that
+  is visible even when the process dies before writing any state document —
+  this alone would have surfaced #1324 within minutes.
+- A fresh process per run: no scheduler-loop state, no slow leaks across days
+  of uptime, and image rollouts take effect at the next run without a
+  Deployment restart.
+- `concurrencyPolicy: Forbid` as a second overlap guard alongside the run
+  `flock`.
+
+What the Deployment still provides and a CronJob cannot replace on its own:
+
+- RWO PVC pinning: the `/backups` claim is ReadWriteOnce, so the Deployment is
+  the node-affinity anchor that every Job (scheduled or on-demand) must
+  colocate with. Removing the Deployment would require a different anchor or an
+  RWX backup volume.
+- The `kubectl exec` operator surface (`list`, `status`, `restore`,
+  `restore-filesystem`, `validation-*`) and startup publication/state
+  reconciliation.
+
+Decision: keep the Deployment, and do **not** move the schedule in this change.
+The fail-closed state persistence above closes the observability gap that made
+the incident invisible, at far lower operational risk than re-plumbing the
+scheduler. A CronJob-based schedule remains a reasonable follow-up once the
+`/backups` anchor question is settled; the recommended shape is a second,
+non-suspended CronJob rendered from the same `hriv-backup.podSpec` and
+`hriv-backup.onDemandAffinity` helpers, with the Deployment's `cron` arg
+replaced by an idle `serve`-style entrypoint that only reconciles state and
+hosts the exec surface. Alert on `kube_job_status_failed` for that CronJob in
+addition to the state-document alerts.
+
 ### Archive staging and ephemeral storage
 
 Azure production archives stream through uncommitted block-blob blocks and are
