@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.61.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.60.0...frontend-v0.61.0) (2026-09-24)
+
+
+### Features
+
+* **frontend:** scope search type filters to their primary metadata field ([#1367](https://github.com/bcit-tlu/hriv/issues/1367)) ([d139752](https://github.com/bcit-tlu/hriv/commit/d13975297437468362f7d0bc584f0bdea511fe57))
+
 ## [0.60.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.59.0...frontend-v0.60.0) (2026-09-22)
 
 
