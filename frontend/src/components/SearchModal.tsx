@@ -110,33 +110,44 @@ const TYPE_FILTERS: FilterDef<TypeFilter>[] = [
     key: 'category',
     label: 'Categories',
     icon: <CategoryIcon fontSize="small" />,
-    tooltip: 'Show only categories',
+    tooltip: 'Search only category names',
   },
   {
     key: 'image',
     label: 'Images',
     icon: <ImageIcon fontSize="small" />,
-    tooltip: 'Show only images',
+    tooltip: 'Search only image titles',
   },
   {
     key: 'program',
     label: 'Programs',
     icon: <SchoolIcon fontSize="small" />,
-    tooltip: 'Show only programs',
+    tooltip: 'Search only program names',
   },
   {
     key: 'user',
     label: 'People',
     icon: <PersonIcon fontSize="small" />,
-    tooltip: 'Show only people',
+    tooltip: 'Search only people names',
   },
   {
     key: 'guide',
     label: 'Guide',
     icon: <MenuBookIcon fontSize="small" />,
-    tooltip: 'Show only guide pages',
+    tooltip: 'Search only guide titles',
   },
 ]
+
+/** Field searched when a type chip is active and no Field chips are selected —
+ *  each type searches only the field most closely associated with it
+ *  (e.g. Images searches image titles, Categories searches category names). */
+const PRIMARY_FIELD_BY_KIND: Record<ResultKind, string> = {
+  category: 'Name',
+  image: 'Name',
+  program: 'Name',
+  user: 'Name',
+  guide: 'Title',
+}
 
 const FIELD_FILTERS: FilterDef<FieldFilter>[] = [
   {
@@ -605,6 +616,11 @@ export default function SearchModal({
     let filtered = allResults
     if (typeFilters.size > 0) {
       filtered = filtered.filter((r) => typeFilters.has(r.kind))
+      // A type chip also scopes the query to the field most closely
+      // associated with that type; explicit Field chips override that scope.
+      if (fieldFilters.size === 0) {
+        filtered = filtered.filter((r) => r.field === PRIMARY_FIELD_BY_KIND[r.kind])
+      }
     }
     if (fieldFilters.size > 0) {
       filtered = filtered.filter((r) => fieldFilters.has(r.field as FieldFilter))

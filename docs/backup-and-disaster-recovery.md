@@ -237,7 +237,7 @@ backend-created subdirectories. The lock contract therefore is:
   a non-owner never fails on it.
 - The backup service opens the file read-write when it can, and falls back to a
   read-only open when `source_images` denies creation — `flock` needs only an
-  open descriptor. A lock file that is missing *and* cannot be created raises
+  open descriptor. A lock file that is missing _and_ cannot be created raises
   `ArchiveLockUnavailable`; the run never proceeds unlocked.
 - Any exception that escapes `run_backup()` before or around
   `_run_backup_inner` is persisted as a failed attempt for both components
