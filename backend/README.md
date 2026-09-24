@@ -240,12 +240,14 @@ backend generates an ephemeral random secret on startup so tokens are
 invalidated whenever the container restarts — convenient for dev, but not
 safe for production.
 
-### Production (single-host, multi-worker)
+### Production (multi-worker or multi-replica)
 
-The production Dockerfile runs `uvicorn --workers 2`, so `JWT_SECRET` is
-already required there. Supply it via `.env`, a Compose `environment:` entry,
-or your orchestrator's secret store, and set `REQUIRE_JWT_SECRET=true` to
-fail fast on misconfiguration:
+The production Dockerfile runs `uvicorn --workers 1` (single-process mode for
+OTel-safe startup — see `backend/Dockerfile`), so a single replica does not
+strictly need a shared secret; any deployment with more than one Uvicorn
+worker or more than one replica still does. Supply it via `.env`, a Compose
+`environment:` entry, or your orchestrator's secret store, and set
+`REQUIRE_JWT_SECRET=true` to fail fast on misconfiguration:
 
 ```sh
 export JWT_SECRET="$(openssl rand -base64 48)"

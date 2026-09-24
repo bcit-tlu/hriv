@@ -214,8 +214,11 @@ top-level `api.*` values and `resources`, mirroring the worker profile:
 ### Database connection budget
 
 Each pod can hold at most `poolSize + maxOverflow` PostgreSQL connections.
-Budget the totals against the shared pg-core CNPG cluster, which runs the
-default `max_connections=100` across all app databases:
+That per-pod ceiling assumes the stable image's single-process uvicorn
+(`--workers 1`, see `backend/Dockerfile`) — a multi-worker image would run
+one SQLAlchemy pool per worker process and multiply the ceiling. Budget the
+totals against the shared pg-core CNPG cluster, which runs the default
+`max_connections=100` across all app databases:
 
 | Component | `poolSize` | `maxOverflow` | Per-pod ceiling | Pod ceiling                   | Worst-case connections        |
 | --------- | ---------- | ------------- | --------------- | ----------------------------- | ----------------------------- |

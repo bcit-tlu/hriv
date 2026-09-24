@@ -50,6 +50,34 @@ def test_export_pigz_threads_accepts_zero_and_positive_values() -> None:
     assert four.export_pigz_threads == 4
 
 
+def test_db_pool_size_rejects_zero_and_negative_values() -> None:
+    with pytest.raises(ValidationError):
+        Settings(db_pool_size=0)
+    with pytest.raises(ValidationError):
+        Settings(db_pool_size=-1)
+
+
+def test_db_pool_size_accepts_positive_values() -> None:
+    one = Settings(db_pool_size=1)
+    ten = Settings(db_pool_size=10)
+
+    assert one.db_pool_size == 1
+    assert ten.db_pool_size == 10
+
+
+def test_db_max_overflow_rejects_negative_values() -> None:
+    with pytest.raises(ValidationError):
+        Settings(db_max_overflow=-1)
+
+
+def test_db_max_overflow_accepts_zero_and_positive_values() -> None:
+    zero = Settings(db_max_overflow=0)
+    twenty = Settings(db_max_overflow=20)
+
+    assert zero.db_max_overflow == 0
+    assert twenty.db_max_overflow == 20
+
+
 def test_parallel_rebuild_scheduler_is_disabled_by_default() -> None:
     settings = Settings()
 
