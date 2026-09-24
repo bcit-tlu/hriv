@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.62.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.61.4...backend-v0.62.0) (2026-09-24)
+
+
+### Features
+
+* **backend-chart:** add explicit API database pool and resource profile ([#1364](https://github.com/bcit-tlu/hriv/issues/1364)) ([eb1487d](https://github.com/bcit-tlu/hriv/commit/eb1487dfbb75d7ed4f0c519c51bffda6d23efc97))
+
 ## [0.61.4](https://github.com/bcit-tlu/hriv/compare/backend-v0.61.3...backend-v0.61.4) (2026-09-24)
 
 
