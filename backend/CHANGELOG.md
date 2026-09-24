@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.61.4](https://github.com/bcit-tlu/hriv/compare/backend-v0.61.3...backend-v0.61.4) (2026-09-24)
+
+
+### Bug Fixes
+
+* **backup:** make archive lock uid-agnostic and fail closed on setup errors ([#1359](https://github.com/bcit-tlu/hriv/issues/1359)) ([0c44c32](https://github.com/bcit-tlu/hriv/commit/0c44c32dce1cd0b04ae2360b19f05615373a1b0d))
+
 ## [0.61.3](https://github.com/bcit-tlu/hriv/compare/backend-v0.61.2...backend-v0.61.3) (2026-09-23)
 
 
