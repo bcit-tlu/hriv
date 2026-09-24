@@ -2900,27 +2900,43 @@ def run_backup() -> Path | None:
                 extra={"event": "backup.overlap_rejected", "run_id": state["run_id"]},
             )
             return None
+        accepted_at = datetime.now(timezone.utc)
         try:
             with _rebuild_fixture_archive_lock():
                 return _run_backup_excluding_fixture()
         except ArchiveLockUnavailable as exc:
-            _fail_closed("archive_lock_unavailable", exc)
+            _fail_closed("archive_lock_unavailable", exc, accepted_at)
             raise
         except Exception as exc:
-            _fail_closed("unexpected_error", exc)
+            _fail_closed("unexpected_error", exc, accepted_at)
             raise
 
 
-def _fail_closed(failure_reason: str, exc: BaseException) -> None:
+def _run_already_recorded(accepted_at: datetime) -> bool:
+    """True when the current state already carries an attempt from this run."""
+    existing = _read_backup_state()
+    if not isinstance(existing, dict):
+        return False
+    return _state_sort_key(existing)[0] >= accepted_at
+
+
+def _fail_closed(
+    failure_reason: str, exc: BaseException, accepted_at: datetime
+) -> None:
     """Persist a failed attempt for an exception that escaped a backup run.
 
     ``_run_backup_inner`` records the outcomes it anticipates; anything that
-    escapes it, or fails before it starts (lock acquisition, publication
-    reconciliation), would otherwise leave no failure state behind and only
-    surface through the much later overdue alert.
+    fails before it starts (lock acquisition, publication reconciliation)
+    would otherwise leave no failure state behind and only surface through
+    the much later overdue alert. If the run already wrote its own outcomes
+    (e.g. post-publication retention cleanup raised), those stay authoritative
+    and the exception is only appended to the attempt history.
     """
     try:
-        state, persisted = _persist_failed_run(failure_reason)
+        if _run_already_recorded(accepted_at):
+            state, persisted = _persist_rejected_attempt(failure_reason)
+        else:
+            state, persisted = _persist_failed_run(failure_reason)
     except Exception:
         log.exception("Could not persist failed backup attempt after %s", exc)
         return

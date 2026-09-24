@@ -1239,6 +1239,51 @@ class BackupRunTestCase(_BackupTestCase):
         self.assertFalse(state["filesystem"]["success"])
         self.assertEqual(state["failure_reason"], "unexpected_error")
 
+    def test_exception_after_run_recorded_outcomes_keeps_them(self):
+        """A failure after publication (e.g. retention cleanup) must not
+        turn an already-recorded success into a failed run."""
+        local_dir = self.tmp / "late-crash-backups"
+        local_dir.mkdir()
+        self._reload(
+            {"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)}
+        )
+
+        def publish_then_crash():
+            now = datetime.now(timezone.utc)
+            state = backup._new_backup_state("", "this-run")
+            for component in ("database", "filesystem"):
+                backup._mark_attempt_started(state, component, started_at=now)
+                backup._mark_attempt_finished(
+                    state,
+                    component,
+                    started_at=now,
+                    completed_at=now,
+                    success=True,
+                    size_bytes=1,
+                )
+            backup._write_backup_state(state)
+            raise PermissionError("retention cleanup denied")
+
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=local_dir),
+            patch.object(backup, "_reconcile_publications"),
+            patch.object(
+                backup, "_run_backup_inner", side_effect=publish_then_crash
+            ),
+            self.assertLogs("hriv-backup", level="ERROR"),
+        ):
+            with self.assertRaises(PermissionError):
+                backup.run_backup()
+
+        state = json.loads((local_dir / "BACKUP_STATE.json").read_text())
+        self.assertEqual(state["run_id"], "this-run")
+        self.assertTrue(state["database"]["success"])
+        self.assertTrue(state["filesystem"]["success"])
+        self.assertIn(
+            "unexpected_error",
+            {attempt["failure_reason"] for attempt in state["attempts"]},
+        )
+
     def test_backup_is_blocked_while_rebuild_fixture_is_active(self):
         fixture_dir = self.data_dir / "rebuild-fixture"
         fixture_dir.mkdir()
