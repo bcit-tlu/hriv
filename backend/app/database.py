@@ -27,8 +27,8 @@ class Settings(BaseSettings):
     azure_read_sas_url: str = ""
     azure_backup_prefix: str = ""
     cors_origins: str = "*"
-    db_pool_size: int = 10
-    db_max_overflow: int = 20
+    db_pool_size: int = Field(default=10, ge=1)
+    db_max_overflow: int = Field(default=20, ge=0)
 
     # Redis URL for task queue (Phase 5 — arq worker) and rate limiting
     redis_url: str = "redis://redis:6379"

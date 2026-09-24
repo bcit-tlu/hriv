@@ -208,6 +208,32 @@ tasks:
     retryBackoffBaseSeconds: 60
     retryBackoffCapSeconds: 900
 
+# ── API pod profile ─────────────────────────────────────────
+# Per-component settings rendered as env vars on the API (backend)
+# Deployment, mirroring the worker-only profile under
+# ``redis.worker.*`` so each pod class carries an explicit,
+# reviewable connection budget instead of silently inheriting the
+# backend code defaults.
+api:
+  # SQLAlchemy pool sizing for the API process (DB_POOL_SIZE /
+  # DB_MAX_OVERFLOW).  The defaults match the backend code defaults in
+  # ``backend/app/database.py``, so installing this chart version with no
+  # overlay change is a runtime no-op — the values only become visible
+  # and tunable per component.  See the connection-budget table in
+  # ``charts/backend/README.md`` before raising them: the shared pg-core
+  # cluster runs max_connections=100 across all app databases.
+  db:
+    poolSize: 10
+    maxOverflow: 20
+  # libvips thread-pool size per operation (VIPS_CONCURRENCY).  In
+  # deployed environments tasks.executionMode=required means image
+  # processing never runs in-process on the API pod, so this only matters
+  # for ``local``-mode installs where the in-process fallback can run
+  # libvips work.  Rendered anyway so the API pod carries an explicit
+  # profile like the worker's, and so local-mode fallback concurrency
+  # stays bounded by something other than the host's detected CPU count.
+  vipsConcurrency: 1
+
 # ── Redis / arq background worker ────────────────────────────
 # When enabled, the chart injects REDIS_URL into the backend pod and
 # optionally deploys a dedicated arq worker Deployment that processes
@@ -454,7 +480,25 @@ persistence:
     accessModes:
       - ReadWriteOnce
 
-resources: {}
+# ── API pod resources ───────────────────────────────────────
+# Previously ``{}``, which meant the API pod silently inherited the
+# namespace LimitRange (requests ~25m CPU / 96Mi memory, a 1Gi memory
+# limit, and no CPU limit).  These explicit defaults keep the deployed
+# outcome identical on memory/ephemeral limits and raise the requests to
+# honest API sizing so the scheduler sees the pod's real footprint; the
+# only behavioural change for existing deployments is the new CPU limit
+# of 2.  Set ``resources: null`` in an overlay to restore
+# LimitRange-inherited sizing — note ``resources: {}`` is a no-op merge
+# over these defaults, not an override.
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+    ephemeral-storage: 128Mi
+  limits:
+    cpu: '2'
+    memory: 1Gi
+    ephemeral-storage: 1Gi
 
 # ── Pod health probes ───────────────────────────────────────
 # Defaults are intentionally conservative so transient DB or node I/O

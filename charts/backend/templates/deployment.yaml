@@ -273,6 +273,18 @@ spec:
             # concurrency used by local-mode bulk imports.
             - name: WORKER_MAX_JOBS
               value: {{ .Values.redis.worker.maxJobs | quote }}
+            # API-side libvips and database pool profile, mirroring the
+            # worker-only redis.worker.* profile so each pod class
+            # carries an explicit connection budget.  VIPS_CONCURRENCY
+            # only matters on the API when local-mode in-process fallback
+            # runs image processing; tasks.executionMode=required never
+            # executes it here.
+            - name: VIPS_CONCURRENCY
+              value: {{ .Values.api.vipsConcurrency | quote }}
+            - name: DB_POOL_SIZE
+              value: {{ .Values.api.db.poolSize | quote }}
+            - name: DB_MAX_OVERFLOW
+              value: {{ .Values.api.db.maxOverflow | quote }}
             # Rendered unconditionally (not via the OIDC-gated ConfigMap)
             # so non-OIDC deployments can also pin explicit CORS origins.
             # Empty is only legal in tasks.executionMode=local (dev); the
