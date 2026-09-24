@@ -187,6 +187,51 @@ Heartbeat and child timeout values must remain shorter than the lease, and the
 pump cadence must be a whole-minute interval. Retry eligibility is stored in
 PostgreSQL and the retry base must not exceed the cap.
 
+## API configuration
+
+The API (backend) Deployment carries its own component profile via the
+top-level `api.*` values and `resources`, mirroring the worker profile:
+
+- `api.db.poolSize` / `api.db.maxOverflow` (defaults `10`/`20`) — rendered as
+  `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` on the API pod. The defaults match the
+  backend code defaults in `backend/app/database.py`, so adopting this chart
+  version with no overlay change is a runtime no-op; the values only become
+  visible and tunable per component.
+- `api.vipsConcurrency` (default `1`) — rendered as `VIPS_CONCURRENCY` on the
+  API pod. With `tasks.executionMode=required` (the deployed overlays) no
+  image processing ever runs in-process on the API, so the value is inert but
+  explicit; it only matters for `local`-mode installs where the in-process
+  fallback can run libvips work.
+- `resources` — the chart now ships an explicit default
+  (`requests: 250m/512Mi/128Mi`, `limits: cpu "2", memory 1Gi, eph 1Gi`)
+  instead of `{}`. Previously the API pod silently inherited the namespace
+  LimitRange; the 1Gi memory limit matches that ceiling, so the deployed
+  outcome is unchanged except for the new CPU limit of 2 and the raised,
+  honest requests. Set `resources: null` in an overlay to restore
+  LimitRange-inherited sizing (`resources: {}` is a merge no-op over the
+  chart defaults, not an override).
+
+### Database connection budget
+
+Each pod can hold at most `poolSize + maxOverflow` PostgreSQL connections.
+That per-pod ceiling assumes the stable image's single-process uvicorn
+(`--workers 1`, see `backend/Dockerfile`) — a multi-worker image would run
+one SQLAlchemy pool per worker process and multiply the ceiling. Budget the
+totals against the shared pg-core CNPG cluster, which runs the default
+`max_connections=100` across all app databases:
+
+| Component | `poolSize` | `maxOverflow` | Per-pod ceiling | Pod ceiling                   | Worst-case connections        |
+| --------- | ---------- | ------------- | --------------- | ----------------------------- | ----------------------------- |
+| API       | 10         | 20            | 30              | `replicaCount` + 1 surge      | ~60–120 at `replicaCount` 2–3 |
+| Worker    | 5          | 5             | 10              | HPA `maxReplicas` 6 + 2 surge | up to ~80                     |
+
+Combined, the theoretical ceiling is roughly 125–170 concurrent connections —
+above pg-core's shared `max_connections=100` — so treat the chart defaults as
+an upper bound to tune _down_ from, not a target. The measured peak during
+the 3,349-item rebuild rehearsal at 6 workers was only ~31 connections. The
+`flux-fleet` overlays pin tighter values than the chart defaults (e.g.
+`api.db.poolSize: 5` / `api.db.maxOverflow: 10`).
+
 ## Worker configuration
 
 Beyond resources, the worker Deployment exposes:

@@ -219,6 +219,14 @@ instructor activity.
 - ingress throughput
 - telemetry overhead
 
+For the `database connections` measurement, compare the observed count
+against the per-component connection-budget table in
+[`charts/backend/README.md`](../charts/backend/README.md#database-connection-budget).
+The theoretical pod-count ceiling can exceed pg-core's shared
+`max_connections=100`, while measured rehearsal peaks were far lower (~31) —
+a gap between observation and the budget table usually means a pod class is
+scaling further than its sized envelope.
+
 ### Load-validation report template
 
 Record the following before issue closure:

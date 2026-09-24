@@ -643,6 +643,67 @@ backend_worker_no_probe="$(extract_yaml_doc "$backend_worker_no_probe_manifest" 
 assert_not_contains "$backend_worker_no_probe" 'livenessProbe:' \
   "worker deployment should omit the liveness probe when redis.worker.probes.liveness.enabled=false"
 
+# ── API component profile (#1072) ───────────────────────────
+# The API Deployment carries its own DB pool / libvips / resource profile
+# via api.* values, independent of the worker-only redis.worker.* profile.
+backend_api_profile_manifest="$(helm template test charts/backend)"
+backend_api_profile_deployment="$(extract_top_level_yaml_doc \
+  "$backend_api_profile_manifest" "Deployment" "test-hriv-backend")"
+backend_api_pool_size="$(grep -F -A1 'name: DB_POOL_SIZE' <<<"$backend_api_profile_deployment")"
+assert_contains "$backend_api_pool_size" 'value: "10"' \
+  "backend deployment should render the api.db.poolSize default matching the backend code default"
+backend_api_max_overflow="$(grep -F -A1 'name: DB_MAX_OVERFLOW' <<<"$backend_api_profile_deployment")"
+assert_contains "$backend_api_max_overflow" 'value: "20"' \
+  "backend deployment should render the api.db.maxOverflow default matching the backend code default"
+backend_api_vips="$(grep -F -A1 'name: VIPS_CONCURRENCY' <<<"$backend_api_profile_deployment")"
+assert_contains "$backend_api_vips" 'value: "1"' \
+  "backend deployment should render the api.vipsConcurrency default for local-mode in-process fallback"
+assert_contains "$backend_api_profile_deployment" "resources:" \
+  "backend deployment should render an explicit resources block by default"
+assert_contains "$backend_api_profile_deployment" "memory: 1Gi" \
+  "backend deployment should render the 1Gi memory limit matching the prior namespace LimitRange ceiling"
+
+# api.* overrides must only affect the API Deployment, never the worker.
+backend_api_tuned_manifest="$(helm template test charts/backend \
+  --set redis.enabled=true \
+  --set redis.worker.enabled=true \
+  --set api.db.poolSize=3)"
+backend_api_tuned_api="$(extract_top_level_yaml_doc "$backend_api_tuned_manifest" "Deployment" "test-hriv-backend")"
+backend_api_tuned_worker="$(extract_top_level_yaml_doc "$backend_api_tuned_manifest" "Deployment" "test-hriv-backend-worker")"
+assert_contains "$(grep -F -A1 'name: DB_POOL_SIZE' <<<"$backend_api_tuned_api")" 'value: "3"' \
+  "api.db.poolSize should tune the backend deployment DB_POOL_SIZE"
+assert_contains "$(grep -F -A1 'name: DB_POOL_SIZE' <<<"$backend_api_tuned_worker")" 'value: "5"' \
+  "api.db.poolSize must not change the worker deployment DB_POOL_SIZE"
+
+# redis.worker.db.* overrides must only affect the worker Deployment.
+backend_worker_tuned_manifest="$(helm template test charts/backend \
+  --set redis.enabled=true \
+  --set redis.worker.enabled=true \
+  --set redis.worker.db.poolSize=7)"
+backend_worker_tuned_api="$(extract_top_level_yaml_doc "$backend_worker_tuned_manifest" "Deployment" "test-hriv-backend")"
+backend_worker_tuned_worker="$(extract_top_level_yaml_doc "$backend_worker_tuned_manifest" "Deployment" "test-hriv-backend-worker")"
+assert_contains "$(grep -F -A1 'name: DB_POOL_SIZE' <<<"$backend_worker_tuned_worker")" 'value: "7"' \
+  "redis.worker.db.poolSize should tune the worker deployment DB_POOL_SIZE"
+assert_contains "$(grep -F -A1 'name: DB_POOL_SIZE' <<<"$backend_worker_tuned_api")" 'value: "10"' \
+  "redis.worker.db.poolSize must not change the backend deployment DB_POOL_SIZE"
+
+# Explicitly nulling resources must still render cleanly — the
+# `with .Values.resources` guard preserves the pre-#1072 opt-out path
+# for overlays that prefer LimitRange-inherited sizing.
+backend_api_null_resources_deployment="$(extract_top_level_yaml_doc \
+  "$(helm template test charts/backend --set-json 'resources=null')" \
+  "Deployment" "test-hriv-backend")"
+assert_not_contains "$backend_api_null_resources_deployment" "resources:" \
+  "backend deployment should omit the resources block when resources=null"
+
+# An explicit empty map is a merge no-op over the chart defaults (not an
+# override), so it must still render cleanly with the default profile.
+backend_api_empty_resources_deployment="$(extract_top_level_yaml_doc \
+  "$(helm template test charts/backend --set-json 'resources={}')" \
+  "Deployment" "test-hriv-backend")"
+assert_contains "$backend_api_empty_resources_deployment" "memory: 1Gi" \
+  "backend deployment should keep the default resources when resources={} merges over the defaults"
+
 if backend_required_no_redis_output="$(helm template test charts/backend \
   --set tasks.executionMode=required 2>&1)"; then
   fail "expected tasks.executionMode=required without redis.enabled to be rejected"
