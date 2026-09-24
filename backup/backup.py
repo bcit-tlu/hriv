@@ -2821,7 +2821,10 @@ def _open_rebuild_fixture_archive_lock(lock_path: Path) -> TextIO:
     try:
         lock_path.parent.mkdir(parents=True, exist_ok=True)
     except PermissionError:
-        pass
+        log.debug(
+            "Cannot create %s (backend-owned); opening an existing lock instead",
+            lock_path.parent,
+        )
     try:
         return lock_path.open("a+")
     except PermissionError as exc:

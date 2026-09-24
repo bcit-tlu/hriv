@@ -237,7 +237,9 @@ def ensure_archive_lock_file(source_images_dir: str | Path | None = None) -> Pat
         if (lock_path.stat().st_mode & 0o777) != FIXTURE_ARCHIVE_LOCK_MODE:
             os.chmod(lock_path, FIXTURE_ARCHIVE_LOCK_MODE)
     except PermissionError:
-        pass
+        # Only the file owner may chmod; a non-owner that could still open
+        # the file has everything it needs, so the mode fix is skipped.
+        return lock_path
     return lock_path
 
 
