@@ -242,8 +242,12 @@ backend-created subdirectories. The lock contract therefore is:
 - Any exception that escapes `run_backup()` before or around
   `_run_backup_inner` is persisted as a failed attempt for both components
   (`failure_reason=archive_lock_unavailable` or `unexpected_error`) before it
-  is re-raised, so `HRIVDatabaseBackupFailed` / `HRIVFilesystemBackupFailed`
-  fire on the next scrape instead of only `HRIVDatabaseBackupOverdue` ~26h
+  is re-raised. Because the run held the run lock it is an accepted run, so
+  the write goes through the normal state merge and advances the current
+  `database` / `filesystem` outcomes (which the metrics read) rather than the
+  history-only path used for overlap / fixture-blocked rejections. Thus
+  `HRIVDatabaseBackupFailed` / `HRIVFilesystemBackupFailed` fire on the next
+  scrape instead of only `HRIVDatabaseBackupOverdue` ~26h
   later.
 
 On a fresh volume where the backend has never started, the lock cannot be

@@ -169,8 +169,8 @@ async def lifespan(app: FastAPI):
     # volume; only the backend (the directory owner) can guarantee the file
     # exists with a mode that uid can open.
     try:
-        ensure_archive_lock_file()
-    except OSError:
+        await asyncio.wait_for(asyncio.to_thread(ensure_archive_lock_file), timeout=5.0)
+    except (OSError, asyncio.TimeoutError):
         logger.warning(
             "Could not pre-create the rebuild fixture archive lock",
             exc_info=True,

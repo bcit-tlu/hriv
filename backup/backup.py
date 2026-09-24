@@ -2848,7 +2848,7 @@ def _rebuild_fixture_archive_lock() -> Iterator[None]:
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
-def _persist_rejected_attempt(failure_reason: str) -> tuple[dict, bool]:
+def _failed_attempt_state(failure_reason: str) -> dict:
     now = datetime.now(timezone.utc)
     state = _new_backup_state(failure_reason, _new_run_id())
     _seed_last_success_history(state, _read_backup_state())
@@ -2863,7 +2863,24 @@ def _persist_rejected_attempt(failure_reason: str) -> tuple[dict, bool]:
             size_bytes=None,
         )
     state["failure_reason"] = failure_reason
+    return state
+
+
+def _persist_rejected_attempt(failure_reason: str) -> tuple[dict, bool]:
+    """Record a run that never became the active one (history only)."""
+    state = _failed_attempt_state(failure_reason)
     return state, _write_rejected_attempt(state)
+
+
+def _persist_failed_run(failure_reason: str) -> tuple[dict, bool]:
+    """Record an accepted run that failed before ``_run_backup_inner`` could.
+
+    Written through the normal state merge so the current ``database`` and
+    ``filesystem`` outcomes advance to failed (and the failure gauges flip),
+    while ``last_success_*`` and any newer concurrent publication are kept.
+    """
+    state = _failed_attempt_state(failure_reason)
+    return state, _write_backup_state(state)
 
 
 def run_backup() -> Path | None:
@@ -2903,7 +2920,7 @@ def _fail_closed(failure_reason: str, exc: BaseException) -> None:
     surface through the much later overdue alert.
     """
     try:
-        state, persisted = _persist_rejected_attempt(failure_reason)
+        state, persisted = _persist_failed_run(failure_reason)
     except Exception:
         log.exception("Could not persist failed backup attempt after %s", exc)
         return

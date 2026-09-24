@@ -1152,6 +1152,31 @@ class BackupRunTestCase(_BackupTestCase):
         self._reload(
             {"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)}
         )
+        # Yesterday's run succeeded; the failure gauges read these sections.
+        (local_dir / "BACKUP_STATE.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": backup.BACKUP_STATE_SCHEMA_VERSION,
+                    "run_id": "prev",
+                    "database": {
+                        "run_id": "prev",
+                        "started_at": "2026-07-12T08:00:00+00:00",
+                        "completed_at": "2026-07-12T08:00:42+00:00",
+                        "success": True,
+                        "last_success_completed_at": "2026-07-12T08:00:42+00:00",
+                        "last_success_archive_key": "old-db",
+                    },
+                    "filesystem": {
+                        "run_id": "prev",
+                        "started_at": "2026-07-12T08:01:00+00:00",
+                        "completed_at": "2026-07-12T08:09:00+00:00",
+                        "success": True,
+                        "last_success_completed_at": "2026-07-12T08:09:00+00:00",
+                        "last_success_archive_key": "old-fs",
+                    },
+                }
+            )
+        )
         with (
             patch.object(Path, "open", deny_create),
             patch.object(backup, "_local_backup_dir", return_value=local_dir),
@@ -1170,6 +1195,17 @@ class BackupRunTestCase(_BackupTestCase):
         ]
         self.assertEqual(len(attempts), 2)
         self.assertTrue(all(attempt["success"] is False for attempt in attempts))
+        # Current component outcomes flip so HRIV*BackupFailed fires, while
+        # last-success fields survive for the overdue alert.
+        for component in ("database", "filesystem"):
+            self.assertFalse(state[component]["success"])
+            self.assertNotEqual(state[component]["run_id"], "prev")
+        self.assertEqual(state["failure_reason"], "archive_lock_unavailable")
+        self.assertEqual(state["database"]["last_success_archive_key"], "old-db")
+        self.assertEqual(
+            state["filesystem"]["last_success_completed_at"],
+            "2026-07-12T08:09:00+00:00",
+        )
         self.assertTrue(
             any("Backup failed:" in line for line in captured_logs.output)
         )
@@ -1199,6 +1235,9 @@ class BackupRunTestCase(_BackupTestCase):
             {attempt["failure_reason"] for attempt in state["attempts"]},
             {"unexpected_error"},
         )
+        self.assertFalse(state["database"]["success"])
+        self.assertFalse(state["filesystem"]["success"])
+        self.assertEqual(state["failure_reason"], "unexpected_error")
 
     def test_backup_is_blocked_while_rebuild_fixture_is_active(self):
         fixture_dir = self.data_dir / "rebuild-fixture"
