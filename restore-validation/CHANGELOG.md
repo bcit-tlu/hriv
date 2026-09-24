@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.13](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.12...restore-validation-v0.1.13) (2026-09-24)
+
+
+### Documentation
+
+* note backupChild pin bump in release flow ([#1336](https://github.com/bcit-tlu/hriv/issues/1336)) ([6410d97](https://github.com/bcit-tlu/hriv/commit/6410d97e2290f98cc563527709b309e253da9922))
+
 ## [0.1.12](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.11...restore-validation-v0.1.12) (2026-09-23)
 
 
