@@ -941,4 +941,90 @@ describe('SearchModal', () => {
       .filter((el) => el.closest('[data-testid="search-result-action-area"]'))
     expect(guideResults.length).toBeGreaterThan(0)
   })
+
+  it('limits image searches to image titles when the Images type chip is active', async () => {
+    const user = userEvent.setup()
+    render(<SearchModal {...defaultProps} open={true} />)
+
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
+    )
+    // "Histology" matches the parent category name — an image metadata field —
+    // but never an image title, so the Images chip should drop those results.
+    await user.type(input, 'Histology')
+    await user.click(
+      screen.getAllByTestId('type-filter-chip').find((chip) => chip.textContent === 'Images')!,
+    )
+
+    expect(screen.getByText(/No results found/)).toBeInTheDocument()
+  })
+
+  it('limits category searches to category names when the Categories type chip is active', async () => {
+    const user = userEvent.setup()
+    render(<SearchModal {...defaultProps} open={true} />)
+
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
+    )
+    // "Medical Lab" only matches the category's program association, not its name.
+    await user.type(input, 'Medical Lab')
+    await user.click(
+      screen.getAllByTestId('type-filter-chip').find((chip) => chip.textContent === 'Categories')!,
+    )
+
+    expect(screen.getByText(/No results found/)).toBeInTheDocument()
+  })
+
+  it('limits people searches to names when the People type chip is active', async () => {
+    const user = userEvent.setup()
+    render(<SearchModal {...defaultProps} open={true} />)
+
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
+    )
+    // The email matches a user field, but not the user's name.
+    await user.type(input, 'jane@bcit.ca')
+    await user.click(
+      screen.getAllByTestId('type-filter-chip').find((chip) => chip.textContent === 'People')!,
+    )
+
+    expect(screen.getByText(/No results found/)).toBeInTheDocument()
+  })
+
+  it('limits guide searches to guide titles when the Guide type chip is active', async () => {
+    const user = userEvent.setup()
+    render(<SearchModal {...defaultProps} open={true} />)
+
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
+    )
+    // "top bar searches" appears only in guide body content, never in a title.
+    await user.type(input, '"top bar searches"')
+    await user.click(
+      screen.getAllByTestId('type-filter-chip').find((chip) => chip.textContent === 'Guide')!,
+    )
+
+    expect(screen.getByText(/No results found/)).toBeInTheDocument()
+  })
+
+  it('lets an explicit Field chip override the type chip field scope', async () => {
+    const user = userEvent.setup()
+    render(<SearchModal {...defaultProps} open={true} />)
+
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
+    )
+    await user.type(input, 'liver')
+    await user.click(
+      screen.getAllByTestId('type-filter-chip').find((chip) => chip.textContent === 'Images')!,
+    )
+    await user.click(screen.getByText('Note'))
+
+    const cards = screen
+      .getAllByTestId('search-result-action-area')
+      .filter((el) => el.textContent?.includes('Liver Section'))
+    expect(cards).toHaveLength(1)
+    expect(cards[0].textContent).toContain('Note:')
+    expect(cards[0].textContent).not.toContain('Name:')
+  })
 })

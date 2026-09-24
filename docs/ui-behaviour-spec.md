@@ -160,6 +160,13 @@ images> / Empty` format used on category tiles.
   create search hits.
 - Field filters expose dedicated chips for `Annotation`, `Link`, and
   `Link URL`, so users can keep only annotation-derived image matches visible.
+- Type filter chips scope the searched fields, not just the result types: with
+  a type chip active (and no Field chips selected), the query matches only the
+  field most closely associated with that type — `Categories` searches category
+  names, `Images` searches image titles, `Programs` searches program names,
+  `People` searches people names, and `Guide` searches guide titles. Selecting
+  any Field chip overrides that default scope, so `Images` + `Note` still
+  finds images whose notes match.
 - Search result field labels render in a stronger secondary style so the field
   name reads as metadata rather than body text.
 - Staff searches also match the user guide: each guide page is split into
