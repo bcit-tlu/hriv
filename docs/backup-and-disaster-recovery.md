@@ -249,7 +249,9 @@ backend-created subdirectories. The lock contract therefore is:
   had already recorded state of its own, components it finished (a published
   success before local retention cleanup raised, say) stay authoritative while
   any it started but never completed — or never started — are finalized as
-  failed rather than left in progress. Thus
+  failed rather than left in progress. If every component already had an
+  outcome, the exception is appended to the attempt history only, so a
+  published run's record never gains a spurious failure reason. Thus
   `HRIVDatabaseBackupFailed` / `HRIVFilesystemBackupFailed` fire on the next
   scrape instead of only `HRIVDatabaseBackupOverdue` ~26h
   later.

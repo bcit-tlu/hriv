@@ -1279,7 +1279,87 @@ class BackupRunTestCase(_BackupTestCase):
         self.assertEqual(state["run_id"], "this-run")
         self.assertTrue(state["database"]["success"])
         self.assertTrue(state["filesystem"]["success"])
-        self.assertEqual(state["failure_reason"], "unexpected_error")
+        self.assertFalse(state.get("failure_reason"))
+        by_run = {
+            attempt["run_id"]: attempt.get("failure_reason")
+            for attempt in state["attempts"]
+        }
+        self.assertFalse(by_run.pop("this-run"))
+        self.assertEqual(set(by_run.values()), {"unexpected_error"})
+
+    def test_finalize_run_state_only_touches_unfinished_components(self):
+        self._reload({"BACKUP_MODE": "production"})
+        accepted_at = datetime.now(timezone.utc) - timedelta(seconds=5)
+        started = accepted_at + timedelta(seconds=1)
+        state = backup._new_backup_state("", "this-run")
+        backup._mark_attempt_started(state, "database", started_at=started)
+        backup._mark_attempt_finished(
+            state,
+            "database",
+            started_at=started,
+            completed_at=started + timedelta(seconds=1),
+            success=True,
+            size_bytes=3,
+            archive_key="db.dump",
+        )
+        backup._mark_attempt_started(state, "filesystem", started_at=started)
+
+        self.assertTrue(backup._run_wrote_state(state, accepted_at))
+        finalized = backup._finalize_run_state(state, "unexpected_error", accepted_at)
+
+        self.assertIsNotNone(finalized)
+        self.assertTrue(finalized["database"]["success"])
+        self.assertEqual(finalized["database"]["archive_key"], "db.dump")
+        self.assertFalse(finalized["filesystem"]["success"])
+        self.assertEqual(finalized["filesystem"]["run_id"], "this-run")
+        self.assertIsNotNone(finalized["filesystem"]["completed_at"])
+        self.assertEqual(finalized["failure_reason"], "unexpected_error")
+        self.assertIsNone(state["filesystem"]["success"], "input not mutated")
+
+    def test_finalize_run_state_fails_never_started_component(self):
+        self._reload({"BACKUP_MODE": "production"})
+        accepted_at = datetime.now(timezone.utc) - timedelta(seconds=5)
+        state = backup._new_backup_state("", "this-run")
+        backup._mark_attempt_started(
+            state, "database", started_at=accepted_at + timedelta(seconds=1)
+        )
+
+        finalized = backup._finalize_run_state(state, "unexpected_error", accepted_at)
+
+        for component in ("database", "filesystem"):
+            self.assertFalse(finalized[component]["success"])
+            self.assertEqual(finalized[component]["run_id"], "this-run")
+
+    def test_finalize_run_state_returns_none_when_all_components_finished(self):
+        self._reload({"BACKUP_MODE": "production"})
+        accepted_at = datetime.now(timezone.utc) - timedelta(seconds=5)
+        started = accepted_at + timedelta(seconds=1)
+        state = backup._new_backup_state("", "this-run")
+        for component in ("database", "filesystem"):
+            backup._mark_attempt_started(state, component, started_at=started)
+            backup._mark_attempt_finished(
+                state,
+                component,
+                started_at=started,
+                completed_at=started,
+                success=True,
+                size_bytes=1,
+            )
+
+        self.assertIsNone(
+            backup._finalize_run_state(state, "unexpected_error", accepted_at)
+        )
+
+    def test_run_wrote_state_rejects_older_or_foreign_state(self):
+        self._reload({"BACKUP_MODE": "production"})
+        accepted_at = datetime.now(timezone.utc)
+        older = backup._new_backup_state("", "previous-run")
+        backup._mark_attempt_started(
+            older, "database", started_at=accepted_at - timedelta(minutes=1)
+        )
+        self.assertFalse(backup._run_wrote_state(older, accepted_at))
+        self.assertFalse(backup._run_wrote_state(None, accepted_at))
+        self.assertFalse(backup._run_wrote_state({"schema_version": 1}, accepted_at))
 
     def test_exception_mid_run_finalizes_unfinished_components_as_failed(self):
         """A crash after the run recorded an in-progress attempt must not

@@ -2912,25 +2912,30 @@ def run_backup() -> Path | None:
             raise
 
 
-def _finalize_run_state(
-    existing: object, failure_reason: str, accepted_at: datetime
-) -> dict | None:
-    """Return the current run's state with every unfinished component failed.
+def _run_wrote_state(existing: object, accepted_at: datetime) -> bool:
+    """True when the persisted state's newest attempt belongs to this run."""
+    return (
+        isinstance(existing, dict)
+        and existing.get("schema_version") == BACKUP_STATE_SCHEMA_VERSION
+        and _state_sort_key(existing)[1] >= accepted_at
+    )
 
-    ``None`` when the persisted state carries no attempt from this run (it
-    failed before ``_run_backup_inner`` wrote anything). Components this run
-    already finished — a published success, say — keep their outcome; the
-    ones it started but never completed, or never started, become failed so
-    the current outcomes (and the failure gauges) reflect the crash.
+
+def _finalize_run_state(
+    existing: dict, failure_reason: str, accepted_at: datetime
+) -> dict | None:
+    """Return this run's state with every unfinished component marked failed.
+
+    Components the run already finished — a published success, say — keep
+    their outcome; the ones it started but never completed, or never started,
+    become failed so the current outcomes (and the failure gauges) reflect
+    the crash. ``None`` when every component already has an outcome, in
+    which case there is nothing to finalize and the run's record must stay
+    untouched.
     """
-    if (
-        not isinstance(existing, dict)
-        or existing.get("schema_version") != BACKUP_STATE_SCHEMA_VERSION
-        or _state_sort_key(existing)[1] < accepted_at
-    ):
-        return None
     state = copy.deepcopy(existing)
     now = datetime.now(timezone.utc)
+    finalized = False
     for backup_type in ("database", "filesystem"):
         section = state.get(backup_type)
         if not isinstance(section, dict):
@@ -2950,6 +2955,9 @@ def _finalize_run_state(
             success=False,
             size_bytes=None,
         )
+        finalized = True
+    if not finalized:
+        return None
     state["failure_reason"] = failure_reason
     return state
 
@@ -2964,14 +2972,20 @@ def _fail_closed(
     would otherwise leave no failure state behind and only surface through
     the much later overdue alert. Once the run has written state of its own,
     components it finished (e.g. a published success before retention
-    cleanup raised) stay authoritative; unfinished ones are marked failed.
+    cleanup raised) stay authoritative and unfinished ones are marked failed;
+    if nothing was left unfinished the exception is recorded as a
+    history-only attempt so the published run's record is not rewritten.
     """
     try:
-        state = _finalize_run_state(_read_backup_state(), failure_reason, accepted_at)
-        if state is not None:
-            persisted = _write_backup_state(state)
-        else:
+        existing = _read_backup_state()
+        if not _run_wrote_state(existing, accepted_at):
             state, persisted = _persist_failed_run(failure_reason)
+        else:
+            state = _finalize_run_state(existing, failure_reason, accepted_at)
+            if state is not None:
+                persisted = _write_backup_state(state)
+            else:
+                state, persisted = _persist_rejected_attempt(failure_reason)
     except Exception:
         log.exception("Could not persist failed backup attempt after %s", exc)
         return
