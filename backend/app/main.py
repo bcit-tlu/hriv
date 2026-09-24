@@ -20,6 +20,7 @@ from .database import get_db, settings
 from .logging_config import setup_logging
 from .metrics import render_metrics
 from .queue_metrics import queue_health
+from .rebuild_fixture import ensure_archive_lock_file
 from .reconciliation import run_reconciliation_sweep
 from .worker import TaskQueueUnavailableError, get_pool
 from .maintenance import is_maintenance_mode
@@ -163,6 +164,18 @@ async def lifespan(app: FastAPI):
             "source_images_dir": settings.source_images_dir,
         },
     )
+
+    # The backup service shares this lock from a different uid on the same
+    # volume; only the backend (the directory owner) can guarantee the file
+    # exists with a mode that uid can open.
+    try:
+        await asyncio.wait_for(asyncio.to_thread(ensure_archive_lock_file), timeout=5.0)
+    except (OSError, asyncio.TimeoutError):
+        logger.warning(
+            "Could not pre-create the rebuild fixture archive lock",
+            exc_info=True,
+            extra={"event": "rebuild_fixture.archive_lock_unavailable"},
+        )
 
     if settings.oidc_enabled:
         await _check_oidc_connectivity()

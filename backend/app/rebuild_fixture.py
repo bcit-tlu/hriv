@@ -59,6 +59,9 @@ from .tile_provenance import current_tile_settings_hash
 FIXTURE_PREFIX = "TRF-"
 FIXTURE_DIRNAME = "rebuild-fixture"
 FIXTURE_ARCHIVE_LOCK_FILENAME = ".rebuild-fixture-archive.lock"
+# World-writable so the backup service (a different, non-root uid on the
+# shared source-images volume) can open the lock the backend created.
+FIXTURE_ARCHIVE_LOCK_MODE = 0o666
 
 # Reserved ID ranges, disjoint from reorder_fixture's 9_100_000/9_200_000.
 SOURCE_IMAGE_ID_BASE = 9_300_000
@@ -218,8 +221,34 @@ def _archive_lock_path(source_images_dir: str | Path | None = None) -> Path:
     return root / FIXTURE_ARCHIVE_LOCK_FILENAME
 
 
+def ensure_archive_lock_file(source_images_dir: str | Path | None = None) -> Path:
+    """Create the shared archive lock file with a permissive mode.
+
+    The backend owns ``source_images`` (created ``0755`` by whichever uid the
+    backend runs as), so any other process locking inside it can only open a
+    lock file that already exists and is writable — or at least readable — by
+    that process. Chmod is best-effort: a non-owner opener may not be allowed
+    to change the mode, and that is fine as long as the file is openable.
+    """
+    lock_path = _archive_lock_path(source_images_dir)
+    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, FIXTURE_ARCHIVE_LOCK_MODE)
+    os.close(fd)
+    try:
+        if (lock_path.stat().st_mode & 0o777) != FIXTURE_ARCHIVE_LOCK_MODE:
+            os.chmod(lock_path, FIXTURE_ARCHIVE_LOCK_MODE)
+    except PermissionError:
+        # Only the file owner may chmod; a non-owner that could still open
+        # the file has everything it needs, so the mode fix is skipped.
+        return lock_path
+    return lock_path
+
+
+def _open_archive_lock(source_images_dir: str | Path | None = None) -> TextIO:
+    return ensure_archive_lock_file(source_images_dir).open("a+")
+
+
 def _acquire_archive_lock(source_images_dir: str | Path | None = None) -> TextIO:
-    handle = _archive_lock_path(source_images_dir).open("a+")
+    handle = _open_archive_lock(source_images_dir)
     try:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
     except Exception:
@@ -231,7 +260,7 @@ def _acquire_archive_lock(source_images_dir: str | Path | None = None) -> TextIO
 def _try_acquire_archive_lock(
     source_images_dir: str | Path | None = None,
 ) -> TextIO | None:
-    handle = _archive_lock_path(source_images_dir).open("a+")
+    handle = _open_archive_lock(source_images_dir)
     try:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:

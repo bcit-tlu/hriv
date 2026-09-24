@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import io
 import importlib
+import fcntl
 import json
 import logging
 import os
@@ -1113,6 +1114,288 @@ class BackupRunTestCase(_BackupTestCase):
             {"BACKUP_MODE": "development", "DATA_DIR": str(self.data_dir)}
         )
         self.assertEqual(backup._source_images_root(), self.data_dir)
+
+    def test_fixture_lock_opens_read_only_when_source_dir_is_unwritable(self):
+        """The backend owns ``source_images``; when this process cannot
+        create files there it must still lock an existing lock file."""
+        source_dir = self.data_dir / "source_images"
+        lock_path = source_dir / backup._REBUILD_FIXTURE_ARCHIVE_LOCK_FILENAME
+        lock_path.touch()
+        real_open = Path.open
+
+        def deny_write(path, mode="r", *args, **kwargs):
+            if path == lock_path and mode != "r":
+                raise PermissionError(13, "Permission denied")
+            return real_open(path, mode, *args, **kwargs)
+
+        self._reload(
+            {"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)}
+        )
+        with patch.object(Path, "open", deny_write):
+            with backup._rebuild_fixture_archive_lock():
+                with real_open(lock_path, "a+") as other:
+                    with self.assertRaises(BlockingIOError):
+                        fcntl.flock(other.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def test_fixture_lock_missing_and_uncreatable_fails_closed(self):
+        source_dir = self.data_dir / "source_images"
+        lock_path = source_dir / backup._REBUILD_FIXTURE_ARCHIVE_LOCK_FILENAME
+        local_dir = self.tmp / "unwritable-backups"
+        local_dir.mkdir()
+        real_open = Path.open
+
+        def deny_create(path, mode="r", *args, **kwargs):
+            if path == lock_path:
+                raise PermissionError(13, "Permission denied")
+            return real_open(path, mode, *args, **kwargs)
+
+        self._reload(
+            {"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)}
+        )
+        # Yesterday's run succeeded; the failure gauges read these sections.
+        (local_dir / "BACKUP_STATE.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": backup.BACKUP_STATE_SCHEMA_VERSION,
+                    "run_id": "prev",
+                    "database": {
+                        "run_id": "prev",
+                        "started_at": "2026-07-12T08:00:00+00:00",
+                        "completed_at": "2026-07-12T08:00:42+00:00",
+                        "success": True,
+                        "last_success_completed_at": "2026-07-12T08:00:42+00:00",
+                        "last_success_archive_key": "old-db",
+                    },
+                    "filesystem": {
+                        "run_id": "prev",
+                        "started_at": "2026-07-12T08:01:00+00:00",
+                        "completed_at": "2026-07-12T08:09:00+00:00",
+                        "success": True,
+                        "last_success_completed_at": "2026-07-12T08:09:00+00:00",
+                        "last_success_archive_key": "old-fs",
+                    },
+                }
+            )
+        )
+        with (
+            patch.object(Path, "open", deny_create),
+            patch.object(backup, "_local_backup_dir", return_value=local_dir),
+            patch.object(backup, "_run_backup_inner") as run_inner,
+            self.assertLogs("hriv-backup", level="ERROR") as captured_logs,
+        ):
+            with self.assertRaises(backup.ArchiveLockUnavailable):
+                backup.run_backup()
+
+        run_inner.assert_not_called()
+        state = json.loads((local_dir / "BACKUP_STATE.json").read_text())
+        attempts = [
+            attempt
+            for attempt in state["attempts"]
+            if attempt["failure_reason"] == "archive_lock_unavailable"
+        ]
+        self.assertEqual(len(attempts), 2)
+        self.assertTrue(all(attempt["success"] is False for attempt in attempts))
+        # Current component outcomes flip so HRIV*BackupFailed fires, while
+        # last-success fields survive for the overdue alert.
+        for component in ("database", "filesystem"):
+            self.assertFalse(state[component]["success"])
+            self.assertNotEqual(state[component]["run_id"], "prev")
+        self.assertEqual(state["failure_reason"], "archive_lock_unavailable")
+        self.assertEqual(state["database"]["last_success_archive_key"], "old-db")
+        self.assertEqual(
+            state["filesystem"]["last_success_completed_at"],
+            "2026-07-12T08:09:00+00:00",
+        )
+        self.assertTrue(
+            any("Backup failed:" in line for line in captured_logs.output)
+        )
+
+    def test_unexpected_setup_exception_persists_failed_attempt(self):
+        local_dir = self.tmp / "crash-backups"
+        local_dir.mkdir()
+        self._reload(
+            {"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)}
+        )
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=local_dir),
+            patch.object(
+                backup,
+                "_reconcile_publications",
+                side_effect=RuntimeError("boom"),
+            ),
+            patch.object(backup, "_run_backup_inner") as run_inner,
+            self.assertLogs("hriv-backup", level="ERROR"),
+        ):
+            with self.assertRaises(RuntimeError):
+                backup.run_backup()
+
+        run_inner.assert_not_called()
+        state = json.loads((local_dir / "BACKUP_STATE.json").read_text())
+        self.assertEqual(
+            {attempt["failure_reason"] for attempt in state["attempts"]},
+            {"unexpected_error"},
+        )
+        self.assertFalse(state["database"]["success"])
+        self.assertFalse(state["filesystem"]["success"])
+        self.assertEqual(state["failure_reason"], "unexpected_error")
+
+    def test_exception_after_run_recorded_outcomes_keeps_them(self):
+        """A failure after publication (e.g. retention cleanup) must not
+        turn an already-recorded success into a failed run."""
+        local_dir = self.tmp / "late-crash-backups"
+        local_dir.mkdir()
+        self._reload(
+            {"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)}
+        )
+
+        def publish_then_crash():
+            now = datetime.now(timezone.utc)
+            state = backup._new_backup_state("", "this-run")
+            for component in ("database", "filesystem"):
+                backup._mark_attempt_started(state, component, started_at=now)
+                backup._mark_attempt_finished(
+                    state,
+                    component,
+                    started_at=now,
+                    completed_at=now,
+                    success=True,
+                    size_bytes=1,
+                )
+            backup._write_backup_state(state)
+            raise PermissionError("retention cleanup denied")
+
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=local_dir),
+            patch.object(backup, "_reconcile_publications"),
+            patch.object(
+                backup, "_run_backup_inner", side_effect=publish_then_crash
+            ),
+            self.assertLogs("hriv-backup", level="ERROR"),
+        ):
+            with self.assertRaises(PermissionError):
+                backup.run_backup()
+
+        state = json.loads((local_dir / "BACKUP_STATE.json").read_text())
+        self.assertEqual(state["run_id"], "this-run")
+        self.assertTrue(state["database"]["success"])
+        self.assertTrue(state["filesystem"]["success"])
+        self.assertFalse(state.get("failure_reason"))
+        by_run = {
+            attempt["run_id"]: attempt.get("failure_reason")
+            for attempt in state["attempts"]
+        }
+        self.assertFalse(by_run.pop("this-run"))
+        self.assertEqual(set(by_run.values()), {"unexpected_error"})
+
+    def test_finalize_run_state_only_touches_unfinished_components(self):
+        self._reload({"BACKUP_MODE": "production"})
+        accepted_at = datetime.now(timezone.utc) - timedelta(seconds=5)
+        started = accepted_at + timedelta(seconds=1)
+        state = backup._new_backup_state("", "this-run")
+        backup._mark_attempt_started(state, "database", started_at=started)
+        backup._mark_attempt_finished(
+            state,
+            "database",
+            started_at=started,
+            completed_at=started + timedelta(seconds=1),
+            success=True,
+            size_bytes=3,
+            archive_key="db.dump",
+        )
+        backup._mark_attempt_started(state, "filesystem", started_at=started)
+
+        self.assertTrue(backup._run_wrote_state(state, accepted_at))
+        finalized = backup._finalize_run_state(state, "unexpected_error", accepted_at)
+
+        self.assertIsNotNone(finalized)
+        self.assertTrue(finalized["database"]["success"])
+        self.assertEqual(finalized["database"]["archive_key"], "db.dump")
+        self.assertFalse(finalized["filesystem"]["success"])
+        self.assertEqual(finalized["filesystem"]["run_id"], "this-run")
+        self.assertIsNotNone(finalized["filesystem"]["completed_at"])
+        self.assertEqual(finalized["failure_reason"], "unexpected_error")
+        self.assertIsNone(state["filesystem"]["success"], "input not mutated")
+
+    def test_finalize_run_state_fails_never_started_component(self):
+        self._reload({"BACKUP_MODE": "production"})
+        accepted_at = datetime.now(timezone.utc) - timedelta(seconds=5)
+        state = backup._new_backup_state("", "this-run")
+        backup._mark_attempt_started(
+            state, "database", started_at=accepted_at + timedelta(seconds=1)
+        )
+
+        finalized = backup._finalize_run_state(state, "unexpected_error", accepted_at)
+
+        for component in ("database", "filesystem"):
+            self.assertFalse(finalized[component]["success"])
+            self.assertEqual(finalized[component]["run_id"], "this-run")
+
+    def test_finalize_run_state_returns_none_when_all_components_finished(self):
+        self._reload({"BACKUP_MODE": "production"})
+        accepted_at = datetime.now(timezone.utc) - timedelta(seconds=5)
+        started = accepted_at + timedelta(seconds=1)
+        state = backup._new_backup_state("", "this-run")
+        for component in ("database", "filesystem"):
+            backup._mark_attempt_started(state, component, started_at=started)
+            backup._mark_attempt_finished(
+                state,
+                component,
+                started_at=started,
+                completed_at=started,
+                success=True,
+                size_bytes=1,
+            )
+
+        self.assertIsNone(
+            backup._finalize_run_state(state, "unexpected_error", accepted_at)
+        )
+
+    def test_run_wrote_state_rejects_older_or_foreign_state(self):
+        self._reload({"BACKUP_MODE": "production"})
+        accepted_at = datetime.now(timezone.utc)
+        older = backup._new_backup_state("", "previous-run")
+        backup._mark_attempt_started(
+            older, "database", started_at=accepted_at - timedelta(minutes=1)
+        )
+        self.assertFalse(backup._run_wrote_state(older, accepted_at))
+        self.assertFalse(backup._run_wrote_state(None, accepted_at))
+        self.assertFalse(backup._run_wrote_state({"schema_version": 1}, accepted_at))
+
+    def test_exception_mid_run_finalizes_unfinished_components_as_failed(self):
+        """A crash after the run recorded an in-progress attempt must not
+        leave that component with ``success=None`` forever."""
+        local_dir = self.tmp / "mid-crash-backups"
+        local_dir.mkdir()
+        self._reload(
+            {"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)}
+        )
+
+        def start_db_then_crash():
+            state = backup._new_backup_state("", "this-run")
+            backup._mark_attempt_started(
+                state, "database", started_at=datetime.now(timezone.utc)
+            )
+            backup._write_backup_state(state)
+            raise RuntimeError("pg_dump exploded")
+
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=local_dir),
+            patch.object(backup, "_reconcile_publications"),
+            patch.object(
+                backup, "_run_backup_inner", side_effect=start_db_then_crash
+            ),
+            self.assertLogs("hriv-backup", level="ERROR"),
+        ):
+            with self.assertRaises(RuntimeError):
+                backup.run_backup()
+
+        state = json.loads((local_dir / "BACKUP_STATE.json").read_text())
+        self.assertEqual(state["run_id"], "this-run")
+        for component in ("database", "filesystem"):
+            self.assertEqual(state[component]["run_id"], "this-run")
+            self.assertFalse(state[component]["success"])
+            self.assertIsNotNone(state[component]["completed_at"])
+        self.assertEqual(state["failure_reason"], "unexpected_error")
 
     def test_backup_is_blocked_while_rebuild_fixture_is_active(self):
         fixture_dir = self.data_dir / "rebuild-fixture"
