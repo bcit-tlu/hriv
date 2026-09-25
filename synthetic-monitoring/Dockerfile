@@ -6,7 +6,7 @@ RUN npm install -g npm@12.1.0
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
-RUN npm ci
+RUN npm ci && rm -rf /root/.npm
 
 COPY playwright.config.ts ./
 COPY tests ./tests
