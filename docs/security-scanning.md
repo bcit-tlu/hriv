@@ -5,15 +5,21 @@ how suppressions are governed, and how automated dependency PRs are handled.
 
 ## Where code-scanning alerts come from
 
-Two workflows upload Trivy SARIF, both under the category `trivy-<component>`
-(`frontend`, `backend`, `backup`, `restore-validation`, `synthetic-monitoring`).
-Because the category is shared, a rescan **updates alerts in place** — it
-never creates a duplicate alert set.
+Two workflows upload Trivy SARIF, one category per component
+(`frontend`, `backend`, `backup`, `restore-validation`, `synthetic-monitoring`)
+and per source. Within a category each upload **replaces** the previous alert
+set, so alerts update in place rather than duplicating.
 
-| Source                                                                                        | Trigger                                                 | What is scanned                                            |
-| --------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ---------------------------------------------------------- |
-| `bcit-tlu/.github/.github/workflows/oci-build.yaml` (called from `.github/workflows/ci.yaml`) | Push to `main` that changes the component (path filter) | The freshly built image, by digest                         |
-| `.github/workflows/security-rescan.yaml`                                                      | Weekly (Monday 14:00 UTC) + `workflow_dispatch`         | `ghcr.io/bcit-tlu/hriv/hriv-<component>:latest`, scan-only |
+| Source                                                                                        | Trigger                                                 | What is scanned                                                                             | SARIF category               |
+| --------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ---------------------------- |
+| `bcit-tlu/.github/.github/workflows/oci-build.yaml` (called from `.github/workflows/ci.yaml`) | Push to `main` that changes the component (path filter) | The freshly built rc image, by digest (what the staging env runs)                           | `trivy-<component>`          |
+| `.github/workflows/security-rescan.yaml`                                                      | Weekly (Monday 14:00 UTC) + `workflow_dispatch`         | `ghcr.io/bcit-tlu/hriv/hriv-<component>:latest`, scan-only (released; what production runs) | `trivy-<component>-released` |
+
+The two categories are deliberately separate: `:latest` is the digest of the
+last _release_ (see [RELEASE_AND_DEPLOY_FLOW.md](RELEASE_AND_DEPLOY_FLOW.md)),
+while `main` builds an rc that may be ahead of it. Sharing one category would
+let each upload overwrite the other's findings. Expect the same CVE to appear
+under both categories when the released and rc digests match.
 
 Both scans use `severity: CRITICAL,HIGH`, `ignore-unfixed: false` and
 `.trivyignore`. PR builds also run Trivy (table output, `ignore-unfixed: true`)

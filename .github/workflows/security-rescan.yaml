@@ -2,9 +2,11 @@ name: '[Security] Weekly Trivy rescan of published images'
 
 # The reusable oci-build workflow only scans an image when its component
 # changes, so new CVEs in an unchanged image never reach code scanning. This
-# workflow rescans the published `latest` images on a schedule and uploads
-# SARIF under the same `trivy-<component>` category as oci-build, so alerts
-# update in place instead of duplicating.
+# workflow rescans the published `latest` (released) images on a schedule and
+# uploads SARIF under `trivy-<component>-released`. oci-build uploads the
+# main rc image under `trivy-<component>`; `latest` is the last release's
+# digest, so the two are kept in separate categories rather than overwriting
+# each other's alert set whenever main is ahead of the last release.
 #
 # Scan-only: nothing is rebuilt or pushed (a rebuild would retag `latest` and
 # roll the staging environment on a timer).
@@ -63,4 +65,4 @@ jobs:
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-${{ matrix.component }}.sarif
-          category: trivy-${{ matrix.component }}
+          category: trivy-${{ matrix.component }}-released
