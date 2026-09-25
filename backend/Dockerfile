@@ -193,6 +193,13 @@ CMD ["opentelemetry-instrument", "uvicorn", "app.main:app", "--host", "0.0.0.0",
 
 # ── Stage 4: Stable ─────────────────────────────────
 FROM base AS stable
+# pip is only needed to install packages (done in ``builder``/``dev``);
+# nothing in the stable image invokes it.  Its vendored copies of
+# msgpack/setuptools (pip/_vendor/vendor.txt) carry open Trivy CRITICAL/HIGH
+# findings that pip upgrades cannot clear (the newest pip still vendors
+# them), so we drop pip from the shipped image entirely.  The ``dev``
+# stage keeps pip — it needs it for the pytest install.
+RUN python -m pip uninstall -y pip
 EXPOSE 8000
 # Run uvicorn in single-process mode (--workers 1) and scale horizontally
 # via Kubernetes replicas (charts/backend/values.yaml: replicaCount)
