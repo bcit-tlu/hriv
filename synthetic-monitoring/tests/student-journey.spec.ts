@@ -1,5 +1,4 @@
-import { expect, test } from '@chromatic-com/playwright'
-import type { Response } from '@playwright/test'
+import { expect, test, type Response } from '@playwright/test'
 
 import { SyntheticJourneyRecorder } from './journeyRecorder'
 
