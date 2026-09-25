@@ -53,6 +53,7 @@ jobs:
             backend-image:
               - 'backend/**'
               - '.github/workflows/ci.yaml'
+              - '.trivyignore'
             backup:
               - 'backup/**'
               - 'charts/backup/**'
@@ -61,10 +62,12 @@ jobs:
               - 'backup/**'
               - 'charts/backup/**'
               - '.github/workflows/ci.yaml'
+              - '.trivyignore'
             frontend:
               - 'frontend/**'
               - 'charts/frontend/files/**'
               - '.github/workflows/ci.yaml'
+              - '.trivyignore'
             restore-validation:
               - 'restore-validation/**'
               - 'charts/restore-validation/**'
@@ -73,9 +76,11 @@ jobs:
               - 'restore-validation/**'
               - 'charts/restore-validation/**'
               - '.github/workflows/ci.yaml'
+              - '.trivyignore'
             synthetic:
               - 'synthetic-monitoring/**'
               - '.github/workflows/ci.yaml'
+              - '.trivyignore'
             agent-docs:
               - '.github/workflows/ci.yaml'
               - '.gitignore'
@@ -365,7 +370,7 @@ jobs:
       context: ./frontend
       target: stable
       build_contexts: 'nginx-config=./charts/frontend/files'
-      extra_watch_paths: ./charts/frontend/files
+      extra_watch_paths: ./charts/frontend/files .trivyignore
       trivyignore: .trivyignore
     secrets: inherit
 
@@ -386,6 +391,7 @@ jobs:
       image_name: hriv-backend
       context: ./backend
       target: stable
+      extra_watch_paths: .trivyignore
       trivyignore: .trivyignore
     secrets: inherit
 
@@ -406,7 +412,7 @@ jobs:
       image_name: hriv-backup
       context: ./backup
       target: stable
-      extra_watch_paths: ./charts/backup
+      extra_watch_paths: ./charts/backup .trivyignore
       trivyignore: .trivyignore
     secrets: inherit
 
@@ -427,7 +433,7 @@ jobs:
       image_name: hriv-restore-validation
       context: ./restore-validation
       target: stable
-      extra_watch_paths: ./charts/restore-validation
+      extra_watch_paths: ./charts/restore-validation .trivyignore
       trivyignore: .trivyignore
     secrets: inherit
 
@@ -447,6 +453,7 @@ jobs:
       component: synthetic-monitoring
       image_name: hriv-synthetic-monitoring
       context: ./synthetic-monitoring
+      extra_watch_paths: .trivyignore
       trivyignore: .trivyignore
     secrets: inherit
 
