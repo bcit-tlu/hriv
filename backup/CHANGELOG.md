@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.5](https://github.com/bcit-tlu/hriv/compare/backup-v0.16.4...backup-v0.16.5) (2026-09-25)
+
+
+### Bug Fixes
+
+* **security:** update fixable Python deps and slim backup/restore-validation images ([#1374](https://github.com/bcit-tlu/hriv/issues/1374)) ([899e1fb](https://github.com/bcit-tlu/hriv/commit/899e1fbc2ad6f0c16f6f6444ea1b24e4c432de90))
+
 ## [0.16.4](https://github.com/bcit-tlu/hriv/compare/backup-v0.16.3...backup-v0.16.4) (2026-09-24)
 
 
