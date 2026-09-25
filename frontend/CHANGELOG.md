@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.61.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.61.0...frontend-v0.61.1) (2026-09-25)
+
+
+### Bug Fixes
+
+* **frontend:** bump nginx alpine base to 1.30 to clear HIGH CVEs ([#1373](https://github.com/bcit-tlu/hriv/issues/1373)) ([5744c92](https://github.com/bcit-tlu/hriv/commit/5744c926ad01bb440740b4ddfff66e976a23a579))
+
 ## [0.61.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.60.0...frontend-v0.61.0) (2026-09-24)
 
 

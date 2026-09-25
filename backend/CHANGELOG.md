@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.63.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.62.0...backend-v0.63.0) (2026-09-25)
+
+
+### Features
+
+* **metrics:** expose SQLAlchemy connection pool gauges ([#1370](https://github.com/bcit-tlu/hriv/issues/1370)) ([27951cd](https://github.com/bcit-tlu/hriv/commit/27951cd2c1cf0248f0363b0004be6b97973f4e18))
+
+
+### Bug Fixes
+
+* **security:** update fixable Python deps and slim backup/restore-validation images ([#1374](https://github.com/bcit-tlu/hriv/issues/1374)) ([899e1fb](https://github.com/bcit-tlu/hriv/commit/899e1fbc2ad6f0c16f6f6444ea1b24e4c432de90))
+
 ## [0.62.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.61.4...backend-v0.62.0) (2026-09-24)
 
 

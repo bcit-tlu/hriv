@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.5](https://github.com/bcit-tlu/hriv/compare/synthetic-monitoring-v1.2.4...synthetic-monitoring-v1.2.5) (2026-09-25)
+
+
+### Bug Fixes
+
+* **synthetic-monitoring:** bump Playwright image and npm deps to clear CRITICAL/HIGH CVEs ([#1372](https://github.com/bcit-tlu/hriv/issues/1372)) ([dbe7d1a](https://github.com/bcit-tlu/hriv/commit/dbe7d1a411800c136e384b58ad3c853067c8ae6c))
+
 ## [1.2.4](https://github.com/bcit-tlu/hriv/compare/synthetic-monitoring-v1.2.3...synthetic-monitoring-v1.2.4) (2026-09-07)
 
 
