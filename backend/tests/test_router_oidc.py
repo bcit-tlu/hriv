@@ -1,7 +1,9 @@
 """Tests for the OIDC router helper functions and endpoints."""
 
+import re
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from urllib.parse import urlparse
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -854,7 +856,18 @@ async def test_oidc_callback_cors_origin_fallback() -> None:
                 result = await oidc_callback(request, db)
 
     assert result.status_code == 200
-    assert "frontend.example.com" in result.body.decode()
+    # The response is an HTML page whose script redirects to
+    # ``http://frontend.example.com/#jwt`` — extract that target and
+    # validate it structurally rather than substring-checking the body.
+    match = re.search(
+        r'window\.location\.replace\("([^"]+)"\)',
+        result.body.decode(),
+    )
+    assert match is not None
+    parsed = urlparse(match.group(1))
+    assert parsed.scheme == "http"
+    assert parsed.hostname == "frontend.example.com"
+    assert parsed.fragment == "oidc_token=jwt"
 
 
 # ── _resolve_programs / _sync_programs helpers ───────────
