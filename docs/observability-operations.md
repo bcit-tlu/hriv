@@ -227,6 +227,18 @@ The theoretical pod-count ceiling can exceed pg-core's shared
 a gap between observation and the budget table usually means a pod class is
 scaling further than its sized envelope.
 
+Per-pool utilization is observable directly via the `hriv_db_pool_*` gauges
+(issue #1072, contract in
+[`observability-conventions.md`](observability-conventions.md#database-pool-metrics)):
+`hriv_db_pool_checked_out` approaching `hriv_db_pool_size + max_overflow` for a
+given `service_name` means that component's pool is saturated. Both the API
+(`hriv-backend`) and the arq worker (`hriv-backend-worker`) emit the series via
+OTLP; `/api/metrics` also renders the same names for the API pod's pool only.
+Pool exhaustion surfaces in logs and span errors as
+`TimeoutError: QueuePool limit of size ... overflow ... reached` — correlate it
+with `hriv_db_pool_checked_out` and `hriv_db_pool_overflow` to distinguish real
+saturation from a stuck-connection leak.
+
 ### Load-validation report template
 
 Record the following before issue closure:

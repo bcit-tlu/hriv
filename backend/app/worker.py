@@ -51,6 +51,7 @@ from .queue_metrics import (
     HEALTH_CHECK_KEY,
 )
 from .task_constants import WORKER_JOB_TIMEOUT_SECONDS
+from . import db_pool_metrics  # noqa: F401 — registers hriv.db.pool.* OTel observers in the worker process
 from . import tile_rebuild_metrics
 from .tile_rebuild_jobs import (
     TileRebuildDispatch,
