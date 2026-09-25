@@ -18,6 +18,11 @@ exporters:
     endpoint: http://prometheus:9090/api/v1/write
     tls:
       insecure: true
+    # Match the deployed cluster collector: promote resource attributes
+    # (service.name → service_name, etc.) onto every exported metric so
+    # per-component gauges like hriv_db_pool_* stay distinguishable.
+    resource_to_telemetry_conversion:
+      enabled: true
   otlp/tempo:
     endpoint: tempo:4317
     tls:
