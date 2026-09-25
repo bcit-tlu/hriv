@@ -50,6 +50,7 @@ jobs:
             backend:
               - 'backend/**'
               - '.github/workflows/ci.yaml'
+              - '.trivyignore'
             backend-image:
               - 'backend/**'
               - '.github/workflows/ci.yaml'
@@ -58,6 +59,7 @@ jobs:
               - 'backup/**'
               - 'charts/backup/**'
               - '.github/workflows/ci.yaml'
+              - '.trivyignore'
             backup-image:
               - 'backup/**'
               - 'charts/backup/**'
@@ -72,6 +74,7 @@ jobs:
               - 'restore-validation/**'
               - 'charts/restore-validation/**'
               - '.github/workflows/ci.yaml'
+              - '.trivyignore'
             restore-validation-image:
               - 'restore-validation/**'
               - 'charts/restore-validation/**'

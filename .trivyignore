@@ -16,9 +16,11 @@
 #   trivy image --severity CRITICAL,HIGH --ignorefile /dev/null <img>
 #   → drop every group whose packages/CVEs no longer appear, and check
 #     https://security-tracker.debian.org/tracker/CVE-... for the rest.
-#   trivy image --severity CRITICAL,HIGH --ignore-unfixed <img>
-#   → must be 0. Every entry in this file is an *unfixed* upstream CVE; a
-#     CVE with a fixed version must be fixed by upgrading, never ignored.
+#   trivy image --severity CRITICAL,HIGH --ignore-unfixed --ignorefile /dev/null <img>
+#   → must be 0 (`--ignorefile /dev/null` matters: Trivy loads ./.trivyignore
+#     by default, which would hide an ignored CVE that has since become
+#     fixable). Every entry in this file is an *unfixed* upstream CVE; a CVE
+#     with a fixed version must be fixed by upgrading, never ignored.
 #
 # Adding an entry requires:
 #   1) A justification comment referencing *why* the CVE is non-reachable, not
