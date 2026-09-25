@@ -14,7 +14,7 @@ Two emission paths cover both pools:
   ``service_name`` label, so ``hriv-backend`` (API) and
   ``hriv-backend-worker`` (arq worker) series stay distinguishable. In
   Prometheus the dots flatten to ``hriv_db_pool_*``.
-* The same four ``hriv_db_pool_*`` names render at ``/api/metrics`` as
+* The same ``hriv_db_pool_*`` names render at ``/api/metrics`` as
   cheap redundancy when the OTLP path is down. The worker Deployment does
   not serve that endpoint, so the scrape payload only ever covers the API
   pod's pool and carries no component label.
@@ -26,9 +26,14 @@ never create the resource it observes (see ``database.get_engine_pool``).
 Pool stat semantics are SQLAlchemy ``QueuePool`` introspection: ``size``
 is the configured ``pool_size`` capacity, ``checked_in`` is idle
 connections held, ``checked_out`` is connections currently lent out, and
-``overflow`` is the raw overflow counter — positive means connections
+``overflow`` is the raw live overflow counter — positive means connections
 beyond ``pool_size`` are open, negative means fewer than ``pool_size``
-connections exist yet.
+connections exist yet. ``max_overflow`` reports the *configured*
+``max_overflow`` (``settings.db_max_overflow``), not the live counter, so
+that ``size + max_overflow`` is the real per-pod connection ceiling:
+``size + overflow`` would instead equal currently-open connections and a
+``checked_out / (size + overflow)`` ratio would read 1.0 whenever every
+open connection is in use, even with large ``max_overflow`` headroom.
 
 No ``checkout_wait`` histogram exists: SQLAlchemy's ``checkout`` pool
 event fires *after* the pool grants a connection and no checkout-requested
@@ -51,7 +56,7 @@ from prometheus_client import (
 )
 from sqlalchemy.pool import Pool
 
-from .database import get_engine_pool
+from .database import get_engine_pool, settings
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +90,22 @@ def _observe_pool_stat(
     return observe
 
 
+def _observe_max_overflow(
+    _options: CallbackOptions,
+) -> Iterable[Observation]:
+    """Report the *configured* ``max_overflow`` ceiling component.
+
+    Reads ``settings.db_max_overflow`` — the same value the engine was
+    created with — rather than the live ``QueuePool.overflow()`` counter,
+    so ``hriv.db.pool.size + hriv.db.pool.max_overflow`` is the real
+    per-pod connection ceiling. Emits nothing until the engine exists, like
+    the live-stat observers.
+    """
+    if get_engine_pool() is None:
+        return
+    yield Observation(int(settings.db_max_overflow))
+
+
 # OTel instrument name -> observer. The dict keys are the published
 # contract; downstream dashboards and alerts are written against these
 # exact names (``hriv_db_pool_*`` after remote-write flattening).
@@ -93,16 +114,18 @@ OBSERVERS: dict[str, Callable[[CallbackOptions], Iterable[Observation]]] = {
     "hriv.db.pool.checked_out": _observe_pool_stat("checkedout"),
     "hriv.db.pool.overflow": _observe_pool_stat("overflow"),
     "hriv.db.pool.checked_in": _observe_pool_stat("checkedin"),
+    "hriv.db.pool.max_overflow": _observe_max_overflow,
 }
 
 _GAUGE_DESCRIPTIONS = {
     "hriv.db.pool.size": "Configured QueuePool capacity (pool_size)",
     "hriv.db.pool.checked_out": "Connections currently checked out of the pool",
     "hriv.db.pool.overflow": (
-        "QueuePool overflow counter: positive counts connections beyond "
+        "QueuePool live overflow counter: positive counts connections beyond "
         "pool_size, negative means fewer than pool_size connections exist"
     ),
     "hriv.db.pool.checked_in": "Idle connections currently held by the pool",
+    "hriv.db.pool.max_overflow": "Configured max_overflow ceiling component",
 }
 
 for _name, _observer in OBSERVERS.items():
@@ -134,6 +157,11 @@ _pool_checked_in = Gauge(
     "Idle connections currently held by the pool",
     registry=_registry,
 )
+_pool_max_overflow = Gauge(
+    "hriv_db_pool_max_overflow",
+    "Configured max_overflow ceiling component",
+    registry=_registry,
+)
 
 
 def render_db_pool_metrics() -> tuple[bytes, str]:
@@ -156,6 +184,11 @@ def render_db_pool_metrics() -> tuple[bytes, str]:
         _pool_checked_in.set(
             float("nan") if pool is None else float(pool.checkedin())
         )
+        # Configured ceiling component, not the live overflow counter —
+        # see the OTel observer for why size + max_overflow is the ceiling.
+        _pool_max_overflow.set(
+            float("nan") if pool is None else float(settings.db_max_overflow)
+        )
     except Exception:
         # Introspection is pure in-process reads on QueuePool, but a
         # non-standard pool must never break the whole scrape.
@@ -164,6 +197,12 @@ def render_db_pool_metrics() -> tuple[bytes, str]:
             extra={"event": "db_pool_metrics.stat_failed"},
             exc_info=True,
         )
-        for gauge in (_pool_size, _pool_checked_out, _pool_overflow, _pool_checked_in):
+        for gauge in (
+            _pool_size,
+            _pool_checked_out,
+            _pool_overflow,
+            _pool_checked_in,
+            _pool_max_overflow,
+        ):
             gauge.set(float("nan"))
     return generate_latest(_registry), CONTENT_TYPE_LATEST

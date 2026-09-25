@@ -230,8 +230,11 @@ scaling further than its sized envelope.
 Per-pool utilization is observable directly via the `hriv_db_pool_*` gauges
 (issue #1072, contract in
 [`observability-conventions.md`](observability-conventions.md#database-pool-metrics)):
-`hriv_db_pool_checked_out` approaching `hriv_db_pool_size + max_overflow` for a
-given `service_name` means that component's pool is saturated. Both the API
+`hriv_db_pool_checked_out` approaching
+`hriv_db_pool_size + hriv_db_pool_max_overflow` for a given `service_name`
+means that component's pool is saturated. (`hriv_db_pool_overflow` is the raw
+live counter — `open − pool_size`, negative below `pool_size` — so the ceiling
+is `size + max_overflow`, _not_ `size + overflow`.) Both the API
 (`hriv-backend`) and the arq worker (`hriv-backend-worker`) emit the series via
 OTLP; `/api/metrics` also renders the same names for the API pod's pool only.
 Pool exhaustion surfaces in logs and span errors as

@@ -377,17 +377,22 @@ OTel instruments (no metric labels beyond resource attributes):
 
 - `hriv.db.pool.size` — configured `pool_size` capacity.
 - `hriv.db.pool.checked_out` — connections currently lent out.
-- `hriv.db.pool.overflow` — raw `QueuePool` overflow counter: positive counts
-  connections open beyond `pool_size`; negative means fewer than `pool_size`
-  connections exist yet. Saturation is `checked_out` approaching
-  `size + max_overflow`.
+- `hriv.db.pool.overflow` — raw live `QueuePool` overflow counter
+  (`open_connections − pool_size`): positive counts connections open beyond
+  `pool_size`; negative means fewer than `pool_size` connections exist yet.
+  Note `size + overflow` equals _currently open_ connections, not the ceiling —
+  use `max_overflow` for the ceiling.
 - `hriv.db.pool.checked_in` — idle connections held by the pool.
+- `hriv.db.pool.max_overflow` — _configured_ `max_overflow`
+  (`settings.db_max_overflow`), a static ceiling component. The real per-pod
+  connection ceiling is `size + max_overflow`; saturation is `checked_out`
+  approaching that sum.
 
 In Prometheus these remote-write as `hriv_db_pool_size`,
-`hriv_db_pool_checked_out`, `hriv_db_pool_overflow`, and
-`hriv_db_pool_checked_in`.
+`hriv_db_pool_checked_out`, `hriv_db_pool_overflow`, `hriv_db_pool_checked_in`,
+and `hriv_db_pool_max_overflow`.
 
-`/api/metrics` also renders the same four `hriv_db_pool_*` names as scrape-time
+`/api/metrics` also renders the same `hriv_db_pool_*` names as scrape-time
 gauges — cheap redundancy for the API pod's own pool when the OTLP collector
 path is down. The worker Deployment does not serve the scrape endpoint, so
 those series carry no component label and never cover the worker pool. Gauges
