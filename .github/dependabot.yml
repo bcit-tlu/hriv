@@ -20,6 +20,7 @@ updates:
     schedule:
       interval: weekly
       day: monday
+      time: '05:00'
       timezone: America/Vancouver
     open-pull-requests-limit: 5
     commit-message:
@@ -34,6 +35,7 @@ updates:
     schedule:
       interval: weekly
       day: monday
+      time: '05:00'
       timezone: America/Vancouver
     open-pull-requests-limit: 5
     commit-message:
@@ -48,6 +50,7 @@ updates:
     schedule:
       interval: weekly
       day: monday
+      time: '05:00'
       timezone: America/Vancouver
     open-pull-requests-limit: 5
     commit-message:
@@ -62,6 +65,7 @@ updates:
     schedule:
       interval: weekly
       day: monday
+      time: '05:00'
       timezone: America/Vancouver
     open-pull-requests-limit: 5
     commit-message:
@@ -84,6 +88,7 @@ updates:
     schedule:
       interval: weekly
       day: monday
+      time: '05:00'
       timezone: America/Vancouver
     open-pull-requests-limit: 5
     commit-message:
@@ -98,6 +103,7 @@ updates:
     schedule:
       interval: weekly
       day: monday
+      time: '05:00'
       timezone: America/Vancouver
     open-pull-requests-limit: 10
     commit-message:
@@ -113,6 +119,7 @@ updates:
     schedule:
       interval: weekly
       day: monday
+      time: '05:00'
       timezone: America/Vancouver
     open-pull-requests-limit: 10
     commit-message:
@@ -128,6 +135,7 @@ updates:
     schedule:
       interval: weekly
       day: monday
+      time: '05:00'
       timezone: America/Vancouver
     open-pull-requests-limit: 10
     commit-message:
@@ -144,6 +152,7 @@ updates:
     schedule:
       interval: weekly
       day: monday
+      time: '05:00'
       timezone: America/Vancouver
     open-pull-requests-limit: 10
     commit-message:
@@ -161,6 +170,7 @@ updates:
     schedule:
       interval: weekly
       day: monday
+      time: '05:00'
       timezone: America/Vancouver
     open-pull-requests-limit: 10
     commit-message:
@@ -184,6 +194,7 @@ updates:
     schedule:
       interval: weekly
       day: monday
+      time: '05:00'
       timezone: America/Vancouver
     open-pull-requests-limit: 5
     commit-message:
@@ -192,3 +203,4 @@ updates:
     groups:
       actions:
         patterns: ['*']
+        update-types: [minor, patch]

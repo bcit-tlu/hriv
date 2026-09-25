@@ -41,7 +41,7 @@ review. Removing an entry is free — the next scan simply re-reports the CVE.
 
 ## Handling Dependabot PRs
 
-`.github/dependabot.yml` opens weekly (Monday, `America/Vancouver`) PRs for
+`.github/dependabot.yml` opens weekly (Monday 05:00, `America/Vancouver`) PRs for
 Docker base images, Poetry (`backend`, `backup`, `restore-validation`), npm
 (`frontend`, `synthetic-monitoring`) and GitHub Actions. Minor + patch updates
 are grouped per component; majors open one PR each. PR titles are
