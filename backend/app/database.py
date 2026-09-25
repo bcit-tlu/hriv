@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase, Session
+from sqlalchemy.pool import Pool
 
 
 MAX_REBUILD_CHILD_TIMEOUT_SECONDS = 86400
@@ -152,6 +153,16 @@ def get_engine() -> AsyncEngine:
             pool_pre_ping=True,
         )
     return _engine
+
+
+def get_engine_pool() -> Pool | None:
+    """Return the shared engine's connection pool, or ``None`` before first use.
+
+    Unlike :func:`get_engine`, this never creates the engine — telemetry
+    observers use it so that reporting metrics cannot itself create the
+    resource being observed.
+    """
+    return _engine.pool if _engine is not None else None
 
 
 def get_async_session() -> async_sessionmaker[AsyncSession]:

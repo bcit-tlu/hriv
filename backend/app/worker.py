@@ -51,6 +51,7 @@ from .queue_metrics import (
     HEALTH_CHECK_KEY,
 )
 from .task_constants import WORKER_JOB_TIMEOUT_SECONDS
+from . import db_pool_metrics
 from . import tile_rebuild_metrics
 from .tile_rebuild_jobs import (
     TileRebuildDispatch,
@@ -661,6 +662,10 @@ async def on_startup(ctx: dict[str, Any]) -> None:
             "event": "worker.started",
             "service.name": os.environ.get("OTEL_SERVICE_NAME", "hriv-backend-worker"),
             "service.version": get_worker_version(),
+            # Importing db_pool_metrics registers the hriv.db.pool.* OTel
+            # observers; log the count so worker-side registration is
+            # provable from the boot log.
+            "db_pool_observer_count": len(db_pool_metrics.OBSERVERS),
         },
     )
 

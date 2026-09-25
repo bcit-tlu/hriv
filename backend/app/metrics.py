@@ -6,6 +6,7 @@ import asyncio
 
 from .backup_metrics import render_backup_metrics
 from .build_info_metrics import render_build_info_metrics
+from .db_pool_metrics import render_db_pool_metrics
 from .reorder_metrics import render_reorder_metrics
 from .queue_metrics import render_queue_metrics
 from .synthetic_metrics import render_synthetic_metrics
@@ -38,18 +39,20 @@ async def render_metrics() -> tuple[bytes, str]:
         render_tile_rebuild_metrics(),
     )
     reorder_content, reorder_media_type = render_reorder_metrics()
+    db_pool_content, db_pool_media_type = render_db_pool_metrics()
     if (
         synthetic_media_type != media_type
         or build_info_media_type != media_type
         or reorder_media_type != media_type
         or queue_media_type != media_type
         or rebuild_media_type != media_type
+        or db_pool_media_type != media_type
     ):
         raise RuntimeError("Metrics renderers returned inconsistent media types.")
     return (
         _join_metric_payloads(
             backup_content, build_info_content, synthetic_content, reorder_content,
-            queue_content, rebuild_content,
+            queue_content, rebuild_content, db_pool_content,
         ),
         media_type,
     )

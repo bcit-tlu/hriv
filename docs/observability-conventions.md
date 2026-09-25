@@ -364,6 +364,47 @@ Rules:
   rollback, and remove only savepoint-scoped callbacks on a nested rollback;
   rebuild helpers reject independent plain `AsyncSession` factories.
 
+## Database Pool Metrics
+
+Each backend pod owns one SQLAlchemy `QueuePool` behind `database.get_engine()`
+— the API Deployment (`api.db.*` chart values) and the arq worker Deployment
+(`redis.worker.db.*`) are independent pools. `db_pool_metrics.py` (issue #1072)
+exposes both through OpenTelemetry observable gauges exported via OTLP, so the
+`service_name` resource label (`hriv-backend` vs `hriv-backend-worker`)
+distinguishes them.
+
+OTel instruments (no metric labels beyond resource attributes):
+
+- `hriv.db.pool.size` — configured `pool_size` capacity.
+- `hriv.db.pool.checked_out` — connections currently lent out.
+- `hriv.db.pool.overflow` — raw live `QueuePool` overflow counter
+  (`open_connections − pool_size`): positive counts connections open beyond
+  `pool_size`; negative means fewer than `pool_size` connections exist yet.
+  Note `size + overflow` equals _currently open_ connections, not the ceiling —
+  use `max_overflow` for the ceiling.
+- `hriv.db.pool.checked_in` — idle connections held by the pool.
+- `hriv.db.pool.max_overflow` — _configured_ `max_overflow`
+  (`settings.db_max_overflow`), a static ceiling component. The real per-pod
+  connection ceiling is `size + max_overflow`; saturation is `checked_out`
+  approaching that sum.
+
+In Prometheus these remote-write as `hriv_db_pool_size`,
+`hriv_db_pool_checked_out`, `hriv_db_pool_overflow`, `hriv_db_pool_checked_in`,
+and `hriv_db_pool_max_overflow`.
+
+`/api/metrics` also renders the same `hriv_db_pool_*` names as scrape-time
+gauges — cheap redundancy for the API pod's own pool when the OTLP collector
+path is down. The worker Deployment does not serve the scrape endpoint, so
+those series carry no component label and never cover the worker pool. Gauges
+report `NaN` until the pod's lazily created engine exists (first DB use) or if
+pool introspection fails; the OTel observers simply emit nothing then.
+
+There is deliberately no checkout-wait histogram: SQLAlchemy's `checkout` pool
+event fires only _after_ the pool grants a connection, and no checkout-requested
+hook precedes it, so queueing latency cannot be measured from pool events.
+Pool exhaustion instead surfaces in logs and span errors as
+`TimeoutError: QueuePool limit ... reached`.
+
 ## Privacy, Access, and Retention
 
 Observability data serves two different uses and must be treated differently:

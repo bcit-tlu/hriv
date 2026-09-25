@@ -250,6 +250,7 @@ async def test_on_startup_logs_worker_identity() -> None:
             "event": "worker.started",
             "service.name": "hriv-backend-worker",
             "service.version": "1.2.3",
+            "db_pool_observer_count": 5,
         },
     )
 

@@ -232,6 +232,13 @@ the 3,349-item rebuild rehearsal at 6 workers was only ~31 connections. The
 `flux-fleet` overlays pin tighter values than the chart defaults (e.g.
 `api.db.poolSize: 5` / `api.db.maxOverflow: 10`).
 
+Live pool occupancy is observable via the `hriv_db_pool_*` gauges — emitted
+over OTLP per pod class (`service_name` = `hriv-backend` /
+`hriv-backend-worker`) and, for the API pool only, at `/api/metrics`. The
+per-pod ceiling above is `hriv_db_pool_size + hriv_db_pool_max_overflow`
+(`hriv_db_pool_overflow` is the raw live counter, negative below `pool_size`).
+See `docs/observability-conventions.md` → Database Pool Metrics.
+
 ## Worker configuration
 
 Beyond resources, the worker Deployment exposes:
