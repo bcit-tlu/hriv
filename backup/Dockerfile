@@ -5,11 +5,22 @@
 # bookworm (notably CVE-2023-45853 zlib minizip and CVE-2025-7458
 # libsqlite3 — both criticals for this image) and receives security
 # updates directly from Debian's trixie-security mirror.
-# Single-stage image, but give it an explicit `stable` target name so
-# `.github/workflows/ci.yaml` can share the same `target: stable` matrix
-# entry across all three components. Targeting a named stage that is
-# also the final stage is a no-op for buildx but lets the CI template
-# treat every component uniformly.
+#
+# Multi-stage layout: a ``builder`` stage resolves the poetry.lock into a
+# requirements.txt and pip-installs it into ``/install``; the ``stable``
+# runtime stage copies that prefix into ``/usr/local`` and ships only the
+# pinned runtime deps — no poetry (and none of its dependencies like
+# dulwich/msgpack/setuptools) in the final image.  The ``stable`` target
+# name is kept so `.github/workflows/ci.yaml` can share the same
+# `target: stable` matrix entry across all three components.
+FROM python:3.13-slim-trixie AS builder
+RUN python -m venv /opt/poetry-venv \
+    && /opt/poetry-venv/bin/pip install --no-cache-dir poetry poetry-plugin-export
+WORKDIR /app
+COPY pyproject.toml poetry.lock ./
+RUN /opt/poetry-venv/bin/poetry export --only main -f requirements.txt -o requirements.txt \
+    && pip install --no-cache-dir --prefix=/install -r requirements.txt
+
 FROM python:3.13-slim-trixie AS stable
 
 WORKDIR /app
@@ -37,11 +48,14 @@ RUN apt-get update \
     && apt-get purge -y --auto-remove curl gnupg \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir poetry \
-    && poetry config virtualenvs.create false
+COPY --from=builder /install /usr/local
 
-COPY pyproject.toml poetry.lock* ./
-RUN poetry install --no-root --no-interaction
+# pip is only needed to install packages (done in ``builder``); nothing in
+# the shipped image invokes it.  Its vendored copies of
+# msgpack/setuptools (pip/_vendor/vendor.txt) carry open Trivy
+# CRITICAL/HIGH findings that pip upgrades cannot clear (the newest pip
+# still vendors them), so we drop pip from the image entirely.
+RUN python -m pip uninstall -y pip
 
 COPY backup.py ./
 # Ship third-party license notices for the bundled Python packages.

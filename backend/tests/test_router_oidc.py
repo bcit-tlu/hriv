@@ -854,7 +854,10 @@ async def test_oidc_callback_cors_origin_fallback() -> None:
                 result = await oidc_callback(request, db)
 
     assert result.status_code == 200
-    assert "frontend.example.com" in result.body.decode()
+    # The response is an HTML page whose script redirects to
+    # ``http://frontend.example.com/#jwt`` — assert on the scheme-qualified
+    # origin rather than the bare hostname.
+    assert "http://frontend.example.com/" in result.body.decode()
 
 
 # ── _resolve_programs / _sync_programs helpers ───────────
