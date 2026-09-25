@@ -82,7 +82,10 @@ services:
 
   worker:
     environment:
-      - OTEL_SERVICE_NAME=hriv-worker
+      # Canonical worker service name (docs/observability-conventions.md) —
+      # resource_to_telemetry_conversion promotes it to service_name, so
+      # local queries match deployed ones.
+      - OTEL_SERVICE_NAME=hriv-backend-worker
       - OTEL_TRACES_EXPORTER=otlp
       - OTEL_METRICS_EXPORTER=otlp
       - OTEL_LOGS_EXPORTER=otlp
