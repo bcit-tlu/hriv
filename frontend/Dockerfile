@@ -36,12 +36,12 @@ ENV VITE_API_URL=${VITE_API_URL}
 RUN npm run build
 
 # ── Stage 4: Stable server (nginx) ───────────────────
-FROM nginx:1.27-alpine AS stable
+FROM nginx:1.30-alpine AS stable
 # Pull fresh Alpine package updates on top of the base so the image
 # doesn't wait on the nginx maintainers' base-image tag cadence for
 # published libxml2 / libssl3 / libcrypto3 / libpng / zlib / musl
 # / libexpat patches. Effectiveness is bounded by how often CI
-# re-resolves the ``nginx:1.27-alpine`` tag against the upstream
+# re-resolves the ``nginx:1.30-alpine`` tag against the upstream
 # registry — BuildKit's cache will otherwise keep serving this layer
 # from the prior build. The ``pull: true`` flag on rebuild-mode
 # builds in ``.github/workflows/ci.yaml`` handles that case.
