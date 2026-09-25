@@ -149,6 +149,7 @@ reconciliation model for both environments.
 | [docs/recovery-set-contract.md](docs/recovery-set-contract.md)                       | Normative backup boundary, mismatch policy, recovery metadata, and restore rules |
 | [docs/ui-behaviour-spec.md](docs/ui-behaviour-spec.md)                               | UI behaviour spec (role gating, browse, dialogs, viewer, file drop)              |
 | [docs/RELEASE_AND_DEPLOY_FLOW.md](docs/RELEASE_AND_DEPLOY_FLOW.md)                   | Release-please + Flux deploy flow                                                |
+| [docs/security-scanning.md](docs/security-scanning.md)                               | Trivy code-scanning sources, `.trivyignore` review, Dependabot PR handling       |
 | [docs/observability-conventions.md](docs/observability-conventions.md)               | OTel spans, telemetry ingestion, canonical auth logs, usage dashboard            |
 | [docs/observability-operations.md](docs/observability-operations.md)                 | Alert catalogue, routing policy, validation drills, and readiness checklist      |
 | [docs/observability-runbooks.md](docs/observability-runbooks.md)                     | Alert-linked operator runbooks for availability, storage, backups, and load      |
