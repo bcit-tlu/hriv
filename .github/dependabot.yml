@@ -156,8 +156,9 @@ updates:
       npm-minor-patch:
         update-types: [minor, patch]
 
-  # `@playwright/test` (and `playwright`) sit in their own group so the
-  # required Dockerfile FROM-tag co-bump is obvious from the PR title.
+  # `@playwright/test` (and `playwright`) sit in their own group so a browser
+  # bump (the Dockerfile installs the matching Chromium at build time) is
+  # obvious from the PR title.
   - package-ecosystem: npm
     directory: /synthetic-monitoring
     schedule:
