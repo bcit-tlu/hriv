@@ -135,7 +135,7 @@ jobs:
       - name: Configure in-project virtualenv
         run: poetry config virtualenvs.in-project true
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: backend/.venv
           key: backend-venv-py3.13-${{ hashFiles('backend/poetry.lock') }}
@@ -173,7 +173,7 @@ jobs:
       - name: Configure in-project virtualenv
         run: poetry config virtualenvs.in-project true
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: backup/.venv
           key: backup-venv-py3.13-${{ hashFiles('backup/poetry.lock') }}
@@ -209,7 +209,7 @@ jobs:
       - name: Configure in-project virtualenv
         run: poetry config virtualenvs.in-project true
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: restore-validation/.venv
           key: restore-validation-venv-py3.13-${{ hashFiles('restore-validation/poetry.lock') }}
@@ -237,7 +237,7 @@ jobs:
         with:
           node-version: '22'
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: ~/.npm
           key: frontend-npm-${{ hashFiles('frontend/package-lock.json') }}
@@ -277,7 +277,7 @@ jobs:
         with:
           node-version: '22'
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: ~/.npm
           key: synthetic-npm-${{ hashFiles('synthetic-monitoring/package-lock.json') }}
@@ -307,7 +307,7 @@ jobs:
             | sudo tar xz -C /usr/local/bin kubeconform
 
       - name: Cache kubeconform schemas
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: /tmp/kubeconform-cache
           key: kubeconform-schemas-v0.6.7-${{ hashFiles('charts/**/Chart.yaml') }}
