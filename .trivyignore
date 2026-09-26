@@ -1,13 +1,26 @@
 # ------------------------------------------------------------------------------
 # HRIV Trivy ignore list
 #
-# Trivy consumes this file (via `trivyignores:` on the aquasecurity/trivy-action
-# step in .github/workflows/ci.yaml) and suppresses the listed CVEs from both
-# the PR-time table scan and the main/tag SARIF upload. Entries here are
+# Trivy consumes this file (via the `trivyignore:` input of the shared
+# bcit-tlu/.github `oci-build.yaml` reusable workflow, called per image from
+# .github/workflows/ci.yaml) and suppresses the listed CVEs from both the
+# PR-time table scan and the main/tag SARIF upload. Entries here are
 # *explicit, documented, reviewed decisions* — each group below has a
 # justification comment and is dated for review.
 #
-# Review cadence: quarterly. Last reviewed: 2026-04-20.
+# Review cadence: quarterly.
+#   Last reviewed:   2026-09-25
+#   Next review due: 2026-12-25
+#
+# Review procedure (per image, from a fresh build of the `stable` target):
+#   trivy image --severity CRITICAL,HIGH --ignorefile /dev/null <img>
+#   → drop every group whose packages/CVEs no longer appear, and check
+#     https://security-tracker.debian.org/tracker/CVE-... for the rest.
+#   trivy image --severity CRITICAL,HIGH --ignore-unfixed --ignorefile /dev/null <img>
+#   → must be 0 (`--ignorefile /dev/null` matters: Trivy loads ./.trivyignore
+#     by default, which would hide an ignored CVE that has since become
+#     fixable). Every entry in this file is an *unfixed* upstream CVE; a CVE
+#     with a fixed version must be fixed by upgrading, never ignored.
 #
 # Adding an entry requires:
 #   1) A justification comment referencing *why* the CVE is non-reachable, not
@@ -22,6 +35,16 @@
 # if HRIV starts shipping a codec delegate that was previously disabled in
 # backend/Dockerfile, the matching ignore block must go).
 #
+# Removal-before-suppression: every package below was checked for removal
+# from the runtime image before being accepted here (apt-get -s purge,
+# apt-cache rdepends --installed, ldd). None can go: the util-linux /
+# ncurses / perl-base / libacl1 / libsystemd0 packages are Essential or
+# Pre-Depends of bash and util-linux; the backend X11 / libxml2 / libtiff /
+# libexpat libraries are DT_NEEDED by the custom libvips.so.42 (via
+# libopenslide / libcairo / libfontconfig); the backup image's perl is what
+# postgresql-client-common's pg_wrapper (/usr/bin/pg_dump, /usr/bin/psql)
+# is written in.
+#
 # NOTE: the backend image deliberately does NOT install `libvips42t64` from
 # Debian — it builds `libvips` from source with unused codec delegates
 # compiled out (see `libvips-build` stage in backend/Dockerfile).  The RAW /
@@ -29,51 +52,215 @@
 # groups that used to dominate this file are *physically absent* from the
 # runtime image and no longer need ignore entries.
 #
+# Runtime entrypoints referenced by the justifications below (none of the
+# images run an interactive shell, cron daemon, or login service):
+#   backend             uvicorn app.main:app / arq worker (python:3.13-slim, Debian 13 trixie)
+#   backup              opentelemetry-instrument python backup.py (python:3.13-slim-trixie)
+#   restore-validation  python restore-validation orchestrator (python:3.13-slim-trixie)
+#   synthetic-monitoring npx playwright test (mcr.microsoft.com/playwright:*-noble, Ubuntu 24.04)
+#
 # Format reference: https://aquasecurity.github.io/trivy/latest/docs/configuration/filtering/#trivyignore
 # ------------------------------------------------------------------------------
 
 
-# --- backend/libarchive13t64: archive-format parser CVEs ---------------------
-# libvips is compiled against libarchive to support the `dzsave` tile writer
-# (directory output of .dzi + _files tree is libarchive-free, but the module
-# is linked regardless).  HRIV only writes DZI output; it never *reads* a
-# user-supplied archive (no .zip/.tar/.rar/.iso paths reach libvips). The
-# RAR5, RAR, and ISO9660 decoder CVEs below are therefore non-reachable —
-# the parsers exist in the library image but nothing in HRIV's pipeline
-# dispatches to them. Debian has not yet shipped a fix in trixie-security.
-#
-# Packages: libarchive13t64
-CVE-2026-4111   # sev=high (RAR5 infinite-loop DoS)
-CVE-2026-4424   # sev=high (RAR information disclosure)
-CVE-2026-5121   # sev=high (ISO9660 integer overflow)
+# === Debian trixie base packages (backend, backup, restore-validation) ========
+# The three Python images share python:3.13-slim (Debian 13 "trixie"). The
+# groups in this section are the trixie base layer; the same CVE is reported
+# once per binary package built from the same source package, so one CVE-ID
+# here silences up to nine alerts per image (e.g. the util-linux family).
 
-# --- util-linux chfn/chsh info leak ------------------------------------------
-# CVE-2022-0563 (and the sibling chsh/login entries) require an interactive
-# `chfn`/`chsh`/`login` session. HRIV container images do not run an
-# interactive shell — the entrypoint is uvicorn (backend), nginx (frontend),
-# or python -m app.backup (backup). No attacker can trigger an interactive
-# readline session inside the container. Debian has declared these
-# unreachable in container contexts and does not intend to fix.
+
+# --- util-linux family: local-privilege / interactive-tool CVEs ---------------
+# CVE-2026-76642, CVE-2026-78408, CVE-2026-78409, CVE-2026-78410 are in the
+# util-linux 2.41 source package and are reported against every binary built
+# from it. They concern the setuid/interactive tools (mount/umount, su, login,
+# lslogins, chfn/chsh) and require a local shell in the container. HRIV
+# images have no interactive entrypoint and no login path, and the backup
+# image runs as a non-root UID with a read-only root filesystem
+# (charts/backup/values.yaml securityContext); the shared libraries (libblkid1,
+# libmount1, libsmartcols1, libuuid1) are only loaded by those same tools —
+# neither CPython nor libvips links them. util-linux is Essential: yes and
+# cannot be purged.
+# Debian status: trixie 2.41.5-0+deb13u1 vulnerable, <no-dsa> (minor issue);
+# fixed only in forky/sid 2.42.3-1 as of 2026-09-25.
+# https://security-tracker.debian.org/tracker/CVE-2026-76642
 #
 # Packages: util-linux, bsdutils, mount, login, libblkid1, libmount1,
-#           libsmartcols1, libuuid1, libfdisk1
+#           libsmartcols1, libuuid1, liblastlog2-2
+#           (scope: backend, backup, restore-validation)
+CVE-2026-76642  # sev=high
+CVE-2026-78408  # sev=high
+CVE-2026-78409  # sev=high
+CVE-2026-78410  # sev=high
+
+# --- util-linux / shadow: chfn/chsh/login info leaks (low/medium) ------------
+# CVE-2022-0563 (chfn/chsh readline info leak) and the sibling login/passwd
+# entries require an interactive `chfn`/`chsh`/`login` session. No such
+# session can exist in HRIV containers (see entrypoints above). Debian has
+# declared these unreachable in container contexts and does not intend to fix.
+#
+# Packages: util-linux, bsdutils, mount, login, passwd, libblkid1, libmount1,
+#           libsmartcols1, libuuid1, liblastlog2-2
+#           (scope: backend, backup, restore-validation; `login` also in
+#            synthetic-monitoring's Ubuntu base)
 CVE-2007-5686   # sev=low
 CVE-2022-0563   # sev=low
 CVE-2024-56433  # sev=low
-CVE-2025-14104  # sev=low
-CVE-2026-27456  # sev=medium
-CVE-2026-3184   # sev=low
+CVE-2026-3184   # sev=medium
 
-# --- backup/zlib1g: minizip Zip64-header heap overflow -----------------------
-# HRIV backup service runs only `pg_dump` and `psql`; minizip is a zlib
-# function for ZIP-archive handling that the backup workflow never invokes.
-# Fix is in Debian unstable (sid) but not yet backported to trixie/bookworm
-# as of this writing.
-CVE-2023-45853  # sev=critical  (scope: backup/zlib1g)
+# --- ncurses: terminfo parser out-of-bounds read --------------------------------
+# CVE-2025-69720 is in the terminfo database/`tic` parsing path and is
+# triggered by loading an attacker-supplied terminfo entry (TERMINFO /
+# ~/.terminfo). No process in HRIV images runs with a controlling terminal:
+# uvicorn/arq, backup.py and the restore-validation orchestrator never load
+# terminfo, and `pg_dump`/`psql` are run non-interactively via subprocess.
+# libtinfo6 is a Pre-Depends of bash and util-linux and ncurses-base /
+# ncurses-bin are Essential, so the family cannot be purged; CPython's
+# `_curses`/`readline` extension modules are the only other consumers and
+# HRIV never imports them. No fix in trixie-security as of 2026-09-25.
+#
+# Packages: ncurses-base, ncurses-bin, libncursesw6, libtinfo6
+#           (scope: backend, backup, restore-validation)
+CVE-2025-69720  # sev=high
 
-# --- backup/libsqlite3-0: SQLite parser integer overflow ---------------------
-# HRIV backup service opens no user-provided SQLite databases. libsqlite3-0
-# is pulled in as a dependency of `libpython3.13-stdlib` (for `import sqlite3`
-# availability). The backup worker does not `import sqlite3`; ripgrep
-# confirms zero references. No attacker-controlled input reaches the parser.
-CVE-2025-7458   # sev=critical  (scope: backup/libsqlite3-0)
+# --- perl: perl-base (all three) + full perl (backup only) ---------------------
+# CVE-2026-9538 is in the perl interpreter/core modules. perl-base is
+# Essential in Debian and cannot be removed. The backup image additionally
+# carries perl/perl-modules-5.40/libperl5.40 because postgresql-client-common
+# implements /usr/bin/pg_dump and /usr/bin/psql as the `pg_wrapper` perl
+# script that backup.py invokes; `apt-get -s purge perl` would take
+# postgresql-client-16 with it. The only perl that ever runs is pg_wrapper,
+# with argv fully controlled by backup.py (no user-supplied input, no
+# network-facing perl). No fix in trixie-security as of 2026-09-25.
+#
+# Packages: perl-base (backend, backup, restore-validation);
+#           perl, perl-modules-5.40, libperl5.40 (scope: backup)
+CVE-2026-9538   # sev=high
+
+# --- libacl1: POSIX ACL parsing --------------------------------------------------
+# CVE-2026-54369 is reachable only through `setfacl`/`getfacl` or an
+# application calling acl_from_text() on attacker-controlled ACL text. HRIV
+# never manipulates ACLs; libacl1 is present only as a dependency of
+# coreutils/tar (Essential). No fix in trixie-security as of 2026-09-25.
+#
+# Packages: libacl1  (scope: backend, backup, restore-validation)
+CVE-2026-54369  # sev=high
+
+# --- systemd libraries: libsystemd0 / libudev1 ---------------------------------
+# CVE-2026-16742 concerns systemd/udev device and journal handling. The
+# images have no systemd, udevd or journald process — libsystemd0/libudev1
+# are shared libraries pulled in by util-linux/procps and are never invoked
+# (no process calls sd_* or udev_* APIs). No fix in trixie-security as of
+# 2026-09-25.
+#
+# Packages: libsystemd0, libudev1  (scope: backend, backup, restore-validation)
+CVE-2026-16742  # sev=high
+
+
+# === backend-only: libvips delegate dependencies =================================
+# The backend builds libvips from source (`libvips-build` stage) with only the
+# codecs in `backend/app/image_validation.py::IMAGE_EXTENSIONS` enabled. The
+# libraries below are DT_NEEDED by libvips.so.42 (directly or via
+# libopenslide0 / libcairo2 / libfontconfig1) and cannot be removed without
+# dropping the OpenSlide delegate. Untrusted input reaches libvips only after
+# `image_validation.py` has checked the extension/magic bytes, and image
+# processing runs in the arq worker, not the API process.
+
+
+# --- backend/libxml2: XML parser CVEs (incl. the one CRITICAL) -----------------
+# libxml2 is linked into the backend image only through libopenslide0 (which
+# uses it to read the XML metadata blocks of whole-slide formats) and
+# libarchive13t64 / shared-mime-info. HRIV's accepted upload set is
+# jpeg/png/tiff/webp/gif + OpenSlide slide formats; the only XML that is ever
+# parsed is the embedded slide metadata of files that already passed
+# `image_validation.py`, inside the arq worker. No user-supplied XML/HTML
+# document reaches libxml2 from the API (FastAPI does not use libxml2; the
+# Python stack has no lxml). CVE-2026-6653 (critical) is a parser
+# memory-safety issue; the only caller is OpenSlide reading metadata of an
+# already-validated slide file inside the worker.
+# Debian status: trixie 2.12.7+dfsg+really2.9.14-2.1+deb13u3 vulnerable,
+# <no-dsa> (minor issue); fixed only in forky/sid as of 2026-09-25.
+# https://security-tracker.debian.org/tracker/CVE-2026-6653
+#
+# Packages: libxml2  (scope: backend)
+CVE-2026-6653   # sev=critical
+CVE-2026-74860  # sev=high
+CVE-2026-86138  # sev=high
+CVE-2026-86139  # sev=high
+CVE-2026-86140  # sev=high
+CVE-2026-86142  # sev=high
+CVE-2026-86143  # sev=high
+CVE-2026-86144  # sev=high
+
+# --- backend/libexpat1: XML parser CVEs -----------------------------------------
+# libexpat1 is pulled in by libfontconfig1 (a libcairo2 → libopenslide0
+# dependency) and by the glib build; HRIV never renders text (pangocairo and
+# fontconfig delegates are disabled in libvips) so fontconfig never parses
+# its XML config, and CPython's `pyexpat` is only used by the stdlib
+# plistlib/xmlrpc modules HRIV does not import. No untrusted XML reaches
+# expat. No fix in trixie-security as of 2026-09-25.
+#
+# Packages: libexpat1  (scope: backend)
+CVE-2026-66046  # sev=high
+CVE-2026-76956  # sev=high
+CVE-2026-76957  # sev=high
+CVE-2026-93990  # sev=high
+
+# --- backend/libtiff6: TIFF codec CVEs -------------------------------------------
+# libtiff is a required delegate (`.tif`/`.tiff` are in IMAGE_EXTENSIONS and
+# OpenSlide's tiled-TIFF readers depend on it), so it cannot be removed.
+# libtiff-tools (tiffcp/tiffcrop/tiff2pdf) is NOT installed; only the
+# decoding library is present. Uploads are size-capped and validated by
+# extension + MIME before decode, and decoding runs in the arq worker, not
+# the API process. Accepted residual risk. No fix in trixie-security as of
+# 2026-09-25.
+#
+# Packages: libtiff6  (scope: backend)
+CVE-2026-36849  # sev=high
+CVE-2026-52490  # sev=high
+
+# --- backend/libx11 + libxrender: X11 client libraries ---------------------------
+# libx11-6/libx11-data/libxrender1 are transitive dependencies of libcairo2
+# (via libopenslide0). There is no X server and no DISPLAY in the container;
+# libvips is built with pangocairo disabled and never opens an X connection,
+# so the X11 wire-protocol parsing these CVEs live in is unreachable. Purging
+# them would remove libopenslide0. No fix in trixie-security as of
+# 2026-09-25.
+#
+# Packages: libx11-6, libx11-data, libxrender1  (scope: backend)
+CVE-2026-88806  # sev=high
+CVE-2026-88807  # sev=high
+
+
+# === backend-only: Python packages ===============================================
+
+# --- backend/ecdsa: Minerva timing side-channel (CVE-2024-23342) ----------------
+# `ecdsa` is a hard dependency of `python-jose` (backend/pyproject.toml →
+# python-jose[cryptography] → ecdsa). HRIV signs and verifies its own JWTs
+# with HMAC only: `AuthSettings.jwt_algorithm` defaults to "HS256"
+# (backend/app/auth.py) and every jwt.decode() call pins
+# `algorithms=[auth_settings.jwt_algorithm]`; no ES256/ECDSA key material
+# exists anywhere in the deployment, so the pure-Python ECDSA code the timing
+# attack targets is never executed. Upstream has stated the issue will not
+# be fixed in pure Python. Follow-up (tracked separately, not in this
+# change): migrate python-jose → PyJWT/joserfc, which drops the ecdsa
+# dependency entirely.
+#
+# Packages: ecdsa (python)  (scope: backend)
+CVE-2024-23342  # sev=high
+
+
+# === synthetic-monitoring (Ubuntu 24.04 noble, Playwright base image) ============
+
+# --- gstreamer1.0-plugins-bad: media plugin CVE ---------------------------------
+# CVE-2025-3887 is in the GStreamer "bad" plugin set shipped by the Microsoft
+# Playwright base image as a WebKit media dependency. HRIV's synthetic
+# journeys (`npx playwright test`) run headless Chromium only
+# (synthetic-monitoring/playwright.config.ts `projects`) against HRIV's own
+# pages; no media element is played, no WebKit browser is launched, and the
+# image processes no external media files. No fixed version for noble as of
+# 2026-09-25.
+#
+# Packages: gstreamer1.0-plugins-bad, libgstreamer-plugins-bad1.0-0
+#           (scope: synthetic-monitoring)
+CVE-2025-3887   # sev=high

@@ -444,7 +444,7 @@ networkPolicy:
 tiles:
   enabled: false
   nginx:
-    image: nginx:1.27-alpine
+    image: nginx:1.30-alpine
     port: 8001
     resources: {}
 
