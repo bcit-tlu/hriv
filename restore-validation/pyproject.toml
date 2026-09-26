@@ -8,7 +8,7 @@ packages = [{include = "hriv_restore_validation"}]
 
 [tool.poetry.dependencies]
 python = "^3.11"
-kubernetes = "32.0.1"
+kubernetes = "36.0.0"
 PyYAML = "6.0.2"
 opentelemetry-distro = "0.57b0"
 opentelemetry-exporter-otlp = "1.36.0"
