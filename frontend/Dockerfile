@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.4
 
 # ── Stage 1: Install dependencies ────────────────────────
-FROM node:22-alpine AS deps
+FROM node:26-alpine AS deps
 WORKDIR /app
 COPY package*.json ./
 COPY scripts/install-git-hooks.mjs ./scripts/install-git-hooks.mjs
