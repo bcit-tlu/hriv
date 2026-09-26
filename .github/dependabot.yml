@@ -1,0 +1,206 @@
+# Dependabot configuration for the HRIV monorepo.
+#
+# Weekly (Monday, America/Vancouver) update PRs for base images, Python and
+# npm dependencies, and GitHub Actions. Minor + patch updates are grouped per
+# component so one PR lands per ecosystem per week; majors open individually.
+#
+# PR titles use conventional-commit prefixes (`chore(deps)`, `ci(deps)`).
+# pr-title-lint.yaml skips bot-authored PRs, and release-please does not add
+# `chore` commits to component changelogs.
+#
+# See docs/security-scanning.md for how to handle these PRs (notably the
+# Playwright image/npm co-bump for synthetic-monitoring).
+
+version: 2
+
+updates:
+  # ── Docker base images ─────────────────────────────────────────────
+  - package-ecosystem: docker
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+      timezone: America/Vancouver
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
+    labels: [dependencies, docker]
+    groups:
+      docker-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+      timezone: America/Vancouver
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
+    labels: [dependencies, docker]
+    groups:
+      docker-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directory: /backup
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+      timezone: America/Vancouver
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
+    labels: [dependencies, docker]
+    groups:
+      docker-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directory: /restore-validation
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+      timezone: America/Vancouver
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
+    labels: [dependencies, docker]
+    groups:
+      docker-minor-patch:
+        update-types: [minor, patch]
+
+  # The Playwright base image tag MUST match the `@playwright/test` version in
+  # synthetic-monitoring/package.json (enforced by
+  # synthetic-monitoring/scripts/check-playwright-image-version.mjs, run in
+  # CI). Dependabot cannot co-bump across ecosystems, so the image is ignored
+  # here; the npm `playwright` group below bumps `@playwright/test`, and the
+  # maintainer bumps the `FROM mcr.microsoft.com/playwright:vX.Y.Z-noble` tag
+  # in synthetic-monitoring/Dockerfile on that same PR. CI fails until the two
+  # agree.
+  - package-ecosystem: docker
+    directory: /synthetic-monitoring
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+      timezone: America/Vancouver
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
+    labels: [dependencies, docker]
+    ignore:
+      - dependency-name: mcr.microsoft.com/playwright
+
+  # ── Python (Poetry) ────────────────────────────────────────────────
+  - package-ecosystem: pip
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+      timezone: America/Vancouver
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: chore(deps)
+      prefix-development: chore(deps-dev)
+    labels: [dependencies, python]
+    groups:
+      python-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: pip
+    directory: /backup
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+      timezone: America/Vancouver
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: chore(deps)
+      prefix-development: chore(deps-dev)
+    labels: [dependencies, python]
+    groups:
+      python-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: pip
+    directory: /restore-validation
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+      timezone: America/Vancouver
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: chore(deps)
+      prefix-development: chore(deps-dev)
+    labels: [dependencies, python]
+    groups:
+      python-minor-patch:
+        update-types: [minor, patch]
+
+  # ── npm ────────────────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+      timezone: America/Vancouver
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: chore(deps)
+      prefix-development: chore(deps-dev)
+    labels: [dependencies, javascript]
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+
+  # `@playwright/test` (and `playwright`) sit in their own group so the
+  # required Dockerfile FROM-tag co-bump is obvious from the PR title.
+  - package-ecosystem: npm
+    directory: /synthetic-monitoring
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+      timezone: America/Vancouver
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: chore(deps)
+      prefix-development: chore(deps-dev)
+    labels: [dependencies, javascript]
+    groups:
+      playwright:
+        patterns:
+          - '@playwright/*'
+          - playwright
+      npm-minor-patch:
+        exclude-patterns:
+          - '@playwright/*'
+          - playwright
+        update-types: [minor, patch]
+
+  # ── GitHub Actions ─────────────────────────────────────────────────
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+      timezone: America/Vancouver
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci(deps)
+    labels: [dependencies, github-actions]
+    groups:
+      actions:
+        patterns: ['*']
+        update-types: [minor, patch]
