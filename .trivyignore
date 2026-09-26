@@ -57,14 +57,16 @@
 #   backend             uvicorn app.main:app / arq worker (python:3.13-slim, Debian 13 trixie)
 #   backup              opentelemetry-instrument python backup.py (python:3.13-slim-trixie)
 #   restore-validation  python restore-validation orchestrator (python:3.13-slim-trixie)
-#   synthetic-monitoring npx playwright test (mcr.microsoft.com/playwright:*-noble, Ubuntu 24.04)
+#   synthetic-monitoring npx playwright test (node:22-trixie-slim, Debian 13 trixie)
 #
 # Format reference: https://aquasecurity.github.io/trivy/latest/docs/configuration/filtering/#trivyignore
 # ------------------------------------------------------------------------------
 
 
-# === Debian trixie base packages (backend, backup, restore-validation) ========
-# The three Python images share python:3.13-slim (Debian 13 "trixie"). The
+# === Debian trixie base packages (backend, backup, restore-validation, ========
+# ===  synthetic-monitoring) ===============================================
+# The three Python images share python:3.13-slim and synthetic-monitoring uses
+# node:22-trixie-slim (Debian 13 "trixie"). The
 # groups in this section are the trixie base layer; the same CVE is reported
 # once per binary package built from the same source package, so one CVE-ID
 # here silences up to nine alerts per image (e.g. the util-linux family).
@@ -87,7 +89,7 @@
 #
 # Packages: util-linux, bsdutils, mount, login, libblkid1, libmount1,
 #           libsmartcols1, libuuid1, liblastlog2-2
-#           (scope: backend, backup, restore-validation)
+#           (scope: backend, backup, restore-validation, synthetic-monitoring)
 CVE-2026-76642  # sev=high
 CVE-2026-78408  # sev=high
 CVE-2026-78409  # sev=high
@@ -101,8 +103,8 @@ CVE-2026-78410  # sev=high
 #
 # Packages: util-linux, bsdutils, mount, login, passwd, libblkid1, libmount1,
 #           libsmartcols1, libuuid1, liblastlog2-2
-#           (scope: backend, backup, restore-validation; `login` also in
-#            synthetic-monitoring's Ubuntu base)
+#           (scope: backend, backup, restore-validation,
+#            synthetic-monitoring)
 CVE-2007-5686   # sev=low
 CVE-2022-0563   # sev=low
 CVE-2024-56433  # sev=low
@@ -120,7 +122,7 @@ CVE-2026-3184   # sev=medium
 # HRIV never imports them. No fix in trixie-security as of 2026-09-25.
 #
 # Packages: ncurses-base, ncurses-bin, libncursesw6, libtinfo6
-#           (scope: backend, backup, restore-validation)
+#           (scope: backend, backup, restore-validation, synthetic-monitoring)
 CVE-2025-69720  # sev=high
 
 # --- perl: perl-base (all three) + full perl (backup only) ---------------------
@@ -133,8 +135,9 @@ CVE-2025-69720  # sev=high
 # with argv fully controlled by backup.py (no user-supplied input, no
 # network-facing perl). No fix in trixie-security as of 2026-09-25.
 #
-# Packages: perl-base (backend, backup, restore-validation);
-#           perl, perl-modules-5.40, libperl5.40 (scope: backup)
+# Packages: perl-base (backend, backup, restore-validation,
+#           synthetic-monitoring); perl, perl-modules-5.40, libperl5.40
+#           (scope: backup)
 CVE-2026-9538   # sev=high
 
 # --- libacl1: POSIX ACL parsing --------------------------------------------------
@@ -143,7 +146,8 @@ CVE-2026-9538   # sev=high
 # never manipulates ACLs; libacl1 is present only as a dependency of
 # coreutils/tar (Essential). No fix in trixie-security as of 2026-09-25.
 #
-# Packages: libacl1  (scope: backend, backup, restore-validation)
+# Packages: libacl1  (scope: backend, backup, restore-validation,
+#                    synthetic-monitoring)
 CVE-2026-54369  # sev=high
 
 # --- systemd libraries: libsystemd0 / libudev1 ---------------------------------
@@ -153,7 +157,8 @@ CVE-2026-54369  # sev=high
 # (no process calls sd_* or udev_* APIs). No fix in trixie-security as of
 # 2026-09-25.
 #
-# Packages: libsystemd0, libudev1  (scope: backend, backup, restore-validation)
+# Packages: libsystemd0, libudev1  (scope: backend, backup,
+#           restore-validation, synthetic-monitoring)
 CVE-2026-16742  # sev=high
 
 
@@ -182,7 +187,9 @@ CVE-2026-16742  # sev=high
 # <no-dsa> (minor issue); fixed only in forky/sid as of 2026-09-25.
 # https://security-tracker.debian.org/tracker/CVE-2026-6653
 #
-# Packages: libxml2  (scope: backend)
+# Packages: libxml2  (scope: backend, synthetic-monitoring — pulled in as a
+#           Chromium runtime dependency via `playwright install --with-deps`;
+#           no XML is ever parsed: the journeys only drive the browser)
 CVE-2026-6653   # sev=critical
 CVE-2026-74860  # sev=high
 CVE-2026-86138  # sev=high
@@ -200,7 +207,9 @@ CVE-2026-86144  # sev=high
 # plistlib/xmlrpc modules HRIV does not import. No untrusted XML reaches
 # expat. No fix in trixie-security as of 2026-09-25.
 #
-# Packages: libexpat1  (scope: backend)
+# Packages: libexpat1  (scope: backend, synthetic-monitoring — pulled in by
+#           fontconfig, a Chromium runtime dependency; no untrusted XML reaches
+#           expat)
 CVE-2026-66046  # sev=high
 CVE-2026-76956  # sev=high
 CVE-2026-76957  # sev=high
@@ -227,7 +236,10 @@ CVE-2026-52490  # sev=high
 # them would remove libopenslide0. No fix in trixie-security as of
 # 2026-09-25.
 #
-# Packages: libx11-6, libx11-data, libxrender1  (scope: backend)
+# Packages: libx11-6, libx11-data, libxrender1  (scope: backend,
+#           synthetic-monitoring — plus libx11-xcb1; pulled in as Chromium
+#           runtime dependencies, but no X server or DISPLAY exists and the
+#           browser runs headless, so the X11 wire protocol is never used)
 CVE-2026-88806  # sev=high
 CVE-2026-88807  # sev=high
 
@@ -250,17 +262,34 @@ CVE-2026-88807  # sev=high
 CVE-2024-23342  # sev=high
 
 
-# === synthetic-monitoring (Ubuntu 24.04 noble, Playwright base image) ============
+# === synthetic-monitoring (Debian 13 trixie, node:22-trixie-slim base) ==========
+# The image is Chromium-only: `playwright.config.ts` declares a single
+# `chromium` project and the Dockerfile installs just that browser via
+# `npx playwright install --with-deps chromium` — no WebKit/Firefox and none
+# of their media/ffmpeg dependencies are present.
 
-# --- gstreamer1.0-plugins-bad: media plugin CVE ---------------------------------
-# CVE-2025-3887 is in the GStreamer "bad" plugin set shipped by the Microsoft
-# Playwright base image as a WebKit media dependency. HRIV's synthetic
-# journeys (`npx playwright test`) run headless Chromium only
-# (synthetic-monitoring/playwright.config.ts `projects`) against HRIV's own
-# pages; no media element is played, no WebKit browser is launched, and the
-# image processes no external media files. No fixed version for noble as of
-# 2026-09-25.
+# --- libcups2t64: CUPS client library -------------------------------------------
+# CVE-2026-34980 is in the CUPS client library, pulled in as a Chromium
+# runtime dependency (`--with-deps`). There is no print server, no
+# CUPS daemon, and no network printing path in the container — libcups is
+# only ever loaded into the headless browser process, which never issues a
+# print request against an attacker-controlled server (the journeys only
+# drive HRIV's own pages). No fix in trixie-security as of 2026-09-26.
+# https://security-tracker.debian.org/tracker/CVE-2026-34980
 #
-# Packages: gstreamer1.0-plugins-bad, libgstreamer-plugins-bad1.0-0
-#           (scope: synthetic-monitoring)
-CVE-2025-3887   # sev=high
+# Packages: libcups2t64  (scope: synthetic-monitoring)
+CVE-2026-34980  # sev=high
+
+# --- xvfb / xserver-common: X server ---------------------------------------------
+# CVE-2023-5574 is a use-after-free in the X server's screen-rotation
+# (RandR) path, reported against xvfb and xserver-common, which Playwright's
+# `--with-deps` installs unconditionally. Chromium runs headless
+# (`--headless`), so no X server is ever launched in the image — xvfb and
+# xserver-common sit unused on disk; no client ever connects and no
+# attacker-controlled RandR request can reach the vulnerable path.
+# Removing them is not possible without diverging from Playwright's own
+# dependency set. No fix in trixie-security as of 2026-09-26.
+# https://security-tracker.debian.org/tracker/CVE-2023-5574
+#
+# Packages: xvfb, xserver-common  (scope: synthetic-monitoring)
+CVE-2023-5574   # sev=high
