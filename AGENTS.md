@@ -93,6 +93,7 @@ lives, and the [domain model](docs/domain-model.md) for schema details.
 - Component release types: `node` (frontend), `python` (backend, backup, restore-validation). Versions tracked in `.release-please-manifest.json` + `charts/*/Chart.yaml` annotations.
 - Images → `ghcr.io/bcit-tlu/hriv/hriv-{frontend,backend,backup,restore-validation}`; charts → `oci://ghcr.io/bcit-tlu/hriv/charts`.
 - `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true` is set in all workflows.
+- Trivy findings reach code scanning from the `main` oci-build and the weekly `security-rescan.yaml`; Dependabot (`.github/dependabot.yml`) opens weekly dependency PRs. See [`docs/security-scanning.md`](docs/security-scanning.md).
 - Details: [`docs/RELEASE_AND_DEPLOY_FLOW.md`](docs/RELEASE_AND_DEPLOY_FLOW.md).
 
 ## Deployment
