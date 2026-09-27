@@ -15,6 +15,10 @@ from app.schemas import (
     CategoryUpdate,
     ChangelogEntryCreate,
     ChangelogEntryUpdate,
+    CollectionCreate,
+    CollectionImagesUpdate,
+    CollectionUpdate,
+    CollectionViewportUpdate,
     GroupCreate,
     GroupOut,
     GroupUpdate,
@@ -448,3 +452,76 @@ def test_metadata_extra_null_and_merge_mutually_exclusive() -> None:
             metadata_extra=None,
             metadata_extra_merge={"key": "val"},
         )
+
+
+# ── Collection request schemas ────────────────────────────
+
+
+def test_collection_create_defaults_and_normalization() -> None:
+    body = CollectionCreate(name="  Lungs ", type="sequence", description="   ")
+    assert body.name == "Lungs"
+    assert body.description is None
+    assert body.visibility == "private"
+    assert body.image_ids == [] and body.program_ids == [] and body.group_ids == []
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"name": "  ", "type": "sequence"},
+        {"name": "x", "type": "playlist"},
+        {"name": "x", "type": "sequence", "visibility": "secret"},
+        {"name": "x", "type": "sequence", "image_ids": [1, 2, 1]},
+        {"name": "x", "type": "synchronized", "image_ids": [1, 2, 3, 4, 5]},
+        {"name": "x", "type": "sequence", "visibility": "public", "program_ids": [1]},
+        {"name": "x", "type": "sequence", "visibility": "private", "group_ids": [1]},
+    ],
+)
+def test_collection_create_rejects_invalid_bodies(kwargs: dict) -> None:
+    with pytest.raises(ValidationError):
+        CollectionCreate(**kwargs)
+
+
+def test_collection_create_allows_cap_and_restricted_scope() -> None:
+    sync = CollectionCreate(name="x", type="synchronized", image_ids=[1, 2, 3, 4])
+    assert len(sync.image_ids) == 4
+    seq = CollectionCreate(name="x", type="sequence", image_ids=list(range(10)))
+    assert len(seq.image_ids) == 10
+    restricted = CollectionCreate(
+        name="x", type="sequence", visibility="restricted", program_ids=[1], group_ids=[2]
+    )
+    assert restricted.program_ids == [1] and restricted.group_ids == [2]
+
+
+def test_collection_update_requires_version_and_validates_literals() -> None:
+    with pytest.raises(ValidationError):
+        CollectionUpdate(name="x")
+    with pytest.raises(ValidationError):
+        CollectionUpdate(version=1, type="bogus")
+    with pytest.raises(ValidationError):
+        CollectionUpdate(version=1, visibility="bogus")
+    with pytest.raises(ValidationError):
+        CollectionUpdate(version=1, name="   ")
+    body = CollectionUpdate(version=2, description="  ", name=" n ")
+    assert body.name == "n" and body.description is None
+    assert body.model_dump(exclude_unset=True) == {
+        "version": 2, "description": None, "name": "n",
+    }
+
+
+def test_collection_images_update_rejects_duplicates_and_requires_version() -> None:
+    with pytest.raises(ValidationError):
+        CollectionImagesUpdate(image_ids=[1, 1], version=1)
+    with pytest.raises(ValidationError):
+        CollectionImagesUpdate(image_ids=[1])
+    body = CollectionImagesUpdate(image_ids=[3, 1, 2], version=1)
+    assert body.image_ids == [3, 1, 2]
+
+
+def test_collection_viewport_update_requires_object_and_version() -> None:
+    with pytest.raises(ValidationError):
+        CollectionViewportUpdate(viewport_state=[1], version=1)
+    with pytest.raises(ValidationError):
+        CollectionViewportUpdate(viewport_state={})
+    body = CollectionViewportUpdate(viewport_state={"a": {"zoom": 2}}, version=4)
+    assert body.viewport_state == {"a": {"zoom": 2}} and body.version == 4

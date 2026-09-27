@@ -733,3 +733,107 @@ class CollectionOut(CollectionSummaryOut):
     program_ids: list[int] = []
     group_ids: list[int] = []
     viewport_state: dict = {}
+
+
+CollectionType = Literal["synchronized", "sequence"]
+CollectionVisibility = Literal["private", "public", "restricted"]
+
+# Mirrors ``models.SYNCHRONIZED_COLLECTION_MAX_IMAGES``; kept here so the
+# request schemas stay import-free of the ORM layer.
+SYNCHRONIZED_COLLECTION_MAX_IMAGES = 4
+
+
+def normalize_collection_description(v: str | None) -> str | None:
+    """Strip whitespace; a blank description clears the field (``None``)."""
+    if isinstance(v, str):
+        v = v.strip()
+        return v or None
+    return v
+
+
+def validate_collection_image_ids(
+    image_ids: list[int], collection_type: str | None,
+) -> list[int]:
+    """Reject duplicate image ids and enforce the synchronized image cap.
+
+    Existence and per-caller visibility of each id are checked by the router
+    against the database; this is the request-shape half of the contract.
+    """
+    if len(set(image_ids)) != len(image_ids):
+        raise ValueError("image_ids must not contain duplicates")
+    if (
+        collection_type == "synchronized"
+        and len(image_ids) > SYNCHRONIZED_COLLECTION_MAX_IMAGES
+    ):
+        raise ValueError(
+            "synchronized collections hold at most "
+            f"{SYNCHRONIZED_COLLECTION_MAX_IMAGES} images"
+        )
+    return image_ids
+
+
+class CollectionCreate(BaseModel):
+    name: str
+    description: str | None = None
+    type: CollectionType
+    visibility: CollectionVisibility = "private"
+    image_ids: list[int] = []
+    program_ids: list[int] = []
+    group_ids: list[int] = []
+
+    _validate_name = field_validator("name", mode="before")(normalize_nonblank_value)
+    _validate_description = field_validator("description", mode="before")(
+        normalize_collection_description
+    )
+
+    @model_validator(mode="after")
+    def _check_images_and_scope(self) -> "CollectionCreate":
+        validate_collection_image_ids(self.image_ids, self.type)
+        if self.visibility != "restricted" and (self.program_ids or self.group_ids):
+            raise ValueError(
+                "program_ids/group_ids may only be set when visibility is 'restricted'"
+            )
+        return self
+
+
+class CollectionUpdate(BaseModel):
+    """PATCH body. ``type`` is immutable: it may be echoed back unchanged but
+    the router rejects any change with 422. ``version`` is the optimistic
+    concurrency token (must equal the collection's current version).
+    """
+
+    name: str | None = None
+    description: str | None = None
+    type: CollectionType | None = None
+    visibility: CollectionVisibility | None = None
+    program_ids: list[int] | None = None
+    group_ids: list[int] | None = None
+    version: int
+
+    _validate_name = field_validator("name", mode="before")(normalize_optional_nonblank_value)
+    _validate_description = field_validator("description", mode="before")(
+        normalize_collection_description
+    )
+
+
+class CollectionImagesUpdate(BaseModel):
+    """PUT body replacing the whole ordered image list (add/remove/reorder).
+
+    The synchronized cap is enforced by the router, which knows the
+    collection's type; duplicates are rejected here.
+    """
+
+    image_ids: list[int]
+    version: int
+
+    @field_validator("image_ids")
+    @classmethod
+    def _no_duplicates(cls, v: list[int]) -> list[int]:
+        return validate_collection_image_ids(v, None)
+
+
+class CollectionViewportUpdate(BaseModel):
+    """PUT body replacing ``viewport_state`` wholesale (never a partial merge)."""
+
+    viewport_state: dict
+    version: int
