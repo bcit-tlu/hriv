@@ -1511,8 +1511,12 @@ async def create_task_download_token(
         samesite="strict",
         path=_download_cookie_path(task_id),
         # ``secure`` follows the effective request scheme (X-Forwarded-Proto
-        # is trusted via --proxy-headers) so plain-http local dev still works.
-        secure=request.url.scheme == "https",
+        # from the fronting nginx, else the direct connection scheme) so
+        # plain-http local dev still works.
+        secure=(
+            request.headers.get("x-forwarded-proto", request.url.scheme).lower()
+            == "https"
+        ),
     )
 
 

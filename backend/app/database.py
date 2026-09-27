@@ -66,9 +66,26 @@ class Settings(BaseSettings):
     files_import_archive_retention_count: int = Field(default=0, ge=0)
     files_import_archive_retention_days: int = Field(default=0, ge=0)
 
-    # Login rate limiting (Phase 5)
+    # Number of trusted reverse proxies that append to X-Forwarded-For before
+    # a request reaches the backend. The client IP is taken this many entries
+    # from the RIGHT of the header (the leftmost entry is client-controlled).
+    # 1 = frontend nginx only (docker compose). The fleet deployment chain is
+    # HAProxy gateway (overwrites XFF with the client IP) -> ingress-nginx
+    # (appends) -> frontend nginx (appends) -> uvicorn, i.e. 3. 0 = ignore
+    # forwarding headers and use the direct connection address.
+    # See docs/deployment-proxy-chain.md.
+    trusted_proxy_hops: int = Field(default=1, ge=0)
+
+    # Login rate limiting (Phase 5). Two sliding-window budgets: a
+    # per-(client IP, email) budget so one shared campus NAT does not lock
+    # out unrelated users, and a longer account-scoped per-email budget that
+    # does not depend on the client IP at all, bounding password guessing
+    # against a single account even if the caller can vary its apparent
+    # source address.
     rate_limit_login_max: int = 5
     rate_limit_login_window: int = 60  # seconds
+    rate_limit_login_email_max: int = 20
+    rate_limit_login_email_window: int = 900  # seconds
 
     # Telemetry ingestion rate limiting. Batches are small and best-effort, so
     # the window is generous; this only guards against a misbehaving or
