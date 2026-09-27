@@ -8,6 +8,7 @@ import asyncio
 import contextlib
 import errno
 import logging
+import math
 import os
 import shutil
 import tempfile
@@ -85,6 +86,26 @@ _ZIP_MIN_FREE_BYTES = int(
     os.environ.get("BULK_IMPORT_MIN_FREE_BYTES", str(1024 * 1024 * 1024))
 )
 _ZIP_FREE_SPACE_CHECK_INTERVAL_BYTES = 512 * 1024 * 1024
+_ZIP_NAME_DISPLAY_LIMIT = 40
+
+
+def _validate_zip_limits() -> None:
+    for name, value in (
+        ("BULK_IMPORT_MAX_ENTRY_BYTES", _ZIP_MAX_ENTRY_BYTES),
+        ("BULK_IMPORT_MAX_TOTAL_BYTES", _ZIP_MAX_TOTAL_BYTES),
+        ("BULK_IMPORT_MAX_ENTRIES", _ZIP_MAX_ENTRIES),
+        ("BULK_IMPORT_MIN_FREE_BYTES", _ZIP_MIN_FREE_BYTES),
+    ):
+        if value <= 0:
+            raise ValueError(f"{name} must be a positive integer, got {value}")
+    if not math.isfinite(_ZIP_MAX_COMPRESSION_RATIO) or _ZIP_MAX_COMPRESSION_RATIO < 1:
+        raise ValueError(
+            "BULK_IMPORT_MAX_COMPRESSION_RATIO must be a finite number >= 1, "
+            f"got {_ZIP_MAX_COMPRESSION_RATIO}"
+        )
+
+
+_validate_zip_limits()
 _SOURCE_IMAGE_POLL_INTERVAL_SECONDS = 2
 _SOURCE_IMAGE_STALE_SECONDS = int(os.environ.get("SOURCE_IMAGE_STALE_SECONDS", "900"))
 _SOURCE_IMAGE_PENDING_GRACE_SECONDS = 10
@@ -136,6 +157,14 @@ def _format_gib(num_bytes: int) -> str:
     return f"{num_bytes / (1024 ** 3):g} GiB"
 
 
+def _display_name(name: str) -> str:
+    """Shorten attacker-controlled names so the error detail stays readable."""
+    name = os.path.basename(name.replace("\\", "/")) or name
+    if len(name) <= _ZIP_NAME_DISPLAY_LIMIT:
+        return name
+    return name[: _ZIP_NAME_DISPLAY_LIMIT - 1] + "\u2026"
+
+
 def _ensure_zip_extract_free_space(target_dir: str) -> None:
     free_bytes = shutil.disk_usage(target_dir).free
     if free_bytes < _ZIP_MIN_FREE_BYTES:
@@ -148,27 +177,30 @@ def _ensure_zip_extract_free_space(target_dir: str) -> None:
 
 
 class _ZipExtractBudget:
-    """Enforces per-entry, cumulative, entry-count and free-space limits while
-    extracting one uploaded zip archive."""
+    """Enforces per-entry, cumulative, entry-count and free-space limits across
+    every zip archive extracted for one bulk-import request."""
 
-    def __init__(self, archive_name: str) -> None:
-        self.archive_name = archive_name
+    def __init__(self) -> None:
+        self.archive_name = ""
         self.entries = 0
         self.total_bytes = 0
         self._last_free_space_check = 0
 
+    def begin_archive(self, archive_name: str) -> None:
+        self.archive_name = _display_name(archive_name)
+
     def _entry_too_large(self, zip_entry: str) -> _ZipExtractLimitExceeded:
         return _ZipExtractLimitExceeded(
             413,
-            f"Zip entry '{zip_entry}' in '{self.archive_name}' is larger than "
-            f"the per-file limit of {_format_gib(_ZIP_MAX_ENTRY_BYTES)}",
+            f"Zip entry '{_display_name(zip_entry)}' in '{self.archive_name}' "
+            f"is larger than the per-file limit of {_format_gib(_ZIP_MAX_ENTRY_BYTES)}",
         )
 
     def _archive_too_large(self) -> _ZipExtractLimitExceeded:
         return _ZipExtractLimitExceeded(
             413,
-            f"Zip archive '{self.archive_name}' expands beyond the total "
-            f"limit of {_format_gib(_ZIP_MAX_TOTAL_BYTES)}",
+            f"Zip archive '{self.archive_name}' would take this upload beyond "
+            f"the total limit of {_format_gib(_ZIP_MAX_TOTAL_BYTES)}",
         )
 
     def next_entry(self) -> None:
@@ -176,7 +208,7 @@ class _ZipExtractBudget:
         if self.entries > _ZIP_MAX_ENTRIES:
             raise _ZipExtractLimitExceeded(
                 413,
-                f"Zip archive '{self.archive_name}' contains more than "
+                f"Zip archive '{self.archive_name}' takes this upload beyond "
                 f"{_ZIP_MAX_ENTRIES} image files",
             )
 
@@ -189,9 +221,10 @@ class _ZipExtractBudget:
         if info.file_size > max(info.compress_size, 1) * _ZIP_MAX_COMPRESSION_RATIO:
             raise _ZipExtractLimitExceeded(
                 413,
-                f"Zip entry '{info.filename}' in '{self.archive_name}' has a "
-                f"compression ratio above {_ZIP_MAX_COMPRESSION_RATIO:g}:1 and "
-                "was rejected as a possible decompression bomb",
+                f"Zip entry '{_display_name(info.filename)}' in "
+                f"'{self.archive_name}' has a compression ratio above "
+                f"{_ZIP_MAX_COMPRESSION_RATIO:g}:1 and was rejected as a "
+                "possible decompression bomb",
             )
 
     def extract_entry(
@@ -1688,6 +1721,7 @@ async def bulk_import_images(
             os.makedirs(settings.source_images_dir, exist_ok=True)
 
             file_entries: list[tuple[str, str]] = []  # (original_filename, stored_path)
+            budget = _ZipExtractBudget()
 
             try:
                 for upload in files:
@@ -1709,7 +1743,7 @@ async def bulk_import_images(
                                         break
                                     tmp.write(chunk)
 
-                            budget = _ZipExtractBudget(upload.filename)
+                            budget.begin_archive(upload.filename)
                             with zipfile.ZipFile(tmp_path, "r") as zf:
                                 for zip_entry in zf.namelist():
                                     # Skip directories and hidden/system files

@@ -12,6 +12,7 @@ import errno
 import io
 import logging
 import os
+import struct
 import sys
 import time
 import zipfile
@@ -3323,8 +3324,13 @@ def _zip_bomb_db() -> AsyncMock:
     return db
 
 
-async def _run_zip_import(tmp_path, zip_data: bytes, **limits) -> HTTPException:
-    upload = _make_upload("archive.zip", [zip_data, b""])
+async def _run_zip_import(
+    tmp_path, zip_data: bytes | list[bytes], **limits
+) -> HTTPException:
+    archives = zip_data if isinstance(zip_data, list) else [zip_data]
+    uploads = [
+        _make_upload(f"archive{i}.zip", [data, b""]) for i, data in enumerate(archives)
+    ]
     patches = [patch("app.routers.bulk_import.settings")]
     patches.extend(
         patch(f"app.routers.bulk_import.{name}", value) for name, value in limits.items()
@@ -3334,13 +3340,24 @@ async def _run_zip_import(tmp_path, zip_data: bytes, **limits) -> HTTPException:
         mocks[0].source_images_dir = str(tmp_path)
         with pytest.raises(HTTPException) as exc:
             await bulk_import_images(
-                files=[upload],
+                files=uploads,
                 category_id=1,
                 background_tasks=MagicMock(),
                 _user=MagicMock(),
                 db=_zip_bomb_db(),
             )
     return exc.value
+
+
+def _forge_declared_size(zip_data: bytes, declared: int) -> bytes:
+    """Rewrite the uncompressed-size field of a single-entry archive in both
+    the local and central-directory headers."""
+    raw = bytearray(zip_data)
+    local = raw.find(b"PK\x03\x04")
+    central = raw.rfind(b"PK\x01\x02")
+    raw[local + 22 : local + 26] = struct.pack("<I", declared)
+    raw[central + 24 : central + 28] = struct.pack("<I", declared)
+    return bytes(raw)
 
 
 async def test_bulk_import_zip_rejects_high_compression_ratio(tmp_path) -> None:
@@ -3364,9 +3381,21 @@ async def test_bulk_import_zip_rejects_oversized_entry(tmp_path) -> None:
     assert list(tmp_path.iterdir()) == []
 
 
+async def test_bulk_import_zip_forged_small_header_cannot_bypass_limits(tmp_path) -> None:
+    """A header that under-declares ``file_size`` must not let the real payload
+    through: CPython's ``ZipExtFile`` truncates at the declared size and fails
+    the CRC, which surfaces as an invalid-archive 400 with nothing left on
+    disk. The streaming cap below is the backstop should that ever change."""
+    zip_data = _forge_declared_size(_zip_bytes({"bomb.png": os.urandom(4096)}), 16)
+    exc = await _run_zip_import(tmp_path, zip_data, _ZIP_MAX_ENTRY_BYTES=1024)
+    assert exc.status_code == 400
+    assert "not a valid zip archive" in exc.detail
+    assert list(tmp_path.iterdir()) == []
+
+
 async def test_bulk_import_zip_rejects_oversized_entry_streaming(tmp_path) -> None:
-    """The cap is enforced on bytes actually decompressed, not only on the
-    (attacker-controlled) declared ``file_size`` header."""
+    """The cap is enforced on bytes actually decompressed, independently of
+    the header pre-screen (bypassed here so only the streaming check remains)."""
     zip_data = _zip_bytes({"bomb.png": os.urandom(4096)})
     exc = await _run_zip_import(
         tmp_path,
@@ -3400,8 +3429,48 @@ async def test_bulk_import_zip_rejects_too_many_entries(tmp_path) -> None:
     zip_data = _zip_bytes({f"img{i}.png": b"x" for i in range(5)})
     exc = await _run_zip_import(tmp_path, zip_data, _ZIP_MAX_ENTRIES=3)
     assert exc.status_code == 413
-    assert "more than 3 image files" in exc.detail
+    assert "beyond 3 image files" in exc.detail
     assert list(tmp_path.iterdir()) == []
+
+
+async def test_bulk_import_zip_limits_span_all_archives_in_request(tmp_path) -> None:
+    """Splitting the payload across several archives in one request does not
+    reset the entry-count or cumulative-size budget."""
+    two_each = _zip_bytes({"a.png": b"x", "b.png": b"x"})
+    exc = await _run_zip_import(tmp_path, [two_each, two_each], _ZIP_MAX_ENTRIES=3)
+    assert exc.status_code == 413
+    assert "archive1.zip" in exc.detail
+    assert list(tmp_path.iterdir()) == []
+
+    big = _zip_bytes({"a.png": os.urandom(600)})
+    exc = await _run_zip_import(tmp_path, [big, big], _ZIP_MAX_TOTAL_BYTES=1000)
+    assert exc.status_code == 413
+    assert "total limit" in exc.detail
+    assert list(tmp_path.iterdir()) == []
+
+
+async def test_bulk_import_zip_limit_detail_truncates_long_names(tmp_path) -> None:
+    """Attacker-controlled names are shortened so the reason survives the
+    frontend's 200-character display cutoff."""
+    zip_data = _zip_bytes({"dir/" + "n" * 300 + ".png": b"\0" * (1024 * 1024)})
+    exc = await _run_zip_import(tmp_path, zip_data)
+    assert exc.status_code == 413
+    assert "compression ratio" in exc.detail
+    assert len(exc.detail) <= 200
+    assert "nnn\u2026" in exc.detail
+
+
+def test_bulk_import_zip_limits_reject_invalid_settings() -> None:
+    with patch("app.routers.bulk_import._ZIP_MAX_COMPRESSION_RATIO", float("nan")):
+        with pytest.raises(ValueError, match="BULK_IMPORT_MAX_COMPRESSION_RATIO"):
+            bulk_import_module._validate_zip_limits()
+    with patch("app.routers.bulk_import._ZIP_MIN_FREE_BYTES", 0):
+        with pytest.raises(ValueError, match="BULK_IMPORT_MIN_FREE_BYTES"):
+            bulk_import_module._validate_zip_limits()
+    with patch("app.routers.bulk_import._ZIP_MAX_ENTRIES", -1):
+        with pytest.raises(ValueError, match="BULK_IMPORT_MAX_ENTRIES"):
+            bulk_import_module._validate_zip_limits()
+    bulk_import_module._validate_zip_limits()
 
 
 async def test_bulk_import_zip_rejects_when_free_space_low(tmp_path) -> None:
