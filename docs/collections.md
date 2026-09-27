@@ -41,6 +41,10 @@ program (`owner_program_id`, FK `SET NULL`) — enforced by
 - Deleting a **group** removes its `collection_groups` rows; unlike categories,
   a group attached to a collection does not block group deletion.
 
+Collections are included in the admin database export/import round-trip
+(`collections` key with ordered `image_ids`, `program_ids`, `group_ids`); see
+[admin-import-export.md](admin-import-export.md).
+
 `viewport_state` is written as a whole-column replacement (never a partial
 JSONB merge). Its shape is finalised with the synchronized viewer (#1417).
 
