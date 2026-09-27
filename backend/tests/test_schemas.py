@@ -525,3 +525,12 @@ def test_collection_viewport_update_requires_object_and_version() -> None:
         CollectionViewportUpdate(viewport_state={})
     body = CollectionViewportUpdate(viewport_state={"a": {"zoom": 2}}, version=4)
     assert body.viewport_state == {"a": {"zoom": 2}} and body.version == 4
+
+
+def test_collection_name_max_length_matches_column() -> None:
+    CollectionCreate(name="x" * 255, type="sequence")
+    CollectionUpdate(version=1, name="x" * 255)
+    with pytest.raises(ValidationError):
+        CollectionCreate(name="x" * 256, type="sequence")
+    with pytest.raises(ValidationError):
+        CollectionUpdate(version=1, name="x" * 256)

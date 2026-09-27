@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy.exc import InvalidRequestError
 from sqlalchemy.sql.dml import Update
 
 from app.models import Collection, CollectionImage, Group, Image, Program, User
@@ -859,3 +860,82 @@ async def test_replace_viewport_authority() -> None:
             1, body, _user("student", id=2), db=_write_db(get=_collection(1, "private", user_id=10))
         )
     assert exc.value.status_code == 404
+
+
+# ── write helpers (direct) ────────────────────────────────
+
+
+def test_replace_image_links_reuses_rows_and_rewrites_order() -> None:
+    col = Collection(id=1, name="C", type="sequence", visibility="private", version=1)
+    keep = CollectionImage(image_id=1, sort_order=0)
+    drop = CollectionImage(image_id=2, sort_order=1)
+    col.image_links = [keep, drop]
+    collections_router._replace_image_links(col, [_image(3), _image(1)])
+    assert _links(col) == [(3, 0), (1, 1)]
+    assert col.image_links[1] is keep and drop not in col.image_links
+    collections_router._replace_image_links(col, [])
+    assert col.image_links == []
+
+
+async def test_bump_version_matches_and_increments() -> None:
+    col = _collection(1, "private", user_id=2)
+    db = _write_db(get=col)
+    ctx = await collections_router._ViewerContext.build(db, _user("student", id=2))
+    await collections_router._bump_version_or_409(db, ctx, col, 3)
+    assert col.version == 4
+    stmt = db.execute.call_args.args[0]
+    assert isinstance(stmt, Update)
+    compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+    assert "collections.version = 3" in compiled and "SET version=4" in compiled
+    db.refresh.assert_not_awaited()
+
+
+async def test_bump_version_mismatch_skips_update_and_raises_409() -> None:
+    col = _collection(1, "private", user_id=2)
+    db = _write_db(get=col)
+    ctx = await collections_router._ViewerContext.build(db, _user("student", id=2))
+    with pytest.raises(HTTPException) as exc:
+        await collections_router._bump_version_or_409(db, ctx, col, 2)
+    assert exc.value.status_code == 409
+    assert exc.value.detail["version"] == 3
+    db.execute.assert_not_awaited()
+    db.refresh.assert_awaited_once_with(col)
+    assert col.version == 3
+
+
+async def test_bump_version_after_concurrent_delete_is_404() -> None:
+    col = _collection(1, "private", user_id=2)
+    db = _write_db(get=col, cas_rowcount=0)
+    db.refresh = AsyncMock(side_effect=InvalidRequestError("Could not refresh instance"))
+    ctx = await collections_router._ViewerContext.build(db, _user("student", id=2))
+    with pytest.raises(HTTPException) as exc:
+        await collections_router._bump_version_or_409(db, ctx, col, 3)
+    assert exc.value.status_code == 404
+
+
+async def test_get_editable_collection_or_error_matrix() -> None:
+    col = _collection(1, "public", user_id=10)
+    ctx, got = await collections_router.get_editable_collection_or_error(
+        _write_db(get=col), _user("admin"), 1
+    )
+    assert got is col and ctx.excluded_category_ids is None
+    with pytest.raises(HTTPException) as exc:
+        await collections_router.get_editable_collection_or_error(
+            _write_db(get=col), _user("staff", id=3), 1
+        )
+    assert exc.value.status_code == 403
+    hidden = _collection(2, "private", user_id=10)
+    with pytest.raises(HTTPException) as exc:
+        await collections_router.get_editable_collection_or_error(
+            _write_db(get=hidden), _user("student", id=2), 2
+        )
+    assert exc.value.status_code == 404
+
+
+def test_require_restricted_authority() -> None:
+    collections_router._require_restricted_authority(_user("admin"))
+    collections_router._require_restricted_authority(_user("instructor", id=7))
+    for role in ("staff", "student"):
+        with pytest.raises(HTTPException) as exc:
+            collections_router._require_restricted_authority(_user(role, id=3))
+        assert exc.value.status_code == 403

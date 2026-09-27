@@ -741,6 +741,7 @@ CollectionVisibility = Literal["private", "public", "restricted"]
 # Mirrors ``models.SYNCHRONIZED_COLLECTION_MAX_IMAGES``; kept here so the
 # request schemas stay import-free of the ORM layer.
 SYNCHRONIZED_COLLECTION_MAX_IMAGES = 4
+COLLECTION_NAME_MAX_LENGTH = 255  # ``collections.name`` is ``String(255)``
 
 
 def normalize_collection_description(v: str | None) -> str | None:
@@ -773,7 +774,7 @@ def validate_collection_image_ids(
 
 
 class CollectionCreate(BaseModel):
-    name: str
+    name: str = Field(max_length=COLLECTION_NAME_MAX_LENGTH)
     description: str | None = None
     type: CollectionType
     visibility: CollectionVisibility = "private"
@@ -802,7 +803,7 @@ class CollectionUpdate(BaseModel):
     concurrency token (must equal the collection's current version).
     """
 
-    name: str | None = None
+    name: str | None = Field(None, max_length=COLLECTION_NAME_MAX_LENGTH)
     description: str | None = None
     type: CollectionType | None = None
     visibility: CollectionVisibility | None = None

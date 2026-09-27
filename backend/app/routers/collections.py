@@ -18,6 +18,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select, update as sql_update
+from sqlalchemy.exc import InvalidRequestError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import get_current_user
@@ -382,7 +383,8 @@ async def _bump_version_or_409(
     """Optimistic concurrency: atomically advance ``version`` from
     *expected_version* via ``UPDATE … WHERE version = :expected``; if no row
     matches, another client wrote first and the caller receives 409 with the
-    current ``CollectionOut`` in ``detail`` (same shape as a fresh GET).
+    current ``CollectionOut`` in ``detail`` (same shape as a fresh GET), or
+    404 if that client deleted the collection meanwhile.
     """
     if collection.version == expected_version:
         cas = await db.execute(
@@ -396,7 +398,10 @@ async def _bump_version_or_409(
         if cas.rowcount:
             collection.version = expected_version + 1
             return
-    await db.refresh(collection)
+    try:
+        await db.refresh(collection)
+    except InvalidRequestError:
+        raise HTTPException(status_code=404, detail="Collection not found")
     raise HTTPException(
         status_code=409,
         detail=collection_out(ctx, collection).model_dump(mode="json"),
