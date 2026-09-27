@@ -4,7 +4,6 @@
   "private": true,
   "description": "Playwright-based synthetic monitoring journeys for HRIV.",
   "scripts": {
-    "check:image-version": "node scripts/check-playwright-image-version.mjs",
     "test": "playwright test",
     "test:ui": "playwright test --ui",
     "typecheck": "tsc --noEmit"
