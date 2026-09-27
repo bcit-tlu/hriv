@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.4
-FROM node:22-trixie-slim
+FROM node:26-trixie-slim
 
 WORKDIR /app
 
