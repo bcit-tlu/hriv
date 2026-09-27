@@ -89,6 +89,35 @@ aged final-path files that no `SourceImage` row owns
 (`upload.unowned_final_detected`) for operator reconciliation — it never
 deletes them automatically.
 
+## Bulk-import zip extraction limits
+
+Bulk import (`POST /admin/bulk-import/`, admin/instructor only) expands
+uploaded `.zip` archives into `source_images_dir` before any `SourceImage`
+rows exist. Extraction is bounded (`_ZipExtractBudget` in
+`backend/app/routers/bulk_import.py`) so a crafted archive cannot exhaust the
+data volume:
+
+- each eligible entry is pre-screened from its central-directory metadata —
+  declared `file_size` over `BULK_IMPORT_MAX_ENTRY_BYTES` (2 GiB), running
+  total over `BULK_IMPORT_MAX_TOTAL_BYTES` (20 GiB), or a
+  `file_size / compress_size` ratio above `BULK_IMPORT_MAX_COMPRESSION_RATIO`
+  (100:1) rejects the archive before the entry is opened;
+- entries are copied with a bounded read loop that re-checks the per-entry and
+  cumulative caps against the bytes actually decompressed, so a forged header
+  gains nothing;
+- more than `BULK_IMPORT_MAX_ENTRIES` (2000) image entries rejects the
+  archive;
+- free space on `source_images_dir` must stay above
+  `BULK_IMPORT_MIN_FREE_BYTES` (1 GiB), checked before each entry and every
+  512 MiB written (the same pattern as the filesystem-import staging check).
+
+Limit violations return HTTP 413 (free-space exhaustion returns 507) with a
+message naming the archive/entry and the limit, and every file already
+extracted for that request is unlinked before the response is sent. The
+frontend surfaces the 413 detail verbatim in the upload modal
+(`userMessage()` in `frontend/src/api.ts`). Defaults are listed in
+`backend/README.md`.
+
 ## Status transitions
 
 | Status       | Progress | Description                                          |
