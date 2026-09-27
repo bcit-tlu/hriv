@@ -34,9 +34,14 @@ where a scheme is needed (download cookie `secure` flag).
 
 | Deployment                    | Chain (client → backend)                                                     | `TRUSTED_PROXY_HOPS` |
 | ----------------------------- | ---------------------------------------------------------------------------- | -------------------- |
-| docker-compose / local        | frontend nginx (appends) → uvicorn                                           | `1` (default)        |
+| docker-compose / local        | Vite dev proxy (`xfwd: true`, appends) or frontend nginx (appends) → uvicorn | `1` (default)        |
 | `latest` / `stable` (fleet)   | HAProxy gateway (**overwrites** XFF with client IP) → ingress-nginx (appends) → frontend nginx (appends) → uvicorn | `3`                  |
-| Direct `uvicorn --reload` dev | none                                                                         | `0`                  |
+| Direct `uvicorn --reload` dev | none (requests hit port 8000 directly)                                       | `0`                  |
+
+Any path that reaches uvicorn without an appending proxy (e.g. curl straight
+to `localhost:8000` in docker-compose) must run with `TRUSTED_PROXY_HOPS=0`;
+with `1` the client's own `X-Forwarded-For` would be the only entry and would
+be trusted.
 
 For the fleet chain the header seen by the backend is
 `<client>, <haproxy>, <ingress-nginx pod>`; `entries[-3]` is the client. The
