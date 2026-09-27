@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.6](https://github.com/bcit-tlu/hriv/compare/synthetic-monitoring-v1.2.5...synthetic-monitoring-v1.2.6) (2026-09-27)
+
+
+### Bug Fixes
+
+* **synthetic-monitoring:** Chromium-only image on node:22-trixie-slim; limit rescan SARIF to CRIT/HIGH ([#1408](https://github.com/bcit-tlu/hriv/issues/1408)) ([6c84b74](https://github.com/bcit-tlu/hriv/commit/6c84b74fa7d1063db0633d7ee9283ab2d12c0ebb))
+
 ## [1.2.5](https://github.com/bcit-tlu/hriv/compare/synthetic-monitoring-v1.2.4...synthetic-monitoring-v1.2.5) (2026-09-25)
 
 
