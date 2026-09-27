@@ -43,6 +43,28 @@ All seed users share the password `password`.
 13. **Assert:** Error alert appears containing "Account has been disabled. Please contact the TLU Learning Tech Lab via Teams to activate your account." (not "Incorrect email or password").
 14. Reactivate the account to restore seed state.
 
+### 1a: Login rate limiting is keyed on the trusted client IP
+
+**Purpose:** Verify a spoofed `X-Forwarded-For` cannot mint fresh login
+rate-limit buckets and that the account-scoped bucket bounds guessing
+regardless of source address (see `docs/deployment-proxy-chain.md`).
+
+1. Through the frontend nginx (`http://localhost:5173`), POST 6 bad passwords
+   for `student@example.ca`, each with a different
+   `X-Forwarded-For: 203.0.113.<n>` header.
+2. **Assert:** the 6th response is `429` with `Retry-After` — the spoofed
+   leftmost entry is ignored, so all attempts share one `(ip, email)` bucket.
+3. **Assert:** the audit log line for each attempt shows `client_ip` as the
+   real connecting address, not `203.0.113.<n>`.
+4. Wait 60 s (or flush Redis), then send 21 bad passwords spread across
+   genuinely different source addresses (e.g. by setting
+   `TRUSTED_PROXY_HOPS=0` and varying the client, or from two hosts).
+5. **Assert:** the 21st is `429` from the `rate:login:email:{email}` bucket
+   (default `RATE_LIMIT_LOGIN_EMAIL_MAX=20` / 900 s).
+6. Log in with the correct password from a fresh window.
+7. **Assert:** success clears both buckets — an immediate bad password is
+   `401`, not `429`.
+
 ---
 
 ## Test Case 2: RBAC Tab Visibility Per Role (UI)
