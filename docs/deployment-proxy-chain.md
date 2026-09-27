@@ -32,11 +32,11 @@ where a scheme is needed (download cookie `secure` flag).
 
 ## Assumed chains
 
-| Deployment                    | Chain (client → backend)                                                     | `TRUSTED_PROXY_HOPS` |
-| ----------------------------- | ---------------------------------------------------------------------------- | -------------------- |
-| docker-compose / local        | Vite dev proxy (`xfwd: true`, appends) or frontend nginx (appends) → uvicorn | `1` (default)        |
+| Deployment                    | Chain (client → backend)                                                                                           | `TRUSTED_PROXY_HOPS` |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------ | -------------------- |
+| docker-compose / local        | Vite dev proxy (`xfwd: true`, appends) or frontend nginx (appends) → uvicorn                                       | `1` (default)        |
 | `latest` / `stable` (fleet)   | HAProxy gateway (**overwrites** XFF with client IP) → ingress-nginx (appends) → frontend nginx (appends) → uvicorn | `3`                  |
-| Direct `uvicorn --reload` dev | none (requests hit port 8000 directly)                                       | `0`                  |
+| Direct `uvicorn --reload` dev | none (requests hit port 8000 directly)                                                                             | `0`                  |
 
 Any path that reaches uvicorn without an appending proxy (e.g. curl straight
 to `localhost:8000` in docker-compose) must run with `TRUSTED_PROXY_HOPS=0`;
@@ -69,10 +69,10 @@ shows an internal pod/gateway address the hop count is too low or too high
 Two Redis sliding-window buckets guard `POST /api/auth/login`
 (`backend/app/rate_limit.py`):
 
-| Bucket                     | Key                          | Default budget              |
-| -------------------------- | ---------------------------- | --------------------------- |
-| per (client IP, email)     | `rate:login:{ip}:{email}`    | `RATE_LIMIT_LOGIN_MAX=5` / `RATE_LIMIT_LOGIN_WINDOW=60s`         |
-| per email (IP-independent) | `rate:login:email:{email}`   | `RATE_LIMIT_LOGIN_EMAIL_MAX=20` / `RATE_LIMIT_LOGIN_EMAIL_WINDOW=900s` |
+| Bucket                     | Key                        | Default budget                                                         |
+| -------------------------- | -------------------------- | ---------------------------------------------------------------------- |
+| per (client IP, email)     | `rate:login:{ip}:{email}`  | `RATE_LIMIT_LOGIN_MAX=5` / `RATE_LIMIT_LOGIN_WINDOW=60s`               |
+| per email (IP-independent) | `rate:login:email:{email}` | `RATE_LIMIT_LOGIN_EMAIL_MAX=20` / `RATE_LIMIT_LOGIN_EMAIL_WINDOW=900s` |
 
 The per-IP bucket is checked first and short-circuits so a throttled source
 does not consume the account-wide budget; a successful login clears both. The
