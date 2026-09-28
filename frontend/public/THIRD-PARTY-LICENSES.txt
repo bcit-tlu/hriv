@@ -1020,7 +1020,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-@mui/icons-material@7.3.10
+@mui/icons-material@7.3.11
 License: MIT
 Repository: git+https://github.com/mui/material-ui.git
 ================================================================================
@@ -1048,7 +1048,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-@mui/material@7.3.10
+@mui/material@7.3.11
 License: MIT
 Repository: git+https://github.com/mui/material-ui.git
 ================================================================================
