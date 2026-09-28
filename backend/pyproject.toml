@@ -8,7 +8,11 @@ package-mode = false
 
 [tool.poetry.dependencies]
 python = "^3.12"
-fastapi = ">=0.136,<0.142"
+# <0.137: FastAPI 0.137 nests include_router() routes under _IncludedRouter
+# tree nodes (no .path), which crashes _get_route_details in
+# opentelemetry-instrumentation-fastapi <0.64b0 — every routed request 500s
+# (2026-09-28 stable outage). Unpin after upgrading opentelemetry-* to >=0.64b0.
+fastapi = ">=0.136,<0.137"
 uvicorn = {extras = ["standard"], version = ">=0.34,<0.55"}
 sqlalchemy = {version = "^2.0.0", extras = ["asyncio"]}
 asyncpg = ">=0.30,<0.32"
