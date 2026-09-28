@@ -16,6 +16,7 @@ function makeProps(overrides: Partial<AppShellProps> = {}): AppShellProps {
     canEditContent: true,
     canManageUsers: true,
     canViewPeople: true,
+    collectionsEnabled: true,
     currentUser: {
       name: 'Test User',
       email: 'test@example.com',
@@ -175,6 +176,12 @@ describe('AppShell', () => {
         expect(onTabChange).toHaveBeenCalledWith('collections')
         unmount()
       }
+    })
+
+    it('hides the Collections tab when the deployment flag is off', () => {
+      render(<AppShell {...makeProps({ collectionsEnabled: false })} />)
+      expect(screen.getByRole('tab', { name: 'Home' })).toBeInTheDocument()
+      expect(screen.queryByRole('tab', { name: 'Collections' })).not.toBeInTheDocument()
     })
 
     it('marks the Collections tab selected on the collections page', () => {
@@ -643,6 +650,13 @@ describe('AppShell', () => {
       expect(screen.queryByRole('button', { name: 'Open navigation menu' })).not.toBeInTheDocument()
       expect(screen.getByRole('tab', { name: 'Home' })).toBeInTheDocument()
       expect(screen.getByRole('tab', { name: 'Collections' })).toBeInTheDocument()
+    })
+
+    it('omits Collections from the collapsed menu when the deployment flag is off', () => {
+      render(<AppShell {...makeProps({ collectionsEnabled: false })} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
+      expect(screen.getByRole('menuitem', { name: 'Home' })).toBeInTheDocument()
+      expect(screen.queryByRole('menuitem', { name: 'Collections' })).not.toBeInTheDocument()
     })
 
     it('navigates to Collections from the collapsed menu', () => {

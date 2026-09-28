@@ -77,6 +77,8 @@ export interface AppShellProps {
   canEditContent: boolean
   canManageUsers: boolean
   canViewPeople: boolean
+  /** Deployment flag (`GET /api/features`); hides the Collections tab when off. */
+  collectionsEnabled: boolean
   currentUser: {
     name: string
     email: string
@@ -120,6 +122,7 @@ export default function AppShell(props: AppShellProps) {
     canEditContent,
     canManageUsers,
     canViewPeople,
+    collectionsEnabled,
     currentUser,
     announcement,
     annMessage,
@@ -147,12 +150,16 @@ export default function AppShell(props: AppShellProps) {
   const [navDrawerOpen, setNavDrawerOpen] = useState(false)
   const theme = useTheme()
   // Collapse the nav tabs into a hamburger menu when the viewport is too
-  // narrow to show them inline. Guarded by tab count so the two universal
-  // tabs (Home + Collections — the whole student layout) stay inline instead
-  // of hiding behind a lone hamburger.
+  // narrow to show them inline. Guarded by tab count so the universal tabs
+  // (Home + Collections when enabled — the whole student layout) stay inline
+  // instead of hiding behind a lone hamburger.
   const isCompactViewport = useMediaQuery(theme.breakpoints.down('md'))
   const navTabCount =
-    2 + (canEditContent ? 2 : 0) + (canViewPeople ? 1 : 0) + (canManageUsers ? 1 : 0)
+    1 +
+    (collectionsEnabled ? 1 : 0) +
+    (canEditContent ? 2 : 0) +
+    (canViewPeople ? 1 : 0) +
+    (canManageUsers ? 1 : 0)
   const collapseNav = isCompactViewport && navTabCount > 2
   // Reset the breakpoint-specific menus on a viewport transition so a resize
   // round-trip doesn't leave one open against an unmounted trigger:
@@ -250,7 +257,12 @@ export default function AppShell(props: AppShellProps) {
     }
 
     const sections = new Map<string, ReactNode[]>()
-    for (const item of getNavigationItems({ canEditContent, canManageUsers, canViewPeople })) {
+    for (const item of getNavigationItems({
+      canEditContent,
+      canManageUsers,
+      canViewPeople,
+      collectionsEnabled,
+    })) {
       const section = sections.get(item.section) ?? []
       section.push(makeItem(item))
       sections.set(item.section, section)
@@ -354,7 +366,7 @@ export default function AppShell(props: AppShellProps) {
                   }
                 }}
               />
-              <Tab label="Collections" value="collections" />
+              {collectionsEnabled && <Tab label="Collections" value="collections" />}
               {canEditContent && <Tab label="Images" value="manage" />}
               {canEditContent && (
                 <Tab

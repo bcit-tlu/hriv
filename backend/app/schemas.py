@@ -854,3 +854,12 @@ class CollectionTransfer(BaseModel):
         if (self.user_id is None) == (self.program_id is None):
             raise ValueError("Provide exactly one of user_id or program_id")
         return self
+
+
+class FeaturesOut(BaseModel):
+    """``GET /api/features``: deployment-level feature flags the frontend
+    reads at boot to decide which surfaces to render. Flags are not secrets;
+    the backend still enforces each one independently.
+    """
+
+    collections: bool

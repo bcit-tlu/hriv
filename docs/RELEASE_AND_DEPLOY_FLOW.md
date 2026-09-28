@@ -138,6 +138,14 @@ change only on release.
   against the previously-released chart. Any new template logic the rc
   image relies on is simply missing in `latest` until a release happens.
   This is the asymmetry called out above.
+- **Long-running features ship dark behind a chart flag, not on a branch.**
+  Work that spans more than one release (e.g. the collections epic,
+  `collections.enabled` → `COLLECTIONS_ENABLED`, see
+  [collections.md](collections.md)) merges to `main` in small PRs behind a
+  chart value that defaults off, is switched on in the `latest` overlay,
+  and is removed by the epic's closing issue. This keeps `fix:`/`feat:`
+  bumps and `stable` re-pins flowing for unrelated work; release branches
+  are reserved for genuine emergencies.
 - **Retag promotion preserves image identity.** `release-retag.yaml`
   does not rebuild on release; it creates a new OCI tag pointing at the
   _same manifest_ as the `sha-<fullsha>` built on `main`. So the binary

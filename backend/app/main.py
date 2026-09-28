@@ -22,9 +22,10 @@ from .metrics import render_metrics
 from .queue_metrics import queue_health
 from .rebuild_fixture import ensure_archive_lock_file
 from .reconciliation import run_reconciliation_sweep
+from .schemas import FeaturesOut
 from .worker import TaskQueueUnavailableError, get_pool
 from .maintenance import is_maintenance_mode
-from .middleware import AuditMiddleware, MaintenanceMiddleware
+from .middleware import AuditMiddleware, CollectionsFeatureMiddleware, MaintenanceMiddleware
 from .routers import (
     admin,
     announcement,
@@ -259,6 +260,9 @@ _cors_origins, _cors_allow_credentials = _resolve_cors_config(
     settings.cors_origins, settings.task_execution_mode
 )
 
+# Registered inside MaintenanceMiddleware (Starlette runs the last-added
+# middleware first) so maintenance 503s win over the collections 404.
+app.add_middleware(CollectionsFeatureMiddleware)
 app.add_middleware(MaintenanceMiddleware)
 app.add_middleware(AuditMiddleware)
 
@@ -304,6 +308,12 @@ os.makedirs(settings.tiles_dir, exist_ok=True)
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "version": app.version}
+
+
+@app.get("/api/features", response_model=FeaturesOut)
+async def features() -> FeaturesOut:
+    """Deployment feature flags (unauthenticated; see docs/collections.md)."""
+    return FeaturesOut(collections=settings.collections_enabled)
 
 
 @app.get("/api/health/queue")

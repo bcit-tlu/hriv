@@ -116,6 +116,7 @@ import {
   fetchBulkImportJob,
   reportIssue,
   fetchVersions,
+  fetchFeatures,
   fetchFrontendVersion,
   downloadAdminTaskResult,
   startDbExport,
@@ -1529,6 +1530,13 @@ describe('Version API', () => {
     const result = await fetchVersions()
     expect(mockFetch.mock.calls[0][0]).toBe('/api/admin/version')
     expect(result).toEqual({ backend: '1.0.0', backup: '1.0.0' })
+  })
+
+  it('fetchFeatures sends GET to /api/features', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse({ collections: true }))
+    const result = await fetchFeatures()
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/features')
+    expect(result).toEqual({ collections: true })
   })
 
   it('fetchFrontendVersion sends GET to /version (not /api/version)', async () => {

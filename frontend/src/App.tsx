@@ -62,6 +62,7 @@ import {
 import UploadImageModal from './components/UploadImageModal'
 import { parseCollectionIdParam } from './collectionUtils'
 import { useCollectionsData } from './useCollectionsData'
+import { useFeatures } from './useFeatures'
 import { isAcceptedFile } from './fileUtils'
 import { formatFileSize } from './formatUtils'
 import { useAuth } from './useAuth'
@@ -152,6 +153,11 @@ export default function App() {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
 
+  // Deployment flags (`GET /api/features`). Collections are dark-launched:
+  // the tab and `?collection=` deep links only exist once the flag is on.
+  const features = useFeatures()
+  const collectionsEnabled = features?.collections === true
+
   // `?collection={id}` implies the Collections page (deep link, #1414).
   const [selectedCollectionId, setSelectedCollectionId] = useState<number | null>(() =>
     parseCollectionIdParam(window.location.search),
@@ -172,7 +178,18 @@ export default function App() {
       ? 'browse'
       : (page === 'admin' && !canManageUsers) || (page === 'people' && !canViewPeople)
         ? 'browse'
-        : page
+        : page === 'collections' && features != null && !features.collections
+          ? 'browse'
+          : page
+
+  // A collections deep link on a deployment with the flag off falls back to
+  // browse once the flags are known (the page renders nothing until then).
+  useEffect(() => {
+    if (features == null || features.collections || page !== 'collections') return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- URL state can only be corrected once the flags arrive
+    setPage('browse')
+    setSelectedCollectionId(null)
+  }, [features, page])
 
   const lastEmittedPageRef = useRef<FrontendPage | null>(null)
   useEffect(() => {
@@ -1456,7 +1473,7 @@ export default function App() {
 
   // Collections tab data (#1414). Fetches only while the tab is active.
   const collectionsData = useCollectionsData({
-    enabled: page === 'collections' && currentUser != null,
+    enabled: collectionsEnabled && page === 'collections' && currentUser != null,
     currentUser,
     selectedCollectionId,
   })
@@ -1527,6 +1544,7 @@ export default function App() {
       canEditContent={canEditContent}
       canManageUsers={canManageUsers}
       canViewPeople={canViewPeople}
+      collectionsEnabled={collectionsEnabled}
       currentUser={currentUser}
       announcement={announcement}
       annMessage={annMessage}
@@ -1579,7 +1597,7 @@ export default function App() {
             <GuidePage docRequest={guideDocRequest} />
           ) : page === 'admin' && canManageUsers ? (
             <AdminPage onChangelogEntriesChanged={bumpChangelogVersion} />
-          ) : page === 'collections' ? (
+          ) : page === 'collections' && !collectionsEnabled ? null : page === 'collections' ? (
             <CollectionsPage
               currentUser={currentUser}
               programs={programs}
