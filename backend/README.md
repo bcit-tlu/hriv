@@ -286,6 +286,30 @@ rendered as `CORS_ORIGINS` unconditionally (not via the OIDC ConfigMap) and
 `auth.openidConnect.corsOrigins` value is a deprecated fallback kept for
 existing overlays.
 
+## TRUSTED_PROXY_HOPS and login rate limiting
+
+The backend never trusts the leftmost `X-Forwarded-For` entry — every proxy
+in front of it _appends_ its peer (`$proxy_add_x_forwarded_for`), so the
+leftmost value is whatever the client sent. `get_client_ip()`
+(`app/middleware.py`) takes the entry `TRUSTED_PROXY_HOPS` positions from the
+**right**; if the header has fewer entries it falls back to `X-Real-IP`, then
+the direct connection address. uvicorn runs **without** `--proxy-headers`
+(with `--forwarded-allow-ips '*'` it would rewrite `scope["client"]` from the
+same spoofable leftmost entry). See
+[`docs/deployment-proxy-chain.md`](../docs/deployment-proxy-chain.md).
+
+| Environment variable         | Default | Purpose                                                                                                                                                                                                                                                                                      |
+| ---------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TRUSTED_PROXY_HOPS`         | `1`     | Number of trusted proxies that append to `X-Forwarded-For`. `1` = docker-compose (frontend nginx). Fleet chain HAProxy → ingress-nginx → nginx = `3`. `0` ignores forwarding headers.                                                                                                        |
+| `SECURE_COOKIES`             | `true`  | Set the `Secure` flag on backend-issued cookies (admin download token). docker-compose sets `false`; set `false` too when running uvicorn standalone on a non-`localhost` plain-http origin (browsers reject `Secure` cookies there, so admin downloads 401). Never disable in a deployment. |
+| `RATE_LIMIT_LOGIN_MAX`       | `5`     | Login attempts per `(client IP, email)` per `RATE_LIMIT_LOGIN_WINDOW` seconds (default `60`).                                                                                                                                                                                                |
+| `RATE_LIMIT_LOGIN_EMAIL_MAX` | `20`    | Account-scoped attempts per email, independent of client IP, per `RATE_LIMIT_LOGIN_EMAIL_WINDOW` seconds (default `900`).                                                                                                                                                                    |
+
+Both buckets are Redis sliding windows (`rate:login:{ip}:{email}` and
+`rate:login:email:{email}`); a successful login clears both. When Redis is
+unavailable the limiter fails open and logs `rate_limit.redis_unavailable` /
+`rate_limit.redis_error` at WARNING — alert on those events.
+
 ## Deployment rollout strategy
 
 The backend Deployment auto-selects a rollout strategy from chart values.

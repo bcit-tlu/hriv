@@ -233,18 +233,30 @@ def _header_value(scope: Scope, name: bytes) -> str:
     return ""
 
 
-def get_client_ip(scope: Scope) -> str:
-    """Best-effort real client IP from an ASGI scope.
+def get_client_ip(scope: Scope, trusted_proxy_hops: int | None = None) -> str:
+    """Real client IP from an ASGI scope, resolved at the trusted-proxy boundary.
 
-    Checks ``X-Forwarded-For`` (leftmost entry) first, then ``X-Real-IP``,
-    and finally falls back to the direct connection address.
+    Every reverse proxy in front of the backend *appends* its downstream
+    peer to ``X-Forwarded-For`` (nginx ``$proxy_add_x_forwarded_for``), so
+    the leftmost entry is whatever the original client sent and must never be
+    trusted. With ``trusted_proxy_hops`` = N (``TRUSTED_PROXY_HOPS``, default
+    1 for the frontend nginx alone), the N-th entry from the right is the
+    address recorded by the outermost trusted proxy. When the header is
+    missing or has fewer entries than expected, ``X-Real-IP`` (nginx
+    ``$remote_addr``) is used, then the direct connection address. With
+    N = 0 forwarding headers are ignored entirely.
     """
-    forwarded_for = _header_value(scope, b"x-forwarded-for")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
-    real_ip = _header_value(scope, b"x-real-ip")
-    if real_ip:
-        return real_ip.strip()
+    hops = (
+        settings.trusted_proxy_hops if trusted_proxy_hops is None else trusted_proxy_hops
+    )
+    if hops > 0:
+        forwarded_for = _header_value(scope, b"x-forwarded-for")
+        entries = [e.strip() for e in forwarded_for.split(",") if e.strip()]
+        if len(entries) >= hops:
+            return entries[-hops]
+        real_ip = _header_value(scope, b"x-real-ip").strip()
+        if real_ip:
+            return real_ip
     client_pair = scope.get("client")
     return client_pair[0] if client_pair else "unknown"
 
