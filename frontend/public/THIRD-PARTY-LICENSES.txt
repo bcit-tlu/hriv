@@ -186,7 +186,7 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ================================================================================
-@babel/parser@7.29.8
+@babel/parser@7.29.9
 License: MIT
 Repository: https://github.com/babel/babel.git
 ================================================================================
@@ -4745,7 +4745,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-es-module-lexer@2.3.2
+es-module-lexer@3.0.2
 License: MIT
 Repository: git+https://github.com/guybedford/es-module-lexer.git
 ================================================================================
@@ -4927,7 +4927,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ================================================================================
-import-in-the-middle@3.3.3
+import-in-the-middle@3.5.1
 License: Apache-2.0
 Repository: git+ssh://git@github.com/nodejs/import-in-the-middle.git
 ================================================================================
@@ -5198,7 +5198,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 ================================================================================
-is-core-module@2.16.2
+is-core-module@2.17.0
 License: MIT
 Repository: git+https://github.com/inspect-js/is-core-module.git
 ================================================================================
@@ -5650,7 +5650,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-react-is@19.2.8
+react-is@19.3.0
 License: MIT
 Repository: https://github.com/react/react.git
 ================================================================================
