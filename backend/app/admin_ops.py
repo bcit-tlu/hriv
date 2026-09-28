@@ -45,6 +45,8 @@ from .models import (
     Announcement,
     Category,
     ChangelogEntry,
+    Collection,
+    CollectionImage,
     Group,
     Image,
     Program,
@@ -1132,6 +1134,13 @@ async def run_db_export(task_id: int) -> None:
                 if source.id not in fixture_source_ids
             ]
 
+            # Collections (image links to rebuild-fixture images are dropped
+            # because those images are not part of the export)
+            await _update_task(session, task, log_line="Exporting collections…", progress=68, check_cancelled=True)
+            result = await session.execute(select(Collection).order_by(Collection.id))
+            collections = result.scalars().all()
+            exported_image_ids = {image.id for image in images}
+
             # Changelog entries
             await _update_task(session, task, log_line="Exporting changelog entries…", progress=70, check_cancelled=True)
             result = await session.execute(select(ChangelogEntry).order_by(ChangelogEntry.id))
@@ -1251,6 +1260,29 @@ async def run_db_export(task_id: int) -> None:
                     }
                     for s in source_images
                 ],
+                "collections": [
+                    {
+                        "id": c.id,
+                        "name": c.name,
+                        "description": c.description,
+                        "type": c.type,
+                        "visibility": c.visibility,
+                        "user_id": c.user_id,
+                        "owner_program_id": c.owner_program_id,
+                        "viewport_state": c.viewport_state,
+                        "version": c.version,
+                        "image_ids": [
+                            link.image_id
+                            for link in c.image_links
+                            if link.image_id in exported_image_ids
+                        ],
+                        "program_ids": [p.id for p in c.programs],
+                        "group_ids": [g.id for g in c.groups],
+                        "created_at": dt(c.created_at),
+                        "updated_at": dt(c.updated_at),
+                    }
+                    for c in collections
+                ],
                 "changelog_entries": [
                     {
                         "id": entry.id,
@@ -1286,6 +1318,7 @@ async def run_db_export(task_id: int) -> None:
                 f"{len(dump['images'])} images, "
                 f"{len(dump['users'])} users, "
                 f"{len(dump['source_images'])} source images, "
+                f"{len(dump['collections'])} collections, "
                 f"{len(dump['changelog_entries'])} changelog entries."
             )
             await _update_task(
@@ -1410,6 +1443,10 @@ async def run_db_import(task_id: int) -> None:
                 )
                 await status_session.commit()
 
+                await data_session.execute(text("DELETE FROM collection_images"))
+                await data_session.execute(text("DELETE FROM collection_programs"))
+                await data_session.execute(text("DELETE FROM collection_groups"))
+                await data_session.execute(text("DELETE FROM collections"))
                 await data_session.execute(text("DELETE FROM source_images"))
                 await data_session.execute(text("DELETE FROM images"))
                 await data_session.execute(text("DELETE FROM category_groups"))
@@ -1635,6 +1672,42 @@ async def run_db_import(task_id: int) -> None:
                     data_session.add(src)
                 await data_session.flush()
 
+                # Import collections (after users, programs, groups and images:
+                # owner, scope and image links all reference those rows)
+                await _update_task(status_session, task, log_line="Importing collections…", progress=68)
+                for c in dump.get("collections", []):
+                    collection = Collection(
+                        id=c["id"],
+                        name=c["name"],
+                        description=c.get("description"),
+                        type=c["type"],
+                        visibility=c.get("visibility", "private"),
+                        user_id=c.get("user_id"),
+                        owner_program_id=c.get("owner_program_id"),
+                        viewport_state=c.get("viewport_state") or {},
+                        version=c.get("version", 1),
+                        created_at=_parse_dt(c.get("created_at")),
+                        updated_at=_parse_dt(c.get("updated_at")),
+                    )
+                    prog_ids = c.get("program_ids", [])
+                    if prog_ids:
+                        progs = (await data_session.execute(
+                            select(Program).where(Program.id.in_(prog_ids))
+                        )).scalars().all()
+                        collection.programs = list(progs)
+                    group_ids = c.get("group_ids", [])
+                    if group_ids:
+                        grps = (await data_session.execute(
+                            select(Group).where(Group.id.in_(group_ids))
+                        )).scalars().all()
+                        collection.groups = list(grps)
+                    collection.image_links = [
+                        CollectionImage(image_id=image_id, sort_order=position)
+                        for position, image_id in enumerate(c.get("image_ids", []))
+                    ]
+                    data_session.add(collection)
+                await data_session.flush()
+
                 # Import changelog entries
                 await _update_task(status_session, task, log_line="Importing changelog entries…", progress=70)
                 for entry in dump.get("changelog_entries", []):
@@ -1667,7 +1740,7 @@ async def run_db_import(task_id: int) -> None:
 
                 # Reset sequences
                 await _update_task(status_session, task, log_line="Resetting sequences…", progress=85)
-                for tbl in ("programs", "groups", "categories", "images", "users", "announcements", "changelog_entries", "source_images"):
+                for tbl in ("programs", "groups", "categories", "images", "users", "announcements", "changelog_entries", "source_images", "collections"):
                     await data_session.execute(
                         text(
                             f"SELECT setval('{tbl}_id_seq', "
@@ -1690,6 +1763,7 @@ async def run_db_import(task_id: int) -> None:
                     f"{len(dump['images'])} images, "
                     f"{len(dump['users'])} users, "
                     f"{len(dump.get('source_images', []))} source images, "
+                    f"{len(dump.get('collections', []))} collections, "
                     f"{len(dump.get('changelog_entries', []))} changelog entries."
                 )
                 # Do NOT check_cancelled here — data_session.commit() already

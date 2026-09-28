@@ -16,6 +16,12 @@ env:
   TILES_DIR: /data/tiles
   EXPORT_PIGZ_THREADS: 2
   AZURE_BACKUP_PREFIX: ''
+  # Number of trusted proxies that APPEND to X-Forwarded-For before the
+  # backend; the client IP is taken that many entries from the right.
+  # 1 = frontend nginx only. Fleet chain HAProxy (overwrites XFF) ->
+  # ingress-nginx -> frontend nginx = 3 (set in flux-fleet overlays).
+  # See docs/deployment-proxy-chain.md.
+  TRUSTED_PROXY_HOPS: 1
 
 azureReadBackup:
   secretName: azure-read-backup-credentials
