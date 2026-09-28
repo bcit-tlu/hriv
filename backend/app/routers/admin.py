@@ -60,7 +60,7 @@ from ..component_versions import (
     get_synthetic_version,
     get_worker_version,
 )
-from ..database import async_session, get_db
+from ..database import async_session, get_db, settings
 from ..filenames import sanitize_upload_filename
 from ..maintenance import (
     disable_maintenance_mode,
@@ -1510,13 +1510,7 @@ async def create_task_download_token(
         httponly=True,
         samesite="strict",
         path=_download_cookie_path(task_id),
-        # ``secure`` follows the effective request scheme (X-Forwarded-Proto
-        # from the fronting nginx, else the direct connection scheme) so
-        # plain-http local dev still works.
-        secure=(
-            request.headers.get("x-forwarded-proto", request.url.scheme).lower()
-            == "https"
-        ),
+        secure=settings.secure_cookies,
     )
 
 

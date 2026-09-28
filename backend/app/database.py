@@ -76,6 +76,11 @@ class Settings(BaseSettings):
     # See docs/deployment-proxy-chain.md.
     trusted_proxy_hops: int = Field(default=1, ge=0)
 
+    # Set the ``Secure`` flag on cookies the backend issues (admin download
+    # token). Deployments always serve over TLS at the edge, so this defaults
+    # on and is only switched off for plain-http docker-compose development.
+    secure_cookies: bool = True
+
     # Login rate limiting (Phase 5). Two sliding-window budgets: a
     # per-(client IP, email) budget so one shared campus NAT does not lock
     # out unrelated users, and a longer account-scoped per-email budget that

@@ -301,6 +301,7 @@ same spoofable leftmost entry). See
 | Environment variable         | Default | Purpose                                                                                                                                                                               |
 | ---------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `TRUSTED_PROXY_HOPS`         | `1`     | Number of trusted proxies that append to `X-Forwarded-For`. `1` = docker-compose (frontend nginx). Fleet chain HAProxy → ingress-nginx → nginx = `3`. `0` ignores forwarding headers. |
+| `SECURE_COOKIES`             | `true`  | Set the `Secure` flag on backend-issued cookies (admin download token). docker-compose sets `false` for plain-http development; never disable in a deployment.                        |
 | `RATE_LIMIT_LOGIN_MAX`       | `5`     | Login attempts per `(client IP, email)` per `RATE_LIMIT_LOGIN_WINDOW` seconds (default `60`).                                                                                         |
 | `RATE_LIMIT_LOGIN_EMAIL_MAX` | `20`    | Account-scoped attempts per email, independent of client IP, per `RATE_LIMIT_LOGIN_EMAIL_WINDOW` seconds (default `900`).                                                             |
 

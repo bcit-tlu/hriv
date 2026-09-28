@@ -27,8 +27,11 @@ outermost trusted proxy. Rules:
 uvicorn runs **without** `--proxy-headers` / `--forwarded-allow-ips '*'`:
 with a wildcard trust list uvicorn's `ProxyHeadersMiddleware` rewrites
 `scope["client"]` from the same client-controlled leftmost entry, so it would
-reintroduce the bypass. `X-Forwarded-Proto` is read directly from the request
-where a scheme is needed (download cookie `secure` flag).
+reintroduce the bypass. Nothing derives the request scheme from forwarded
+headers either: the `Secure` flag on backend-issued cookies (admin download
+token) is governed by `SECURE_COOKIES` (default `true`; docker-compose sets
+`false` for plain-http development) rather than by a spoofable
+`X-Forwarded-Proto`.
 
 ## Assumed chains
 
