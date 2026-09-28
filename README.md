@@ -33,6 +33,7 @@ All seed users share the password `password`.
 | Browse categories & view images          | Yes   | Yes        | Yes   | Yes†    |
 | View collections (API)                   | Yes   | Yes        | Yes   | Yes¶    |
 | Create collections                       | Yes   | Yes        | Yes   | Yes     |
+| Edit/delete own collections‖             | Yes   | Yes        | Yes   | Yes     |
 | Restrict collections to programs/groups‖ | Yes   | Yes\*      | No    | No      |
 | Transfer collection ownership‖           | Yes   | Yes\*      | No    | No      |
 | Manage any collection (incl. orphaned)‖  | Yes   | No         | No    | No      |
