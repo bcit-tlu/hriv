@@ -15,6 +15,10 @@ export default defineConfig({
       '/api': {
         target: 'http://backend:8000',
         changeOrigin: true,
+        // Append X-Forwarded-For/-Proto like the production nginx does so
+        // the backend's TRUSTED_PROXY_HOPS=1 default resolves the real
+        // client in docker-compose too.
+        xfwd: true,
       },
     },
   },

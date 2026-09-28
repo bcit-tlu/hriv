@@ -96,22 +96,44 @@ async def check_rate_limit(key: str, window: int, max_attempts: int) -> int | No
     return None
 
 
+def _login_ip_key(client_ip: str, email: str) -> str:
+    return f"rate:login:{client_ip}:{email}"
+
+
+def _login_email_key(email: str) -> str:
+    return f"rate:login:email:{email}"
+
+
 async def check_login_rate_limit(client_ip: str, email: str) -> int | None:
-    """Check whether *client_ip* + *email* has exceeded the login rate limit.
+    """Check the login rate limit for *client_ip* + *email*.
 
-    The key is a composite of IP and email so that one user's successful
-    login does not reset the counter for a different user at the same IP
-    (important when the service is publicly accessible and users may be
-    behind a shared campus NAT).
+    Two sliding-window budgets are enforced:
 
-    Returns ``None`` if the request is allowed, otherwise returns the
-    number of seconds the client should wait (for a ``Retry-After``
-    header).
+    * a per-(IP, email) budget (``rate_limit_login_max`` per
+      ``rate_limit_login_window``) so that one user's attempts do not lock out
+      a different user behind the same shared campus NAT address; and
+    * an account-scoped budget keyed by email alone
+      (``rate_limit_login_email_max`` per ``rate_limit_login_email_window``)
+      that does not depend on the client IP, so guessing against a single
+      account stays bounded even if the caller can vary its apparent source
+      address.
+
+    The per-IP budget is checked first and short-circuits so a throttled
+    source does not keep consuming the account-wide budget. Returns ``None``
+    if the request is allowed, otherwise the number of seconds the client
+    should wait (for a ``Retry-After`` header).
     """
-    return await check_rate_limit(
-        f"rate:login:{client_ip}:{email}",
+    ip_retry = await check_rate_limit(
+        _login_ip_key(client_ip, email),
         settings.rate_limit_login_window,
         settings.rate_limit_login_max,
+    )
+    if ip_retry is not None:
+        return ip_retry
+    return await check_rate_limit(
+        _login_email_key(email),
+        settings.rate_limit_login_email_window,
+        settings.rate_limit_login_email_max,
     )
 
 
@@ -182,11 +204,11 @@ async def check_telemetry_rate_limit(
 
 
 async def reset_login_rate_limit(client_ip: str, email: str) -> None:
-    """Clear rate-limit state for *client_ip* + *email* after a successful login."""
+    """Clear both login rate-limit buckets for *email* after a successful login."""
     redis = await _get_redis()
     if redis is not None:
         try:
-            await redis.delete(f"rate:login:{client_ip}:{email}")
+            await redis.delete(_login_ip_key(client_ip, email), _login_email_key(email))
         except Exception:
             logger.warning(
                 "Redis operation failed — rate-limit reset skipped",

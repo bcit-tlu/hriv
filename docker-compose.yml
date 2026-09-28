@@ -102,6 +102,7 @@ services:
       - REDIS_URL=redis://redis:6379
       - SOURCE_IMAGES_DIR=/data/source_images
       - TILES_DIR=/data/tiles
+      - SECURE_COOKIES=false
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
       - GITHUB_REPO=${GITHUB_REPO:-}
     depends_on:
