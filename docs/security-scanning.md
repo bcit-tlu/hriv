@@ -61,8 +61,11 @@ and release-please leaves out of changelogs.
 Dependabot PRs do not run the Chromatic workflow: `dependabot[bot]`-triggered
 workflows receive no repository secrets, so `CHROMATIC_PROJECT_TOKEN` is empty
 and the job would fail with "Missing project token" before publishing anything.
-The job is skipped via `if: github.actor != 'dependabot[bot]'`; the bump's
-`main` build after merge runs Chromatic as usual. Dependabot branches are not
+The job is skipped via `if: github.actor != 'dependabot[bot]'`. The bump's
+`main` build after merge is skipped too — dependency merges touch only
+files excluded by the workflow's push-paths filter (`package.json`, the
+lockfile, generated license notices), and a weekly scheduled `main` build
+catches any resulting rendering drift. Dependabot branches are not
 auto-rebased — comment `@dependabot rebase` (or `@dependabot recreate`) on the
 PR to refresh one that has fallen behind `main`.
 

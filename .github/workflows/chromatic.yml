@@ -6,24 +6,41 @@ on:
   # merge commits.  The pull_request event creates ephemeral merge commits
   # that can cause incorrect baseline comparisons.
   #
-  # Do not add a paths filter: branch builds maintain Chromatic's baseline
-  # chain. TurboSnap's `untraced` setting instead bypasses snapshot capture
-  # for changes outside `frontend/`, without fragmenting that history.
+  # The paths filter below preserves that baseline chain while skipping pushes
+  # that cannot change rendered output: it excludes only the mechanical files
+  # that every release-please or dependency merge touches. Those diffs
+  # previously forced full rebuilds (TurboSnap cannot prove a package file
+  # change is version-only) and were the main driver of quota exhaustion.
+  # Every other frontend change still builds on every branch, so stacked PRs
+  # keep real base baselines; a base branch with no frontend changes falls
+  # back to an ancestor build whose frontend content is identical anyway.
   #
   # release-please--* branches are exempt: they are bot-owned version/changelog
-  # bumps, never carry story changes, and are never UI Review targets. Skipping
-  # them cannot break a baseline chain (branches-ignore still scopes the
-  # trigger to branch pushes only, so tag pushes do not run either).
+  # bumps, never carry story changes, and are never UI Review targets.
+  # (branches-ignore also scopes the trigger to branch pushes, so tag pushes
+  # do not run either.)
   #
-  # Dependabot branches are exempt for a different reason (see the job-level
-  # `if`): workflows triggered by dependabot[bot] receive no repository secrets,
-  # so CHROMATIC_PROJECT_TOKEN is empty and the action fails before publishing.
-  # A dependency bump that does change rendering still gets its Chromatic run
-  # on `main` after merge.
+  # Kill switch: the job-level `if` skips all runs when the CHROMATIC_ENABLED
+  # repository variable is 'false' — flip it in Settings → Variables when the
+  # monthly quota is exhausted instead of editing this file. Unset or any
+  # other value leaves builds enabled. dependabot[bot] is also skipped there
+  # because its pushes receive no repository secrets.
+  #
+  # The weekly schedule catches rendering drift from dependency merges that
+  # the paths filter skips — one bounded build per week instead of a full
+  # rebuild per merge.
   push:
     branches-ignore:
       - 'release-please--**'
+    paths:
+      - 'frontend/**'
+      - '!frontend/package.json'
+      - '!frontend/package-lock.json'
+      - '!frontend/CHANGELOG.md'
+      - '!frontend/public/THIRD-PARTY-LICENSES.txt'
   workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 0'
 
 concurrency:
   # Rapid pushes to the same branch supersede the in-flight build. Scoped per
@@ -40,7 +57,7 @@ permissions:
 jobs:
   chromatic:
     name: Run Chromatic visual tests
-    if: github.actor != 'dependabot[bot]'
+    if: github.actor != 'dependabot[bot]' && vars.CHROMATIC_ENABLED != 'false'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -52,7 +69,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
@@ -62,7 +79,7 @@ jobs:
         run: npm ci
 
       - name: Publish Storybook to Chromatic
-        uses: chromaui/action@v18.7.1
+        uses: chromaui/action@v18.9.5
         with:
           projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
           workingDir: frontend
