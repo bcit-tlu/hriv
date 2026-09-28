@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.15](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.14...restore-validation-v0.1.15) (2026-09-28)
+
+
+### Documentation
+
+* prettier-format domain-model.md ([#1435](https://github.com/bcit-tlu/hriv/issues/1435)) ([1a9fd81](https://github.com/bcit-tlu/hriv/commit/1a9fd810aaad697e9f73d096cbd1c207815fbab7))
+
 ## [0.1.14](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.13...restore-validation-v0.1.14) (2026-09-25)
 
 
