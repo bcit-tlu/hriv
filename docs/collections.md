@@ -18,12 +18,12 @@ implemented.
 Migration `0030_collections` (`backend/app/models.py`: `Collection`,
 `CollectionImage`, `collection_programs`, `collection_groups`).
 
-| Table                 | Purpose                                                                                                                                                                                                                       |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Table                 | Purpose                                                                                                                                                                                                                            |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `collections`         | `name`, `description`, `type` (`synchronized` / `sequence`, CHECK), `visibility` (`private` / `public` / `restricted`, CHECK, default `private`), `user_id`, `owner_program_id`, `viewport_state` (JSONB, default `{}`), `version` |
-| `collection_images`   | Ordered membership: PK `(collection_id, image_id)`, `sort_order`; index `idx_collection_images_order (collection_id, sort_order)`                                                                                              |
-| `collection_programs` | Program scope for `visibility = restricted`                                                                                                                                                                                   |
-| `collection_groups`   | Group scope for `visibility = restricted`                                                                                                                                                                                     |
+| `collection_images`   | Ordered membership: PK `(collection_id, image_id)`, `sort_order`; index `idx_collection_images_order (collection_id, sort_order)`                                                                                                  |
+| `collection_programs` | Program scope for `visibility = restricted`                                                                                                                                                                                        |
+| `collection_groups`   | Group scope for `visibility = restricted`                                                                                                                                                                                          |
 
 ### Ownership
 
@@ -55,11 +55,11 @@ backend is authoritative (frontend gating on `permissions` is UX only).
 
 ### Who can see a collection (`can_view_collection`)
 
-| Caller                     | private        | public | restricted                                          |
-| -------------------------- | -------------- | ------ | --------------------------------------------------- |
-| admin / instructor / staff | yes (all)      | yes    | yes                                                 |
-| student — owner            | yes            | yes    | yes                                                 |
-| student — other            | no             | yes    | only if the **program gate AND group gate** pass    |
+| Caller                     | private   | public | restricted                                       |
+| -------------------------- | --------- | ------ | ------------------------------------------------ |
+| admin / instructor / staff | yes (all) | yes    | yes                                              |
+| student — owner            | yes       | yes    | yes                                              |
+| student — other            | no        | yes    | only if the **program gate AND group gate** pass |
 
 The restricted dual gate mirrors
 [category visibility](category-visibility-and-programs.md): for each dimension
@@ -98,15 +98,15 @@ Base path `/api/collections` (router `backend/app/routers/collections.py`).
 All endpoints require a JWT bearer token — there is no unauthenticated variant
 (see [unauthenticated-routes.md](unauthenticated-routes.md)).
 
-| Method | Endpoint                | Min role | Notes                                                                                                                                                     |
-| ------ | ----------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/collections`      | student  | Visible collections as `CollectionSummaryOut[]`. Query: `type`, `mine`, `owner_user_id`, `owner_program_id`, `orphaned` (**admin only**, others **403**). Ordered by `updated_at` desc. |
-| GET    | `/api/collections/{id}` | student  | `CollectionOut` (summary + ordered `images: ImageOut[]`, `program_ids`, `group_ids`, `viewport_state`). **404** when missing _or_ not visible (no existence leak). |
-| POST   | `/api/collections`      | student  | Create; owner = caller (`user_id`). Body `CollectionCreate`: `name`, `description?`, `type`, `visibility` (default `private`), ordered `image_ids`, `program_ids` / `group_ids` (restricted only). **201** `CollectionOut`. |
-| PATCH  | `/api/collections/{id}` | student (must pass `can_edit_collection`) | Body `CollectionUpdate`: any of `name`, `description`, `visibility`, `program_ids`, `group_ids` + required `version`. `type` is immutable (**422** if changed). Returns fresh `CollectionOut`. |
-| DELETE | `/api/collections/{id}` | student (must pass `can_delete_collection`) | **204**. |
-| PUT    | `/api/collections/{id}/images`   | student (must pass `can_edit_collection`) | Replace the whole ordered image list (add / remove / reorder in one call). Body `CollectionImagesUpdate`: `image_ids`, `version`. `sort_order` is rewritten to `0..n-1`. Returns fresh `CollectionOut`. |
-| PUT    | `/api/collections/{id}/viewport` | student (must pass `can_edit_collection`) | Replace `viewport_state` wholesale. Body `CollectionViewportUpdate`: `viewport_state` (JSON object), `version`. Returns fresh `CollectionOut`. |
+| Method | Endpoint                         | Min role                                    | Notes                                                                                                                                                                                                                       |
+| ------ | -------------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/collections`               | student                                     | Visible collections as `CollectionSummaryOut[]`. Query: `type`, `mine`, `owner_user_id`, `owner_program_id`, `orphaned` (**admin only**, others **403**). Ordered by `updated_at` desc.                                     |
+| GET    | `/api/collections/{id}`          | student                                     | `CollectionOut` (summary + ordered `images: ImageOut[]`, `program_ids`, `group_ids`, `viewport_state`). **404** when missing _or_ not visible (no existence leak).                                                          |
+| POST   | `/api/collections`               | student                                     | Create; owner = caller (`user_id`). Body `CollectionCreate`: `name`, `description?`, `type`, `visibility` (default `private`), ordered `image_ids`, `program_ids` / `group_ids` (restricted only). **201** `CollectionOut`. |
+| PATCH  | `/api/collections/{id}`          | student (must pass `can_edit_collection`)   | Body `CollectionUpdate`: any of `name`, `description`, `visibility`, `program_ids`, `group_ids` + required `version`. `type` is immutable (**422** if changed). Returns fresh `CollectionOut`.                              |
+| DELETE | `/api/collections/{id}`          | student (must pass `can_delete_collection`) | **204**.                                                                                                                                                                                                                    |
+| PUT    | `/api/collections/{id}/images`   | student (must pass `can_edit_collection`)   | Replace the whole ordered image list (add / remove / reorder in one call). Body `CollectionImagesUpdate`: `image_ids`, `version`. `sort_order` is rewritten to `0..n-1`. Returns fresh `CollectionOut`.                     |
+| PUT    | `/api/collections/{id}/viewport` | student (must pass `can_edit_collection`)   | Replace `viewport_state` wholesale. Body `CollectionViewportUpdate`: `viewport_state` (JSON object), `version`. Returns fresh `CollectionOut`.                                                                              |
 
 `CollectionSummaryOut`: `id`, `name`, `description`, `type`, `visibility`,
 `owner` (`{user_id, name}` | `{program_id, name}` | `null` when orphaned),
@@ -176,9 +176,84 @@ program-orphaned collections.
 
 ## Frontend behaviour
 
-_Planned_ (#1414–#1419): Collections tab, `?collection={id}` deep links,
-"Add to Collection" from the image view, sequence and synchronized viewers
-(read-only annotations), search integration and ownership management.
+### Collections tab, CRUD and deep links (#1414)
+
+**Where.** `frontend/src/api.ts` (`ApiCollection*` wire shapes,
+`fetchCollections` / `fetchCollection` / `createCollection` /
+`updateCollection` / `deleteCollection` / `replaceCollectionImages` /
+`saveCollectionViewport`, `collectionConflictCurrent`), `types.ts`
+(`Collection`, `CollectionSummary`, `CollectionType`, `CollectionVisibility`,
+`CollectionOwner`, `CollectionPermissions`), `collectionUtils.ts` (mapping,
+labels, `canUseRestrictedVisibility`, `parseCollectionIdParam`),
+`useCollectionsData.ts` (list/detail state + mutations),
+`components/CollectionsPage.tsx`, `CollectionCard.tsx`,
+`CollectionEditDialog.tsx`, plus `navigation.ts`, `AppShell.tsx`,
+`useShareableImageState.ts`, `useNavigationHistory.ts` and `App.tsx`.
+
+**Navigation.** A **Collections** tab is shown to every authenticated role
+(students included) in both the desktop app bar and the compact/mobile
+drawer. `?page=collections` opens the list. `App` only mounts
+`useCollectionsData` while the tab is active, so browsing images never hits
+`/api/collections`.
+
+**List.** `GET /api/collections` rendered as a responsive card grid
+(1 → 2 → 3 → 4 columns at `xs/sm/md/lg`). Each `CollectionCard` shows the
+cover (`RenewingThumbnail` with a collection-scoped renewer that refreshes the
+token via `GET /api/collections/{id}`), name, image count, owner, a type chip
+and a visibility chip that reuses the category restriction palette. Filters:
+type toggle (All / Synchronized / Sequence), **My collections** (`mine=true`;
+clears and disables the owner facet), and — for admin, instructor and staff
+only — an **Owner** select built from the owners in the loaded list
+(`owner_user_id` / `owner_program_id`). Students never see the Owner select
+and `toCollectionApiFilters` never emits `owner_*` for them. Admins
+additionally get _No owner (orphaned)_ → `orphaned=true`;
+`toCollectionApiFilters` never emits `orphaned` for other roles. Loading
+spinner, a plain error `Alert`
+(notification only — no Retry action), and filter-aware empty copy follow the
+existing page patterns; the unfiltered empty state's "Create a collection" is
+a link that opens the same create dialog as the **New collection** button.
+
+**Create / edit (`CollectionEditDialog`).** Name (required), description,
+type (radio on create; read-only chip on edit — the API rejects type changes
+with 422), visibility. `restricted` is only offered to admins and instructors
+(`canUseRestrictedVisibility`); students/staff see Private / Public. When
+restricted, program and group chip pickers reuse the Add/EditCategoryDialog
+attach logic: instructors can only select programs they belong to
+(`getAttachableProgramIds`) and groups they manage; already-attached scope
+stays enabled so it can be removed. At least one program or group is required
+for `restricted`; `program_ids` / `group_ids` are sent as `[]` for any other
+visibility. Create posts `image_ids: []` (adding images arrives with #1415).
+Edit sends the collection `version` in the PATCH body; a **409** shows the
+standard "modified by another user" message with a **Reload** action that
+re-seeds the form from the authoritative `CollectionOut` in `detail`.
+
+**Delete.** Confirmation dialog (existing delete-dialog pattern) →
+`DELETE /api/collections/{id}`; failures stay in the dialog with the API
+message. Deleting the open collection returns to the list.
+
+**Permissions are UX gates only.** Edit/delete controls render when
+`permissions.can_edit` / `can_delete` from the API are true; the backend
+re-checks authority on every call.
+
+**Detail placeholder.** Selecting a card sets `?collection={id}` and renders
+the collection header (type/visibility chips, description, owner), an info
+alert that the viewer is coming (#1416 sequence / #1417 synchronized), and
+the ordered member list with an **Open image** link per row that navigates to
+`?image={id}`. Both types share this placeholder for now. A 404 (missing or
+not visible) renders the not-found alert with an _All collections_ action.
+
+**Deep links & history.** `useShareableImageState` parses `?collection={id}`
+ahead of `?image=` / `?category=`; a collection link wins if both are present.
+The list emits `?page=collections`, a selected collection emits
+`?collection={id}` (no `page` param). Both push history entries through
+`useNavigationHistory`, and `popstate` restores the selected collection from
+the URL, so back/forward moves between browse, image and collection views.
+Refreshing a `?collection=` URL re-opens that collection. `?item={image_id}`
+is reserved for the sequence viewer (#1416) and is not parsed yet.
+
+_Planned_ (#1415–#1419): "Add to Collection" from the image view, sequence
+and synchronized viewers (read-only annotations), search integration and
+ownership management / transfer UI.
 
 ## Tests
 
@@ -193,3 +268,17 @@ _Planned_ (#1414–#1419): Collections tab, `?collection={id}` deep links,
   `sort_order` rewrite), viewport whole-replace, 409 + version increment.
 - `backend/tests/test_schemas.py` — `CollectionCreate` / `CollectionUpdate` /
   `CollectionImagesUpdate` / `CollectionViewportUpdate` validators.
+- `frontend/tests/api.test.ts` — collection wrapper paths, query filters,
+  request bodies, 409 `collectionConflictCurrent` extraction.
+- `frontend/tests/collectionUtils.test.ts` — wire → domain mapping, role
+  gating for `restricted`, `?collection=` parsing.
+- `frontend/tests/navigation.test.ts`, `components/AppShell.test.tsx` —
+  Collections tab for every role (desktop + compact drawer).
+- `frontend/tests/useShareableImageState.test.ts`,
+  `useNavigationHistory.test.ts`, `App.test.tsx` — `?collection={id}`
+  parse/emit precedence, history entries, deep-link restore on load and
+  back/forward.
+- `frontend/tests/components/CollectionsPage.test.tsx`,
+  `CollectionCard.test.tsx`, `CollectionEditDialog.test.tsx` — list/filter
+  states, permission-gated actions, create/edit/delete flows, restricted
+  picker gating per role, 409 reload.

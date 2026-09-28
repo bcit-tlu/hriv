@@ -1,0 +1,87 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as CollectionsPageStories from './CollectionsPage.stories'
+
+<Meta of={CollectionsPageStories} />
+
+<Title />
+
+<Subtitle>
+  The Collections tab: filters, responsive card grid, create/edit/delete flows, and the detail
+  placeholder that lists member images until the viewers arrive.
+</Subtitle>
+
+## When to use
+
+`App` renders `CollectionsPage` when the active page is `collections` (`?page=collections` or
+`?collection={id}`). It is visible to every authenticated role, including students. The component
+is presentational — list/detail data and mutations come from `useCollectionsData` via props, so the
+stories drive it with deterministic fixtures.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={CollectionsPageStories.Basic} />
+
+## Implementation guidance
+
+- **Filters.** Type toggle (All / Synchronized / Sequence), a **My collections** chip, and an
+  **Owner** select. Selecting My collections resets and disables the owner facet. Admins get an
+  extra _No owner (orphaned)_ owner choice; the hook never sends `orphaned` for other roles.
+  Students never see the Owner select, and the hook never sends `owner_user_id` /
+  `owner_program_id` for them.
+- **Grid.** One column on phones, two at `sm`, three at `md`, four at `lg`, each cell a
+  `CollectionCard`.
+- **States.** Spinner while the first page loads, a plain error `Alert` (no action), and an
+  empty state whose copy changes depending on whether filters are active; with no filters the
+  copy's **Create a collection** is a link that opens the same dialog as **New collection**.
+- **Create / edit.** Both use `CollectionEditDialog`. Editing from a card first loads the full
+  record (summaries omit the restricted scope); editing from the detail header reuses the loaded
+  detail.
+- **Delete.** Confirmation dialog following the existing delete-dialog pattern; a failure keeps
+  the dialog open with the API message. Deleting the currently open collection returns to the list.
+- **Detail placeholder.** Header with type/visibility chips, an info alert that the viewer is
+  coming soon, and an ordered member list with an **Open image** link (`?image={id}`) per row. A
+  404 (`detailError`) renders the not-found alert with a way back to the list.
+
+## Examples
+
+### Filtered
+
+<Canvas of={CollectionsPageStories.Filtered} />
+
+### Loading
+
+<Canvas of={CollectionsPageStories.Loading} />
+
+### Empty
+
+<Canvas of={CollectionsPageStories.Empty} />
+
+### Load error
+
+<Canvas of={CollectionsPageStories.LoadError} />
+
+### Detail
+
+<Canvas of={CollectionsPageStories.Detail} />
+
+### Detail not found
+
+<Canvas of={CollectionsPageStories.DetailNotFound} />
+
+### Create dialog open
+
+<Canvas of={CollectionsPageStories.CreateDialogOpen} />
+
+## Stories
+
+<Stories includePrimary={false} />

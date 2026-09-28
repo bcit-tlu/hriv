@@ -68,3 +68,45 @@ export interface Group {
   createdAt: string
   updatedAt: string
 }
+
+// ── Collections (docs/collections.md) ─────────────────────
+
+export type CollectionType = 'synchronized' | 'sequence'
+
+export type CollectionVisibility = 'private' | 'public' | 'restricted'
+
+/** Owner of a collection: a user, a program (after transfer, #1413), or nobody (orphaned). */
+export type CollectionOwner =
+  | { kind: 'user'; userId: number; name: string }
+  | { kind: 'program'; programId: number; name: string }
+  | null
+
+/** UX hints from the API — the backend re-checks authority on every write. */
+export interface CollectionPermissions {
+  canEdit: boolean
+  canDelete: boolean
+  canTransfer: boolean
+}
+
+export interface CollectionSummary {
+  id: number
+  name: string
+  description: string | null
+  type: CollectionType
+  visibility: CollectionVisibility
+  owner: CollectionOwner
+  imageCount: number
+  coverThumb: string | null
+  version: number
+  createdAt: string
+  updatedAt: string
+  permissions: CollectionPermissions
+}
+
+export interface Collection extends CollectionSummary {
+  /** Ordered member images (only those visible to the caller). */
+  images: ImageItem[]
+  programIds: number[]
+  groupIds: number[]
+  viewportState: Record<string, unknown>
+}
