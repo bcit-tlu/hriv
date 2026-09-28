@@ -188,6 +188,11 @@ re-creating any tables.
 | `DB_POOL_SIZE`                       | `10`                                 | SQLAlchemy connection-pool size per pod. The Helm chart sets it per component: `api.db.poolSize` on the API pod and `redis.worker.db.poolSize` (default `5`) on worker pods. Must be at least `1`.                                                                                                                                                                                                   |
 | `DB_MAX_OVERFLOW`                    | `20`                                 | SQLAlchemy overflow connections permitted above `DB_POOL_SIZE` per pod. Set per component via `api.db.maxOverflow` (API) and `redis.worker.db.maxOverflow` (default `5`) on workers. Per-pod ceiling is pool plus overflow; see the connection-budget table in `charts/backend/README.md`. Must be `0` or greater.                                                                                   |
 | `BULK_IMPORT_STALE_SECONDS`          | `7200` (the coordinator job timeout) | How long an abandoned `pending`/`processing` bulk-import row survives before the reconciliation sweep finalises it. Only bounds cleanup of rows whose coordinator has no live registration; it does not time out a healthy running import.                                                                                                                                                           |
+| `BULK_IMPORT_MAX_ENTRY_BYTES`        | `2147483648` (2 GiB)                 | Maximum decompressed size of a single image entry inside an uploaded bulk-import zip. Checked against the central-directory `file_size` before the entry is opened and again against the bytes actually streamed out, so a forged header cannot bypass it. Violations return HTTP 413 and delete every file already extracted for that request.                                                      |
+| `BULK_IMPORT_MAX_TOTAL_BYTES`        | `21474836480` (20 GiB)               | Maximum cumulative decompressed size of all image entries across every zip in one bulk-import request (same pre-screen + streamed enforcement, same 413 + cleanup behaviour).                                                                                                                                                                                                                        |
+| `BULK_IMPORT_MAX_ENTRIES`            | `2000`                               | Maximum number of eligible image entries across every zip in one bulk-import request; exceeding it returns HTTP 413 and rolls back the extracted files.                                                                                                                                                                                                                                              |
+| `BULK_IMPORT_MAX_COMPRESSION_RATIO`  | `100`                                | Zip entries whose declared `file_size / compress_size` exceeds this ratio are rejected (HTTP 413) before extraction as probable decompression bombs.                                                                                                                                                                                                                                                 |
+| `BULK_IMPORT_MIN_FREE_BYTES`         | `1073741824` (1 GiB)                 | Minimum free space that must remain on the `source_images_dir` volume while extracting a zip; checked before each entry and every 512 MiB written. Falling below it aborts the import with HTTP 507 and removes the partially extracted files.                                                                                                                                                       |
 
 The dedicated worker uses arq's built-in health key
 (`arq:queue:health-check`), refreshed independently of job slots every 30
@@ -285,6 +290,30 @@ rendered as `CORS_ORIGINS` unconditionally (not via the OIDC ConfigMap) and
 `tasks.executionMode=required` fails chart rendering without it. The nested
 `auth.openidConnect.corsOrigins` value is a deprecated fallback kept for
 existing overlays.
+
+## TRUSTED_PROXY_HOPS and login rate limiting
+
+The backend never trusts the leftmost `X-Forwarded-For` entry — every proxy
+in front of it _appends_ its peer (`$proxy_add_x_forwarded_for`), so the
+leftmost value is whatever the client sent. `get_client_ip()`
+(`app/middleware.py`) takes the entry `TRUSTED_PROXY_HOPS` positions from the
+**right**; if the header has fewer entries it falls back to `X-Real-IP`, then
+the direct connection address. uvicorn runs **without** `--proxy-headers`
+(with `--forwarded-allow-ips '*'` it would rewrite `scope["client"]` from the
+same spoofable leftmost entry). See
+[`docs/deployment-proxy-chain.md`](../docs/deployment-proxy-chain.md).
+
+| Environment variable         | Default | Purpose                                                                                                                                                                                                                                                                                      |
+| ---------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TRUSTED_PROXY_HOPS`         | `1`     | Number of trusted proxies that append to `X-Forwarded-For`. `1` = docker-compose (frontend nginx). Fleet chain HAProxy → ingress-nginx → nginx = `3`. `0` ignores forwarding headers.                                                                                                        |
+| `SECURE_COOKIES`             | `true`  | Set the `Secure` flag on backend-issued cookies (admin download token). docker-compose sets `false`; set `false` too when running uvicorn standalone on a non-`localhost` plain-http origin (browsers reject `Secure` cookies there, so admin downloads 401). Never disable in a deployment. |
+| `RATE_LIMIT_LOGIN_MAX`       | `5`     | Login attempts per `(client IP, email)` per `RATE_LIMIT_LOGIN_WINDOW` seconds (default `60`).                                                                                                                                                                                                |
+| `RATE_LIMIT_LOGIN_EMAIL_MAX` | `20`    | Account-scoped attempts per email, independent of client IP, per `RATE_LIMIT_LOGIN_EMAIL_WINDOW` seconds (default `900`).                                                                                                                                                                    |
+
+Both buckets are Redis sliding windows (`rate:login:{ip}:{email}` and
+`rate:login:email:{email}`); a successful login clears both. When Redis is
+unavailable the limiter fails open and logs `rate_limit.redis_unavailable` /
+`rate_limit.redis_error` at WARNING — alert on those events.
 
 ## Deployment rollout strategy
 

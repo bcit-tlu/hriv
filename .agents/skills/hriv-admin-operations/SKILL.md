@@ -65,7 +65,9 @@ Use this skill for administrator-facing operations and long-running task flows.
 - `run_db_import` uses separate status and data sessions so progress commits
   while destructive data import remains atomic.
 - Keep DB import delete/insert ordering aligned with foreign keys, groups,
-  categories, images, source images, changelog entries, and announcements.
+  categories, images, source images, collections (and their image/program/group
+  junctions, deleted first and inserted after `source_images`), changelog
+  entries, and announcements.
 - Reset PostgreSQL sequences after import.
 - `reconcile_stale_tasks` must remain multi-replica safe by using freshness on
   `updated_at`.
