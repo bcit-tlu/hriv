@@ -467,6 +467,10 @@ backend_default_deployment="$(extract_top_level_yaml_doc "$backend_default_manif
 assert_not_contains "$backend_default_deployment" "strategy:" \
   "backend deployment should omit strategy when no rollout override is needed"
 
+backend_default_readiness="$(grep -F -A2 "readinessProbe:" <<<"$backend_default_deployment")"
+assert_contains "$backend_default_readiness" 'path: "/api/_probe"' \
+  "backend readiness probe should target the routed /api/_probe canary (#1473)"
+
 backend_override_manifest="$(helm template test charts/backend \
   --set scheduling.zoneAntiAffinity.enabled=true \
   --set replicaCount=2 \
@@ -842,6 +846,11 @@ assert_contains "$frontend_default_manifest" "location = /api/health/storage {" 
 frontend_health_storage_location="$(grep -F -A2 "location = /api/health/storage {" <<<"$frontend_default_manifest")"
 assert_contains "$frontend_health_storage_location" "return 404;" \
   "frontend nginx should block the backend storage probe endpoint"
+assert_contains "$frontend_default_manifest" "location = /api/_probe {" \
+  "frontend nginx should intercept the routed readiness canary endpoint"
+frontend_probe_location="$(grep -F -A2 "location = /api/_probe {" <<<"$frontend_default_manifest")"
+assert_contains "$frontend_probe_location" "return 404;" \
+  "frontend nginx should block the routed readiness canary endpoint"
 assert_contains "$frontend_default_manifest" "location = /runtime-config.js {" \
   "frontend nginx should serve the runtime configuration script"
 assert_contains "$frontend_default_manifest" 'otelEndpointBase64:"${OTEL_BROWSER_TRACE_ENDPOINT_B64}"' \
