@@ -126,3 +126,15 @@ def test_parallel_rebuild_retry_backoff_requires_valid_bounds() -> None:
             rebuild_retry_backoff_base_seconds=61,
             rebuild_retry_backoff_cap_seconds=60,
         )
+
+
+def test_collections_enabled_defaults_off() -> None:
+    settings = Settings()
+
+    assert settings.collections_enabled is False
+
+
+def test_collections_enabled_reads_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("COLLECTIONS_ENABLED", "true")
+
+    assert Settings().collections_enabled is True

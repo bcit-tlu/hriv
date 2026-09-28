@@ -13,7 +13,7 @@ Total packages: 78
 ================================================================================
 
 ================================================================================
-alembic@1.18.4
+alembic@1.20.0
 License: MIT
 Homepage: https://alembic.sqlalchemy.org
 ================================================================================
@@ -121,7 +121,7 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ================================================================================
-arq@0.27.0
+arq@0.28.0
 License: MIT License
 Homepage: https://github.com/python-arq/arq
 ================================================================================
@@ -183,8 +183,8 @@ ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ================================================================================
-asyncpg@0.30.0
-License: Apache Software License
+asyncpg@0.31.0
+License: Apache-2.0
 ================================================================================
 
 Copyright (C) 2016-present the asyncpg authors and contributors.
@@ -393,7 +393,7 @@ Copyright (C) 2016-present the asyncpg authors and contributors.
    limitations under the License.
 
 ================================================================================
-Authlib@1.6.12
+Authlib@1.8.0
 License: BSD License
 Homepage: https://github.com/authlib/authlib
 ================================================================================
@@ -457,7 +457,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-azure-storage-blob@12.28.0
+azure-storage-blob@12.30.3
 License: MIT License
 Homepage: https://github.com/Azure/azure-sdk-for-python/tree/main/sdk/storage/azure-storage-blob
 ================================================================================
@@ -1082,7 +1082,7 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
 
 ================================================================================
-fastapi@0.136.0
+fastapi@0.141.1
 License: MIT
 Homepage: https://github.com/fastapi/fastapi
 ================================================================================
@@ -1319,7 +1319,7 @@ Homepage: https://github.com/googleapis/google-cloud-python/tree/main/packages/g
    limitations under the License.
 
 ================================================================================
-greenlet@3.3.2
+greenlet@3.5.6
 License: MIT AND PSF-2.0
 Homepage: https://greenlet.readthedocs.io
 ================================================================================
@@ -2125,7 +2125,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ================================================================================
-httptools@0.7.1
+httptools@0.8.0
 License: MIT
 Homepage: https://github.com/MagicStack/httptools
 ================================================================================
@@ -2151,6 +2151,49 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
+
+Copyright Joyent, Inc. and other Node contributors.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to
+deal in the Software without restriction, including without limitation the
+rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+IN THE SOFTWARE.
+
+MIT License
+
+Copyright © 2018 Fedor Indutny
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to permit
+persons to whom the Software is furnished to do so, subject to the
+following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ================================================================================
 httpx@0.28.1
@@ -2356,6 +2399,41 @@ PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
 LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+================================================================================
+joserfc@1.7.5
+License: BSD License
+Homepage: https://github.com/authlib/joserfc
+================================================================================
+
+BSD 3-Clause License
+
+Copyright (c) 2023, Hsiaoming Yang
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ================================================================================
 Mako@1.3.12
@@ -5559,34 +5637,8 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ================================================================================
-pkgconfig@1.6.0
-License: MIT License
-Homepage: https://github.com/matze/pkgconfig
-================================================================================
-
-Copyright (c) 2013 Matthias Vogelgesang <matthias.vogelgesang@gmail.com>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-================================================================================
-prometheus_client@0.21.1
-License: Apache Software License
+prometheus_client@0.26.0
+License: Apache-2.0 AND BSD-2-Clause
 Homepage: https://github.com/prometheus/client_python
 ================================================================================
 
@@ -5903,7 +5955,7 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ================================================================================
-pydantic@2.12.5
+pydantic@2.13.5
 License: MIT
 Homepage: https://github.com/pydantic/pydantic
 ================================================================================
@@ -5931,9 +5983,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-pydantic_core@2.41.5
+pydantic_core@2.46.5
 License: MIT
-Homepage: https://github.com/pydantic/pydantic-core
+Homepage: https://github.com/pydantic
 ================================================================================
 
 The MIT License (MIT)
@@ -5959,7 +6011,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-pydantic-settings@2.14.2
+pydantic-settings@2.15.0
 License: MIT
 Homepage: https://github.com/pydantic/pydantic-settings
 ================================================================================
@@ -6077,7 +6129,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-python-multipart@0.0.31
+python-multipart@0.0.32
 License: Apache-2.0
 Homepage: https://github.com/Kludex/python-multipart
 ================================================================================
@@ -6286,7 +6338,7 @@ Homepage: https://github.com/Kludex/python-multipart
    limitations under the License.
 
 ================================================================================
-pyvips@2.2.3
+pyvips@3.2.0
 License: MIT License
 Homepage: https://github.com/libvips/pyvips
 ================================================================================
@@ -6598,7 +6650,7 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ================================================================================
-SQLAlchemy@2.0.48
+SQLAlchemy@2.1.1
 License: MIT
 Homepage: https://www.sqlalchemy.org
 ================================================================================
@@ -6999,9 +7051,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-uvicorn@0.34.3
+uvicorn@0.54.0
 License: BSD-3-Clause
-Homepage: https://www.uvicorn.org/
+Homepage: https://uvicorn.dev/
 ================================================================================
 
 Copyright © 2017-present, [Encode OSS Ltd](https://www.encode.io/).

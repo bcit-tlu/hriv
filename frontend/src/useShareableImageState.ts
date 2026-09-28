@@ -4,6 +4,7 @@ import { MAX_SHARE_OVERLAYS } from './components/imageViewerUtils'
 import { buildNavHistoryState } from './useNavigationHistory'
 import { emitEvent } from './observability'
 import { findImageInTree, resolveCategoryPath } from './treeUtils'
+import { parseCollectionIdParam } from './collectionUtils'
 import type { Category, ImageItem } from './types'
 
 interface ParsedShareableUrl {
@@ -11,6 +12,8 @@ interface ParsedShareableUrl {
   viewport: ViewportState | undefined
   overlays: OverlayRect[] | undefined
   catIds: number[] | null
+  /** `?collection={id}` deep link (docs/collections.md); wins over image/cat params. */
+  collectionId: number | null
 }
 
 /**
@@ -19,12 +22,19 @@ interface ParsedShareableUrl {
  * first render (via useRef initialisation), eliminating any dependency
  * on React effect execution order.
  */
-function parseShareableUrlParams(): ParsedShareableUrl {
+export function parseShareableUrlParams(): ParsedShareableUrl {
   const params = new URLSearchParams(window.location.search)
   let imageId: number | null = null
   let viewport: ViewportState | undefined
   let overlays: OverlayRect[] | undefined
   let catIds: number[] | null = null
+
+  // A collection link opens the Collections page, so browse-only params are
+  // ignored. (`?item=` is reserved for the collection viewers, #1416.)
+  const collectionId = parseCollectionIdParam(window.location.search)
+  if (collectionId != null) {
+    return { imageId, viewport, overlays, catIds, collectionId }
+  }
 
   const imgId = params.get('image')
   if (imgId) {
@@ -80,7 +90,7 @@ function parseShareableUrlParams(): ParsedShareableUrl {
       }
     }
   }
-  return { imageId, viewport, overlays, catIds }
+  return { imageId, viewport, overlays, catIds, collectionId }
 }
 
 export interface UseShareableImageStateDeps {
@@ -94,6 +104,11 @@ export interface UseShareableImageStateDeps {
   page: string
   /** Current category path — changes trigger URL sync (`?cat=`). */
   path: Category[]
+  /**
+   * Collection open on the Collections page — written as `?collection={id}`
+   * (instead of `?page=collections`) so the link re-opens it on refresh.
+   */
+  collectionId?: number | null
   setPath: React.Dispatch<React.SetStateAction<Category[]>>
   setSelectedImage: React.Dispatch<React.SetStateAction<ImageItem | null>>
   /**
@@ -146,6 +161,7 @@ export function useShareableImageState(
     uncategorizedLoaded,
     page,
     path,
+    collectionId = null,
     setPath,
     setSelectedImage,
     enableUrlSync = true,
@@ -240,7 +256,9 @@ export function useShareableImageState(
     // Don't overwrite URL while a shared-link image is still pending resolution
     if (pendingImageId.current !== null) return
     const params = new URLSearchParams()
-    if (page !== 'browse') {
+    if (page === 'collections' && collectionId != null) {
+      params.set('collection', String(collectionId))
+    } else if (page !== 'browse') {
       params.set('page', page)
       // The guide page owns a ?doc= sub-param — preserve it so refreshes and
       // shared links keep the current document.
@@ -278,7 +296,7 @@ export function useShareableImageState(
       '',
       newUrl,
     )
-  }, [enableUrlSync, page, path, selectedImage, viewportState, overlays])
+  }, [enableUrlSync, page, path, selectedImage, viewportState, overlays, collectionId])
 
   const handleViewportChange = useCallback((state: ViewportState) => {
     setViewportState(state)

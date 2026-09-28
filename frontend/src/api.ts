@@ -653,6 +653,135 @@ export function bulkDeleteImages(body: { image_ids: number[] }): Promise<void> {
   })
 }
 
+// ── Collections (docs/collections.md) ────────────────────
+
+export type ApiCollectionType = 'synchronized' | 'sequence'
+export type ApiCollectionVisibility = 'private' | 'public' | 'restricted'
+
+/** Exactly one of `user_id` / `program_id` is set; the other key is present but `null`. */
+export type ApiCollectionOwner = {
+  user_id?: number | null
+  program_id?: number | null
+  name: string
+} | null
+
+export interface ApiCollectionPermissions {
+  can_edit: boolean
+  can_delete: boolean
+  can_transfer: boolean
+}
+
+export interface ApiCollectionSummary {
+  id: number
+  name: string
+  description: string | null
+  type: ApiCollectionType
+  visibility: ApiCollectionVisibility
+  owner: ApiCollectionOwner
+  image_count: number
+  cover_thumb: string | null
+  version: number
+  created_at: string
+  updated_at: string
+  permissions: ApiCollectionPermissions
+}
+
+export interface ApiCollection extends ApiCollectionSummary {
+  /** Ordered, visible-to-caller members with tokenized `thumb` / `tile_sources`. */
+  images: ApiImage[]
+  program_ids: number[]
+  group_ids: number[]
+  viewport_state: Record<string, unknown>
+}
+
+export interface CollectionFilters {
+  type?: ApiCollectionType
+  mine?: boolean
+  owner_user_id?: number
+  owner_program_id?: number
+  /** Admin-only; the API returns 403 for anyone else, so callers must not set it for non-admins. */
+  orphaned?: boolean
+}
+
+export function fetchCollections(filters: CollectionFilters = {}): Promise<ApiCollectionSummary[]> {
+  const params = new URLSearchParams()
+  if (filters.type) params.set('type', filters.type)
+  if (filters.mine) params.set('mine', 'true')
+  if (filters.owner_user_id != null) params.set('owner_user_id', String(filters.owner_user_id))
+  if (filters.owner_program_id != null)
+    params.set('owner_program_id', String(filters.owner_program_id))
+  if (filters.orphaned) params.set('orphaned', 'true')
+  const qs = params.toString()
+  return request(`/collections${qs ? `?${qs}` : ''}`)
+}
+
+export function fetchCollection(id: number): Promise<ApiCollection> {
+  return request(`/collections/${id}`)
+}
+
+export function createCollection(body: {
+  name: string
+  description?: string | null
+  type: ApiCollectionType
+  visibility: ApiCollectionVisibility
+  image_ids: number[]
+  program_ids?: number[]
+  group_ids?: number[]
+}): Promise<ApiCollection> {
+  return request('/collections', { method: 'POST', body: JSON.stringify(body) })
+}
+
+/** `type` is immutable after creation (422) and therefore not accepted here. */
+export function updateCollection(
+  id: number,
+  body: {
+    name?: string
+    description?: string | null
+    visibility?: ApiCollectionVisibility
+    program_ids?: number[]
+    group_ids?: number[]
+    version: number
+  },
+): Promise<ApiCollection> {
+  return request(`/collections/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+}
+
+export function deleteCollection(id: number): Promise<void> {
+  return request(`/collections/${id}`, { method: 'DELETE' })
+}
+
+/** Replaces the whole ordered member list (add / remove / reorder in one call). */
+export function replaceCollectionImages(
+  id: number,
+  body: { image_ids: number[]; version: number },
+): Promise<ApiCollection> {
+  return request(`/collections/${id}/images`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function saveCollectionViewport(
+  id: number,
+  body: { viewport_state: Record<string, unknown>; version: number },
+): Promise<ApiCollection> {
+  return request(`/collections/${id}/viewport`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+/**
+ * Extract the authoritative current collection from a 409 stale-version
+ * ApiError (the backend puts the fresh `CollectionOut` in `detail`).
+ */
+export function collectionConflictCurrent(err: unknown): ApiCollection | null {
+  if (!(err instanceof ApiError) || err.status !== 409) return null
+  const detail = err.data
+  return isRecord(detail) &&
+    typeof detail.id === 'number' &&
+    typeof detail.version === 'number' &&
+    typeof detail.name === 'string' &&
+    Array.isArray(detail.images) &&
+    isRecord(detail.permissions)
+    ? (detail as unknown as ApiCollection)
+    : null
+}
+
 // ── OIDC ────────────────────────────────────────────────
 
 export interface OidcStatus {
@@ -2005,6 +2134,15 @@ export function retryFailedJobItems(jobId: number): Promise<JobRetryResult> {
 export interface VersionsResponse {
   backend: string
   backup: string
+}
+
+/** ``GET /api/features`` — deployment feature flags (docs/collections.md). */
+export interface ApiFeatures {
+  collections: boolean
+}
+
+export function fetchFeatures(): Promise<ApiFeatures> {
+  return request('/features')
 }
 
 export function fetchVersions(): Promise<VersionsResponse> {

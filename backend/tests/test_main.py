@@ -427,3 +427,28 @@ def test_resolve_cors_config_unset_required_fails_fast() -> None:
 
     with pytest.raises(RuntimeError, match="CORS_ORIGINS"):
         _resolve_cors_config("", "required")
+
+
+def test_maintenance_wins_over_disabled_collections(monkeypatch) -> None:
+    """Maintenance 503 takes priority over the collections dark-launch 404."""
+    from app.database import settings
+    from app.main import app as main_app
+
+    monkeypatch.setattr(settings, "collections_enabled", False)
+    with patch("app.middleware.is_maintenance_mode", return_value=True):
+        with TestClient(main_app, raise_server_exceptions=False) as client:
+            assert client.get("/api/collections").status_code == 503
+    with patch("app.middleware.is_maintenance_mode", return_value=False):
+        with TestClient(main_app, raise_server_exceptions=False) as client:
+            assert client.get("/api/collections").status_code == 404
+
+
+async def test_features_endpoint_reports_collections_flag(monkeypatch) -> None:
+    from app.database import settings
+    from app.main import features
+
+    monkeypatch.setattr(settings, "collections_enabled", False)
+    assert (await features()).collections is False
+
+    monkeypatch.setattr(settings, "collections_enabled", True)
+    assert (await features()).collections is True

@@ -41,7 +41,7 @@ jobs:
       synthetic: ${{ steps.filter.outputs.synthetic }}
       agent-docs: ${{ steps.filter.outputs.agent-docs }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: dorny/paths-filter@v4
         id: filter
@@ -102,7 +102,7 @@ jobs:
     if: needs.changes.outputs.agent-docs == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - run: bash scripts/check-agent-docs.sh
 
   backend-tests:
@@ -131,9 +131,9 @@ jobs:
     env:
       REORDER_FIXTURE_DATABASE_URL: postgresql+asyncpg://hriv:hriv@localhost:5432/hriv_test
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
 
@@ -143,7 +143,7 @@ jobs:
       - name: Configure in-project virtualenv
         run: poetry config virtualenvs.in-project true
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: backend/.venv
           key: backend-venv-py3.13-${{ hashFiles('backend/poetry.lock') }}
@@ -169,9 +169,9 @@ jobs:
       run:
         working-directory: backup
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
 
@@ -181,7 +181,7 @@ jobs:
       - name: Configure in-project virtualenv
         run: poetry config virtualenvs.in-project true
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: backup/.venv
           key: backup-venv-py3.13-${{ hashFiles('backup/poetry.lock') }}
@@ -201,9 +201,9 @@ jobs:
       run:
         working-directory: restore-validation
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
 
@@ -217,7 +217,7 @@ jobs:
       - name: Configure in-project virtualenv
         run: poetry config virtualenvs.in-project true
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: restore-validation/.venv
           key: restore-validation-venv-py3.13-${{ hashFiles('restore-validation/poetry.lock') }}
@@ -239,13 +239,13 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: ~/.npm
           key: frontend-npm-${{ hashFiles('frontend/package-lock.json') }}
@@ -279,13 +279,13 @@ jobs:
       run:
         working-directory: synthetic-monitoring
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: ~/.npm
           key: synthetic-npm-${{ hashFiles('synthetic-monitoring/package-lock.json') }}
@@ -300,7 +300,7 @@ jobs:
   helm-lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: azure/setup-helm@v5
         with:
@@ -312,7 +312,7 @@ jobs:
             | sudo tar xz -C /usr/local/bin kubeconform
 
       - name: Cache kubeconform schemas
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: /tmp/kubeconform-cache
           key: kubeconform-schemas-v0.6.7-${{ hashFiles('charts/**/Chart.yaml') }}
@@ -486,7 +486,7 @@ jobs:
     env:
       REGISTRY: ghcr.io
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: azure/setup-helm@v5
         with:

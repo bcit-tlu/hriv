@@ -80,7 +80,8 @@ export type TelemetryErrorCode =
   | 'unhandled_promise_rejection'
   | 'window_runtime_error'
 export type FrontendPerformanceMetric = 'application_load' | 'lcp' | 'inp' | 'cls' | 'image_ready'
-export type FrontendPage = 'browse' | 'manage' | 'people' | 'admin' | 'guide' | 'other' | 'unknown'
+export type FrontendPage =
+  'browse' | 'collections' | 'manage' | 'people' | 'admin' | 'guide' | 'other' | 'unknown'
 export type TelemetryNavDirection = 'down' | 'up' | 'jump'
 
 interface TelemetryEventBase {
@@ -218,9 +219,12 @@ export function setTelemetryPage(page: FrontendPage | null): void {
 function currentPage(): FrontendPage {
   if (_effectivePage !== null) return _effectivePage
   if (!isBrowser()) return 'unknown'
-  const page = new URLSearchParams(window.location.search).get('page')
+  const params = new URLSearchParams(window.location.search)
+  if (params.has('collection')) return 'collections'
+  const page = params.get('page')
   if (
     page === 'browse' ||
+    page === 'collections' ||
     page === 'manage' ||
     page === 'people' ||
     page === 'admin' ||

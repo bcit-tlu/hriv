@@ -3,8 +3,12 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
+from app.database import settings
 from app.middleware import (
     AuditMiddleware,
+    CollectionsFeatureMiddleware,
     MaintenanceMiddleware,
     _normalize_path_fallback,
     _is_upload_path,
@@ -53,7 +57,7 @@ async def _noop_send(message: dict) -> None:
 
 
 async def _invoke(
-    middleware: AuditMiddleware | MaintenanceMiddleware,
+    middleware: AuditMiddleware | CollectionsFeatureMiddleware | MaintenanceMiddleware,
     scope: dict,
     *,
     response_status: int = 200,
@@ -780,6 +784,54 @@ async def test_audit_respects_configured_exclude_prefixes() -> None:
             await _invoke(mw, scope)
             mock_logger.info.assert_called_once()
             mock_logger.debug.assert_not_called()
+
+
+# ── CollectionsFeatureMiddleware ────────────────────────────────────────
+
+
+def _status(messages: list[dict]) -> int:
+    return next(m["status"] for m in messages if m["type"] == "http.response.start")
+
+
+async def test_collections_middleware_404s_when_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "collections_enabled", False)
+    mw = CollectionsFeatureMiddleware(app=AsyncMock())
+
+    for path in ("/api/collections", "/api/collections/", "/api/collections/7/transfer"):
+        messages = await _invoke(mw, _make_scope(path=path, method="POST"))
+        assert _status(messages) == 404, path
+
+
+async def test_collections_middleware_ignores_other_paths_when_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "collections_enabled", False)
+    mw = CollectionsFeatureMiddleware(app=AsyncMock())
+
+    for path in ("/api/collectionsx", "/api/features", "/api/images"):
+        messages = await _invoke(mw, _make_scope(path=path))
+        assert _status(messages) == 200, path
+
+
+async def test_collections_middleware_passes_through_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "collections_enabled", True)
+    mw = CollectionsFeatureMiddleware(app=AsyncMock())
+
+    messages = await _invoke(mw, _make_scope(path="/api/collections", method="POST"))
+    assert _status(messages) == 200
+
+
+async def test_collections_middleware_passes_through_non_http_scope() -> None:
+    inner = AsyncMock()
+    mw = CollectionsFeatureMiddleware(app=inner)
+    scope = {"type": "lifespan"}
+
+    await mw(scope, _noop_receive, _noop_send)
+    inner.assert_called_once_with(scope, _noop_receive, _noop_send)
 
 
 # ── MaintenanceMiddleware ────────────────────────────────────────────────

@@ -13,6 +13,53 @@ Epic: [#1409](https://github.com/bcit-tlu/hriv/issues/1409). This page is
 extended as each child issue lands; sections marked _planned_ are not yet
 implemented.
 
+## Feature flag (`COLLECTIONS_ENABLED`)
+
+Collections are **dark-launched** so the rest of the app can keep releasing
+(patch/minor bumps via release-please, `stable` re-pins) while the epic lands
+one child issue at a time on `main`.
+
+- **Backend.** `Settings.collections_enabled` (`backend/app/database.py`,
+  env `COLLECTIONS_ENABLED`, default `false`). The collections router carries
+  a router-wide dependency (`require_collections_enabled` in
+  `routers/collections.py`) that raises the same `404 Not Found` as an
+  unknown route for **every** `/api/collections*` endpoint while the flag is
+  off — the API surface is indistinguishable from a build without
+  collections. The check runs per request, so tests and operators can flip
+  it without rebuilding the app. `CollectionsFeatureMiddleware`
+  (`middleware.py`, registered in `main.py`) applies the same 404 to every
+  `/api/collections*` path _before_ FastAPI parses the body, so a malformed
+  write on a disabled deployment is also a 404 rather than a 422 — the two
+  layers keep the surface identical to an unknown route. Admin DB export/import still includes the
+  `collections` tables regardless of the flag (they exist in the schema
+  either way).
+- **`GET /api/features`** (`main.py`, unauthenticated, `FeaturesOut`) returns
+  `{"collections": <bool>}`. It is a UX hint only — flags are not secrets and
+  each one is enforced independently by the backend.
+- **Frontend.** `useFeatures()` fetches `/api/features` once per mount
+  (`fetchFeatures` in `api.ts`; `Features` / `DEFAULT_FEATURES` in
+  `types.ts`). Until the response arrives nothing collections-related
+  renders; a failed request resolves to _everything off_. When `collections`
+  is `false`, `getNavigationItems` drops the Collections item
+  (`requiresCollections`), `AppShell` omits the desktop tab and drawer entry,
+  `useCollectionsData` never fetches, and `App.tsx` falls back from
+  `?collection={id}` / `?page=collections` to browse (`effectivePage` reports
+  `browse` to telemetry). When `true`, behaviour is exactly as described in
+  the sections below.
+- **Deployment.** Helm value `collections.enabled` (default `false`) renders
+  `COLLECTIONS_ENABLED` on the backend API pod (`charts/backend`). The
+  `flux-fleet` `latest` overlay
+  (`apps/overlays/latest/hriv/backend/values-latest.yaml`) sets it `true`;
+  `stable` inherits the chart default until the epic is promoted. Because
+  chart edits only reach an environment on the next chart release
+  ([RELEASE_AND_DEPLOY_FLOW.md](RELEASE_AND_DEPLOY_FLOW.md)), `latest`
+  shows no collections between this flag landing and the next backend
+  release. `docker-compose.yml` sets `COLLECTIONS_ENABLED=true` for local
+  development.
+- **Removal.** The flag, `/api/features`' `collections` key and the frontend
+  gating are deleted in the epic's closing issue
+  ([#1419](https://github.com/bcit-tlu/hriv/issues/1419)).
+
 ## Data model
 
 Migration `0030_collections` (`backend/app/models.py`: `Collection`,
@@ -96,7 +143,9 @@ group; instructors only groups they manage). Students and staff cannot use
 
 Base path `/api/collections` (router `backend/app/routers/collections.py`).
 All endpoints require a JWT bearer token — there is no unauthenticated variant
-(see [unauthenticated-routes.md](unauthenticated-routes.md)).
+(see [unauthenticated-routes.md](unauthenticated-routes.md)). Every endpoint
+below answers `404` while `COLLECTIONS_ENABLED` is off (see
+[Feature flag](#feature-flag-collections_enabled)).
 
 | Method | Endpoint                         | Min role                                                               | Notes                                                                                                                                                                                                                                                                                                                                 |
 | ------ | -------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -246,9 +295,104 @@ followed by `POST …/transfer`.
 
 ## Frontend behaviour
 
-_Planned_ (#1414–#1419): Collections tab, `?collection={id}` deep links,
-"Add to Collection" from the image view, sequence and synchronized viewers
-(read-only annotations), search integration and ownership management.
+### Collections tab, CRUD and deep links (#1414)
+
+**Where.** `frontend/src/api.ts` (`ApiCollection*` wire shapes,
+`fetchCollections` / `fetchCollection` / `createCollection` /
+`updateCollection` / `deleteCollection` / `replaceCollectionImages` /
+`saveCollectionViewport`, `collectionConflictCurrent`), `types.ts`
+(`Collection`, `CollectionSummary`, `CollectionType`, `CollectionVisibility`,
+`CollectionOwner`, `CollectionPermissions`), `collectionUtils.ts` (mapping,
+labels, `canUseRestrictedVisibility`, `parseCollectionIdParam`),
+`useCollectionsData.ts` (list/detail state + mutations),
+`components/CollectionsPage.tsx`, `CollectionCard.tsx`,
+`CollectionEditDialog.tsx`, plus `navigation.ts`, `AppShell.tsx`,
+`useShareableImageState.ts`, `useNavigationHistory.ts` and `App.tsx`.
+Everything in this section is conditional on the deployment flag
+(`useFeatures.ts`; see [Feature flag](#feature-flag-collections_enabled)).
+
+**Navigation.** A **Collections** tab is shown to every authenticated role
+(students included) in both the desktop app bar and the compact/mobile
+drawer. `?page=collections` opens the list. `App` only mounts
+`useCollectionsData` while the tab is active, so browsing images never hits
+`/api/collections`.
+
+**List.** `GET /api/collections` rendered as a responsive card grid
+(1 → 2 → 3 → 4 columns at `xs/sm/md/lg`). Each `CollectionCard` shows the
+cover (`RenewingThumbnail` with a collection-scoped renewer that refreshes the
+token via `GET /api/collections/{id}`; a renewed cover that loads and later
+expires again is renewed once more, while a cover that never loads is renewed
+only once), name, image count, owner, a type chip
+and a visibility chip that reuses the category restriction palette. Filters:
+type toggle (All / Synchronized / Sequence), **My collections** (`mine=true`;
+clears and disables the owner facet), and — for admin, instructor and staff
+only — an **Owner** select built from the owners in the loaded list
+(`owner_user_id` / `owner_program_id`). Students never see the Owner select
+and `toCollectionApiFilters` never emits `owner_*` for them. Admins
+additionally get _No owner (orphaned)_ → `orphaned=true`;
+`toCollectionApiFilters` never emits `orphaned` for other roles. Both rules
+come from one helper, `normalizeCollectionFilters(filters, role)`, which the
+hook applies to its filter state before it reaches the API params, the
+client-side mirror (`matchesCollectionFilters`) and the filter bar — so an
+owner selection that outlives a user switch (e.g. admin → student on the
+same tab) is dropped rather than silently hiding the new user's own saves.
+Filter state is also keyed to the signed-in user's id: a different user on
+the same tab starts from the default filters, so a previous admin's owner
+selection cannot resurface for the next instructor. Saves that finish after
+a filter change are placed and refreshed against the filters current at
+completion, and a second **Edit** click (or **New collection**) supersedes an
+earlier Edit whose record fetch is still in flight. When the account changes,
+the previous user's cards and owner options are cleared as the new user's
+first load starts, so a failed load never leaves another account's rows on
+screen. The `owner` wire object always carries both `user_id` and
+`program_id` (the unused one `null`), so the mapper picks the non-null id
+rather than testing key presence.
+Loading spinner, a plain error `Alert`
+(notification only — no Retry action), and filter-aware empty copy follow the
+existing page patterns; the unfiltered empty state's "Create a collection" is
+a link that opens the same create dialog as the **New collection** button.
+
+**Create / edit (`CollectionEditDialog`).** Name (required), description,
+type (radio on create; read-only chip on edit — the API rejects type changes
+with 422), visibility. `restricted` is only offered to admins and instructors
+(`canUseRestrictedVisibility`); students/staff see Private / Public. When
+restricted, program and group chip pickers reuse the Add/EditCategoryDialog
+attach logic: instructors can only select programs they belong to
+(`getAttachableProgramIds`) and groups they manage; already-attached scope
+stays enabled so it can be removed. At least one program or group is required
+for `restricted`; `program_ids` / `group_ids` are sent as `[]` for any other
+visibility. Create posts `image_ids: []` (adding images arrives with #1415).
+Edit sends the collection `version` in the PATCH body; a **409** shows the
+standard "modified by another user" message with a **Reload** action that
+re-seeds the form from the authoritative `CollectionOut` in `detail`.
+
+**Delete.** Confirmation dialog (existing delete-dialog pattern) →
+`DELETE /api/collections/{id}`; failures stay in the dialog with the API
+message. Deleting the open collection returns to the list.
+
+**Permissions are UX gates only.** Edit/delete controls render when
+`permissions.can_edit` / `can_delete` from the API are true; the backend
+re-checks authority on every call.
+
+**Detail placeholder.** Selecting a card sets `?collection={id}` and renders
+the collection header (type/visibility chips, description, owner), an info
+alert that the viewer is coming (#1416 sequence / #1417 synchronized), and
+the ordered member list with an **Open image** link per row that navigates to
+`?image={id}`. Both types share this placeholder for now. A 404 (missing or
+not visible) renders the not-found alert with an _All collections_ action.
+
+**Deep links & history.** `useShareableImageState` parses `?collection={id}`
+ahead of `?image=` / `?category=`; a collection link wins if both are present.
+The list emits `?page=collections`, a selected collection emits
+`?collection={id}` (no `page` param). Both push history entries through
+`useNavigationHistory`, and `popstate` restores the selected collection from
+the URL, so back/forward moves between browse, image and collection views.
+Refreshing a `?collection=` URL re-opens that collection. `?item={image_id}`
+is reserved for the sequence viewer (#1416) and is not parsed yet.
+
+_Planned_ (#1415–#1419): "Add to Collection" from the image view, sequence
+and synchronized viewers (read-only annotations), search integration and
+ownership management / transfer UI.
 
 ## Tests
 
@@ -273,3 +417,24 @@ _Planned_ (#1414–#1419): Collections tab, `?collection={id}` deep links,
 - `backend/tests/test_schemas.py` — `CollectionCreate` / `CollectionUpdate` /
   `CollectionImagesUpdate` / `CollectionViewportUpdate` / `CollectionTransfer`
   validators.
+- `frontend/tests/api.test.ts` — collection wrapper paths, query filters,
+  request bodies, 409 `collectionConflictCurrent` extraction.
+- `frontend/tests/collectionUtils.test.ts` — wire → domain mapping, role
+  gating for `restricted`, `?collection=` parsing.
+- `frontend/tests/navigation.test.ts`, `components/AppShell.test.tsx` —
+  Collections tab for every role (desktop + compact drawer), and hidden for
+  every role when `collectionsEnabled` is false.
+- Feature flag: `backend/tests/test_database.py` (`COLLECTIONS_ENABLED`
+  default / env parsing), `test_router_collections.py` (router-wide
+  `require_collections_enabled` dependency, 404 when off), `test_main.py`
+  (`GET /api/features`); `frontend/tests/useFeatures.test.ts`,
+  `api.test.ts` (`fetchFeatures`), `App.test.tsx` (shell flag prop, deep-link
+  fallback to browse when off, failed `/api/features` treated as off).
+- `frontend/tests/useShareableImageState.test.ts`,
+  `useNavigationHistory.test.ts`, `App.test.tsx` — `?collection={id}`
+  parse/emit precedence, history entries, deep-link restore on load and
+  back/forward.
+- `frontend/tests/components/CollectionsPage.test.tsx`,
+  `CollectionCard.test.tsx`, `CollectionEditDialog.test.tsx` — list/filter
+  states, permission-gated actions, create/edit/delete flows, restricted
+  picker gating per role, 409 reload.

@@ -251,6 +251,8 @@ spec:
             - name: REDIS_URL
               value: {{ .Values.redis.url | quote }}
             {{- end }}
+            - name: COLLECTIONS_ENABLED
+              value: {{ .Values.collections.enabled | quote }}
             - name: TASK_EXECUTION_MODE
               value: {{ .Values.tasks.executionMode | quote }}
             - name: REBUILD_PARALLEL_ENABLED

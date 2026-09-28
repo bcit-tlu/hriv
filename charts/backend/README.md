@@ -187,6 +187,21 @@ Heartbeat and child timeout values must remain shorter than the lease, and the
 pump cadence must be a whole-minute interval. Retry eligibility is stored in
 PostgreSQL and the retry base must not exceed the cap.
 
+## Collections feature flag (`collections.enabled`)
+
+`collections.enabled` renders `COLLECTIONS_ENABLED` on the API pod and
+defaults to `false`. The collections epic
+([hriv#1409](https://github.com/bcit-tlu/hriv/issues/1409)) is dark-launched
+so unrelated fixes keep shipping through the normal release-please flow while
+the feature lands piecemeal: with the flag off every `/api/collections` route
+answers `404` and the frontend — which reads `GET /api/features` at boot —
+hides the Collections tab and ignores `?collection=` deep links. The `latest`
+`flux-fleet` overlay sets `collections.enabled: true`; `stable` inherits the
+chart default until the epic is promoted. Only the API pod needs the variable
+(the worker never serves the router). Flipping it is a rollout-only change
+(no migration: the collections tables are additive and already present). See
+[`docs/collections.md`](../../docs/collections.md).
+
 ## API configuration
 
 The API (backend) Deployment carries its own component profile via the

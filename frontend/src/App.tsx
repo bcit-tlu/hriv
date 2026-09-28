@@ -38,6 +38,7 @@ import AdminPage from './components/AdminPage'
 import AppShell from './components/AppShell'
 import type { Page } from './components/AppShell'
 import AddEditPersonModal from './components/AddEditPersonModal'
+import CollectionsPage from './components/CollectionsPage'
 import ManagePage from './components/ManagePage'
 import PeoplePage from './components/PeoplePage'
 import LoginScreen from './components/LoginScreen'
@@ -59,6 +60,9 @@ import {
   updateImageInTree,
 } from './treeUtils'
 import UploadImageModal from './components/UploadImageModal'
+import { parseCollectionIdParam } from './collectionUtils'
+import { useCollectionsData } from './useCollectionsData'
+import { useFeatures } from './useFeatures'
 import { isAcceptedFile } from './fileUtils'
 import { formatFileSize } from './formatUtils'
 import { useAuth } from './useAuth'
@@ -149,9 +153,20 @@ export default function App() {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
 
+  // Deployment flags (`GET /api/features`). Collections are dark-launched:
+  // the tab and `?collection=` deep links only exist once the flag is on.
+  const features = useFeatures()
+  const collectionsEnabled = features?.collections === true
+
+  // `?collection={id}` implies the Collections page (deep link, #1414).
+  const [selectedCollectionId, setSelectedCollectionId] = useState<number | null>(() =>
+    parseCollectionIdParam(window.location.search),
+  )
   const [page, setPage] = useState<Page>(() => {
+    if (parseCollectionIdParam(window.location.search) != null) return 'collections'
     const p = new URLSearchParams(window.location.search).get('page')
-    if (p === 'manage' || p === 'people' || p === 'admin' || p === 'guide') return p
+    if (p === 'collections' || p === 'manage' || p === 'people' || p === 'admin' || p === 'guide')
+      return p
     return 'browse'
   })
 
@@ -163,7 +178,18 @@ export default function App() {
       ? 'browse'
       : (page === 'admin' && !canManageUsers) || (page === 'people' && !canViewPeople)
         ? 'browse'
-        : page
+        : page === 'collections' && features != null && !features.collections
+          ? 'browse'
+          : page
+
+  // A collections deep link on a deployment with the flag off falls back to
+  // browse once the flags are known (the page renders nothing until then).
+  useEffect(() => {
+    if (features == null || features.collections || page !== 'collections') return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- URL state can only be corrected once the flags arrive
+    setPage('browse')
+    setSelectedCollectionId(null)
+  }, [features, page])
 
   const lastEmittedPageRef = useRef<FrontendPage | null>(null)
   useEffect(() => {
@@ -517,6 +543,7 @@ export default function App() {
     uncategorizedLoaded,
     page,
     path,
+    collectionId: selectedCollectionId,
     setPath,
     setSelectedImage,
   })
@@ -603,9 +630,16 @@ export default function App() {
       }
       setCanvasEditActive(false)
       const validPage = (
-        ['browse', 'manage', 'people', 'admin', 'guide'].includes(popPage) ? popPage : 'browse'
+        ['browse', 'collections', 'manage', 'people', 'admin', 'guide'].includes(popPage)
+          ? popPage
+          : 'browse'
       ) as Page
       setPage(validPage)
+      // The collection id lives in the URL (`?collection=`), which the browser
+      // has already restored by the time popstate fires.
+      setSelectedCollectionId(
+        validPage === 'collections' ? parseCollectionIdParam(window.location.search) : null,
+      )
 
       if (validPage !== 'browse') {
         setPath([])
@@ -741,6 +775,7 @@ export default function App() {
       lastEmittedCategoryRef.current = null
       lastEmittedPathIdsRef.current = []
       setPage('browse')
+      setSelectedCollectionId(null)
       setPath([])
       setSelectedImage(null)
       setViewportState(undefined)
@@ -1411,6 +1446,7 @@ export default function App() {
     (v: Page) => {
       runCanvasNavigation(() => {
         setPage(v)
+        setSelectedCollectionId(null)
         clearImage()
         setPath([])
         pushNavState(v)
@@ -1434,6 +1470,47 @@ export default function App() {
       pushNavState('browse')
     })
   }, [clearImage, pushNavState, loadCategories, loadUncategorizedImages, runCanvasNavigation])
+
+  // Collections tab data (#1414). Fetches only while the tab is active.
+  const collectionsData = useCollectionsData({
+    enabled: collectionsEnabled && page === 'collections' && currentUser != null,
+    currentUser,
+    selectedCollectionId,
+  })
+
+  const handleOpenCollection = useCallback(
+    (id: number) => {
+      runCanvasNavigation(() => {
+        setPage('collections')
+        setSelectedCollectionId(id)
+        clearImage()
+        setPath([])
+        pushNavState('collections', [], null, { collection: String(id) })
+      })
+    },
+    [clearImage, pushNavState, runCanvasNavigation],
+  )
+
+  const handleCloseCollection = useCallback(() => {
+    setSelectedCollectionId(null)
+    pushNavState('collections')
+  }, [pushNavState])
+
+  // "Open image" from the collection detail placeholder → the regular
+  // `?image={id}` viewer, so back returns to the collection.
+  const handleOpenCollectionImage = useCallback(
+    (img: ImageItem) => {
+      runCanvasNavigation(() => {
+        setSelectedImage(img)
+        const catPath = img.categoryId != null ? findCategoryPath(categories, img.categoryId) : null
+        setPath(catPath ?? [])
+        setSelectedCollectionId(null)
+        setPage('browse')
+        pushNavState('browse', catPath?.map((c) => c.id) ?? [], img.id)
+      })
+    },
+    [categories, pushNavState, runCanvasNavigation],
+  )
 
   // Show loading spinner while users are loading
   if (usersLoading) {
@@ -1467,6 +1544,7 @@ export default function App() {
       canEditContent={canEditContent}
       canManageUsers={canManageUsers}
       canViewPeople={canViewPeople}
+      collectionsEnabled={collectionsEnabled}
       currentUser={currentUser}
       announcement={announcement}
       annMessage={annMessage}
@@ -1519,6 +1597,29 @@ export default function App() {
             <GuidePage docRequest={guideDocRequest} />
           ) : page === 'admin' && canManageUsers ? (
             <AdminPage onChangelogEntriesChanged={bumpChangelogVersion} />
+          ) : page === 'collections' && !collectionsEnabled ? null : page === 'collections' ? (
+            <CollectionsPage
+              currentUser={currentUser}
+              programs={programs}
+              groups={groups}
+              collections={collectionsData.collections}
+              loading={collectionsData.loading}
+              error={collectionsData.error}
+              filters={collectionsData.filters}
+              onFiltersChange={collectionsData.setFilters}
+              ownerOptions={collectionsData.ownerOptions}
+              selectedCollectionId={selectedCollectionId}
+              detail={collectionsData.detail}
+              detailLoading={collectionsData.detailLoading}
+              detailError={collectionsData.detailError}
+              onOpenCollection={handleOpenCollection}
+              onCloseCollection={handleCloseCollection}
+              onOpenImage={handleOpenCollectionImage}
+              loadCollection={collectionsData.loadCollection}
+              onCreate={collectionsData.create}
+              onUpdate={collectionsData.update}
+              onDelete={collectionsData.remove}
+            />
           ) : page === 'people' && canViewPeople ? (
             <PeoplePage
               readOnly={!canManageUsers}
