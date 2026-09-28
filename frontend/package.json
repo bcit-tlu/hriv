@@ -52,7 +52,7 @@
     "@storybook/addon-docs": "^10.6.0-beta.0",
     "@storybook/addon-themes": "^10.6.0-beta.0",
     "@storybook/addon-vitest": "^10.6.0-beta.0",
-    "@storybook/react-vite": "^10.6.0-beta.0",
+    "@storybook/react-vite": "^10.6.0",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.7",
