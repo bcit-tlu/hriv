@@ -1396,9 +1396,7 @@ async def test_cancel_task_already_cancelled() -> None:
     assert result["status"] == "cancelled"
 
 
-def _download_request(
-    task_id: int, token: str | None = None, scheme: str = "http"
-) -> Request:
+def _download_request(task_id: int, token: str | None = None) -> Request:
     """Build a minimal ASGI request, optionally carrying the download cookie."""
     headers: list[tuple[bytes, bytes]] = []
     if token is not None:
@@ -1408,9 +1406,9 @@ def _download_request(
     return Request(
         {
             "type": "http",
-            "scheme": scheme,
+            "scheme": "http",
             "path": "/",
-            "server": ("testserver", 443 if scheme == "https" else 80),
+            "server": ("testserver", 80),
             "headers": headers,
         }
     )
@@ -1429,9 +1427,13 @@ async def test_create_task_download_token_success(tmp_path) -> None:
     db.get = AsyncMock(return_value=task)
     response = Response()
 
-    with patch("app.routers.admin.auth_settings") as mock_settings:
+    with (
+        patch("app.routers.admin.auth_settings") as mock_settings,
+        patch("app.routers.admin.settings") as mock_app_settings,
+    ):
         mock_settings.jwt_secret = "test-secret"
         mock_settings.jwt_algorithm = "HS256"
+        mock_app_settings.secure_cookies = False  # docker-compose (plain http)
         result = await create_task_download_token(
             1, _download_request(1), response, user, db=db
         )
@@ -1443,10 +1445,10 @@ async def test_create_task_download_token_success(tmp_path) -> None:
     assert "SameSite=strict" in cookie
     assert "Max-Age=60" in cookie
     assert "Path=/api/admin/tasks/1/download" in cookie
-    assert "Secure" not in cookie  # plain-http dev requests stay usable
+    assert "Secure" not in cookie
 
 
-async def test_create_task_download_token_secure_over_https(tmp_path) -> None:
+async def test_create_task_download_token_secure_by_default(tmp_path) -> None:
     filepath = tmp_path / "export.json"
     filepath.write_text('{"data": true}')
     task = _make_admin_task(
@@ -1463,7 +1465,7 @@ async def test_create_task_download_token_secure_over_https(tmp_path) -> None:
         mock_settings.jwt_secret = "test-secret"
         mock_settings.jwt_algorithm = "HS256"
         await create_task_download_token(
-            1, _download_request(1, scheme="https"), response, user, db=db
+            1, _download_request(1), response, user, db=db
         )
 
     assert "Secure" in response.headers["set-cookie"]
