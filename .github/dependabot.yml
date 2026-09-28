@@ -75,14 +75,9 @@ updates:
       docker-minor-patch:
         update-types: [minor, patch]
 
-  # The Playwright base image tag MUST match the `@playwright/test` version in
-  # synthetic-monitoring/package.json (enforced by
-  # synthetic-monitoring/scripts/check-playwright-image-version.mjs, run in
-  # CI). Dependabot cannot co-bump across ecosystems, so the image is ignored
-  # here; the npm `playwright` group below bumps `@playwright/test`, and the
-  # maintainer bumps the `FROM mcr.microsoft.com/playwright:vX.Y.Z-noble` tag
-  # in synthetic-monitoring/Dockerfile on that same PR. CI fails until the two
-  # agree.
+  # The synthetic-monitoring image is a plain `node:` base; Playwright's
+  # version is pinned by `@playwright/test` in package.json only (the
+  # Dockerfile installs the matching Chromium at build time).
   - package-ecosystem: docker
     directory: /synthetic-monitoring
     schedule:
@@ -94,8 +89,6 @@ updates:
     commit-message:
       prefix: chore(deps)
     labels: [dependencies, docker]
-    ignore:
-      - dependency-name: mcr.microsoft.com/playwright
 
   # ── Python (Poetry) ────────────────────────────────────────────────
   - package-ecosystem: pip
@@ -163,8 +156,9 @@ updates:
       npm-minor-patch:
         update-types: [minor, patch]
 
-  # `@playwright/test` (and `playwright`) sit in their own group so the
-  # required Dockerfile FROM-tag co-bump is obvious from the PR title.
+  # `@playwright/test` (and `playwright`) sit in their own group so a browser
+  # bump (the Dockerfile installs the matching Chromium at build time) is
+  # obvious from the PR title.
   - package-ecosystem: npm
     directory: /synthetic-monitoring
     schedule:

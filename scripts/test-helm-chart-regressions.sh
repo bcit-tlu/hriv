@@ -1106,7 +1106,7 @@ for image_value in images.orchestrator images.backupChild images.postgresql; do
     --set-string "${image_value}=registry.example/unpinned:latest" 2>&1)"; then
     fail "expected ${image_value} without a sha256 digest to be rejected"
   fi
-  if ! grep -Eq 'must be digest-pinned|tag plus sha256 digest|does not match (the )?pattern|doesn.t match (the )?pattern' <<<"$restore_validation_bad_image_output"; then
+  if ! grep -Eiq 'must be digest-pinned|tag plus sha256 digest|does not match (the )?pattern|doesn.t match (the )?pattern' <<<"$restore_validation_bad_image_output"; then
     fail "restore-validation chart should explain the digest requirement for ${image_value}"
   fi
 done
@@ -1126,7 +1126,7 @@ for bad_postgres_image in "${restore_validation_bad_postgres_images[@]}"; do
     --set-string "images.postgresql=${bad_postgres_image}" 2>&1)"; then
     fail "expected invalid images.postgresql to be rejected: ${bad_postgres_image}"
   fi
-  if ! grep -Eq 'tag plus sha256 digest|does not match (the )?pattern|doesn.t match (the )?pattern' <<<"$restore_validation_bad_postgres_output"; then
+  if ! grep -Eiq 'tag plus sha256 digest|does not match (the )?pattern|doesn.t match (the )?pattern' <<<"$restore_validation_bad_postgres_output"; then
     fail "restore-validation chart should explain the PostgreSQL tag requirement"
   fi
 done
