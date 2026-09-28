@@ -5,16 +5,21 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.rate_limit import (
+    _login_email_key,
+    _login_ip_key,
     _telemetry_rate_limit_key,
     _telemetry_user_rate_limit_key,
     check_login_rate_limit,
     check_telemetry_rate_limit,
+    reset_login_rate_limit,
 )
 
 _MOCK_SETTINGS = SimpleNamespace(
     redis_url="redis://localhost:6379",
     rate_limit_login_max=5,
     rate_limit_login_window=60,
+    rate_limit_login_email_max=20,
+    rate_limit_login_email_window=900,
     rate_limit_telemetry_max=60,
     rate_limit_telemetry_user_max=600,
     rate_limit_telemetry_window=60,
@@ -52,7 +57,8 @@ async def test_rate_limit_allows_under_threshold() -> None:
         result = await check_login_rate_limit("1.2.3.4", "user@example.com")
 
     assert result is None
-    mock_redis.zadd.assert_awaited_once()
+    # One attempt recorded in each of the per-IP and account-scoped buckets.
+    assert mock_redis.zadd.await_count == 2
 
 
 async def test_rate_limit_blocks_over_threshold() -> None:
@@ -85,6 +91,75 @@ async def test_rate_limit_returns_retry_after_when_no_oldest() -> None:
         result = await check_login_rate_limit("1.2.3.4", "user@example.com")
 
     assert result == 60
+
+
+async def test_login_rate_limit_checks_ip_then_email_bucket() -> None:
+    """Both the per-(IP, email) and the account-scoped budgets are consulted."""
+    calls: list[tuple[str, int, int]] = []
+
+    async def fake_check(key: str, window: int, max_attempts: int) -> None:
+        calls.append((key, window, max_attempts))
+        return None
+
+    with patch("app.rate_limit.settings", _MOCK_SETTINGS), patch(
+        "app.rate_limit.check_rate_limit", side_effect=fake_check
+    ):
+        result = await check_login_rate_limit("1.2.3.4", "user@example.com")
+
+    assert result is None
+    assert calls == [
+        ("rate:login:1.2.3.4:user@example.com", 60, 5),
+        ("rate:login:email:user@example.com", 900, 20),
+    ]
+
+
+async def test_login_rate_limit_ip_rotation_hits_email_bucket() -> None:
+    """Varying the source IP cannot bypass the limit: the email bucket blocks it."""
+    email_key = _login_email_key("user@example.com")
+
+    async def fake_check(key: str, window: int, max_attempts: int) -> int | None:
+        return 42 if key == email_key else None
+
+    with patch("app.rate_limit.settings", _MOCK_SETTINGS), patch(
+        "app.rate_limit.check_rate_limit", side_effect=fake_check
+    ):
+        results = [
+            await check_login_rate_limit(f"10.0.0.{i}", "user@example.com")
+            for i in range(5)
+        ]
+
+    assert results == [42, 42, 42, 42, 42]
+
+
+async def test_login_rate_limit_ip_bucket_short_circuits() -> None:
+    """A throttled source never consumes the shared account-scoped budget."""
+    ip_key = _login_ip_key("1.2.3.4", "user@example.com")
+    calls: list[str] = []
+
+    async def fake_check(key: str, window: int, max_attempts: int) -> int | None:
+        calls.append(key)
+        return 7
+
+    with patch("app.rate_limit.settings", _MOCK_SETTINGS), patch(
+        "app.rate_limit.check_rate_limit", side_effect=fake_check
+    ):
+        result = await check_login_rate_limit("1.2.3.4", "user@example.com")
+
+    assert result == 7
+    assert calls == [ip_key]
+
+
+async def test_reset_login_rate_limit_clears_both_buckets() -> None:
+    mock_redis = AsyncMock()
+    mock_redis.delete = AsyncMock()
+
+    with patch("app.rate_limit._get_redis", new_callable=AsyncMock, return_value=mock_redis):
+        await reset_login_rate_limit("1.2.3.4", "user@example.com")
+
+    mock_redis.delete.assert_awaited_once_with(
+        "rate:login:1.2.3.4:user@example.com",
+        "rate:login:email:user@example.com",
+    )
 
 
 def test_telemetry_key_distinct_per_session() -> None:

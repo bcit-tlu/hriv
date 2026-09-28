@@ -14,6 +14,12 @@ on:
   # bumps, never carry story changes, and are never UI Review targets. Skipping
   # them cannot break a baseline chain (branches-ignore still scopes the
   # trigger to branch pushes only, so tag pushes do not run either).
+  #
+  # Dependabot branches are exempt for a different reason (see the job-level
+  # `if`): workflows triggered by dependabot[bot] receive no repository secrets,
+  # so CHROMATIC_PROJECT_TOKEN is empty and the action fails before publishing.
+  # A dependency bump that does change rendering still gets its Chromatic run
+  # on `main` after merge.
   push:
     branches-ignore:
       - 'release-please--**'
@@ -34,6 +40,7 @@ permissions:
 jobs:
   chromatic:
     name: Run Chromatic visual tests
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     defaults:
       run:
