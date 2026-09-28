@@ -1,0 +1,70 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as CollectionEditDialogStories from './CollectionEditDialog.stories'
+
+<Meta of={CollectionEditDialogStories} />
+
+<Title />
+
+<Subtitle>
+  Create and edit a collection: name, description, type (create only), visibility, and the
+  restricted program/group pickers.
+</Subtitle>
+
+## When to use
+
+`CollectionsPage` opens this dialog from the **New collection** button (create mode,
+`collection={null}`) and from the edit action on a card or the detail header (edit mode, with the
+full `Collection` so the restricted scope can be seeded).
+
+## Interactive example
+
+Use the `role` control to see how the visibility options and pickers change per role.
+
+<Primary />
+
+<Controls of={CollectionEditDialogStories.Basic} />
+
+## Implementation guidance
+
+- **Type is immutable.** Create mode shows Synchronized / Sequence radios; edit mode shows a
+  read-only type chip and explanatory helper text.
+- **Restricted is admin/instructor only.** Students and staff see Private / Public only
+  (`canUseRestrictedVisibility`). The backend returns 403 if they send `restricted` anyway.
+- **Attach authority mirrors the category dialogs.** Instructors can only pick programs they belong
+  to (`getAttachableProgramIds`) and groups they manage (`group.instructorIds` contains them).
+  Programs/groups already attached to the collection stay enabled so they can be removed.
+- **Validation.** Name is required; `restricted` needs at least one program or group. Program and
+  group IDs are only sent when visibility is `restricted`.
+- **Stale version (409).** `onSave` receives the collection `version`; when the API rejects with
+  409 the dialog shows the standard "modified by another user" message and a **Reload** action
+  that re-seeds the form from the authoritative record returned in the error `detail`.
+
+## Examples
+
+### Editing
+
+<Canvas of={CollectionEditDialogStories.Editing} />
+
+### Restricted as instructor
+
+<Canvas of={CollectionEditDialogStories.RestrictedAsInstructor} />
+
+### As student
+
+<Canvas of={CollectionEditDialogStories.AsStudent} />
+
+### Validation error
+
+<Canvas of={CollectionEditDialogStories.ValidationError} />
+
+## Stories
+
+<Stories includePrimary={false} />

@@ -1,5 +1,5 @@
 import { createRef, useEffect, useState, type ReactNode } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import App from '../src/App'
 import type { ProcessingJob } from '../src/useProcessingJobs'
@@ -397,6 +397,9 @@ vi.mock('../src/components/AppShell', () => ({
       <button type="button" onClick={() => onTabChange('browse')}>
         Shell tab browse
       </button>
+      <button type="button" onClick={() => onTabChange('collections')}>
+        Shell tab collections
+      </button>
       <button type="button" onClick={onHomeClick}>
         Shell home
       </button>
@@ -538,6 +541,49 @@ vi.mock('../src/components/PeoplePage', () => ({
     <div data-testid="people-page" data-readonly={String(readOnly)} />
   ),
 }))
+vi.mock('../src/components/CollectionsPage', () => ({
+  default: ({
+    selectedCollectionId,
+    onOpenCollection,
+    onCloseCollection,
+    onOpenImage,
+  }: {
+    selectedCollectionId: number | null
+    onOpenCollection: (id: number) => void
+    onCloseCollection: () => void
+    onOpenImage: (image: typeof mockImage) => void
+  }) => (
+    <div data-testid="collections-page" data-selected={String(selectedCollectionId)}>
+      <button type="button" onClick={() => onOpenCollection(5)}>
+        Open collection 5
+      </button>
+      <button type="button" onClick={onCloseCollection}>
+        Close collection
+      </button>
+      <button type="button" onClick={() => onOpenImage(mockImage)}>
+        Open collection image
+      </button>
+    </div>
+  ),
+}))
+vi.mock('../src/useCollectionsData', () => ({
+  useCollectionsData: () => ({
+    collections: [],
+    loading: false,
+    error: null,
+    filters: { type: 'all', mine: false, owner: 'any' },
+    setFilters: vi.fn(),
+    ownerOptions: [],
+    reload: vi.fn(),
+    detail: null,
+    detailLoading: false,
+    detailError: null,
+    loadCollection: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    remove: vi.fn(),
+  }),
+}))
 vi.mock('../src/components/ManagePage', () => ({ default: () => null }))
 vi.mock('../src/components/LoginScreen', () => ({ default: () => null }))
 vi.mock('../src/components/EditImageModal', () => ({ default: () => null }))
@@ -663,8 +709,17 @@ vi.mock('../src/useBrowseData', () => ({
   }),
 }))
 
+const pushNavStateMock = vi.fn()
+let popStateHandler: ((page: string, catIds: number[], imageId: number | null) => boolean) | null =
+  null
+
 vi.mock('../src/useNavigationHistory', () => ({
-  useNavigationHistory: () => ({ pushNavState: vi.fn() }),
+  useNavigationHistory: (
+    onPopState: (page: string, catIds: number[], imageId: number | null) => boolean,
+  ) => {
+    popStateHandler = onPopState
+    return { pushNavState: pushNavStateMock, replayPopState: vi.fn() }
+  },
   buildNavHistoryState: vi.fn(),
 }))
 
@@ -1588,5 +1643,82 @@ describe('App breadcrumb navigation links', () => {
 
     fireEvent.click(within(screen.getByLabelText('image breadcrumb')).getByText('Home'))
     expect(shareableImageStateMock.clearImage).toHaveBeenCalled()
+  })
+})
+
+describe('App collections deep links (#1414)', () => {
+  const originalUrl = `${window.location.pathname}${window.location.search}`
+
+  beforeEach(() => {
+    resetFixtures()
+    popStateHandler = null
+  })
+
+  afterEach(() => {
+    window.history.replaceState(null, '', originalUrl)
+  })
+
+  it('opens the Collections tab from the shell for a student', () => {
+    authState = { ...authState, canEditContent: false, canViewPeople: false }
+    render(<App />)
+    expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab collections' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', 'null')
+  })
+
+  it('restores ?collection={id} on load and selects that collection', () => {
+    window.history.replaceState(null, '', '/?collection=12')
+    render(<App />)
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '12')
+  })
+
+  it('opens the Collections list from ?page=collections', () => {
+    window.history.replaceState(null, '', '/?page=collections')
+    render(<App />)
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', 'null')
+  })
+
+  it('pushes ?collection={id} history when a collection is opened and ?page=collections when closed', () => {
+    window.history.replaceState(null, '', '/?page=collections')
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open collection 5' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '5')
+    expect(pushNavStateMock).toHaveBeenLastCalledWith('collections', [], null, { collection: '5' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close collection' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', 'null')
+    expect(pushNavStateMock).toHaveBeenLastCalledWith('collections')
+  })
+
+  it('opens a member image in the normal ?image= view from the collection detail', async () => {
+    window.history.replaceState(null, '', '/?collection=12')
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open collection image' }))
+    expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument()
+    expect(await screen.findByText(/Image Viewer 101/)).toBeInTheDocument()
+    expect(pushNavStateMock).toHaveBeenLastCalledWith('browse', [1], 101)
+  })
+
+  it('restores the selected collection from the URL on back/forward', async () => {
+    render(<App />)
+    expect(popStateHandler).not.toBeNull()
+
+    window.history.replaceState(null, '', '/?collection=12')
+    act(() => {
+      popStateHandler!('collections', [], null)
+    })
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '12')
+
+    window.history.replaceState(null, '', '/?page=collections')
+    act(() => {
+      popStateHandler!('collections', [], null)
+    })
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', 'null')
+
+    window.history.replaceState(null, '', '/')
+    act(() => {
+      popStateHandler!('browse', [], null)
+    })
+    await waitFor(() => expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument())
   })
 })

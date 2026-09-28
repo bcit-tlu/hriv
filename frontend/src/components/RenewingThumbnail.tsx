@@ -12,12 +12,20 @@ interface RenewingThumbnailProps extends Omit<
   image: { id: number; thumb: string }
   sx?: SxProps<Theme>
   onImageRenewed?: (image: ApiImage) => void
+  /**
+   * Alternative renewal fetch for thumbs that are not `GET /api/images/{id}`
+   * records (e.g. a collection cover keyed by collection id). Must resolve to
+   * a fresh tokenized thumb for the same `id`. `onImageRenewed` is not called
+   * on this path because there is no image record to hand back.
+   */
+  renewThumb?: (id: number) => Promise<{ id: number; thumb: string | null }>
 }
 
 export default function RenewingThumbnail({
   image,
   sx,
   onImageRenewed,
+  renewThumb,
   ...imgProps
 }: RenewingThumbnailProps) {
   const [renewed, setRenewed] = useState<{
@@ -50,12 +58,18 @@ export default function RenewingThumbnail({
     if (retriedKeysRef.current.has(retryKey)) return
     retriedKeysRef.current.add(retryKey)
 
-    renewImageRecord(image.id)
-      .then((fresh) => {
+    const renewal: Promise<{
+      fresh: { id: number; thumb: string | null }
+      record: ApiImage | null
+    }> = renewThumb
+      ? renewThumb(image.id).then((fresh) => ({ fresh, record: null }))
+      : renewImageRecord(image.id).then((fresh) => ({ fresh, record: fresh }))
+    renewal
+      .then(({ fresh, record }) => {
         if (!mountedRef.current || fresh.id !== image.id || currentKeyRef.current !== retryKey) {
           return
         }
-        onImageRenewed?.(fresh)
+        if (record) onImageRenewed?.(record)
         if (fresh.thumb && fresh.thumb !== src) {
           setRenewed({ imageId: image.id, originalThumb: image.thumb, thumb: fresh.thumb })
         }
@@ -63,7 +77,7 @@ export default function RenewingThumbnail({
       .catch(() => {
         // The broken thumbnail remains visible as the browser's fallback.
       })
-  }, [currentRetryKey, image.id, image.thumb, onImageRenewed, src])
+  }, [currentRetryKey, image.id, image.thumb, onImageRenewed, renewThumb, src])
 
   return <Box component="img" src={src} onError={handleError} sx={sx} {...imgProps} />
 }

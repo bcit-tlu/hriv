@@ -42,6 +42,7 @@ import SearchIcon from '@mui/icons-material/Search'
 import CloseIcon from '@mui/icons-material/Close'
 import HomeIcon from '@mui/icons-material/Home'
 import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary'
+import CollectionsIcon from '@mui/icons-material/Collections'
 import FolderIcon from '@mui/icons-material/Folder'
 import SchoolIcon from '@mui/icons-material/School'
 import GroupsIcon from '@mui/icons-material/Groups'
@@ -67,7 +68,7 @@ import {
   getSurfaceVariant,
 } from '../theme'
 
-export type Page = 'browse' | 'manage' | 'people' | 'admin' | 'guide'
+export type Page = 'browse' | 'collections' | 'manage' | 'people' | 'admin' | 'guide'
 
 export interface AppShellProps {
   page: Page
@@ -146,12 +147,13 @@ export default function AppShell(props: AppShellProps) {
   const [navDrawerOpen, setNavDrawerOpen] = useState(false)
   const theme = useTheme()
   // Collapse the nav tabs into a hamburger menu when the viewport is too
-  // narrow to show them inline. Guarded by tab count so a single-tab
-  // (student) layout keeps its inline Home tab instead of a lone hamburger.
+  // narrow to show them inline. Guarded by tab count so the two universal
+  // tabs (Home + Collections — the whole student layout) stay inline instead
+  // of hiding behind a lone hamburger.
   const isCompactViewport = useMediaQuery(theme.breakpoints.down('md'))
   const navTabCount =
-    1 + (canEditContent ? 2 : 0) + (canViewPeople ? 1 : 0) + (canManageUsers ? 1 : 0)
-  const collapseNav = isCompactViewport && navTabCount > 1
+    2 + (canEditContent ? 2 : 0) + (canViewPeople ? 1 : 0) + (canManageUsers ? 1 : 0)
+  const collapseNav = isCompactViewport && navTabCount > 2
   // Reset the breakpoint-specific menus on a viewport transition so a resize
   // round-trip doesn't leave one open against an unmounted trigger:
   //  - desktop → the drawer can't apply, so close it;
@@ -201,6 +203,7 @@ export default function AppShell(props: AppShellProps) {
     const iconFor = (icon: NavigationIcon): ReactNode => {
       const icons: Record<NavigationIcon, ReactNode> = {
         home: <HomeIcon fontSize="small" />,
+        collections: <CollectionsIcon fontSize="small" />,
         images: <PhotoLibraryIcon fontSize="small" />,
         categories: <FolderIcon fontSize="small" />,
         programs: <SchoolIcon fontSize="small" />,
@@ -324,7 +327,13 @@ export default function AppShell(props: AppShellProps) {
               // 'guide' has no AppBar tab — it is opened via the notification menu.
               value={page === 'guide' ? false : page}
               onChange={(_, v: Page) => {
-                if (v === 'browse' || v === 'manage' || v === 'people' || v === 'admin') {
+                if (
+                  v === 'browse' ||
+                  v === 'collections' ||
+                  v === 'manage' ||
+                  v === 'people' ||
+                  v === 'admin'
+                ) {
                   onTabChange(v)
                 }
               }}
@@ -345,6 +354,7 @@ export default function AppShell(props: AppShellProps) {
                   }
                 }}
               />
+              <Tab label="Collections" value="collections" />
               {canEditContent && <Tab label="Images" value="manage" />}
               {canEditContent && (
                 <Tab
