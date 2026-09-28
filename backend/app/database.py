@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     rebuild_retry_backoff_base_seconds: int = Field(default=60, ge=1)
     rebuild_retry_backoff_cap_seconds: int = Field(default=900, ge=1)
 
+    # Dark-launch flag for the collections feature (epic #1409). When off the
+    # collections router answers 404 and the frontend hides the tab; the chart
+    # defaults it off and the `latest` overlay turns it on (docs/collections.md).
+    collections_enabled: bool = False
+
     # Audit middleware: comma-separated list of URL paths whose request logs are
     # emitted at DEBUG instead of INFO. Entries without a trailing slash match
     # the exact path or a subpath (e.g. /api/metrics matches /api/metrics but not

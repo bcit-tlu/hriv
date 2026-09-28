@@ -103,6 +103,7 @@ services:
       - SOURCE_IMAGES_DIR=/data/source_images
       - TILES_DIR=/data/tiles
       - SECURE_COOKIES=false
+      - COLLECTIONS_ENABLED=${COLLECTIONS_ENABLED:-true}
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
       - GITHUB_REPO=${GITHUB_REPO:-}
     depends_on:

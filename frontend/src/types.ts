@@ -69,6 +69,20 @@ export interface Group {
   updatedAt: string
 }
 
+// ── Deployment feature flags (GET /api/features) ──────────
+
+/**
+ * Flags a deployment turns on per environment (chart values). Unknown flags
+ * are read as ``false`` so a frontend that ships ahead of the backend hides
+ * the surface rather than rendering it against a 404 API.
+ */
+export interface Features {
+  /** Collections tab + ``?collection=`` deep links (epic #1409). */
+  collections: boolean
+}
+
+export const DEFAULT_FEATURES: Features = { collections: false }
+
 // ── Collections (docs/collections.md) ─────────────────────
 
 export type CollectionType = 'synchronized' | 'sequence'

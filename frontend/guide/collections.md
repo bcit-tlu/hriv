@@ -4,7 +4,9 @@ Collections gather a handful of images into a named set — for example, the
 four views of one specimen, or a sequence that tells a story over time.
 
 Open the **Collections** tab in the app bar. Everyone who is signed in,
-including students, can see the tab and create their own collections.
+including students, can see the tab and create their own collections. (If
+your HRIV instance doesn't show a Collections tab yet, the feature hasn't
+been switched on there — ask your administrator.)
 
 ## Two kinds of collection
 

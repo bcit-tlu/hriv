@@ -18,6 +18,7 @@ import {
 const apiMocks = vi.hoisted(() => ({
   fetchUsers: vi.fn(),
   fetchVersions: vi.fn(),
+  fetchFeatures: vi.fn(),
   fetchFrontendVersion: vi.fn(),
   createProgram: vi.fn(),
   updateProgram: vi.fn(),
@@ -149,6 +150,7 @@ function resetFixtures() {
   vi.resetAllMocks()
   apiMocks.fetchUsers.mockResolvedValue([])
   apiMocks.fetchVersions.mockResolvedValue({ backend: '1.0.0', backup: '1.0.0' })
+  apiMocks.fetchFeatures.mockResolvedValue({ collections: true })
   apiMocks.fetchFrontendVersion.mockResolvedValue({ frontend: '1.0.0' })
   apiMocks.createProgram.mockResolvedValue({})
   apiMocks.updateProgram.mockResolvedValue({})
@@ -366,6 +368,7 @@ vi.mock('../src/components/AppShell', () => ({
     frontendVersion,
     backendVersion,
     onReportIssue,
+    collectionsEnabled,
   }: {
     children: ReactNode
     onTabChange: (v: string) => void
@@ -377,11 +380,13 @@ vi.mock('../src/components/AppShell', () => ({
     frontendVersion: string | null
     backendVersion: string | null
     onReportIssue: () => void
+    collectionsEnabled: boolean
   }) => (
     <div>
       <div>
         versions: {String(frontendVersion)}/{String(backendVersion)}
       </div>
+      <div data-testid="shell-collections-enabled">{String(collectionsEnabled)}</div>
       <button type="button" onClick={onReportIssue}>
         Shell report issue
       </button>
@@ -1658,29 +1663,37 @@ describe('App collections deep links (#1414)', () => {
     window.history.replaceState(null, '', originalUrl)
   })
 
-  it('opens the Collections tab from the shell for a student', () => {
-    authState = { ...authState, canEditContent: false, canViewPeople: false }
+  /** The Collections surface only mounts once `GET /api/features` resolves on. */
+  async function renderWithCollectionsEnabled() {
     render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+  }
+
+  it('opens the Collections tab from the shell for a student', async () => {
+    authState = { ...authState, canEditContent: false, canViewPeople: false }
+    await renderWithCollectionsEnabled()
     expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Shell tab collections' }))
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', 'null')
   })
 
-  it('restores ?collection={id} on load and selects that collection', () => {
+  it('restores ?collection={id} on load and selects that collection', async () => {
     window.history.replaceState(null, '', '/?collection=12')
-    render(<App />)
+    await renderWithCollectionsEnabled()
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '12')
   })
 
-  it('opens the Collections list from ?page=collections', () => {
+  it('opens the Collections list from ?page=collections', async () => {
     window.history.replaceState(null, '', '/?page=collections')
-    render(<App />)
+    await renderWithCollectionsEnabled()
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', 'null')
   })
 
-  it('pushes ?collection={id} history when a collection is opened and ?page=collections when closed', () => {
+  it('pushes ?collection={id} history when a collection is opened and ?page=collections when closed', async () => {
     window.history.replaceState(null, '', '/?page=collections')
-    render(<App />)
+    await renderWithCollectionsEnabled()
     fireEvent.click(screen.getByRole('button', { name: 'Open collection 5' }))
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '5')
     expect(pushNavStateMock).toHaveBeenLastCalledWith('collections', [], null, { collection: '5' })
@@ -1692,7 +1705,7 @@ describe('App collections deep links (#1414)', () => {
 
   it('opens a member image in the normal ?image= view from the collection detail', async () => {
     window.history.replaceState(null, '', '/?collection=12')
-    render(<App />)
+    await renderWithCollectionsEnabled()
     fireEvent.click(screen.getByRole('button', { name: 'Open collection image' }))
     expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument()
     expect(await screen.findByText(/Image Viewer 101/)).toBeInTheDocument()
@@ -1700,7 +1713,7 @@ describe('App collections deep links (#1414)', () => {
   })
 
   it('restores the selected collection from the URL on back/forward', async () => {
-    render(<App />)
+    await renderWithCollectionsEnabled()
     expect(popStateHandler).not.toBeNull()
 
     window.history.replaceState(null, '', '/?collection=12')
@@ -1720,5 +1733,71 @@ describe('App collections deep links (#1414)', () => {
       popStateHandler!('browse', [], null)
     })
     await waitFor(() => expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument())
+  })
+})
+
+describe('App collections feature flag (COLLECTIONS_ENABLED)', () => {
+  const originalUrl = `${window.location.pathname}${window.location.search}`
+
+  beforeEach(() => {
+    resetFixtures()
+    popStateHandler = null
+  })
+
+  afterEach(() => {
+    window.history.replaceState(null, '', originalUrl)
+  })
+
+  it('tells the shell collections are enabled once GET /api/features says so', async () => {
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+    expect(apiMocks.fetchFeatures).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports collections disabled to the shell when the flag is off', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({ collections: false })
+    render(<App />)
+    await waitFor(() => expect(apiMocks.fetchFeatures).toHaveBeenCalled())
+    await act(async () => {})
+    expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('false')
+  })
+
+  it('treats a failed /api/features request as every flag off', async () => {
+    apiMocks.fetchFeatures.mockRejectedValue(new Error('boom'))
+    render(<App />)
+    await waitFor(() => expect(apiMocks.fetchFeatures).toHaveBeenCalled())
+    await act(async () => {})
+    expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('false')
+  })
+
+  it('falls back to browse from ?collection={id} when the flag is off', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({ collections: false })
+    window.history.replaceState(null, '', '/?collection=12')
+    render(<App />)
+    // Never renders the Collections page against a 404 API, even before the
+    // flags resolve.
+    expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Drop files on grid' })).toBeInTheDocument()
+    expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument()
+  })
+
+  it('falls back to browse from ?page=collections when the flag is off', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({ collections: false })
+    window.history.replaceState(null, '', '/?page=collections')
+    render(<App />)
+    expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Drop files on grid' })).toBeInTheDocument()
+    expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument()
+  })
+
+  it('still honours ?collection={id} once the flag resolves on', async () => {
+    window.history.replaceState(null, '', '/?collection=12')
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '12')
   })
 })

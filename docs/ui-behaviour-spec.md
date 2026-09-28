@@ -37,6 +37,10 @@ Three capability flags in `AuthContext.tsx` drive all gating:
 
 - **Given** a student is logged in, **When** the app bar renders, **Then** only
   Home and **Collections** are shown (no Images, Manage, People, or Admin).
+- **Given** the deployment has `COLLECTIONS_ENABLED=false` (`GET /api/features`
+  → `collections: false`), **Then** the Collections tab/drawer entry is absent
+  for every role and `?collection=` / `?page=collections` open Home instead
+  (see [collections.md](collections.md)).
 - **Given** a student on a compact (mobile) viewport, **Then** Home and
   Collections stay inline in the app bar (two tabs never collapse behind a
   lone hamburger).

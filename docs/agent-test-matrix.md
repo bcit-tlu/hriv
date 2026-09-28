@@ -34,6 +34,9 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
 ### Changed collections (model, authorization, read/write API, ownership transfer, Collections tab)
 
 - backend: `poetry run pytest tests/test_collections_model.py tests/test_router_collections.py tests/test_schemas.py tests/test_authz.py tests/test_visibility.py`
+- Feature flag (`COLLECTIONS_ENABLED`, `GET /api/features`, `useFeatures`): add
+  `tests/test_database.py tests/test_main.py` (backend) and
+  `npm test -- useFeatures` (frontend); chart: `bash scripts/test-helm-chart-regressions.sh`.
 - Ownership transfer / program-deletion orphaning (#1413) also runs
   `tests/test_router_programs.py` (the real `DELETE /api/programs/{id}` →
   orphan test needs `REORDER_FIXTURE_DATABASE_URL`, otherwise it skips).
