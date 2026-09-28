@@ -37,9 +37,12 @@ Three capability flags in `AuthContext.tsx` drive all gating:
 
 - **Given** a student is logged in, **When** the app bar renders, **Then** only
   Home and **Collections** are shown (no Images, Manage, People, or Admin).
-- **Given** any authenticated role on a compact (mobile) viewport, **Then**
-  Home and Collections stay inline in the app bar while role-specific tabs
-  collapse into the drawer.
+- **Given** a student on a compact (mobile) viewport, **Then** Home and
+  Collections stay inline in the app bar (two tabs never collapse behind a
+  lone hamburger).
+- **Given** a staff, instructor, or admin on a compact (mobile) viewport,
+  **Then** every tab — Home and Collections included — collapses into the
+  hamburger drawer (the #1121 layout; Manage items are flattened into it).
 - **Given** a staff user, **Then** Home + **Collections** + **People** appear — the People page
   renders read-only (no add/edit/delete/bulk controls; filters, sorting, and
   pagination still work).
