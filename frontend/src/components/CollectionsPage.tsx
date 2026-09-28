@@ -70,7 +70,12 @@ export interface CollectionsPageProps {
   /** Mutations — reject with an ApiError to surface the message in the dialog. */
   loadCollection: (id: number) => Promise<Collection>
   onCreate: (values: CollectionFormValues) => Promise<unknown>
-  onUpdate: (id: number, values: CollectionFormValues, version: number) => Promise<unknown>
+  onUpdate: (
+    id: number,
+    values: CollectionFormValues,
+    version: number,
+    baseline: Collection | null,
+  ) => Promise<unknown>
   onDelete: (id: number) => Promise<void>
 }
 
@@ -265,9 +270,13 @@ export default function CollectionsPage({
     }
   }
 
-  const handleSave = async (values: CollectionFormValues, version: number | null) => {
+  const handleSave = async (
+    values: CollectionFormValues,
+    version: number | null,
+    baseline: Collection | null,
+  ) => {
     if (editing && version != null) {
-      await onUpdate(editing.id, values, version)
+      await onUpdate(editing.id, values, version, baseline)
     } else {
       await onCreate(values)
     }

@@ -46,10 +46,16 @@ export interface CollectionEditDialogProps {
   groups?: Group[]
   /**
    * Persist the form. `version` is the optimistic-concurrency token for edits
-   * (null on create). Rejections are shown inside the dialog via `userMessage`;
+   * (null on create). `baseline` is the record the form was seeded from (the
+   * authoritative copy after a conflict reload) so callers can send only the
+   * changed fields. Rejections are shown inside the dialog via `userMessage`;
    * a stale-version 409 additionally offers to reload the current values.
    */
-  onSave: (values: CollectionFormValues, version: number | null) => Promise<void>
+  onSave: (
+    values: CollectionFormValues,
+    version: number | null,
+    baseline: Collection | null,
+  ) => Promise<void>
 }
 
 const TYPE_HELP: Record<CollectionType, string> = {
@@ -78,6 +84,7 @@ export default function CollectionEditDialog({
   const [selectedProgramIds, setSelectedProgramIds] = useState<Set<number>>(new Set())
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<number>>(new Set())
   const [version, setVersion] = useState<number | null>(null)
+  const [baseline, setBaseline] = useState<Collection | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [conflict, setConflict] = useState<Collection | null>(null)
   const [saving, setSaving] = useState(false)
@@ -91,6 +98,7 @@ export default function CollectionEditDialog({
     setSelectedProgramIds(new Set(source?.programIds ?? []))
     setSelectedGroupIds(new Set(source?.groupIds ?? []))
     setVersion(source?.version ?? null)
+    setBaseline(source)
     setError(null)
     setConflict(null)
     setSaving(false)
@@ -129,8 +137,8 @@ export default function CollectionEditDialog({
   // Attach authority mirrors the category dialogs: instructors may only add
   // programs they belong to and groups they manage; anything already attached
   // stays toggleable so any editor can narrow or drop scope.
-  const currentProgramIds = collection?.programIds ?? []
-  const currentGroupIds = collection?.groupIds ?? []
+  const currentProgramIds = baseline?.programIds ?? []
+  const currentGroupIds = baseline?.groupIds ?? []
   const isProgramDisabled = (programId: number) =>
     attachableProgramIds != null &&
     !attachableProgramIds.includes(programId) &&
@@ -161,7 +169,7 @@ export default function CollectionEditDialog({
     setError(null)
     setConflict(null)
     try {
-      await onSave(values, version)
+      await onSave(values, version, baseline)
       onClose()
     } catch (err) {
       const current = collectionConflictCurrent(err)

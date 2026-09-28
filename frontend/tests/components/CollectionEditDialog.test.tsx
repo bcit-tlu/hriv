@@ -118,6 +118,7 @@ describe('CollectionEditDialog', () => {
           groupIds: [],
         },
         null,
+        null,
       )
       await waitFor(() => expect(onClose).toHaveBeenCalled())
     })
@@ -156,6 +157,7 @@ describe('CollectionEditDialog', () => {
       await waitFor(() => expect(onSave).toHaveBeenCalled())
       expect(onSave.mock.calls[0][0]).toMatchObject({ name: 'Renamed', type: 'synchronized' })
       expect(onSave.mock.calls[0][1]).toBe(4)
+      expect(onSave.mock.calls[0][2]).toMatchObject({ id: collection.id, version: 4 })
     })
 
     it('seeds the restricted scope from the collection', () => {
@@ -326,6 +328,48 @@ describe('CollectionEditDialog', () => {
       await user.click(screen.getByRole('button', { name: 'Save' }))
       await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2))
       expect(onSave.mock.calls[1][1]).toBe(9)
+      expect(onSave.mock.calls[1][2]).toMatchObject({ name: 'Renamed elsewhere', version: 9 })
+    })
+
+    it('lets an instructor remove scope attached elsewhere after a 409 reload', async () => {
+      const user = userEvent.setup()
+      const current = makeApiCollection({
+        visibility: 'restricted',
+        program_ids: [1, 2],
+        group_ids: [10, 11],
+        version: 3,
+      })
+      const onSave = vi
+        .fn()
+        .mockRejectedValueOnce(new ApiError(409, '', current))
+        .mockResolvedValue(undefined)
+      renderDialog(
+        {
+          onSave,
+          collection: makeCollection({
+            visibility: 'restricted',
+            programIds: [1],
+            groupIds: [10],
+            version: 2,
+          }),
+        },
+        makeAuth('instructor', { id: 7, program_ids: [1] }),
+      )
+      expect(screen.getByText('Program B').closest('.MuiChip-root')).toHaveClass('Mui-disabled')
+
+      await user.click(screen.getByRole('button', { name: 'Save' }))
+      await user.click(await screen.findByRole('button', { name: 'Reload' }))
+
+      const programB = screen.getByText('Program B').closest('.MuiChip-root')
+      const cohort2 = screen.getByText('Cohort 2').closest('.MuiChip-root')
+      expect(programB).not.toHaveClass('Mui-disabled')
+      expect(cohort2).not.toHaveClass('Mui-disabled')
+      await user.click(programB!)
+      await user.click(cohort2!)
+      await user.click(screen.getByRole('button', { name: 'Save' }))
+      await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2))
+      expect(onSave.mock.calls[1][0]).toMatchObject({ programIds: [1], groupIds: [10] })
+      expect(onSave.mock.calls[1][1]).toBe(3)
     })
 
     it('does not offer Reload for a 409 whose detail is not a collection', async () => {

@@ -54,6 +54,66 @@ export function toCollectionApiFilters(
   return api
 }
 
+function sameIds(a: number[], b: number[]): boolean {
+  if (a.length !== b.length) return false
+  const set = new Set(a)
+  return b.every((id) => set.has(id))
+}
+
+/**
+ * Body for `PATCH /api/collections/{id}` containing only the fields that differ
+ * from `baseline` (the record the form was seeded from). Omitting unchanged
+ * `visibility`/scope matters: the backend re-checks restricted authority
+ * whenever those keys are present, so a metadata-only edit of a restricted
+ * collection must not resend them.
+ */
+export function toCollectionPatch(
+  values: CollectionFormValues,
+  baseline: Collection | null,
+  version: number,
+): Parameters<typeof updateCollection>[1] {
+  const restricted = values.visibility === 'restricted'
+  if (!baseline) {
+    return {
+      name: values.name,
+      description: values.description,
+      visibility: values.visibility,
+      ...(restricted ? { program_ids: values.programIds, group_ids: values.groupIds } : {}),
+      version,
+    }
+  }
+  const patch: Parameters<typeof updateCollection>[1] = { version }
+  if (values.name !== baseline.name) patch.name = values.name
+  if (values.description !== baseline.description) patch.description = values.description
+  const visibilityChanged = values.visibility !== baseline.visibility
+  if (visibilityChanged) patch.visibility = values.visibility
+  if (
+    restricted &&
+    (visibilityChanged ||
+      !sameIds(values.programIds, baseline.programIds) ||
+      !sameIds(values.groupIds, baseline.groupIds))
+  ) {
+    patch.program_ids = values.programIds
+    patch.group_ids = values.groupIds
+  }
+  return patch
+}
+
+/** Client-side mirror of the list filters, used to slot a freshly saved row into the current view. */
+export function matchesCollectionFilters(
+  row: CollectionSummary,
+  filters: CollectionListFilters,
+  user: Pick<User, 'id'> | null,
+): boolean {
+  if (filters.type !== 'all' && row.type !== filters.type) return false
+  if (filters.mine) return row.owner?.kind === 'user' && row.owner.userId === user?.id
+  if (filters.owner === 'any') return true
+  if (filters.owner === 'orphaned') return row.owner == null
+  const owner = filters.owner
+  if (owner.kind === 'user') return row.owner?.kind === 'user' && row.owner.userId === owner.userId
+  return row.owner?.kind === 'program' && row.owner.programId === owner.programId
+}
+
 function uniqueOwners(collections: CollectionSummary[]): NonNullable<CollectionOwner>[] {
   const seen = new Set<string>()
   const owners: NonNullable<CollectionOwner>[] = []
@@ -128,6 +188,7 @@ export function useCollectionsData({
     let cancelled = false
     setDetailLoading(true)
     setDetailError(null)
+    setDetail((prev) => (prev?.id === selectedCollectionId ? prev : null))
     fetchCollection(selectedCollectionId)
       .then((api) => {
         if (cancelled) return
@@ -157,46 +218,56 @@ export function useCollectionsData({
 
   const create = useCallback(
     async (values: CollectionFormValues): Promise<Collection> => {
-      const created = await createCollection({
-        name: values.name,
-        description: values.description,
-        type: values.type,
-        visibility: values.visibility,
-        image_ids: [],
-        ...(values.visibility === 'restricted'
-          ? { program_ids: values.programIds, group_ids: values.groupIds }
-          : {}),
-      })
-      await load()
-      return apiCollectionToCollection(created)
+      const created = apiCollectionToCollection(
+        await createCollection({
+          name: values.name,
+          description: values.description,
+          type: values.type,
+          visibility: values.visibility,
+          image_ids: [],
+          ...(values.visibility === 'restricted'
+            ? { program_ids: values.programIds, group_ids: values.groupIds }
+            : {}),
+        }),
+      )
+      // Reflect the server's response immediately; the refresh below only
+      // reconciles with other users' changes and must not make a successful
+      // save look like a failure if it happens to fail.
+      if (matchesCollectionFilters(created, filters, currentUser)) {
+        setCollections((prev) => [created, ...prev.filter((c) => c.id !== created.id)])
+      }
+      void load()
+      return created
     },
-    [load],
+    [load, filters, currentUser],
   )
 
   const update = useCallback(
-    async (id: number, values: CollectionFormValues, version: number): Promise<Collection> => {
-      const updated = await updateCollection(id, {
-        name: values.name,
-        description: values.description,
-        visibility: values.visibility,
-        ...(values.visibility === 'restricted'
-          ? { program_ids: values.programIds, group_ids: values.groupIds }
-          : {}),
-        version,
-      })
+    async (
+      id: number,
+      values: CollectionFormValues,
+      version: number,
+      baseline: Collection | null = null,
+    ): Promise<Collection> => {
+      const updated = await updateCollection(id, toCollectionPatch(values, baseline, version))
       const mapped = apiCollectionToCollection(updated)
       setDetail((prev) => (prev?.id === id ? mapped : prev))
-      await load()
+      setCollections((prev) => {
+        const rest = prev.filter((c) => c.id !== id)
+        return matchesCollectionFilters(mapped, filters, currentUser) ? [mapped, ...rest] : rest
+      })
+      void load()
       return mapped
     },
-    [load],
+    [load, filters, currentUser],
   )
 
   const remove = useCallback(
     async (id: number): Promise<void> => {
       await deleteCollection(id)
       setCollections((prev) => prev.filter((c) => c.id !== id))
-      await load()
+      setDetail((prev) => (prev?.id === id ? null : prev))
+      void load()
     },
     [load],
   )

@@ -70,7 +70,11 @@ export function CollectionVisibilityChip({ visibility }: { visibility: Collectio
       label={label}
       size="small"
       icon={<LockIcon />}
-      sx={{ bgcolor: visColors.inactiveChipBg, color: visColors.inactive }}
+      sx={{
+        bgcolor: visColors.inactiveChipBg,
+        color: '#fff',
+        '& .MuiChip-icon': { color: '#fff' },
+      }}
     />
   )
 }
