@@ -31,9 +31,11 @@ All commands run from `frontend/` — there is no root `package.json`.
 
 ## Storybook / Chromatic
 
-Chromatic snapshots every story on each push (release-please and Dependabot
-bot branches excluded; TurboSnap skips pushes that only touch
-untraced/non-frontend files), so stories are permanent baselines — target
+Chromatic snapshots every story on pushes that change `frontend/` (excluding
+release/dependency mechanics like `package.json` and the lockfile; the
+`CHROMATIC_ENABLED=false` repo variable pauses all runs; TurboSnap skips
+pushes that only touch untraced/non-frontend files), so stories are
+permanent baselines — target
 meaningfully distinct visual states, not one story per code path:
 
 - New components in `src/components/` need a `*.stories.tsx` covering each
