@@ -4,6 +4,7 @@ import type { NavigationItem } from '../src/navigation'
 
 const ALL_IDS = [
   'home',
+  'collections',
   'images',
   'categories',
   'programs',
@@ -47,7 +48,7 @@ describe('getNavigationItems', () => {
       canViewPeople: false,
     })
     const ids = items.map((i) => i.id)
-    expect(ids).toEqual(['home'])
+    expect(ids).toEqual(['home', 'collections'])
   })
 
   it('returns home + people for staff (view-only with people access)', () => {
@@ -57,7 +58,21 @@ describe('getNavigationItems', () => {
       canViewPeople: true,
     })
     const ids = items.map((i) => i.id)
-    expect(ids).toEqual(['home', 'people'])
+    expect(ids).toEqual(['home', 'collections', 'people'])
+  })
+
+  it('collections is a primary item for every role (#1414)', () => {
+    for (const canEditContent of [true, false]) {
+      for (const canManageUsers of [true, false]) {
+        for (const canViewPeople of [true, false]) {
+          const items = getNavigationItems({ canEditContent, canManageUsers, canViewPeople })
+          const collections = items.find((i) => i.id === 'collections')
+          expect(collections).toBeDefined()
+          expect(collections?.section).toBe('primary')
+          expect(collections?.page).toBe('collections')
+        }
+      }
+    }
   })
 
   it('staff never sees admin or manage items', () => {

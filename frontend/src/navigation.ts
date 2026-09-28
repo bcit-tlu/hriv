@@ -1,7 +1,15 @@
-export type NavigationPage = 'browse' | 'manage' | 'people' | 'admin'
+export type NavigationPage = 'browse' | 'collections' | 'manage' | 'people' | 'admin'
 export type NavigationSection = 'primary' | 'manage' | 'account'
 export type NavigationIcon =
-  'home' | 'images' | 'categories' | 'programs' | 'groups' | 'announcement' | 'people' | 'admin'
+  | 'home'
+  | 'collections'
+  | 'images'
+  | 'categories'
+  | 'programs'
+  | 'groups'
+  | 'announcement'
+  | 'people'
+  | 'admin'
 
 export interface NavigationItem {
   id: string
@@ -16,6 +24,15 @@ export interface NavigationItem {
 
 const navigationItems: readonly NavigationItem[] = [
   { id: 'home', label: 'Home', section: 'primary', icon: 'home', page: 'browse' },
+  // Visible to every role (students included) — collections are a browsing
+  // feature, not a management one; the API scopes what each caller can see.
+  {
+    id: 'collections',
+    label: 'Collections',
+    section: 'primary',
+    icon: 'collections',
+    page: 'collections',
+  },
   {
     id: 'images',
     label: 'Images',

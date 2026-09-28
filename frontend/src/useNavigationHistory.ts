@@ -245,7 +245,10 @@ export function useNavigationHistory(
       const historyIndex = currentIndexRef.current + 1
       const state = buildNavHistoryState(page, catIds, imageId, historyIndex)
       const params = new URLSearchParams()
-      if (page !== 'browse') {
+      if (extraParams?.collection != null) {
+        // `?collection={id}` alone identifies the Collections page (see
+        // parseShareableUrlParams), matching what the URL-sync effect writes.
+      } else if (page !== 'browse') {
         params.set('page', page)
       } else {
         if (catIds.length > 0) params.set('cat', catIds.join(','))
