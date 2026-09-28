@@ -102,6 +102,11 @@ All endpoints require a JWT bearer token — there is no unauthenticated variant
 | ------ | ----------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | GET    | `/api/collections`      | student  | Visible collections as `CollectionSummaryOut[]`. Query: `type`, `mine`, `owner_user_id`, `owner_program_id`, `orphaned` (**admin only**, others **403**). Ordered by `updated_at` desc. |
 | GET    | `/api/collections/{id}` | student  | `CollectionOut` (summary + ordered `images: ImageOut[]`, `program_ids`, `group_ids`, `viewport_state`). **404** when missing _or_ not visible (no existence leak). |
+| POST   | `/api/collections`      | student  | Create; owner = caller (`user_id`). Body `CollectionCreate`: `name`, `description?`, `type`, `visibility` (default `private`), ordered `image_ids`, `program_ids` / `group_ids` (restricted only). **201** `CollectionOut`. |
+| PATCH  | `/api/collections/{id}` | student (must pass `can_edit_collection`) | Body `CollectionUpdate`: any of `name`, `description`, `visibility`, `program_ids`, `group_ids` + required `version`. `type` is immutable (**422** if changed). Returns fresh `CollectionOut`. |
+| DELETE | `/api/collections/{id}` | student (must pass `can_delete_collection`) | **204**. |
+| PUT    | `/api/collections/{id}/images`   | student (must pass `can_edit_collection`) | Replace the whole ordered image list (add / remove / reorder in one call). Body `CollectionImagesUpdate`: `image_ids`, `version`. `sort_order` is rewritten to `0..n-1`. Returns fresh `CollectionOut`. |
+| PUT    | `/api/collections/{id}/viewport` | student (must pass `can_edit_collection`) | Replace `viewport_state` wholesale. Body `CollectionViewportUpdate`: `viewport_state` (JSON object), `version`. Returns fresh `CollectionOut`. |
 
 `CollectionSummaryOut`: `id`, `name`, `description`, `type`, `visibility`,
 `owner` (`{user_id, name}` | `{program_id, name}` | `null` when orphaned),
@@ -114,9 +119,60 @@ tokenized at serialization time exactly like `GET /api/images/{id}` (see
 [tile-delivery-boundary.md](tile-delivery-boundary.md)), so the viewer's tile
 token renewal keeps working from collection responses.
 
-_Planned_ (#1412, #1413): `POST /api/collections`, `PATCH`/`DELETE
-/api/collections/{id}`, image add/remove/reorder, `viewport` persistence with
-version-based optimistic concurrency, and `POST /api/collections/{id}/transfer`.
+### Write semantics (#1412)
+
+Every mutation re-checks authority server-side; the `permissions` block in
+responses is a UX hint only.
+
+**404 vs 403.** A caller who cannot _view_ the collection (per
+`can_view_collection`) gets **404** — never 403 — so private ids cannot be
+probed. A caller who can view it but fails `can_edit_collection` (PATCH,
+images, viewport) or `can_delete_collection` (DELETE) gets **403**.
+
+**Creating.** Any authenticated role may `POST`; the caller becomes the owner
+(`user_id`; program ownership is only reachable via transfer, #1413).
+
+**Restricted visibility & scope.**
+
+- `visibility=restricted` requires an admin or instructor (**403** for staff /
+  students, on create and when a PATCH sets it or touches scope).
+- Every _newly attached_ id must pass `can_attach_program_to_collection` /
+  `can_attach_group_to_collection` (**403**); unknown ids are **422**.
+  Programs/groups already attached are kept without re-checking, so any editor
+  may narrow or drop scope.
+- Non-restricted collections carry no scope: `program_ids` / `group_ids` on a
+  `private` / `public` create or PATCH is **422**, and a PATCH that leaves
+  `restricted` clears both scope tables.
+
+**Image list (`PUT …/images`, and `image_ids` on create).**
+
+- Every id must exist (**422**, detail lists the offenders).
+- No duplicates (**422**, rejected by the schema and again by the router).
+- `synchronized` collections hold at most `SYNCHRONIZED_COLLECTION_MAX_IMAGES`
+  (4) images (**422**); `sequence` has no cap.
+- Students may only reference images they can open: `active` **and** category
+  passing the program AND group dual gate (`get_student_excluded_category_ids`
+  with both `{p.id for p in user.programs}` and `{g.id for g in user.groups}`).
+  Invisible ids are **422** for students; non-students may add any existing
+  image, including inactive ones.
+- Membership is replaced as a whole and `sort_order` rewritten to `0..n-1` in
+  request order; retained images keep their `collection_images` row.
+
+**Viewport (`PUT …/viewport`).** `viewport_state` is overwritten with the
+submitted object — never a partial JSONB merge. Any JSON object is accepted
+until the synchronized viewer fixes the shape (#1417).
+
+**Optimistic concurrency.** PATCH, images and viewport bodies carry the
+`version` the client last read. The server advances it atomically
+(`UPDATE collections SET version = v+1 WHERE id = :id AND version = :v`); if
+no row matches, the response is **409** whose `detail` is the _current_
+`CollectionOut` (same shape as a fresh GET) so the client can rebase and
+retry. Every successful mutation increments `version` and returns the fresh
+`CollectionOut`. Unlike images/categories, the token is in the body rather
+than an `If-Match` header and is required, not optional.
+
+_Planned_ (#1413): `POST /api/collections/{id}/transfer` and admin flows for
+program-orphaned collections.
 
 ## Frontend behaviour
 
@@ -129,4 +185,11 @@ _Planned_ (#1414–#1419): Collections tab, `?collection={id}` deep links,
 - `backend/tests/test_collections_model.py` — table/constraint/cascade contract.
 - `backend/tests/test_authz.py` — collection predicate matrix.
 - `backend/tests/test_router_collections.py` — list/detail per role, dual-gate
-  cases, image omission, 404-not-403, admin-only `orphaned` filter.
+  cases, image omission, 404-not-403, admin-only `orphaned` filter; write API:
+  create per role, restricted attach authority (admin any / instructor own
+  programs + managed groups / staff + student 403), edit/delete matrix
+  (owner, instructor-of-owning-program, orphaned = admin only), image replace
+  validations (missing id, duplicates, synchronized cap, student-invisible,
+  `sort_order` rewrite), viewport whole-replace, 409 + version increment.
+- `backend/tests/test_schemas.py` — `CollectionCreate` / `CollectionUpdate` /
+  `CollectionImagesUpdate` / `CollectionViewportUpdate` validators.
