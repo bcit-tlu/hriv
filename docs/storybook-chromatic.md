@@ -249,11 +249,13 @@ Dismiss Action`, `Login Screen`, and `Empty Message`.
 
 ## Story coverage convention
 
-Chromatic snapshots every story on each push to a branch (release-please and
-Dependabot bot branches are excluded, and TurboSnap skips pushes that only touch
-untraced/non-frontend files), so each story is a permanent baseline that
-someone must review — target meaningfully distinct visual states, not one story
-per code path:
+Chromatic snapshots every story on pushes that change `frontend/` files other
+than release/dependency mechanics (`package.json`, the lockfile, the changelog,
+generated license notices); release-please and Dependabot bot pushes are
+skipped, `CHROMATIC_ENABLED=false` pauses all runs, and TurboSnap bypasses
+runs whose diff only touches untraced files — so each story is a permanent
+baseline that someone must review. Target meaningfully distinct visual
+states, not one story per code path:
 
 - New components in `src/components/` require a `*.stories.tsx` covering each
   meaningfully distinct visual state.
