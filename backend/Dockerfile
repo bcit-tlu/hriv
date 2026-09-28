@@ -182,7 +182,7 @@ ENV OTEL_TRACES_EXPORTER=none \
 
 # ── Stage 3: Development (hot-reload, used by docker compose)
 FROM base AS dev
-RUN pip install --no-cache-dir 'pytest>=8.3.3,<9' 'pytest-asyncio>=0.24.0,<0.25' 'pytest-cov>=5.0.0,<6'
+RUN pip install --no-cache-dir 'pytest>=9.1.1,<10' 'pytest-asyncio>=1.4.0,<2' 'pytest-cov>=7.1.0,<8'
 # Wrap with ``opentelemetry-instrument`` for parity with the stable stage so
 # developers can exercise the OTel auto-instrumentation pipeline locally
 # just by overriding ``OTEL_TRACES_EXPORTER``/``OTEL_EXPORTER_OTLP_ENDPOINT``

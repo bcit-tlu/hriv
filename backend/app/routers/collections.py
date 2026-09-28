@@ -36,7 +36,7 @@ from ..authz import (
     can_transfer_collection,
     can_view_collection,
 )
-from ..database import get_db
+from ..database import get_db, settings
 from ..models import (
     COLLECTION_TYPES,
     SYNCHRONIZED_COLLECTION_MAX_IMAGES,
@@ -61,7 +61,23 @@ from ..schemas import (
 )
 from ..visibility import get_student_excluded_category_ids
 
-router = APIRouter(prefix="/collections", tags=["collections"])
+def require_collections_enabled() -> None:
+    """Router-wide gate for the ``COLLECTIONS_ENABLED`` dark-launch flag.
+
+    Every collections endpoint returns the same 404 as an unknown route while
+    the feature is off, so the API surface is indistinguishable from a build
+    without collections. Evaluated per request so tests (and operators
+    reloading settings) can flip it without rebuilding the app.
+    """
+    if not settings.collections_enabled:
+        raise HTTPException(status_code=404, detail="Not Found")
+
+
+router = APIRouter(
+    prefix="/collections",
+    tags=["collections"],
+    dependencies=[Depends(require_collections_enabled)],
+)
 
 
 class _ViewerContext:

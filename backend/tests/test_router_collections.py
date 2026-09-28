@@ -20,6 +20,7 @@ from app.routers.collections import (
     list_collections,
     replace_collection_images,
     replace_collection_viewport,
+    require_collections_enabled,
     transfer_collection,
     update_collection,
 )
@@ -194,6 +195,33 @@ def _no_excluded(monkeypatch: pytest.MonkeyPatch) -> None:
         "get_student_excluded_category_ids",
         AsyncMock(return_value=set()),
     )
+
+
+# ── feature flag ──────────────────────────────────────────
+
+
+def test_router_gated_by_collections_enabled_dependency() -> None:
+    gates = [
+        dep.dependency for dep in collections_router.router.dependencies
+    ]
+    assert require_collections_enabled in gates
+
+
+def test_require_collections_enabled_404_when_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(collections_router.settings, "collections_enabled", False)
+    with pytest.raises(HTTPException) as exc:
+        require_collections_enabled()
+    assert exc.value.status_code == 404
+    assert exc.value.detail == "Not Found"
+
+
+def test_require_collections_enabled_passes_when_on(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(collections_router.settings, "collections_enabled", True)
+    assert require_collections_enabled() is None
 
 
 # ── list ──────────────────────────────────────────────────

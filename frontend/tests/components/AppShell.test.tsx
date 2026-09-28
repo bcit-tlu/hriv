@@ -16,6 +16,7 @@ function makeProps(overrides: Partial<AppShellProps> = {}): AppShellProps {
     canEditContent: true,
     canManageUsers: true,
     canViewPeople: true,
+    collectionsEnabled: true,
     currentUser: {
       name: 'Test User',
       email: 'test@example.com',
@@ -159,6 +160,36 @@ describe('AppShell', () => {
         />,
       )
       expect(screen.getByRole('tab', { name: 'Home' })).toBeInTheDocument()
+    })
+
+    it('renders the Collections tab for every role (#1414)', () => {
+      const roles = [
+        { canEditContent: true, canManageUsers: true, canViewPeople: true },
+        { canEditContent: true, canManageUsers: false, canViewPeople: false },
+        { canEditContent: false, canManageUsers: false, canViewPeople: true },
+        { canEditContent: false, canManageUsers: false, canViewPeople: false },
+      ]
+      for (const caps of roles) {
+        const onTabChange = vi.fn()
+        const { unmount } = render(<AppShell {...makeProps({ ...caps, onTabChange })} />)
+        fireEvent.click(screen.getByRole('tab', { name: 'Collections' }))
+        expect(onTabChange).toHaveBeenCalledWith('collections')
+        unmount()
+      }
+    })
+
+    it('hides the Collections tab when the deployment flag is off', () => {
+      render(<AppShell {...makeProps({ collectionsEnabled: false })} />)
+      expect(screen.getByRole('tab', { name: 'Home' })).toBeInTheDocument()
+      expect(screen.queryByRole('tab', { name: 'Collections' })).not.toBeInTheDocument()
+    })
+
+    it('marks the Collections tab selected on the collections page', () => {
+      render(<AppShell {...makeProps({ page: 'collections' })} />)
+      expect(screen.getByRole('tab', { name: 'Collections' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      )
     })
 
     it('renders Images and Manage tabs when canEditContent', () => {
@@ -522,6 +553,7 @@ describe('AppShell', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
       for (const name of [
         'Home',
+        'Collections',
         'Images',
         'Categories',
         'Programs',
@@ -561,7 +593,7 @@ describe('AppShell', () => {
       expect(heading).toHaveStyle({ textTransform: 'uppercase' })
     })
 
-    it('navigates and opens dialogs from the collapsed menu', () => {
+    it('navigates and opens dialogs from the collapsed menu', async () => {
       const onTabChange = vi.fn()
       const onOpenCategories = vi.fn()
       render(<AppShell {...makeProps({ onTabChange, onOpenCategories })} />)
@@ -570,7 +602,7 @@ describe('AppShell', () => {
       fireEvent.click(screen.getByRole('menuitem', { name: 'Admin' }))
       expect(onTabChange).toHaveBeenCalledWith('admin')
 
-      fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
+      fireEvent.click(await screen.findByRole('button', { name: 'Open navigation menu' }))
       fireEvent.click(screen.getByRole('menuitem', { name: 'Categories' }))
       expect(onOpenCategories).toHaveBeenCalled()
     })
@@ -605,7 +637,7 @@ describe('AppShell', () => {
       expect(screen.getByText('Administration')).toBeInTheDocument()
     })
 
-    it('keeps a single Home tab inline for students instead of collapsing', () => {
+    it('keeps the Home and Collections tabs inline for students instead of collapsing', () => {
       render(
         <AppShell
           {...makeProps({
@@ -617,16 +649,32 @@ describe('AppShell', () => {
       )
       expect(screen.queryByRole('button', { name: 'Open navigation menu' })).not.toBeInTheDocument()
       expect(screen.getByRole('tab', { name: 'Home' })).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: 'Collections' })).toBeInTheDocument()
     })
 
-    it('closes the drawer when the close button is clicked', () => {
+    it('omits Collections from the collapsed menu when the deployment flag is off', () => {
+      render(<AppShell {...makeProps({ collectionsEnabled: false })} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
+      expect(screen.getByRole('menuitem', { name: 'Home' })).toBeInTheDocument()
+      expect(screen.queryByRole('menuitem', { name: 'Collections' })).not.toBeInTheDocument()
+    })
+
+    it('navigates to Collections from the collapsed menu', () => {
+      const onTabChange = vi.fn()
+      render(<AppShell {...makeProps({ onTabChange })} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Collections' }))
+      expect(onTabChange).toHaveBeenCalledWith('collections')
+    })
+
+    it('closes the drawer when the close button is clicked', async () => {
       render(<AppShell {...makeProps()} />)
       fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
       expect(screen.getByRole('menuitem', { name: 'Home' })).toBeInTheDocument()
 
       fireEvent.click(screen.getByRole('button', { name: 'Close navigation menu' }))
 
-      expect(screen.getByRole('button', { name: 'Open navigation menu' })).toHaveAttribute(
+      expect(await screen.findByRole('button', { name: 'Open navigation menu' })).toHaveAttribute(
         'aria-expanded',
         'false',
       )

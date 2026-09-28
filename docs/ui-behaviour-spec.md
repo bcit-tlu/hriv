@@ -25,6 +25,7 @@ Three capability flags in `AuthContext.tsx` drive all gating:
 | Surface               | Student | Staff | Instructor | Admin |
 | --------------------- | ------- | ----- | ---------- | ----- |
 | Home                  | ✓       | ✓     | ✓          | ✓     |
+| Collections tab       | ✓       | ✓     | ✓          | ✓     |
 | Images tab            | —       | —     | ✓          | ✓     |
 | Manage dropdown       | —       | —     | ✓          | ✓     |
 | Manage → Categories   | —       | —     | ✓          | ✓     |
@@ -35,8 +36,18 @@ Three capability flags in `AuthContext.tsx` drive all gating:
 | Admin tab             | —       | —     | —          | ✓     |
 
 - **Given** a student is logged in, **When** the app bar renders, **Then** only
-  Home is shown (no Images, Manage, People, or Admin).
-- **Given** a staff user, **Then** Home + **People** appear — the People page
+  Home and **Collections** are shown (no Images, Manage, People, or Admin).
+- **Given** the deployment has `COLLECTIONS_ENABLED=false` (`GET /api/features`
+  → `collections: false`), **Then** the Collections tab/drawer entry is absent
+  for every role and `?collection=` / `?page=collections` open Home instead
+  (see [collections.md](collections.md)).
+- **Given** a student on a compact (mobile) viewport, **Then** Home and
+  Collections stay inline in the app bar (two tabs never collapse behind a
+  lone hamburger).
+- **Given** a staff, instructor, or admin on a compact (mobile) viewport,
+  **Then** every tab — Home and Collections included — collapses into the
+  hamburger drawer (the #1121 layout; Manage items are flattened into it).
+- **Given** a staff user, **Then** Home + **Collections** + **People** appear — the People page
   renders read-only (no add/edit/delete/bulk controls; filters, sorting, and
   pagination still work).
 - **Given** an instructor, **Then** Images + the Manage dropdown appear, but the
@@ -146,6 +157,60 @@ images> / Empty` format used on category tiles.
   rotation is suppressed. A gap greater than `PINCH_GESTURE_GAP_MS` resets
   arbitration for the next gesture. Covered by `measurement.test.ts`
   (`pinchRotationDeltaDegrees`, `createPinchRotationTracker`).
+
+### Collections tab (`CollectionsPage.test.tsx`, `CollectionCard.test.tsx`, `CollectionEditDialog.test.tsx`, `App.test.tsx`)
+
+See [collections.md](collections.md#frontend-behaviour) for the full contract.
+All roles, including students, can list, open, and create collections;
+edit/delete controls are gated by `permissions.can_edit` / `can_delete`
+returned by the API (UX only — the backend re-checks).
+
+- **Given** a user opens the Collections tab (`?page=collections`), **When**
+  `GET /api/collections` resolves, **Then** a responsive card grid renders one
+  `CollectionCard` per summary (cover, name, image count, owner, type chip,
+  visibility chip); an empty result shows the empty state (whose
+  **Create a collection** link opens the create dialog when no filters are
+  active) and a failed request shows a plain error `Alert` with no action.
+- **Given** the list, **When** the user picks a type toggle,
+  **My collections**, or an **Owner**, **Then** the list re-fetches with
+  `type=` / `mine=true` / `owner_user_id=` or `owner_program_id=`; selecting
+  **My collections** resets and disables the owner select.
+- **Given** a student, **Then** the **Owner** select is not rendered at all
+  (only the type toggle and **My collections** remain) and `owner_user_id` /
+  `owner_program_id` are never sent; admin, instructor and staff keep it.
+- **Given** an admin, **Then** the owner select also offers _No owner
+  (orphaned)_ (`orphaned=true`); **Given** any other role, **Then** that option
+  is absent and `orphaned` is never sent.
+- **Given** the user clicks **New collection**, **When** they enter a name,
+  pick a type and visibility and press **Create**, **Then**
+  `POST /api/collections` is sent with `image_ids: []` and the new card
+  appears in the list.
+- **Given** a student or staff user in the dialog, **Then** the **Restricted**
+  visibility option is not offered; **Given** an admin or instructor,
+  **When** they choose **Restricted**, **Then** program and group chip pickers
+  appear and **Create**/**Save** stays disabled until at least one is selected.
+- **Given** an instructor in the restricted pickers, **Then** only programs
+  they belong to and groups they manage are selectable (others are disabled),
+  except scope already attached to the collection, which stays removable.
+- **Given** a card whose `permissions.can_edit` is true, **When** the user
+  clicks **Edit**, **Then** the dialog opens pre-filled with the full record
+  and the type is shown as a read-only chip; **Save** sends `PATCH` with the
+  current `version` in the body.
+- **Given** the edit `PATCH` returns **409**, **Then** the dialog shows the
+  "modified by another user" message with a **Reload** action that re-seeds
+  the form from the current record in the error `detail`.
+- **Given** a card whose `permissions.can_delete` is true, **When** the user
+  clicks **Delete** and confirms, **Then** `DELETE /api/collections/{id}` is
+  sent and the card disappears; a failure keeps the dialog open with the API
+  message.
+- **Given** the user opens a card, **Then** the URL becomes
+  `?collection={id}` and the detail placeholder lists the ordered member
+  images with an **Open image** link (`?image={id}`) each; the viewer itself
+  arrives in #1416/#1417.
+- **Given** a `?collection={id}` URL is loaded or restored via back/forward,
+  **Then** the Collections tab opens on that collection; **Given** the API
+  returns **404**, **Then** the not-found `Alert` with **All collections** is
+  shown instead.
 
 ### Search modal (`SearchModal.test.tsx`)
 

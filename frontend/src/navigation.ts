@@ -1,7 +1,15 @@
-export type NavigationPage = 'browse' | 'manage' | 'people' | 'admin'
+export type NavigationPage = 'browse' | 'collections' | 'manage' | 'people' | 'admin'
 export type NavigationSection = 'primary' | 'manage' | 'account'
 export type NavigationIcon =
-  'home' | 'images' | 'categories' | 'programs' | 'groups' | 'announcement' | 'people' | 'admin'
+  | 'home'
+  | 'collections'
+  | 'images'
+  | 'categories'
+  | 'programs'
+  | 'groups'
+  | 'announcement'
+  | 'people'
+  | 'admin'
 
 export interface NavigationItem {
   id: string
@@ -12,10 +20,23 @@ export interface NavigationItem {
   requiresEditContent?: boolean
   requiresManageUsers?: boolean
   requiresViewPeople?: boolean
+  /** Hidden unless the deployment's `collections` feature flag is on. */
+  requiresCollections?: boolean
 }
 
 const navigationItems: readonly NavigationItem[] = [
   { id: 'home', label: 'Home', section: 'primary', icon: 'home', page: 'browse' },
+  // Visible to every role (students included) — collections are a browsing
+  // feature, not a management one; the API scopes what each caller can see.
+  // Dark-launched: only rendered when the deployment enables collections.
+  {
+    id: 'collections',
+    label: 'Collections',
+    section: 'primary',
+    icon: 'collections',
+    page: 'collections',
+    requiresCollections: true,
+  },
   {
     id: 'images',
     label: 'Images',
@@ -75,15 +96,18 @@ export function getNavigationItems({
   canEditContent,
   canManageUsers,
   canViewPeople,
+  collectionsEnabled,
 }: {
   canEditContent: boolean
   canManageUsers: boolean
   canViewPeople: boolean
+  collectionsEnabled: boolean
 }): NavigationItem[] {
   return navigationItems.filter(
     (item) =>
       (!item.requiresEditContent || canEditContent) &&
       (!item.requiresManageUsers || canManageUsers) &&
-      (!item.requiresViewPeople || canViewPeople),
+      (!item.requiresViewPeople || canViewPeople) &&
+      (!item.requiresCollections || collectionsEnabled),
   )
 }

@@ -8,8 +8,14 @@
 # pr-title-lint.yaml skips bot-authored PRs, and release-please does not add
 # `chore` commits to component changelogs.
 #
-# See docs/security-scanning.md for how to handle these PRs (notably the
-# Playwright image/npm co-bump for synthetic-monitoring).
+# See docs/security-scanning.md for how to handle these PRs.
+#
+# Node images and `@types/node` follow the even-numbered LTS line; all
+# majors are ignored so the runtime only changes through a deliberate LTS
+# move (edit the ignores when moving). Frontend toolchain majors whose peers
+# cannot follow yet (typescript 7 vs typescript-eslint, storybook 11
+# prereleases, vitest 5 vs @storybook/addon-vitest) are ignored until those
+# peers catch up; revisit each ignore when the blocking peer publishes support.
 
 version: 2
 
@@ -26,6 +32,9 @@ updates:
     commit-message:
       prefix: chore(deps)
     labels: [dependencies, docker]
+    ignore:
+      - dependency-name: node
+        update-types: ['version-update:semver-major']
     groups:
       docker-minor-patch:
         update-types: [minor, patch]
@@ -89,6 +98,9 @@ updates:
     commit-message:
       prefix: chore(deps)
     labels: [dependencies, docker]
+    ignore:
+      - dependency-name: node
+        update-types: ['version-update:semver-major']
 
   # ── Python (Poetry) ────────────────────────────────────────────────
   - package-ecosystem: pip
@@ -152,6 +164,26 @@ updates:
       prefix: chore(deps)
       prefix-development: chore(deps-dev)
     labels: [dependencies, javascript]
+    ignore:
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+      # typescript-eslint peer range is `<6.1.0`.
+      - dependency-name: typescript
+        update-types: ['version-update:semver-major']
+      # Core is pinned to the 10.x beta line; 11 is alpha only, and addons
+      # (incl. ones already published at 11.x) must move together with core.
+      - dependency-name: storybook
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@storybook/*'
+        update-types: ['version-update:semver-major']
+      # @storybook/addon-vitest 10.x peers on vitest/@vitest/browser 3–4.
+      - dependency-name: vitest
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@vitest/*'
+        update-types: ['version-update:semver-major']
+      # MUI 9 is a coordinated migration PR.
+      - dependency-name: '@mui/*'
+        update-types: ['version-update:semver-major']
     groups:
       npm-minor-patch:
         update-types: [minor, patch]
@@ -171,6 +203,9 @@ updates:
       prefix: chore(deps)
       prefix-development: chore(deps-dev)
     labels: [dependencies, javascript]
+    ignore:
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
     groups:
       playwright:
         patterns:

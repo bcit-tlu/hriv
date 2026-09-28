@@ -63,6 +63,7 @@ export function DrawerContentExample({
           canEditContent: role === 'admin' || role === 'instructor',
           canManageUsers: role === 'admin',
           canViewPeople: role === 'admin' || role === 'staff',
+          collectionsEnabled: true,
         })
       : []
   const items = Array.from({ length: 8 }, (_, index) => `Menu item ${index + 1}`)

@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.64.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.63.0...backend-v0.64.0) (2026-09-28)
+
+
+### Features
+
+* **backend:** add collection ownership transfer + program-delete orphan handling ([#1427](https://github.com/bcit-tlu/hriv/issues/1427)) ([96b9045](https://github.com/bcit-tlu/hriv/commit/96b9045d21481dbd9ee25131646009785b11e40e))
+* **backend:** add collections schema, migration and read API ([#1420](https://github.com/bcit-tlu/hriv/issues/1420)) ([ba85178](https://github.com/bcit-tlu/hriv/commit/ba85178f0192717cb0bc39e33638b9c6697cf7e5))
+* **backend:** add collections write API ([#1423](https://github.com/bcit-tlu/hriv/issues/1423)) ([2e38b74](https://github.com/bcit-tlu/hriv/commit/2e38b74c8bfc2ea541d5b0dccd63e615719f2c43))
+* dark-launch collections behind COLLECTIONS_ENABLED flag ([#1464](https://github.com/bcit-tlu/hriv/issues/1464)) ([a1d661b](https://github.com/bcit-tlu/hriv/commit/a1d661bda5667e9376856b1ef18e5861caa4a305))
+
+
+### Bug Fixes
+
+* **backend:** resolve client IP at trusted-proxy boundary and add account-scoped login limiter ([#1425](https://github.com/bcit-tlu/hriv/issues/1425)) ([2465336](https://github.com/bcit-tlu/hriv/commit/2465336372c010a9be0b2f2380ace84b966965dc))
+* **bulk-import:** bound zip extraction to prevent decompression-bomb DoS ([#1424](https://github.com/bcit-tlu/hriv/issues/1424)) ([4d640c3](https://github.com/bcit-tlu/hriv/commit/4d640c367a71a1c582a3408a2a712c4a1ae2d81d))
+
+
+### Documentation
+
+* prettier-format domain-model.md ([#1435](https://github.com/bcit-tlu/hriv/issues/1435)) ([1a9fd81](https://github.com/bcit-tlu/hriv/commit/1a9fd810aaad697e9f73d096cbd1c207815fbab7))
+
 ## [0.63.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.62.0...backend-v0.63.0) (2026-09-25)
 
 

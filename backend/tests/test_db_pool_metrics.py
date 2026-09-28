@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+from prometheus_client import CONTENT_TYPE_LATEST
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from app import db_pool_metrics
@@ -150,7 +151,7 @@ def test_render_db_pool_metrics_reports_gauges() -> None:
     finally:
         engine.sync_engine.dispose()
 
-    assert media_type == "text/plain; version=0.0.4; charset=utf-8"
+    assert media_type == CONTENT_TYPE_LATEST
     assert b"hriv_db_pool_size 5.0" in content
     assert b"hriv_db_pool_checked_in 0.0" in content
     assert b"hriv_db_pool_checked_out 0.0" in content
