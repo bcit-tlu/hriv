@@ -73,6 +73,21 @@ category_groups = Table(
 )
 
 
+collection_programs = Table(
+    "collection_programs",
+    Base.metadata,
+    Column("collection_id", Integer, ForeignKey("collections.id", ondelete="CASCADE"), primary_key=True),
+    Column("program_id", Integer, ForeignKey("programs.id", ondelete="CASCADE"), primary_key=True),
+)
+
+collection_groups = Table(
+    "collection_groups",
+    Base.metadata,
+    Column("collection_id", Integer, ForeignKey("collections.id", ondelete="CASCADE"), primary_key=True),
+    Column("group_id", Integer, ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
 class Program(Base):
     __tablename__ = "programs"
 
@@ -477,6 +492,111 @@ class User(Base):
     groups: Mapped[list["Group"]] = relationship(
         "Group", secondary=group_members, lazy="selectin", viewonly=True,
     )
+
+
+COLLECTION_TYPES: tuple[str, ...] = ("synchronized", "sequence")
+COLLECTION_VISIBILITIES: tuple[str, ...] = ("private", "public", "restricted")
+
+# Maximum images a ``synchronized`` collection may reference. The initial UI
+# renders the first two; the extra slots are reserved for future layouts.
+SYNCHRONIZED_COLLECTION_MAX_IMAGES = 4
+
+
+class Collection(Base):
+    """A user- or program-owned grouping of existing images.
+
+    Collections never duplicate image or category rows; they reference
+    ``images`` through ``collection_images``. Exactly one of ``user_id`` /
+    ``owner_program_id`` is set for an owned collection; both are ``NULL``
+    when the owning program was deleted (an *orphaned* collection that only
+    admins may manage until it is reassigned). ``visibility == "restricted"``
+    is scoped by ``collection_programs`` / ``collection_groups`` using the
+    same dual-gate semantics as categories (see ``visibility``).
+    """
+
+    __tablename__ = "collections"
+    __table_args__ = (
+        CheckConstraint(
+            "type IN ('synchronized', 'sequence')",
+            name="ck_collections_type",
+        ),
+        CheckConstraint(
+            "visibility IN ('private', 'public', 'restricted')",
+            name="ck_collections_visibility",
+        ),
+        CheckConstraint(
+            "num_nonnulls(user_id, owner_program_id) <= 1",
+            name="ck_collections_single_owner",
+        ),
+        Index("idx_collections_user", "user_id"),
+        Index("idx_collections_owner_program", "owner_program_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    type: Mapped[str] = mapped_column(String(20), nullable=False)
+    visibility: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="private",
+        server_default=text("'private'"),
+    )
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=True,
+    )
+    owner_program_id: Mapped[int | None] = mapped_column(
+        ForeignKey("programs.id", ondelete="SET NULL"), nullable=True,
+    )
+    viewport_state: Mapped[dict] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    owner: Mapped["User | None"] = relationship("User", lazy="selectin")
+    owner_program: Mapped["Program | None"] = relationship("Program", lazy="selectin")
+    programs: Mapped[list["Program"]] = relationship(
+        "Program", secondary=collection_programs, lazy="selectin",
+    )
+    groups: Mapped[list["Group"]] = relationship(
+        "Group", secondary=collection_groups, lazy="selectin",
+    )
+    image_links: Mapped[list["CollectionImage"]] = relationship(
+        "CollectionImage",
+        back_populates="collection",
+        cascade="all, delete-orphan",
+        order_by="CollectionImage.sort_order",
+        lazy="selectin",
+    )
+
+
+class CollectionImage(Base):
+    """Ordered membership of an ``Image`` in a ``Collection``."""
+
+    __tablename__ = "collection_images"
+    __table_args__ = (
+        Index("idx_collection_images_order", "collection_id", "sort_order"),
+    )
+
+    collection_id: Mapped[int] = mapped_column(
+        ForeignKey("collections.id", ondelete="CASCADE"), primary_key=True,
+    )
+    image_id: Mapped[int] = mapped_column(
+        ForeignKey("images.id", ondelete="CASCADE"), primary_key=True,
+    )
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+
+    collection: Mapped["Collection"] = relationship("Collection", back_populates="image_links")
+    image: Mapped["Image"] = relationship("Image", lazy="selectin")
 
 
 # Canonical set of ``Job.status`` values that mean the job is still in-flight

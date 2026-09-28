@@ -108,9 +108,18 @@ def test_get_request_id_returns_set_value() -> None:
 # ── get_client_ip ─────────────────────────────────────────────────────────
 
 
-def test_get_client_ip_from_forwarded_for() -> None:
+def test_get_client_ip_default_one_hop_uses_rightmost_entry() -> None:
+    """With one trusted proxy the rightmost entry is the peer nginx saw."""
     scope = _make_scope(headers={"X-Forwarded-For": "203.0.113.50, 10.0.0.1"})
-    assert get_client_ip(scope) == "203.0.113.50"
+    assert get_client_ip(scope) == "10.0.0.1"
+
+
+def test_get_client_ip_spoofed_leftmost_entry_is_ignored() -> None:
+    """A client-supplied XFF value is appended to by nginx and never trusted."""
+    scope = _make_scope(
+        headers={"X-Forwarded-For": "1.1.1.1, 2.2.2.2, 203.0.113.50"}
+    )
+    assert get_client_ip(scope, trusted_proxy_hops=1) == "203.0.113.50"
 
 
 def test_get_client_ip_from_forwarded_for_single() -> None:
@@ -118,17 +127,56 @@ def test_get_client_ip_from_forwarded_for_single() -> None:
     assert get_client_ip(scope) == "203.0.113.50"
 
 
+def test_get_client_ip_two_hops_takes_second_from_right() -> None:
+    scope = _make_scope(
+        headers={"X-Forwarded-For": "9.9.9.9, 203.0.113.50, 10.244.0.5"}
+    )
+    assert get_client_ip(scope, trusted_proxy_hops=2) == "203.0.113.50"
+
+
+def test_get_client_ip_three_hops_fleet_chain() -> None:
+    """HAProxy (overwrites) -> ingress-nginx -> frontend nginx -> uvicorn."""
+    scope = _make_scope(
+        headers={"X-Forwarded-For": "203.0.113.50, 10.10.0.2, 10.244.0.5"}
+    )
+    assert get_client_ip(scope, trusted_proxy_hops=3) == "203.0.113.50"
+
+
+def test_get_client_ip_short_header_falls_back_to_real_ip() -> None:
+    """Fewer XFF entries than trusted hops: use X-Real-IP, not a spoofable entry."""
+    scope = _make_scope(headers={
+        "X-Forwarded-For": "9.9.9.9",
+        "X-Real-IP": "198.51.100.7",
+    })
+    assert get_client_ip(scope, trusted_proxy_hops=2) == "198.51.100.7"
+
+
+def test_get_client_ip_short_header_without_real_ip_uses_scope_client() -> None:
+    scope = _make_scope(
+        headers={"X-Forwarded-For": "9.9.9.9"}, client=("192.168.1.1", 1)
+    )
+    assert get_client_ip(scope, trusted_proxy_hops=2) == "192.168.1.1"
+
+
+def test_get_client_ip_zero_hops_ignores_forwarding_headers() -> None:
+    scope = _make_scope(
+        headers={"X-Forwarded-For": "9.9.9.9", "X-Real-IP": "8.8.8.8"},
+        client=("192.168.1.1", 1),
+    )
+    assert get_client_ip(scope, trusted_proxy_hops=0) == "192.168.1.1"
+
+
 def test_get_client_ip_from_real_ip() -> None:
     scope = _make_scope(headers={"X-Real-IP": "198.51.100.7"})
     assert get_client_ip(scope) == "198.51.100.7"
 
 
-def test_get_client_ip_forwarded_for_takes_precedence_over_real_ip() -> None:
-    scope = _make_scope(headers={
-        "X-Forwarded-For": "203.0.113.50",
-        "X-Real-IP": "198.51.100.7",
-    })
-    assert get_client_ip(scope) == "203.0.113.50"
+def test_get_client_ip_uses_settings_default_hops() -> None:
+    scope = _make_scope(
+        headers={"X-Forwarded-For": "203.0.113.50, 10.10.0.2, 10.244.0.5"}
+    )
+    with patch("app.middleware.settings", SimpleNamespace(trusted_proxy_hops=3)):
+        assert get_client_ip(scope) == "203.0.113.50"
 
 
 def test_get_client_ip_falls_back_to_scope_client() -> None:
@@ -142,7 +190,7 @@ def test_get_client_ip_returns_unknown_when_no_client() -> None:
 
 
 def test_get_client_ip_strips_whitespace() -> None:
-    scope = _make_scope(headers={"X-Forwarded-For": "  203.0.113.50 , 10.0.0.1"})
+    scope = _make_scope(headers={"X-Forwarded-For": "10.0.0.1 ,  203.0.113.50 "})
     assert get_client_ip(scope) == "203.0.113.50"
 
 
@@ -185,7 +233,7 @@ async def test_audit_uses_forwarded_for_ip() -> None:
         await _invoke(mw, scope)
         call_args = mock_logger.info.call_args
         extra = call_args.kwargs.get("extra", {})
-        assert extra["client_ip"] == "1.2.3.4"
+        assert extra["client_ip"] == "5.6.7.8"
 
 
 async def test_audit_extracts_session_id() -> None:

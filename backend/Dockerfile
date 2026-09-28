@@ -189,7 +189,7 @@ RUN pip install --no-cache-dir 'pytest>=8.3.3,<9' 'pytest-asyncio>=0.24.0,<0.25'
 # in their ``backend/.env``.  The base stage pins all exporters to
 # ``none`` (see above), so the wrapper is a true no-op at startup and adds
 # no runtime overhead until the developer opts in.
-CMD ["opentelemetry-instrument", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--proxy-headers", "--forwarded-allow-ips", "*"]
+CMD ["opentelemetry-instrument", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
 # ── Stage 4: Stable ─────────────────────────────────
 FROM base AS stable
@@ -217,9 +217,9 @@ EXPOSE 8000
 # corrupt gRPC/HTTP exporter connections and produce duplicate or lost
 # telemetry.  --workers 1 avoids the problem by never forking.
 #
-# --proxy-headers + --forwarded-allow-ips '*': trust X-Forwarded-For /
-# X-Forwarded-Proto from all upstream proxies.  The backend is never
-# directly exposed to the internet (HAProxy → nginx-ingress → frontend
-# nginx → here), so accepting proxy headers from any direct peer is safe
-# and ensures scope["client"] reflects the real client IP.
-CMD ["opentelemetry-instrument", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--proxy-headers", "--forwarded-allow-ips", "*"]
+# No --proxy-headers: uvicorn's proxy-header handling would rewrite
+# scope["client"] from the client-controlled leftmost X-Forwarded-For
+# entry.  The application resolves the client IP itself at the trusted
+# proxy boundary (app.middleware.get_client_ip / TRUSTED_PROXY_HOPS; see
+# docs/deployment-proxy-chain.md).
+CMD ["opentelemetry-instrument", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
