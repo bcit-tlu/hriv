@@ -33,7 +33,8 @@ All commands run from `frontend/` — there is no root `package.json`.
 
 Chromatic snapshots every story on each push (release-please and Dependabot
 bot branches excluded; TurboSnap skips pushes that only touch
-untraced/non-frontend files), so stories are permanent baselines — target
+untraced/non-frontend files) — **temporarily `workflow_dispatch`-only while
+the monthly snapshot quota is exhausted** — so stories are permanent baselines — target
 meaningfully distinct visual states, not one story per code path:
 
 - New components in `src/components/` need a `*.stories.tsx` covering each

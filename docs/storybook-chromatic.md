@@ -195,9 +195,13 @@ The initial frontend setup now includes:
 - Frontend scripts: `npm run storybook`, `npm run build-storybook`,
   `npm run chromatic`, and `npm run test:storybook`.
 - GitHub Actions automation in `.github/workflows/chromatic.yml` publishes the
-  frontend Storybook on pushes using `chromaui/action@latest` and the
+  frontend Storybook on pushes using a pinned `chromaui/action` and the
   `CHROMATIC_PROJECT_TOKEN` repository secret. The workflow also supports manual
   runs through `workflow_dispatch`.
+  - **Temporary:** the push trigger is currently commented out because the
+    monthly snapshot quota is exhausted; only `workflow_dispatch` runs until
+    the quota resets at the end of the billing cycle. UI Review and UI Tests
+    will not update on PRs in the meantime.
 - Foundation stories at `frontend/src/theme.stories.tsx` and
   `frontend/src/typography.stories.tsx` document HRIV's light/dark palettes,
   typography variants, custom semantic tokens, opacity treatments, and common

@@ -1,6 +1,12 @@
 name: Chromatic
 
 on:
+  # TEMPORARY: the push trigger is disabled because the monthly Chromatic
+  # snapshot quota is exhausted. Uncomment the `push` block below to restore
+  # it once the quota resets at the end of the billing cycle.
+  # `workflow_dispatch` remains available for emergency baseline repair —
+  # each manual run still bills snapshots, so use it sparingly.
+  #
   # Chromatic recommends push events so branch baselines are associated with
   # commits that actually exist in the repository rather than ephemeral PR
   # merge commits.  The pull_request event creates ephemeral merge commits
@@ -20,9 +26,9 @@ on:
   # so CHROMATIC_PROJECT_TOKEN is empty and the action fails before publishing.
   # A dependency bump that does change rendering still gets its Chromatic run
   # on `main` after merge.
-  push:
-    branches-ignore:
-      - 'release-please--**'
+  # push:
+  #   branches-ignore:
+  #     - 'release-please--**'
   workflow_dispatch:
 
 concurrency:
