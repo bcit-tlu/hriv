@@ -42,9 +42,10 @@ const meta = {
     onEdit: fn(),
     onDelete: fn(),
   },
+  // Padding keeps the card's elevation shadow inside Chromatic's content-cropped snapshot.
   decorators: [
     (Story) => (
-      <Box sx={{ width: 280 }}>
+      <Box sx={{ width: 296, p: 1 }}>
         <Story />
       </Box>
     ),
