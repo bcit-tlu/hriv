@@ -31,9 +31,11 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
   `tests/test_router_images.py`** — the images router is a separate caller that
   must pass `user_group_ids` (regression fixed in #604). See [groups.md](groups.md).
 
-### Changed collections (model, authorization, read/write API)
+### Changed collections (model, authorization, read/write API, Collections tab)
 
 - backend: `poetry run pytest tests/test_collections_model.py tests/test_router_collections.py tests/test_schemas.py tests/test_authz.py tests/test_visibility.py`
+- frontend: `npm test -- CollectionsPage CollectionCard CollectionEditDialog collectionUtils api.test navigation AppShell useShareableImageState useNavigationHistory App.test`
+- Storybook (stories + a11y): `npm run test:storybook -- Collection`
 - Collection visibility reuses the category dual gate — if you touched
   `visibility.py` also run the "Changed groups" set above. See
   [collections.md](collections.md).

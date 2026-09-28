@@ -120,6 +120,31 @@ describe('useNavigationHistory', () => {
       expect(url).toContain('page=manage')
     })
 
+    it('writes ?collection={id} without page= for a collection deep link (#1414)', () => {
+      const onPopState = vi.fn()
+      const { result } = renderHook(() => useNavigationHistory(onPopState))
+
+      act(() => {
+        result.current.pushNavState('collections', [], null, { collection: '12' })
+      })
+
+      const [state, , url] = pushStateSpy.mock.calls[0]
+      expect(url).toBe(`${window.location.pathname}?collection=12`)
+      expect((state as NavHistoryState).page).toBe('collections')
+    })
+
+    it('writes ?page=collections for the Collections list without a selection', () => {
+      const onPopState = vi.fn()
+      const { result } = renderHook(() => useNavigationHistory(onPopState))
+
+      act(() => {
+        result.current.pushNavState('collections')
+      })
+
+      const [, , url] = pushStateSpy.mock.calls[0]
+      expect(url).toBe(`${window.location.pathname}?page=collections`)
+    })
+
     it('builds a clean pathname when browse with no cat/image', () => {
       const onPopState = vi.fn()
       const { result } = renderHook(() => useNavigationHistory(onPopState))

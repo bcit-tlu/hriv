@@ -31,6 +31,7 @@ export const GUIDE_PAGES: GuidePageDef[] = [
   { slug: 'categories', title: 'Managing Categories' },
   { slug: 'images', title: 'Managing Images' },
   { slug: 'groups', title: 'Managing Groups' },
+  { slug: 'collections', title: 'Collections' },
   { slug: 'announcements', title: 'Announcements' },
   { slug: 'help', title: 'Getting Help' },
 ]

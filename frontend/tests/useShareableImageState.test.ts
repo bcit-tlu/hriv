@@ -256,6 +256,42 @@ describe('useShareableImageState', () => {
       expect(result.current.overlays).toEqual([{ x: 0.1, y: 0.2, w: 0.3, h: 0.4 }])
     })
 
+    it('parses ?collection={id} and ignores image/cat params on a collection link (#1414)', () => {
+      window.history.replaceState(null, '', '/?collection=12&image=42&cat=1')
+      const setSelectedImage = vi.fn()
+      const setPath = vi.fn()
+      const img = makeImage({ id: 42 })
+      const cat = makeCategory({ id: 1, label: 'Root', images: [img] })
+      const { result } = renderHook(() =>
+        useShareableImageState(
+          makeDeps({
+            setSelectedImage,
+            setPath,
+            page: 'collections',
+            collectionId: 12,
+            categories: [cat],
+            categoriesLoading: false,
+          }),
+        ),
+      )
+      expect(result.current.pendingImageId.current).toBeNull()
+      expect(setSelectedImage).not.toHaveBeenCalled()
+      expect(setPath).not.toHaveBeenCalled()
+    })
+
+    it('ignores a non-numeric ?collection= and falls through to image parsing', () => {
+      window.history.replaceState(null, '', '/?collection=abc&image=42')
+      const setSelectedImage = vi.fn()
+      const img = makeImage({ id: 42 })
+      const cat = makeCategory({ id: 1, label: 'Root', images: [img] })
+      renderHook(() =>
+        useShareableImageState(
+          makeDeps({ setSelectedImage, categories: [cat], categoriesLoading: false }),
+        ),
+      )
+      expect(setSelectedImage).toHaveBeenCalledWith(img)
+    })
+
     it('parses category path from URL when no image param', () => {
       window.history.replaceState(null, '', '/?cat=1,2')
       const setPath = vi.fn()
@@ -340,6 +376,26 @@ describe('useShareableImageState', () => {
       renderHook(() => useShareableImageState(makeDeps({ page: 'manage' })))
       const url = replaceStateSpy.mock.calls[replaceStateSpy.mock.calls.length - 1][2] as string
       expect(url).toContain('page=manage')
+    })
+
+    it('writes ?collection={id} (no page=) when a collection is open', () => {
+      renderHook(() => useShareableImageState(makeDeps({ page: 'collections', collectionId: 12 })))
+      const url = replaceStateSpy.mock.calls[replaceStateSpy.mock.calls.length - 1][2] as string
+      expect(url).toBe('/?collection=12')
+    })
+
+    it('writes ?page=collections when on the Collections list without a selection', () => {
+      renderHook(() =>
+        useShareableImageState(makeDeps({ page: 'collections', collectionId: null })),
+      )
+      const url = replaceStateSpy.mock.calls[replaceStateSpy.mock.calls.length - 1][2] as string
+      expect(url).toBe('/?page=collections')
+    })
+
+    it('does not leak ?collection= into a browse URL', () => {
+      renderHook(() => useShareableImageState(makeDeps({ page: 'browse', collectionId: 12 })))
+      const url = replaceStateSpy.mock.calls[replaceStateSpy.mock.calls.length - 1][2] as string
+      expect(url).not.toContain('collection=')
     })
 
     it('skips URL sync when enableUrlSync is false', () => {

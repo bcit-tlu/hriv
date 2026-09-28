@@ -1,0 +1,69 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as CollectionCardStories from './CollectionCard.stories'
+
+<Meta of={CollectionCardStories} />
+
+<Title />
+
+<Subtitle>
+  Collections-tab card: cover thumbnail, name, image count, owner, type chip and visibility chip,
+  with permission-gated edit/delete actions.
+</Subtitle>
+
+## When to use
+
+Use `CollectionCard` inside the Collections tab grid (`CollectionsPage`) to represent one
+`CollectionSummary`. Clicking the card body opens the collection (`?collection={id}`); the icon
+buttons in the corner call `onEdit` / `onDelete`.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={CollectionCardStories.Basic} />
+
+## Implementation guidance
+
+- The cover is rendered through `RenewingThumbnail` with a collection-specific renewer, so an
+  expired thumbnail token is refreshed via `GET /api/collections/{id}` rather than the image route.
+- The type chip is outlined primary (`Synchronized` / `Sequence`); the visibility chip reuses the
+  category restriction palette — `Restricted` borrows the group-chip colours, `Public` is neutral
+  outlined, `Private` uses the muted visibility grey.
+- Edit/delete icons are a UX gate only: they render when `permissions.canEdit` /
+  `permissions.canDelete` is true **and** a handler is supplied. The backend re-checks authority on
+  every call.
+- Without a cover the card shows the collections icon on a primary-coloured block.
+
+## Examples
+
+### Sequence
+
+<Canvas of={CollectionCardStories.Sequence} />
+
+### Restricted
+
+<Canvas of={CollectionCardStories.Restricted} />
+
+### Read only
+
+<Canvas of={CollectionCardStories.ReadOnly} />
+
+### No cover
+
+<Canvas of={CollectionCardStories.NoCover} />
+
+### Long name
+
+<Canvas of={CollectionCardStories.LongName} />
+
+## Stories
+
+<Stories includePrimary={false} />
