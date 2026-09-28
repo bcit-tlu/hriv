@@ -1792,18 +1792,6 @@ files = [
 ]
 
 [[package]]
-name = "pkgconfig"
-version = "1.6.0"
-description = "Interface Python with pkg-config"
-optional = false
-python-versions = "<4.0.0,>=3.9.0"
-groups = ["main"]
-files = [
-    {file = "pkgconfig-1.6.0-py3-none-any.whl", hash = "sha256:98e71754855e9563838d952a160eb577edabb57782e49853edb5381927e6bea1"},
-    {file = "pkgconfig-1.6.0.tar.gz", hash = "sha256:4a5a6631ce937fafac457104a40d558785a658bbdca5c49b6295bc3fd651907f"},
-]
-
-[[package]]
 name = "pluggy"
 version = "1.6.0"
 description = "plugin and hook calling mechanisms for python"
@@ -2204,22 +2192,24 @@ files = [
 
 [[package]]
 name = "pyvips"
-version = "2.2.3"
-description = "binding for the libvips image processing library, API mode"
+version = "3.2.0"
+description = "binding for the libvips image processing library"
 optional = false
-python-versions = "*"
+python-versions = ">=3.7"
 groups = ["main"]
 files = [
-    {file = "pyvips-2.2.3.tar.gz", hash = "sha256:43bceced0db492654c93008246a58a508e0373ae1621116b87b322f2ac72212f"},
+    {file = "pyvips-3.2.0.tar.gz", hash = "sha256:5fa47cdce4e7f450747c118c12fde913e0710850c6015d8ec4f5af490003a347"},
 ]
 
 [package.dependencies]
 cffi = ">=1.0.0"
-pkgconfig = "*"
 
 [package.extras]
+binary = ["pyvips-binary"]
 doc = ["sphinx", "sphinx_rtd_theme"]
-test = ["cffi (>=1.0.0)", "pyperf", "pytest"]
+sdist = ["build"]
+test = ["pyperf", "pytest"]
+tox = ["tox"]
 
 [[package]]
 name = "pyyaml"
@@ -2950,4 +2940,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12"
-content-hash = "b623870c9003cd0aeb6a51d5b2d098c06093bde27fde7369e77931ab01c976d6"
+content-hash = "657058d4d393706c97bf91879122c50089cb8595897efb5a7f1f379861df8f2b"
