@@ -92,15 +92,33 @@ describe('toCollectionApiFilters', () => {
     expect(
       toCollectionApiFilters(
         { type: 'all', mine: false, owner: { kind: 'user', userId: 3, name: 'X' } },
-        { role: 'student' },
+        { role: 'instructor' },
       ),
     ).toEqual({ owner_user_id: 3 })
     expect(
       toCollectionApiFilters(
         { type: 'all', mine: false, owner: { kind: 'program', programId: 4, name: 'P' } },
-        { role: 'student' },
+        { role: 'staff' },
       ),
     ).toEqual({ owner_program_id: 4 })
+  })
+
+  it('never sends owner_* or orphaned for students', () => {
+    const owners = [
+      { kind: 'user', userId: 3, name: 'X' },
+      { kind: 'program', programId: 4, name: 'P' },
+      'orphaned',
+    ] as const
+    for (const owner of owners) {
+      const api = toCollectionApiFilters(
+        { type: 'sequence', mine: false, owner },
+        { role: 'student' },
+      )
+      expect(api).toEqual({ type: 'sequence' })
+      expect(api).not.toHaveProperty('owner_user_id')
+      expect(api).not.toHaveProperty('owner_program_id')
+      expect(api).not.toHaveProperty('orphaned')
+    }
   })
 
   it('only sends orphaned for admins', () => {

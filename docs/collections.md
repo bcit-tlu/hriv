@@ -201,11 +201,14 @@ drawer. `?page=collections` opens the list. `App` only mounts
 cover (`RenewingThumbnail` with a collection-scoped renewer that refreshes the
 token via `GET /api/collections/{id}`), name, image count, owner, a type chip
 and a visibility chip that reuses the category restriction palette. Filters:
-type toggle (All / Synchronized / Sequence), **Mine** (`mine=true`; clears and
-disables the owner facet), and an **Owner** select built from the owners in
-the loaded list (`owner_user_id` / `owner_program_id`). Admins additionally
-get _No owner (orphaned)_ → `orphaned=true`; `toCollectionApiFilters` never
-emits `orphaned` for other roles. Loading spinner, a plain error `Alert`
+type toggle (All / Synchronized / Sequence), **My collections** (`mine=true`;
+clears and disables the owner facet), and — for admin, instructor and staff
+only — an **Owner** select built from the owners in the loaded list
+(`owner_user_id` / `owner_program_id`). Students never see the Owner select
+and `toCollectionApiFilters` never emits `owner_*` for them. Admins
+additionally get _No owner (orphaned)_ → `orphaned=true`;
+`toCollectionApiFilters` never emits `orphaned` for other roles. Loading
+spinner, a plain error `Alert`
 (notification only — no Retry action), and filter-aware empty copy follow the
 existing page patterns; the unfiltered empty state's "Create a collection" is
 a link that opens the same create dialog as the **New collection** button.

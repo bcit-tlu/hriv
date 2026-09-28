@@ -39,8 +39,9 @@ release, as is adding images straight from the image view.
 Use the filters above the grid:
 
 - **All / Synchronized / Sequence** – narrow by type.
-- **Mine** – just the collections you own.
-- **Owner** – collections owned by a particular person or program.
+- **My collections** – just the collections you own.
+- **Owner** – collections owned by a particular person or program (not shown
+  to students).
 
 Each card shows the cover image, how many images it holds, who owns it, and
 chips for its type and visibility.

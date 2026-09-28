@@ -28,6 +28,8 @@ const ADMIN: User = {
 }
 
 const STUDENT: User = { ...ADMIN, id: 2, name: 'Student', role: 'student' }
+const INSTRUCTOR: User = { ...ADMIN, id: 3, name: 'Instructor', role: 'instructor' }
+const STAFF: User = { ...ADMIN, id: 4, name: 'Staff', role: 'staff' }
 
 function makeAuth(user: User): AuthContextValue {
   return {
@@ -145,13 +147,13 @@ describe('CollectionsPage', () => {
       })
     })
 
-    it('toggles Mine and resets the owner facet', () => {
+    it('toggles My collections and resets the owner facet', () => {
       const onFiltersChange = vi.fn()
       renderPage({
         onFiltersChange,
         filters: { ...DEFAULT_COLLECTION_FILTERS, owner: { kind: 'user', userId: 5, name: 'X' } },
       })
-      fireEvent.click(screen.getByRole('button', { name: 'Mine' }))
+      fireEvent.click(screen.getByRole('button', { name: 'My collections' }))
       expect(onFiltersChange).toHaveBeenCalledWith({
         ...DEFAULT_COLLECTION_FILTERS,
         mine: true,
@@ -185,14 +187,25 @@ describe('CollectionsPage', () => {
       await user.keyboard('{Escape}')
       unmount()
 
-      renderPage({ currentUser: STUDENT })
+      renderPage({ currentUser: INSTRUCTOR })
       await user.click(screen.getByLabelText('Owner'))
       expect(
         within(await screen.findByRole('listbox')).queryByText('No owner (orphaned)'),
       ).not.toBeInTheDocument()
     })
 
-    it('disables the owner select while Mine is active', () => {
+    it('shows the owner select to admin, instructor and staff but never to students', () => {
+      for (const currentUser of [ADMIN, INSTRUCTOR, STAFF]) {
+        const { unmount } = renderPage({ currentUser })
+        expect(screen.getByLabelText('Owner')).toBeInTheDocument()
+        unmount()
+      }
+      renderPage({ currentUser: STUDENT })
+      expect(screen.queryByLabelText('Owner')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'My collections' })).toBeInTheDocument()
+    })
+
+    it('disables the owner select while My collections is active', () => {
       renderPage({ filters: { ...DEFAULT_COLLECTION_FILTERS, mine: true } })
       expect(screen.getByLabelText('Owner')).toHaveAttribute('aria-disabled', 'true')
     })

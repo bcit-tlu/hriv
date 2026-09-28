@@ -178,7 +178,7 @@ const meta = {
     docs: {
       description: {
         component:
-          'The Collections tab: filter bar (type, Mine, owner), responsive card grid, create button, and the detail placeholder that lists member images until the viewers land (#1416/#1417).',
+          'The Collections tab: filter bar (type, My collections, owner — the owner select is hidden for students), responsive card grid, create button, and the detail placeholder that lists member images until the viewers land (#1416/#1417).',
       },
     },
   },
@@ -186,7 +186,8 @@ const meta = {
     role: {
       control: 'inline-radio',
       options: ['admin', 'instructor', 'staff', 'student'],
-      description: 'Role of the signed-in user (admins also get the orphaned owner filter).',
+      description:
+        'Role of the signed-in user (admins also get the orphaned owner filter; students see no owner filter).',
     },
   },
   args: {
@@ -227,7 +228,7 @@ export const Filtered: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.click(canvas.getByRole('button', { name: 'Sequence' }))
-    await userEvent.click(canvas.getByRole('button', { name: 'Mine' }))
+    await userEvent.click(canvas.getByRole('button', { name: 'My collections' }))
     await expect(canvas.getByRole('button', { name: 'Sequence' })).toHaveAttribute(
       'aria-pressed',
       'true',

@@ -230,6 +230,7 @@ export default function CollectionsPage({
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const isAdmin = currentUser?.role === 'admin'
+  const showOwnerFilter = currentUser != null && currentUser.role !== 'student'
 
   const openCreate = () => {
     setEditing(null)
@@ -370,31 +371,33 @@ export default function CollectionsPage({
             <ToggleButton value="sequence">{COLLECTION_TYPE_LABELS.sequence}</ToggleButton>
           </ToggleButtonGroup>
           <Chip
-            label="Mine"
+            label="My collections"
             clickable
             color={filters.mine ? 'primary' : 'default'}
             variant={filters.mine ? 'filled' : 'outlined'}
             onClick={() => onFiltersChange({ ...filters, mine: !filters.mine, owner: 'any' })}
             aria-pressed={filters.mine}
           />
-          <FormControl size="small" sx={{ minWidth: 180 }} disabled={filters.mine}>
-            <InputLabel id="collection-owner-filter-label">Owner</InputLabel>
-            <Select
-              labelId="collection-owner-filter-label"
-              label="Owner"
-              value={selectedOwnerKnown ? ownerValue : 'any'}
-              onChange={(e) => {
-                const choice = ownerChoices.find((c) => c.key === e.target.value)
-                onFiltersChange({ ...filters, owner: choice?.value ?? 'any' })
-              }}
-            >
-              {ownerChoices.map((c) => (
-                <MenuItem key={c.key} value={c.key}>
-                  {c.label}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          {showOwnerFilter && (
+            <FormControl size="small" sx={{ minWidth: 180 }} disabled={filters.mine}>
+              <InputLabel id="collection-owner-filter-label">Owner</InputLabel>
+              <Select
+                labelId="collection-owner-filter-label"
+                label="Owner"
+                value={selectedOwnerKnown ? ownerValue : 'any'}
+                onChange={(e) => {
+                  const choice = ownerChoices.find((c) => c.key === e.target.value)
+                  onFiltersChange({ ...filters, owner: choice?.value ?? 'any' })
+                }}
+              >
+                {ownerChoices.map((c) => (
+                  <MenuItem key={c.key} value={c.key}>
+                    {c.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
         </Box>
 
         {error ? (

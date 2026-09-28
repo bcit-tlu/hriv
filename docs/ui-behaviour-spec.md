@@ -167,10 +167,13 @@ returned by the API (UX only — the backend re-checks).
   visibility chip); an empty result shows the empty state (whose
   **Create a collection** link opens the create dialog when no filters are
   active) and a failed request shows a plain error `Alert` with no action.
-- **Given** the list, **When** the user picks a type toggle, **Mine**, or an
-  **Owner**, **Then** the list re-fetches with `type=` / `mine=true` /
-  `owner_user_id=` or `owner_program_id=`; selecting **Mine** resets and
-  disables the owner select.
+- **Given** the list, **When** the user picks a type toggle,
+  **My collections**, or an **Owner**, **Then** the list re-fetches with
+  `type=` / `mine=true` / `owner_user_id=` or `owner_program_id=`; selecting
+  **My collections** resets and disables the owner select.
+- **Given** a student, **Then** the **Owner** select is not rendered at all
+  (only the type toggle and **My collections** remain) and `owner_user_id` /
+  `owner_program_id` are never sent; admin, instructor and staff keep it.
 - **Given** an admin, **Then** the owner select also offers _No owner
   (orphaned)_ (`orphaned=true`); **Given** any other role, **Then** that option
   is absent and `orphaned` is never sent.

@@ -33,7 +33,8 @@ export const COLLECTION_NOT_FOUND_MESSAGE =
 
 /**
  * Translate UI filters into API query params. `orphaned` is admin-only on the
- * server (403 otherwise) so it is dropped for every other role.
+ * server (403 otherwise) so it is dropped for every other role, and students
+ * have no owner facet at all so `owner_*` is never sent for them.
  */
 export function toCollectionApiFilters(
   filters: CollectionListFilters,
@@ -45,6 +46,7 @@ export function toCollectionApiFilters(
     api.mine = true
     return api
   }
+  if (user?.role === 'student') return api
   if (filters.owner === 'orphaned') {
     if (user?.role === 'admin') api.orphaned = true
   } else if (filters.owner !== 'any') {
