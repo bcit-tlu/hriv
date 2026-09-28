@@ -74,7 +74,6 @@ describe('getNavigationItems', () => {
             canEditContent,
             canManageUsers,
             canViewPeople,
-            collectionsEnabled: true,
           })
           const collections = items.find((i) => i.id === 'collections')
           expect(collections).toBeDefined()
