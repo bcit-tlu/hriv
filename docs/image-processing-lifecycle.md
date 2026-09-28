@@ -89,6 +89,40 @@ aged final-path files that no `SourceImage` row owns
 (`upload.unowned_final_detected`) for operator reconciliation — it never
 deletes them automatically.
 
+## Bulk-import zip extraction limits
+
+Bulk import (`POST /admin/bulk-import/`, admin/instructor only) expands
+uploaded `.zip` archives into `source_images_dir` before any `SourceImage`
+rows exist. Extraction is bounded by a single `_ZipExtractBudget`
+(`backend/app/routers/bulk_import.py`) shared by every archive in the request,
+so a crafted archive — or the same payload split across several archives —
+cannot exhaust the data volume:
+
+- each eligible entry is pre-screened from its central-directory metadata —
+  declared `file_size` over `BULK_IMPORT_MAX_ENTRY_BYTES` (2 GiB), running
+  total over `BULK_IMPORT_MAX_TOTAL_BYTES` (20 GiB), or a
+  `file_size / compress_size` ratio above `BULK_IMPORT_MAX_COMPRESSION_RATIO`
+  (100:1) rejects the archive before the entry is opened;
+- entries are copied with a bounded read loop that re-checks the per-entry and
+  cumulative caps against the bytes actually decompressed, so a forged header
+  gains nothing;
+- more than `BULK_IMPORT_MAX_ENTRIES` (2000) image entries rejects the
+  archive;
+- free space on `source_images_dir` must stay above
+  `BULK_IMPORT_MIN_FREE_BYTES` (1 GiB), checked before each entry and every
+  512 MiB written (the same pattern as the filesystem-import staging check).
+
+The limits are validated at import time (`_validate_zip_limits`): non-positive
+values, or a non-finite / sub-1 compression ratio, fail startup rather than
+silently disabling a guard. Limit violations return HTTP 413 (free-space
+exhaustion returns 507) with a message naming the archive/entry (basenames
+truncated to 40 characters so the reason fits the frontend's 200-character
+display cutoff) and the limit, and every file already
+extracted for that request is unlinked before the response is sent. The
+frontend surfaces the 413 detail verbatim in the upload modal
+(`userMessage()` in `frontend/src/api.ts`). Defaults are listed in
+`backend/README.md`.
+
 ## Status transitions
 
 | Status       | Progress | Description                                          |
