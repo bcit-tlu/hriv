@@ -195,9 +195,17 @@ The initial frontend setup now includes:
 - Frontend scripts: `npm run storybook`, `npm run build-storybook`,
   `npm run chromatic`, and `npm run test:storybook`.
 - GitHub Actions automation in `.github/workflows/chromatic.yml` publishes the
-  frontend Storybook on pushes using `chromaui/action@latest` and the
+  frontend Storybook on pushes using a pinned `chromaui/action` and the
   `CHROMATIC_PROJECT_TOKEN` repository secret. The workflow also supports manual
-  runs through `workflow_dispatch`.
+  runs through `workflow_dispatch` and a weekly scheduled `main` build.
+  - The push trigger is path-scoped: pushes only run when they change
+    `frontend/` files other than release/dependency mechanics
+    (`package.json`, `package-lock.json`, `CHANGELOG.md`, generated
+    `public/THIRD-PARTY-LICENSES.txt`). TurboSnap then decides which stories
+    actually re-snapshot.
+  - All runs are gated by the `CHROMATIC_ENABLED` repository variable: set it
+    to `false` in Settings → Variables to pause every trigger (e.g. monthly
+    snapshot quota exhausted); unset or any other value leaves builds on.
 - Foundation stories at `frontend/src/theme.stories.tsx` and
   `frontend/src/typography.stories.tsx` document HRIV's light/dark palettes,
   typography variants, custom semantic tokens, opacity treatments, and common
