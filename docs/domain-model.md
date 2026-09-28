@@ -225,13 +225,13 @@ the schema** — change the model _and_ generate a migration in the same PR (see
 
 ## Junction tables
 
-| Table               | Composite PK                | FK behaviour   | Constraint                                                                         |
-| ------------------- | --------------------------- | -------------- | ---------------------------------------------------------------------------------- |
-| `user_programs`     | `(user_id, program_id)`     | both `CASCADE` | —                                                                                  |
-| `category_programs` | `(category_id, program_id)` | both `CASCADE` | —                                                                                  |
-| `group_members`     | `(group_id, user_id)`       | both `CASCADE` | members must be **students** (422 on mismatch)                                     |
-| `group_instructors` | `(group_id, user_id)`       | both `CASCADE` | instructors must be **instructors** (422); last instructor cannot be removed (409) |
-| `category_groups`   | `(category_id, group_id)`   | both `CASCADE` | group attached to a category cannot be deleted (409)                               |
+| Table                 | Composite PK                  | FK behaviour   | Constraint                                                                         |
+| --------------------- | ----------------------------- | -------------- | ---------------------------------------------------------------------------------- |
+| `user_programs`       | `(user_id, program_id)`       | both `CASCADE` | —                                                                                  |
+| `category_programs`   | `(category_id, program_id)`   | both `CASCADE` | —                                                                                  |
+| `group_members`       | `(group_id, user_id)`         | both `CASCADE` | members must be **students** (422 on mismatch)                                     |
+| `group_instructors`   | `(group_id, user_id)`         | both `CASCADE` | instructors must be **instructors** (422); last instructor cannot be removed (409) |
+| `category_groups`     | `(category_id, group_id)`     | both `CASCADE` | group attached to a category cannot be deleted (409)                               |
 | `collection_programs` | `(collection_id, program_id)` | both `CASCADE` | restricted-visibility scope; see [Collections](collections.md)                     |
 | `collection_groups`   | `(collection_id, group_id)`   | both `CASCADE` | restricted-visibility scope                                                        |
 
