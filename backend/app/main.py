@@ -260,8 +260,10 @@ _cors_origins, _cors_allow_credentials = _resolve_cors_config(
     settings.cors_origins, settings.task_execution_mode
 )
 
-app.add_middleware(MaintenanceMiddleware)
+# Registered inside MaintenanceMiddleware (Starlette runs the last-added
+# middleware first) so maintenance 503s win over the collections 404.
 app.add_middleware(CollectionsFeatureMiddleware)
+app.add_middleware(MaintenanceMiddleware)
 app.add_middleware(AuditMiddleware)
 
 # Starlette session middleware — required by authlib's OIDC client to store
