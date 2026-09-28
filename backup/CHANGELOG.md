@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.6](https://github.com/bcit-tlu/hriv/compare/backup-v0.16.5...backup-v0.16.6) (2026-09-28)
+
+
+### Documentation
+
+* prettier-format domain-model.md ([#1435](https://github.com/bcit-tlu/hriv/issues/1435)) ([1a9fd81](https://github.com/bcit-tlu/hriv/commit/1a9fd810aaad697e9f73d096cbd1c207815fbab7))
+
 ## [0.16.5](https://github.com/bcit-tlu/hriv/compare/backup-v0.16.4...backup-v0.16.5) (2026-09-25)
 
 
