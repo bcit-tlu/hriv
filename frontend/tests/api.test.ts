@@ -357,6 +357,12 @@ describe('userMessage', () => {
     expect(userMessage(err, 'Too large')).toBe('This file is too large to upload.')
   })
 
+  it('returns the backend detail for 413 zip-limit rejections', () => {
+    const detail = "Zip archive 'batch.zip' contains more than 2000 image files"
+    const err = new ApiError(413, detail)
+    expect(userMessage(err, 'Too large')).toBe(detail)
+  })
+
   it('returns a clear message for 413 without usable detail', () => {
     const err = new ApiError(413, '')
     expect(userMessage(err, 'Too large')).toBe('This file is too large to upload.')
