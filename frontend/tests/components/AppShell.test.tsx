@@ -586,7 +586,7 @@ describe('AppShell', () => {
       expect(heading).toHaveStyle({ textTransform: 'uppercase' })
     })
 
-    it('navigates and opens dialogs from the collapsed menu', () => {
+    it('navigates and opens dialogs from the collapsed menu', async () => {
       const onTabChange = vi.fn()
       const onOpenCategories = vi.fn()
       render(<AppShell {...makeProps({ onTabChange, onOpenCategories })} />)
@@ -595,7 +595,7 @@ describe('AppShell', () => {
       fireEvent.click(screen.getByRole('menuitem', { name: 'Admin' }))
       expect(onTabChange).toHaveBeenCalledWith('admin')
 
-      fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
+      fireEvent.click(await screen.findByRole('button', { name: 'Open navigation menu' }))
       fireEvent.click(screen.getByRole('menuitem', { name: 'Categories' }))
       expect(onOpenCategories).toHaveBeenCalled()
     })
@@ -653,14 +653,14 @@ describe('AppShell', () => {
       expect(onTabChange).toHaveBeenCalledWith('collections')
     })
 
-    it('closes the drawer when the close button is clicked', () => {
+    it('closes the drawer when the close button is clicked', async () => {
       render(<AppShell {...makeProps()} />)
       fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
       expect(screen.getByRole('menuitem', { name: 'Home' })).toBeInTheDocument()
 
       fireEvent.click(screen.getByRole('button', { name: 'Close navigation menu' }))
 
-      expect(screen.getByRole('button', { name: 'Open navigation menu' })).toHaveAttribute(
+      expect(await screen.findByRole('button', { name: 'Open navigation menu' })).toHaveAttribute(
         'aria-expanded',
         'false',
       )
