@@ -69,6 +69,14 @@ catches any resulting rendering drift. Dependabot branches are not
 auto-rebased — comment `@dependabot rebase` (or `@dependabot recreate`) on the
 PR to refresh one that has fallen behind `main`.
 
+Some majors are deliberately ignored in `dependabot.yml`: all `node` image and
+`@types/node` majors (HRIV follows the even-numbered LTS line, so a move to the
+next LTS is a deliberate PR that also edits those ignores), and frontend
+`typescript`, `storybook`/`@storybook/*` and `vitest`/`@vitest/*` majors whose
+peers cannot follow yet. Each ignore has a comment naming the blocker; when it
+clears, delete the ignore and take the bump as a co-ordinated PR (all peers
+together) rather than via single-package Dependabot PRs.
+
 Checklist when merging one:
 
 - **Runtime Python/npm dependency changed?** Regenerate the component's
