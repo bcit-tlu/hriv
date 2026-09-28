@@ -129,7 +129,7 @@ reconciliation model for both environments.
 | Doc                                                                                  | Covers                                                                           |
 | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
 | [docs/groups.md](docs/groups.md)                                                     | Groups model, authorization, API surface, and frontend behaviour                 |
-| [docs/collections.md](docs/collections.md)                                           | Collections model, ownership, visibility/authorization rules, and API surface     |
+| [docs/collections.md](docs/collections.md)                                           | Collections model, ownership, visibility/authorization rules, and API surface    |
 | [docs/user-deactivation.md](docs/user-deactivation.md)                               | Admin user deactivation flow, API, auth enforcement, and People page behavior    |
 | [docs/changelog-notifications.md](docs/changelog-notifications.md)                   | Notification bell, What's New feed, changelog CRUD, and unread-state rules       |
 | [docs/feedback-subsystem.md](docs/feedback-subsystem.md)                             | In-app feedback routing, provider contract, and environment policy               |

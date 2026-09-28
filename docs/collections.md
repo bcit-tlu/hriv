@@ -18,12 +18,12 @@ implemented.
 Migration `0030_collections` (`backend/app/models.py`: `Collection`,
 `CollectionImage`, `collection_programs`, `collection_groups`).
 
-| Table                 | Purpose                                                                                                                                                                                                                       |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Table                 | Purpose                                                                                                                                                                                                                            |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `collections`         | `name`, `description`, `type` (`synchronized` / `sequence`, CHECK), `visibility` (`private` / `public` / `restricted`, CHECK, default `private`), `user_id`, `owner_program_id`, `viewport_state` (JSONB, default `{}`), `version` |
-| `collection_images`   | Ordered membership: PK `(collection_id, image_id)`, `sort_order`; index `idx_collection_images_order (collection_id, sort_order)`                                                                                              |
-| `collection_programs` | Program scope for `visibility = restricted`                                                                                                                                                                                   |
-| `collection_groups`   | Group scope for `visibility = restricted`                                                                                                                                                                                     |
+| `collection_images`   | Ordered membership: PK `(collection_id, image_id)`, `sort_order`; index `idx_collection_images_order (collection_id, sort_order)`                                                                                                  |
+| `collection_programs` | Program scope for `visibility = restricted`                                                                                                                                                                                        |
+| `collection_groups`   | Group scope for `visibility = restricted`                                                                                                                                                                                          |
 
 ### Ownership
 
@@ -55,11 +55,11 @@ backend is authoritative (frontend gating on `permissions` is UX only).
 
 ### Who can see a collection (`can_view_collection`)
 
-| Caller                     | private        | public | restricted                                          |
-| -------------------------- | -------------- | ------ | --------------------------------------------------- |
-| admin / instructor / staff | yes (all)      | yes    | yes                                                 |
-| student — owner            | yes            | yes    | yes                                                 |
-| student — other            | no             | yes    | only if the **program gate AND group gate** pass    |
+| Caller                     | private   | public | restricted                                       |
+| -------------------------- | --------- | ------ | ------------------------------------------------ |
+| admin / instructor / staff | yes (all) | yes    | yes                                              |
+| student — owner            | yes       | yes    | yes                                              |
+| student — other            | no        | yes    | only if the **program gate AND group gate** pass |
 
 The restricted dual gate mirrors
 [category visibility](category-visibility-and-programs.md): for each dimension
@@ -98,15 +98,15 @@ Base path `/api/collections` (router `backend/app/routers/collections.py`).
 All endpoints require a JWT bearer token — there is no unauthenticated variant
 (see [unauthenticated-routes.md](unauthenticated-routes.md)).
 
-| Method | Endpoint                | Min role | Notes                                                                                                                                                     |
-| ------ | ----------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/collections`      | student  | Visible collections as `CollectionSummaryOut[]`. Query: `type`, `mine`, `owner_user_id`, `owner_program_id`, `orphaned` (**admin only**, others **403**). Ordered by `updated_at` desc. |
-| GET    | `/api/collections/{id}` | student  | `CollectionOut` (summary + ordered `images: ImageOut[]`, `program_ids`, `group_ids`, `viewport_state`). **404** when missing _or_ not visible (no existence leak). |
-| POST   | `/api/collections`      | student  | Create; owner = caller (`user_id`). Body `CollectionCreate`: `name`, `description?`, `type`, `visibility` (default `private`), ordered `image_ids`, `program_ids` / `group_ids` (restricted only). **201** `CollectionOut`. |
-| PATCH  | `/api/collections/{id}` | student (must pass `can_edit_collection`) | Body `CollectionUpdate`: any of `name`, `description`, `visibility`, `program_ids`, `group_ids` + required `version`. `type` is immutable (**422** if changed). Returns fresh `CollectionOut`. |
-| DELETE | `/api/collections/{id}` | student (must pass `can_delete_collection`) | **204**. |
-| PUT    | `/api/collections/{id}/images`   | student (must pass `can_edit_collection`) | Replace the whole ordered image list (add / remove / reorder in one call). Body `CollectionImagesUpdate`: `image_ids`, `version`. `sort_order` is rewritten to `0..n-1`. Returns fresh `CollectionOut`. |
-| PUT    | `/api/collections/{id}/viewport` | student (must pass `can_edit_collection`) | Replace `viewport_state` wholesale. Body `CollectionViewportUpdate`: `viewport_state` (JSON object), `version`. Returns fresh `CollectionOut`. |
+| Method | Endpoint                         | Min role                                    | Notes                                                                                                                                                                                                                       |
+| ------ | -------------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/collections`               | student                                     | Visible collections as `CollectionSummaryOut[]`. Query: `type`, `mine`, `owner_user_id`, `owner_program_id`, `orphaned` (**admin only**, others **403**). Ordered by `updated_at` desc.                                     |
+| GET    | `/api/collections/{id}`          | student                                     | `CollectionOut` (summary + ordered `images: ImageOut[]`, `program_ids`, `group_ids`, `viewport_state`). **404** when missing _or_ not visible (no existence leak).                                                          |
+| POST   | `/api/collections`               | student                                     | Create; owner = caller (`user_id`). Body `CollectionCreate`: `name`, `description?`, `type`, `visibility` (default `private`), ordered `image_ids`, `program_ids` / `group_ids` (restricted only). **201** `CollectionOut`. |
+| PATCH  | `/api/collections/{id}`          | student (must pass `can_edit_collection`)   | Body `CollectionUpdate`: any of `name`, `description`, `visibility`, `program_ids`, `group_ids` + required `version`. `type` is immutable (**422** if changed). Returns fresh `CollectionOut`.                              |
+| DELETE | `/api/collections/{id}`          | student (must pass `can_delete_collection`) | **204**.                                                                                                                                                                                                                    |
+| PUT    | `/api/collections/{id}/images`   | student (must pass `can_edit_collection`)   | Replace the whole ordered image list (add / remove / reorder in one call). Body `CollectionImagesUpdate`: `image_ids`, `version`. `sort_order` is rewritten to `0..n-1`. Returns fresh `CollectionOut`.                     |
+| PUT    | `/api/collections/{id}/viewport` | student (must pass `can_edit_collection`)   | Replace `viewport_state` wholesale. Body `CollectionViewportUpdate`: `viewport_state` (JSON object), `version`. Returns fresh `CollectionOut`.                                                                              |
 
 `CollectionSummaryOut`: `id`, `name`, `description`, `type`, `visibility`,
 `owner` (`{user_id, name}` | `{program_id, name}` | `null` when orphaned),
