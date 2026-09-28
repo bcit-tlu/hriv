@@ -115,6 +115,12 @@ updates:
       prefix: chore(deps)
       prefix-development: chore(deps-dev)
     labels: [dependencies, python]
+    ignore:
+      # Keep fastapi <0.137 until opentelemetry-instrumentation-fastapi is
+      # bumped to >=0.64b0 — 0.137's _IncludedRouter route tree crashes the
+      # older instrumentor's _get_route_details on every routed request.
+      - dependency-name: fastapi
+        update-types: ['version-update:semver-minor', 'version-update:semver-major']
     groups:
       python-minor-patch:
         update-types: [minor, patch]
