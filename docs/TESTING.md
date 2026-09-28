@@ -43,6 +43,32 @@ All seed users share the password `password`.
 13. **Assert:** Error alert appears containing "Account has been disabled. Please contact the TLU Learning Tech Lab via Teams to activate your account." (not "Incorrect email or password").
 14. Reactivate the account to restore seed state.
 
+### 1a: Login rate limiting is keyed on the trusted client IP
+
+**Purpose:** Verify a spoofed `X-Forwarded-For` cannot mint fresh login
+rate-limit buckets and that the account-scoped bucket bounds guessing
+regardless of source address (see `docs/deployment-proxy-chain.md`).
+
+1. Through the dev proxy (`http://localhost:5173`; the Vite proxy appends
+   `X-Forwarded-For` with `xfwd: true`, mirroring the production frontend
+   nginx), POST 6 bad passwords for `student@example.ca`, each with a
+   different `X-Forwarded-For: 203.0.113.<n>` header.
+2. **Assert:** the 6th response is `429` with `Retry-After` — the spoofed
+   leftmost entry is ignored, so all attempts share one `(ip, email)` bucket.
+3. **Assert:** the audit log line for each attempt shows `client_ip` as the
+   real connecting address, not `203.0.113.<n>`.
+4. Flush Redis (`docker compose exec redis redis-cli FLUSHDB`), then send 4
+   bad passwords followed by the correct password.
+5. **Assert:** the login succeeds and clears both buckets — 4 further bad
+   passwords are `401`, and only the 5th is `429`.
+6. To exercise the account-scoped bucket in isolation, restart the backend
+   with `RATE_LIMIT_LOGIN_MAX=100` (so the per-IP bucket never trips), flush
+   Redis, and send 21 bad passwords from one client.
+7. **Assert:** the 21st is `429` from `rate:login:email:{email}` (default
+   `RATE_LIMIT_LOGIN_EMAIL_MAX=20` / 900 s) and the correct password is also
+   `429` until the window expires or Redis is flushed — the account budget is
+   independent of source address. Restore the default afterwards.
+
 ---
 
 ## Test Case 2: RBAC Tab Visibility Per Role (UI)
@@ -344,6 +370,13 @@ All endpoints except login require a valid JWT bearer token in the `Authorizatio
 | DELETE | /api/groups/{id}/instructors/bulk                                                                         | Yes           | instructor †                                                                |
 | POST   | /api/groups/{id}/instructors/{user_id}                                                                    | Yes           | instructor †                                                                |
 | DELETE | /api/groups/{id}/instructors/{user_id}                                                                    | Yes           | instructor †                                                                |
+| GET    | /api/collections                                                                                          | Yes           | student (`orphaned=true` filter: admin)                                     |
+| GET    | /api/collections/{id}                                                                                     | Yes           | student (404 if not visible)                                                |
+| POST   | /api/collections                                                                                          | Yes           | student (`visibility=restricted`: instructor, with attach authority)        |
+| PATCH  | /api/collections/{id}                                                                                     | Yes           | student (owner / instructor of owning program / admin; 404 if not visible)  |
+| DELETE | /api/collections/{id}                                                                                     | Yes           | student (owner / instructor of owning program / admin; 404 if not visible)  |
+| PUT    | /api/collections/{id}/images                                                                              | Yes           | student (owner / instructor of owning program / admin; 404 if not visible)  |
+| PUT    | /api/collections/{id}/viewport                                                                            | Yes           | student (owner / instructor of owning program / admin; 404 if not visible)  |
 | GET    | /api/changelog/                                                                                           | Yes           | instructor                                                                  |
 | POST   | /api/changelog/                                                                                           | Yes           | admin                                                                       |
 | POST   | /api/changelog/mark-read                                                                                  | Yes           | instructor                                                                  |
