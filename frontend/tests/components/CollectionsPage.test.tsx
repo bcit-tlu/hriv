@@ -288,6 +288,31 @@ describe('CollectionsPage', () => {
       expect(screen.getByDisplayValue('Second full')).toBeInTheDocument()
       expect(screen.queryByDisplayValue('First full')).not.toBeInTheDocument()
     })
+
+    it('keeps the create form when an earlier edit load finishes after New collection', async () => {
+      const user = userEvent.setup()
+      let resolveLoad!: (value: ReturnType<typeof makeCollection>) => void
+      const loadCollection = vi.fn(
+        () =>
+          new Promise<ReturnType<typeof makeCollection>>((resolve) => {
+            resolveLoad = resolve
+          }),
+      )
+      renderPage({
+        collections: [makeCollectionSummary({ id: 1, name: 'First' })],
+        loadCollection,
+      })
+      await user.click(screen.getByRole('button', { name: 'Edit First' }))
+      await user.click(screen.getByRole('button', { name: 'New collection' }))
+      expect(await screen.findByText('New Collection')).toBeInTheDocument()
+
+      await act(async () => {
+        resolveLoad(makeCollection({ id: 1, name: 'First full' }))
+      })
+      expect(screen.getByText('New Collection')).toBeInTheDocument()
+      expect(screen.queryByText('Edit Collection')).not.toBeInTheDocument()
+      expect(screen.queryByDisplayValue('First full')).not.toBeInTheDocument()
+    })
   })
 
   describe('delete', () => {

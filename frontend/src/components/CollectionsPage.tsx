@@ -234,6 +234,9 @@ export default function CollectionsPage({
   const showOwnerFilter = currentUser != null && currentUser.role !== 'student'
 
   const openCreate = () => {
+    // Supersede any Edit fetch still in flight so it cannot replace this form.
+    editRequestRef.current++
+    setEditLoadError(null)
     setEditing(null)
     setEditorOpen(true)
   }

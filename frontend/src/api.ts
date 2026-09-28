@@ -658,8 +658,12 @@ export function bulkDeleteImages(body: { image_ids: number[] }): Promise<void> {
 export type ApiCollectionType = 'synchronized' | 'sequence'
 export type ApiCollectionVisibility = 'private' | 'public' | 'restricted'
 
-export type ApiCollectionOwner =
-  { user_id: number; name: string } | { program_id: number; name: string } | null
+/** Exactly one of `user_id` / `program_id` is set; the other key is present but `null`. */
+export type ApiCollectionOwner = {
+  user_id?: number | null
+  program_id?: number | null
+  name: string
+} | null
 
 export interface ApiCollectionPermissions {
   can_edit: boolean

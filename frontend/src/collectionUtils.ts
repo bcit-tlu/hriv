@@ -30,8 +30,11 @@ export function canUseRestrictedVisibility(role: Role | undefined | null): boole
 
 export function apiCollectionOwnerToOwner(owner: ApiCollectionOwner): CollectionOwner {
   if (owner == null) return null
-  if ('user_id' in owner) return { kind: 'user', userId: owner.user_id, name: owner.name }
-  return { kind: 'program', programId: owner.program_id, name: owner.name }
+  if (owner.user_id != null) return { kind: 'user', userId: owner.user_id, name: owner.name }
+  if (owner.program_id != null) {
+    return { kind: 'program', programId: owner.program_id, name: owner.name }
+  }
+  return null
 }
 
 export function apiCollectionSummaryToSummary(api: ApiCollectionSummary): CollectionSummary {

@@ -289,8 +289,13 @@ Filter state is also keyed to the signed-in user's id: a different user on
 the same tab starts from the default filters, so a previous admin's owner
 selection cannot resurface for the next instructor. Saves that finish after
 a filter change are placed and refreshed against the filters current at
-completion, and a second **Edit** click supersedes an earlier one whose
-record fetch is still in flight.
+completion, and a second **Edit** click (or **New collection**) supersedes an
+earlier Edit whose record fetch is still in flight. When the account changes,
+the previous user's cards and owner options are cleared as the new user's
+first load starts, so a failed load never leaves another account's rows on
+screen. The `owner` wire object always carries both `user_id` and
+`program_id` (the unused one `null`), so the mapper picks the non-null id
+rather than testing key presence.
 Loading spinner, a plain error `Alert`
 (notification only — no Retry action), and filter-aware empty copy follow the
 existing page patterns; the unfiltered empty state's "Create a collection" is

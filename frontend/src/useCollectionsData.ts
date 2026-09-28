@@ -175,6 +175,9 @@ export function useCollectionsData({
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
   const loadSeq = useRef(0)
+  // The user whose rows are in `collections`; another account starts empty
+  // even if its own first load fails.
+  const rowsUserId = useRef(userId)
   const role = currentUser?.role ?? null
   const filters = useMemo(
     () => normalizeCollectionFilters(rawFilters, role ? { role } : null),
@@ -183,6 +186,11 @@ export function useCollectionsData({
 
   const load = useCallback(async () => {
     const seq = ++loadSeq.current
+    if (rowsUserId.current !== userId) {
+      rowsUserId.current = userId
+      setCollections([])
+      setOwnerOptions([])
+    }
     setLoading(true)
     setError(null)
     try {
@@ -199,7 +207,7 @@ export function useCollectionsData({
     } finally {
       if (seq === loadSeq.current) setLoading(false)
     }
-  }, [filters, role])
+  }, [filters, role, userId])
 
   // Mutations read the filters, user and loader in effect when the request
   // completes, not those captured when it started, so a save that outlives a

@@ -45,6 +45,18 @@ describe('collectionUtils mapping', () => {
     expect(apiCollectionOwnerToOwner(null)).toBeNull()
   })
 
+  it('maps owners as the backend serialises them, with the unused id present as null', () => {
+    expect(
+      apiCollectionOwnerToOwner({ user_id: null, program_id: 3, name: 'Radiography' }),
+    ).toEqual({ kind: 'program', programId: 3, name: 'Radiography' })
+    expect(apiCollectionOwnerToOwner({ user_id: 7, program_id: null, name: 'Ada' })).toEqual({
+      kind: 'user',
+      userId: 7,
+      name: 'Ada',
+    })
+    expect(apiCollectionOwnerToOwner({ user_id: null, program_id: null, name: '' })).toBeNull()
+  })
+
   it('maps a summary to camelCase including permissions', () => {
     const summary = apiCollectionSummaryToSummary(
       makeApiCollectionSummary({

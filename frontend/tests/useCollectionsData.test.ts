@@ -384,6 +384,23 @@ describe('useCollectionsData', () => {
     expect(fetchCollectionsMock).toHaveBeenLastCalledWith({ owner_user_id: 9 })
   })
 
+  it("does not keep the previous user's cards when the next account's load fails", async () => {
+    const admin = makeUser({ id: 1, role: 'admin' })
+    const student = makeUser({ id: 2, role: 'student' })
+    fetchCollectionsMock.mockResolvedValueOnce([
+      makeApiCollectionSummary({ id: 1, owner: { user_id: 9, name: 'Zed' } }),
+    ])
+    const { result, rerender } = renderData({}, admin)
+    await waitFor(() => expect(result.current.collections.map((c) => c.id)).toEqual([1]))
+    expect(result.current.ownerOptions).toHaveLength(1)
+
+    fetchCollectionsMock.mockRejectedValueOnce(new ApiError(403, 'Forbidden'))
+    rerender({ currentUser: student })
+    await waitFor(() => expect(result.current.error).toBe('Forbidden'))
+    expect(result.current.collections).toEqual([])
+    expect(result.current.ownerOptions).toEqual([])
+  })
+
   it('refreshes with the filters in effect when a save finishes, not those at its start', async () => {
     const { result } = renderData()
     await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(1))
