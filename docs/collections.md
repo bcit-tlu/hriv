@@ -269,7 +269,9 @@ drawer. `?page=collections` opens the list. `App` only mounts
 **List.** `GET /api/collections` rendered as a responsive card grid
 (1 → 2 → 3 → 4 columns at `xs/sm/md/lg`). Each `CollectionCard` shows the
 cover (`RenewingThumbnail` with a collection-scoped renewer that refreshes the
-token via `GET /api/collections/{id}`), name, image count, owner, a type chip
+token via `GET /api/collections/{id}`; a renewed cover that loads and later
+expires again is renewed once more, while a cover that never loads is renewed
+only once), name, image count, owner, a type chip
 and a visibility chip that reuses the category restriction palette. Filters:
 type toggle (All / Synchronized / Sequence), **My collections** (`mine=true`;
 clears and disables the owner facet), and — for admin, instructor and staff

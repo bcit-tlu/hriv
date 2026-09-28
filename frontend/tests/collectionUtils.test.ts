@@ -137,4 +137,12 @@ describe('parseCollectionIdParam', () => {
     expect(parseCollectionIdParam('?collection=1.5')).toBeNull()
     expect(parseCollectionIdParam('?collection=')).toBeNull()
   })
+
+  it('rejects integers that cannot be represented exactly', () => {
+    expect(parseCollectionIdParam(`?collection=${Number.MAX_SAFE_INTEGER}`)).toBe(
+      Number.MAX_SAFE_INTEGER,
+    )
+    expect(parseCollectionIdParam('?collection=9007199254740993')).toBeNull()
+    expect(parseCollectionIdParam(`?collection=${'9'.repeat(400)}`)).toBeNull()
+  })
 })

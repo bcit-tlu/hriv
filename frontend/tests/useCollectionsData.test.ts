@@ -359,6 +359,34 @@ describe('useCollectionsData', () => {
     expect(result.current.collections.map((c) => c.id)).toEqual([42])
   })
 
+  it('refreshes with the filters in effect when a save finishes, not those at its start', async () => {
+    const { result } = renderData()
+    await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(1))
+
+    let resolveCreate!: (value: ReturnType<typeof makeApiCollection>) => void
+    createCollectionMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveCreate = resolve
+      }),
+    )
+    let created: Promise<unknown>
+    act(() => {
+      created = result.current.create(VALUES)
+    })
+    act(() => result.current.setFilters({ ...DEFAULT_COLLECTION_FILTERS, type: 'sequence' }))
+    await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(2))
+    expect(fetchCollectionsMock).toHaveBeenLastCalledWith({ type: 'sequence' })
+
+    fetchCollectionsMock.mockResolvedValueOnce([makeApiCollectionSummary({ id: 5 })])
+    await act(async () => {
+      resolveCreate(makeApiCollection({ id: 42 }))
+      await created
+    })
+    await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(3))
+    expect(fetchCollectionsMock).toHaveBeenLastCalledWith({ type: 'sequence' })
+    await waitFor(() => expect(result.current.collections.map((c) => c.id)).toEqual([5]))
+  })
+
   it('keeps owner options from the unfiltered result while an owner filter is active', async () => {
     fetchCollectionsMock.mockResolvedValueOnce([
       makeApiCollectionSummary({ id: 1, owner: { user_id: 7, name: 'Ada' } }),

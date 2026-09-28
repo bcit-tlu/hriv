@@ -181,4 +181,58 @@ describe('RenewingThumbnail', () => {
 
     expect(onImageRenewed).not.toHaveBeenCalled()
   })
+
+  it('renews a renewed URL again once it has loaded and then expires', async () => {
+    const renewThumb = vi
+      .fn<(id: number) => Promise<{ id: number; thumb: string | null }>>()
+      .mockResolvedValueOnce({ id: 7, thumb: '/cover.jpg?tile_token=second' })
+      .mockResolvedValueOnce({ id: 7, thumb: '/cover.jpg?tile_token=third' })
+    const onLoad = vi.fn()
+    const onImageRenewed = vi.fn()
+    render(
+      <RenewingThumbnail
+        image={{ id: 7, thumb: '/cover.jpg?tile_token=first' }}
+        alt="Cover"
+        renewThumb={renewThumb}
+        onImageRenewed={onImageRenewed}
+        onLoad={onLoad}
+      />,
+    )
+    const img = screen.getByAltText('Cover')
+
+    fireEvent.error(img)
+    await waitFor(() => expect(img).toHaveAttribute('src', '/cover.jpg?tile_token=second'))
+    fireEvent.load(img)
+    expect(onLoad).toHaveBeenCalledTimes(1)
+
+    fireEvent.error(img)
+    await waitFor(() => expect(img).toHaveAttribute('src', '/cover.jpg?tile_token=third'))
+
+    expect(renewThumb).toHaveBeenCalledTimes(2)
+    expect(renewThumb).toHaveBeenCalledWith(7)
+    expect(apiMocks.fetchImage).not.toHaveBeenCalled()
+    expect(onImageRenewed).not.toHaveBeenCalled()
+  })
+
+  it('does not renew a renewed URL that never loaded', async () => {
+    const renewThumb = vi
+      .fn<(id: number) => Promise<{ id: number; thumb: string | null }>>()
+      .mockResolvedValue({ id: 7, thumb: '/cover.jpg?tile_token=second' })
+    render(
+      <RenewingThumbnail
+        image={{ id: 7, thumb: '/cover.jpg?tile_token=first' }}
+        alt="Cover"
+        renewThumb={renewThumb}
+      />,
+    )
+    const img = screen.getByAltText('Cover')
+
+    fireEvent.error(img)
+    await waitFor(() => expect(img).toHaveAttribute('src', '/cover.jpg?tile_token=second'))
+    fireEvent.error(img)
+    fireEvent.error(img)
+
+    expect(renewThumb).toHaveBeenCalledTimes(1)
+    expect(img).toHaveAttribute('src', '/cover.jpg?tile_token=second')
+  })
 })

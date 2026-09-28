@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { ImgHTMLAttributes } from 'react'
+import type { ImgHTMLAttributes, SyntheticEvent } from 'react'
 import Box from '@mui/material/Box'
 import type { SxProps, Theme } from '@mui/material/styles'
 import type { ApiImage } from '../api'
@@ -26,6 +26,7 @@ export default function RenewingThumbnail({
   sx,
   onImageRenewed,
   renewThumb,
+  onLoad,
   ...imgProps
 }: RenewingThumbnailProps) {
   const [renewed, setRenewed] = useState<{
@@ -34,13 +35,14 @@ export default function RenewingThumbnail({
     thumb: string
   } | null>(null)
   const retriedKeysRef = useRef(new Set<string>())
+  const loadedSrcsRef = useRef(new Set<string>())
   const mountedRef = useRef(true)
-  const currentRetryKey = `${image.id}:${image.thumb}`
-  const currentKeyRef = useRef(currentRetryKey)
   const src =
     renewed?.imageId === image.id && renewed.originalThumb === image.thumb
       ? renewed.thumb
       : image.thumb
+  const currentRetryKey = `${image.id}:${src}`
+  const currentKeyRef = useRef(currentRetryKey)
 
   useLayoutEffect(() => {
     currentKeyRef.current = currentRetryKey
@@ -53,9 +55,20 @@ export default function RenewingThumbnail({
     }
   }, [])
 
+  const handleLoad = useCallback(
+    (event: SyntheticEvent<HTMLImageElement>) => {
+      loadedSrcsRef.current.add(src)
+      onLoad?.(event)
+    },
+    [onLoad, src],
+  )
+
   const handleError = useCallback(() => {
     const retryKey = currentRetryKey
     if (retriedKeysRef.current.has(retryKey)) return
+    // A renewed URL is only renewed again once it has loaded successfully
+    // (its token has since expired); a thumb that never loads is renewed once.
+    if (src !== image.thumb && !loadedSrcsRef.current.has(src)) return
     retriedKeysRef.current.add(retryKey)
 
     const renewal: Promise<{
@@ -79,5 +92,14 @@ export default function RenewingThumbnail({
       })
   }, [currentRetryKey, image.id, image.thumb, onImageRenewed, renewThumb, src])
 
-  return <Box component="img" src={src} onError={handleError} sx={sx} {...imgProps} />
+  return (
+    <Box
+      component="img"
+      src={src}
+      onLoad={handleLoad}
+      onError={handleError}
+      sx={sx}
+      {...imgProps}
+    />
+  )
 }

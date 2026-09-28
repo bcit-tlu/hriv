@@ -189,6 +189,13 @@ export function useCollectionsData({
     }
   }, [filters, role])
 
+  // Mutations refresh through this ref so a save that outlives a filter
+  // change refetches with the filters in effect when it completes.
+  const loadRef = useRef(load)
+  useEffect(() => {
+    loadRef.current = load
+  }, [load])
+
   useEffect(() => {
     if (!enabled || !currentUser) return
     void load() // eslint-disable-line react-hooks/set-state-in-effect -- standard data-fetch trigger on tab/filter change
@@ -254,10 +261,10 @@ export function useCollectionsData({
       if (matchesCollectionFilters(created, filters, currentUser)) {
         setCollections((prev) => [created, ...prev.filter((c) => c.id !== created.id)])
       }
-      void load()
+      void loadRef.current()
       return created
     },
-    [load, filters, currentUser],
+    [filters, currentUser],
   )
 
   const update = useCallback(
@@ -274,21 +281,18 @@ export function useCollectionsData({
         const rest = prev.filter((c) => c.id !== id)
         return matchesCollectionFilters(mapped, filters, currentUser) ? [mapped, ...rest] : rest
       })
-      void load()
+      void loadRef.current()
       return mapped
     },
-    [load, filters, currentUser],
+    [filters, currentUser],
   )
 
-  const remove = useCallback(
-    async (id: number): Promise<void> => {
-      await deleteCollection(id)
-      setCollections((prev) => prev.filter((c) => c.id !== id))
-      setDetail((prev) => (prev?.id === id ? null : prev))
-      void load()
-    },
-    [load],
-  )
+  const remove = useCallback(async (id: number): Promise<void> => {
+    await deleteCollection(id)
+    setCollections((prev) => prev.filter((c) => c.id !== id))
+    setDetail((prev) => (prev?.id === id ? null : prev))
+    void loadRef.current()
+  }, [])
 
   return {
     collections,
