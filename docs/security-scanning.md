@@ -58,6 +58,14 @@ are grouped per component; majors open one PR each. PR titles are
 `chore(deps)` / `chore(deps-dev)` / `ci(deps)`, which `pr-title-lint` accepts
 and release-please leaves out of changelogs.
 
+Dependabot PRs do not run the Chromatic workflow: `dependabot[bot]`-triggered
+workflows receive no repository secrets, so `CHROMATIC_PROJECT_TOKEN` is empty
+and the job would fail with "Missing project token" before publishing anything.
+The job is skipped via `if: github.actor != 'dependabot[bot]'`; the bump's
+`main` build after merge runs Chromatic as usual. Dependabot branches are not
+auto-rebased — comment `@dependabot rebase` (or `@dependabot recreate`) on the
+PR to refresh one that has fallen behind `main`.
+
 Checklist when merging one:
 
 - **Runtime Python/npm dependency changed?** Regenerate the component's
