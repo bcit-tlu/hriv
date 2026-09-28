@@ -246,9 +246,102 @@ followed by `POST …/transfer`.
 
 ## Frontend behaviour
 
-_Planned_ (#1414–#1419): Collections tab, `?collection={id}` deep links,
-"Add to Collection" from the image view, sequence and synchronized viewers
-(read-only annotations), search integration and ownership management.
+### Collections tab, CRUD and deep links (#1414)
+
+**Where.** `frontend/src/api.ts` (`ApiCollection*` wire shapes,
+`fetchCollections` / `fetchCollection` / `createCollection` /
+`updateCollection` / `deleteCollection` / `replaceCollectionImages` /
+`saveCollectionViewport`, `collectionConflictCurrent`), `types.ts`
+(`Collection`, `CollectionSummary`, `CollectionType`, `CollectionVisibility`,
+`CollectionOwner`, `CollectionPermissions`), `collectionUtils.ts` (mapping,
+labels, `canUseRestrictedVisibility`, `parseCollectionIdParam`),
+`useCollectionsData.ts` (list/detail state + mutations),
+`components/CollectionsPage.tsx`, `CollectionCard.tsx`,
+`CollectionEditDialog.tsx`, plus `navigation.ts`, `AppShell.tsx`,
+`useShareableImageState.ts`, `useNavigationHistory.ts` and `App.tsx`.
+
+**Navigation.** A **Collections** tab is shown to every authenticated role
+(students included) in both the desktop app bar and the compact/mobile
+drawer. `?page=collections` opens the list. `App` only mounts
+`useCollectionsData` while the tab is active, so browsing images never hits
+`/api/collections`.
+
+**List.** `GET /api/collections` rendered as a responsive card grid
+(1 → 2 → 3 → 4 columns at `xs/sm/md/lg`). Each `CollectionCard` shows the
+cover (`RenewingThumbnail` with a collection-scoped renewer that refreshes the
+token via `GET /api/collections/{id}`; a renewed cover that loads and later
+expires again is renewed once more, while a cover that never loads is renewed
+only once), name, image count, owner, a type chip
+and a visibility chip that reuses the category restriction palette. Filters:
+type toggle (All / Synchronized / Sequence), **My collections** (`mine=true`;
+clears and disables the owner facet), and — for admin, instructor and staff
+only — an **Owner** select built from the owners in the loaded list
+(`owner_user_id` / `owner_program_id`). Students never see the Owner select
+and `toCollectionApiFilters` never emits `owner_*` for them. Admins
+additionally get _No owner (orphaned)_ → `orphaned=true`;
+`toCollectionApiFilters` never emits `orphaned` for other roles. Both rules
+come from one helper, `normalizeCollectionFilters(filters, role)`, which the
+hook applies to its filter state before it reaches the API params, the
+client-side mirror (`matchesCollectionFilters`) and the filter bar — so an
+owner selection that outlives a user switch (e.g. admin → student on the
+same tab) is dropped rather than silently hiding the new user's own saves.
+Filter state is also keyed to the signed-in user's id: a different user on
+the same tab starts from the default filters, so a previous admin's owner
+selection cannot resurface for the next instructor. Saves that finish after
+a filter change are placed and refreshed against the filters current at
+completion, and a second **Edit** click (or **New collection**) supersedes an
+earlier Edit whose record fetch is still in flight. When the account changes,
+the previous user's cards and owner options are cleared as the new user's
+first load starts, so a failed load never leaves another account's rows on
+screen. The `owner` wire object always carries both `user_id` and
+`program_id` (the unused one `null`), so the mapper picks the non-null id
+rather than testing key presence.
+Loading spinner, a plain error `Alert`
+(notification only — no Retry action), and filter-aware empty copy follow the
+existing page patterns; the unfiltered empty state's "Create a collection" is
+a link that opens the same create dialog as the **New collection** button.
+
+**Create / edit (`CollectionEditDialog`).** Name (required), description,
+type (radio on create; read-only chip on edit — the API rejects type changes
+with 422), visibility. `restricted` is only offered to admins and instructors
+(`canUseRestrictedVisibility`); students/staff see Private / Public. When
+restricted, program and group chip pickers reuse the Add/EditCategoryDialog
+attach logic: instructors can only select programs they belong to
+(`getAttachableProgramIds`) and groups they manage; already-attached scope
+stays enabled so it can be removed. At least one program or group is required
+for `restricted`; `program_ids` / `group_ids` are sent as `[]` for any other
+visibility. Create posts `image_ids: []` (adding images arrives with #1415).
+Edit sends the collection `version` in the PATCH body; a **409** shows the
+standard "modified by another user" message with a **Reload** action that
+re-seeds the form from the authoritative `CollectionOut` in `detail`.
+
+**Delete.** Confirmation dialog (existing delete-dialog pattern) →
+`DELETE /api/collections/{id}`; failures stay in the dialog with the API
+message. Deleting the open collection returns to the list.
+
+**Permissions are UX gates only.** Edit/delete controls render when
+`permissions.can_edit` / `can_delete` from the API are true; the backend
+re-checks authority on every call.
+
+**Detail placeholder.** Selecting a card sets `?collection={id}` and renders
+the collection header (type/visibility chips, description, owner), an info
+alert that the viewer is coming (#1416 sequence / #1417 synchronized), and
+the ordered member list with an **Open image** link per row that navigates to
+`?image={id}`. Both types share this placeholder for now. A 404 (missing or
+not visible) renders the not-found alert with an _All collections_ action.
+
+**Deep links & history.** `useShareableImageState` parses `?collection={id}`
+ahead of `?image=` / `?category=`; a collection link wins if both are present.
+The list emits `?page=collections`, a selected collection emits
+`?collection={id}` (no `page` param). Both push history entries through
+`useNavigationHistory`, and `popstate` restores the selected collection from
+the URL, so back/forward moves between browse, image and collection views.
+Refreshing a `?collection=` URL re-opens that collection. `?item={image_id}`
+is reserved for the sequence viewer (#1416) and is not parsed yet.
+
+_Planned_ (#1415–#1419): "Add to Collection" from the image view, sequence
+and synchronized viewers (read-only annotations), search integration and
+ownership management / transfer UI.
 
 ## Tests
 
@@ -273,3 +366,17 @@ _Planned_ (#1414–#1419): Collections tab, `?collection={id}` deep links,
 - `backend/tests/test_schemas.py` — `CollectionCreate` / `CollectionUpdate` /
   `CollectionImagesUpdate` / `CollectionViewportUpdate` / `CollectionTransfer`
   validators.
+- `frontend/tests/api.test.ts` — collection wrapper paths, query filters,
+  request bodies, 409 `collectionConflictCurrent` extraction.
+- `frontend/tests/collectionUtils.test.ts` — wire → domain mapping, role
+  gating for `restricted`, `?collection=` parsing.
+- `frontend/tests/navigation.test.ts`, `components/AppShell.test.tsx` —
+  Collections tab for every role (desktop + compact drawer).
+- `frontend/tests/useShareableImageState.test.ts`,
+  `useNavigationHistory.test.ts`, `App.test.tsx` — `?collection={id}`
+  parse/emit precedence, history entries, deep-link restore on load and
+  back/forward.
+- `frontend/tests/components/CollectionsPage.test.tsx`,
+  `CollectionCard.test.tsx`, `CollectionEditDialog.test.tsx` — list/filter
+  states, permission-gated actions, create/edit/delete flows, restricted
+  picker gating per role, 409 reload.

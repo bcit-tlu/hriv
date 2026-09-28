@@ -55,6 +55,14 @@ import {
   putTileOrder,
   tileOrderConflictCurrent,
   type TileOrderResponse,
+  fetchCollections,
+  fetchCollection,
+  createCollection,
+  updateCollection,
+  deleteCollection,
+  replaceCollectionImages,
+  saveCollectionViewport,
+  collectionConflictCurrent,
   fetchOidcEnabled,
   getOidcLoginUrl,
   fetchUsers,
@@ -140,6 +148,7 @@ import {
 } from '../src/api'
 
 import { setClientSyntheticMode } from '../src/syntheticMode'
+import { makeApiCollection, makeApiCollectionSummary } from './helpers/fixtures'
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -941,6 +950,142 @@ describe('Tile order API', () => {
     expect(tileOrderConflictCurrent(new ApiError(409, 'stale revision', {}))).toBeNull()
     expect(tileOrderConflictCurrent(new Error('boom'))).toBeNull()
     expect(tileOrderConflictCurrent(undefined)).toBeNull()
+  })
+})
+
+// ── Collections (#1414) ──────────────────────────────────────────────────
+
+describe('Collections API', () => {
+  beforeEach(() => {
+    mockFetch.mockReset()
+    setToken('jwt')
+  })
+  afterEach(() => setToken(null))
+
+  it('fetchCollections with no filters hits /api/collections without a query string', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse([makeApiCollectionSummary()]))
+    const result = await fetchCollections()
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/collections')
+    expect(init.method ?? 'GET').toBe('GET')
+    expect(init.headers.Authorization).toBe('Bearer jwt')
+    expect(result).toHaveLength(1)
+  })
+
+  it('fetchCollections serialises every filter as a query param', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse([]))
+    await fetchCollections({
+      type: 'sequence',
+      mine: true,
+      owner_user_id: 7,
+      owner_program_id: 3,
+      orphaned: true,
+    })
+    const [url] = mockFetch.mock.calls[0]
+    const qs = new URL(url, 'http://x').searchParams
+    expect(qs.get('type')).toBe('sequence')
+    expect(qs.get('mine')).toBe('true')
+    expect(qs.get('owner_user_id')).toBe('7')
+    expect(qs.get('owner_program_id')).toBe('3')
+    expect(qs.get('orphaned')).toBe('true')
+  })
+
+  it('fetchCollections omits falsy boolean filters (never sends mine=false / orphaned=false)', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse([]))
+    await fetchCollections({ mine: false, orphaned: false })
+    const [url] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/collections')
+  })
+
+  it('fetchCollection hits /api/collections/{id}', async () => {
+    const fixture = makeApiCollection({ id: 42 })
+    mockFetch.mockReturnValueOnce(jsonResponse(fixture))
+    const result = await fetchCollection(42)
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/collections/42')
+    expect(result).toEqual(fixture)
+  })
+
+  it('createCollection POSTs the body verbatim (empty image_ids allowed)', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(makeApiCollection(), 201))
+    await createCollection({
+      name: 'New',
+      description: null,
+      type: 'sequence',
+      visibility: 'restricted',
+      image_ids: [],
+      program_ids: [1],
+      group_ids: [2],
+    })
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/collections')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body)).toEqual({
+      name: 'New',
+      description: null,
+      type: 'sequence',
+      visibility: 'restricted',
+      image_ids: [],
+      program_ids: [1],
+      group_ids: [2],
+    })
+  })
+
+  it('updateCollection PATCHes with version in the body (not If-Match)', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(makeApiCollection({ version: 3 })))
+    await updateCollection(5, { name: 'Renamed', version: 2 })
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/collections/5')
+    expect(init.method).toBe('PATCH')
+    expect(JSON.parse(init.body)).toEqual({ name: 'Renamed', version: 2 })
+    expect(init.headers['If-Match']).toBeUndefined()
+  })
+
+  it('deleteCollection sends DELETE and resolves on 204', async () => {
+    mockFetch.mockReturnValueOnce(noContentResponse())
+    await expect(deleteCollection(5)).resolves.toBeUndefined()
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/collections/5')
+    expect(init.method).toBe('DELETE')
+  })
+
+  it('replaceCollectionImages PUTs the whole ordered list with version', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(makeApiCollection()))
+    await replaceCollectionImages(5, { image_ids: [3, 1, 2], version: 4 })
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/collections/5/images')
+    expect(init.method).toBe('PUT')
+    expect(JSON.parse(init.body)).toEqual({ image_ids: [3, 1, 2], version: 4 })
+  })
+
+  it('saveCollectionViewport PUTs viewport_state with version', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(makeApiCollection()))
+    await saveCollectionViewport(5, { viewport_state: { zoom: 2 }, version: 4 })
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/collections/5/viewport')
+    expect(init.method).toBe('PUT')
+    expect(JSON.parse(init.body)).toEqual({ viewport_state: { zoom: 2 }, version: 4 })
+  })
+
+  it('a stale-version 409 exposes the current CollectionOut via collectionConflictCurrent', async () => {
+    const current = makeApiCollection({ version: 9, name: 'Renamed elsewhere' })
+    mockFetch.mockReturnValueOnce(errorResponse(409, JSON.stringify({ detail: current })))
+    let caught: unknown
+    try {
+      await updateCollection(1, { name: 'Mine', version: 1 })
+    } catch (err) {
+      caught = err
+    }
+    expect(caught).toBeInstanceOf(ApiError)
+    expect((caught as ApiError).status).toBe(409)
+    expect(collectionConflictCurrent(caught)).toEqual(current)
+  })
+
+  it('collectionConflictCurrent returns null for non-409, non-collection, and non-ApiError values', () => {
+    expect(collectionConflictCurrent(new ApiError(400, 'bad', makeApiCollection()))).toBeNull()
+    expect(collectionConflictCurrent(new ApiError(409, 'stale', { id: 1, version: 2 }))).toBeNull()
+    expect(collectionConflictCurrent(new ApiError(409, 'stale', 'Conflict'))).toBeNull()
+    expect(collectionConflictCurrent(new Error('boom'))).toBeNull()
+    expect(collectionConflictCurrent(undefined)).toBeNull()
   })
 })
 
