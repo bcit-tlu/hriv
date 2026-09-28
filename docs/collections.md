@@ -26,7 +26,11 @@ one child issue at a time on `main`.
   unknown route for **every** `/api/collections*` endpoint while the flag is
   off — the API surface is indistinguishable from a build without
   collections. The check runs per request, so tests and operators can flip
-  it without rebuilding the app. Admin DB export/import still includes the
+  it without rebuilding the app. `CollectionsFeatureMiddleware`
+  (`middleware.py`, registered in `main.py`) applies the same 404 to every
+  `/api/collections*` path _before_ FastAPI parses the body, so a malformed
+  write on a disabled deployment is also a 404 rather than a 422 — the two
+  layers keep the surface identical to an unknown route. Admin DB export/import still includes the
   `collections` tables regardless of the flag (they exist in the schema
   either way).
 - **`GET /api/features`** (`main.py`, unauthenticated, `FeaturesOut`) returns

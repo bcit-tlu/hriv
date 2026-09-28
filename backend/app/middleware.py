@@ -434,6 +434,37 @@ _MAINTENANCE_EXEMPT: tuple[str, ...] = (
 )
 
 
+class CollectionsFeatureMiddleware:
+    """Return 404 for every ``/api/collections`` request while the
+    ``COLLECTIONS_ENABLED`` dark-launch flag is off.
+
+    Runs before FastAPI parses the request body, so a disabled deployment
+    answers a malformed collection write with the same 404 as an unknown
+    route rather than a 422 (docs/collections.md). The router keeps its own
+    ``require_collections_enabled`` dependency as a second layer.
+    """
+
+    _PREFIX = "/api/collections"
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        path: str = scope["path"]
+        if not settings.collections_enabled and (
+            path == self._PREFIX or path.startswith(self._PREFIX + "/")
+        ):
+            response = JSONResponse(status_code=404, content={"detail": "Not Found"})
+            await response(scope, receive, send)
+            return
+
+        await self.app(scope, receive, send)
+
+
 class MaintenanceMiddleware:
     """Return 503 for non-exempt endpoints when the maintenance flag is set.
 

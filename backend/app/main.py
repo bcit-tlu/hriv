@@ -25,7 +25,7 @@ from .reconciliation import run_reconciliation_sweep
 from .schemas import FeaturesOut
 from .worker import TaskQueueUnavailableError, get_pool
 from .maintenance import is_maintenance_mode
-from .middleware import AuditMiddleware, MaintenanceMiddleware
+from .middleware import AuditMiddleware, CollectionsFeatureMiddleware, MaintenanceMiddleware
 from .routers import (
     admin,
     announcement,
@@ -261,6 +261,7 @@ _cors_origins, _cors_allow_credentials = _resolve_cors_config(
 )
 
 app.add_middleware(MaintenanceMiddleware)
+app.add_middleware(CollectionsFeatureMiddleware)
 app.add_middleware(AuditMiddleware)
 
 # Starlette session middleware — required by authlib's OIDC client to store
