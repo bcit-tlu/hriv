@@ -4771,8 +4771,8 @@ standalone and requires a support library to be linked with it.  This
 support library is itself covered by the above license.
 
 ================================================================================
-psycopg@3.2.9
-License: GNU Lesser General Public License v3 (LGPLv3)
+psycopg@3.3.6
+License: LGPL-3.0-only
 ================================================================================
 
                    GNU LESSER GENERAL PUBLIC LICENSE
@@ -4942,8 +4942,8 @@ permanent authorization for you to choose that version for the
 Library.
 
 ================================================================================
-psycopg-binary@3.2.9
-License: GNU Lesser General Public License v3 (LGPLv3)
+psycopg-binary@3.3.6
+License: LGPL-3.0-only
 ================================================================================
 
                    GNU LESSER GENERAL PUBLIC LICENSE
@@ -5173,7 +5173,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 The above BSD License Applies to all code, even that also covered by Apache 2.0.
 
 ================================================================================
-PyYAML@6.0.2
+PyYAML@6.0.3
 License: MIT
 ================================================================================
 
