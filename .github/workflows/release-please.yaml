@@ -25,7 +25,7 @@ jobs:
       # downstream workflows (ci.yaml, pr-title-lint).  GITHUB_TOKEN's
       # anti-recursion guard silently prevents other workflows from
       # running on the PR, leaving branch-protection checks unsatisfied.
-      - uses: actions/create-github-app-token@v1
+      - uses: actions/create-github-app-token@v3
         id: app-token
         with:
           app-id: ${{ vars.RELEASE_PLEASE_APP_ID }}
