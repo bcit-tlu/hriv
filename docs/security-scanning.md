@@ -66,6 +66,13 @@ The job is skipped via `if: github.actor != 'dependabot[bot]'`; the bump's
 auto-rebased — comment `@dependabot rebase` (or `@dependabot recreate`) on the
 PR to refresh one that has fallen behind `main`.
 
+Some majors are deliberately ignored in `dependabot.yml` (Node/`@types/node`
+odd-numbered Current releases; frontend `typescript`, `storybook`/`@storybook/*`
+and `vitest`/`@vitest/*` majors whose peers cannot follow yet). Each ignore has
+a comment naming the blocker; when it clears, delete the ignore and take the
+bump as a co-ordinated PR (all peers together) rather than via single-package
+Dependabot PRs.
+
 Checklist when merging one:
 
 - **Runtime Python/npm dependency changed?** Regenerate the component's
