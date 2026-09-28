@@ -6,6 +6,7 @@ import {
   DEFAULT_COLLECTION_FILTERS,
   COLLECTION_NOT_FOUND_MESSAGE,
   matchesCollectionFilters,
+  normalizeCollectionFilters,
   toCollectionApiFilters,
   toCollectionPatch,
   useCollectionsData,
@@ -79,6 +80,39 @@ function renderData(
     { initialProps: {} },
   )
 }
+
+describe('normalizeCollectionFilters', () => {
+  const userOwner = { kind: 'user', userId: 3, name: 'X' } as const
+  const programOwner = { kind: 'program', programId: 4, name: 'P' } as const
+
+  it('returns the same object when nothing needs dropping', () => {
+    const filters = { type: 'sequence', mine: false, owner: userOwner } as const
+    expect(normalizeCollectionFilters(filters, { role: 'instructor' })).toBe(filters)
+    expect(normalizeCollectionFilters(DEFAULT_COLLECTION_FILTERS, { role: 'student' })).toBe(
+      DEFAULT_COLLECTION_FILTERS,
+    )
+  })
+
+  it('drops every owner facet for students, keeping type and mine', () => {
+    for (const owner of [userOwner, programOwner, 'orphaned'] as const) {
+      expect(
+        normalizeCollectionFilters({ type: 'sequence', mine: true, owner }, { role: 'student' }),
+      ).toEqual({ type: 'sequence', mine: true, owner: 'any' })
+    }
+  })
+
+  it('drops orphaned for every non-admin but keeps explicit owners', () => {
+    const orphaned = { type: 'all', mine: false, owner: 'orphaned' } as const
+    expect(normalizeCollectionFilters(orphaned, { role: 'admin' })).toBe(orphaned)
+    for (const user of [{ role: 'instructor' }, { role: 'staff' }, null] as const) {
+      expect(normalizeCollectionFilters(orphaned, user)).toEqual({ ...orphaned, owner: 'any' })
+      expect(normalizeCollectionFilters({ ...orphaned, owner: programOwner }, user)).toEqual({
+        ...orphaned,
+        owner: programOwner,
+      })
+    }
+  })
+})
 
 describe('toCollectionApiFilters', () => {
   it('sends nothing for the defaults', () => {
@@ -294,6 +328,35 @@ describe('useCollectionsData', () => {
     act(() => result.current.setFilters({ type: 'sequence', mine: false, owner: 'orphaned' }))
     await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(2))
     expect(fetchCollectionsMock).toHaveBeenLastCalledWith({ type: 'sequence' })
+  })
+
+  it('drops a stale owner facet when the current user becomes a student', async () => {
+    const admin = makeUser({ id: 1, role: 'admin' })
+    const student = makeUser({ id: 2, role: 'student' })
+    const owner = { kind: 'user', userId: 9, name: 'Zed' } as const
+    const { result, rerender } = renderData({}, admin)
+    await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(1))
+    act(() => result.current.setFilters({ ...DEFAULT_COLLECTION_FILTERS, owner }))
+    await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(2))
+    expect(fetchCollectionsMock).toHaveBeenLastCalledWith({ owner_user_id: 9 })
+    expect(result.current.filters.owner).toEqual(owner)
+
+    rerender({ currentUser: student })
+    await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(3))
+    expect(fetchCollectionsMock).toHaveBeenLastCalledWith({})
+    expect(result.current.filters).toEqual(DEFAULT_COLLECTION_FILTERS)
+
+    // A collection the student saves must not be hidden by the admin's leftover owner selection.
+    createCollectionMock.mockResolvedValueOnce(
+      makeApiCollection({ id: 42, owner: { user_id: 2, name: 'Student' } }),
+    )
+    fetchCollectionsMock.mockRejectedValueOnce(new ApiError(403, 'Refresh failed'))
+    await act(async () => {
+      await result.current.create(VALUES)
+    })
+    expect(result.current.collections.map((c) => c.id)).toEqual([42])
+    await waitFor(() => expect(result.current.error).toBe('Refresh failed'))
+    expect(result.current.collections.map((c) => c.id)).toEqual([42])
   })
 
   it('keeps owner options from the unfiltered result while an owner filter is active', async () => {

@@ -277,8 +277,13 @@ only — an **Owner** select built from the owners in the loaded list
 (`owner_user_id` / `owner_program_id`). Students never see the Owner select
 and `toCollectionApiFilters` never emits `owner_*` for them. Admins
 additionally get _No owner (orphaned)_ → `orphaned=true`;
-`toCollectionApiFilters` never emits `orphaned` for other roles. Loading
-spinner, a plain error `Alert`
+`toCollectionApiFilters` never emits `orphaned` for other roles. Both rules
+come from one helper, `normalizeCollectionFilters(filters, role)`, which the
+hook applies to its filter state before it reaches the API params, the
+client-side mirror (`matchesCollectionFilters`) and the filter bar — so an
+owner selection that outlives a user switch (e.g. admin → student on the
+same tab) is dropped rather than silently hiding the new user's own saves.
+Loading spinner, a plain error `Alert`
 (notification only — no Retry action), and filter-aware empty copy follow the
 existing page patterns; the unfiltered empty state's "Create a collection" is
 a link that opens the same create dialog as the **New collection** button.

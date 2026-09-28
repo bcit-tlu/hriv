@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ApiError,
   createCollection,
@@ -32,26 +32,38 @@ export const COLLECTION_NOT_FOUND_MESSAGE =
   'This collection could not be found. It may have been deleted or you may not have access to it.'
 
 /**
- * Translate UI filters into API query params. `orphaned` is admin-only on the
- * server (403 otherwise) so it is dropped for every other role, and students
- * have no owner facet at all so `owner_*` is never sent for them.
+ * Drop owner facets the role cannot use: students have no owner facet at all
+ * and `orphaned` is admin-only on the server (403 otherwise). Applied to the
+ * hook's filter state so the UI, the API params and the client-side mirror
+ * agree even when a selection outlives a user switch.
  */
+export function normalizeCollectionFilters(
+  filters: CollectionListFilters,
+  user: Pick<User, 'role'> | null,
+): CollectionListFilters {
+  if (filters.owner === 'any') return filters
+  if (user?.role === 'student' || (filters.owner === 'orphaned' && user?.role !== 'admin')) {
+    return { ...filters, owner: 'any' }
+  }
+  return filters
+}
+
+/** Translate UI filters into API query params. */
 export function toCollectionApiFilters(
   filters: CollectionListFilters,
   user: Pick<User, 'role'> | null,
 ): CollectionFilters {
+  const { type, mine, owner } = normalizeCollectionFilters(filters, user)
   const api: CollectionFilters = {}
-  if (filters.type !== 'all') api.type = filters.type
-  if (filters.mine) {
+  if (type !== 'all') api.type = type
+  if (mine) {
     api.mine = true
     return api
   }
-  if (user?.role === 'student') return api
-  if (filters.owner === 'orphaned') {
-    if (user?.role === 'admin') api.orphaned = true
-  } else if (filters.owner !== 'any') {
-    if (filters.owner.kind === 'user') api.owner_user_id = filters.owner.userId
-    else api.owner_program_id = filters.owner.programId
+  if (owner === 'orphaned') api.orphaned = true
+  else if (owner !== 'any') {
+    if (owner.kind === 'user') api.owner_user_id = owner.userId
+    else api.owner_program_id = owner.programId
   }
   return api
 }
@@ -145,13 +157,17 @@ export function useCollectionsData({
   const [collections, setCollections] = useState<CollectionSummary[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [filters, setFilters] = useState<CollectionListFilters>(DEFAULT_COLLECTION_FILTERS)
+  const [rawFilters, setFilters] = useState<CollectionListFilters>(DEFAULT_COLLECTION_FILTERS)
   const [ownerOptions, setOwnerOptions] = useState<NonNullable<CollectionOwner>[]>([])
   const [detail, setDetail] = useState<Collection | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
   const loadSeq = useRef(0)
   const role = currentUser?.role ?? null
+  const filters = useMemo(
+    () => normalizeCollectionFilters(rawFilters, role ? { role } : null),
+    [rawFilters, role],
+  )
 
   const load = useCallback(async () => {
     const seq = ++loadSeq.current

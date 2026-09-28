@@ -37,7 +37,9 @@ stories drive it with deterministic fixtures.
   **Owner** select. Selecting My collections resets and disables the owner facet. Admins get an
   extra _No owner (orphaned)_ owner choice; the hook never sends `orphaned` for other roles.
   Students never see the Owner select, and the hook never sends `owner_user_id` /
-  `owner_program_id` for them.
+  `owner_program_id` for them. `normalizeCollectionFilters` applies both rules to the hook's
+  filter state, so an owner selection left over from a previous user is dropped rather than
+  hiding the new user's own saves.
 - **Grid.** One column on phones, two at `sm`, three at `md`, four at `lg`, each cell a
   `CollectionCard`.
 - **States.** Spinner while the first page loads, a plain error `Alert` (no action), and an
