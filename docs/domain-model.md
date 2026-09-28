@@ -45,6 +45,34 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   deleted.
 - See [Groups](groups.md) for membership/lifecycle invariants.
 
+### Collection _(added in `0030_collections`)_
+
+- **Purpose:** user- or program-owned grouping of existing images for
+  `sequence` or `synchronized` viewing; never duplicates image/category rows.
+- **Key fields:** `name`; `description` (nullable); `type` (`synchronized` /
+  `sequence`, CHECK `ck_collections_type`); `visibility` (`private` / `public` /
+  `restricted`, CHECK `ck_collections_visibility`, default `private`);
+  `user_id` (FK to User, **CASCADE**); `owner_program_id` (FK to Program,
+  **SET NULL**); `viewport_state` (JSONB, default `{}`); `version` (optimistic
+  concurrency, starts at 1). CHECK `ck_collections_single_owner`
+  (`num_nonnulls(user_id, owner_program_id) <= 1`) — both `NULL` = orphaned.
+- **Relationships:** `owner` (User), `owner_program` (Program); `image_links`
+  (ordered `CollectionImage` rows, `cascade="all, delete-orphan"`,
+  `order_by sort_order`); `programs` / `groups` (M2M via `collection_programs` /
+  `collection_groups`, eager `selectin`) — restricted-visibility scope.
+- **Deletion:** `CASCADE` to `collection_images`, `collection_programs`,
+  `collection_groups`. Deleting a user deletes their collections; deleting a
+  program orphans its collections; deleting an image removes it from every
+  collection.
+- See [Collections](collections.md).
+
+### CollectionImage _(added in `0030_collections`)_
+
+- **Purpose:** ordered membership of an Image in a Collection.
+- **Key fields:** composite PK `(collection_id, image_id)`; `sort_order`
+  (default 0); index `idx_collection_images_order (collection_id, sort_order)`.
+- **Deletion:** both FKs `CASCADE`.
+
 ### Category
 
 - **Purpose:** hierarchical folder structure for organising images.
@@ -197,13 +225,15 @@ the schema** — change the model _and_ generate a migration in the same PR (see
 
 ## Junction tables
 
-| Table               | Composite PK                | FK behaviour   | Constraint                                                                         |
-| ------------------- | --------------------------- | -------------- | ---------------------------------------------------------------------------------- |
-| `user_programs`     | `(user_id, program_id)`     | both `CASCADE` | —                                                                                  |
-| `category_programs` | `(category_id, program_id)` | both `CASCADE` | —                                                                                  |
-| `group_members`     | `(group_id, user_id)`       | both `CASCADE` | members must be **students** (422 on mismatch)                                     |
-| `group_instructors` | `(group_id, user_id)`       | both `CASCADE` | instructors must be **instructors** (422); last instructor cannot be removed (409) |
-| `category_groups`   | `(category_id, group_id)`   | both `CASCADE` | group attached to a category cannot be deleted (409)                               |
+| Table                 | Composite PK                  | FK behaviour   | Constraint                                                                         |
+| --------------------- | ----------------------------- | -------------- | ---------------------------------------------------------------------------------- |
+| `user_programs`       | `(user_id, program_id)`       | both `CASCADE` | —                                                                                  |
+| `category_programs`   | `(category_id, program_id)`   | both `CASCADE` | —                                                                                  |
+| `group_members`       | `(group_id, user_id)`         | both `CASCADE` | members must be **students** (422 on mismatch)                                     |
+| `group_instructors`   | `(group_id, user_id)`         | both `CASCADE` | instructors must be **instructors** (422); last instructor cannot be removed (409) |
+| `category_groups`     | `(category_id, group_id)`     | both `CASCADE` | group attached to a category cannot be deleted (409)                               |
+| `collection_programs` | `(collection_id, program_id)` | both `CASCADE` | restricted-visibility scope; see [Collections](collections.md)                     |
+| `collection_groups`   | `(collection_id, group_id)`   | both `CASCADE` | restricted-visibility scope                                                        |
 
 `group_members` and `group_instructors` also carry a `created_at` timestamp.
 
@@ -215,7 +245,7 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   than delete the child: `images.category_id`, `source_images.category_id`,
   `source_images.image_id`, `source_images.uploaded_by`, `bulk_import_jobs.category_id`,
   `bulk_import_jobs.requested_by`, `admin_tasks.created_by`,
-  `groups.created_by_user_id`.
+  `groups.created_by_user_id`, `collections.owner_program_id`.
 - **`active` (Image) vs `status` (Category)** are independent visibility
   mechanisms — don't conflate them.
 - **`sort_order`** exists on both `Category` and `Image` for manual ordering.
@@ -232,7 +262,7 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   several indexes are named explicitly in `__table_args__` to keep autogenerate
   from proposing spurious rename/drop operations.
 
-See also: [Groups](groups.md),
+See also: [Groups](groups.md), [Collections](collections.md),
 [Category visibility & program restriction](category-visibility-and-programs.md),
 [Admin import/export](admin-import-export.md),
 [agent feature map](agent-feature-map.md).
