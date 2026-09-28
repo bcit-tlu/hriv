@@ -32,6 +32,7 @@ from .routers import (
     bulk_import,
     categories,
     changelog,
+    collections,
     groups,
     images,
     issues,
@@ -280,6 +281,7 @@ app.include_router(admin.router, prefix="/api")
 app.include_router(bulk_import.router, prefix="/api")
 app.include_router(announcement.router, prefix="/api")
 app.include_router(changelog.router, prefix="/api")
+app.include_router(collections.router, prefix="/api")
 app.include_router(categories.router, prefix="/api")
 app.include_router(groups.router, prefix="/api")
 app.include_router(images.router, prefix="/api")
