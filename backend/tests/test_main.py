@@ -427,3 +427,14 @@ def test_resolve_cors_config_unset_required_fails_fast() -> None:
 
     with pytest.raises(RuntimeError, match="CORS_ORIGINS"):
         _resolve_cors_config("", "required")
+
+
+async def test_features_endpoint_reports_collections_flag(monkeypatch) -> None:
+    from app.database import settings
+    from app.main import features
+
+    monkeypatch.setattr(settings, "collections_enabled", False)
+    assert (await features()).collections is False
+
+    monkeypatch.setattr(settings, "collections_enabled", True)
+    assert (await features()).collections is True

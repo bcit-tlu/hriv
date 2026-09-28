@@ -2136,6 +2136,15 @@ export interface VersionsResponse {
   backup: string
 }
 
+/** ``GET /api/features`` — deployment feature flags (docs/collections.md). */
+export interface ApiFeatures {
+  collections: boolean
+}
+
+export function fetchFeatures(): Promise<ApiFeatures> {
+  return request('/features')
+}
+
 export function fetchVersions(): Promise<VersionsResponse> {
   return request('/admin/version')
 }

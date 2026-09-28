@@ -17,6 +17,7 @@ const ALL_IDS = [
 describe('getNavigationItems', () => {
   it('returns all items for admin (canEditContent + canManageUsers + canViewPeople)', () => {
     const items = getNavigationItems({
+      collectionsEnabled: true,
       canEditContent: true,
       canManageUsers: true,
       canViewPeople: true,
@@ -26,6 +27,7 @@ describe('getNavigationItems', () => {
 
   it('returns all items for instructor (canEditContent, no canManageUsers/canViewPeople)', () => {
     const items = getNavigationItems({
+      collectionsEnabled: true,
       canEditContent: true,
       canManageUsers: false,
       canViewPeople: false,
@@ -43,6 +45,7 @@ describe('getNavigationItems', () => {
 
   it('returns only unrestricted items for student (no edit, no manage users, no people)', () => {
     const items = getNavigationItems({
+      collectionsEnabled: true,
       canEditContent: false,
       canManageUsers: false,
       canViewPeople: false,
@@ -53,6 +56,7 @@ describe('getNavigationItems', () => {
 
   it('returns home + people for staff (view-only with people access)', () => {
     const items = getNavigationItems({
+      collectionsEnabled: true,
       canEditContent: false,
       canManageUsers: false,
       canViewPeople: true,
@@ -65,7 +69,13 @@ describe('getNavigationItems', () => {
     for (const canEditContent of [true, false]) {
       for (const canManageUsers of [true, false]) {
         for (const canViewPeople of [true, false]) {
-          const items = getNavigationItems({ canEditContent, canManageUsers, canViewPeople })
+          const items = getNavigationItems({
+            collectionsEnabled: true,
+            canEditContent,
+            canManageUsers,
+            canViewPeople,
+            collectionsEnabled: true,
+          })
           const collections = items.find((i) => i.id === 'collections')
           expect(collections).toBeDefined()
           expect(collections?.section).toBe('primary')
@@ -77,6 +87,7 @@ describe('getNavigationItems', () => {
 
   it('staff never sees admin or manage items', () => {
     const items = getNavigationItems({
+      collectionsEnabled: true,
       canEditContent: false,
       canManageUsers: false,
       canViewPeople: true,
@@ -88,6 +99,7 @@ describe('getNavigationItems', () => {
 
   it('includes manage-section items for instructor with correct sections', () => {
     const items = getNavigationItems({
+      collectionsEnabled: true,
       canEditContent: true,
       canManageUsers: false,
       canViewPeople: false,
@@ -98,6 +110,7 @@ describe('getNavigationItems', () => {
 
   it('includes account-section items only for admin or staff', () => {
     const withoutManage = getNavigationItems({
+      collectionsEnabled: true,
       canEditContent: true,
       canManageUsers: false,
       canViewPeople: false,
@@ -105,6 +118,7 @@ describe('getNavigationItems', () => {
     expect(withoutManage.filter((i) => i.section === 'account')).toEqual([])
 
     const withManage = getNavigationItems({
+      collectionsEnabled: true,
       canEditContent: true,
       canManageUsers: true,
       canViewPeople: true,
@@ -113,6 +127,7 @@ describe('getNavigationItems', () => {
     expect(accountItems.map((i) => i.id)).toEqual(['people', 'admin'])
 
     const staff = getNavigationItems({
+      collectionsEnabled: true,
       canEditContent: false,
       canManageUsers: false,
       canViewPeople: true,
@@ -123,11 +138,13 @@ describe('getNavigationItems', () => {
 
   it('preserves item ordering regardless of permissions', () => {
     const adminItems = getNavigationItems({
+      collectionsEnabled: true,
       canEditContent: true,
       canManageUsers: true,
       canViewPeople: true,
     })
     const studentItems = getNavigationItems({
+      collectionsEnabled: true,
       canEditContent: false,
       canManageUsers: false,
       canViewPeople: false,
@@ -138,6 +155,7 @@ describe('getNavigationItems', () => {
 
   it('each returned item satisfies the required permission gates', () => {
     const items: NavigationItem[] = getNavigationItems({
+      collectionsEnabled: true,
       canEditContent: true,
       canManageUsers: false,
       canViewPeople: false,
@@ -155,5 +173,27 @@ describe('getNavigationItems', () => {
         throw new Error(`Item ${item.id} should not be included without canViewPeople`)
       }
     }
+  })
+
+  it('omits Collections for every role when the deployment flag is off', () => {
+    const roles = [
+      { canEditContent: true, canManageUsers: true, canViewPeople: true },
+      { canEditContent: true, canManageUsers: false, canViewPeople: false },
+      { canEditContent: false, canManageUsers: false, canViewPeople: true },
+      { canEditContent: false, canManageUsers: false, canViewPeople: false },
+    ]
+    for (const caps of roles) {
+      const ids = getNavigationItems({ ...caps, collectionsEnabled: false }).map((i) => i.id)
+      expect(ids).not.toContain('collections')
+      expect(ids[0]).toBe('home')
+    }
+    expect(
+      getNavigationItems({
+        canEditContent: false,
+        canManageUsers: false,
+        canViewPeople: false,
+        collectionsEnabled: false,
+      }).map((i) => i.id),
+    ).toEqual(['home'])
   })
 })

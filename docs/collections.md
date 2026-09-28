@@ -13,6 +13,49 @@ Epic: [#1409](https://github.com/bcit-tlu/hriv/issues/1409). This page is
 extended as each child issue lands; sections marked _planned_ are not yet
 implemented.
 
+## Feature flag (`COLLECTIONS_ENABLED`)
+
+Collections are **dark-launched** so the rest of the app can keep releasing
+(patch/minor bumps via release-please, `stable` re-pins) while the epic lands
+one child issue at a time on `main`.
+
+- **Backend.** `Settings.collections_enabled` (`backend/app/database.py`,
+  env `COLLECTIONS_ENABLED`, default `false`). The collections router carries
+  a router-wide dependency (`require_collections_enabled` in
+  `routers/collections.py`) that raises the same `404 Not Found` as an
+  unknown route for **every** `/api/collections*` endpoint while the flag is
+  off — the API surface is indistinguishable from a build without
+  collections. The check runs per request, so tests and operators can flip
+  it without rebuilding the app. Admin DB export/import still includes the
+  `collections` tables regardless of the flag (they exist in the schema
+  either way).
+- **`GET /api/features`** (`main.py`, unauthenticated, `FeaturesOut`) returns
+  `{"collections": <bool>}`. It is a UX hint only — flags are not secrets and
+  each one is enforced independently by the backend.
+- **Frontend.** `useFeatures()` fetches `/api/features` once per mount
+  (`fetchFeatures` in `api.ts`; `Features` / `DEFAULT_FEATURES` in
+  `types.ts`). Until the response arrives nothing collections-related
+  renders; a failed request resolves to _everything off_. When `collections`
+  is `false`, `getNavigationItems` drops the Collections item
+  (`requiresCollections`), `AppShell` omits the desktop tab and drawer entry,
+  `useCollectionsData` never fetches, and `App.tsx` falls back from
+  `?collection={id}` / `?page=collections` to browse (`effectivePage` reports
+  `browse` to telemetry). When `true`, behaviour is exactly as described in
+  the sections below.
+- **Deployment.** Helm value `collections.enabled` (default `false`) renders
+  `COLLECTIONS_ENABLED` on the backend API pod (`charts/backend`). The
+  `flux-fleet` `latest` overlay
+  (`apps/overlays/latest/hriv/backend/values-latest.yaml`) sets it `true`;
+  `stable` inherits the chart default until the epic is promoted. Because
+  chart edits only reach an environment on the next chart release
+  ([RELEASE_AND_DEPLOY_FLOW.md](RELEASE_AND_DEPLOY_FLOW.md)), `latest`
+  shows no collections between this flag landing and the next backend
+  release. `docker-compose.yml` sets `COLLECTIONS_ENABLED=true` for local
+  development.
+- **Removal.** The flag, `/api/features`' `collections` key and the frontend
+  gating are deleted in the epic's closing issue
+  ([#1419](https://github.com/bcit-tlu/hriv/issues/1419)).
+
 ## Data model
 
 Migration `0030_collections` (`backend/app/models.py`: `Collection`,
@@ -96,7 +139,9 @@ group; instructors only groups they manage). Students and staff cannot use
 
 Base path `/api/collections` (router `backend/app/routers/collections.py`).
 All endpoints require a JWT bearer token — there is no unauthenticated variant
-(see [unauthenticated-routes.md](unauthenticated-routes.md)).
+(see [unauthenticated-routes.md](unauthenticated-routes.md)). Every endpoint
+below answers `404` while `COLLECTIONS_ENABLED` is off (see
+[Feature flag](#feature-flag-collections_enabled)).
 
 | Method | Endpoint                         | Min role                                                               | Notes                                                                                                                                                                                                                                                                                                                                 |
 | ------ | -------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -259,6 +304,8 @@ labels, `canUseRestrictedVisibility`, `parseCollectionIdParam`),
 `components/CollectionsPage.tsx`, `CollectionCard.tsx`,
 `CollectionEditDialog.tsx`, plus `navigation.ts`, `AppShell.tsx`,
 `useShareableImageState.ts`, `useNavigationHistory.ts` and `App.tsx`.
+Everything in this section is conditional on the deployment flag
+(`useFeatures.ts`; see [Feature flag](#feature-flag-collections_enabled)).
 
 **Navigation.** A **Collections** tab is shown to every authenticated role
 (students included) in both the desktop app bar and the compact/mobile
@@ -371,7 +418,14 @@ ownership management / transfer UI.
 - `frontend/tests/collectionUtils.test.ts` — wire → domain mapping, role
   gating for `restricted`, `?collection=` parsing.
 - `frontend/tests/navigation.test.ts`, `components/AppShell.test.tsx` —
-  Collections tab for every role (desktop + compact drawer).
+  Collections tab for every role (desktop + compact drawer), and hidden for
+  every role when `collectionsEnabled` is false.
+- Feature flag: `backend/tests/test_database.py` (`COLLECTIONS_ENABLED`
+  default / env parsing), `test_router_collections.py` (router-wide
+  `require_collections_enabled` dependency, 404 when off), `test_main.py`
+  (`GET /api/features`); `frontend/tests/useFeatures.test.ts`,
+  `api.test.ts` (`fetchFeatures`), `App.test.tsx` (shell flag prop, deep-link
+  fallback to browse when off, failed `/api/features` treated as off).
 - `frontend/tests/useShareableImageState.test.ts`,
   `useNavigationHistory.test.ts`, `App.test.tsx` — `?collection={id}`
   parse/emit precedence, history entries, deep-link restore on load and
