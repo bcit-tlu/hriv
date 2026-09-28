@@ -8,6 +8,7 @@ import asyncio
 import contextlib
 import errno
 import logging
+import math
 import os
 import shutil
 import tempfile
@@ -66,6 +67,45 @@ tracer = trace.get_tracer(__name__)
 # Keep this aligned with worker.max_jobs to avoid surprising throughput shifts.
 _MAX_CONCURRENCY = settings.worker_max_jobs
 _ZIP_EXTRACT_CHUNK_SIZE = 1024 * 1024
+# Decompression-bomb guards for uploaded zip archives. Each image entry is
+# capped individually (declared size, compression ratio and bytes actually
+# decompressed), the archive is capped cumulatively and by entry count, and the
+# data volume must keep a minimum amount of free space while extracting
+# (checked every _ZIP_FREE_SPACE_CHECK_INTERVAL_BYTES written).
+_ZIP_MAX_ENTRY_BYTES = int(
+    os.environ.get("BULK_IMPORT_MAX_ENTRY_BYTES", str(2 * 1024 * 1024 * 1024))
+)
+_ZIP_MAX_TOTAL_BYTES = int(
+    os.environ.get("BULK_IMPORT_MAX_TOTAL_BYTES", str(20 * 1024 * 1024 * 1024))
+)
+_ZIP_MAX_ENTRIES = int(os.environ.get("BULK_IMPORT_MAX_ENTRIES", "2000"))
+_ZIP_MAX_COMPRESSION_RATIO = float(
+    os.environ.get("BULK_IMPORT_MAX_COMPRESSION_RATIO", "100")
+)
+_ZIP_MIN_FREE_BYTES = int(
+    os.environ.get("BULK_IMPORT_MIN_FREE_BYTES", str(1024 * 1024 * 1024))
+)
+_ZIP_FREE_SPACE_CHECK_INTERVAL_BYTES = 512 * 1024 * 1024
+_ZIP_NAME_DISPLAY_LIMIT = 40
+
+
+def _validate_zip_limits() -> None:
+    for name, value in (
+        ("BULK_IMPORT_MAX_ENTRY_BYTES", _ZIP_MAX_ENTRY_BYTES),
+        ("BULK_IMPORT_MAX_TOTAL_BYTES", _ZIP_MAX_TOTAL_BYTES),
+        ("BULK_IMPORT_MAX_ENTRIES", _ZIP_MAX_ENTRIES),
+        ("BULK_IMPORT_MIN_FREE_BYTES", _ZIP_MIN_FREE_BYTES),
+    ):
+        if value <= 0:
+            raise ValueError(f"{name} must be a positive integer, got {value}")
+    if not math.isfinite(_ZIP_MAX_COMPRESSION_RATIO) or _ZIP_MAX_COMPRESSION_RATIO < 1:
+        raise ValueError(
+            "BULK_IMPORT_MAX_COMPRESSION_RATIO must be a finite number >= 1, "
+            f"got {_ZIP_MAX_COMPRESSION_RATIO}"
+        )
+
+
+_validate_zip_limits()
 _SOURCE_IMAGE_POLL_INTERVAL_SECONDS = 2
 _SOURCE_IMAGE_STALE_SECONDS = int(os.environ.get("SOURCE_IMAGE_STALE_SECONDS", "900"))
 _SOURCE_IMAGE_PENDING_GRACE_SECONDS = 10
@@ -104,6 +144,125 @@ _SOURCE_IMAGE_NO_WORKER_WINDOW_SECONDS = (
 def _is_image_filename(filename: str) -> bool:
     """Return True if the filename has a recognised image extension."""
     return Path(filename).suffix.lower() in IMAGE_EXTENSIONS
+
+
+class _ZipExtractLimitExceeded(Exception):
+    def __init__(self, status_code: int, detail: str) -> None:
+        super().__init__(detail)
+        self.status_code = status_code
+        self.detail = detail
+
+
+def _format_gib(num_bytes: int) -> str:
+    return f"{num_bytes / (1024 ** 3):g} GiB"
+
+
+def _display_name(name: str) -> str:
+    """Shorten attacker-controlled names so the error detail stays readable."""
+    name = os.path.basename(name.replace("\\", "/")) or name
+    if len(name) <= _ZIP_NAME_DISPLAY_LIMIT:
+        return name
+    return name[: _ZIP_NAME_DISPLAY_LIMIT - 1] + "\u2026"
+
+
+def _ensure_zip_extract_free_space(target_dir: str) -> None:
+    free_bytes = shutil.disk_usage(target_dir).free
+    if free_bytes < _ZIP_MIN_FREE_BYTES:
+        raise _ZipExtractLimitExceeded(
+            507,
+            "Insufficient storage \u2014 the data volume has less than "
+            f"{_format_gib(_ZIP_MIN_FREE_BYTES)} free, so the zip archive "
+            "cannot be extracted",
+        )
+
+
+class _ZipExtractBudget:
+    """Enforces per-entry, cumulative, entry-count and free-space limits across
+    every zip archive extracted for one bulk-import request."""
+
+    def __init__(self) -> None:
+        self.archive_name = ""
+        self.entries = 0
+        self.total_bytes = 0
+        self._last_free_space_check = 0
+
+    def begin_archive(self, archive_name: str) -> None:
+        self.archive_name = _display_name(archive_name)
+
+    def _entry_too_large(self, zip_entry: str) -> _ZipExtractLimitExceeded:
+        return _ZipExtractLimitExceeded(
+            413,
+            f"Zip entry '{_display_name(zip_entry)}' in '{self.archive_name}' "
+            f"is larger than the per-file limit of {_format_gib(_ZIP_MAX_ENTRY_BYTES)}",
+        )
+
+    def _archive_too_large(self) -> _ZipExtractLimitExceeded:
+        return _ZipExtractLimitExceeded(
+            413,
+            f"Zip archive '{self.archive_name}' would take this upload beyond "
+            f"the total limit of {_format_gib(_ZIP_MAX_TOTAL_BYTES)}",
+        )
+
+    def next_entry(self) -> None:
+        self.entries += 1
+        if self.entries > _ZIP_MAX_ENTRIES:
+            raise _ZipExtractLimitExceeded(
+                413,
+                f"Zip archive '{self.archive_name}' takes this upload beyond "
+                f"{_ZIP_MAX_ENTRIES} image files",
+            )
+
+    def prescreen(self, info: zipfile.ZipInfo) -> None:
+        """Reject an entry from its central-directory metadata alone."""
+        if info.file_size > _ZIP_MAX_ENTRY_BYTES:
+            raise self._entry_too_large(info.filename)
+        if self.total_bytes + info.file_size > _ZIP_MAX_TOTAL_BYTES:
+            raise self._archive_too_large()
+        if info.file_size > max(info.compress_size, 1) * _ZIP_MAX_COMPRESSION_RATIO:
+            raise _ZipExtractLimitExceeded(
+                413,
+                f"Zip entry '{_display_name(info.filename)}' in "
+                f"'{self.archive_name}' has a compression ratio above "
+                f"{_ZIP_MAX_COMPRESSION_RATIO:g}:1 and was rejected as a "
+                "possible decompression bomb",
+            )
+
+    def extract_entry(
+        self,
+        zf: zipfile.ZipFile,
+        zip_entry: str,
+        stored_path: str,
+        target_dir: str,
+    ) -> None:
+        """Write ``zip_entry`` to ``stored_path`` with a bounded read loop.
+
+        The declared sizes are pre-screened, then the limits are re-checked on
+        the bytes actually decompressed (headers are attacker-controlled).
+        Aborts before the next write as soon as a limit is crossed, leaving
+        cleanup of ``stored_path`` to the caller.
+        """
+        self.prescreen(zf.getinfo(zip_entry))
+        _ensure_zip_extract_free_space(target_dir)
+
+        entry_bytes = 0
+        with zf.open(zip_entry) as src, open(stored_path, "wb") as dst:
+            while True:
+                chunk = src.read(_ZIP_EXTRACT_CHUNK_SIZE)
+                if not chunk:
+                    break
+                entry_bytes += len(chunk)
+                self.total_bytes += len(chunk)
+                if entry_bytes > _ZIP_MAX_ENTRY_BYTES:
+                    raise self._entry_too_large(zip_entry)
+                if self.total_bytes > _ZIP_MAX_TOTAL_BYTES:
+                    raise self._archive_too_large()
+                dst.write(chunk)
+                if (
+                    self.total_bytes - self._last_free_space_check
+                    >= _ZIP_FREE_SPACE_CHECK_INTERVAL_BYTES
+                ):
+                    self._last_free_space_check = self.total_bytes
+                    _ensure_zip_extract_free_space(target_dir)
 
 
 @dataclass(frozen=True)
@@ -1562,6 +1721,7 @@ async def bulk_import_images(
             os.makedirs(settings.source_images_dir, exist_ok=True)
 
             file_entries: list[tuple[str, str]] = []  # (original_filename, stored_path)
+            budget = _ZipExtractBudget()
 
             try:
                 for upload in files:
@@ -1583,6 +1743,7 @@ async def bulk_import_images(
                                         break
                                     tmp.write(chunk)
 
+                            budget.begin_archive(upload.filename)
                             with zipfile.ZipFile(tmp_path, "r") as zf:
                                 for zip_entry in zf.namelist():
                                     # Skip directories and hidden/system files
@@ -1600,16 +1761,14 @@ async def bulk_import_images(
                                         settings.source_images_dir, unique_name
                                     )
 
+                                    budget.next_entry()
                                     try:
-                                        with (
-                                            zf.open(zip_entry) as src,
-                                            open(stored_path, "wb") as dst,
-                                        ):
-                                            shutil.copyfileobj(
-                                                src,
-                                                dst,
-                                                length=_ZIP_EXTRACT_CHUNK_SIZE,
-                                            )
+                                        budget.extract_entry(
+                                            zf,
+                                            zip_entry,
+                                            stored_path,
+                                            settings.source_images_dir,
+                                        )
                                     except Exception:
                                         with contextlib.suppress(OSError):
                                             os.unlink(stored_path)
@@ -1625,6 +1784,15 @@ async def bulk_import_images(
                             raise HTTPException(
                                 status_code=400,
                                 detail=f"File '{upload.filename}' is not a valid zip archive",
+                            )
+                        except _ZipExtractLimitExceeded as exc:
+                            logger.warning(
+                                "Bulk import rejected zip archive: %s",
+                                exc.detail,
+                                extra={"event": "bulk_import.zip_limit_exceeded"},
+                            )
+                            raise HTTPException(
+                                status_code=exc.status_code, detail=exc.detail
                             )
                         finally:
                             if tmp_path is not None:
