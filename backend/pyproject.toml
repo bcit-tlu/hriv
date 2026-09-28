@@ -8,11 +8,7 @@ package-mode = false
 
 [tool.poetry.dependencies]
 python = "^3.12"
-# <0.137: FastAPI 0.137 nests include_router() routes under _IncludedRouter
-# tree nodes (no .path), which crashes _get_route_details in
-# opentelemetry-instrumentation-fastapi <0.64b0 — every routed request 500s
-# (2026-09-28 stable outage). Unpin after upgrading opentelemetry-* to >=0.64b0.
-fastapi = ">=0.136,<0.137"
+fastapi = ">=0.136,<0.142"
 uvicorn = {extras = ["standard"], version = ">=0.34,<0.55"}
 sqlalchemy = {version = "^2.0.0", extras = ["asyncio"]}
 asyncpg = ">=0.30,<0.32"
@@ -27,12 +23,12 @@ authlib = "^1.3.0"
 itsdangerous = ">=1.1.0"
 arq = ">=0.27,<0.29"
 redis = "^5.0.0"
-opentelemetry-distro = "^0.57b0"
+opentelemetry-distro = "^0.64b0"
 opentelemetry-exporter-otlp = "^1.36.0"
-opentelemetry-instrumentation-fastapi = "^0.57b0"
-opentelemetry-instrumentation-httpx = "^0.57b0"
-opentelemetry-instrumentation-sqlalchemy = "^0.57b0"
-opentelemetry-instrumentation-redis = "^0.57b0"
+opentelemetry-instrumentation-fastapi = "^0.64b0"
+opentelemetry-instrumentation-httpx = "^0.64b0"
+opentelemetry-instrumentation-sqlalchemy = "^0.64b0"
+opentelemetry-instrumentation-redis = "^0.64b0"
 alembic = "^1.13.0"
 azure-storage-blob = "12.30.3"
 prometheus-client = ">=0.21,<0.27"
