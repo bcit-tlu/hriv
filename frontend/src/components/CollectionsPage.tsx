@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -228,6 +228,7 @@ export default function CollectionsPage({
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const editRequestRef = useRef(0)
 
   const isAdmin = currentUser?.role === 'admin'
   const showOwnerFilter = currentUser != null && currentUser.role !== 'student'
@@ -238,13 +239,17 @@ export default function CollectionsPage({
   }
 
   const openEdit = async (summary: CollectionSummary) => {
+    // Only the most recent Edit click may open the form.
+    const request = ++editRequestRef.current
     setEditLoadError(null)
     try {
       // Summaries omit program/group scope, so fetch the full record first.
       const full = detail?.id === summary.id ? detail : await loadCollection(summary.id)
+      if (request !== editRequestRef.current) return
       setEditing(full)
       setEditorOpen(true)
     } catch (err) {
+      if (request !== editRequestRef.current) return
       setEditLoadError(userMessage(err, 'Failed to load collection.'))
     }
   }

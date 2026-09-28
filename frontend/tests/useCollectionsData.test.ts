@@ -359,6 +359,31 @@ describe('useCollectionsData', () => {
     expect(result.current.collections.map((c) => c.id)).toEqual([42])
   })
 
+  it("forgets a previous user's owner selection instead of restoring it for the next non-student", async () => {
+    const admin = makeUser({ id: 1, role: 'admin' })
+    const student = makeUser({ id: 2, role: 'student' })
+    const instructor = makeUser({ id: 3, role: 'instructor' })
+    const owner = { kind: 'user', userId: 9, name: 'Zed' } as const
+    const { result, rerender } = renderData({}, admin)
+    await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(1))
+    act(() => result.current.setFilters({ ...DEFAULT_COLLECTION_FILTERS, owner }))
+    await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(2))
+
+    rerender({ currentUser: student })
+    await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(3))
+    expect(result.current.filters).toEqual(DEFAULT_COLLECTION_FILTERS)
+
+    rerender({ currentUser: instructor })
+    await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(4))
+    expect(fetchCollectionsMock).toHaveBeenLastCalledWith({})
+    expect(result.current.filters).toEqual(DEFAULT_COLLECTION_FILTERS)
+
+    // The new user can still pick their own owner filter.
+    act(() => result.current.setFilters({ ...DEFAULT_COLLECTION_FILTERS, owner }))
+    await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(5))
+    expect(fetchCollectionsMock).toHaveBeenLastCalledWith({ owner_user_id: 9 })
+  })
+
   it('refreshes with the filters in effect when a save finishes, not those at its start', async () => {
     const { result } = renderData()
     await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(1))
@@ -385,6 +410,37 @@ describe('useCollectionsData', () => {
     await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(3))
     expect(fetchCollectionsMock).toHaveBeenLastCalledWith({ type: 'sequence' })
     await waitFor(() => expect(result.current.collections.map((c) => c.id)).toEqual([5]))
+  })
+
+  it('places a finished save against the current filters, not those at its start', async () => {
+    const { result } = renderData()
+    await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(1))
+
+    let resolveCreate!: (value: ReturnType<typeof makeApiCollection>) => void
+    createCollectionMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveCreate = resolve
+      }),
+    )
+    let created: Promise<unknown>
+    act(() => {
+      created = result.current.create({ ...VALUES, type: 'synchronized' })
+    })
+    // Switch to a filter the pending collection will not satisfy before it resolves.
+    fetchCollectionsMock.mockResolvedValueOnce([
+      makeApiCollectionSummary({ id: 5, type: 'sequence' }),
+    ])
+    act(() => result.current.setFilters({ ...DEFAULT_COLLECTION_FILTERS, type: 'sequence' }))
+    await waitFor(() => expect(result.current.collections.map((c) => c.id)).toEqual([5]))
+
+    // A failed background refresh leaves the optimistic placement in charge.
+    fetchCollectionsMock.mockRejectedValueOnce(new ApiError(403, 'Refresh failed'))
+    await act(async () => {
+      resolveCreate(makeApiCollection({ id: 42, type: 'synchronized' }))
+      await created
+    })
+    await waitFor(() => expect(result.current.error).toBe('Refresh failed'))
+    expect(result.current.collections.map((c) => c.id)).toEqual([5])
   })
 
   it('keeps owner options from the unfiltered result while an owner filter is active', async () => {

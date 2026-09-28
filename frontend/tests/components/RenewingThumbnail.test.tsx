@@ -214,6 +214,37 @@ describe('RenewingThumbnail', () => {
     expect(onImageRenewed).not.toHaveBeenCalled()
   })
 
+  it('renews through the image record again when a parent keeps the stale thumb prop', async () => {
+    apiMocks.fetchImage
+      .mockResolvedValueOnce(apiImage({ thumb: '/thumb.jpg?tile_token=second' }))
+      .mockResolvedValueOnce(apiImage({ thumb: '/thumb.jpg?tile_token=third' }))
+    const onImageRenewed = vi.fn()
+    render(
+      <RenewingThumbnail
+        image={{ id: 1, thumb: '/thumb.jpg?tile_token=first' }}
+        alt="Slide"
+        onImageRenewed={onImageRenewed}
+      />,
+    )
+    const img = screen.getByAltText('Slide')
+
+    fireEvent.error(img)
+    await waitFor(() => expect(img).toHaveAttribute('src', '/thumb.jpg?tile_token=second'))
+    fireEvent.load(img)
+
+    fireEvent.error(img)
+    await waitFor(() => expect(img).toHaveAttribute('src', '/thumb.jpg?tile_token=third'))
+    fireEvent.error(img)
+
+    expect(apiMocks.fetchImage).toHaveBeenCalledTimes(2)
+    expect(apiMocks.fetchImage).toHaveBeenCalledWith(1)
+    expect(onImageRenewed).toHaveBeenCalledTimes(2)
+    expect(onImageRenewed).toHaveBeenLastCalledWith(
+      expect.objectContaining({ thumb: '/thumb.jpg?tile_token=third' }),
+    )
+    expect(img).toHaveAttribute('src', '/thumb.jpg?tile_token=third')
+  })
+
   it('does not renew a renewed URL that never loaded', async () => {
     const renewThumb = vi
       .fn<(id: number) => Promise<{ id: number; thumb: string | null }>>()

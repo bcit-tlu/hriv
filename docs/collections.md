@@ -285,6 +285,12 @@ hook applies to its filter state before it reaches the API params, the
 client-side mirror (`matchesCollectionFilters`) and the filter bar — so an
 owner selection that outlives a user switch (e.g. admin → student on the
 same tab) is dropped rather than silently hiding the new user's own saves.
+Filter state is also keyed to the signed-in user's id: a different user on
+the same tab starts from the default filters, so a previous admin's owner
+selection cannot resurface for the next instructor. Saves that finish after
+a filter change are placed and refreshed against the filters current at
+completion, and a second **Edit** click supersedes an earlier one whose
+record fetch is still in flight.
 Loading spinner, a plain error `Alert`
 (notification only — no Retry action), and filter-aware empty copy follow the
 existing page patterns; the unfiltered empty state's "Create a collection" is

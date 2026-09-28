@@ -157,7 +157,19 @@ export function useCollectionsData({
   const [collections, setCollections] = useState<CollectionSummary[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [rawFilters, setFilters] = useState<CollectionListFilters>(DEFAULT_COLLECTION_FILTERS)
+  // Filters are scoped to the signed-in user so one user's owner selection
+  // never carries over to whoever signs in next on the same tab.
+  const userId = currentUser?.id ?? null
+  const [filterState, setFilterState] = useState<{
+    userId: number | null
+    filters: CollectionListFilters
+  }>({ userId, filters: DEFAULT_COLLECTION_FILTERS })
+  const rawFilters =
+    filterState.userId === userId ? filterState.filters : DEFAULT_COLLECTION_FILTERS
+  const setFilters = useCallback(
+    (next: CollectionListFilters) => setFilterState({ userId, filters: next }),
+    [userId],
+  )
   const [ownerOptions, setOwnerOptions] = useState<NonNullable<CollectionOwner>[]>([])
   const [detail, setDetail] = useState<Collection | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -189,12 +201,13 @@ export function useCollectionsData({
     }
   }, [filters, role])
 
-  // Mutations refresh through this ref so a save that outlives a filter
-  // change refetches with the filters in effect when it completes.
-  const loadRef = useRef(load)
+  // Mutations read the filters, user and loader in effect when the request
+  // completes, not those captured when it started, so a save that outlives a
+  // filter change is placed and refreshed against the current view.
+  const latest = useRef({ filters, currentUser, load })
   useEffect(() => {
-    loadRef.current = load
-  }, [load])
+    latest.current = { filters, currentUser, load }
+  }, [filters, currentUser, load])
 
   useEffect(() => {
     if (!enabled || !currentUser) return
@@ -241,31 +254,29 @@ export function useCollectionsData({
     [],
   )
 
-  const create = useCallback(
-    async (values: CollectionFormValues): Promise<Collection> => {
-      const created = apiCollectionToCollection(
-        await createCollection({
-          name: values.name,
-          description: values.description,
-          type: values.type,
-          visibility: values.visibility,
-          image_ids: [],
-          ...(values.visibility === 'restricted'
-            ? { program_ids: values.programIds, group_ids: values.groupIds }
-            : {}),
-        }),
-      )
-      // Reflect the server's response immediately; the refresh below only
-      // reconciles with other users' changes and must not make a successful
-      // save look like a failure if it happens to fail.
-      if (matchesCollectionFilters(created, filters, currentUser)) {
-        setCollections((prev) => [created, ...prev.filter((c) => c.id !== created.id)])
-      }
-      void loadRef.current()
-      return created
-    },
-    [filters, currentUser],
-  )
+  const create = useCallback(async (values: CollectionFormValues): Promise<Collection> => {
+    const created = apiCollectionToCollection(
+      await createCollection({
+        name: values.name,
+        description: values.description,
+        type: values.type,
+        visibility: values.visibility,
+        image_ids: [],
+        ...(values.visibility === 'restricted'
+          ? { program_ids: values.programIds, group_ids: values.groupIds }
+          : {}),
+      }),
+    )
+    // Reflect the server's response immediately; the refresh below only
+    // reconciles with other users' changes and must not make a successful
+    // save look like a failure if it happens to fail.
+    const { filters: current, currentUser: user, load: refresh } = latest.current
+    if (matchesCollectionFilters(created, current, user)) {
+      setCollections((prev) => [created, ...prev.filter((c) => c.id !== created.id)])
+    }
+    void refresh()
+    return created
+  }, [])
 
   const update = useCallback(
     async (
@@ -277,21 +288,22 @@ export function useCollectionsData({
       const updated = await updateCollection(id, toCollectionPatch(values, baseline, version))
       const mapped = apiCollectionToCollection(updated)
       setDetail((prev) => (prev?.id === id ? mapped : prev))
+      const { filters: current, currentUser: user, load: refresh } = latest.current
       setCollections((prev) => {
         const rest = prev.filter((c) => c.id !== id)
-        return matchesCollectionFilters(mapped, filters, currentUser) ? [mapped, ...rest] : rest
+        return matchesCollectionFilters(mapped, current, user) ? [mapped, ...rest] : rest
       })
-      void loadRef.current()
+      void refresh()
       return mapped
     },
-    [filters, currentUser],
+    [],
   )
 
   const remove = useCallback(async (id: number): Promise<void> => {
     await deleteCollection(id)
     setCollections((prev) => prev.filter((c) => c.id !== id))
     setDetail((prev) => (prev?.id === id ? null : prev))
-    void loadRef.current()
+    void latest.current.load()
   }, [])
 
   return {

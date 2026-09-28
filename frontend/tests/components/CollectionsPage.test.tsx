@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AuthContext } from '../../src/authContextValue'
 import type { AuthContextValue } from '../../src/authContextValue'
@@ -254,6 +254,39 @@ describe('CollectionsPage', () => {
       await user.click(screen.getByRole('button', { name: 'Edit Summary' }))
       expect(await screen.findByText('Forbidden')).toBeInTheDocument()
       expect(screen.queryByText('Edit Collection')).not.toBeInTheDocument()
+    })
+
+    it('opens the most recently clicked collection when an earlier edit load finishes last', async () => {
+      const user = userEvent.setup()
+      const resolvers = new Map<number, (value: ReturnType<typeof makeCollection>) => void>()
+      const loadCollection = vi.fn(
+        (id: number) =>
+          new Promise<ReturnType<typeof makeCollection>>((resolve) => {
+            resolvers.set(id, resolve)
+          }),
+      )
+      renderPage({
+        collections: [
+          makeCollectionSummary({ id: 1, name: 'First' }),
+          makeCollectionSummary({ id: 2, name: 'Second' }),
+        ],
+        loadCollection,
+      })
+      await user.click(screen.getByRole('button', { name: 'Edit First' }))
+      await user.click(screen.getByRole('button', { name: 'Edit Second' }))
+      expect(loadCollection).toHaveBeenCalledTimes(2)
+
+      await act(async () => {
+        resolvers.get(2)!(makeCollection({ id: 2, name: 'Second full' }))
+      })
+      expect(await screen.findByText('Edit Collection')).toBeInTheDocument()
+      expect(screen.getByDisplayValue('Second full')).toBeInTheDocument()
+
+      await act(async () => {
+        resolvers.get(1)!(makeCollection({ id: 1, name: 'First full' }))
+      })
+      expect(screen.getByDisplayValue('Second full')).toBeInTheDocument()
+      expect(screen.queryByDisplayValue('First full')).not.toBeInTheDocument()
     })
   })
 
