@@ -62,8 +62,12 @@ export const Basic: Story = {
   },
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(canvas.getByTestId('collection-card-action-area'))
+    const area = canvas.getByTestId('collection-card-action-area')
+    await userEvent.click(area)
     await expect(args.onOpen).toHaveBeenCalledWith(args.collection)
+    // Snapshot the resting card, not the hover/focus highlight left behind by the click.
+    await userEvent.unhover(area)
+    area.blur()
   },
 }
 

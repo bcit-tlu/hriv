@@ -58,7 +58,6 @@ function makeProps(overrides: Partial<CollectionsPageProps> = {}): CollectionsPa
     filters: DEFAULT_COLLECTION_FILTERS,
     onFiltersChange: vi.fn(),
     ownerOptions: [],
-    onRetry: vi.fn(),
     selectedCollectionId: null,
     detail: null,
     detailLoading: false,
@@ -94,18 +93,24 @@ describe('CollectionsPage', () => {
       expect(screen.queryByTestId('collections-empty')).not.toBeInTheDocument()
     })
 
-    it('shows the error with a Retry action', () => {
-      const onRetry = vi.fn()
-      renderPage({ error: 'Failed to load collections.', onRetry })
+    it('shows the load error as a plain notification', () => {
+      renderPage({ error: 'Failed to load collections.' })
       expect(screen.getByRole('alert')).toHaveTextContent('Failed to load collections.')
-      fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
-      expect(onRetry).toHaveBeenCalled()
+      expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
     })
 
     it('shows the create hint when there are no collections and no filters', () => {
       renderPage()
       expect(screen.getByTestId('collections-empty')).toHaveTextContent('No collections yet')
-      expect(screen.getByText(/Create a collection to group images/)).toBeInTheDocument()
+      expect(screen.getByTestId('collections-empty')).toHaveTextContent(
+        /Create a collection to group images/,
+      )
+    })
+
+    it('opens the create dialog from the empty-state link', async () => {
+      renderPage()
+      fireEvent.click(screen.getByRole('button', { name: 'Create a collection' }))
+      expect(await screen.findByText('New Collection')).toBeInTheDocument()
     })
 
     it('shows the filter hint when filters exclude everything', () => {

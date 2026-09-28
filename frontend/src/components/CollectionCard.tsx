@@ -97,7 +97,7 @@ export default function CollectionCard({
   const showDelete = Boolean(onDelete) && collection.permissions.canDelete
 
   return (
-    <Card data-testid="collection-card" sx={{ height: '100%', position: 'relative' }}>
+    <Card data-testid="collection-card" elevation={2} sx={{ height: '100%', position: 'relative' }}>
       <CardActionArea
         data-testid="collection-card-action-area"
         onClick={() => onOpen(collection)}

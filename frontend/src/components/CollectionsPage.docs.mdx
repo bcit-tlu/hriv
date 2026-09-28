@@ -38,8 +38,9 @@ stories drive it with deterministic fixtures.
   _No owner (orphaned)_ owner choice; the hook never sends `orphaned` for other roles.
 - **Grid.** One column on phones, two at `sm`, three at `md`, four at `lg`, each cell a
   `CollectionCard`.
-- **States.** Spinner while the first page loads, an error `Alert` with **Retry**, and an empty
-  state whose copy changes depending on whether filters are active.
+- **States.** Spinner while the first page loads, a plain error `Alert` (no action), and an
+  empty state whose copy changes depending on whether filters are active; with no filters the
+  copy's **Create a collection** is a link that opens the same dialog as **New collection**.
 - **Create / edit.** Both use `CollectionEditDialog`. Editing from a card first loads the full
   record (summaries omit the restricted scope); editing from the detail header reuses the loaded
   detail.

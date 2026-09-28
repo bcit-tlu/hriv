@@ -11,6 +11,7 @@ import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
 import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
+import Link from '@mui/material/Link'
 import List from '@mui/material/List'
 import ListItem from '@mui/material/ListItem'
 import ListItemAvatar from '@mui/material/ListItemAvatar'
@@ -58,7 +59,6 @@ export interface CollectionsPageProps {
   filters: CollectionListFilters
   onFiltersChange: (filters: CollectionListFilters) => void
   ownerOptions: NonNullable<CollectionOwner>[]
-  onRetry: () => void
   /** Detail placeholder state; `selectedCollectionId` null renders the list. */
   selectedCollectionId: number | null
   detail: Collection | null
@@ -209,7 +209,6 @@ export default function CollectionsPage({
   filters,
   onFiltersChange,
   ownerOptions,
-  onRetry,
   selectedCollectionId,
   detail,
   detailLoading,
@@ -399,16 +398,7 @@ export default function CollectionsPage({
         </Box>
 
         {error ? (
-          <Alert
-            severity="error"
-            action={
-              <Button color="inherit" size="small" onClick={onRetry}>
-                Retry
-              </Button>
-            }
-          >
-            {error}
-          </Alert>
+          <Alert severity="error">{error}</Alert>
         ) : loading && collections.length === 0 ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}>
             <CircularProgress aria-label="Loading collections" />
@@ -423,9 +413,22 @@ export default function CollectionsPage({
               No collections yet
             </Typography>
             <Typography variant="body2" sx={{ mt: 0.5 }}>
-              {filters.mine || filters.type !== 'all' || filters.owner !== 'any'
-                ? 'No collections match the current filters.'
-                : 'Create a collection to group images for side-by-side comparison or a guided sequence.'}
+              {filters.mine || filters.type !== 'all' || filters.owner !== 'any' ? (
+                'No collections match the current filters.'
+              ) : (
+                <>
+                  <Link
+                    component="button"
+                    variant="body2"
+                    underline="hover"
+                    onClick={openCreate}
+                    sx={{ verticalAlign: 'baseline' }}
+                  >
+                    Create a collection
+                  </Link>{' '}
+                  to group images for side-by-side comparison or a guided sequence.
+                </>
+              )}
             </Typography>
           </Box>
         ) : (

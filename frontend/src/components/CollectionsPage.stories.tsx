@@ -151,7 +151,6 @@ function CollectionsPageExample(args: StoryArgs) {
             { kind: 'user', userId: 8, name: 'Grace Hopper' },
             { kind: 'program', programId: 1, name: 'Radiography' },
           ]}
-          onRetry={() => undefined}
           selectedCollectionId={args.selectedCollectionId}
           detail={args.detail}
           detailLoading={args.detailLoading}

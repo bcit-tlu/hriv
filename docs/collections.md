@@ -205,8 +205,10 @@ type toggle (All / Synchronized / Sequence), **Mine** (`mine=true`; clears and
 disables the owner facet), and an **Owner** select built from the owners in
 the loaded list (`owner_user_id` / `owner_program_id`). Admins additionally
 get _No owner (orphaned)_ → `orphaned=true`; `toCollectionApiFilters` never
-emits `orphaned` for other roles. Loading spinner, error `Alert` with Retry,
-and filter-aware empty copy follow the existing page patterns.
+emits `orphaned` for other roles. Loading spinner, a plain error `Alert`
+(notification only — no Retry action), and filter-aware empty copy follow the
+existing page patterns; the unfiltered empty state's "Create a collection" is
+a link that opens the same create dialog as the **New collection** button.
 
 **Create / edit (`CollectionEditDialog`).** Name (required), description,
 type (radio on create; read-only chip on edit — the API rejects type changes

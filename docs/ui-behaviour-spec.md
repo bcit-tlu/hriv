@@ -164,8 +164,9 @@ returned by the API (UX only — the backend re-checks).
 - **Given** a user opens the Collections tab (`?page=collections`), **When**
   `GET /api/collections` resolves, **Then** a responsive card grid renders one
   `CollectionCard` per summary (cover, name, image count, owner, type chip,
-  visibility chip); an empty result shows the empty state and a failed request
-  shows an error `Alert` with **Retry**.
+  visibility chip); an empty result shows the empty state (whose
+  **Create a collection** link opens the create dialog when no filters are
+  active) and a failed request shows a plain error `Alert` with no action.
 - **Given** the list, **When** the user picks a type toggle, **Mine**, or an
   **Owner**, **Then** the list re-fetches with `type=` / `mine=true` /
   `owner_user_id=` or `owner_program_id=`; selecting **Mine** resets and

@@ -1590,7 +1590,6 @@ export default function App() {
               filters={collectionsData.filters}
               onFiltersChange={collectionsData.setFilters}
               ownerOptions={collectionsData.ownerOptions}
-              onRetry={() => void collectionsData.reload()}
               selectedCollectionId={selectedCollectionId}
               detail={collectionsData.detail}
               detailLoading={collectionsData.detailLoading}
