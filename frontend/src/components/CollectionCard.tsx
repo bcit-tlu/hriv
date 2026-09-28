@@ -171,8 +171,6 @@ export default function CollectionCard({
             right: 8,
             display: 'flex',
             gap: 0.25,
-            bgcolor: 'background.paper',
-            borderRadius: 1,
           }}
         >
           {showEdit && (
