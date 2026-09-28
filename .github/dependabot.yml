@@ -181,6 +181,9 @@ updates:
         update-types: ['version-update:semver-major']
       - dependency-name: '@vitest/*'
         update-types: ['version-update:semver-major']
+      # MUI 9 is a coordinated migration PR.
+      - dependency-name: '@mui/*'
+        update-types: ['version-update:semver-major']
     groups:
       npm-minor-patch:
         update-types: [minor, patch]
