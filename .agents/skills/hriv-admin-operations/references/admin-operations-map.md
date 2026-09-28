@@ -39,7 +39,8 @@ guards. Cancellation is soft first and can be forced from `cancelling` to
 ## Import/Export Data
 
 DB export/import includes programs, groups, categories and restrictions, images,
-source images, users and memberships, changelog entries, and announcement data.
+source images, users and memberships, collections (ordered image links plus
+program/group scope), changelog entries, and announcement data.
 Filesystem export/import handles source-image filesystem archives.
 
 ## Docs And Tests
