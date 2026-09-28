@@ -17,6 +17,7 @@ from app.schemas import (
     ChangelogEntryUpdate,
     CollectionCreate,
     CollectionImagesUpdate,
+    CollectionTransfer,
     CollectionUpdate,
     CollectionViewportUpdate,
     GroupCreate,
@@ -525,6 +526,23 @@ def test_collection_viewport_update_requires_object_and_version() -> None:
         CollectionViewportUpdate(viewport_state={})
     body = CollectionViewportUpdate(viewport_state={"a": {"zoom": 2}}, version=4)
     assert body.viewport_state == {"a": {"zoom": 2}} and body.version == 4
+
+
+def test_collection_transfer_requires_exactly_one_target_and_version() -> None:
+    to_user = CollectionTransfer(user_id=5, version=2)
+    assert to_user.user_id == 5 and to_user.program_id is None and to_user.version == 2
+    to_program = CollectionTransfer(program_id=3, version=1)
+    assert to_program.program_id == 3 and to_program.user_id is None
+    with pytest.raises(ValidationError, match="exactly one"):
+        CollectionTransfer(version=1)
+    with pytest.raises(ValidationError, match="exactly one"):
+        CollectionTransfer(user_id=5, program_id=3, version=1)
+    with pytest.raises(ValidationError, match="exactly one"):
+        CollectionTransfer(user_id=None, program_id=None, version=1)
+    with pytest.raises(ValidationError):
+        CollectionTransfer(user_id=5)
+    with pytest.raises(ValidationError):
+        CollectionTransfer(user_id="abc", version=1)
 
 
 def test_collection_name_max_length_matches_column() -> None:

@@ -314,6 +314,32 @@ curl -s http://localhost:8000/api/categories/ -H "Authorization: Bearer $TOKEN"
 
 ---
 
+## Test Case 10: Collection Orphaned by Program Deletion → Admin Reassign (API)
+
+**Purpose:** Verify that deleting a program leaves its collections in place as
+orphans (admin-only), and that an admin can reassign them with
+`POST /api/collections/{id}/transfer`. See [collections.md](collections.md)
+("Ownership & lifecycle").
+
+1. Obtain tokens for `admin@example.ca` and `instructor@example.ca` (Test Case 4b).
+2. As admin, create a throw-away program: `POST /api/programs {"name": "Orphan Test"}` → note its `id` as `$PID`, and add the instructor to it (`PATCH /api/users/{instructor_id}` with `program_ids` including `$PID`).
+3. As the instructor, create a collection: `POST /api/collections {"name": "Orphan me", "type": "sequence", "visibility": "public", "image_ids": [1]}` → note `id` as `$CID` and `version`.
+4. As the instructor, move it onto the program: `POST /api/collections/$CID/transfer {"program_id": $PID, "version": <version>}`.
+   **Assert:** `200`, `owner` is `{"program_id": $PID, "name": "Orphan Test"}`, `version` incremented, `permissions.can_edit` is `true`.
+5. As the instructor, try to hand it to a user: `POST /api/collections/$CID/transfer {"user_id": <own id>, "version": <version>}`.
+   **Assert:** `403` (only admins may transfer to a user).
+6. As admin, delete the program: `DELETE /api/programs/$PID`.
+   **Assert:** `204`.
+7. As admin, `GET /api/collections?orphaned=true`.
+   **Assert:** `$CID` is listed with `owner: null`; `GET /api/collections/$CID` still returns the collection and its image.
+8. As the instructor, `PATCH /api/collections/$CID {"name": "x", "version": <version>}` and `POST /api/collections/$CID/transfer {"program_id": <another program>, "version": <version>}`.
+   **Assert:** both `403` — the orphan is admin-only even though the instructor created it. As a student, `GET /api/collections/$CID` still returns `200` (public visibility survives orphaning).
+9. As admin, reassign it: `POST /api/collections/$CID/transfer {"user_id": <instructor id>, "version": <version>}`.
+   **Assert:** `200`, `owner` is `{"user_id": <instructor id>, "name": ...}`, `version` incremented; the instructor can PATCH it again (`200`).
+10. Optional: repeat step 9 with a stale `version` → `409` whose `detail` is the current collection; with a deactivated user's id → `422`; with an unknown id → `422`; with both `user_id` and `program_id` → `422`.
+
+---
+
 ## API Endpoint Reference
 
 All endpoints except login require a valid JWT bearer token in the `Authorization` header.
@@ -377,6 +403,7 @@ All endpoints except login require a valid JWT bearer token in the `Authorizatio
 | DELETE | /api/collections/{id}                                                                                     | Yes           | student (owner / instructor of owning program / admin; 404 if not visible)  |
 | PUT    | /api/collections/{id}/images                                                                              | Yes           | student (owner / instructor of owning program / admin; 404 if not visible)  |
 | PUT    | /api/collections/{id}/viewport                                                                            | Yes           | student (owner / instructor of owning program / admin; 404 if not visible)  |
+| POST   | /api/collections/{id}/transfer                                                                            | Yes           | instructor (owner / in owning program, to own program; to user: admin) ¤    |
 | GET    | /api/changelog/                                                                                           | Yes           | instructor                                                                  |
 | POST   | /api/changelog/                                                                                           | Yes           | admin                                                                       |
 | POST   | /api/changelog/mark-read                                                                                  | Yes           | instructor                                                                  |
@@ -424,6 +451,16 @@ the dual-gate visibility evaluation.
 Rows marked **‡** return minimal health status; they return **503** when the
 queue is degraded in required task-execution mode. Detailed queue state is
 available from `/api/metrics`.
+
+The row marked **¤** (`POST /api/collections/{id}/transfer`) is
+visibility-first: a caller who cannot view the collection gets **404**, one who
+can view it but fails `can_transfer_collection` gets **403**. Instructors may
+transfer only a collection they own or one owned by a program they belong to,
+and only onto a program they belong to (never to a user — **403**). Admins may
+transfer any collection to any program or any active user (unknown or
+deactivated target → **422**). Collections **orphaned** by a program deletion
+(both owner columns `NULL`) can only be transferred, edited or deleted by
+admins. See [collections.md](collections.md) and Test Case 10.
 
 Filesystem-import uploads use raw request bodies only. `PUT /api/admin/tasks/{task_id}/upload` streams an `application/octet-stream` body directly to disk, rejects multipart form uploads with 415, and preflights declared `Content-Length` against the admin-tasks volume so a full archive can fail fast with 507 before streaming begins.
 

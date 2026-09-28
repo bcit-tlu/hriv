@@ -838,3 +838,19 @@ class CollectionViewportUpdate(BaseModel):
 
     viewport_state: dict
     version: int
+
+
+class CollectionTransfer(BaseModel):
+    """POST ``…/transfer`` body: the new owner is exactly one of ``user_id``
+    / ``program_id``; ``version`` is the optimistic concurrency token.
+    """
+
+    user_id: int | None = None
+    program_id: int | None = None
+    version: int
+
+    @model_validator(mode="after")
+    def _exactly_one_owner(self) -> "CollectionTransfer":
+        if (self.user_id is None) == (self.program_id is None):
+            raise ValueError("Provide exactly one of user_id or program_id")
+        return self
