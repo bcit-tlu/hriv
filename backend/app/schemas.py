@@ -680,3 +680,56 @@ class UserOut(UserBase):
 
 # Rebuild forward refs for nested models
 CategoryTree.model_rebuild()
+
+
+# ── Collection ────────────────────────────────────────────
+
+class CollectionOwnerOut(BaseModel):
+    """Owner of a collection: exactly one of ``user_id`` / ``program_id``."""
+
+    user_id: int | None = None
+    program_id: int | None = None
+    name: str
+
+
+class CollectionPermissionsOut(BaseModel):
+    """Caller-specific capabilities, mirrored from ``authz``. UX hints only —
+    the backend re-checks authority on every mutation.
+    """
+
+    can_edit: bool = False
+    can_delete: bool = False
+    can_transfer: bool = False
+
+
+class CollectionSummaryOut(BaseModel):
+    id: int
+    name: str
+    description: str | None = None
+    type: str
+    visibility: str
+    owner: CollectionOwnerOut | None = None
+    image_count: int = 0
+    cover_thumb: str | None = None
+    version: int = 1
+    created_at: datetime
+    updated_at: datetime
+    permissions: CollectionPermissionsOut = CollectionPermissionsOut()
+
+    @field_serializer("cover_thumb")
+    def _tokenize_cover_thumb(self, value: str | None) -> str | None:
+        """Tokenize the cover thumbnail like ``ImageOut.thumb`` (issued only
+        after the router's visibility filtering; see docs/tile-delivery-boundary.md).
+        """
+        if value is None:
+            return None
+        from .tile_tokens import append_tile_token
+
+        return append_tile_token(value)
+
+
+class CollectionOut(CollectionSummaryOut):
+    images: list[ImageOut] = []
+    program_ids: list[int] = []
+    group_ids: list[int] = []
+    viewport_state: dict = {}

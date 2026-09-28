@@ -1162,6 +1162,28 @@ async def test_run_db_export_success(tmp_path) -> None:
     announcement = SimpleNamespace(message="", enabled=False, created_at=now, updated_at=now)
 
     groups = []
+    collections = [
+        SimpleNamespace(
+            id=1,
+            name="Compare",
+            description=None,
+            type="synchronized",
+            visibility="restricted",
+            user_id=1,
+            owner_program_id=None,
+            viewport_state={"offsets": []},
+            version=2,
+            # 9_400_000 is a rebuild-fixture image (not exported) → dropped.
+            image_links=[
+                SimpleNamespace(image_id=9_400_005, sort_order=0),
+                SimpleNamespace(image_id=9_400_000, sort_order=1),
+            ],
+            programs=[SimpleNamespace(id=2)],
+            groups=[],
+            created_at=now,
+            updated_at=now,
+        )
+    ]
     call_count = 0
 
     async def mock_execute(stmt):
@@ -1170,9 +1192,9 @@ async def test_run_db_export_success(tmp_path) -> None:
         result = MagicMock()
         data_map = {
             1: programs, 2: groups, 3: categories, 4: images,
-            5: users, 6: source_images, 7: changelog_entries,
+            5: users, 6: source_images, 7: collections, 8: changelog_entries,
         }
-        if call_count <= 7:
+        if call_count <= 8:
             result.scalars.return_value.all.return_value = data_map[call_count]
         else:
             result.scalar_one_or_none.return_value = announcement
@@ -1226,6 +1248,25 @@ async def test_run_db_export_success(tmp_path) -> None:
     assert [image["id"] for image in dump["images"]] == [9_400_005]
     assert [source["id"] for source in dump["source_images"]] == [1, 812]
     assert dump["source_images"][0]["uploaded_by"] == 1
+    assert dump["collections"] == [
+        {
+            "id": 1,
+            "name": "Compare",
+            "description": None,
+            "type": "synchronized",
+            "visibility": "restricted",
+            "user_id": 1,
+            "owner_program_id": None,
+            "viewport_state": {"offsets": []},
+            "version": 2,
+            "image_ids": [9_400_005],
+            "program_ids": [2],
+            "group_ids": [],
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+        }
+    ]
+    assert "1 collections" in task.log
     assert dump["changelog_entries"] == [
         {
             "id": 1,
@@ -1411,6 +1452,27 @@ def _full_dump() -> dict:
                 "uploaded_by": 1,
             }
         ],
+        "collections": [
+            {
+                "id": 7,
+                "name": "Seq",
+                "type": "sequence",
+                "visibility": "public",
+                "user_id": 1,
+                "image_ids": [2, 1],
+                "program_ids": [1],
+                "group_ids": [],
+                "viewport_state": {},
+                "version": 3,
+            },
+            {
+                # Orphaned (program deleted) — both owner columns NULL.
+                "id": 8,
+                "name": "Orphan",
+                "type": "synchronized",
+                "image_ids": [],
+            },
+        ],
         "changelog_entries": [
             {
                 "id": 1,
@@ -1451,6 +1513,28 @@ async def test_run_db_import_happy_path(tmp_path) -> None:
     imported_sources = [obj for obj in add_calls if type(obj).__name__ == "SourceImage"]
     assert len(imported_sources) == 1
     assert imported_sources[0].uploaded_by == 1
+    imported_collections = {
+        obj.id: obj for obj in add_calls if type(obj).__name__ == "Collection"
+    }
+    assert set(imported_collections) == {7, 8}
+    seq = imported_collections[7]
+    assert seq.type == "sequence" and seq.visibility == "public"
+    assert seq.user_id == 1 and seq.version == 3
+    assert [(l.image_id, l.sort_order) for l in seq.image_links] == [(2, 0), (1, 1)]
+    orphan = imported_collections[8]
+    assert orphan.user_id is None and orphan.owner_program_id is None
+    assert orphan.visibility == "private" and orphan.viewport_state == {}
+    assert orphan.image_links == []
+    executed_sql = [
+        str(c.args[0]) for c in mock_session.execute.call_args_list
+    ]
+    assert executed_sql.index("DELETE FROM collection_images") < executed_sql.index(
+        "DELETE FROM images"
+    )
+    assert executed_sql.index("DELETE FROM collections") < executed_sql.index(
+        "DELETE FROM users"
+    )
+    assert any("collections_id_seq" in sql for sql in executed_sql)
     # The importer unlinks the uploaded file on the `finally` branch.
     assert not input_file.exists()
 
@@ -2965,8 +3049,8 @@ async def test_run_db_export_includes_groups(tmp_path) -> None:
         nonlocal call_count
         call_count += 1
         result = MagicMock()
-        data_map = {1: [], 2: [group], 3: [], 4: [], 5: [], 6: [], 7: [changelog_entry]}
-        if call_count <= 7:
+        data_map = {1: [], 2: [group], 3: [], 4: [], 5: [], 6: [], 7: [], 8: [changelog_entry]}
+        if call_count <= 8:
             rows = data_map[call_count]
             result.scalars.return_value.all.return_value = rows
             result.scalars.return_value.unique.return_value.all.return_value = rows
