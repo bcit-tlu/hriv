@@ -489,12 +489,24 @@ def test_bulk_routes_not_shadowed_by_param_routes() -> None:
     app = FastAPI()
     app.include_router(groups_router.router, prefix="/api")
 
-    def _first_match(method: str, path: str):
+    def _first_match_endpoint(method: str, path: str):
         scope = {"type": "http", "method": method, "path": path}
         for route in app.router.routes:
             match, _ = route.matches(scope)
-            if match == Match.FULL:
-                return route
+            if match != Match.FULL:
+                continue
+            if getattr(route, "endpoint", None) is not None:
+                return route.endpoint
+            # FastAPI >=0.141 wraps include_router results in _IncludedRouter,
+            # which has no `endpoint`; match the wrapped route contexts instead
+            # (ctx.path is the prefix-expanded pattern).
+            for ctx in route.effective_route_contexts():
+                if (
+                    ctx.path_regex.match(path)
+                    and method in ctx.original_route.methods
+                    and ctx.endpoint is not None
+                ):
+                    return ctx.endpoint
         return None
 
     cases = [
@@ -504,9 +516,9 @@ def test_bulk_routes_not_shadowed_by_param_routes() -> None:
         ("DELETE", "/api/groups/1/instructors/bulk", "remove_instructors_bulk"),
     ]
     for method, path, expected in cases:
-        route = _first_match(method, path)
-        assert route is not None, f"{method} {path} matched no route"
-        assert route.endpoint.__name__ == expected, (
-            f"{method} {path} resolved to {route.endpoint.__name__}, "
+        endpoint = _first_match_endpoint(method, path)
+        assert endpoint is not None, f"{method} {path} matched no route"
+        assert endpoint.__name__ == expected, (
+            f"{method} {path} resolved to {endpoint.__name__}, "
             f"expected {expected} (route-shadowing regression)"
         )

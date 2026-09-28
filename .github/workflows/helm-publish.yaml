@@ -40,7 +40,7 @@ jobs:
             echo "publish=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         if: steps.parse.outputs.publish == 'true'
 
       - uses: azure/setup-helm@v5

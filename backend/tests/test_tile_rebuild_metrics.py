@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from prometheus_client import CONTENT_TYPE_LATEST
 
 from app import tile_rebuild_metrics
 from app.tile_rebuild_metrics import (
@@ -187,7 +188,7 @@ async def test_render_tile_rebuild_metrics_reports_durable_state() -> None:
     ):
         content, media_type = await render_tile_rebuild_metrics()
 
-    assert media_type == "text/plain; version=0.0.4; charset=utf-8"
+    assert media_type == CONTENT_TYPE_LATEST
     assert b"hriv_tile_rebuild_jobs_active 1.0" in content
     assert b"hriv_tile_rebuild_active_children 3.0" in content
     assert b"hriv_tile_rebuild_queued_items 42.0" in content

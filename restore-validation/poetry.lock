@@ -788,22 +788,22 @@ type = ["mypy (<1.19) ; platform_python_implementation == \"PyPy\"", "pytest-myp
 
 [[package]]
 name = "kubernetes"
-version = "36.0.0"
+version = "36.0.3"
 description = "Kubernetes python client"
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "kubernetes-36.0.0-py2.py3-none-any.whl", hash = "sha256:a766433357ec9f90db7565cccf52e28e7fca40b0ef366c80a6022adbc0ac0425"},
-    {file = "kubernetes-36.0.0.tar.gz", hash = "sha256:027b606bb8032e6c6464a53236bdd9bd9a94c237e1063bc45a303c25b304ced9"},
+    {file = "kubernetes-36.0.3-py2.py3-none-any.whl", hash = "sha256:8fde9241c4b298e6374a069dcf728359b4e72c2fb29489a975ba4e1c047cf10f"},
+    {file = "kubernetes-36.0.3.tar.gz", hash = "sha256:36993ed25ce59b789c9341473a228fcf268504a2fec7c2b2b1531d73072e5ce7"},
 ]
 
 [package.dependencies]
-aiohttp = ">=3.9.0,<4.0.0"
+aiohttp = ">=3.13.5,<4.0.0"
 certifi = ">=14.5.14"
 durationpy = ">=0.7"
 python-dateutil = ">=2.5.3"
-pyyaml = ">=5.4.1"
+pyyaml = ">=6.0.3"
 requests = "*"
 requests-oauthlib = "*"
 six = ">=1.9.0"
@@ -1949,4 +1949,4 @@ type = ["pytest-mypy (>=1.0.1) ; platform_python_implementation != \"PyPy\""]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.11"
-content-hash = "d334ed203e4db4e8f0ac08a95d138b1d467fac5e6134a65bd4939ea9ebb3093c"
+content-hash = "ae4f1ce9b1e651f5a9eefb919c8907c3eb53821e402bbe0606e54f92fe8c5acd"
