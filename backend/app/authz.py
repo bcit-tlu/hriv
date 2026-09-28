@@ -56,3 +56,100 @@ def can_attach_group_to_category(user, group_instructor_ids: Iterable[int]) -> b
     if not can_edit_category(user):
         return False
     return can_manage_group(user, group_instructor_ids)
+
+
+# ── Collections ───────────────────────────────────────────
+#
+# Collections are owned by a user (``user_id``) or a program
+# (``owner_program_id``); both ``NULL`` means the owning program was deleted
+# and the collection is orphaned (admin-managed until reassigned). Admins,
+# instructors, and staff see every collection; students see their own,
+# ``public`` ones, and ``restricted`` ones that pass the same program AND
+# group dual gate used for categories.
+
+
+def _is_collection_owner(user, collection) -> bool:
+    return collection.user_id is not None and collection.user_id == user.id
+
+
+def _manages_owner_program(user, collection) -> bool:
+    """Instructors manage collections owned by a program they belong to."""
+    if user.role != "instructor" or collection.owner_program_id is None:
+        return False
+    return collection.owner_program_id in {p.id for p in user.programs}
+
+
+def can_view_collection(
+    user,
+    collection,
+    user_program_ids: set[int],
+    user_group_ids: set[int],
+) -> bool:
+    """Return True when *user* may read *collection*.
+
+    Non-students see everything. Students pass when they own the collection,
+    when it is ``public``, or when it is ``restricted`` and both the program
+    gate and the group gate admit them (an empty scope on a dimension is
+    unrestricted on that dimension). ``private`` collections are owner-only.
+    """
+    if user.role in ("admin", "instructor", "staff"):
+        return True
+    if _is_collection_owner(user, collection):
+        return True
+    if collection.visibility == "public":
+        return True
+    if collection.visibility != "restricted":
+        return False
+    program_ids = {p.id for p in collection.programs}
+    if program_ids and not program_ids & user_program_ids:
+        return False
+    group_ids = {g.id for g in collection.groups}
+    if group_ids and not group_ids & user_group_ids:
+        return False
+    return True
+
+
+def can_edit_collection(user, collection) -> bool:
+    """Owner, admin, or an instructor in the owning program may edit."""
+    if user.role == "admin":
+        return True
+    return _is_collection_owner(user, collection) or _manages_owner_program(
+        user, collection
+    )
+
+
+def can_delete_collection(user, collection) -> bool:
+    """Deletion authority mirrors edit authority (admins may delete any)."""
+    return can_edit_collection(user, collection)
+
+
+def can_transfer_collection(user, collection) -> bool:
+    """Admins transfer any collection; instructors transfer collections they
+    own or that belong to one of their programs. Students and staff cannot
+    transfer ownership.
+    """
+    if user.role == "admin":
+        return True
+    if user.role != "instructor":
+        return False
+    return _is_collection_owner(user, collection) or _manages_owner_program(
+        user, collection
+    )
+
+
+def can_attach_program_to_collection(user, program_id: int) -> bool:
+    """Admins may scope a collection to any program; instructors only to
+    programs they belong to. Other roles cannot use restricted visibility.
+    """
+    if user.role == "admin":
+        return True
+    return user.role == "instructor" and program_id in {p.id for p in user.programs}
+
+
+def can_attach_group_to_collection(user, group_instructor_ids: Iterable[int]) -> bool:
+    """Admins may scope a collection to any group; instructors only to groups
+    they manage.
+    """
+    if user.role not in ("admin", "instructor"):
+        return False
+    return can_manage_group(user, group_instructor_ids)
