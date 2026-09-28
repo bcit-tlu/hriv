@@ -12,6 +12,12 @@ cannot *view* a collection gets 404 (never 403, so private ids cannot be
 probed); a caller who can view but not edit gets 403. PATCH / images /
 viewport carry a ``version`` token; a stale token yields 409 whose ``detail``
 is the current ``CollectionOut`` so the client can rebase.
+
+Ownership transfer (``POST …/transfer``) is gated by
+``authz.can_transfer_collection``: admins may hand any collection to any
+active user or any program; instructors may move collections they own or
+that belong to one of their programs, but only onto a program they belong
+to. Collections orphaned by a program delete are admin-only until reassigned.
 """
 
 from typing import Annotated
@@ -48,6 +54,7 @@ from ..schemas import (
     CollectionOwnerOut,
     CollectionPermissionsOut,
     CollectionSummaryOut,
+    CollectionTransfer,
     CollectionUpdate,
     CollectionViewportUpdate,
     ImageOut,
@@ -554,6 +561,78 @@ async def replace_collection_viewport(
     ctx, collection = await get_editable_collection_or_error(db, user, collection_id)
     await _bump_version_or_409(db, ctx, collection, body.version)
     collection.viewport_state = dict(body.viewport_state)
+    await db.commit()
+    await db.refresh(collection)
+    return collection_out(ctx, collection)
+
+
+# ── Ownership transfer ────────────────────────────────────────────────────
+
+
+async def _resolve_transfer_target(
+    db: AsyncSession, user: User, body: CollectionTransfer,
+) -> tuple[User | None, Program | None]:
+    """Resolve the new owner named by *body* as ``(user, None)`` or
+    ``(None, program)``.
+
+    Only admins may assign a user owner (403 otherwise), and that user must
+    exist and be active (422). A program owner must exist (422) and pass
+    ``can_attach_program_to_collection`` (403): admins any program,
+    instructors only programs they belong to.
+    """
+    if body.user_id is not None:
+        if user.role != "admin":
+            raise HTTPException(
+                status_code=403,
+                detail="Only admins may transfer a collection to a user",
+            )
+        new_owner = await db.get(User, body.user_id)
+        if new_owner is None:
+            raise HTTPException(422, f"Invalid user ID: {body.user_id}")
+        if not new_owner.active:
+            raise HTTPException(
+                422, "Collections cannot be transferred to a deactivated user"
+            )
+        return new_owner, None
+
+    new_program = await db.get(Program, body.program_id)
+    if new_program is None:
+        raise HTTPException(422, f"Invalid program ID: {body.program_id}")
+    if not can_attach_program_to_collection(user, new_program.id):
+        raise HTTPException(
+            403,
+            f"You may only transfer to programs you belong to ({new_program.name})",
+        )
+    return None, new_program
+
+
+@router.post("/{collection_id}/transfer", response_model=CollectionOut)
+async def transfer_collection(
+    collection_id: int,
+    body: CollectionTransfer,
+    user: Annotated[User, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_db),
+):
+    """Reassign ownership to exactly one of ``user_id`` / ``program_id``.
+
+    404 when the caller cannot view the collection, 403 when they can view
+    it but fail ``can_transfer_collection`` (students and staff always;
+    instructors unless they own it or belong to its owning program;
+    orphaned collections are admin-only). The other owner column is cleared
+    and ``version`` advances under the same optimistic-concurrency rule as
+    PATCH.
+    """
+    ctx, collection = await get_visible_collection_or_404(db, user, collection_id)
+    if not can_transfer_collection(user, collection):
+        raise HTTPException(
+            status_code=403, detail="You may not transfer this collection"
+        )
+    new_owner, new_program = await _resolve_transfer_target(db, user, body)
+    await _bump_version_or_409(db, ctx, collection, body.version)
+    collection.user_id = new_owner.id if new_owner is not None else None
+    collection.owner = new_owner
+    collection.owner_program_id = new_program.id if new_program is not None else None
+    collection.owner_program = new_program
     await db.commit()
     await db.refresh(collection)
     return collection_out(ctx, collection)

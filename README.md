@@ -28,25 +28,29 @@ All seed users share the password `password`.
 
 ### Role Capabilities
 
-| Capability                      | Admin | Instructor | Staff | Student |
-| ------------------------------- | ----- | ---------- | ----- | ------- |
-| Browse categories & view images | Yes   | Yes        | Yes   | Yes†    |
-| View collections (API)          | Yes   | Yes        | Yes   | Yes¶    |
-| Create/update categories        | Yes   | Yes        | No    | No      |
-| Delete categories               | Yes   | Yes        | No    | No      |
-| Manage page (image table)       | Yes   | Yes        | No    | No      |
-| Bulk import images              | Yes   | Yes        | No    | No      |
-| Manage programs                 | Yes   | No         | No    | No      |
-| Manage groups                   | Yes   | Yes\*      | No    | No      |
-| Restrict categories to groups   | Yes   | Yes\*      | No    | No      |
-| Manage announcement             | Yes   | Yes        | No    | No      |
-| View changelog notifications    | Yes   | Yes        | No    | No      |
-| View component versions (About) | Yes   | Yes        | No    | No      |
-| Manage changelog entries        | Yes   | No         | No    | No      |
-| Admin tab (changelog + backups) | Yes   | No         | No    | No      |
-| User management (add/delete)    | Yes   | No         | No    | No      |
-| People tab (view users)         | Yes   | No         | Yes‡  | No      |
-| List users (API)                | Yes   | Yes§       | Yes‡  | No      |
+| Capability                               | Admin | Instructor | Staff | Student |
+| ---------------------------------------- | ----- | ---------- | ----- | ------- |
+| Browse categories & view images          | Yes   | Yes        | Yes   | Yes†    |
+| View collections (API)                   | Yes   | Yes        | Yes   | Yes¶    |
+| Create collections                       | Yes   | Yes        | Yes   | Yes     |
+| Restrict collections to programs/groups‖ | Yes   | Yes\*      | No    | No      |
+| Transfer collection ownership‖           | Yes   | Yes\*      | No    | No      |
+| Manage any collection (incl. orphaned)‖  | Yes   | No         | No    | No      |
+| Create/update categories                 | Yes   | Yes        | No    | No      |
+| Delete categories                        | Yes   | Yes        | No    | No      |
+| Manage page (image table)                | Yes   | Yes        | No    | No      |
+| Bulk import images                       | Yes   | Yes        | No    | No      |
+| Manage programs                          | Yes   | No         | No    | No      |
+| Manage groups                            | Yes   | Yes\*      | No    | No      |
+| Restrict categories to groups            | Yes   | Yes\*      | No    | No      |
+| Manage announcement                      | Yes   | Yes        | No    | No      |
+| View changelog notifications             | Yes   | Yes        | No    | No      |
+| View component versions (About)          | Yes   | Yes        | No    | No      |
+| Manage changelog entries                 | Yes   | No         | No    | No      |
+| Admin tab (changelog + backups)          | Yes   | No         | No    | No      |
+| User management (add/delete)             | Yes   | No         | No    | No      |
+| People tab (view users)                  | Yes   | No         | Yes‡  | No      |
+| List users (API)                         | Yes   | Yes§       | Yes‡  | No      |
 
 \* Instructors manage only the groups they co-own and may attach only groups
 they manage; admins manage and attach any group. Inherited program and group
@@ -61,6 +65,17 @@ collections that pass both the program and group gates; images they cannot
 open are omitted from collection responses. Admins, instructors and staff see
 every collection. Edit/delete/transfer authority (admin, owner, or instructor in
 the owning program) is described in [docs/collections.md](docs/collections.md).
+
+‖ Any role may create collections and edit/delete the ones it owns. Instructor
+collection authority is program-bound (the `*` rows): an instructor may
+restrict a collection to programs/groups only when they belong to the program
+or manage the group, and may transfer only a collection they own or one owned
+by a program they belong to — and only **onto a program they belong to**, never
+to a user. Only admins can transfer a collection to a user (any active user;
+deactivated users are rejected), transfer to any program, or edit / delete /
+reassign collections **orphaned** by a program deletion (both owner columns
+`NULL`). Staff and students can never transfer ownership, even of their own
+collections. See [docs/collections.md](docs/collections.md).
 
 ‡ Staff are a view-only role for authenticated non-students. They see all
 content (no program/group visibility filter) and get a **read-only** People
