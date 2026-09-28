@@ -22,8 +22,12 @@ let each upload overwrite the other's findings. Expect the same CVE to appear
 under both categories when the released and rc digests match.
 
 Both scans use `severity: CRITICAL,HIGH`, `ignore-unfixed: false` and
-`.trivyignore`. PR builds also run Trivy (table output, `ignore-unfixed: true`)
-but do **not** upload SARIF and are advisory (`exit-code: 0`).
+`.trivyignore`, and SARIF uploads are limited to CRITICAL/HIGH via
+`limit-severities-for-sarif: true` (trivy-action ignores `severity` for sarif
+output without it — the shared `oci-build.yaml` gets the same fix in
+bcit-tlu/.github PR #18). PR builds also run Trivy (table output,
+`ignore-unfixed: true`) but do **not** upload SARIF and are advisory
+(`exit-code: 0`).
 
 The rescan closes the gap where a component that has not changed for weeks
 never gets rescanned: newly published CVEs in its base image or pinned
@@ -54,19 +58,23 @@ are grouped per component; majors open one PR each. PR titles are
 `chore(deps)` / `chore(deps-dev)` / `ci(deps)`, which `pr-title-lint` accepts
 and release-please leaves out of changelogs.
 
+Dependabot PRs do not run the Chromatic workflow: `dependabot[bot]`-triggered
+workflows receive no repository secrets, so `CHROMATIC_PROJECT_TOKEN` is empty
+and the job would fail with "Missing project token" before publishing anything.
+The job is skipped via `if: github.actor != 'dependabot[bot]'`; the bump's
+`main` build after merge runs Chromatic as usual. Dependabot branches are not
+auto-rebased — comment `@dependabot rebase` (or `@dependabot recreate`) on the
+PR to refresh one that has fallen behind `main`.
+
 Checklist when merging one:
 
 - **Runtime Python/npm dependency changed?** Regenerate the component's
   `THIRD-PARTY-LICENSES.txt` (see `AGENTS.md` → Setup Commands); CI fails on
   drift.
 - **`@playwright/test` bump in `synthetic-monitoring`** (its own Dependabot
-  group named `playwright`): also bump the
-  `FROM mcr.microsoft.com/playwright:vX.Y.Z-noble` tag in
-  `synthetic-monitoring/Dockerfile` to the same version on that PR.
-  `synthetic-monitoring/scripts/check-playwright-image-version.mjs` fails CI
-  until the two agree. The Playwright image is deliberately **ignored** in the
-  Docker ecosystem so Dependabot never opens a lone image bump that would
-  break this invariant.
+  group named `playwright`): self-contained — the Dockerfile installs the
+  matching Chromium via `npx playwright install --with-deps chromium`, so no
+  image co-bump is needed.
 - **Base image bump?** The PR-time Trivy table shows any new CRITICAL/HIGH
   findings; the `main` build after merge uploads SARIF and refreshes alerts.
 
