@@ -38,7 +38,7 @@ jobs:
 
       # `release-as` is one-shot. Once manifest catches up, remove it;
       # otherwise future semver bumps are pinned and releases stall.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         if: steps.rp.outputs.releases_created != 'true'
       - name: Guard against stale `release-as` entries
         if: steps.rp.outputs.releases_created != 'true'

@@ -38,7 +38,7 @@ jobs:
       matrix:
         component: [frontend, backend, backup, restore-validation, synthetic-monitoring]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           sparse-checkout: .trivyignore
           sparse-checkout-cone-mode: false
