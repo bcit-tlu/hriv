@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
 import Box from '@mui/material/Box'
 import { AuthContext, type AuthContextValue } from '../authContextValue'
-import type { CollectionListFilters } from '../useCollectionsData'
+import { matchesCollectionFilters, type CollectionListFilters } from '../useCollectionsData'
 import type { Collection, CollectionSummary, ImageItem, Program, Role, User } from '../types'
 import CollectionsPage from './CollectionsPage'
 
@@ -132,6 +132,8 @@ function CollectionsPageExample(args: StoryArgs) {
     owner: 'any',
   })
   const user = makeUser(args.role)
+  // The real page receives a server-filtered list; mirror that here so the filter bar has effect.
+  const collections = args.collections.filter((c) => matchesCollectionFilters(c, filters, user))
   return (
     <AuthContext.Provider value={makeAuth(user)}>
       <Box sx={{ p: 3 }}>
@@ -139,7 +141,7 @@ function CollectionsPageExample(args: StoryArgs) {
           currentUser={user}
           programs={programs}
           groups={[]}
-          collections={args.collections}
+          collections={collections}
           loading={args.loading}
           error={args.error}
           filters={filters}
@@ -232,6 +234,8 @@ export const Filtered: Story = {
       'true',
     )
     await expect(canvas.getByLabelText('Owner')).toHaveAttribute('aria-disabled', 'true')
+    await expect(canvas.getAllByTestId('collection-card')).toHaveLength(1)
+    await expect(canvas.getByRole('button', { name: /^Edit / })).toBeInTheDocument()
   },
 }
 
