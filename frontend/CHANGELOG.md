@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.62.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.61.1...frontend-v0.62.0) (2026-09-28)
+
+
+### Features
+
+* dark-launch collections behind COLLECTIONS_ENABLED flag ([#1464](https://github.com/bcit-tlu/hriv/issues/1464)) ([a1d661b](https://github.com/bcit-tlu/hriv/commit/a1d661bda5667e9376856b1ef18e5861caa4a305))
+* **frontend:** add collections tab and CRUD ([#1440](https://github.com/bcit-tlu/hriv/issues/1440)) ([d7c93f5](https://github.com/bcit-tlu/hriv/commit/d7c93f5e3590a0b68327a16a5d892137d0706531))
+
+
+### Bug Fixes
+
+* **backend:** resolve client IP at trusted-proxy boundary and add account-scoped login limiter ([#1425](https://github.com/bcit-tlu/hriv/issues/1425)) ([2465336](https://github.com/bcit-tlu/hriv/commit/2465336372c010a9be0b2f2380ace84b966965dc))
+* **bulk-import:** bound zip extraction to prevent decompression-bomb DoS ([#1424](https://github.com/bcit-tlu/hriv/issues/1424)) ([4d640c3](https://github.com/bcit-tlu/hriv/commit/4d640c367a71a1c582a3408a2a712c4a1ae2d81d))
+
 ## [0.61.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.61.0...frontend-v0.61.1) (2026-09-25)
 
 
