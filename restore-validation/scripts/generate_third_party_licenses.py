@@ -24,7 +24,10 @@ def build() -> str:
         meta = dist.metadata
         license_id = meta.get("License-Expression") or meta.get("License") or "UNKNOWN"
         texts: list[str] = []
-        for file in dist.files or []:
+        # Sort by package-relative path: wheel RECORD order differs between
+        # platform builds, which would make generated output
+        # platform-dependent.
+        for file in sorted(dist.files or [], key=str):
             if "dist-info" in str(file).lower() and LICENSE_RE.search(str(file)):
                 try:
                     texts.append(Path(dist.locate_file(file)).read_text(encoding="utf-8").replace("\r\n", "\n").rstrip())

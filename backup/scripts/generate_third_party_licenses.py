@@ -83,7 +83,10 @@ def homepage(meta: md.PackageMetadata) -> str:
 
 def license_text(dist: md.Distribution, meta: md.PackageMetadata) -> str | None:
     texts: list[str] = []
-    for f in dist.files or []:
+    # Sort by package-relative path: wheel RECORD order differs between
+    # platform builds (e.g. httptools' LICENSE vs bundled libuv notice),
+    # which would make generated output platform-dependent.
+    for f in sorted(dist.files or [], key=str):
         if LICENSE_FILE_RE.search(str(f)) and "dist-info" in str(f).lower():
             try:
                 raw = Path(dist.locate_file(f)).read_text(encoding="utf-8")
