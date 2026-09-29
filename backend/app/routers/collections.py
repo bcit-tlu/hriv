@@ -5,7 +5,9 @@ server-side. Non-students see all collections. Students see their own,
 ``public`` collections, and ``restricted`` collections passing the program
 AND group dual gate (``authz.can_view_collection``). Inside a collection a
 student only receives images they could open via ``GET /api/images/{id}``
-(active + category visible); hidden images are omitted, not an error.
+(active + category visible); hidden images are omitted, not an error. A
+whole-list ``PUT …/images`` from such a caller retains those hidden members
+(appended after the submitted list) rather than dropping them.
 
 Write endpoints re-check authority server-side on every call: a caller who
 cannot *view* a collection gets 404 (never 403, so private ids cannot be
@@ -343,27 +345,54 @@ async def _resolve_groups(
     return [by_id[gid] for gid in unique_ids]
 
 
+def _unseen_links(
+    ctx: _ViewerContext, collection: Collection
+) -> list[CollectionImage]:
+    """Membership rows whose image exists but the caller cannot view.
+
+    ``GET`` omits these images, so a whole-list ``PUT`` built from that
+    response cannot name them; they are carried over unchanged (original
+    relative order) instead of being silently dropped. Non-students see every
+    image, so for them this is always empty.
+    """
+    return sorted(
+        (
+            link
+            for link in collection.image_links
+            if link.image is not None and not ctx.can_view_image(link.image)
+        ),
+        key=lambda link: link.sort_order,
+    )
+
+
 async def _resolve_images(
-    db: AsyncSession, ctx: _ViewerContext, collection_type: str, image_ids: list[int],
+    db: AsyncSession,
+    ctx: _ViewerContext,
+    collection_type: str,
+    image_ids: list[int],
+    retained: int = 0,
 ) -> list[Image]:
     """Validate the ordered image list for a collection of *collection_type*.
 
     422 when an id is unknown, when ids repeat, when a synchronized collection
-    would exceed ``SYNCHRONIZED_COLLECTION_MAX_IMAGES``, or when a student
-    names an image they cannot view (inactive, or category failing the
-    program AND group dual gate). Returns images in request order.
+    would exceed ``SYNCHRONIZED_COLLECTION_MAX_IMAGES`` (counting *retained*
+    members the caller cannot see), or when a student names an image they
+    cannot view (inactive, or category failing the program AND group dual
+    gate). Returns images in request order.
     """
     if len(set(image_ids)) != len(image_ids):
         raise HTTPException(422, "image_ids must not contain duplicates")
     if (
         collection_type == "synchronized"
-        and len(image_ids) > SYNCHRONIZED_COLLECTION_MAX_IMAGES
+        and len(image_ids) + retained > SYNCHRONIZED_COLLECTION_MAX_IMAGES
     ):
-        raise HTTPException(
-            422,
+        detail = (
             "synchronized collections hold at most "
-            f"{SYNCHRONIZED_COLLECTION_MAX_IMAGES} images",
+            f"{SYNCHRONIZED_COLLECTION_MAX_IMAGES} images"
         )
+        if retained:
+            detail += f" ({retained} not visible to you are retained)"
+        raise HTTPException(422, detail)
     if not image_ids:
         return []
     images = (await db.execute(
@@ -379,8 +408,14 @@ async def _resolve_images(
     return [by_id[iid] for iid in image_ids]
 
 
-def _replace_image_links(collection: Collection, images: list[Image]) -> None:
-    """Rewrite the membership to *images* in order with ``sort_order`` 0..n-1.
+def _replace_image_links(
+    collection: Collection,
+    images: list[Image],
+    unseen: list[CollectionImage] | None = None,
+) -> None:
+    """Rewrite the membership to *images* in order with ``sort_order`` 0..n-1,
+    followed by *unseen* links (members the caller cannot view) in their
+    existing relative order.
 
     Existing link rows are reused for retained images (the composite PK
     would otherwise collide on delete-then-insert within one flush); links
@@ -388,12 +423,14 @@ def _replace_image_links(collection: Collection, images: list[Image]) -> None:
     """
     existing = {link.image_id: link for link in collection.image_links}
     links: list[CollectionImage] = []
-    for position, img in enumerate(images):
+    for img in images:
         link = existing.get(img.id)
         if link is None:
             link = CollectionImage(image_id=img.id)
-        link.sort_order = position
         links.append(link)
+    links.extend(unseen or [])
+    for position, link in enumerate(links):
+        link.sort_order = position
     collection.image_links = links
 
 
@@ -555,11 +592,19 @@ async def replace_collection_images(
     user: Annotated[User, Depends(get_current_user)],
     db: AsyncSession = Depends(get_db),
 ):
-    """Replace the ordered image list (add / remove / reorder in one call)."""
+    """Replace the ordered image list (add / remove / reorder in one call).
+
+    Members the caller cannot view are never in ``image_ids`` (GET omits them
+    and naming one is 422); they are retained after the submitted list rather
+    than dropped, and still count toward the synchronized cap.
+    """
     ctx, collection = await get_editable_collection_or_error(db, user, collection_id)
-    images = await _resolve_images(db, ctx, collection.type, body.image_ids)
+    unseen = _unseen_links(ctx, collection)
+    images = await _resolve_images(
+        db, ctx, collection.type, body.image_ids, retained=len(unseen)
+    )
     await _bump_version_or_409(db, ctx, collection, body.version)
-    _replace_image_links(collection, images)
+    _replace_image_links(collection, images, unseen)
     await db.commit()
     await db.refresh(collection)
     return collection_out(ctx, collection)

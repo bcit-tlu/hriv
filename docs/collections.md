@@ -120,7 +120,9 @@ Students receive only images they could open via `GET /api/images/{id}` —
 `image.active` **and** the image's category (with ancestors) passes the dual
 gate. Invisible images are **omitted** from `images`, `image_count` and
 `cover_thumb`; the collection itself is still returned. Non-students see every
-referenced image, including inactive ones.
+referenced image, including inactive ones. Omitted members survive a student's
+`PUT …/images` (see **Image list** below), so a hidden image is never removed
+by someone who cannot see it.
 
 ### Who can manage a collection
 
@@ -207,6 +209,11 @@ images, viewport) or `can_delete_collection` (DELETE) gets **403**.
   image, including inactive ones.
 - Membership is replaced as a whole and `sort_order` rewritten to `0..n-1` in
   request order; retained images keep their `collection_images` row.
+- Members the caller **cannot view** (omitted from `GET`, and **422** if named)
+  are never dropped by a `PUT`: they are carried over after the submitted list
+  in their existing relative order, and still count toward the `synchronized`
+  cap (the 422 detail then says how many hidden members are retained). Since
+  non-students see every image, this only affects students.
 
 **Viewport (`PUT …/viewport`).** `viewport_state` is overwritten with the
 submitted object — never a partial JSONB merge. Any JSON object is accepted
