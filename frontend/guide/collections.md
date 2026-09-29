@@ -21,7 +21,7 @@ create a new collection instead.
 ::: note Viewers are on the way
 For now, opening a collection lists its images with an **Open image** link
 for each. The side-by-side and step-through viewers are coming in a later
-release, as is adding images straight from the image view.
+release.
 :::
 
 ## Create a collection
@@ -35,6 +35,24 @@ release, as is adding images straight from the image view.
      Instructors can choose from the programs they belong to and the groups
      they manage; this option isn't offered to students or staff.
 4. Click **Create**.
+
+## Add an image to a collection
+
+While viewing an image, click **Add to Collection** (next to **Share View**)
+and pick one of your collections — or one owned by a program you teach in.
+Type in the filter box to narrow a long list.
+
+- The image is added to the end of the collection. If it is already there,
+  nothing changes and a note tells you so.
+- A synchronized collection that already holds four images is greyed out;
+  hover it to see why.
+- Use **New collection…** in the dialog to create a collection that starts
+  with this image.
+- After adding, the message at the bottom offers **View collection** to jump
+  straight to it. Your browser's back button returns you to the image.
+
+The button is unavailable while you are editing annotations on the canvas —
+finish or cancel that first.
 
 ## Find a collection
 

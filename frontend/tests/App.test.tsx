@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import App from '../src/App'
 import type { ProcessingJob } from '../src/useProcessingJobs'
 import {
+  ApiError,
   createGroup,
   createProgram,
   deleteGroup,
@@ -590,6 +591,57 @@ vi.mock('../src/useCollectionsData', () => ({
   }),
 }))
 vi.mock('../src/components/ManagePage', () => ({ default: () => null }))
+const addToCollectionMocks = vi.hoisted(() => ({
+  addImagesToCollection: vi.fn(),
+  createCollectionWithImages: vi.fn(),
+}))
+vi.mock('../src/useAddToCollection', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/useAddToCollection')>()),
+  ...addToCollectionMocks,
+  useEditableCollections: () => ({ collections: [], loading: false, error: null, reload: vi.fn() }),
+}))
+vi.mock('../src/components/AddToCollectionDialog', () => ({
+  default: ({
+    open,
+    imageIds,
+    onClose,
+    onAdd,
+    onCreate,
+  }: {
+    open: boolean
+    imageIds: number[]
+    onClose: () => void
+    onAdd: (collection: { id: number; name: string }) => Promise<boolean>
+    onCreate: (values: unknown) => Promise<void>
+  }) =>
+    open ? (
+      <div data-testid="add-to-collection-dialog" data-image-ids={imageIds.join(',')}>
+        <button
+          type="button"
+          onClick={() => {
+            void onAdd({ id: 9, name: 'Skull set' }).then((done) => {
+              if (done) onClose()
+            })
+          }}
+        >
+          Pick collection
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            void onCreate({ name: 'Fresh' })
+              .then(onClose)
+              .catch(() => undefined)
+          }}
+        >
+          Create collection
+        </button>
+        <button type="button" onClick={onClose}>
+          Close add dialog
+        </button>
+      </div>
+    ) : null,
+}))
 vi.mock('../src/components/LoginScreen', () => ({ default: () => null }))
 vi.mock('../src/components/EditImageModal', () => ({ default: () => null }))
 vi.mock('../src/components/ProgramManagementModal', () => ({
@@ -1799,5 +1851,148 @@ describe('App collections feature flag (COLLECTIONS_ENABLED)', () => {
       expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
     )
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '12')
+  })
+})
+
+describe('App "Add to Collection" from the image view (#1415)', () => {
+  const originalUrl = `${window.location.pathname}${window.location.search}`
+
+  beforeEach(() => {
+    resetFixtures()
+    popStateHandler = null
+    addToCollectionMocks.addImagesToCollection.mockReset()
+    addToCollectionMocks.createCollectionWithImages.mockReset()
+  })
+
+  afterEach(() => {
+    window.history.replaceState(null, '', originalUrl)
+  })
+
+  async function openImageWithCollectionsEnabled() {
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+    return screen.getByRole('button', { name: 'Add to Collection' })
+  }
+
+  it('shows the button next to Share View for a student when the flag is on', async () => {
+    authState = { ...authState, canEditContent: false, canViewPeople: false }
+    const button = await openImageWithCollectionsEnabled()
+    expect(button).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Edit Details' })).not.toBeInTheDocument()
+    expect(screen.getByText('Share View').closest('button')).toBeInTheDocument()
+  })
+
+  it('hides the button when the collections flag is off', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({ collections: false })
+    render(<App />)
+    await waitFor(() => expect(apiMocks.fetchFeatures).toHaveBeenCalled())
+    await act(async () => {})
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+    expect(screen.getByText('Share View').closest('button')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add to Collection' })).not.toBeInTheDocument()
+  })
+
+  it('disables the button while canvas edit mode is active', async () => {
+    const button = await openImageWithCollectionsEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Enter canvas edit' }))
+    expect(button).toBeDisabled()
+    expect(screen.queryByTestId('add-to-collection-dialog')).not.toBeInTheDocument()
+  })
+
+  it('desaturates the button when the image is inactive', async () => {
+    mockImage.active = false
+    const button = await openImageWithCollectionsEnabled()
+    expect(button).toHaveStyle({ filter: 'grayscale(100%)' })
+  })
+
+  it('opens the dialog for the selected image and shows a View collection action on success', async () => {
+    addToCollectionMocks.addImagesToCollection.mockResolvedValue({
+      status: 'added',
+      collection: { id: 9, name: 'Skull set' },
+      addedCount: 1,
+    })
+    const button = await openImageWithCollectionsEnabled()
+    fireEvent.click(button)
+    expect(screen.getByTestId('add-to-collection-dialog')).toHaveAttribute(
+      'data-image-ids',
+      String(mockImage.id),
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pick collection' }))
+    await waitFor(() =>
+      expect(addToCollectionMocks.addImagesToCollection).toHaveBeenCalledWith(9, [mockImage.id]),
+    )
+    expect(await screen.findByText('Added to "Skull set".')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByTestId('add-to-collection-dialog')).not.toBeInTheDocument(),
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'View collection' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '9')
+    expect(pushNavStateMock).toHaveBeenLastCalledWith('collections', [], null, { collection: '9' })
+  })
+
+  it('reports an already-present image as an informational no-op and closes', async () => {
+    addToCollectionMocks.addImagesToCollection.mockResolvedValue({
+      status: 'already',
+      collection: { id: 9, name: 'Skull set' },
+    })
+    fireEvent.click(await openImageWithCollectionsEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Pick collection' }))
+    expect(await screen.findByText('This image is already in "Skull set".')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByTestId('add-to-collection-dialog')).not.toBeInTheDocument(),
+    )
+    expect(screen.queryByRole('button', { name: 'View collection' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the dialog open with an error when a synchronized collection is full', async () => {
+    addToCollectionMocks.addImagesToCollection.mockResolvedValue({
+      status: 'full',
+      collection: { id: 9, name: 'Skull set' },
+    })
+    fireEvent.click(await openImageWithCollectionsEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Pick collection' }))
+    expect(
+      await screen.findByText(
+        '"Skull set" already holds 4 images, the most a synchronized collection can show.',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('add-to-collection-dialog')).toBeInTheDocument()
+  })
+
+  it('routes API failures to the error snackbar and keeps the dialog open', async () => {
+    addToCollectionMocks.addImagesToCollection.mockRejectedValue(
+      new ApiError(409, 'Collection was modified by another user'),
+    )
+    fireEvent.click(await openImageWithCollectionsEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Pick collection' }))
+    expect(
+      await screen.findByText(
+        'This item was modified by another user. Please refresh and try again.',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('add-to-collection-dialog')).toBeInTheDocument()
+  })
+
+  it('creates a new collection with the image preset and offers to view it', async () => {
+    addToCollectionMocks.createCollectionWithImages.mockResolvedValue({
+      id: 11,
+      name: 'Fresh',
+    })
+    fireEvent.click(await openImageWithCollectionsEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Create collection' }))
+    await waitFor(() =>
+      expect(addToCollectionMocks.createCollectionWithImages).toHaveBeenCalledWith(
+        { name: 'Fresh' },
+        [mockImage.id],
+      ),
+    )
+    expect(await screen.findByText('Added to "Fresh".')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'View collection' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '11')
   })
 })

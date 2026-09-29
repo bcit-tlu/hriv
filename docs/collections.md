@@ -361,7 +361,8 @@ attach logic: instructors can only select programs they belong to
 (`getAttachableProgramIds`) and groups they manage; already-attached scope
 stays enabled so it can be removed. At least one program or group is required
 for `restricted`; `program_ids` / `group_ids` are sent as `[]` for any other
-visibility. Create posts `image_ids: []` (adding images arrives with #1415).
+visibility. Create from the Collections tab posts `image_ids: []`; create from
+the image view (#1415, below) posts the selected image id(s).
 Edit sends the collection `version` in the PATCH body; a **409** shows the
 standard "modified by another user" message with a **Reload** action that
 re-seeds the form from the authoritative `CollectionOut` in `detail`.
@@ -390,9 +391,59 @@ the URL, so back/forward moves between browse, image and collection views.
 Refreshing a `?collection=` URL re-opens that collection. `?item={image_id}`
 is reserved for the sequence viewer (#1416) and is not parsed yet.
 
-_Planned_ (#1415–#1419): "Add to Collection" from the image view, sequence
-and synchronized viewers (read-only annotations), search integration and
-ownership management / transfer UI.
+### "Add to Collection" from the image view (#1415)
+
+**Where.** `App.tsx` (button + snackbars), `components/AddToCollectionDialog.tsx`,
+`useAddToCollection.ts` (`useEditableCollections`, `addImagesToCollection`,
+`createCollectionWithImages`, `fitsCollectionCapacity`). Reuses the #1414
+API wrappers — no new endpoints.
+
+**Button.** An **Add to Collection** action sits after **Share View** in the
+image viewer action bar for every authenticated role (students included) and
+only while the deployment flag is on. It shares the viewer-action rules:
+desaturated when the image is inactive or hidden by category, disabled with
+the "Exit canvas edit mode first" tooltip while canvas edit mode is active.
+
+**Dialog.** Opening it loads `GET /api/collections` (unfiltered) and keeps
+rows with `permissions.can_edit`, grouped as _My collections_ (owner is the
+signed-in user), _Program collections_ (program-owned) and _Other
+collections_ (anything else an admin may edit, e.g. orphaned). A client-side
+name filter narrows the list. Rows show name, image count and a type chip.
+The dialog takes `imageIds: number[]` so the multi-select flow (#1418) can
+reuse it; the viewer passes the selected image.
+
+**Capacity.** A `synchronized` row whose `image_count + imageIds.length`
+would exceed `SYNCHRONIZED_MAX_IMAGES` (4) is disabled with an explanatory
+tooltip; sequence rows are never capped. The rule is re-checked against the
+fresh member list before the write.
+
+**Add.** `addImagesToCollection` fetches `GET /api/collections/{id}` for the
+current member list and `version`, drops ids already present, and issues the
+whole-replace `PUT /api/collections/{id}/images` with `[...existing,
+...missing]` so nobody else's members are lost. Outcomes:
+
+| Result                               | Feedback                                                                     | Dialog |
+| ------------------------------------ | ---------------------------------------------------------------------------- | ------ |
+| Added                                | success snackbar `Added to "<name>".` with a **View collection** action      | closes |
+| Every image already present (no-op)  | info snackbar `This image is already in "<name>".`; no PUT is sent           | closes |
+| Synchronized collection already full | error snackbar; no PUT is sent                                               | stays  |
+| API error (409 stale / 403 / 404 …)  | existing error snackbar via `userMessage` (409 → "modified by another user") | stays  |
+
+**View collection** navigates with `handleOpenCollection` → `?collection={id}`
+(same history entry as opening a card), so back returns to the image.
+
+**New collection…** opens the shared `CollectionEditDialog` in create mode;
+`createCollectionWithImages` posts the form with `image_ids` preset to the
+selected image(s) and the success snackbar offers **View collection**. Form
+errors stay inside the create dialog as on the Collections tab.
+
+**Permissions are UX gates only.** `can_edit` filtering and the capacity
+check are conveniences; the backend re-validates edit authority, image
+visibility, duplicates and the synchronized cap on every write.
+
+_Planned_ (#1416–#1419): sequence and synchronized viewers (read-only
+annotations), search integration / multi-select add, and ownership
+management / transfer UI.
 
 ## Tests
 
@@ -438,3 +489,10 @@ ownership management / transfer UI.
   `CollectionCard.test.tsx`, `CollectionEditDialog.test.tsx` — list/filter
   states, permission-gated actions, create/edit/delete flows, restricted
   picker gating per role, 409 reload.
+- `frontend/tests/components/AddToCollectionDialog.test.tsx`,
+  `useAddToCollection.test.tsx`, `App.test.tsx` (#1415) — grouping, filter,
+  synchronized cap (per image count), in-flight locking, create path;
+  append-not-replace `PUT` body with current `version`, no-op / full / error
+  results; viewer button per role and flag, canvas-edit disabling,
+  desaturation, success / info / error snackbars and **View collection**
+  navigation.

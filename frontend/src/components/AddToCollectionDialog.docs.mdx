@@ -1,0 +1,62 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as AddToCollectionDialogStories from './AddToCollectionDialog.stories'
+
+<Meta of={AddToCollectionDialogStories} />
+
+<Title />
+
+<Subtitle>
+  Pick one of the collections you can edit — or create a new one — to add the current image(s) to,
+  straight from the image view.
+</Subtitle>
+
+## When to use
+
+`App` opens this dialog from the **Add to Collection** button in the image viewer action bar
+(next to **Share View**, only while the `COLLECTIONS_ENABLED` deployment flag is on). It takes
+`imageIds` so the same dialog serves the single-image viewer today and the multi-select flow
+planned in #1418.
+
+## Interactive example
+
+Use the `role` control to change who is signed in; the grouping and the **New collection…**
+form's visibility options follow the role.
+
+<Primary />
+
+<Controls of={AddToCollectionDialogStories.Basic} />
+
+## Implementation guidance
+
+- **Data comes in through props.** `collections` is the caller's already-filtered
+  `permissions.canEdit` list (`useEditableCollections` in `useAddToCollection.ts` loads it each
+  time the dialog opens); `loading` / `error` render the spinner and a plain error `Alert`.
+- **Grouping.** Rows are split into _My collections_ (owner is the signed-in user), _Program
+  collections_ and _Other collections_ (anything else an admin may edit, including orphaned
+  collections). Empty groups are omitted; a client-side name filter narrows all three.
+- **Capacity.** A `synchronized` row is disabled with the `CAP_REACHED_TOOLTIP` tooltip when
+  `imageCount + imageIds.length` would exceed `SYNCHRONIZED_MAX_IMAGES` (4). Sequence
+  collections are never capped.
+- **`onAdd` decides whether to close.** The caller performs the add (`addImagesToCollection`
+  fetches the current member list, skips images already present and issues the whole-replace
+  `PUT /api/collections/{id}/images` with the current `version`) and reports the outcome through
+  its own snackbars: success with a **View collection** action, an informational
+  "already in" no-op, or an error for 409/403/404 / a full synchronized collection. Resolving
+  `true` closes the dialog; `false` keeps it open so another collection can be picked.
+- **New collection…** reuses `CollectionEditDialog` in create mode; `onCreate` receives the form
+  values and the caller posts them with `image_ids` preset (`createCollectionWithImages`).
+  Rejections render inside the create form, as they do on the Collections tab.
+- **Permissions are UX gates only.** The backend re-checks edit authority and image visibility
+  on every write.
+
+## Stories
+
+<Stories />
