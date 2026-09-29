@@ -14,6 +14,8 @@ from sqlalchemy.sql.dml import Update
 from app.models import Collection, CollectionImage, Group, Image, Program, User
 from app.routers import collections as collections_router
 from app.routers.collections import (
+    _unseen_links,
+    _ViewerContext,
     create_collection,
     delete_collection,
     get_collection,
@@ -848,6 +850,17 @@ async def test_replace_images_authority_and_version() -> None:
     with pytest.raises(HTTPException) as exc:
         await replace_collection_images(1, _images_body([], version=1), _user("admin"), db=_write_db(get=col))
     assert exc.value.status_code == 409 and exc.value.detail["version"] == 3
+
+
+def test_unseen_links_filters_by_viewer_and_keeps_relative_order() -> None:
+    col = _collection(
+        1, images=[_image(1, category_id=20), _image(2), _image(3, active=False), _image(4, category_id=20)]
+    )
+    col.image_links.append(SimpleNamespace(sort_order=4, image_id=9, image=None))  # dangling
+    col.image_links[0].sort_order = 7  # sort_order gaps / out-of-order rows are honoured
+    student = _ViewerContext(_user("student", id=2), excluded_category_ids={20})
+    assert [link.image_id for link in _unseen_links(student, col)] == [3, 4, 1]
+    assert _unseen_links(_ViewerContext(_user("admin"), excluded_category_ids=None), col) == []
 
 
 async def test_replace_images_student_retains_unseen_members(
