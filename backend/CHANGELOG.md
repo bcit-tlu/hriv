@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.64.2](https://github.com/bcit-tlu/hriv/compare/backend-v0.64.1...backend-v0.64.2) (2026-09-29)
+
+
+### Bug Fixes
+
+* **backend:** bump opentelemetry-* to &gt;=0.64b0 and unpin fastapi ([#1472](https://github.com/bcit-tlu/hriv/issues/1472)) ([a6819a0](https://github.com/bcit-tlu/hriv/commit/a6819a0264cb261e66f13a730d3a2b61db03b5c1))
+* **backend:** retain unseen collection members on PUT /collections/{id}/images ([#1477](https://github.com/bcit-tlu/hriv/issues/1477)) ([d1e4fd7](https://github.com/bcit-tlu/hriv/commit/d1e4fd7b1250280cb45affe752b89c67831ccec3))
+* **backend:** route readiness probe through included-router path ([#1475](https://github.com/bcit-tlu/hriv/issues/1475)) ([1f301a4](https://github.com/bcit-tlu/hriv/commit/1f301a4404397c1f25246b7f76ef63b543ddd621))
+
 ## [0.64.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.64.0...backend-v0.64.1) (2026-09-28)
 
 
