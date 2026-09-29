@@ -14,6 +14,8 @@ from sqlalchemy.sql.dml import Update
 from app.models import Collection, CollectionImage, Group, Image, Program, User
 from app.routers import collections as collections_router
 from app.routers.collections import (
+    _unseen_links,
+    _ViewerContext,
     create_collection,
     delete_collection,
     get_collection,
@@ -848,6 +850,91 @@ async def test_replace_images_authority_and_version() -> None:
     with pytest.raises(HTTPException) as exc:
         await replace_collection_images(1, _images_body([], version=1), _user("admin"), db=_write_db(get=col))
     assert exc.value.status_code == 409 and exc.value.detail["version"] == 3
+
+
+def test_unseen_links_filters_by_viewer_and_keeps_relative_order() -> None:
+    col = _collection(
+        1, images=[_image(1, category_id=20), _image(2), _image(3, active=False), _image(4, category_id=20)]
+    )
+    col.image_links.append(SimpleNamespace(sort_order=4, image_id=9, image=None))  # dangling
+    col.image_links[0].sort_order = 7  # sort_order gaps / out-of-order rows are honoured
+    student = _ViewerContext(_user("student", id=2), excluded_category_ids={20})
+    assert [link.image_id for link in _unseen_links(student, col)] == [3, 4, 1]
+    assert _unseen_links(_ViewerContext(_user("admin"), excluded_category_ids=None), col) == []
+
+
+async def test_replace_images_student_retains_unseen_members(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # GET omits images 1 (excluded category) and 3 (inactive), so a client
+    # can only ever submit [2, 4]; the PUT must not drop the hidden members.
+    monkeypatch.setattr(
+        collections_router, "get_student_excluded_category_ids", AsyncMock(return_value={20})
+    )
+    hidden_a, visible_b, hidden_c, visible_d = (
+        _image(1, category_id=20),
+        _image(2),
+        _image(3, active=False),
+        _image(4, category_id=21),
+    )
+    col = _collection(1, "private", user_id=2, images=[hidden_a, visible_b, hidden_c, visible_d])
+    kept = {link.image_id: link for link in col.image_links}
+    db = _write_db(get=col, images=[visible_b, visible_d, _image(5)])
+    out = await replace_collection_images(
+        1, _images_body([5, 4, 2]), _user("student", id=2), db=db
+    )
+    assert _links(col) == [(5, 0), (4, 1), (2, 2), (1, 3), (3, 4)]
+    assert col.image_links[3] is kept[1] and col.image_links[4] is kept[3]
+    # The mock never hydrates ``link.image`` for the new row (5); the point is
+    # that the retained hidden members stay out of the response.
+    assert [i.id for i in out.images] == [4, 2] and out.image_count == 2
+    assert col.version == 4 and out.version == 4
+    db.commit.assert_awaited_once()
+
+    # Removing every visible image still keeps the hidden ones.
+    col = _collection(1, "private", user_id=2, images=[hidden_a, visible_b, hidden_c])
+    await replace_collection_images(1, _images_body([]), _user("student", id=2), db=_write_db(get=col))
+    assert _links(col) == [(1, 0), (3, 1)]
+
+    # Naming a hidden member explicitly is still 422 (no probing).
+    col = _collection(1, "private", user_id=2, images=[hidden_a, visible_b])
+    with pytest.raises(HTTPException) as exc:
+        await replace_collection_images(
+            1, _images_body([2, 1]), _user("student", id=2), db=_write_db(get=col, images=[hidden_a, visible_b])
+        )
+    assert exc.value.status_code == 422 and "[1]" in exc.value.detail
+
+
+async def test_replace_images_unseen_members_count_toward_synchronized_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        collections_router, "get_student_excluded_category_ids", AsyncMock(return_value={20})
+    )
+    hidden = _image(9, category_id=20)
+    visible = [_image(i) for i in range(1, 5)]
+    col = _collection(1, "private", user_id=2, type="synchronized", images=[hidden, *visible[:2]])
+    with pytest.raises(HTTPException) as exc:
+        await replace_collection_images(
+            1, _images_body([1, 2, 3, 4]), _user("student", id=2), db=_write_db(get=col, images=visible)
+        )
+    assert exc.value.status_code == 422
+    assert "at most 4" in exc.value.detail and "1 not visible" in exc.value.detail
+    assert col.version == 3 and _links(col) == [(9, 0), (1, 1), (2, 2)]
+    out = await replace_collection_images(
+        1, _images_body([1, 2, 3]), _user("student", id=2), db=_write_db(get=col, images=visible)
+    )
+    assert _links(col) == [(1, 0), (2, 1), (3, 2), (9, 3)]
+    assert [i.id for i in out.images] == [1, 2] and out.version == 4
+
+
+async def test_replace_images_non_student_drops_inactive_members() -> None:
+    # Non-students see every image, so nothing is retained behind their back:
+    # omitting an inactive member really removes it.
+    col = _collection(1, "private", user_id=10, images=[_image(1, active=False), _image(2)])
+    db = _write_db(get=col, images=[_image(2)])
+    out = await replace_collection_images(1, _images_body([2]), _user("admin"), db=db)
+    assert _links(col) == [(2, 0)] and out.image_count == 1
 
 
 # ── viewport ──────────────────────────────────────────────
