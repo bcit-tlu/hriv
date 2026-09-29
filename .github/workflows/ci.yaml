@@ -152,6 +152,11 @@ jobs:
       - name: Install dependencies
         run: poetry install --with dev
 
+      # THIRD-PARTY-LICENSES.txt must match the locked runtime dependency
+      # tree (run `poetry run python scripts/generate_third_party_licenses.py` to refresh).
+      - name: Verify third-party license notices
+        run: poetry run python scripts/generate_third_party_licenses.py --check
+
       # Alembic is the sole source of truth for the schema; bring the
       # fixture database to head before the integration tests touch it.
       - name: Apply migrations to fixture database
@@ -190,6 +195,11 @@ jobs:
       - name: Install dependencies
         run: poetry install --no-root
 
+      # THIRD-PARTY-LICENSES.txt must match the locked runtime dependency
+      # tree (run `poetry run python scripts/generate_third_party_licenses.py` to refresh).
+      - name: Verify third-party license notices
+        run: poetry run python scripts/generate_third_party_licenses.py --check
+
       - name: Run backup tests
         run: poetry run python -m unittest discover tests
 
@@ -225,6 +235,11 @@ jobs:
 
       - name: Install dependencies
         run: poetry install --with dev
+
+      # THIRD-PARTY-LICENSES.txt must match the locked runtime dependency
+      # tree (run `poetry run python scripts/generate_third_party_licenses.py` to refresh).
+      - name: Verify third-party license notices
+        run: poetry run python scripts/generate_third_party_licenses.py --check
 
       - name: Run restore-validation tests
         run: |

@@ -81,6 +81,7 @@ credentials removed as a default).
 | `GET /api/metrics`        | Frontend nginx returns 404 (`default.conf.template`); scraped in-cluster via ServiceMonitor against the ClusterIP Service | ⚠ **Partial.** The app itself is unauthenticated and there is no NetworkPolicy restricting the backend Service, so any in-cluster or port-forwarded client (and dev compose on `:8000`) reads queue depth, worker heartbeat age, and execution mode. Enforcement fix: opt-in backend NetworkPolicy in PR [#1160](https://github.com/bcit-tlu/hriv/pull/1160) (enable per deployment overlay). |
 | `GET /api/health/ready`   | Frontend nginx returns 404 (`default.conf.template`); kubelet probes the backend pod directly                             | The readiness handler remains unauthenticated for kubelet access, but public frontend-ingress requests are blocked before they reach the DB and storage checks.                                                                                                                                                                                                                               |
 | `GET /api/health/storage` | Frontend nginx returns 404 (`default.conf.template`); kubelet probes the backend pod directly                             | The storage liveness handler remains unauthenticated for kubelet access, but public frontend-ingress requests are blocked before they reach the storage check.                                                                                                                                                                                                                                |
+| `GET /api/_probe`         | Frontend nginx returns 404 (`default.conf.template`); kubelet probes the backend pod directly                             | The readiness canary handler remains unauthenticated for kubelet access and travels the included-router request path (#1473), but public frontend-ingress requests are blocked before they reach the DB and storage checks.                                                                                                                                                                   |
 
 ### FastAPI — mismatches (violate rule 3)
 
@@ -107,14 +108,15 @@ images, issues, programs, telemetry, tile-order, upload, users) are
 | `= /api/metrics`                    | `return 404`                                                                                                                                                                                                             | Edge restriction for the cluster-internal route above     |
 | `= /api/health/ready`               | `return 404`                                                                                                                                                                                                             | Edge restriction; kubelet probes the backend pod directly |
 | `= /api/health/storage`             | `return 404`                                                                                                                                                                                                             | Edge restriction; kubelet probes the backend pod directly |
+| `= /api/_probe`                     | `return 404`                                                                                                                                                                                                             | Edge restriction; kubelet probes the backend pod directly |
 
 ### Kubernetes / ingress
 
 - `charts/frontend/templates/ingress.yaml` annotations are values-driven; the
   chart itself imposes no path allowlist. The frontend nginx configuration
-  explicitly blocks `/api/health/ready` and `/api/health/storage` before the
-  generic API proxy. Kubelet probes continue to call those paths directly on
-  the backend pod.
+  explicitly blocks `/api/health/ready`, `/api/health/storage`, and
+  `/api/_probe` before the generic API proxy. Kubelet probes continue to call
+  those paths directly on the backend pod.
 - PR [#1160](https://github.com/bcit-tlu/hriv/pull/1160) adds an opt-in
   NetworkPolicy to `charts/backend` restricting ingress to the frontend proxy
   and the metrics-scraper — required for rule 4 to hold for `/api/metrics`.

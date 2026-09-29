@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     # that prefix. Intended for high-volume, low-signal endpoints (container
     # healthchecks, tile serving, Prometheus scrapes, etc.). Operators can
     # extend the list per deployment by setting the AUDIT_EXCLUDE_PREFIXES env var.
-    audit_exclude_prefixes: str = "/api/health,/api/tiles/,/api/metrics"
+    audit_exclude_prefixes: str = "/api/health,/api/tiles/,/api/metrics,/api/_probe"
 
     # Retention policy for retained filesystem-import archives. Applied after
     # a successful files import and once at startup. Count keeps only the
