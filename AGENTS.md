@@ -15,7 +15,7 @@ per-directory `AGENTS.md` files that load when you work under them:
 - Restore validation (from `restore-validation/`): `poetry install --with dev`, `poetry run python -m unittest discover tests` (needs `helm` on `PATH`).
 - Helm charts (from repo root): `for chart in charts/*/; do helm lint "$chart"; done` — plus kubeconform and `bash scripts/test-helm-chart-regressions.sh` (see `charts/AGENTS.md`).
 - DB schema changes: Alembic is the sole source of truth — model change in `backend/app/models.py` + generated revision committed together (see `backend/AGENTS.md`; revision IDs must be ≤32 chars).
-- Runtime dependency changes → regenerate the component's `THIRD-PARTY-LICENSES.txt` (`cd frontend && npm run licenses:generate`; backend/backup: `poetry run python scripts/generate_third_party_licenses.py`). CI fails on drift.
+- Runtime dependency changes → regenerate the component's `THIRD-PARTY-LICENSES.txt` (`cd frontend && npm run licenses:generate`; backend/backup/restore-validation: `poetry run python scripts/generate_third_party_licenses.py`). CI fails on drift.
 
 ## Code Style
 

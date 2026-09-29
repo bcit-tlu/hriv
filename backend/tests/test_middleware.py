@@ -851,7 +851,7 @@ async def test_maintenance_returns_503_when_active() -> None:
 async def test_maintenance_allows_exempt_paths() -> None:
     mw = MaintenanceMiddleware(app=AsyncMock())
 
-    for path in ("/api/health", "/api/status", "/api/admin/maintenance"):
+    for path in ("/api/health", "/api/_probe", "/api/status", "/api/admin/maintenance"):
         scope = _make_scope(path=path)
         with patch("app.middleware.is_maintenance_mode", return_value=True):
             messages = await _invoke(mw, scope)
