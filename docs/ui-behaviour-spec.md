@@ -212,6 +212,46 @@ returned by the API (UX only — the backend re-checks).
   returns **404**, **Then** the not-found `Alert` with **All collections** is
   shown instead.
 
+### "Add to Collection" from the image view (`AddToCollectionDialog.test.tsx`, `useAddToCollection.test.tsx`, `App.test.tsx`)
+
+See [collections.md](collections.md#add-to-collection-from-the-image-view-1415)
+for the full contract. Available to every authenticated role; the dialog only
+lists collections the API marks `permissions.can_edit` (UX gate — the backend
+re-checks).
+
+- **Given** the collections flag is on and an image is open, **When** the
+  viewer action bar renders, **Then** an **Add to Collection** button follows
+  **Share View** for every role. It is absent when the flag is off, disabled
+  with the "Exit canvas edit mode first" tooltip while canvas edit mode is
+  active, and desaturated (`grayscale(100%)`) when the image is inactive or
+  hidden by category — the same rules as **Edit Details** / **Share View**.
+- **Given** the dialog opens, **When** `GET /api/collections` resolves,
+  **Then** editable collections render grouped as **My collections**,
+  **Program collections** and **Other collections** (empty groups omitted),
+  each row showing name, image count and type chip, with a name filter above;
+  a spinner, a plain error `Alert`, and an empty state ("You don't have a
+  collection you can add to yet.") follow the usual patterns. The filter and
+  busy state reset each time the dialog opens.
+- **Given** a synchronized collection, **When** its image count plus the
+  images being added would exceed four, **Then** its row is disabled and
+  hovering it shows "Synchronized collections hold at most 4 images."
+  Sequence rows are never capped.
+- **Given** a row is picked, **When** the add is in flight, **Then** every row
+  and the footer buttons are disabled and the picked row shows a spinner.
+- **Given** the add succeeds, **Then** the dialog closes and a success
+  snackbar `Added to "<name>".` offers **View collection**, which opens
+  `?collection={id}` (back returns to the image).
+- **Given** the image is already in the collection, **Then** no write is
+  sent, the dialog closes, and an info snackbar reads
+  `This image is already in "<name>".`
+- **Given** the collection turns out to be full or the API fails (409 stale
+  version, 403, 404), **Then** the message goes to the error snackbar and
+  the dialog stays open so another collection can be chosen.
+- **Given** **New collection…** is clicked, **Then** the shared
+  `CollectionEditDialog` opens in create mode; creating posts the image id(s)
+  as the initial members, closes both dialogs and shows the same success
+  snackbar. Form errors stay inside the create dialog.
+
 ### Search modal (`SearchModal.test.tsx`)
 
 - Search is client-side over the currently loaded browse data (categories,
@@ -359,8 +399,8 @@ committed on Save) in the edit modals.
 - `categoryHidden` is computed reactively inside `EditImageForm` via
   `isCategoryHiddenInTree(categories, categoryId)`, so it updates when the
   user changes the category in the form.
-- The Image Viewer header buttons ("Edit Details", "Share View") desaturate
-  when the image's category is hidden.
+- The Image Viewer header buttons ("Edit Details", "Share View",
+  "Add to Collection") desaturate when the image's category is hidden.
 
 #### Tile desaturation
 

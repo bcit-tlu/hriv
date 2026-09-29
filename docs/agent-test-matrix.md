@@ -41,6 +41,9 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
   `tests/test_router_programs.py` (the real `DELETE /api/programs/{id}` →
   orphan test needs `REORDER_FIXTURE_DATABASE_URL`, otherwise it skips).
 - frontend: `npm test -- CollectionsPage CollectionCard CollectionEditDialog collectionUtils useCollectionsData api.test navigation AppShell useShareableImageState useNavigationHistory App.test`
+- "Add to Collection" from the image view (#1415: `AddToCollectionDialog.tsx`,
+  `useAddToCollection.ts`, the viewer action bar in `App.tsx`):
+  `npm test -- AddToCollectionDialog useAddToCollection App.test`
 - Storybook (stories + a11y): `npm run test:storybook -- Collection`
 - Collection visibility reuses the category dual gate — if you touched
   `visibility.py` also run the "Changed groups" set above. See

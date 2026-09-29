@@ -29,6 +29,7 @@ import Visibility from '@mui/icons-material/Visibility'
 import EditIcon from '@mui/icons-material/Edit'
 import HomeIcon from '@mui/icons-material/Home'
 import LinkIcon from '@mui/icons-material/Link'
+import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd'
 import ImageViewer from './components/ImageViewer'
 import SortableTileGrid from './components/SortableTileGrid'
 import ReorderSnackbar from './components/ReorderSnackbar'
@@ -39,6 +40,8 @@ import AppShell from './components/AppShell'
 import type { Page } from './components/AppShell'
 import AddEditPersonModal from './components/AddEditPersonModal'
 import CollectionsPage from './components/CollectionsPage'
+import AddToCollectionDialog from './components/AddToCollectionDialog'
+import type { CollectionFormValues } from './components/CollectionEditDialog'
 import ManagePage from './components/ManagePage'
 import PeoplePage from './components/PeoplePage'
 import LoginScreen from './components/LoginScreen'
@@ -60,8 +63,13 @@ import {
   updateImageInTree,
 } from './treeUtils'
 import UploadImageModal from './components/UploadImageModal'
-import { parseCollectionIdParam } from './collectionUtils'
+import { SYNCHRONIZED_MAX_IMAGES, parseCollectionIdParam } from './collectionUtils'
 import { useCollectionsData } from './useCollectionsData'
+import {
+  addImagesToCollection,
+  createCollectionWithImages,
+  useEditableCollections,
+} from './useAddToCollection'
 import { useFeatures } from './useFeatures'
 import { isAcceptedFile } from './fileUtils'
 import { formatFileSize } from './formatUtils'
@@ -276,7 +284,9 @@ export default function App() {
   const [successSnack, setSuccessSnack] = useState<{
     message: string
     trackingUrl?: string | null
+    action?: { label: string; onClick: () => void }
   } | null>(null)
+  const [infoSnack, setInfoSnack] = useState<string | null>(null)
   const [warnSnack, setWarnSnack] = useState<string | null>(null)
   const [moveSnack, setMoveSnack] = useState<{
     message: string
@@ -1496,6 +1506,68 @@ export default function App() {
     pushNavState('collections')
   }, [pushNavState])
 
+  // "Add to Collection" from the image view (#1415).
+  const [addToCollectionOpen, setAddToCollectionOpen] = useState(false)
+  const addToCollectionActive =
+    collectionsEnabled && addToCollectionOpen && selectedImage != null && currentUser != null
+  const editableCollections = useEditableCollections(addToCollectionActive)
+  const addToCollectionImageIds = useMemo(
+    () => (selectedImage ? [selectedImage.id] : []),
+    [selectedImage],
+  )
+
+  const reportAddedToCollection = useCallback(
+    (collection: { id: number; name: string }, addedCount: number) => {
+      setSuccessSnack({
+        message:
+          addedCount === 1
+            ? `Added to "${collection.name}".`
+            : `Added ${addedCount} images to "${collection.name}".`,
+        action: {
+          label: 'View collection',
+          onClick: () => {
+            setSuccessSnack(null)
+            handleOpenCollection(collection.id)
+          },
+        },
+      })
+    },
+    [handleOpenCollection],
+  )
+
+  const handleAddToCollection = useCallback(
+    async (collection: { id: number; name: string }): Promise<boolean> => {
+      if (addToCollectionImageIds.length === 0) return true
+      try {
+        const result = await addImagesToCollection(collection.id, addToCollectionImageIds)
+        if (result.status === 'added') {
+          reportAddedToCollection(result.collection, result.addedCount)
+          return true
+        }
+        if (result.status === 'already') {
+          setInfoSnack(`This image is already in "${result.collection.name}".`)
+          return true
+        }
+        setErrorSnack(
+          `"${result.collection.name}" already holds ${SYNCHRONIZED_MAX_IMAGES} images, the most a synchronized collection can show.`,
+        )
+        return false
+      } catch (err) {
+        setErrorSnack(userMessage(err, 'Failed to add to collection.'))
+        return false
+      }
+    },
+    [addToCollectionImageIds, reportAddedToCollection],
+  )
+
+  const handleCreateCollectionWithImage = useCallback(
+    async (values: CollectionFormValues) => {
+      const created = await createCollectionWithImages(values, addToCollectionImageIds)
+      reportAddedToCollection(created, addToCollectionImageIds.length)
+    },
+    [addToCollectionImageIds, reportAddedToCollection],
+  )
+
   // "Open image" from the collection detail placeholder → the regular
   // `?image={id}` viewer, so back returns to the collection.
   const handleOpenCollectionImage = useCallback(
@@ -1899,6 +1971,27 @@ export default function App() {
                       Share View
                     </Button>
                   </Tooltip>
+                  {collectionsEnabled && (
+                    <Tooltip
+                      title={
+                        canvasEditActive
+                          ? 'Exit canvas edit mode first'
+                          : 'Add this image to a collection'
+                      }
+                    >
+                      <span>
+                        <Button
+                          variant="outlined"
+                          startIcon={<PlaylistAddIcon />}
+                          onClick={() => setAddToCollectionOpen(true)}
+                          disabled={canvasEditActive}
+                          sx={inactiveViewerActionSx}
+                        >
+                          Add to Collection
+                        </Button>
+                      </span>
+                    </Tooltip>
+                  )}
                 </Box>
               </Box>
 
@@ -2642,6 +2735,21 @@ export default function App() {
         onGroupUpdated={handleGroupUpdated}
       />
 
+      {collectionsEnabled && selectedImage && currentUser && (
+        <AddToCollectionDialog
+          open={addToCollectionOpen}
+          onClose={() => setAddToCollectionOpen(false)}
+          imageIds={addToCollectionImageIds}
+          collections={editableCollections.collections}
+          loading={editableCollections.loading}
+          error={editableCollections.error}
+          programs={programs}
+          groups={groups}
+          onAdd={handleAddToCollection}
+          onCreate={handleCreateCollectionWithImage}
+        />
+      )}
+
       {/* Report issue modal */}
       <ReportIssueModal
         open={reportIssueOpen}
@@ -2807,7 +2915,11 @@ export default function App() {
           onClose={() => setSuccessSnack(null)}
           variant="filled"
           action={
-            successSnack?.trackingUrl ? (
+            successSnack?.action ? (
+              <Button size="small" color="inherit" onClick={successSnack.action.onClick}>
+                {successSnack.action.label}
+              </Button>
+            ) : successSnack?.trackingUrl ? (
               <Button
                 size="small"
                 color="inherit"
@@ -2821,6 +2933,22 @@ export default function App() {
           }
         >
           {successSnack?.message}
+        </Alert>
+      </Snackbar>
+
+      {/* Info snackbar (e.g. no-op "already in collection") */}
+      <Snackbar
+        open={infoSnack !== null}
+        autoHideDuration={6000}
+        onClose={(_event, reason) => {
+          if (reason === 'clickaway') return
+          setInfoSnack(null)
+        }}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        sx={{ zIndex: 1500 }}
+      >
+        <Alert severity="info" onClose={() => setInfoSnack(null)} variant="filled">
+          {infoSnack}
         </Alert>
       </Snackbar>
 
