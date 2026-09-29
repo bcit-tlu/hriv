@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.63.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.62.0...frontend-v0.63.0) (2026-09-29)
+
+
+### Features
+
+* **frontend:** add "Add to Collection" action to the image view ([#1476](https://github.com/bcit-tlu/hriv/issues/1476)) ([c08ca78](https://github.com/bcit-tlu/hriv/commit/c08ca78310e94e6ff16f3cca85ffc37954e2f504))
+
 ## [0.62.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.61.1...frontend-v0.62.0) (2026-09-28)
 
 
