@@ -66,3 +66,31 @@ def test_routed_probe_excluded_from_schema() -> None:
 
     paths = app.openapi().get("paths", {})
     assert "/api/_probe" not in paths
+
+
+def test_routed_probe_dispatch() -> None:
+    """A real request to /api/_probe resolves through app routing.
+
+    Verifies the canary is registered via include_router and reachable
+    through the middleware stack — a probe that bypassed router dispatch
+    would not detect routed-path failures.
+    """
+    from unittest.mock import patch
+
+    from fastapi.testclient import TestClient
+
+    from app.database import get_db
+    from app.main import app as main_app
+
+    main_app.dependency_overrides[get_db] = lambda: AsyncMock()
+    try:
+        with patch(
+            "app.main._check_storage_ready", AsyncMock(return_value=True)
+        ):
+            with TestClient(main_app, raise_server_exceptions=False) as client:
+                response = client.get("/api/_probe")
+    finally:
+        main_app.dependency_overrides.pop(get_db, None)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ready"
