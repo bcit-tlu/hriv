@@ -7,7 +7,7 @@
 # Because ``builder`` depends on this stage, BuildKit AND non-BuildKit
 # Docker both treat it as a real dependency rather than a leaf — no
 # wasted build work even when targeting ``stable`` directly.
-FROM python:3.13-slim AS poetry-tools
+FROM python:3.14-slim AS poetry-tools
 # No WORKDIR here: this stage only ships a venv at /opt/poetry-venv that is
 # consumed by ``builder`` via COPY --from=poetry-tools, and by the
 # ``backend_poetry`` docker-compose service which sets its own
@@ -29,7 +29,7 @@ RUN python -m venv /opt/poetry-venv \
 # libtiff internally) — every one of those codecs is unreachable, so
 # the only way to remove the CVE surface is to rebuild libvips with
 # those delegates compiled out.
-FROM python:3.13-slim AS libvips-build
+FROM python:3.14-slim AS libvips-build
 ARG VIPS_VERSION=8.18.2
 ARG VIPS_SHA256=a30d4aede16f1c2899c1a2241870f8a7409feafa38484bcdcdac113d6d6f8ff5
 RUN apt-get update \
@@ -74,11 +74,11 @@ RUN meson setup build --prefix=/usr/local --libdir=lib --buildtype=release \
     && DESTDIR=/tmp/vips meson install -C build
 
 # ── Stage 1b: Python dependency builder (discarded) ──────
-FROM python:3.13-slim AS builder
+FROM python:3.14-slim AS builder
 WORKDIR /app
 
 # ``apt-get -y upgrade`` before the install chain picks up any
-# trixie-security patches published since the ``python:3.13-slim``
+# trixie-security patches published since the ``python:3.14-slim``
 # base-image digest was built.  The builder stage is discarded, but
 # upgrading here keeps the pip-built wheels linked against the same
 # library versions the runtime ``base`` stage will use.  pyvips is a
@@ -100,11 +100,11 @@ RUN /opt/poetry-venv/bin/poetry export --only main -f requirements.txt -o requir
     && pip install --no-cache-dir -r requirements.txt
 
 # ── Stage 2: Runtime base (slim, no compiler or dev headers) ─
-FROM python:3.13-slim AS base
+FROM python:3.14-slim AS base
 WORKDIR /app
 
 # ``apt-get -y upgrade`` pulls any trixie-security deltas that have
-# landed since the ``python:3.13-slim`` base digest was built, so the
+# landed since the ``python:3.14-slim`` base digest was built, so the
 # runtime image is at least as current as the Debian security mirror
 # at build time rather than as current as the last docker-library
 # python rebuild.
@@ -132,7 +132,7 @@ RUN apt-get update \
 COPY --from=libvips-build /tmp/vips/usr/local /usr/local
 RUN ldconfig
 
-COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
+COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages
 COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/arq /usr/local/bin/alembic /usr/local/bin/opentelemetry-instrument /usr/local/bin/
 
 COPY app ./app
