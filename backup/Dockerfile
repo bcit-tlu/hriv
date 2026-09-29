@@ -1,6 +1,6 @@
 # HRIV Disaster Recovery Backup Service
 #
-# Base: python:3.13-slim-trixie (Debian 13). Trixie ships libraries
+# Base: python:3.14-slim-trixie (Debian 13). Trixie ships libraries
 # that moved past the zlib/sqlite/expat/openssl CVEs still present in
 # bookworm (notably CVE-2023-45853 zlib minizip and CVE-2025-7458
 # libsqlite3 — both criticals for this image) and receives security
