@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.64.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.64.0...backend-v0.64.1) (2026-09-28)
+
+
+### Bug Fixes
+
+* **backend:** pin fastapi &lt;0.137 to restore routed endpoints under OTel ([#1466](https://github.com/bcit-tlu/hriv/issues/1466)) ([15c0727](https://github.com/bcit-tlu/hriv/commit/15c072745c8c06cf7c456188ac283eb79b2cac2a))
+
 ## [0.64.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.63.0...backend-v0.64.0) (2026-09-28)
 
 

@@ -1,7 +1,7 @@
 {
   "frontend": "0.62.0",
-  "backend": "0.64.0",
-  "backup": "0.16.5",
-  "restore-validation": "0.1.14",
+  "backend": "0.64.1",
+  "backup": "0.16.6",
+  "restore-validation": "0.1.15",
   "synthetic-monitoring": "1.2.6"
 }

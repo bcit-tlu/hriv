@@ -452,3 +452,34 @@ async def test_features_endpoint_reports_collections_flag(monkeypatch) -> None:
 
     monkeypatch.setattr(settings, "collections_enabled", True)
     assert (await features()).collections is True
+
+
+def test_otel_route_details_resolves_included_routes() -> None:
+    """``_get_route_details`` must resolve routes from the real app tree.
+
+    FastAPI 0.137 nests ``include_router`` routes under ``_IncludedRouter``
+    nodes that expose no ``.path``; opentelemetry-instrumentation-fastapi
+    <0.64b0 raised ``AttributeError: '_IncludedRouter' object has no
+    attribute 'path'`` on every routed request — the 2026-09-28 stable
+    outage. Calling the installed helper against the real ``app.routes``
+    fails CI if that dependency combination ever returns.
+    """
+    from app.main import app as main_app
+    from opentelemetry.instrumentation.fastapi import _get_route_details
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0", "spec_version": "2.5"},
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "https",
+        "path": "/api/auth/oidc/enabled",
+        "raw_path": b"/api/auth/oidc/enabled",
+        "query_string": b"",
+        "root_path": "",
+        "headers": [],
+        "client": ("127.0.0.1", 50000),
+        "server": ("hriv.ltc.bcit.ca", 443),
+        "app": main_app,
+    }
+    assert _get_route_details(scope) == "/api/auth/oidc/enabled"
