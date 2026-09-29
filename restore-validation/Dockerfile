@@ -4,7 +4,7 @@
 # runtime stage copies that prefix into ``/usr/local`` and ships only the
 # pinned runtime deps — no poetry (and none of its dependencies like
 # dulwich/msgpack/setuptools) in the final image.
-FROM python:3.13-slim-trixie AS builder
+FROM python:3.14-slim-trixie AS builder
 RUN python -m venv /opt/poetry-venv \
     && /opt/poetry-venv/bin/pip install --no-cache-dir 'poetry==2.4.3' poetry-plugin-export
 WORKDIR /app
@@ -12,7 +12,7 @@ COPY pyproject.toml poetry.lock ./
 RUN /opt/poetry-venv/bin/poetry export --only main -f requirements.txt -o requirements.txt \
     && pip install --no-cache-dir --prefix=/install -r requirements.txt
 
-FROM python:3.13-slim-trixie AS stable
+FROM python:3.14-slim-trixie AS stable
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
