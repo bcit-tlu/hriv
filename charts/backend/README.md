@@ -292,8 +292,12 @@ Beyond resources, the worker Deployment exposes:
 The backend pod's probe settings are configurable through `probes.backend.*`.
 The defaults are chosen to tolerate transient node or database load:
 
-- liveness: `GET /api/health`, `timeoutSeconds: 5`, `failureThreshold: 6`
-- readiness: `GET /api/health/ready`, `timeoutSeconds: 5`, `failureThreshold: 3`
+- liveness: `GET /api/health/storage`, `timeoutSeconds: 5`, `failureThreshold: 6`
+- readiness: `GET /api/_probe`, `timeoutSeconds: 5`, `failureThreshold: 3` —
+  the probe handler is registered through `app.include_router` and is not in
+  `otel.excludedUrls`, so it traverses the same instrumented middleware and
+  route-dispatch path as real endpoints; a routed-API failure marks pods
+  unready instead of passing silently (#1473).
 
 Initial delays and periods remain the same defaults as the previous chart
 behavior, but both probes can be overridden in values if a cluster needs

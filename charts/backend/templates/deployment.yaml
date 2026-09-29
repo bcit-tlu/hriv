@@ -333,7 +333,7 @@ spec:
             failureThreshold: {{ get $backendLivenessProbe "failureThreshold" | default 6 }}
           readinessProbe:
             httpGet:
-              path: {{ get $backendReadinessProbe "path" | default "/api/health/ready" | quote }}
+              path: {{ get $backendReadinessProbe "path" | default "/api/_probe" | quote }}
               port: http
             initialDelaySeconds: {{ get $backendReadinessProbe "initialDelaySeconds" | default 5 }}
             periodSeconds: {{ get $backendReadinessProbe "periodSeconds" | default 10 }}
