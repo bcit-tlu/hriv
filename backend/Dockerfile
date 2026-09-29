@@ -78,7 +78,7 @@ FROM python:3.14-slim AS builder
 WORKDIR /app
 
 # ``apt-get -y upgrade`` before the install chain picks up any
-# trixie-security patches published since the ``python:3.13-slim``
+# trixie-security patches published since the ``python:3.14-slim``
 # base-image digest was built.  The builder stage is discarded, but
 # upgrading here keeps the pip-built wheels linked against the same
 # library versions the runtime ``base`` stage will use.  pyvips is a
@@ -104,7 +104,7 @@ FROM python:3.14-slim AS base
 WORKDIR /app
 
 # ``apt-get -y upgrade`` pulls any trixie-security deltas that have
-# landed since the ``python:3.13-slim`` base digest was built, so the
+# landed since the ``python:3.14-slim`` base digest was built, so the
 # runtime image is at least as current as the Debian security mirror
 # at build time rather than as current as the last docker-library
 # python rebuild.
@@ -132,7 +132,7 @@ RUN apt-get update \
 COPY --from=libvips-build /tmp/vips/usr/local /usr/local
 RUN ldconfig
 
-COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
+COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages
 COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/arq /usr/local/bin/alembic /usr/local/bin/opentelemetry-instrument /usr/local/bin/
 
 COPY app ./app
