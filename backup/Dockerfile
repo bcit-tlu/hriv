@@ -1,6 +1,6 @@
 # HRIV Disaster Recovery Backup Service
 #
-# Base: python:3.13-slim-trixie (Debian 13). Trixie ships libraries
+# Base: python:3.14-slim-trixie (Debian 13). Trixie ships libraries
 # that moved past the zlib/sqlite/expat/openssl CVEs still present in
 # bookworm (notably CVE-2023-45853 zlib minizip and CVE-2025-7458
 # libsqlite3 — both criticals for this image) and receives security
@@ -13,7 +13,7 @@
 # dulwich/msgpack/setuptools) in the final image.  The ``stable`` target
 # name is kept so `.github/workflows/ci.yaml` can share the same
 # `target: stable` matrix entry across all three components.
-FROM python:3.13-slim-trixie AS builder
+FROM python:3.14-slim-trixie AS builder
 RUN python -m venv /opt/poetry-venv \
     && /opt/poetry-venv/bin/pip install --no-cache-dir poetry poetry-plugin-export
 WORKDIR /app
@@ -21,7 +21,7 @@ COPY pyproject.toml poetry.lock ./
 RUN /opt/poetry-venv/bin/poetry export --only main -f requirements.txt -o requirements.txt \
     && pip install --no-cache-dir --prefix=/install -r requirements.txt
 
-FROM python:3.13-slim-trixie AS stable
+FROM python:3.14-slim-trixie AS stable
 
 WORKDIR /app
 
