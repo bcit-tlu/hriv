@@ -132,7 +132,13 @@ export default function AddToCollectionDialog({
         onClose={busy ? undefined : onClose}
         maxWidth="xs"
         fullWidth
-        TransitionProps={{ onEntered: () => inputRef.current?.focus() }}
+        TransitionProps={{
+          // Skip the filter autofocus if the create dialog already opened on
+          // top, otherwise it would pull focus away from the nested form.
+          onEntered: () => {
+            if (!createOpen) inputRef.current?.focus()
+          },
+        }}
         aria-labelledby="add-to-collection-title"
       >
         <DialogTitle id="add-to-collection-title">Add to Collection</DialogTitle>
