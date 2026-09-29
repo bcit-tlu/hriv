@@ -39,6 +39,7 @@ from .routers import (
     issues,
     jobs,
     oidc,
+    probe,
     programs,
     telemetry,
     tile_order,
@@ -297,6 +298,7 @@ app.include_router(tile_order.router, prefix="/api")
 app.include_router(tiles.router, prefix="/api")
 app.include_router(upload.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
+app.include_router(probe.router, prefix="/api")
 
 # DZI tiles are served by the authorized tiles router (token-validated
 # FileResponse) — see docs/tile-delivery-boundary.md. The previous

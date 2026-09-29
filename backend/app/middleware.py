@@ -428,6 +428,7 @@ class AuditMiddleware:
 # keep working.
 _MAINTENANCE_EXEMPT: tuple[str, ...] = (
     "/api/health",
+    "/api/_probe",
     "/api/status",
     "/api/metrics",
     "/api/admin/maintenance",

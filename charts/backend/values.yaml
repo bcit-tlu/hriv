@@ -520,9 +520,15 @@ resources:
 # ── Pod health probes ───────────────────────────────────────
 # Defaults are intentionally conservative so transient DB or node I/O
 # pressure does not evict a healthy backend pod. The readiness probe
-# checks /api/health/ready (database + storage), while the liveness probe
-# checks /api/health/storage so Kubernetes restarts the pod when the
+# checks /api/_probe (database + storage), which is served through the
+# include_router request path so a routed-API outage marks pods unready
+# instead of passing silently — see #1473. The liveness probe checks
+# /api/health/storage so Kubernetes restarts the pod when the
 # source-images volume becomes read-only.
+#
+# /api/_probe is intentionally NOT in otel.excludedUrls above: the probe
+# must traverse the instrumented middleware path it canaries. Do not add
+# it there — that would reintroduce the readiness blind spot.
 probes:
   backend:
     liveness:
@@ -532,7 +538,7 @@ probes:
       timeoutSeconds: 5
       failureThreshold: 6
     readiness:
-      path: /api/health/ready
+      path: /api/_probe
       initialDelaySeconds: 5
       periodSeconds: 10
       timeoutSeconds: 5
