@@ -83,7 +83,8 @@ lives, and the [domain model](docs/domain-model.md) for schema details.
 
 - Create feature branches from `main`; open PRs for review; squash-merge.
 - Update documentation for new features in the same PR — see the **Documentation & Skill Files** checklist above.
-- Local worktrees go in `.worktrees/<name>` (gitignored); `git worktree prune` clears stale registrations.
+- Do issue/PR work in a git worktree, not the main checkout: `git fetch origin && git worktree add .worktrees/<name> -b <type>/<issue>-<slug> origin/main` (`.worktrees/` is gitignored).
+- Keep the main checkout on a clean, up-to-date `main`; after the PR merges, `git worktree remove .worktrees/<name>` (`git worktree prune` clears stale registrations).
 - If the session's configured workspace directory is missing or empty, locate the real checkout before running commands (on Kyle's machine this repo lives at `~/projects/github/apps/hriv`).
 
 ## CI/CD
