@@ -69,6 +69,18 @@ catches any resulting rendering drift. Dependabot branches are not
 auto-rebased — comment `@dependabot rebase` (or `@dependabot recreate`) on the
 PR to refresh one that has fallen behind `main`.
 
+Dependabot cannot run repo tooling during an update, so lockfile bumps used to
+land without the regenerated `THIRD-PARTY-LICENSES.txt` that CI's drift gate
+requires. `.github/workflows/dependabot-licenses.yaml` closes that gap: it
+triggers on `push` to `dependabot/**` branches (`github.actor ==
+'dependabot[bot]'`), regenerates the notices for each component whose
+manifest/lockfile changed, and commits them back to the branch. It pushes with
+the release-please GitHub App token so the fixup push re-triggers the PR check
+suite — a `GITHUB_TOKEN` push would be swallowed by the anti-recursion guard.
+The workflow triggers on `push` rather than `pull_request` because Dependabot's
+PR events get a read-only token and no repository secrets (GitHub treats them
+like fork PRs), whereas in-repo branch pushes run in the trusted context.
+
 Some majors are deliberately ignored in `dependabot.yml`: all `node` image and
 `@types/node` majors (HRIV follows the even-numbered LTS line, so a move to the
 next LTS is a deliberate PR that also edits those ignores), and frontend
@@ -79,9 +91,10 @@ together) rather than via single-package Dependabot PRs.
 
 Checklist when merging one:
 
-- **Runtime Python/npm dependency changed?** Regenerate the component's
-  `THIRD-PARTY-LICENSES.txt` (see `AGENTS.md` → Setup Commands); CI fails on
-  drift.
+- **Runtime Python/npm dependency changed?** `dependabot-licenses.yaml`
+  regenerates the component's `THIRD-PARTY-LICENSES.txt` automatically on the
+  bot's branch; CI fails on drift if the job did not run (e.g. a human force-push
+  to the branch — regen manually, see `AGENTS.md` → Setup Commands).
 - **`@playwright/test` bump in `synthetic-monitoring`** (its own Dependabot
   group named `playwright`): self-contained — the Dockerfile installs the
   matching Chromium via `npx playwright install --with-deps chromium`, so no

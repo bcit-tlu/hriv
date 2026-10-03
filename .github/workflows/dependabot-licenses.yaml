@@ -1,0 +1,112 @@
+name: dependabot-licenses
+
+# Dependabot bumps lockfiles but cannot run repo tooling, so its PRs fail the
+# THIRD-PARTY-LICENSES.txt drift gate (see ci.yaml) until a human regenerates
+# the notices. This workflow watches Dependabot's pushes to its own branches,
+# regenerates the notices for whichever component changed, and commits them
+# back to the branch.
+#
+# Why `push` and not `pull_request`: workflows triggered by Dependabot's PR
+# events get a read-only GITHUB_TOKEN and no repo secrets (GitHub treats them
+# like fork PRs). Pushes to in-repo dependabot/* branches run in the trusted
+# repo context, so the app-token secrets below are available.
+#
+# Why the app token for the push: a GITHUB_TOKEN push would be swallowed by
+# GitHub's anti-recursion guard and the PR's check suite would never re-run —
+# the same reason release-please.yaml uses RELEASE_PLEASE_APP_*.
+
+on:
+  push:
+    branches:
+      - 'dependabot/**'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
+
+jobs:
+  regen-licenses:
+    # Process Dependabot's pushes only. The fixup commit this job pushes is
+    # authored by the app token (a *-bot actor, not dependabot[bot]), so the
+    # job cannot self-trigger; human pushes to dependabot/* are ignored too.
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Mint GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+
+      # Checkout the pushed branch with the app token so the fixup push
+      # re-triggers the PR check suite.
+      - uses: actions/checkout@v7
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Install poetry
+        run: pip install poetry
+
+      # Regenerate notices for each component whose manifest/lockfile changed
+      # relative to main — covers both first pushes (event.before is the null
+      # SHA) and grouped updates spread over several pushes.
+      - name: Regenerate notices for touched components
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --depth=1 origin main
+          changed=$(git diff --name-only origin/main...HEAD)
+          printf 'Changed files vs main:\n%s\n' "$changed"
+
+          for dir in backend backup restore-validation; do
+            if printf '%s\n' "$changed" | grep -q "^${dir}/\(poetry\.lock\|pyproject\.toml\)"; then
+              echo "::group::Regenerate $dir THIRD-PARTY-LICENSES.txt"
+              (
+                cd "$dir"
+                poetry config virtualenvs.in-project true
+                if [ "$dir" = backup ]; then
+                  poetry install --no-root --quiet
+                else
+                  poetry install --with dev --quiet
+                fi
+                poetry run python scripts/generate_third_party_licenses.py
+              )
+              echo "::endgroup::"
+            fi
+          done
+
+          if printf '%s\n' "$changed" | grep -q '^frontend/package\(-lock\)\?\.json'; then
+            echo "::group::Regenerate frontend THIRD-PARTY-LICENSES.txt"
+            (
+              cd frontend
+              npm ci --no-audit --no-fund
+              npm run licenses:generate
+            )
+            echo "::endgroup::"
+          fi
+
+      - name: Commit regenerated notices
+        shell: bash
+        run: |
+          if [ -z "$(git status --porcelain -- '**/THIRD-PARTY-LICENSES.txt')" ]; then
+            echo 'Notices already up to date — nothing to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add '**/THIRD-PARTY-LICENSES.txt'
+          git commit -m 'chore(deps): regenerate THIRD-PARTY-LICENSES'
+          git push
