@@ -6944,7 +6944,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-urllib3@2.7.0
+urllib3@2.8.0
 License: MIT
 ================================================================================
 
