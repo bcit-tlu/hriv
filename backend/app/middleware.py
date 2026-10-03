@@ -12,7 +12,7 @@ import time
 import uuid
 from contextvars import ContextVar
 
-from jose import jwt
+import jwt
 from opentelemetry import metrics, trace
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send

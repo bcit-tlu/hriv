@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 from fastapi import FastAPI, HTTPException
-from jose import jwt
+import jwt
 
 import app.auth as auth
 from app.routers import images as images_router

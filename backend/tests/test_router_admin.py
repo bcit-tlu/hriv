@@ -1486,9 +1486,9 @@ async def test_create_task_download_token_not_completed() -> None:
 
 def _make_download_token(task_id: int, user_id: int = 1) -> str:
     """Create a valid task-download JWT for testing."""
-    from jose import jwt as jose_jwt
+    import jwt
 
-    return jose_jwt.encode(
+    return jwt.encode(
         {"sub": str(user_id), "purpose": "task-download", "task_id": task_id},
         "test-secret",
         algorithm="HS256",
@@ -1517,9 +1517,9 @@ async def test_download_task_invalid_token() -> None:
 
 
 async def test_download_task_wrong_purpose() -> None:
-    from jose import jwt as jose_jwt
+    import jwt
 
-    token = jose_jwt.encode(
+    token = jwt.encode(
         {"sub": "1", "purpose": "general", "task_id": 1},
         "test-secret",
         algorithm="HS256",

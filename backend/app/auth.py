@@ -9,7 +9,7 @@ from typing import Annotated
 import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+import jwt
 from pydantic import Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -172,7 +172,7 @@ async def _get_user_from_token(
         if user_id_str is None:
             raise credentials_exception
         user_id = int(user_id_str)
-    except (JWTError, ValueError):
+    except (jwt.PyJWTError, ValueError):
         raise credentials_exception
 
     user = await db.get(User, user_id)
