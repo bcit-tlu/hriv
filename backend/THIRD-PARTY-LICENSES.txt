@@ -5959,7 +5959,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-PyJWT@2.13.0
+PyJWT@2.15.0
 License: MIT
 Homepage: https://github.com/jpadilla/pyjwt
 ================================================================================
