@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.64.3](https://github.com/bcit-tlu/hriv/compare/backend-v0.64.2...backend-v0.64.3) (2026-10-04)
+
+
+### Bug Fixes
+
+* **backend:** migrate python-jose to PyJWT to drop ecdsa ([#1504](https://github.com/bcit-tlu/hriv/issues/1504)) ([b6d3609](https://github.com/bcit-tlu/hriv/commit/b6d3609e244859eb5cdc01de7711b2527bb76ae2))
+
 ## [0.64.2](https://github.com/bcit-tlu/hriv/compare/backend-v0.64.1...backend-v0.64.2) (2026-09-29)
 
 
