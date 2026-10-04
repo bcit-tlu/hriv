@@ -222,7 +222,9 @@ async def lifespan(app: FastAPI):
                 extra={"event": "worker.queue_unavailable"},
             )
 
-    if not settings.synthetic_ingest_token:
+    # .strip() matches the endpoint's compare: a whitespace-only configured
+    # value is effectively unconfigured and must not suppress the warning.
+    if not settings.synthetic_ingest_token.strip():
         log_missing_token = (
             logger.warning
             if settings.task_execution_mode == "required"

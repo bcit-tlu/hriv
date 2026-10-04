@@ -60,6 +60,30 @@ async def test_lifespan_runs_reconciliation_sweep_in_local_mode(monkeypatch) -> 
     sweep.assert_awaited_once()
 
 
+async def test_lifespan_warns_on_whitespace_only_ingest_token(
+    monkeypatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A whitespace-only SYNTHETIC_INGEST_TOKEN is effectively unconfigured —
+    the startup warning must not be suppressed (#1495 review)."""
+    from app import main
+    from app.database import settings
+
+    monkeypatch.setattr(settings, "task_execution_mode", "required")
+    monkeypatch.setattr(settings, "synthetic_ingest_token", "  \n ")
+    monkeypatch.setattr(main, "setup_logging", MagicMock())
+    monkeypatch.setattr(main, "_check_oidc_connectivity", AsyncMock())
+    monkeypatch.setattr(main, "get_pool", AsyncMock(return_value=MagicMock()))
+
+    with caplog.at_level("WARNING", logger="app.main"):
+        async with main.lifespan(main.app):
+            pass
+
+    assert any(
+        getattr(r, "event", None) == "synthetic.ingest_token_missing"
+        for r in caplog.records
+    )
+
+
 async def test_lifespan_skips_reconciliation_sweep_in_required_mode(monkeypatch) -> None:
     """In ``required`` mode a dedicated arq worker pod runs the sweep
     periodically via a cron job instead (see ``worker.WorkerSettings``), so
