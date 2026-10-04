@@ -12,6 +12,7 @@ import math
 import os
 import shutil
 import tempfile
+import threading
 import time
 import uuid
 import zipfile
@@ -263,6 +264,58 @@ class _ZipExtractBudget:
                 ):
                     self._last_free_space_check = self.total_bytes
                     _ensure_zip_extract_free_space(target_dir)
+
+
+def _extract_zip_image_entries(
+    tmp_path: str,
+    budget: _ZipExtractBudget,
+    file_entries: list[tuple[str, str]],
+    target_dir: str,
+    done: threading.Event,
+) -> None:
+    """Extract eligible image entries from the zip archive at ``tmp_path``.
+
+    Runs entirely on a worker thread (``asyncio.to_thread`` at the call
+    site): parsing the central directory and decompressing entries are
+    synchronous CPU/IO work that would otherwise stall the API worker's
+    event loop for the whole archive.
+
+    Each staged entry is appended to ``file_entries`` as an
+    ``(original_filename, stored_path)`` pair as soon as it lands, so a
+    caller cancelled mid-extraction can still find and remove them — a
+    cancelled asyncio wrapper cannot carry the paths back. ``done`` is
+    set on every exit so the caller can confirm the thread has finished
+    before sweeping ``file_entries``.
+    """
+    try:
+        with zipfile.ZipFile(tmp_path, "r") as zf:
+            for zip_entry in zf.namelist():
+                # Skip directories and hidden/system files
+                if zip_entry.endswith("/") or zip_entry.startswith("__MACOSX"):
+                    continue
+                basename = os.path.basename(zip_entry)
+                if not basename or basename.startswith("."):
+                    continue
+                if not _is_image_filename(basename):
+                    continue
+
+                ext = Path(basename).suffix or ".bin"
+                unique_name = f"{uuid.uuid4().hex}{ext}"
+                stored_path = os.path.join(target_dir, unique_name)
+
+                budget.next_entry()
+                try:
+                    budget.extract_entry(zf, zip_entry, stored_path, target_dir)
+                except Exception:
+                    with contextlib.suppress(OSError):
+                        os.unlink(stored_path)
+                    raise
+
+                file_entries.append(
+                    (sanitize_upload_filename(basename), stored_path)
+                )
+    finally:
+        done.set()
 
 
 @dataclass(frozen=True)
@@ -1744,42 +1797,35 @@ async def bulk_import_images(
                                     tmp.write(chunk)
 
                             budget.begin_archive(upload.filename)
-                            with zipfile.ZipFile(tmp_path, "r") as zf:
-                                for zip_entry in zf.namelist():
-                                    # Skip directories and hidden/system files
-                                    if zip_entry.endswith("/") or zip_entry.startswith("__MACOSX"):
-                                        continue
-                                    basename = os.path.basename(zip_entry)
-                                    if not basename or basename.startswith("."):
-                                        continue
-                                    if not _is_image_filename(basename):
-                                        continue
-
-                                    ext = Path(basename).suffix or ".bin"
-                                    unique_name = f"{uuid.uuid4().hex}{ext}"
-                                    stored_path = os.path.join(
-                                        settings.source_images_dir, unique_name
-                                    )
-
-                                    budget.next_entry()
-                                    try:
-                                        budget.extract_entry(
-                                            zf,
-                                            zip_entry,
-                                            stored_path,
-                                            settings.source_images_dir,
+                            # Central-directory parsing and bounded
+                            # extraction run on a worker thread: both are
+                            # synchronous CPU/IO that would otherwise stall
+                            # this uvicorn worker's event loop for the
+                            # duration of a large archive. The thread cannot
+                            # be interrupted once started, so a cancelled
+                            # request waits on extract_done for it to finish;
+                            # the paths it appended to file_entries are then
+                            # removed by the CancelledError sweep below
+                            # instead of being orphaned mid-write.
+                            extract_done = threading.Event()
+                            try:
+                                await asyncio.to_thread(
+                                    _extract_zip_image_entries,
+                                    tmp_path,
+                                    budget,
+                                    file_entries,
+                                    settings.source_images_dir,
+                                    extract_done,
+                                )
+                            except asyncio.CancelledError:
+                                while not extract_done.is_set():
+                                    with contextlib.suppress(
+                                        asyncio.CancelledError
+                                    ):
+                                        await asyncio.to_thread(
+                                            extract_done.wait
                                         )
-                                    except Exception:
-                                        with contextlib.suppress(OSError):
-                                            os.unlink(stored_path)
-                                        raise
-
-                                    file_entries.append(
-                                        (
-                                            sanitize_upload_filename(basename),
-                                            stored_path,
-                                        )
-                                    )
+                                raise
                         except zipfile.BadZipFile:
                             raise HTTPException(
                                 status_code=400,
@@ -1823,6 +1869,13 @@ async def bulk_import_images(
                         file_entries.append(
                             (sanitize_upload_filename(upload.filename), stored_path)
                         )
+            except asyncio.CancelledError:
+                # CancelledError is BaseException and bypasses the generic
+                # cleanup below; remove everything staged so far.
+                for _, stored_path in file_entries:
+                    with contextlib.suppress(OSError):
+                        os.unlink(stored_path)
+                raise
             except OSError as exc:
                 for _, stored_path in file_entries:
                     with contextlib.suppress(OSError):
