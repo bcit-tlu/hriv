@@ -42,8 +42,9 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
   orphan test needs `REORDER_FIXTURE_DATABASE_URL`, otherwise it skips).
 - `tests/test_router_collections_db.py` is the PostgreSQL-backed write-API
   persistence suite — it runs when `TEST_DATABASE_URL` is set (CI sets it;
-  locally `docker compose up -d db migrate` and export
-  `postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`), otherwise it skips.
+  locally `docker compose up -d db migrate` then `export
+TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
+  otherwise it skips.
 - frontend: `npm test -- CollectionsPage CollectionCard CollectionEditDialog collectionUtils useCollectionsData api.test navigation AppShell useShareableImageState useNavigationHistory App.test`
 - "Add to Collection" from the image view (#1415: `AddToCollectionDialog.tsx`,
   `useAddToCollection.ts`, the viewer action bar in `App.tsx`):

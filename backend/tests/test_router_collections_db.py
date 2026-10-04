@@ -18,7 +18,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import delete, select
+from sqlalchemy import delete, event, select
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -170,7 +170,13 @@ async def _link_pairs(
 async def test_replace_images_persists_order_reuses_links(session_factory) -> None:
     """Reordering reuses the composite-PK link rows (a delete-then-insert
     would collide mid-flush); sort_order is rewritten to 0..n-1 and dropped
-    memberships are deleted."""
+    memberships are deleted.
+
+    Membership and order alone cannot distinguish row reuse from
+    delete-then-reinsert (the composite PK is identical either way), so the
+    write statements are captured at the engine: reuse emits UPDATEs on
+    ``sort_order`` and a single DELETE for the dropped image — no INSERTs.
+    """
     async with session_factory() as session:
         admin_id = await _new_admin(session, "reorder")
         a = await _new_image(session, "ra")
@@ -184,12 +190,35 @@ async def test_replace_images_persists_order_reuses_links(session_factory) -> No
     # The write runs in a fresh session, like a real request.
     async with session_factory() as session:
         admin = await _get_user(session, admin_id)
-        await replace_collection_images(
-            collection_id,
-            CollectionImagesUpdate(image_ids=[c, a], version=1),
-            admin,
-            session,
-        )
+        engine = session.sync_session.get_bind()
+        engine = getattr(engine, "sync_engine", engine)
+        captured: list[tuple[str, object, bool]] = []
+
+        def _capture(conn, cursor, statement, parameters, context, executemany):
+            captured.append((statement, parameters, executemany))
+
+        event.listen(engine, "before_cursor_execute", _capture)
+        try:
+            await replace_collection_images(
+                collection_id,
+                CollectionImagesUpdate(image_ids=[c, a], version=1),
+                admin,
+                session,
+            )
+        finally:
+            event.remove(engine, "before_cursor_execute", _capture)
+
+        def _rows(verb: str) -> int:
+            return sum(
+                len(parameters) if executemany else 1
+                for statement, parameters, executemany in captured
+                if statement.lstrip().upper().startswith(verb)
+                and "collection_images" in statement
+            )
+
+        assert _rows("INSERT") == 0
+        assert _rows("UPDATE") == 2  # retained c, a re-ordered
+        assert _rows("DELETE") == 1  # dropped b
 
     async with session_factory() as check:
         assert await _link_pairs(check, collection_id) == [(c, 0), (a, 1)]
