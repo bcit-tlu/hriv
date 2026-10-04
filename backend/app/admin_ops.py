@@ -554,6 +554,21 @@ def _swap_imported_entries(
                     exc_info=True,
                 )
 
+    # The export omits the transient upload spool dir, so the restored
+    # source_images tree has none — recreate it or a running API pod whose
+    # TMPDIR still points there fails tempfile rollover (#1365).
+    try:
+        os.makedirs(
+            os.path.join(source_images_dir, UPLOAD_SPOOL_DIR_NAME),
+            exist_ok=True,
+        )
+    except OSError:
+        logger.warning(
+            "Failed to recreate upload spool directory after import",
+            extra={"event": "admin_task.files_import_spool_dir_failed"},
+            exc_info=True,
+        )
+
     tiles_path = Path(tiles_dir)
     source_path = Path(source_images_dir)
     tiles_count = 0

@@ -2555,6 +2555,31 @@ def test_swap_imported_entries_keeps_success_on_backup_cleanup_failure(
     assert not (data_source / "old.tiff").exists()
 
 
+def test_swap_imported_entries_recreates_upload_spool_dir(tmp_path) -> None:
+    """The export omits ``.staging``, so the swap must recreate it or the
+    running API's TMPDIR points at a missing directory (#1365)."""
+    extracted_dir = tmp_path / "staging" / "data"
+    extracted_source = extracted_dir / "source_images"
+    extracted_source.mkdir(parents=True)
+    (extracted_source / "new.tiff").write_text("new")
+
+    data_dir = tmp_path / "data"
+    data_source = data_dir / "source_images"
+    data_source.mkdir(parents=True)
+    (data_source / "old.tiff").write_text("old")
+    (data_source / ".staging").mkdir()  # present before the restore
+
+    result = _swap_imported_entries(
+        extracted_dir,
+        data_dir,
+        str(data_dir / "tiles"),
+        str(data_source),
+    )
+
+    assert result["source_files"] == 1
+    assert (data_source / ".staging").is_dir()
+
+
 def test_compute_archive_sha256(tmp_path) -> None:
     payload = b"archive-bytes" * 1000
     archive = tmp_path / "a.tar.gz"
