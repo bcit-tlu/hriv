@@ -683,6 +683,76 @@ async def test_bulk_import_images_extracts_zip_off_event_loop(tmp_path) -> None:
     assert len(list(tmp_path.iterdir())) == 1
 
 
+async def test_bulk_import_images_cancelled_extraction_cleans_staged_files(tmp_path) -> None:
+    """A cancelled request still removes paths the worker thread staged.
+
+    ``asyncio.to_thread`` cannot be interrupted once running: when the
+    request is cancelled mid-extraction the endpoint keeps waiting for the
+    worker under shield, then unlinks the paths it produced instead of
+    leaving them as unowned files on the data volume.
+    """
+    category = SimpleNamespace(id=1)
+    db = AsyncMock()
+    db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
+    db.get = AsyncMock(return_value=category)
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+
+    async def _refresh(obj) -> None:
+        obj.id = 6
+
+    db.refresh = AsyncMock(side_effect=_refresh)
+    bg = MagicMock()
+    upload = _make_upload(
+        "batch.zip",
+        [_zip_bytes({"a.png": b"png-a", "b.jpg": b"jpg-b"}), b""],
+    )
+
+    started = threading.Event()
+    release = threading.Event()
+    staged: list[str] = []
+    real_helper = bulk_import_module._extract_zip_image_entries
+
+    def _gated_helper(*args, **kwargs):
+        started.set()
+        release.wait(timeout=10)
+        result = real_helper(*args, **kwargs)
+        staged.extend(path for _, path in result)
+        return result
+
+    with (
+        patch("app.routers.bulk_import.settings") as mock_settings,
+        patch(
+            "app.routers.bulk_import._extract_zip_image_entries",
+            _gated_helper,
+        ),
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        task = asyncio.create_task(
+            bulk_import_images(
+                files=[upload],
+                category_id=1,
+                background_tasks=bg,
+                _user=MagicMock(),
+                db=db,
+            )
+        )
+        # Block until the worker thread is inside extraction, then cancel.
+        await asyncio.to_thread(started.wait, 10)
+        task.cancel()
+        # Give the event loop a tick so the CancelledError lands on the
+        # shielded await while the worker is still gated.
+        await asyncio.sleep(0.05)
+        release.set()
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    assert staged, "worker did not stage any files before cancellation"
+    assert all(not os.path.exists(path) for path in staged)
+    assert list(tmp_path.iterdir()) == []
+
+
 async def test_bulk_import_images_rejects_corrupt_zip(tmp_path) -> None:
     category = SimpleNamespace(id=1)
     db = AsyncMock()

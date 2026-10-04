@@ -1801,15 +1801,36 @@ async def bulk_import_images(
                             # extraction run on a worker thread: both are
                             # synchronous CPU/IO that would otherwise stall
                             # this uvicorn worker's event loop for the
-                            # duration of a large archive.
-                            file_entries.extend(
-                                await asyncio.to_thread(
+                            # duration of a large archive. The shield keeps
+                            # request cancellation from propagating into
+                            # the task: a cancelled request cannot stop the
+                            # thread, so it keeps waiting for the result
+                            # and removes the staged paths instead of
+                            # leaving them orphaned on the data volume.
+                            extract_task = asyncio.create_task(
+                                asyncio.to_thread(
                                     _extract_zip_image_entries,
                                     tmp_path,
                                     budget,
                                     settings.source_images_dir,
                                 )
                             )
+                            try:
+                                extracted = await asyncio.shield(extract_task)
+                            except asyncio.CancelledError:
+                                while True:
+                                    try:
+                                        extracted = await asyncio.shield(
+                                            extract_task
+                                        )
+                                        break
+                                    except asyncio.CancelledError:
+                                        continue
+                                for _, staged_path in extracted:
+                                    with contextlib.suppress(OSError):
+                                        os.unlink(staged_path)
+                                raise
+                            file_entries.extend(extracted)
                         except zipfile.BadZipFile:
                             raise HTTPException(
                                 status_code=400,
@@ -1853,6 +1874,13 @@ async def bulk_import_images(
                         file_entries.append(
                             (sanitize_upload_filename(upload.filename), stored_path)
                         )
+            except asyncio.CancelledError:
+                # CancelledError is BaseException and bypasses the generic
+                # cleanup below; remove everything staged so far.
+                for _, stored_path in file_entries:
+                    with contextlib.suppress(OSError):
+                        os.unlink(stored_path)
+                raise
             except OSError as exc:
                 for _, stored_path in file_entries:
                     with contextlib.suppress(OSError):
