@@ -2555,6 +2555,98 @@ def test_swap_imported_entries_keeps_success_on_backup_cleanup_failure(
     assert not (data_source / "old.tiff").exists()
 
 
+def test_swap_imported_entries_recreates_upload_spool_dir(tmp_path) -> None:
+    """The export omits ``.staging``, so the swap must recreate it or the
+    running API's TMPDIR points at a missing directory (#1365)."""
+    extracted_dir = tmp_path / "staging" / "data"
+    extracted_source = extracted_dir / "source_images"
+    extracted_source.mkdir(parents=True)
+    (extracted_source / "new.tiff").write_text("new")
+
+    data_dir = tmp_path / "data"
+    data_source = data_dir / "source_images"
+    data_source.mkdir(parents=True)
+    (data_source / "old.tiff").write_text("old")
+    (data_source / ".staging").mkdir()  # present before the restore
+
+    result = _swap_imported_entries(
+        extracted_dir,
+        data_dir,
+        str(data_dir / "tiles"),
+        str(data_source),
+    )
+
+    assert result["source_files"] == 1
+    assert (data_source / ".staging").is_dir()
+
+
+def _extracted_and_data_dirs(
+    tmp_path: Path,
+) -> tuple[Path, Path, Path]:
+    extracted_dir = tmp_path / "staging" / "data"
+    extracted_source = extracted_dir / "source_images"
+    extracted_source.mkdir(parents=True)
+    (extracted_source / "new.tiff").write_text("new")
+    data_dir = tmp_path / "data"
+    data_source = data_dir / "source_images"
+    data_source.mkdir(parents=True)
+    return extracted_dir, data_dir, data_source
+
+
+def test_swap_imported_entries_survives_spool_recreate_failure(
+    tmp_path, monkeypatch
+) -> None:
+    """A persistent makedirs failure logs an error but does not fail the
+    import — the restore succeeded, and the upload middleware recreates
+    the spool dir on the next request (#1365)."""
+    extracted_dir, data_dir, data_source = _extracted_and_data_dirs(tmp_path)
+
+    monkeypatch.setattr(
+        "app.admin_ops.os.makedirs",
+        MagicMock(side_effect=OSError("fs offline")),
+    )
+    monkeypatch.setattr("app.admin_ops.time.sleep", lambda _s: None)
+
+    result = _swap_imported_entries(
+        extracted_dir,
+        data_dir,
+        str(data_dir / "tiles"),
+        str(data_source),
+    )
+
+    assert result["source_files"] == 1
+    assert (data_source / "new.tiff").read_text() == "new"
+
+
+def test_swap_imported_entries_retries_transient_spool_failure(
+    tmp_path, monkeypatch
+) -> None:
+    """A transient makedirs error retries before the swap reports success."""
+    extracted_dir, data_dir, data_source = _extracted_and_data_dirs(tmp_path)
+
+    real_makedirs = os.makedirs
+    calls = []
+
+    def _flaky_makedirs(path, **kwargs):
+        calls.append(path)
+        if len(calls) == 1:
+            raise OSError("transient")
+        return real_makedirs(path, **kwargs)
+
+    monkeypatch.setattr("app.admin_ops.os.makedirs", _flaky_makedirs)
+    monkeypatch.setattr("app.admin_ops.time.sleep", lambda _s: None)
+
+    result = _swap_imported_entries(
+        extracted_dir,
+        data_dir,
+        str(data_dir / "tiles"),
+        str(data_source),
+    )
+
+    assert result["source_files"] == 1
+    assert (data_source / ".staging").is_dir()
+
+
 def test_compute_archive_sha256(tmp_path) -> None:
     payload = b"archive-bytes" * 1000
     archive = tmp_path / "a.tar.gz"
