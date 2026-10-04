@@ -43,6 +43,7 @@ from app.routers.bulk_import import (
     _process_bulk_import_impl,
     _STALE_BULK_IMPORT_SECONDS,
     _write_source_image_abort_latch,
+    _zip_declared_entry_count,
     _wait_for_source_image_terminal_state,
     bulk_import_images,
     get_bulk_import_job,
@@ -754,6 +755,161 @@ async def test_bulk_import_images_cancelled_extraction_cleans_staged_files(tmp_p
     assert staged, "worker did not stage any files before cancellation"
     assert all(not os.path.exists(path) for path in staged)
     assert list(tmp_path.iterdir()) == []
+
+
+async def test_bulk_import_images_rejects_oversized_zip_upload(tmp_path) -> None:
+    """A zip part streamed past BULK_IMPORT_MAX_UPLOAD_BYTES gets a 413 (#1432).
+
+    The raw request body is uncapped at the ingress, so the spool loop
+    itself must bound how much of one uploaded part reaches disk.
+    """
+    category = SimpleNamespace(id=1)
+    db = AsyncMock()
+    db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
+    db.get = AsyncMock(return_value=category)
+    bg = MagicMock()
+
+    zip_payload = _zip_bytes({"a.png": b"png-a"})
+    upload = _make_upload("batch.zip", [zip_payload, b""])
+
+    with (
+        patch("app.routers.bulk_import.settings") as mock_settings,
+        patch(
+            "app.routers.bulk_import._MAX_UPLOAD_BYTES",
+            len(zip_payload) - 1,
+        ),
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        with pytest.raises(HTTPException) as exc:
+            await bulk_import_images(
+                files=[upload],
+                category_id=1,
+                background_tasks=bg,
+                _user=MagicMock(),
+                db=db,
+            )
+    assert exc.value.status_code == 413
+    assert "per-upload limit" in exc.value.detail
+    # Nothing staged or extracted survives the rejection.
+    assert list(tmp_path.iterdir()) == []
+
+
+async def test_bulk_import_images_rejects_oversized_plain_image(tmp_path) -> None:
+    """A plain-image part past the upload cap gets a 413 + cleanup (#1432)."""
+    category = SimpleNamespace(id=1)
+    db = AsyncMock()
+    db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
+    db.get = AsyncMock(return_value=category)
+    bg = MagicMock()
+
+    upload = _make_upload("big.png", [b"aa", b"bb", b"cc", b""])
+
+    with (
+        patch("app.routers.bulk_import.settings") as mock_settings,
+        patch("app.routers.bulk_import._MAX_UPLOAD_BYTES", 4),
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        with pytest.raises(HTTPException) as exc:
+            await bulk_import_images(
+                files=[upload],
+                category_id=1,
+                background_tasks=bg,
+                _user=MagicMock(),
+                db=db,
+            )
+    assert exc.value.status_code == 413
+    # The partially written image is unlinked, not left behind.
+    assert list(tmp_path.iterdir()) == []
+
+
+async def test_bulk_import_images_rejects_archive_over_entry_ceiling(tmp_path) -> None:
+    """An oversized central directory is rejected before extraction (#1432).
+
+    ``BULK_IMPORT_MAX_ENTRIES`` only counts eligible image entries, so an
+    archive of mostly non-image entries would otherwise cost API
+    memory/time proportional to its size. The ceiling is checked from the
+    EOCD record before ``ZipFile`` allocates the ``ZipInfo`` list, and
+    re-checked on the parsed total after open.
+    """
+    category = SimpleNamespace(id=1)
+    db = AsyncMock()
+    db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
+    db.get = AsyncMock(return_value=category)
+    bg = MagicMock()
+
+    upload = _make_upload(
+        "many.zip",
+        [
+            _zip_bytes({
+                "a.png": b"a",
+                "b.txt": b"b",
+                "c.txt": b"c",
+                "d.txt": b"d",
+            }),
+            b"",
+        ],
+    )
+
+    with (
+        patch("app.routers.bulk_import.settings") as mock_settings,
+        patch("app.routers.bulk_import._ZIP_MAX_ARCHIVE_ENTRIES", 3),
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        with pytest.raises(HTTPException) as exc:
+            await bulk_import_images(
+                files=[upload],
+                category_id=1,
+                background_tasks=bg,
+                _user=MagicMock(),
+                db=db,
+            )
+    assert exc.value.status_code == 413
+    assert "entries" in exc.value.detail
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_zip_declared_entry_count_reads_eocd(tmp_path) -> None:
+    """A normal archive reports its real central-directory count (#1432)."""
+    archive = tmp_path / "real.zip"
+    archive.write_bytes(_zip_bytes({"a.png": b"a", "b.txt": b"b", "c.png": b"c"}))
+    assert _zip_declared_entry_count(str(archive)) == 3
+
+
+def test_zip_declared_entry_count_reads_zip64_eocd(tmp_path) -> None:
+    """A saturated EOCD falls through to the ZIP64 locator/record (#1432)."""
+    body = b"x" * 10  # stands in for the central directory
+    zip64_offset = len(body)
+    zip64_eocd = struct.pack(
+        "<4sQ2H2L4Q", b"PK\x06\x06", 44, 45, 45, 0, 0, 7, 7, 100, 0
+    )
+    locator = struct.pack("<4sLQL", b"PK\x06\x07", 0, zip64_offset, 1)
+    eocd = struct.pack(
+        "<4s4H2LH",
+        b"PK\x05\x06",
+        0,
+        0,
+        0xFFFF,      # disk entries saturated
+        0xFFFF,      # total entries saturated
+        0xFFFFFFFF,  # cd size saturated
+        0xFFFFFFFF,  # cd offset saturated
+        0,
+    )
+    archive = tmp_path / "fake64.zip"
+    archive.write_bytes(body + zip64_eocd + locator + eocd)
+    assert _zip_declared_entry_count(str(archive)) == 7
+
+
+def test_zip_declared_entry_count_returns_none_on_malformed(tmp_path) -> None:
+    """Unreadable/garbled EOCDs defer to ZipFile's BadZipFile handling."""
+    short = tmp_path / "short.zip"
+    short.write_bytes(b"tiny")
+    assert _zip_declared_entry_count(str(short)) is None
+
+    garbage = tmp_path / "garbage.zip"
+    garbage.write_bytes(b"x" * 200)
+    assert _zip_declared_entry_count(str(garbage)) is None
+
+    assert _zip_declared_entry_count(str(tmp_path / "missing.zip")) is None
 
 
 async def test_bulk_import_images_rejects_corrupt_zip(tmp_path) -> None:

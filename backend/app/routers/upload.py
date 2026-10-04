@@ -30,6 +30,7 @@ from ..processing import process_source_image
 from ..schemas import MAX_NOTE_LENGTH, SourceImageOut, normalize_note_value
 from ..tracing import record_exception_if_server_error
 from ..upload_staging import (
+    UploadTooLargeError,
     cleanup_unowned_final,
     discard_staging,
     staging_path_for,
@@ -92,6 +93,9 @@ async def upload_source_image(
             try:
                 file_size = await write_upload_to_staging(file, staging_path)
                 os.replace(staging_path, stored_path)
+            except UploadTooLargeError as exc:
+                discard_staging(staging_path)
+                raise HTTPException(status_code=413, detail=exc.detail)
             except OSError as exc:
                 discard_staging(staging_path)
                 if exc.errno == errno.ENOSPC:

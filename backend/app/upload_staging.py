@@ -28,10 +28,18 @@ import time
 from sqlalchemy import exists, select
 
 from .database import async_session
-from .image_validation import UPLOAD_CHUNK_SIZE
+from .image_validation import UPLOAD_CHUNK_SIZE, UPLOAD_MAX_BYTES
 from .models import SourceImage
 
 logger = logging.getLogger(__name__)
+
+
+class UploadTooLargeError(Exception):
+    """Raised when a streamed upload exceeds ``UPLOAD_MAX_BYTES`` (#1432)."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail)
+        self.detail = detail
 
 STAGING_PREFIX = ".staging-"
 
@@ -64,10 +72,17 @@ async def write_upload_to_staging(file, staging_path: str) -> int:
     the readiness probe) if run inline.
     """
     with open(staging_path, "wb") as f:
+        written = 0
         while True:
             chunk = await file.read(UPLOAD_CHUNK_SIZE)
             if not chunk:
                 break
+            written += len(chunk)
+            if written > UPLOAD_MAX_BYTES:
+                raise UploadTooLargeError(
+                    "File exceeds the per-upload size limit of "
+                    f"{UPLOAD_MAX_BYTES / (1024 ** 3):g} GiB"
+                )
             await asyncio.to_thread(f.write, chunk)
     return os.path.getsize(staging_path)
 

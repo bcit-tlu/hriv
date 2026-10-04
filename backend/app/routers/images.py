@@ -19,6 +19,7 @@ from ..database import async_session, get_db, settings
 from ..filenames import sanitize_upload_filename, storage_extension
 from ..image_validation import is_valid_image
 from ..upload_staging import (
+    UploadTooLargeError,
     cleanup_unowned_final,
     discard_staging,
     staging_path_for,
@@ -404,6 +405,9 @@ async def replace_image(
             try:
                 file_size = await write_upload_to_staging(file, staging_path)
                 os.replace(staging_path, stored_path)
+            except UploadTooLargeError as exc:
+                discard_staging(staging_path)
+                raise HTTPException(status_code=413, detail=exc.detail)
             except OSError as exc:
                 discard_staging(staging_path)
                 if exc.errno == errno.ENOSPC:

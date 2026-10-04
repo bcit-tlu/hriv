@@ -24,7 +24,7 @@ from .reconciliation import run_reconciliation_sweep
 from .schemas import FeaturesOut
 from .worker import TaskQueueUnavailableError, get_pool
 from .maintenance import is_maintenance_mode
-from .middleware import AuditMiddleware, CollectionsFeatureMiddleware, MaintenanceMiddleware
+from .middleware import AuditMiddleware, CollectionsFeatureMiddleware, MaintenanceMiddleware, UploadBodyLimitMiddleware
 from .routers import (
     admin,
     announcement,
@@ -310,6 +310,11 @@ _cors_origins, _cors_allow_credentials = _resolve_cors_config(
     settings.cors_origins, settings.task_execution_mode
 )
 
+# Innermost custom middleware: caps the streamed upload body on the
+# multipart upload routes before python-multipart's temp-file spool can
+# absorb an oversized request (#1432). Registered first so its 413 still
+# flows back through the audit/CORS layers for logging and headers.
+app.add_middleware(UploadBodyLimitMiddleware)
 # Registered inside MaintenanceMiddleware (Starlette runs the last-added
 # middleware first) so maintenance 503s win over the collections 404.
 app.add_middleware(CollectionsFeatureMiddleware)
