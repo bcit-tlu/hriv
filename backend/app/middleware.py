@@ -19,7 +19,9 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from .auth import auth_settings
 from .database import settings
+from .image_validation import UPLOAD_MAX_BYTES
 from .maintenance import is_maintenance_mode
+from .task_constants import BULK_IMPORT_MAX_UPLOAD_BYTES
 
 logger = logging.getLogger(__name__)
 _meter = metrics.get_meter(__name__)
@@ -499,3 +501,109 @@ class MaintenanceMiddleware:
                 return
 
         await self.app(scope, receive, send)
+
+
+# ── Upload body limits (#1432) ───────────────────────────────────────────
+# python-multipart streams each uploaded part into a SpooledTemporaryFile
+# on pod-local temp storage *before* the endpoint runs, so per-file caps
+# inside the handlers cannot stop an oversized request body from
+# exhausting the pod's ephemeral-storage budget first. This middleware
+# counts the streamed request bytes and answers 413 the moment the cap is
+# crossed — including chunked requests, which a Content-Length pre-check
+# cannot see. The handler-side caps remain as a second layer.
+
+# Multipart boundary strings, part headers, and non-file form fields ride
+# inside the same request body as the capped file part.
+_MULTIPART_OVERHEAD_BYTES = 1024 * 1024
+
+
+def _upload_body_limit(path: str) -> int | None:
+    """Streamed-body cap for the multipart upload paths, else ``None``."""
+    if path == "/api/source-images/upload" or _IMAGE_REPLACE_ROUTE.fullmatch(
+        path
+    ):
+        return UPLOAD_MAX_BYTES + _MULTIPART_OVERHEAD_BYTES
+    if path.startswith("/api/admin/bulk-import"):
+        return BULK_IMPORT_MAX_UPLOAD_BYTES + _MULTIPART_OVERHEAD_BYTES
+    return None
+
+
+def _upload_body_limit_detail(path: str) -> str:
+    if path.startswith("/api/admin/bulk-import"):
+        return (
+            "Bulk import request exceeds the size limit of "
+            f"{BULK_IMPORT_MAX_UPLOAD_BYTES / (1024 ** 3):g} GiB"
+        )
+    return (
+        "File exceeds the per-upload size limit of "
+        f"{UPLOAD_MAX_BYTES / (1024 ** 3):g} GiB"
+    )
+
+
+class UploadBodyLimitMiddleware:
+    """Answer 413 for oversized upload bodies while they stream (#1432).
+
+    Pure ASGI (no buffering): a declared ``Content-Length`` over the route
+    cap is rejected without reading the body, and a chunked/lied-length
+    body is aborted mid-stream — the downstream app sees a client
+    disconnect and stops parsing, so nothing more reaches the temp spool.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        limit = (
+            _upload_body_limit(scope["path"])
+            if scope["method"] == "POST"
+            else None
+        )
+        if limit is None:
+            await self.app(scope, receive, send)
+            return
+
+        detail = _upload_body_limit_detail(scope["path"])
+
+        # Fast path: a declared Content-Length over the cap never reads
+        # a single body byte.
+        declared = _parse_content_length(
+            _header_value(scope, b"content-length") or None
+        )
+        if isinstance(declared, int) and declared > limit:
+            await JSONResponse(
+                status_code=413, content={"detail": detail}
+            )(scope, receive, send)
+            return
+
+        received = 0
+        answered = False
+
+        async def limited_receive() -> Message:
+            nonlocal received, answered
+            if answered:
+                # The connection is dead from the app's perspective once
+                # we have answered; never touch the real channel again.
+                return {"type": "http.disconnect"}
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > limit:
+                    answered = True
+                    await JSONResponse(
+                        status_code=413, content={"detail": detail}
+                    )(scope, receive, send)
+                    return {"type": "http.disconnect"}
+            return message
+
+        async def limited_send(message: Message) -> None:
+            # Once we have answered, drop whatever response the
+            # disconnected downstream app tries to send.
+            if answered:
+                return
+            await send(message)
+
+        await self.app(scope, limited_receive, limited_send)

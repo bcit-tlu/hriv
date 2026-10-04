@@ -43,6 +43,7 @@ from app.routers.bulk_import import (
     _process_bulk_import_impl,
     _STALE_BULK_IMPORT_SECONDS,
     _write_source_image_abort_latch,
+    _zip_declared_entry_count,
     _wait_for_source_image_terminal_state,
     bulk_import_images,
     get_bulk_import_job,
@@ -826,8 +827,9 @@ async def test_bulk_import_images_rejects_archive_over_entry_ceiling(tmp_path) -
 
     ``BULK_IMPORT_MAX_ENTRIES`` only counts eligible image entries, so an
     archive of mostly non-image entries would otherwise cost API
-    memory/time proportional to its size. The ceiling is checked right
-    after ``ZipFile`` parses the central directory.
+    memory/time proportional to its size. The ceiling is checked from the
+    EOCD record before ``ZipFile`` allocates the ``ZipInfo`` list, and
+    re-checked on the parsed total after open.
     """
     category = SimpleNamespace(id=1)
     db = AsyncMock()
@@ -864,6 +866,50 @@ async def test_bulk_import_images_rejects_archive_over_entry_ceiling(tmp_path) -
     assert exc.value.status_code == 413
     assert "entries" in exc.value.detail
     assert list(tmp_path.iterdir()) == []
+
+
+def test_zip_declared_entry_count_reads_eocd(tmp_path) -> None:
+    """A normal archive reports its real central-directory count (#1432)."""
+    archive = tmp_path / "real.zip"
+    archive.write_bytes(_zip_bytes({"a.png": b"a", "b.txt": b"b", "c.png": b"c"}))
+    assert _zip_declared_entry_count(str(archive)) == 3
+
+
+def test_zip_declared_entry_count_reads_zip64_eocd(tmp_path) -> None:
+    """A saturated EOCD falls through to the ZIP64 locator/record (#1432)."""
+    body = b"x" * 10  # stands in for the central directory
+    zip64_offset = len(body)
+    zip64_eocd = struct.pack(
+        "<4sQ2H2L4Q", b"PK\x06\x06", 44, 45, 45, 0, 0, 7, 7, 100, 0
+    )
+    locator = struct.pack("<4sLQL", b"PK\x06\x07", 0, zip64_offset, 1)
+    eocd = struct.pack(
+        "<4s4H2LH",
+        b"PK\x05\x06",
+        0,
+        0,
+        0xFFFF,      # disk entries saturated
+        0xFFFF,      # total entries saturated
+        0xFFFFFFFF,  # cd size saturated
+        0xFFFFFFFF,  # cd offset saturated
+        0,
+    )
+    archive = tmp_path / "fake64.zip"
+    archive.write_bytes(body + zip64_eocd + locator + eocd)
+    assert _zip_declared_entry_count(str(archive)) == 7
+
+
+def test_zip_declared_entry_count_returns_none_on_malformed(tmp_path) -> None:
+    """Unreadable/garbled EOCDs defer to ZipFile's BadZipFile handling."""
+    short = tmp_path / "short.zip"
+    short.write_bytes(b"tiny")
+    assert _zip_declared_entry_count(str(short)) is None
+
+    garbage = tmp_path / "garbage.zip"
+    garbage.write_bytes(b"x" * 200)
+    assert _zip_declared_entry_count(str(garbage)) is None
+
+    assert _zip_declared_entry_count(str(tmp_path / "missing.zip")) is None
 
 
 async def test_bulk_import_images_rejects_corrupt_zip(tmp_path) -> None:

@@ -109,21 +109,27 @@ cannot exhaust the data volume:
 - more than `BULK_IMPORT_MAX_ENTRIES` (2000) image entries rejects the
   archive;
 - a single archive with more than `BULK_IMPORT_MAX_ARCHIVE_ENTRIES`
-  (10,000) total entries — images and non-images alike — is rejected right
-  after `ZipFile` parses the central directory, so an archive flooded with
-  tiny non-image entries cannot charge unbounded parse cost against the
-  API (`BULK_IMPORT_MAX_ENTRIES` only counts eligible image entries);
+  (10,000) total entries — images and non-images alike — is rejected from
+  the end-of-central-directory record (with ZIP64 fallback) before
+  `ZipFile` allocates the `ZipInfo` list, and re-checked on the parsed
+  total after open, so an archive flooded with tiny non-image entries
+  cannot charge unbounded parse cost against the API
+  (`BULK_IMPORT_MAX_ENTRIES` only counts eligible image entries);
 - free space on `source_images_dir` must stay above
   `BULK_IMPORT_MIN_FREE_BYTES` (1 GiB), checked before each entry and every
   512 MiB written (the same pattern as the filesystem-import staging check).
 
 The raw request body is also bounded: the ingress accepts unlimited
-bodies, so each uploaded part — zip archives spooled to a temp file and
-plain images streamed to `source_images_dir` — is capped at
-`BULK_IMPORT_MAX_UPLOAD_BYTES` (20 GiB) while it is read. Exceeding the
-cap returns 413 and removes the partial file. Single-image upload and
-image replacement share the same streamed cap as `UPLOAD_MAX_BYTES`
-(20 GiB), enforced inside `write_upload_to_staging`.
+bodies, so `UploadBodyLimitMiddleware` (pure ASGI) counts streamed request
+bytes on the multipart upload paths and answers 413 the moment
+`BULK_IMPORT_MAX_UPLOAD_BYTES` — or `UPLOAD_MAX_BYTES` for single-image
+upload and replacement — plus 1 MiB of multipart overhead is crossed,
+before python-multipart's temp-file spool can absorb the body. The
+endpoint read loops re-apply the per-part cap to each uploaded part (zip
+archives spooled to a temp file, plain images streamed to
+`source_images_dir`), and `write_upload_to_staging` enforces
+`UPLOAD_MAX_BYTES` for single uploads and replacements; exceeding a cap
+returns 413 and removes the partial file.
 
 The limits are validated at import time (`_validate_zip_limits`): non-positive
 values, or a non-finite / sub-1 compression ratio, fail startup rather than

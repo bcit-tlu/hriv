@@ -10,7 +10,9 @@ from app.middleware import (
     AuditMiddleware,
     CollectionsFeatureMiddleware,
     MaintenanceMiddleware,
+    UploadBodyLimitMiddleware,
     _normalize_path_fallback,
+    _upload_body_limit,
     _is_upload_path,
     _parse_content_length,
     _parse_exclude_prefixes,
@@ -879,3 +881,154 @@ async def test_maintenance_passes_through_non_http_scope() -> None:
 
     await mw(scope, _noop_receive, _noop_send)
     inner.assert_called_once_with(scope, _noop_receive, _noop_send)
+
+
+# ── UploadBodyLimitMiddleware (#1432) ────────────────────────────────────
+
+
+def _list_send(sent: list[dict]):
+    async def send(message: dict) -> None:
+        sent.append(message)
+
+    return send
+
+
+def test_upload_body_limit_covers_multipart_upload_routes() -> None:
+    """Multipart upload paths carry a cap; unrelated paths return None."""
+    from app.image_validation import UPLOAD_MAX_BYTES
+    from app.task_constants import BULK_IMPORT_MAX_UPLOAD_BYTES
+
+    assert _upload_body_limit("/api/source-images/upload") is not None
+    assert _upload_body_limit("/api/images/123/replace") is not None
+    assert _upload_body_limit("/api/admin/bulk-import/") is not None
+    assert (
+        _upload_body_limit("/api/source-images/upload")
+        == UPLOAD_MAX_BYTES + 1024 * 1024
+    )
+    assert (
+        _upload_body_limit("/api/admin/bulk-import/")
+        == BULK_IMPORT_MAX_UPLOAD_BYTES + 1024 * 1024
+    )
+    assert _upload_body_limit("/api/images") is None
+    assert _upload_body_limit("/api/admin/tasks/123/upload") is None
+
+
+async def test_upload_body_limit_rejects_declared_length_without_reading() -> None:
+    """A Content-Length over the cap gets a 413 before any body is read."""
+    sent: list[dict] = []
+
+    async def receive() -> dict:
+        raise AssertionError("body must not be consumed")
+
+    inner = AsyncMock()
+    mw = UploadBodyLimitMiddleware(app=inner)
+    scope = _make_scope(
+        method="POST",
+        path="/api/source-images/upload",
+        headers={"content-length": "5000"},
+    )
+
+    with (
+        patch("app.middleware.UPLOAD_MAX_BYTES", 100),
+        patch("app.middleware._MULTIPART_OVERHEAD_BYTES", 0),
+    ):
+        await mw(scope, receive, _list_send(sent))
+
+    inner.assert_not_called()
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert starts[0]["status"] == 413
+
+
+async def test_upload_body_limit_aborts_chunked_body_over_cap() -> None:
+    """A chunked body (no Content-Length) is cut at the cap mid-stream.
+
+    The downstream app sees a client disconnect and its own response is
+    suppressed — exactly one response (the middleware's 413) is sent.
+    """
+    sent: list[dict] = []
+    app_saw_disconnect = False
+    chunks = iter(
+        [
+            {"type": "http.request", "body": b"aaaa", "more_body": True},
+            {"type": "http.request", "body": b"bbbb", "more_body": True},
+            {"type": "http.request", "body": b"cccc", "more_body": False},
+        ]
+    )
+
+    async def receive() -> dict:
+        return next(chunks)
+
+    async def inner_app(scope, receive, send) -> None:
+        nonlocal app_saw_disconnect
+        while True:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                app_saw_disconnect = True
+                break
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"late"})
+
+    mw = UploadBodyLimitMiddleware(app=inner_app)
+    scope = _make_scope(method="POST", path="/api/admin/bulk-import/")
+
+    with (
+        patch("app.middleware.BULK_IMPORT_MAX_UPLOAD_BYTES", 4),
+        patch("app.middleware._MULTIPART_OVERHEAD_BYTES", 0),
+    ):
+        await mw(scope, receive, _list_send(sent))
+
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert len(starts) == 1
+    assert starts[0]["status"] == 413
+    assert app_saw_disconnect
+
+
+async def test_upload_body_limit_passes_through_within_cap() -> None:
+    """A body under the cap streams through to the app untouched."""
+    sent: list[dict] = []
+    chunks = iter(
+        [
+            {"type": "http.request", "body": b"aa", "more_body": True},
+            {"type": "http.request", "body": b"bb", "more_body": False},
+        ]
+    )
+
+    async def receive() -> dict:
+        return next(chunks)
+
+    async def inner_app(scope, receive, send) -> None:
+        while True:
+            message = await receive()
+            if not message.get("more_body"):
+                break
+        await send({"type": "http.response.start", "status": 201, "headers": []})
+        await send({"type": "http.response.body", "body": b"done"})
+
+    mw = UploadBodyLimitMiddleware(app=inner_app)
+    scope = _make_scope(method="POST", path="/api/source-images/upload")
+
+    with (
+        patch("app.middleware.UPLOAD_MAX_BYTES", 100),
+        patch("app.middleware._MULTIPART_OVERHEAD_BYTES", 0),
+    ):
+        await mw(scope, receive, _list_send(sent))
+
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert starts[0]["status"] == 201
+
+
+async def test_upload_body_limit_ignores_unrelated_paths_and_methods() -> None:
+    inner = AsyncMock()
+    mw = UploadBodyLimitMiddleware(app=inner)
+
+    await mw(
+        _make_scope(method="POST", path="/api/other"), _noop_receive, _noop_send
+    )
+    await mw(
+        _make_scope(method="GET", path="/api/source-images/upload"),
+        _noop_receive,
+        _noop_send,
+    )
+    await mw({"type": "lifespan"}, _noop_receive, _noop_send)
+
+    assert inner.await_count == 3

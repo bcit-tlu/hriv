@@ -11,6 +11,7 @@ import logging
 import math
 import os
 import shutil
+import struct
 import tempfile
 import threading
 import time
@@ -45,6 +46,7 @@ from ..schemas import MAX_NOTE_LENGTH, BulkImportJobOut, normalize_note_value
 from ..task_constants import (
     BULK_IMPORT_COORDINATOR_LIVENESS_KEY as _BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
     BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS as _BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS,
+    BULK_IMPORT_MAX_UPLOAD_BYTES as _MAX_UPLOAD_BYTES,
     SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS,
 )
 from ..tracing import record_exception_if_server_error
@@ -88,18 +90,11 @@ _ZIP_MIN_FREE_BYTES = int(
 )
 _ZIP_FREE_SPACE_CHECK_INTERVAL_BYTES = 512 * 1024 * 1024
 _ZIP_NAME_DISPLAY_LIMIT = 40
-# Per-part streamed-bytes cap for the raw request body (#1432). The ingress
-# intentionally accepts unlimited request bodies, so the read loops are the
-# layer that bounds how much of one uploaded part reaches disk. The default
-# matches _ZIP_MAX_TOTAL_BYTES: a compliant archive's compressed size can
-# never legitimately exceed its decompressed content by a meaningful margin.
-_MAX_UPLOAD_BYTES = int(
-    os.environ.get("BULK_IMPORT_MAX_UPLOAD_BYTES", str(20 * 1024 * 1024 * 1024))
-)
-# Ceiling on one archive's central-directory entry count, checked right
-# after ZipFile() parses it (#1432). ``BULK_IMPORT_MAX_ENTRIES`` only counts
-# eligible image entries, so without this an archive of millions of tiny
-# non-image files still costs API memory/time proportional to its size.
+# Ceiling on one archive's central-directory entry count (#1432). Checked
+# from the EOCD record before ZipFile() allocates the ZipInfo list, and
+# again on the parsed total after open: ``BULK_IMPORT_MAX_ENTRIES`` only
+# counts eligible image entries, so without this an archive of millions of
+# tiny non-image files costs API memory/time proportional to its size.
 _ZIP_MAX_ARCHIVE_ENTRIES = int(
     os.environ.get("BULK_IMPORT_MAX_ARCHIVE_ENTRIES", "10000")
 )
@@ -298,6 +293,91 @@ class _ZipExtractBudget:
                     _ensure_zip_extract_free_space(target_dir)
 
 
+# End-of-central-directory record layout (APPNOTE §4.3.16). Parsing just
+# the EOCD gives the archive's declared total entry count without building
+# one ZipInfo per record — the pre-parse bound on ``ZipFile``'s memory use
+# (#1432). Fields that overflow 16/32 bits are saturated and the real values
+# live in the ZIP64 EOCD located via the locator record just before it.
+_EOCD_SIGNATURE = b"PK\x05\x06"
+_EOCD_MIN_BYTES = 22
+_EOCD_SEARCH_BYTES = _EOCD_MIN_BYTES + 0xFFFF  # + max comment length
+_EOCD_STRUCT = struct.Struct("<4s4H2LH")
+_ZIP64_LOCATOR_SIGNATURE = b"PK\x06\x07"
+_ZIP64_LOCATOR_STRUCT = struct.Struct("<4sLQL")
+_ZIP64_EOCD_SIGNATURE = b"PK\x06\x06"
+_ZIP64_EOCD_STRUCT = struct.Struct("<4sQ2H2L4Q")
+_UINT16_MAX = 0xFFFF
+_UINT32_MAX = 0xFFFFFFFF
+
+
+def _zip_declared_entry_count(path: str) -> int | None:
+    """Return an archive's declared total entry count, or ``None``.
+
+    ``ZipFile`` allocates the full ``ZipInfo`` list while parsing the
+    central directory on open, so the per-archive entry ceiling must be
+    checked from this cheap EOCD read first. ``None`` means the record
+    could not be read (truncated/garbled/zip64-inconsistent); the caller
+    then defers to ``ZipFile``'s own ``BadZipFile`` handling and the
+    post-open re-check of the parsed count.
+    """
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            if size < _EOCD_MIN_BYTES:
+                return None
+            f.seek(max(0, size - _EOCD_SEARCH_BYTES))
+            tail = f.read()
+
+            idx = tail.rfind(_EOCD_SIGNATURE)
+            if idx < 0 or idx + _EOCD_MIN_BYTES > len(tail):
+                return None
+            (
+                _sig,
+                _disk,
+                _cd_disk,
+                disk_entries,
+                total_entries,
+                cd_size,
+                cd_offset,
+                _comment_len,
+            ) = _EOCD_STRUCT.unpack(tail[idx : idx + _EOCD_MIN_BYTES])
+            if (
+                total_entries != _UINT16_MAX
+                and disk_entries != _UINT16_MAX
+                and cd_size != _UINT32_MAX
+                and cd_offset != _UINT32_MAX
+            ):
+                return total_entries
+
+            # ZIP64: the locator record sits immediately before the EOCD.
+            eocd_offset = size - len(tail) + idx
+            locator_offset = eocd_offset - _ZIP64_LOCATOR_STRUCT.size
+            if locator_offset < 0:
+                return None
+            f.seek(locator_offset)
+            locator = f.read(_ZIP64_LOCATOR_STRUCT.size)
+            if (
+                len(locator) != _ZIP64_LOCATOR_STRUCT.size
+                or locator[:4] != _ZIP64_LOCATOR_SIGNATURE
+            ):
+                # Claims ZIP64 but has no locator — let ZipFile raise.
+                return None
+            (_lsig, _ldisk, zip64_offset, _ldisks) = _ZIP64_LOCATOR_STRUCT.unpack(
+                locator
+            )
+            if zip64_offset + _ZIP64_EOCD_STRUCT.size > size:
+                return None
+            f.seek(zip64_offset)
+            z64 = f.read(_ZIP64_EOCD_STRUCT.size)
+    except OSError:
+        return None
+    if len(z64) != _ZIP64_EOCD_STRUCT.size or z64[:4] != _ZIP64_EOCD_SIGNATURE:
+        return None
+    fields = _ZIP64_EOCD_STRUCT.unpack(z64)
+    return fields[7]  # total entries across all disks (u64)
+
+
 def _extract_zip_image_entries(
     tmp_path: str,
     budget: _ZipExtractBudget,
@@ -320,7 +400,14 @@ def _extract_zip_image_entries(
     before sweeping ``file_entries``.
     """
     try:
+        declared_entries = _zip_declared_entry_count(tmp_path)
+        if declared_entries is not None:
+            # Reject oversized central directories before ZipFile()
+            # allocates one ZipInfo per record.
+            budget.check_central_directory(declared_entries)
         with zipfile.ZipFile(tmp_path, "r") as zf:
+            # The declared count can understate a malformed archive, so
+            # the parsed total is re-checked after open as well.
             budget.check_central_directory(len(zf.infolist()))
             for zip_entry in zf.namelist():
                 # Skip directories and hidden/system files

@@ -658,3 +658,43 @@ def test_otel_route_details_resolves_included_routes() -> None:
         "app": main_app,
     }
     assert _get_route_details(scope) == "/api/auth/oidc/enabled"
+
+
+def test_upload_body_limit_rejects_oversized_upload_through_stack(
+    monkeypatch,
+) -> None:
+    """A multipart upload body over the cap gets a middleware 413 (#1432).
+
+    The limit fires while the body streams through the ASGI stack — before
+    python-multipart spools it to temp storage and before auth runs, so
+    even an unauthenticated request cannot fill pod-local disk.
+    """
+    from app.main import app as main_app
+
+    monkeypatch.setattr("app.middleware.UPLOAD_MAX_BYTES", 64)
+    monkeypatch.setattr("app.middleware._MULTIPART_OVERHEAD_BYTES", 0)
+
+    with TestClient(main_app, raise_server_exceptions=False) as client:
+        response = client.post(
+            "/api/source-images/upload",
+            files={"file": ("big.png", b"x" * 4096, "image/png")},
+        )
+
+    assert response.status_code == 413
+
+
+def test_upload_body_limit_passes_small_upload_to_endpoint_auth(
+    monkeypatch,
+) -> None:
+    """An under-cap upload body streams through to the endpoint's auth."""
+    from app.main import app as main_app
+
+    monkeypatch.setattr("app.middleware.UPLOAD_MAX_BYTES", 1024 * 1024)
+
+    with TestClient(main_app, raise_server_exceptions=False) as client:
+        response = client.post(
+            "/api/source-images/upload",
+            files={"file": ("ok.png", b"x" * 64, "image/png")},
+        )
+
+    assert response.status_code == 401
