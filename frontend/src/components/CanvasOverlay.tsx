@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import OpenSeadragon from 'openseadragon'
 import * as fabric from 'fabric'
+import { ArrowLine, arrowHeadLength, drawArrowhead, type ArrowStyle } from './arrowLine'
 import { wrapCanvasText } from './canvasText'
 import { emitEvent } from '../observability'
 import Box from '@mui/material/Box'
@@ -95,7 +96,6 @@ const ANNOTATION_SELECTION_STYLE = {
   transparentCorners: false,
 }
 
-type ArrowStyle = 'none' | 'standard' | 'triangle' | 'circle'
 type FillMode = 'outlined' | 'filled'
 type Tool = 'select' | 'rect' | 'circle' | 'arrow' | 'text' | 'link'
 
@@ -272,87 +272,6 @@ function uid(): string {
   return Math.random().toString(36).slice(2, 10)
 }
 
-/**
- * Draw an arrowhead at the end of a line on a plain canvas context.
- */
-function drawArrowhead(
-  ctx: CanvasRenderingContext2D,
-  x1: number,
-  y1: number,
-  x2: number,
-  y2: number,
-  headLen: number,
-  color: string,
-  style: ArrowStyle,
-  lineWidth: number,
-) {
-  if (style === 'none') return
-  const angle = Math.atan2(y2 - y1, x2 - x1)
-
-  if (style === 'circle') {
-    const radius = headLen / 2
-    ctx.beginPath()
-    ctx.arc(x2, y2, radius, 0, 2 * Math.PI)
-    ctx.fillStyle = color
-    ctx.fill()
-    return
-  }
-
-  // 'standard' = open V, 'triangle' = filled triangle
-  ctx.beginPath()
-  ctx.moveTo(x2, y2)
-  ctx.lineTo(
-    x2 - headLen * Math.cos(angle - Math.PI / 6),
-    y2 - headLen * Math.sin(angle - Math.PI / 6),
-  )
-  if (style === 'triangle') {
-    ctx.lineTo(
-      x2 - headLen * Math.cos(angle + Math.PI / 6),
-      y2 - headLen * Math.sin(angle + Math.PI / 6),
-    )
-    ctx.closePath()
-    ctx.fillStyle = color
-    ctx.fill()
-  } else {
-    // standard: draw both prongs as stroked lines
-    ctx.moveTo(x2, y2)
-    ctx.lineTo(
-      x2 - headLen * Math.cos(angle + Math.PI / 6),
-      y2 - headLen * Math.sin(angle + Math.PI / 6),
-    )
-    ctx.strokeStyle = color
-    ctx.lineWidth = lineWidth
-    ctx.stroke()
-  }
-}
-
-/**
- * Line that renders its arrowhead on the fabric edit canvas, matching the
- * view-mode canvas rendering. Caching is disabled by the creation sites so
- * the head (which extends beyond the line's bounding box) is not clipped.
- */
-class ArrowLine extends fabric.Line {
-  override _render(ctx: CanvasRenderingContext2D) {
-    super._render(ctx)
-    const style = (this as AnnotatedObject)._arrowStyle ?? 'standard'
-    if (style === 'none') return
-    const p = this.calcLinePoints()
-    const sw = this.strokeWidth ?? 1
-    const headLen = Math.max(24, sw * 12)
-    drawArrowhead(
-      ctx,
-      p.x1,
-      p.y1,
-      p.x2,
-      p.y2,
-      headLen,
-      typeof this.stroke === 'string' ? this.stroke : '#000000',
-      style,
-      Math.max(1, sw),
-    )
-  }
-}
-
 export default function CanvasOverlay({
   viewer,
   annotations,
@@ -511,7 +430,7 @@ export default function CanvasOverlay({
         ctx.lineWidth = Math.max(1, sw)
         ctx.stroke()
         // Arrowhead: 3x larger default
-        const headLen = Math.max(24, sw * 12)
+        const headLen = arrowHeadLength(sw)
         const arrowStyle = ann.arrowStyle ?? 'standard'
         const arrowLineWidth = Math.max(1, sw)
         drawArrowhead(
