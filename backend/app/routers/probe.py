@@ -1,7 +1,7 @@
 """Kubernetes readiness probe served through the included-router path.
 
-``/api/_probe`` performs the same checks as ``/api/health/ready`` (database
-round-trip plus storage writability) but is registered via
+``/api/_probe`` performs the same checks as ``/api/health/ready`` (fresh
+database connection plus storage writability) but is registered via
 ``app.include_router`` so each probe request travels the full middleware
 chain and included-router dispatch — the same machinery real API endpoints
 depend on. A readiness target registered directly on ``app`` (the
@@ -18,23 +18,23 @@ probes reach the pod's HTTP port directly.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from ..database import get_db
+from fastapi import APIRouter, HTTPException, status
 
 router = APIRouter()
 
 
 @router.get("/_probe", include_in_schema=False)
-async def routed_probe(db: AsyncSession = Depends(get_db)) -> dict[str, str]:
+async def routed_probe() -> dict[str, str]:
     """Readiness check traversing the included-router request path."""
     # Deferred import: app.main imports this module at startup, so
     # module-level symbols from main are only resolvable at call time.
-    from ..main import _check_storage_ready, app
+    from ..main import _check_db_ready, _check_storage_ready, app
 
-    await db.execute(text("SELECT 1"))
+    if not await _check_db_ready():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database unreachable",
+        )
     if not await _check_storage_ready():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

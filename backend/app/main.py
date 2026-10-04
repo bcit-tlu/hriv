@@ -7,16 +7,15 @@ import uuid
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, Request, status as http_status
+from fastapi import FastAPI, HTTPException, Request, status as http_status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.sessions import SessionMiddleware
 
 from .admin_ops import _ensure_tasks_dir
 from .auth import auth_settings
-from .database import get_db, settings
+from .database import dispose_probe_engine, get_probe_engine, settings
 from .logging_config import setup_logging
 from .metrics import render_metrics
 from .queue_metrics import queue_health
@@ -90,6 +89,39 @@ async def _check_storage_ready(timeout: float = 5.0) -> bool:
         logger.warning(
             "Storage health check timed out after %s seconds", timeout,
             extra={"event": "health.storage_timeout"},
+        )
+        return False
+
+
+async def _check_db_ready(timeout: float = 5.0) -> bool:
+    """Open a *fresh* database connection and run ``SELECT 1`` on it.
+
+    The check uses a dedicated unpooled (``NullPool``) engine rather than the
+    request-path session pool: a pooled checkout can reuse a connection that
+    authenticated before Vault revoked or rotated the dynamic PostgreSQL
+    credentials, which reported pods Ready through the 2026-10-02 outage
+    while every new connection failed authentication (#1496). Establishing a
+    new session per probe proves the app can still connect — the property
+    Kubernetes readiness actually needs.
+
+    Scope note: this check deliberately does NOT reflect request-pool
+    saturation — an exhausted pool means the pod is busy, not broken, and
+    flapping readiness under load would cascade failures. Pool occupancy is
+    monitored via the ``hriv_db_pool_*`` metrics instead.
+    """
+    async def _roundtrip() -> None:
+        engine = get_probe_engine()
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+
+    try:
+        await asyncio.wait_for(_roundtrip(), timeout=timeout)
+        return True
+    except Exception:
+        logger.warning(
+            "Database readiness check failed — cannot establish a fresh connection",
+            exc_info=True,
+            extra={"event": "health.db_unready"},
         )
         return False
 
@@ -213,6 +245,7 @@ async def lifespan(app: FastAPI):
         await run_reconciliation_sweep()
 
     yield
+    await dispose_probe_engine()
     logger.info("Application shutting down", extra={"event": "app.shutdown"})
 
 
@@ -345,9 +378,13 @@ async def queue_health_endpoint():
 
 
 @app.get("/api/health/ready")
-async def readiness(db: AsyncSession = Depends(get_db)):
-    """Readiness probe: verifies the database connection and storage are alive."""
-    await db.execute(text("SELECT 1"))
+async def readiness():
+    """Readiness probe: verifies fresh DB connectivity and storage are alive."""
+    if not await _check_db_ready():
+        raise HTTPException(
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database unreachable",
+        )
     if not await _check_storage_ready():
         raise HTTPException(
             status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,

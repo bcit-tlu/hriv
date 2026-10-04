@@ -34,14 +34,27 @@ def _stub_pyvips(monkeypatch):
         monkeypatch.setitem(sys.modules, "pyvips", MagicMock())
 
 
-async def test_routed_probe_ok() -> None:
+async def test_routed_probe_ok(monkeypatch) -> None:
     """routed_probe returns ready when the database and storage are reachable."""
     from app.main import app
     from app.routers.probe import routed_probe
 
-    db = AsyncMock()
-    result = await routed_probe(db=db)
+    monkeypatch.setattr("app.main._check_db_ready", AsyncMock(return_value=True))
+    result = await routed_probe()
     assert result == {"status": "ready", "version": app.version}
+
+
+async def test_routed_probe_db_unreachable(monkeypatch) -> None:
+    """routed_probe raises 503 when no fresh database connection can be made."""
+    from fastapi import HTTPException
+
+    from app.routers.probe import routed_probe
+
+    monkeypatch.setattr("app.main._check_db_ready", AsyncMock(return_value=False))
+
+    with pytest.raises(HTTPException) as exc_info:
+        await routed_probe()
+    assert exc_info.value.status_code == 503
 
 
 async def test_routed_probe_storage_unwritable(monkeypatch) -> None:
@@ -50,13 +63,13 @@ async def test_routed_probe_storage_unwritable(monkeypatch) -> None:
 
     from app.routers.probe import routed_probe
 
+    monkeypatch.setattr("app.main._check_db_ready", AsyncMock(return_value=True))
     monkeypatch.setattr(
         "app.main._check_storage_ready", AsyncMock(return_value=False)
     )
 
-    db = AsyncMock()
     with pytest.raises(HTTPException) as exc_info:
-        await routed_probe(db=db)
+        await routed_probe()
     assert exc_info.value.status_code == 503
 
 
@@ -66,10 +79,6 @@ def test_routed_probe_excluded_from_schema() -> None:
 
     paths = app.openapi().get("paths", {})
     assert "/api/_probe" not in paths
-
-
-def _mock_db() -> AsyncMock:
-    return AsyncMock()
 
 
 def test_routed_probe_dispatch() -> None:
@@ -88,20 +97,19 @@ def test_routed_probe_dispatch() -> None:
     from fastapi.testclient import TestClient
     from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
-    from app.database import get_db
     from app.main import app as main_app
 
-    main_app.dependency_overrides[get_db] = _mock_db
     FastAPIInstrumentor().instrument_app(main_app)
     try:
         with patch(
+            "app.main._check_db_ready", AsyncMock(return_value=True)
+        ), patch(
             "app.main._check_storage_ready", AsyncMock(return_value=True)
         ):
             with TestClient(main_app, raise_server_exceptions=False) as client:
                 response = client.get("/api/_probe")
     finally:
         FastAPIInstrumentor().uninstrument_app(main_app)
-        main_app.dependency_overrides.pop(get_db, None)
 
     assert response.status_code == 200
     assert response.json()["status"] == "ready"
