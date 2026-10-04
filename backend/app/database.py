@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase, Session
-from sqlalchemy.pool import Pool
+from sqlalchemy.pool import NullPool, Pool
 
 
 MAX_REBUILD_CHILD_TIMEOUT_SECONDS = 86400
@@ -190,6 +190,38 @@ def get_engine_pool() -> Pool | None:
     resource being observed.
     """
     return _engine.pool if _engine is not None else None
+
+
+_probe_engine = None
+
+
+def get_probe_engine() -> AsyncEngine:
+    """Return the dedicated unpooled engine used by readiness probes.
+
+    ``NullPool`` means every ``connect()`` establishes a brand-new PostgreSQL
+    session and closes it on release. Probes must test *connection
+    establishment* — a pooled checkout can silently reuse a session that
+    authenticated before database credentials were revoked or rotated, which
+    reported pods Ready through the 2026-10-02 dynamic-credential outage
+    while every new connection failed (#1496).
+    """
+    global _probe_engine
+    if _probe_engine is None:
+        _probe_engine = create_async_engine(
+            settings.database_url,
+            echo=False,
+            poolclass=NullPool,
+        )
+    return _probe_engine
+
+
+async def dispose_probe_engine() -> None:
+    """Close the probe engine if it was ever created (app shutdown)."""
+    global _probe_engine
+    if _probe_engine is not None:
+        engine = _probe_engine
+        _probe_engine = None
+        await engine.dispose()
 
 
 def get_async_session() -> async_sessionmaker[AsyncSession]:
