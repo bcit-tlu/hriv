@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   createCollection,
   fetchCollection,
@@ -78,10 +78,11 @@ export async function createCollectionWithImages(
 }
 
 /**
- * Collections the caller may add images to (`permissions.can_edit`), loaded
- * on each `enabled` false → true transition (dialog open).
+ * Collections the caller may see, loaded on each `enabled` false → true
+ * transition (modal open). The list endpoint is already access-filtered by
+ * the backend, so no client-side visibility filtering happens here.
  */
-export function useEditableCollections(enabled: boolean) {
+export function useVisibleCollections(enabled: boolean) {
   const [collections, setCollections] = useState<CollectionSummary[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -94,7 +95,7 @@ export function useEditableCollections(enabled: boolean) {
     try {
       const rows = (await fetchCollections()).map(apiCollectionSummaryToSummary)
       if (seq !== loadSeq.current) return
-      setCollections(rows.filter((c) => c.permissions.canEdit))
+      setCollections(rows)
     } catch (err) {
       if (seq !== loadSeq.current) return
       setError(userMessage(err, 'Failed to load collections.'))
@@ -112,4 +113,14 @@ export function useEditableCollections(enabled: boolean) {
   }, [enabled, load])
 
   return { collections, loading, error, reload: load }
+}
+
+/**
+ * Collections the caller may add images to (`permissions.can_edit`), loaded
+ * on each `enabled` false → true transition (dialog open).
+ */
+export function useEditableCollections(enabled: boolean) {
+  const { collections, ...rest } = useVisibleCollections(enabled)
+  const editable = useMemo(() => collections.filter((c) => c.permissions.canEdit), [collections])
+  return { collections: editable, ...rest }
 }

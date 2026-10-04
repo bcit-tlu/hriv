@@ -92,6 +92,15 @@ Type in the filter box to narrow a long list.
 The button is unavailable while you are editing annotations on the canvas —
 finish or cancel that first.
 
+### Add several images at once (from search)
+
+In the top-bar **Search**, click **Select** next to the result count, tick
+each image you want, then click **Add to collection** in the footer. The
+same dialog opens with all of them selected, and they are added in the
+order they appeared in your results — not the order you ticked them. Only
+image results can be selected; categories, collections, and other kinds
+still open when you click them.
+
 ## Find a collection
 
 Use the filters above the grid:
@@ -103,6 +112,10 @@ Use the filters above the grid:
 
 Each card shows the cover image, how many images it holds, who owns it, and
 chips for its type and visibility.
+
+Collections also appear in the top-bar **Search** — both name and
+description are searched, and the **Collections** chip narrows results to
+just collections. Choosing a result opens it here.
 
 ## Edit or delete
 

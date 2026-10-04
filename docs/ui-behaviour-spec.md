@@ -341,11 +341,26 @@ re-checks).
   `Link URL`, so users can keep only annotation-derived image matches visible.
 - Type filter chips scope the searched fields, not just the result types: with
   a type chip active (and no Field chips selected), the query matches only the
-  field most closely associated with that type — `Categories` searches category
-  names, `Images` searches image titles, `Programs` searches program names,
-  `People` searches people names, and `Guide` searches guide titles. Selecting
-  any Field chip overrides that default scope, so `Images` + `Note` still
-  finds images whose notes match.
+  field(s) most closely associated with that type — `Categories` searches
+  category names, `Images` searches image titles, `Programs` searches program
+  names, `People` searches people names, `Guide` searches guide titles, and
+  `Collections` searches collection names and descriptions. Selecting any
+  Field chip overrides that default scope, so `Images` + `Note` still finds
+  images whose notes match.
+- Collections are a result kind for **every** role (unlike program/user/guide
+  kinds, they are not hidden from students): the modal indexes the caller's
+  `GET /api/collections` list, which the backend already access-filters, so a
+  student never sees a restricted-failing collection. A collection row shows
+  its type, image count, and owner, and selecting it navigates to
+  `?collection={id}`.
+- Multi-select is image-only: a **Select** toggle appears next to the result
+  count when image results exist. In select mode, image rows gain checkboxes
+  labelled `Select {image title}` and the row click toggles the check instead
+  of navigating; every other kind stays navigable and is never selectable. A
+  sticky footer shows "N images selected" with **Clear** and **Add to
+  collection**, which opens `AddToCollectionDialog` with the selected image
+  ids in result order. Closing the modal, toggling select mode off, or
+  handing off to the dialog resets the selection.
 - Search result field labels render in a stronger secondary style so the field
   name reads as metadata rather than body text.
 - Staff searches also match the user guide: each guide page is split into

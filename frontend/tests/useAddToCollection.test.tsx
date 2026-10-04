@@ -5,6 +5,7 @@ import {
   createCollectionWithImages,
   fitsCollectionCapacity,
   useEditableCollections,
+  useVisibleCollections,
 } from '../src/useAddToCollection'
 import { ApiError } from '../src/api'
 import { makeApiCollection, makeApiCollectionSummary } from './helpers/fixtures'
@@ -161,6 +162,27 @@ describe('createCollectionWithImages', () => {
       program_ids: [1],
       group_ids: [10],
     })
+  })
+})
+
+describe('useVisibleCollections', () => {
+  it('loads on open and keeps every row — visibility is already enforced server-side', async () => {
+    apiMocks.fetchCollections.mockResolvedValue([
+      makeApiCollectionSummary({ id: 1, name: 'Editable' }),
+      makeApiCollectionSummary({
+        id: 2,
+        name: 'Read only',
+        permissions: { can_edit: false, can_delete: false, can_transfer: false },
+      }),
+    ])
+    const { result, rerender } = renderHook(({ enabled }) => useVisibleCollections(enabled), {
+      initialProps: { enabled: false },
+    })
+    expect(apiMocks.fetchCollections).not.toHaveBeenCalled()
+
+    rerender({ enabled: true })
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.collections.map((c) => c.name)).toEqual(['Editable', 'Read only'])
   })
 })
 

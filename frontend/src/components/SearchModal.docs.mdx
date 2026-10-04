@@ -1,0 +1,58 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as SearchModalStories from './SearchModal.stories'
+
+<Meta of={SearchModalStories} />
+
+<Title />
+
+<Subtitle>
+  Client-side search across categories, images, programs, people, the guide, and collections — with
+  multi-select for adding image results to a collection.
+</Subtitle>
+
+## When to use
+
+`App` opens this modal from the top-bar **Search** button. All searching is client-side: the
+index is whatever data the caller already has — the category tree, uncategorized images,
+programs, users (admin/instructor), the bundled guide, and the caller's visible collections
+(`useVisibleCollections`, fetched lazily each time the modal opens; the backend list is
+already access-filtered).
+
+## Interactive example
+
+<Primary />
+
+<Controls of={SearchModalStories.Basic} />
+
+## Implementation guidance
+
+- **Result kinds.** `ResultKind` covers `category`, `image`, `program`, `user`, `guide`, and
+  `collection`. Each kind has a type chip; a chip scopes matches to the kind's primary
+  fields (`PRIMARY_FIELDS_BY_KIND`) unless explicit Field chips override. Collections match
+  **Name** and **Description**; their rows show the collection type, image count, and owner,
+  and selecting one navigates to `?collection={id}` via `onSelectCollection`.
+- **Collections appear for every role.** They are _not_ part of `suppressExtendedResults`
+  (unlike program/user/guide results) because the list endpoint is already access-filtered —
+  a student never sees a restricted collection they fail.
+- **Multi-select is image-only.** The **Select** toggle appears next to the result count when
+  image results exist and `onAddImagesToCollection` is provided. Image rows become labelled
+  checkboxes (`Select {image name}`) while every other kind keeps its navigation behaviour —
+  no selectable category/program/user/guide/collection rows.
+- **Sticky footer.** While select mode is active, a footer shows “N images selected” with
+  **Clear** and **Add to collection**. The payload preserves result order (not click order).
+  Closing the modal, toggling select mode off, or handing off to the dialog resets the
+  selection.
+- **Result dedupe.** Multiple field matches on one entity group into a single row listing
+  each matched field; `MAX_RESULTS` caps the display.
+
+## Stories
+
+<Stories />

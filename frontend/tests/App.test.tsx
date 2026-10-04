@@ -608,10 +608,19 @@ const addToCollectionMocks = vi.hoisted(() => ({
   addImagesToCollection: vi.fn(),
   createCollectionWithImages: vi.fn(),
 }))
+const searchCollectionMocks = vi.hoisted(() => ({
+  collections: [] as { id: number; name: string }[],
+}))
 vi.mock('../src/useAddToCollection', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/useAddToCollection')>()),
   ...addToCollectionMocks,
   useEditableCollections: () => ({ collections: [], loading: false, error: null, reload: vi.fn() }),
+  useVisibleCollections: (enabled: boolean) => ({
+    collections: enabled ? searchCollectionMocks.collections : [],
+    loading: false,
+    error: null,
+    reload: vi.fn(),
+  }),
 }))
 vi.mock('../src/components/AddToCollectionDialog', () => ({
   default: ({
@@ -726,21 +735,34 @@ vi.mock('../src/components/SearchModal', () => ({
   default: ({
     open,
     users,
+    collections,
     onClose,
     onSelectImage,
+    onSelectCollection,
+    onAddImagesToCollection,
   }: {
     open: boolean
     users: unknown[]
+    collections?: { id: number; name: string }[]
     onClose: () => void
     onSelectImage: (image: typeof mockSecondImage, categoryPath: typeof mockCategories) => void
+    onSelectCollection?: (collectionId: number) => void
+    onAddImagesToCollection?: (imageIds: number[]) => void
   }) => (
     <>
       {open && <div>search users: {users.length}</div>}
+      {open && <div data-testid="search-collection-count">{collections?.length ?? 0}</div>}
       <button type="button" onClick={onClose}>
         Close search
       </button>
       <button type="button" onClick={() => onSelectImage(mockSecondImage, mockCategories)}>
         Select second image from search
+      </button>
+      <button type="button" onClick={() => onSelectCollection?.(5)}>
+        Select collection 5
+      </button>
+      <button type="button" onClick={() => onAddImagesToCollection?.([10, 11])}>
+        Add selected images to collection
       </button>
     </>
   ),
@@ -2069,5 +2091,76 @@ describe('App "Add to Collection" from the image view (#1415)', () => {
     expect(await screen.findByText('Added to "Fresh".')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'View collection' }))
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '11')
+  })
+})
+
+describe('App search collections integration (#1418)', () => {
+  const originalUrl = `${window.location.pathname}${window.location.search}`
+
+  beforeEach(() => {
+    resetFixtures()
+    popStateHandler = null
+    addToCollectionMocks.addImagesToCollection.mockReset()
+    addToCollectionMocks.createCollectionWithImages.mockReset()
+    searchCollectionMocks.collections = []
+  })
+
+  afterEach(() => {
+    window.history.replaceState(null, '', originalUrl)
+  })
+
+  it("passes the caller's visible collections to the search modal when the flag is on", async () => {
+    searchCollectionMocks.collections = [{ id: 5, name: 'Skull set' }]
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Shell search' }))
+    expect(await screen.findByTestId('search-collection-count')).toHaveTextContent('1')
+  })
+
+  it('passes no collections to the search modal when the flag is off', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({ collections: false })
+    searchCollectionMocks.collections = [{ id: 5, name: 'Skull set' }]
+    render(<App />)
+    await waitFor(() => expect(apiMocks.fetchFeatures).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: 'Shell search' }))
+    expect(await screen.findByTestId('search-collection-count')).toHaveTextContent('0')
+  })
+
+  it('navigates to ?collection={id} when a collection result is selected', async () => {
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Shell search' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Select collection 5' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '5')
+    expect(pushNavStateMock).toHaveBeenLastCalledWith('collections', [], null, { collection: '5' })
+  })
+
+  it('opens Add to Collection with the multi-selected image ids even with no image open', async () => {
+    addToCollectionMocks.addImagesToCollection.mockResolvedValue({
+      status: 'added',
+      collection: { id: 9, name: 'Skull set' },
+      addedCount: 2,
+    })
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+    // No image is open — selection came from search results.
+    fireEvent.click(screen.getByRole('button', { name: 'Shell search' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add selected images to collection' }))
+
+    expect(screen.getByTestId('add-to-collection-dialog')).toHaveAttribute(
+      'data-image-ids',
+      '10,11',
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Pick collection' }))
+    await waitFor(() =>
+      expect(addToCollectionMocks.addImagesToCollection).toHaveBeenCalledWith(9, [10, 11]),
+    )
+    expect(await screen.findByText('Added 2 images to "Skull set".')).toBeInTheDocument()
   })
 })
