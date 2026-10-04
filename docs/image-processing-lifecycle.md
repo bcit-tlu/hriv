@@ -123,6 +123,11 @@ frontend surfaces the 413 detail verbatim in the upload modal
 (`userMessage()` in `frontend/src/api.ts`). Defaults are listed in
 `backend/README.md`.
 
+Central-directory parsing and the bounded extraction loop run on a worker
+thread via `asyncio.to_thread` (`_extract_zip_image_entries`), so a large
+archive does not stall the API worker's event loop; the budget and the
+400/413/507 error mapping are unchanged.
+
 ## Status transitions
 
 | Status       | Progress | Description                                          |

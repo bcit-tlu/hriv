@@ -14,6 +14,7 @@ import logging
 import os
 import struct
 import sys
+import threading
 import time
 import zipfile
 from datetime import datetime, timedelta, timezone
@@ -630,6 +631,56 @@ async def test_bulk_import_images_streams_zip_extraction(tmp_path) -> None:
     assert set(read_sizes) == {1024}
     stored = list(tmp_path.iterdir())
     assert len(stored) == 1 and stored[0].stat().st_size == 5600
+
+
+async def test_bulk_import_images_extracts_zip_off_event_loop(tmp_path) -> None:
+    """ZIP central-directory parsing and extraction run on a worker thread.
+
+    Regression test for #1434: decompressing entries synchronously inside
+    the async endpoint stalled the API worker's event loop for the whole
+    archive.
+    """
+    category = SimpleNamespace(id=1)
+    db = AsyncMock()
+    db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
+    db.get = AsyncMock(return_value=category)
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+
+    async def _refresh(obj) -> None:
+        obj.id = 5
+
+    db.refresh = AsyncMock(side_effect=_refresh)
+    bg = MagicMock()
+    upload = _make_upload("batch.zip", [_zip_bytes({"a.png": b"png-a"}), b""])
+
+    loop_ident = threading.get_ident()
+    worker_idents: list[int] = []
+    real_helper = bulk_import_module._extract_zip_image_entries
+
+    def _recording_helper(*args, **kwargs):
+        worker_idents.append(threading.get_ident())
+        return real_helper(*args, **kwargs)
+
+    with (
+        patch("app.routers.bulk_import.settings") as mock_settings,
+        patch(
+            "app.routers.bulk_import._extract_zip_image_entries",
+            _recording_helper,
+        ),
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        await bulk_import_images(
+            files=[upload],
+            category_id=1,
+            background_tasks=bg,
+            _user=MagicMock(),
+            db=db,
+        )
+
+    assert worker_idents, "zip extraction helper was not invoked"
+    assert worker_idents[0] != loop_ident
+    assert len(list(tmp_path.iterdir())) == 1
 
 
 async def test_bulk_import_images_rejects_corrupt_zip(tmp_path) -> None:
