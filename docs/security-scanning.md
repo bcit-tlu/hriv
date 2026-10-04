@@ -71,15 +71,17 @@ PR to refresh one that has fallen behind `main`.
 
 Dependabot cannot run repo tooling during an update, so lockfile bumps used to
 land without the regenerated `THIRD-PARTY-LICENSES.txt` that CI's drift gate
-requires. `.github/workflows/dependabot-licenses.yaml` closes that gap: it
-triggers on `push` to `dependabot/**` branches (`github.actor ==
-'dependabot[bot]'`), regenerates the notices for each component whose
-manifest/lockfile changed, and commits them back to the branch. It pushes with
-the release-please GitHub App token so the fixup push re-triggers the PR check
-suite — a `GITHUB_TOKEN` push would be swallowed by the anti-recursion guard.
-The workflow triggers on `push` rather than `pull_request` because Dependabot's
-PR events get a read-only token and no repository secrets (GitHub treats them
-like fork PRs), whereas in-repo branch pushes run in the trusted context.
+requires. `.github/workflows/dependabot-licenses.yaml` closes that gap: when a
+`[CI] Test, build & publish` run fails on a `dependabot/**` branch, a
+`workflow_run` job regenerates the notices for each component whose
+manifest/lockfile changed and commits them back to the branch. `workflow_run`
+is used because Dependabot's own `push`/`pull_request` events run with a
+read-only `GITHUB_TOKEN` and no repository secrets (GitHub treats them like
+fork PRs); `workflow_run` executes the `main` copy of the workflow in the
+trusted context. The fixup pushes with the release-please GitHub App token so
+the push re-triggers the PR check suite — a `GITHUB_TOKEN` push would be
+swallowed by the anti-recursion guard. The token is minted after regeneration
+completes, so dependency install code never runs while it exists.
 
 Some majors are deliberately ignored in `dependabot.yml`: all `node` image and
 `@types/node` majors (HRIV follows the even-numbered LTS line, so a move to the
