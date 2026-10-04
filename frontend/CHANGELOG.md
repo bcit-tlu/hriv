@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.64.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.63.0...frontend-v0.64.0) (2026-10-04)
+
+
+### Features
+
+* **frontend:** add the sequence collection viewer ([#1520](https://github.com/bcit-tlu/hriv/issues/1520)) ([cb5d6a9](https://github.com/bcit-tlu/hriv/commit/cb5d6a9588a1ee38b92e279f3313015be7a84f93))
+* **frontend:** add the synchronized collection viewer ([#1521](https://github.com/bcit-tlu/hriv/issues/1521)) ([dab64b5](https://github.com/bcit-tlu/hriv/commit/dab64b5f2d4d2b852029ce3e4dd5c3706a0dd296))
+* **frontend:** collection ownership transfer and admin management UI ([#1523](https://github.com/bcit-tlu/hriv/issues/1523)) ([fccfaff](https://github.com/bcit-tlu/hriv/commit/fccfaff417a85c67aaa2115dbbf4ab10dd0a12cf))
+* **frontend:** surface collections in search and add image multi-select ([#1522](https://github.com/bcit-tlu/hriv/issues/1522)) ([da186d3](https://github.com/bcit-tlu/hriv/commit/da186d3e99961871eaf351e731cbc76e92bd2aac))
+
+
+### Bug Fixes
+
+* **frontend:** include arrowhead in canvas arrow bounding box ([#1363](https://github.com/bcit-tlu/hriv/issues/1363)) ([#1516](https://github.com/bcit-tlu/hriv/issues/1516)) ([7ae6302](https://github.com/bcit-tlu/hriv/commit/7ae630228abd1ccda6e9d8321a702ab00e299d34))
+
 ## [0.63.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.62.0...frontend-v0.63.0) (2026-09-29)
 
 
