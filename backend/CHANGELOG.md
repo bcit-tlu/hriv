@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.64.4](https://github.com/bcit-tlu/hriv/compare/backend-v0.64.3...backend-v0.64.4) (2026-10-04)
+
+
+### Bug Fixes
+
+* **backend,monitoring:** report synthetic results without a user session ([#1507](https://github.com/bcit-tlu/hriv/issues/1507)) ([9b2ee92](https://github.com/bcit-tlu/hriv/commit/9b2ee92f62d1e2f2e862afd7a3b41dd0295d8f3f))
+* **backend:** probe readiness with a fresh NullPool connection ([#1506](https://github.com/bcit-tlu/hriv/issues/1506)) ([3958be2](https://github.com/bcit-tlu/hriv/commit/3958be24e1318bb11417903a6f89f2f37aaf5b6d))
+
 ## [0.64.3](https://github.com/bcit-tlu/hriv/compare/backend-v0.64.2...backend-v0.64.3) (2026-10-04)
 
 
