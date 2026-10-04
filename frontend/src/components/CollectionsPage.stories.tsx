@@ -170,6 +170,7 @@ function CollectionsPageExample(args: StoryArgs) {
           onCreate={async () => undefined}
           onUpdate={async () => undefined}
           onDelete={async () => undefined}
+          onTransfer={async () => undefined}
         />
       </Box>
     </AuthContext.Provider>

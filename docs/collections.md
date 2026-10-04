@@ -605,7 +605,36 @@ button sets `[selectedImage.id]`, the search footer sets the checked ids;
 the dialog renders whenever `collectionsEnabled && currentUser`, so
 search-driven adds work with no image open.
 
-_Planned_ (#1419): ownership management / transfer UI.
+### Ownership management UI (#1419)
+
+The write API's `POST /api/collections/{id}/transfer` endpoint (#1413) is
+surfaced on the Collections tab — there is no separate Admin section.
+
+**Entry points.** A **Transfer** button appears on the detail header and a
+transfer icon on each `CollectionCard`, both gated on
+`permissions.can_transfer` (the API re-checks regardless). On an orphaned
+collection — found via the admin-only _No owner (orphaned)_ owner facet —
+the card action is the reassignment flow.
+
+**`TransferCollectionDialog`.** Admins choose _A user_ or _A program_; the
+user picker is an autocomplete over `auth.users` (loaded at login, refreshed
+on open) with inactive accounts filtered out, and the program select lists
+every program. Instructors go straight to a program select narrowed to their
+own `program_ids` — the same boundary the backend 403s across. The confirm
+stays disabled until a target different from the current owner is chosen.
+Rejections surface inline via `userMessage`: 403 (outside your authority),
+409 (stale `version` — "modified by another user"), 422 (invalid or
+inactive target). The version is resolved by `useCollectionsData.transfer`,
+which serializes with reorder/viewport saves through the shared mutation
+queue and fetches the freshest record first when the collection is not the
+open detail (e.g. card-level reassignment). A transferred row that no longer
+matches the current filters — transferred away under **My collections**, or
+assigned out of **No owner (orphaned)** — leaves the list.
+
+**Detail header.** Shows the owner as "Managed by program _X_" for
+program-owned collections (user owners show their name, orphans _No
+owner_), the visibility chip, and — for `restricted` — a chip per attached
+program and group using the shared group-chip palette.
 
 ## Tests
 
@@ -689,3 +718,13 @@ _Planned_ (#1419): ownership management / transfer UI.
   toggle gating (image results + handler only), image-only checkboxes,
   result-order payload, Clear/close reset, `useVisibleCollections` keeping
   non-editable rows, dialog plumbing with the multi-selected ids.
+- `frontend/tests/components/TransferCollectionDialog.test.tsx`,
+  `CollectionsPage.test.tsx`, `CollectionCard.test.tsx`,
+  `useCollectionsData.test.ts`, `api.test.ts`, `App.test.tsx` (#1419) —
+  admin user/program pick, instructor program narrowing, inactive-user and
+  unchanged-owner gating, orphaned hint, 403/409 inline errors; `canTransfer`
+  affordances on cards and the detail header, "Managed by program" hint,
+  restricted scope chips, admin orphan reassignment; the `transfer` hook's
+  version resolution (open detail vs fetched), mutation-queue serialization
+  behind a reorder, filtered-list removal, and error propagation; and the
+  `POST /transfer` request body.

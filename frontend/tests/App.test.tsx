@@ -547,42 +547,50 @@ vi.mock('../src/components/PeoplePage', () => ({
     <div data-testid="people-page" data-readonly={String(readOnly)} />
   ),
 }))
-vi.mock('../src/components/CollectionsPage', () => ({
-  default: ({
-    selectedCollectionId,
-    selectedCollectionItemId,
-    onOpenCollection,
-    onCloseCollection,
-    onOpenImage,
-    onSelectCollectionItem,
-  }: {
-    selectedCollectionId: number | null
-    selectedCollectionItemId: number | null
-    onOpenCollection: (id: number) => void
-    onCloseCollection: () => void
-    onOpenImage: (image: typeof mockImage) => void
-    onSelectCollectionItem: (imageId: number) => void
-  }) => (
-    <div
-      data-testid="collections-page"
-      data-selected={String(selectedCollectionId)}
-      data-item={String(selectedCollectionItemId)}
-    >
-      <button type="button" onClick={() => onOpenCollection(5)}>
-        Open collection 5
-      </button>
-      <button type="button" onClick={onCloseCollection}>
-        Close collection
-      </button>
-      <button type="button" onClick={() => onOpenImage(mockImage)}>
-        Open collection image
-      </button>
-      <button type="button" onClick={() => onSelectCollectionItem(99)}>
-        Select item 99
-      </button>
-    </div>
-  ),
+const collectionsPageProps = vi.hoisted(() => ({
+  current: null as Record<string, unknown> | null,
 }))
+vi.mock('../src/components/CollectionsPage', () => ({
+  default: (props: Record<string, unknown>) => {
+    collectionsPageProps.current = props
+    const {
+      selectedCollectionId,
+      selectedCollectionItemId,
+      onOpenCollection,
+      onCloseCollection,
+      onOpenImage,
+      onSelectCollectionItem,
+    } = props as {
+      selectedCollectionId: number | null
+      selectedCollectionItemId: number | null
+      onOpenCollection: (id: number) => void
+      onCloseCollection: () => void
+      onOpenImage: (image: typeof mockImage) => void
+      onSelectCollectionItem: (imageId: number) => void
+    }
+    return (
+      <div
+        data-testid="collections-page"
+        data-selected={String(selectedCollectionId)}
+        data-item={String(selectedCollectionItemId)}
+      >
+        <button type="button" onClick={() => onOpenCollection(5)}>
+          Open collection 5
+        </button>
+        <button type="button" onClick={onCloseCollection}>
+          Close collection
+        </button>
+        <button type="button" onClick={() => onOpenImage(mockImage)}>
+          Open collection image
+        </button>
+        <button type="button" onClick={() => onSelectCollectionItem(99)}>
+          Select item 99
+        </button>
+      </div>
+    )
+  },
+}))
+const collectionsDataMocks = vi.hoisted(() => ({ transfer: vi.fn() }))
 vi.mock('../src/useCollectionsData', () => ({
   useCollectionsData: () => ({
     collections: [],
@@ -600,6 +608,8 @@ vi.mock('../src/useCollectionsData', () => ({
     update: vi.fn(),
     remove: vi.fn(),
     reorderImages: vi.fn(),
+    saveViewport: vi.fn(),
+    transfer: collectionsDataMocks.transfer,
     renewCollectionImage: vi.fn(),
   }),
 }))
@@ -1827,6 +1837,19 @@ describe('App collections deep links (#1414)', () => {
     await renderWithCollectionsEnabled()
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '5')
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', '99')
+  })
+
+  it('forwards collection transfer calls to collectionsData.transfer (#1419)', async () => {
+    window.history.replaceState(null, '', '/?page=collections')
+    await renderWithCollectionsEnabled()
+    const onTransfer = collectionsPageProps.current?.onTransfer as (
+      id: number,
+      target: unknown,
+    ) => Promise<unknown>
+    await act(async () => {
+      await onTransfer(5, { programId: 2 })
+    })
+    expect(collectionsDataMocks.transfer).toHaveBeenCalledWith(5, { programId: 2 })
   })
 
   it('ignores ?item= without a collection param', async () => {

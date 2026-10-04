@@ -2,9 +2,14 @@
 
 ### Tabs by Role
 
-- **admin:** Home, Images, Manage, People, Admin
-- **instructor:** Home, Images, Manage
-- **student:** Home only
+- **admin:** Home, Collections, Images, Manage, People, Admin
+- **instructor:** Home, Collections, Images, Manage
+- **staff:** Home, Collections, People (read-only)
+- **student:** Home, Collections
+
+(Collections appears for every role when `COLLECTIONS_ENABLED=true` — the
+compose default. Staff get Images/Manage-level read access through
+visibility, not the Images/Manage tabs.)
 
 ### Browse (Home)
 

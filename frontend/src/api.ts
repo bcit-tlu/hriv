@@ -766,6 +766,20 @@ export function saveCollectionViewport(
 }
 
 /**
+ * Transfer ownership (#1419). Exactly one of `user_id` / `program_id` must be
+ * set (422 otherwise). Authorization lives on the server: admins may assign
+ * any user or program, instructors only programs they belong to (403).
+ */
+export function transferCollection(
+  id: number,
+  body:
+    | { user_id: number; program_id?: null; version: number }
+    | { program_id: number; user_id?: null; version: number },
+): Promise<ApiCollection> {
+  return request(`/collections/${id}/transfer`, { method: 'POST', body: JSON.stringify(body) })
+}
+
+/**
  * Extract the authoritative current collection from a 409 stale-version
  * ApiError (the backend puts the fresh `CollectionOut` in `detail`).
  */
