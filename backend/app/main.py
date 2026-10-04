@@ -103,6 +103,11 @@ async def _check_db_ready(timeout: float = 5.0) -> bool:
     while every new connection failed authentication (#1496). Establishing a
     new session per probe proves the app can still connect — the property
     Kubernetes readiness actually needs.
+
+    Scope note: this check deliberately does NOT reflect request-pool
+    saturation — an exhausted pool means the pod is busy, not broken, and
+    flapping readiness under load would cascade failures. Pool occupancy is
+    monitored via the ``hriv_db_pool_*`` metrics instead.
     """
     async def _roundtrip() -> None:
         engine = get_probe_engine()
