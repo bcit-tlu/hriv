@@ -5,11 +5,17 @@ import {
   deleteCollection,
   fetchCollection,
   fetchCollections,
+  replaceCollectionImages,
   updateCollection,
   userMessage,
+  type ApiImage,
   type CollectionFilters,
 } from './api'
-import { apiCollectionSummaryToSummary, apiCollectionToCollection } from './collectionUtils'
+import {
+  apiCollectionSummaryToSummary,
+  apiCollectionToCollection,
+  apiImageToItem,
+} from './collectionUtils'
 import type { CollectionFormValues } from './components/CollectionEditDialog'
 import type { Collection, CollectionOwner, CollectionSummary, CollectionType, User } from './types'
 
@@ -174,6 +180,10 @@ export function useCollectionsData({
   const [detail, setDetail] = useState<Collection | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
+  const detailRef = useRef<Collection | null>(null)
+  useEffect(() => {
+    detailRef.current = detail
+  }, [detail])
   const loadSeq = useRef(0)
   // The user whose rows are in `collections`; another account starts empty
   // even if its own first load fails.
@@ -314,6 +324,63 @@ export function useCollectionsData({
     void latest.current.load()
   }, [])
 
+  /**
+   * Reorder the open collection's images (#1416 sequence viewer). Applies the
+   * new order optimistically to `detail`, persists with the whole-replace
+   * `PUT …/images` carrying the loaded `version`, and rolls `detail` back on
+   * error so the caller can surface the message. Members the caller cannot
+   * see are kept at the end (the backend carries them over, matching the
+   * visible-only submit list).
+   */
+  const reorderImages = useCallback(async (id: number, imageIds: number[]): Promise<Collection> => {
+    const baseline = detailRef.current
+    if (!baseline || baseline.id !== id) {
+      throw new Error('The collection is not loaded.')
+    }
+    const byId = new Map(baseline.images.map((img) => [img.id, img] as const))
+    const optimisticImages = [
+      ...imageIds
+        .map((imageId) => byId.get(imageId))
+        .filter((img): img is NonNullable<typeof img> => img != null),
+      ...baseline.images.filter((img) => !imageIds.includes(img.id)),
+    ]
+    setDetail({ ...baseline, images: optimisticImages })
+    try {
+      const updated = apiCollectionToCollection(
+        await replaceCollectionImages(id, {
+          image_ids: imageIds,
+          version: baseline.version,
+        }),
+      )
+      setDetail((prev) => (prev?.id === id ? updated : prev))
+      setCollections((prev) => {
+        const rest = prev.filter((c) => c.id !== id)
+        return matchesCollectionFilters(updated, latest.current.filters, latest.current.currentUser)
+          ? [updated, ...rest]
+          : rest
+      })
+      void latest.current.load()
+      return updated
+    } catch (err) {
+      setDetail((prev) => (prev?.id === id ? baseline : prev))
+      throw err
+    }
+  }, [])
+
+  /**
+   * Refresh a member's tokenized tile/thumb URLs inside the open collection
+   * after the viewer's tile-token renewal (#1416), so a later remount does
+   * not start from an expired source.
+   */
+  const renewCollectionImage = useCallback((collectionId: number, image: ApiImage) => {
+    const fresh = apiImageToItem(image)
+    setDetail((prev) =>
+      prev?.id === collectionId
+        ? { ...prev, images: prev.images.map((img) => (img.id === fresh.id ? fresh : img)) }
+        : prev,
+    )
+  }, [])
+
   return {
     collections,
     loading,
@@ -329,5 +396,7 @@ export function useCollectionsData({
     create,
     update,
     remove,
+    reorderImages,
+    renewCollectionImage,
   }
 }

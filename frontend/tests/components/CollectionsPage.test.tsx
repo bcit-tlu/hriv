@@ -15,6 +15,16 @@ vi.mock('../../src/api', async (importOriginal) => {
   return { ...actual, fetchCollection: vi.fn(), fetchImage: vi.fn() }
 })
 
+// Sequence detail mounts the real OpenSeadragon viewer, which jsdom cannot
+// run; stub the component and record its props so page wiring is assertable.
+const sequenceViewerProps: { current: Record<string, unknown> | null } = { current: null }
+vi.mock('../../src/components/SequenceCollectionViewer', () => ({
+  default: (props: Record<string, unknown>) => {
+    sequenceViewerProps.current = props
+    return <div data-testid="sequence-collection-viewer" />
+  },
+}))
+
 const ADMIN: User = {
   id: 1,
   name: 'Admin',
@@ -67,6 +77,11 @@ function makeProps(overrides: Partial<CollectionsPageProps> = {}): CollectionsPa
     onOpenCollection: vi.fn(),
     onCloseCollection: vi.fn(),
     onOpenImage: vi.fn(),
+    selectedCollectionItemId: null,
+    onSelectCollectionItem: vi.fn(),
+    onReorderImages: vi.fn().mockResolvedValue(undefined),
+    onCollectionImageRenewed: vi.fn(),
+    onViewerError: vi.fn(),
     loadCollection: vi.fn().mockResolvedValue(makeCollection()),
     onCreate: vi.fn().mockResolvedValue(undefined),
     onUpdate: vi.fn().mockResolvedValue(undefined),
@@ -86,7 +101,10 @@ function renderPage(overrides: Partial<CollectionsPageProps> = {}) {
 }
 
 describe('CollectionsPage', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    sequenceViewerProps.current = null
+  })
 
   describe('list states', () => {
     it('shows a spinner while loading an empty list', () => {
@@ -389,30 +407,76 @@ describe('CollectionsPage', () => {
       expect(onCloseCollection).toHaveBeenCalled()
     })
 
-    it.each(['synchronized', 'sequence'] as const)(
-      'lists ordered members with Open image links for a %s collection',
-      (type) => {
-        const onOpenImage = vi.fn()
-        const images = [
-          makeImage({ id: 21, name: 'Frontal' }),
-          makeImage({ id: 22, name: 'Lateral' }),
-        ]
-        const detail = makeCollection({ id: 9, type, images, description: 'Two views' })
-        renderPage({ selectedCollectionId: 9, detail, onOpenImage })
+    it('lists ordered members with Open image links for a synchronized collection', () => {
+      const onOpenImage = vi.fn()
+      const images = [
+        makeImage({ id: 21, name: 'Frontal' }),
+        makeImage({ id: 22, name: 'Lateral' }),
+      ]
+      const detail = makeCollection({
+        id: 9,
+        type: 'synchronized',
+        images,
+        description: 'Two views',
+      })
+      renderPage({ selectedCollectionId: 9, detail, onOpenImage })
 
-        expect(screen.getByTestId('collection-detail')).toBeInTheDocument()
-        expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Skull comparison')
-        expect(screen.getByText('Two views')).toBeInTheDocument()
-        expect(screen.getByRole('alert')).toHaveTextContent(`The ${type} viewer is coming soon`)
-        expect(screen.getByText('1. Frontal')).toBeInTheDocument()
-        expect(screen.getByText('2. Lateral')).toBeInTheDocument()
+      expect(screen.getByTestId('collection-detail')).toBeInTheDocument()
+      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Skull comparison')
+      expect(screen.getByText('Two views')).toBeInTheDocument()
+      expect(screen.getByRole('alert')).toHaveTextContent('The synchronized viewer is coming soon')
+      expect(screen.getByText('1. Frontal')).toBeInTheDocument()
+      expect(screen.getByText('2. Lateral')).toBeInTheDocument()
 
-        const links = screen.getAllByRole('link', { name: 'Open image' })
-        expect(links.map((l) => l.getAttribute('href'))).toEqual(['?image=21', '?image=22'])
-        fireEvent.click(links[1])
-        expect(onOpenImage).toHaveBeenCalledWith(images[1])
-      },
-    )
+      const links = screen.getAllByRole('link', { name: 'Open image' })
+      expect(links.map((l) => l.getAttribute('href'))).toEqual(['?image=21', '?image=22'])
+      fireEvent.click(links[1])
+      expect(onOpenImage).toHaveBeenCalledWith(images[1])
+    })
+
+    it('mounts the sequence viewer with the header and wired callbacks (#1416)', () => {
+      const onOpenImage = vi.fn()
+      const onSelectCollectionItem = vi.fn()
+      const onReorderImages = vi.fn().mockResolvedValue(undefined)
+      const onCollectionImageRenewed = vi.fn()
+      const onViewerError = vi.fn()
+      const images = [
+        makeImage({ id: 21, name: 'Frontal' }),
+        makeImage({ id: 22, name: 'Lateral' }),
+      ]
+      const detail = makeCollection({ id: 9, type: 'sequence', images, description: 'Two views' })
+      renderPage({
+        selectedCollectionId: 9,
+        detail,
+        onOpenImage,
+        selectedCollectionItemId: 22,
+        onSelectCollectionItem,
+        onReorderImages,
+        onCollectionImageRenewed,
+        onViewerError,
+      })
+
+      expect(screen.getByTestId('collection-detail')).toBeInTheDocument()
+      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Skull comparison')
+      expect(screen.getByText('Two views')).toBeInTheDocument()
+      expect(screen.getByTestId('sequence-collection-viewer')).toBeInTheDocument()
+      // The member list / coming-soon alert only remain for synchronized.
+      expect(screen.queryByText('1. Frontal')).not.toBeInTheDocument()
+
+      const props = sequenceViewerProps.current!
+      expect(props.collection).toBe(detail)
+      expect(props.itemId).toBe(22)
+      ;(props.onSelectItem as (id: number) => void)(21)
+      expect(onSelectCollectionItem).toHaveBeenCalledWith(21)
+      ;(props.onOpenImage as (img: unknown) => void)(images[0])
+      expect(onOpenImage).toHaveBeenCalledWith(images[0])
+      void (props.onReorder as (ids: number[]) => Promise<unknown>)([22, 21])
+      expect(onReorderImages).toHaveBeenCalledWith(9, [22, 21])
+      ;(props.onImageRenewed as (img: unknown) => void)({ id: 21 })
+      expect(onCollectionImageRenewed).toHaveBeenCalledWith(9, { id: 21 })
+      ;(props.onError as (m: string) => void)('boom')
+      expect(onViewerError).toHaveBeenCalledWith('boom')
+    })
 
     it('explains when a collection has no images yet', () => {
       renderPage({ selectedCollectionId: 9, detail: makeCollection({ id: 9, images: [] }) })

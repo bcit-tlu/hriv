@@ -398,6 +398,36 @@ describe('useShareableImageState', () => {
       expect(url).not.toContain('collection=')
     })
 
+    it('writes &item={id} for the open sequence position (#1416)', () => {
+      renderHook(() =>
+        useShareableImageState(
+          makeDeps({ page: 'collections', collectionId: 12, collectionItemId: 99 }),
+        ),
+      )
+      const url = replaceStateSpy.mock.calls[replaceStateSpy.mock.calls.length - 1][2] as string
+      expect(url).toBe('/?collection=12&item=99')
+    })
+
+    it('omits &item= while no sequence position is selected', () => {
+      renderHook(() =>
+        useShareableImageState(
+          makeDeps({ page: 'collections', collectionId: 12, collectionItemId: null }),
+        ),
+      )
+      const url = replaceStateSpy.mock.calls[replaceStateSpy.mock.calls.length - 1][2] as string
+      expect(url).toBe('/?collection=12')
+    })
+
+    it('does not leak &item= outside an open collection', () => {
+      renderHook(() =>
+        useShareableImageState(
+          makeDeps({ page: 'collections', collectionId: null, collectionItemId: 99 }),
+        ),
+      )
+      const url = replaceStateSpy.mock.calls[replaceStateSpy.mock.calls.length - 1][2] as string
+      expect(url).not.toContain('item=')
+    })
+
     it('skips URL sync when enableUrlSync is false', () => {
       const callsBefore = replaceStateSpy.mock.calls.length
       const img = makeImage({ id: 42 })

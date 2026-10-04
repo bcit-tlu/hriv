@@ -23,6 +23,7 @@ vi.mock('../src/api', async (importOriginal) => {
     createCollection: vi.fn(),
     updateCollection: vi.fn(),
     deleteCollection: vi.fn(),
+    replaceCollectionImages: vi.fn(),
   }
 })
 
@@ -31,6 +32,7 @@ import {
   deleteCollection,
   fetchCollection,
   fetchCollections,
+  replaceCollectionImages,
   updateCollection,
 } from '../src/api'
 
@@ -39,6 +41,7 @@ const fetchCollectionMock = vi.mocked(fetchCollection)
 const createCollectionMock = vi.mocked(createCollection)
 const updateCollectionMock = vi.mocked(updateCollection)
 const deleteCollectionMock = vi.mocked(deleteCollection)
+const replaceCollectionImagesMock = vi.mocked(replaceCollectionImages)
 
 function makeUser(overrides: Partial<User> = {}): User {
   return {
@@ -672,6 +675,96 @@ describe('useCollectionsData', () => {
       expect(result.current.collections.map((c) => c.id)).toEqual([2])
       expect(result.current.detail).toBeNull()
       await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(2))
+    })
+
+    it('reorderImages applies the order optimistically and sends the whole list (#1416)', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1 })])
+      fetchCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({
+          id: 1,
+          version: 5,
+          images: [
+            { id: 10, name: 'A' },
+            { id: 11, name: 'B' },
+            { id: 12, name: 'C' },
+          ] as never,
+        }),
+      )
+      replaceCollectionImagesMock.mockResolvedValueOnce(
+        makeApiCollection({
+          id: 1,
+          version: 6,
+          images: [{ id: 12 }, { id: 10 }, { id: 11 }] as never,
+        }),
+      )
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() =>
+        expect(result.current.detail?.images.map((i) => i.id)).toEqual([10, 11, 12]),
+      )
+
+      let reorderPromise!: Promise<unknown>
+      act(() => {
+        reorderPromise = result.current.reorderImages(1, [12, 10, 11])
+      })
+      // Optimistic order is visible before the PUT resolves.
+      expect(result.current.detail?.images.map((i) => i.id)).toEqual([12, 10, 11])
+      await act(async () => {
+        await reorderPromise
+      })
+      expect(replaceCollectionImagesMock).toHaveBeenCalledWith(1, {
+        image_ids: [12, 10, 11],
+        version: 5,
+      })
+      expect(result.current.detail?.images.map((i) => i.id)).toEqual([12, 10, 11])
+      expect(result.current.detail?.version).toBe(6)
+    })
+
+    it('reorderImages rolls detail back and propagates API errors', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1 })])
+      fetchCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({
+          id: 1,
+          version: 5,
+          images: [{ id: 10 }, { id: 11 }] as never,
+        }),
+      )
+      replaceCollectionImagesMock.mockRejectedValueOnce(new ApiError(409, 'Stale'))
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.images.map((i) => i.id)).toEqual([10, 11]))
+
+      await expect(result.current.reorderImages(1, [11, 10])).rejects.toBeInstanceOf(ApiError)
+      expect(result.current.detail?.images.map((i) => i.id)).toEqual([10, 11])
+    })
+
+    it('reorderImages refuses to run before the detail has loaded', async () => {
+      const { result } = renderData()
+      await expect(result.current.reorderImages(1, [1])).rejects.toThrow(
+        'The collection is not loaded.',
+      )
+      expect(replaceCollectionImagesMock).not.toHaveBeenCalled()
+    })
+
+    it('renewCollectionImage swaps the member record inside detail', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1 })])
+      fetchCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, images: [{ id: 10 }, { id: 11 }] as never }),
+      )
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.images).toHaveLength(2))
+
+      act(() => {
+        result.current.renewCollectionImage(1, {
+          id: 11,
+          name: 'Renewed',
+          thumb: '/thumbs/new.jpg?token=x',
+          tile_sources: '/tiles/new.dzi?token=x',
+        } as never)
+      })
+      const renewed = result.current.detail?.images.find((i) => i.id === 11)
+      expect(renewed?.name).toBe('Renewed')
+      expect(renewed?.thumb).toContain('token=x')
+      // Other members untouched.
+      expect(result.current.detail?.images[0].id).toBe(10)
     })
   })
 })

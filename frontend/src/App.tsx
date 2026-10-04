@@ -63,7 +63,11 @@ import {
   updateImageInTree,
 } from './treeUtils'
 import UploadImageModal from './components/UploadImageModal'
-import { SYNCHRONIZED_MAX_IMAGES, parseCollectionIdParam } from './collectionUtils'
+import {
+  SYNCHRONIZED_MAX_IMAGES,
+  parseCollectionIdParam,
+  parseCollectionItemParam,
+} from './collectionUtils'
 import { useCollectionsData } from './useCollectionsData'
 import {
   addImagesToCollection,
@@ -166,9 +170,13 @@ export default function App() {
   const features = useFeatures()
   const collectionsEnabled = features?.collections === true
 
-  // `?collection={id}` implies the Collections page (deep link, #1414).
+  // `?collection={id}` implies the Collections page (deep link, #1414);
+  // `&item={image_id}` is the sequence viewer position (#1416).
   const [selectedCollectionId, setSelectedCollectionId] = useState<number | null>(() =>
     parseCollectionIdParam(window.location.search),
+  )
+  const [selectedCollectionItemId, setSelectedCollectionItemId] = useState<number | null>(() =>
+    parseCollectionItemParam(window.location.search),
   )
   const [page, setPage] = useState<Page>(() => {
     if (parseCollectionIdParam(window.location.search) != null) return 'collections'
@@ -554,6 +562,7 @@ export default function App() {
     page,
     path,
     collectionId: selectedCollectionId,
+    collectionItemId: selectedCollectionItemId,
     setPath,
     setSelectedImage,
   })
@@ -646,9 +655,13 @@ export default function App() {
       ) as Page
       setPage(validPage)
       // The collection id lives in the URL (`?collection=`), which the browser
-      // has already restored by the time popstate fires.
+      // has already restored by the time popstate fires. `?item=` (sequence
+      // position) is restored the same way.
       setSelectedCollectionId(
         validPage === 'collections' ? parseCollectionIdParam(window.location.search) : null,
+      )
+      setSelectedCollectionItemId(
+        validPage === 'collections' ? parseCollectionItemParam(window.location.search) : null,
       )
 
       if (validPage !== 'browse') {
@@ -1493,6 +1506,7 @@ export default function App() {
       runCanvasNavigation(() => {
         setPage('collections')
         setSelectedCollectionId(id)
+        setSelectedCollectionItemId(null)
         clearImage()
         setPath([])
         pushNavState('collections', [], null, { collection: String(id) })
@@ -1503,8 +1517,39 @@ export default function App() {
 
   const handleCloseCollection = useCallback(() => {
     setSelectedCollectionId(null)
+    setSelectedCollectionItemId(null)
     pushNavState('collections')
   }, [pushNavState])
+
+  // Sequence viewer: `?collection={id}&item={image_id}` keeps the position
+  // shareable and in history, so back steps through viewed items (#1416).
+  const handleSelectCollectionItem = useCallback(
+    (imageId: number) => {
+      setSelectedCollectionItemId(imageId)
+      if (selectedCollectionId != null) {
+        pushNavState('collections', [], null, {
+          collection: String(selectedCollectionId),
+          item: String(imageId),
+        })
+      }
+    },
+    [pushNavState, selectedCollectionId],
+  )
+
+  // Drop an `?item=` that does not resolve to a visible member (deleted image,
+  // or one hidden from this user); the URL sync effect then silently rewrites
+  // the link to the bare `?collection={id}`.
+  useEffect(() => {
+    const detail = collectionsData.detail
+    if (
+      detail == null ||
+      selectedCollectionItemId == null ||
+      detail.images.some((img) => img.id === selectedCollectionItemId)
+    ) {
+      return
+    }
+    setSelectedCollectionItemId(null)
+  }, [collectionsData.detail, selectedCollectionItemId])
 
   // "Add to Collection" from the image view (#1415).
   const [addToCollectionOpen, setAddToCollectionOpen] = useState(false)
@@ -1687,6 +1732,11 @@ export default function App() {
               onOpenCollection={handleOpenCollection}
               onCloseCollection={handleCloseCollection}
               onOpenImage={handleOpenCollectionImage}
+              selectedCollectionItemId={selectedCollectionItemId}
+              onSelectCollectionItem={handleSelectCollectionItem}
+              onReorderImages={collectionsData.reorderImages}
+              onCollectionImageRenewed={collectionsData.renewCollectionImage}
+              onViewerError={setErrorSnack}
               loadCollection={collectionsData.loadCollection}
               onCreate={collectionsData.create}
               onUpdate={collectionsData.update}

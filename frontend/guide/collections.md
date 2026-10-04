@@ -18,11 +18,27 @@ been switched on there — ask your administrator.)
 You choose the type when you create a collection and can't change it later —
 create a new collection instead.
 
-::: note Viewers are on the way
-For now, opening a collection lists its images with an **Open image** link
-for each. The side-by-side and step-through viewers are coming in a later
-release.
+::: note Synchronized viewer is on the way
+Sequence collections already open in a step-through viewer (below).
+Synchronized collections still list their images with an **Open image**
+link for each — the side-by-side viewer is coming in a later release.
 :::
+
+## Viewing a sequence collection
+
+Open a sequence collection and you get a read-only viewer that shows one
+image at a time — annotations and measurement markings on each image are
+visible but can't be changed here.
+
+- Step through with **Previous** / **Next**, click a thumbnail in the strip
+  below the viewer, or press the ← and → arrow keys.
+- The position (`n of N`) is part of the page link, so copying the URL
+  shares the exact image you're looking at.
+- **Open image** jumps to the normal image view, where you can edit
+  annotations with the usual permissions.
+- If you can edit the collection, a **Reorder** button turns the thumbnail
+  strip into a drag-and-drop list; drag images into place and choose
+  **Done**.
 
 ## Create a collection
 

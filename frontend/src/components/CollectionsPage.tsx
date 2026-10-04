@@ -27,7 +27,7 @@ import CollectionsIcon from '@mui/icons-material/Collections'
 import DeleteIcon from '@mui/icons-material/Delete'
 import EditIcon from '@mui/icons-material/Edit'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
-import { userMessage } from '../api'
+import { userMessage, type ApiImage } from '../api'
 import {
   COLLECTION_TYPE_LABELS,
   COLLECTION_VISIBILITY_LABELS,
@@ -47,6 +47,7 @@ import type {
 import CollectionCard, { CollectionVisibilityChip } from './CollectionCard'
 import CollectionEditDialog, { type CollectionFormValues } from './CollectionEditDialog'
 import RenewingThumbnail from './RenewingThumbnail'
+import SequenceCollectionViewer from './SequenceCollectionViewer'
 
 export interface CollectionsPageProps {
   currentUser: User | null
@@ -67,6 +68,12 @@ export interface CollectionsPageProps {
   onOpenCollection: (id: number) => void
   onCloseCollection: () => void
   onOpenImage: (image: ImageItem) => void
+  /** Sequence viewer state (`?item=` position) and mutations (#1416). */
+  selectedCollectionItemId: number | null
+  onSelectCollectionItem: (imageId: number) => void
+  onReorderImages: (id: number, imageIds: number[]) => Promise<unknown>
+  onCollectionImageRenewed: (collectionId: number, image: ApiImage) => void
+  onViewerError: (message: string) => void
   /** Mutations — reject with an ApiError to surface the message in the dialog. */
   loadCollection: (id: number) => Promise<Collection>
   onCreate: (values: CollectionFormValues) => Promise<unknown>
@@ -84,21 +91,20 @@ function ownerFilterKey(owner: CollectionOwnerFilter): string {
   return owner.kind === 'user' ? `u${owner.userId}` : `p${owner.programId}`
 }
 
-function CollectionDetailPlaceholder({
+/** Shared header for the collection detail views (placeholder + viewers). */
+function CollectionDetailHeader({
   collection,
   onBack,
-  onOpenImage,
   onEdit,
   onDelete,
 }: {
   collection: Collection
   onBack: () => void
-  onOpenImage: (image: ImageItem) => void
   onEdit?: () => void
   onDelete?: () => void
 }) {
   return (
-    <Box data-testid="collection-detail">
+    <>
       <Button startIcon={<ArrowBackIcon />} onClick={onBack} sx={{ mb: 1 }}>
         All collections
       </Button>
@@ -153,6 +159,31 @@ function CollectionDetailPlaceholder({
           )}
         </Box>
       </Box>
+    </>
+  )
+}
+
+function CollectionDetailPlaceholder({
+  collection,
+  onBack,
+  onOpenImage,
+  onEdit,
+  onDelete,
+}: {
+  collection: Collection
+  onBack: () => void
+  onOpenImage: (image: ImageItem) => void
+  onEdit?: () => void
+  onDelete?: () => void
+}) {
+  return (
+    <Box data-testid="collection-detail">
+      <CollectionDetailHeader
+        collection={collection}
+        onBack={onBack}
+        onEdit={onEdit}
+        onDelete={onDelete}
+      />
 
       <Alert severity="info" sx={{ mt: 3 }}>
         The {COLLECTION_TYPE_LABELS[collection.type].toLowerCase()} viewer is coming soon. Until
@@ -216,6 +247,11 @@ export default function CollectionsPage({
   onOpenCollection,
   onCloseCollection,
   onOpenImage,
+  selectedCollectionItemId,
+  onSelectCollectionItem,
+  onReorderImages,
+  onCollectionImageRenewed,
+  onViewerError,
   loadCollection,
   onCreate,
   onUpdate,
@@ -325,6 +361,26 @@ export default function CollectionsPage({
           >
             {detailError}
           </Alert>
+        </Box>
+      )
+    } else if (detail && detail.type === 'sequence') {
+      body = (
+        <Box data-testid="collection-detail">
+          <CollectionDetailHeader
+            collection={detail}
+            onBack={onCloseCollection}
+            onEdit={() => void openEdit(detail)}
+            onDelete={() => requestDelete(detail)}
+          />
+          <SequenceCollectionViewer
+            collection={detail}
+            itemId={selectedCollectionItemId}
+            onSelectItem={onSelectCollectionItem}
+            onOpenImage={onOpenImage}
+            onReorder={(imageIds) => onReorderImages(detail.id, imageIds)}
+            onImageRenewed={(image) => onCollectionImageRenewed(detail.id, image)}
+            onError={onViewerError}
+          />
         </Box>
       )
     } else if (detail) {
