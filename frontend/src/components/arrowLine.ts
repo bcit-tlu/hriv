@@ -65,6 +65,8 @@ type ArrowAnnotatedObject = fabric.FabricObject & {
   _arrowStyle?: ArrowStyle
 }
 
+type TransformedDimensionsOptions = Parameters<fabric.Line['_getTransformedDimensions']>[0]
+
 /**
  * Line that renders its arrowhead on the fabric edit canvas, matching the
  * view-mode canvas rendering. Caching is disabled by the creation sites so
@@ -92,23 +94,15 @@ export class ArrowLine extends fabric.Line {
   }
 
   /**
-   * The arrowhead is drawn up to headLen past the head endpoint and off the
-   * line's axis, so the line's own extents under-cover the rendered ink and
-   * the selection box is too small to grab (#1363). Inflating the object
-   * dimensions here flows through fabric's calcACoords / getBoundingRect /
-   * _calculateCurrentDimensions, keeping the selection outline, corner
-   * handles, and hit-testing consistent. Rendering uses the un-inflated
-   * width/height fields, so the drawn geometry does not move.
+   * Line dims inflated by the arrowhead extent on every side. Only the
+   * selection-box / hit-test pipeline (calcACoords → getCoords →
+   * containsPoint, and the controls box via _calculateCurrentDimensions)
+   * uses this. `_getTransformedDimensions` itself stays untouched: the
+   * left/top ↔ centre math and arrow serialisation must keep using the
+   * shaft's real extents so the glyph does not shift when edit mode
+   * opens or saves (#1363).
    */
-  override _getTransformedDimensions(options?: {
-    scaleX?: number
-    scaleY?: number
-    skewX?: number
-    skewY?: number
-    width?: number
-    height?: number
-    strokeWidth?: number
-  }) {
+  private _paddedTransformedDimensions(options?: TransformedDimensionsOptions) {
     const style = (this as ArrowAnnotatedObject)._arrowStyle ?? 'standard'
     if (style === 'none') return super._getTransformedDimensions(options)
     const pad = arrowHeadLength(options?.strokeWidth ?? this.strokeWidth ?? 1)
@@ -117,5 +111,44 @@ export class ArrowLine extends fabric.Line {
       width: (options?.width ?? this.width) + pad * 2,
       height: (options?.height ?? this.height) + pad * 2,
     })
+  }
+
+  /**
+   * Corner coords for hit-testing and bounding rects — the same geometry as
+   * the base implementation but sized by the padded dims, centred on the
+   * un-inflated centre so the box grows around the painted arrow.
+   */
+  override calcACoords(): ReturnType<fabric.Line['calcACoords']> {
+    const rotateMatrix = fabric.util.createRotateMatrix({ angle: this.angle })
+    const { x, y } = this.getRelativeCenterPoint()
+    const finalMatrix = fabric.util.multiplyTransformMatrices(
+      fabric.util.createTranslateMatrix(x, y),
+      rotateMatrix,
+    )
+    const dim = this._paddedTransformedDimensions()
+    const w = dim.x / 2
+    const h = dim.y / 2
+    return {
+      tl: fabric.util.transformPoint(new fabric.Point(-w, -h), finalMatrix),
+      tr: fabric.util.transformPoint(new fabric.Point(w, -h), finalMatrix),
+      br: fabric.util.transformPoint(new fabric.Point(w, h), finalMatrix),
+      bl: fabric.util.transformPoint(new fabric.Point(-w, h), finalMatrix),
+    }
+  }
+
+  /**
+   * Control-box dims (selection border + handle positions), same formula as
+   * the base implementation over the padded dims so the drawn selection box
+   * matches the inflated hit area.
+   */
+  override _calculateCurrentDimensions(options?: TransformedDimensionsOptions) {
+    const vpt = this.canvas?.viewportTransform
+    const dim = this._paddedTransformedDimensions(options)
+    if (vpt) {
+      return dim
+        .multiply(new fabric.Point(Math.hypot(vpt[0], vpt[1]), Math.hypot(vpt[2], vpt[3])))
+        .scalarAdd(2 * this.padding)
+    }
+    return dim.scalarAdd(2 * this.padding)
   }
 }

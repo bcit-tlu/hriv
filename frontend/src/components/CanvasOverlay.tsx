@@ -196,9 +196,16 @@ function annotationObjectDimensions(obj: fabric.FabricObject): { width: number; 
       Math.abs(((obj.x2 ?? 0) - (obj.x1 ?? 0)) * scaleX) || Math.abs((obj.width ?? 0) * scaleX)
     const lineHeight =
       Math.abs(((obj.y2 ?? 0) - (obj.y1 ?? 0)) * scaleY) || Math.abs((obj.height ?? 0) * scaleY)
+    // Arrows paint a head past the shaft's extents; grow the guide by the
+    // same amount the selection box grows so the dashed box wraps the whole
+    // glyph (#1363).
+    const headPad =
+      obj instanceof ArrowLine && (obj as AnnotatedObject)._arrowStyle !== 'none'
+        ? arrowHeadLength(obj.strokeWidth ?? 1) * 2
+        : 0
     return {
-      width: Math.max(1, lineWidth),
-      height: Math.max(1, lineHeight),
+      width: Math.max(1, lineWidth + headPad * scaleX),
+      height: Math.max(1, lineHeight + headPad * scaleY),
     }
   }
 

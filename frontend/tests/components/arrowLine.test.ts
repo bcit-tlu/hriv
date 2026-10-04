@@ -73,6 +73,54 @@ describe('ArrowLine bounding box', () => {
     expect(rect.height).toBeGreaterThanOrEqual(arrowHeadLength(2) * 2)
   })
 
+  it('keeps left/top and centre identical to a plain line', () => {
+    // The arrowhead padding must not shift the shaft's placement (#1363):
+    // left/top-pinning and the centre math use the un-inflated dims.
+    const arrow = new ArrowLine([0, 0, 100, 0], {
+      left: 10,
+      top: 20,
+      originX: 'left',
+      originY: 'top',
+      stroke: '#000000',
+      strokeWidth: 2,
+    })
+    const plain = new Line([0, 0, 100, 0], {
+      left: 10,
+      top: 20,
+      originX: 'left',
+      originY: 'top',
+      stroke: '#000000',
+      strokeWidth: 2,
+    })
+    ;(arrow as { _arrowStyle?: string })._arrowStyle = 'standard'
+
+    expect(arrow.left).toBe(plain.left)
+    expect(arrow.top).toBe(plain.top)
+    expect(arrow.getRelativeCenterPoint().x).toBe(plain.getRelativeCenterPoint().x)
+    expect(arrow.getRelativeCenterPoint().y).toBe(plain.getRelativeCenterPoint().y)
+  })
+
+  it('keeps shaft placement consistent after endpoint updates', () => {
+    const options = {
+      left: 10,
+      top: 20,
+      originX: 'left' as const,
+      originY: 'top' as const,
+      strokeWidth: 2,
+    }
+    const arrow = new ArrowLine([0, 0, 100, 0], options)
+    const plain = new Line([0, 0, 100, 0], options)
+    ;(arrow as { _arrowStyle?: string })._arrowStyle = 'standard'
+
+    arrow.set({ x2: 200, y2: 40 })
+    plain.set({ x2: 200, y2: 40 })
+
+    expect(arrow.left).toBeCloseTo(plain.left)
+    expect(arrow.top).toBeCloseTo(plain.top)
+    expect(arrow.width).toBe(plain.width)
+    expect(arrow.height).toBe(plain.height)
+  })
+
   it('covers a rotated arrow', () => {
     const arrow = new ArrowLine([0, 0, 100, 0], {
       stroke: '#000000',
