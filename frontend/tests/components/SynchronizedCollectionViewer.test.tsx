@@ -464,7 +464,14 @@ describe('SynchronizedCollectionViewer', () => {
   })
 
   it('keeps the replacement pair linked and saveable after the first member fails', async () => {
-    const collection = syncCollection({ images: images(3) })
+    const meta101 = { locked_overlays: [{ x: 0.1, y: 0.2, w: 0.3, h: 0.4 }] }
+    const collection = syncCollection({
+      images: [
+        makeImage({ id: 100, name: 'Slice 1', sortOrder: 0 }),
+        makeImage({ id: 101, name: 'Slice 2', sortOrder: 1, metadataExtra: meta101 }),
+        makeImage({ id: 102, name: 'Slice 3', sortOrder: 2 }),
+      ],
+    })
     const { b } = openPair()
     const c = makeFakeViewer({ zoom: 1, x: 0.5, y: 0.5, rotation: 0 })
     mockState.fakes.set(102, c.viewer)
@@ -473,6 +480,10 @@ describe('SynchronizedCollectionViewer', () => {
       mockState.fakes.get(100)!.open()
       b.viewer.open()
     })
+    act(() => {
+      b.viewer.viewport!.panTo({ x: 0.8, y: 0.8 })
+    })
+    const overlaysBefore = mockState.lastProps.get(101)!.initialOverlays
     // First member's tiles fail: the pair slides to (101, 102) without
     // remounting the surviving viewer.
     act(() => {
@@ -481,27 +492,32 @@ describe('SynchronizedCollectionViewer', () => {
     expect(
       screen.getAllByTestId('image-viewer').map((v) => v.getAttribute('data-image-id')),
     ).toEqual(['101', '102'])
+    // The surviving pane keeps its unsaved navigation and a stable
+    // initialOverlays identity — either would remount the viewer otherwise.
+    expect(b.state.x).toBeCloseTo(0.8)
+    expect(mockState.lastProps.get(101)!.initialOverlays).toBe(overlaysBefore)
     act(() => {
       c.viewer.open()
     })
-    // Mirroring works in both directions on the new pair.
+    // Mirroring works in both directions on the new pair. The offset armed
+    // when 102 opened as b(0.8) - c(0.5) = -0.3, so it is kept on both writes.
     act(() => {
-      b.viewer.viewport!.panTo({ x: 0.8, y: 0.8 })
+      b.viewer.viewport!.panTo({ x: 0.7, y: 0.7 })
     })
-    expect(c.state.x).toBeCloseTo(0.8)
-    expect(c.state.y).toBeCloseTo(0.8)
+    expect(c.state.x).toBeCloseTo(0.4)
+    expect(c.state.y).toBeCloseTo(0.4)
     act(() => {
       c.viewer.viewport!.panTo({ x: 0.3, y: 0.3 })
     })
-    expect(b.state.x).toBeCloseTo(0.3)
-    expect(b.state.y).toBeCloseTo(0.3)
+    expect(b.state.x).toBeCloseTo(0.6)
+    expect(b.state.y).toBeCloseTo(0.6)
     // Save view persists the replacement pair's viewports.
     await act(async () => {
       fireEvent.click(screen.getByTestId('synchronized-save'))
     })
     await vi.waitFor(() =>
       expect(props.onSaveViewport).toHaveBeenCalledWith({
-        '101': { zoom: 1, x: expect.closeTo(0.3), y: expect.closeTo(0.3), rotation: 0 },
+        '101': { zoom: 1, x: expect.closeTo(0.6), y: expect.closeTo(0.6), rotation: 0 },
         '102': { zoom: 1, x: 0.3, y: 0.3, rotation: 0 },
       }),
     )

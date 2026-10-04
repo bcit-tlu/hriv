@@ -25,7 +25,6 @@ import {
   canvasAnnotationsFromMetadata,
   lockedOverlaysFromMetadata,
   measurementFromMetadata,
-  useStableJson,
   viewportStateFromSaved,
   type MeasurementConfig,
   type OverlayRect,
@@ -164,45 +163,6 @@ export default function SynchronizedCollectionViewer({
   const slotAId = slotA?.id
   const slotBId = slotB?.id
 
-  // Memoized per-image viewer props keyed on serialized content — a fresh
-  // array/object identity would re-run ImageViewer's mount effect (it deps on
-  // `initialOverlays`/`initialViewport`) and destroy the OSD viewer on any
-  // unrelated collection update (tile renewal, save response, edits).
-  const overlaysA = useStableJson(
-    slotA ? JSON.stringify(slotA.metadataExtra?.locked_overlays ?? null) : '',
-    () => lockedOverlaysFromMetadata(slotA?.metadataExtra),
-  )
-  const overlaysB = useStableJson(
-    slotB ? JSON.stringify(slotB.metadataExtra?.locked_overlays ?? null) : '',
-    () => lockedOverlaysFromMetadata(slotB?.metadataExtra),
-  )
-  const annotationsA = useStableJson(
-    slotA ? JSON.stringify(slotA.metadataExtra?.canvas_annotations ?? null) : '',
-    () => canvasAnnotationsFromMetadata(slotA?.metadataExtra),
-  )
-  const annotationsB = useStableJson(
-    slotB ? JSON.stringify(slotB.metadataExtra?.canvas_annotations ?? null) : '',
-    () => canvasAnnotationsFromMetadata(slotB?.metadataExtra),
-  )
-  const measurementA = useStableJson(
-    slotA
-      ? JSON.stringify([
-          slotA.metadataExtra?.measurement_scale,
-          slotA.metadataExtra?.measurement_unit,
-        ])
-      : '',
-    () => measurementFromMetadata(slotA?.metadataExtra),
-  )
-  const measurementB = useStableJson(
-    slotB
-      ? JSON.stringify([
-          slotB.metadataExtra?.measurement_scale,
-          slotB.metadataExtra?.measurement_unit,
-        ])
-      : '',
-    () => measurementFromMetadata(slotB?.metadataExtra),
-  )
-
   // `initialViewport` is mount-only input for ImageViewer — freeze the saved
   // entry the first time an image occupies a pane so a later save/refetch
   // (which replaces `collection`) cannot remount the viewer and discard
@@ -222,13 +182,46 @@ export default function SynchronizedCollectionViewer({
     return map.get(image.id)
   }
 
-  // The offset pair and stale snapshot entries are meaningless for a
-  // different image pair — drop both when the occupants change.
+  // Per-image pane props cached by image id and serialized metadata: fresh
+  // array/object identities would re-run ImageViewer's mount effect (it deps
+  // on `initialOverlays`/`initialViewport`) and destroy the OSD viewer on any
+  // unrelated collection update (tile renewal, save response, edits) — or
+  // when a surviving image slides into the other pane after a member fails.
+  const panePropsCache = useRef({
+    collectionId,
+    map: new Map<number, { key: string; value: PaneProps }>(),
+  })
+  if (panePropsCache.current.collectionId !== collectionId) {
+    panePropsCache.current = { collectionId, map: new Map() }
+  }
+  const panePropsFor = (image: ImageItem): PaneProps => {
+    const key = JSON.stringify([
+      image.metadataExtra?.locked_overlays ?? null,
+      image.metadataExtra?.canvas_annotations ?? null,
+      image.metadataExtra?.measurement_scale ?? null,
+      image.metadataExtra?.measurement_unit ?? null,
+    ])
+    const cached = panePropsCache.current.map.get(image.id)
+    if (cached && cached.key === key) return cached.value
+    const value: PaneProps = {
+      initialViewport: initialViewportFor(image),
+      initialOverlays: lockedOverlaysFromMetadata(image.metadataExtra),
+      canvasAnnotations: canvasAnnotationsFromMetadata(image.metadataExtra),
+      measurement: measurementFromMetadata(image.metadataExtra),
+    }
+    panePropsCache.current.map.set(image.id, { key, value })
+    return value
+  }
+
+  // The offset pair and cached props of images that left the pair are
+  // meaningless — drop both when the occupants change. (The surviving member
+  // keeps its entry, so its viewer is not remounted by a new prop identity.)
   useEffect(() => {
     offsetRef.current = null
-    const { map } = initialViewports.current
-    for (const id of [...map.keys()]) {
-      if (id !== slotAId && id !== slotBId) map.delete(id)
+    for (const { map } of [initialViewports.current, panePropsCache.current]) {
+      for (const id of [...map.keys()]) {
+        if (id !== slotAId && id !== slotBId) map.delete(id)
+      }
     }
   }, [slotAId, slotBId])
 
@@ -434,24 +427,8 @@ export default function SynchronizedCollectionViewer({
   }
 
   const panes: { image: ImageItem; pane: PaneProps }[] = [
-    {
-      image: slotA,
-      pane: {
-        initialViewport: initialViewportFor(slotA),
-        initialOverlays: overlaysA,
-        canvasAnnotations: annotationsA,
-        measurement: measurementA,
-      },
-    },
-    {
-      image: slotB,
-      pane: {
-        initialViewport: initialViewportFor(slotB),
-        initialOverlays: overlaysB,
-        canvasAnnotations: annotationsB,
-        measurement: measurementB,
-      },
-    },
+    { image: slotA, pane: panePropsFor(slotA) },
+    { image: slotB, pane: panePropsFor(slotB) },
   ]
 
   return (
