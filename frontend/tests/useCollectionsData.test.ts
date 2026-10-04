@@ -794,6 +794,60 @@ describe('useCollectionsData', () => {
       expect(result.current.detail?.version).toBe(7)
     })
 
+    it('a queued reorder still persists but never overwrites another open detail', async () => {
+      fetchCollectionsMock.mockResolvedValue([
+        makeApiCollectionSummary({ id: 1 }),
+        makeApiCollectionSummary({ id: 2 }),
+      ])
+      fetchCollectionMock
+        .mockResolvedValueOnce(
+          makeApiCollection({ id: 1, version: 5, images: [{ id: 10 }, { id: 11 }] as never }),
+        )
+        .mockResolvedValueOnce(makeApiCollection({ id: 2, name: 'Second', images: [] as never }))
+      let resolveFirst!: (value: ReturnType<typeof makeApiCollection>) => void
+      replaceCollectionImagesMock
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              resolveFirst = resolve
+            }),
+        )
+        .mockResolvedValueOnce(
+          makeApiCollection({ id: 1, version: 7, images: [{ id: 11 }, { id: 10 }] as never }),
+        )
+      const { result, rerender } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.id).toBe(1))
+
+      let first!: Promise<unknown>
+      let second!: Promise<unknown>
+      await act(async () => {
+        first = result.current.reorderImages(1, [11, 10])
+        second = result.current.reorderImages(1, [11, 10])
+      })
+      // Navigate to collection 2 while both PUTs are queued/in flight.
+      rerender({ selectedCollectionId: 2 })
+      await waitFor(() => expect(result.current.detail?.id).toBe(2))
+
+      await act(async () => {
+        resolveFirst(
+          makeApiCollection({ id: 1, version: 6, images: [{ id: 11 }, { id: 10 }] as never }),
+        )
+        await first
+      })
+      await act(async () => {
+        await second
+      })
+      // Both PUTs persisted collection 1's reorder…
+      expect(replaceCollectionImagesMock).toHaveBeenCalledTimes(2)
+      expect(replaceCollectionImagesMock).toHaveBeenNthCalledWith(2, 1, {
+        image_ids: [11, 10],
+        version: 6,
+      })
+      // …but collection 2's open detail was never displaced.
+      expect(result.current.detail?.id).toBe(2)
+      expect(result.current.detail?.name).toBe('Second')
+    })
+
     it('reorderImages refuses to run before the detail has loaded', async () => {
       const { result } = renderData()
       await expect(result.current.reorderImages(1, [1])).rejects.toThrow(

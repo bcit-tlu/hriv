@@ -353,7 +353,10 @@ export function useCollectionsData({
           .filter((img): img is NonNullable<typeof img> => img != null),
         ...baseline.images.filter((img) => !imageIds.includes(img.id)),
       ]
-      setDetail({ ...baseline, images: optimisticImages })
+      // Only paint the optimistic order when this collection is still open —
+      // a queued drop can run after the user opened another collection, and
+      // must not overwrite its detail (the PUT still persists the reorder).
+      setDetail((prev) => (prev?.id === id ? { ...baseline, images: optimisticImages } : prev))
       try {
         const updated = apiCollectionToCollection(
           await replaceCollectionImages(id, {
