@@ -354,13 +354,17 @@ re-checks).
   its type, image count, and owner, and selecting it navigates to
   `?collection={id}`.
 - Multi-select is image-only: a **Select** toggle appears next to the result
-  count when image results exist. In select mode, image rows gain checkboxes
-  labelled `Select {image title}` and the row click toggles the check instead
-  of navigating; every other kind stays navigable and is never selectable. A
-  sticky footer shows "N images selected" with **Clear** and **Add to
-  collection**, which opens `AddToCollectionDialog` with the selected image
-  ids in result order. Closing the modal, toggling select mode off, or
-  handing off to the dialog resets the selection.
+  count when image results exist (or select mode is already active). In
+  select mode, image rows gain checkboxes labelled `Select {image title}`
+  and the row click toggles the check instead of navigating; every other
+  kind stays navigable and is never selectable. Selections persist across
+  query and filter changes — the footer count includes picks hidden by the
+  current query and **Add to collection** opens `AddToCollectionDialog`
+  with the ids in "order encountered" (result order within a query,
+  chronological across queries). Closing the modal, toggling select mode
+  off, or handing off to the dialog resets the selection. When the
+  collections feature flag is off the modal hides collection results, the
+  Collections chip, and the collections wording in the placeholder.
 - Search result field labels render in a stronger secondary style so the field
   name reads as metadata rather than body text.
 - Staff searches also match the user guide: each guide page is split into

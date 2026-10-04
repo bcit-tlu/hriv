@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useRef } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
@@ -493,6 +493,9 @@ interface SearchModalProps {
   /** The caller's visible collections — the backend list is already
    *  access-filtered, so every row here may surface in results. */
   collections?: CollectionSummary[]
+  /** Whether the collections feature is enabled — gates the Collections
+   *  chip, collection results, and the placeholder copy. */
+  collectionsEnabled?: boolean
   /** Hide categories/images with a non-published status (students only). */
   excludeHidden: boolean
   /** Restrict results to categories/images — no program, user, or guide
@@ -523,6 +526,7 @@ export default function SearchModal({
   programs,
   users,
   collections = [],
+  collectionsEnabled = false,
   excludeHidden,
   suppressExtendedResults,
   onSelectCategory,
@@ -540,9 +544,14 @@ export default function SearchModal({
   const [typeFilters, setTypeFilters] = useState<Set<TypeFilter>>(new Set())
   const [fieldFilters, setFieldFilters] = useState<Set<FieldFilter>>(new Set())
   // Multi-select mode: image results get checkboxes feeding a sticky footer
-  // action; non-image kinds are never selectable. (#1418)
+  // action; non-image kinds are never selectable. Each check records the
+  // result generation and position where the image appeared so a selection
+  // accumulated across several queries still emits in "order encountered".
+  // (#1418)
   const [selectMode, setSelectMode] = useState(false)
-  const [selectedImageIds, setSelectedImageIds] = useState<Set<number>>(new Set())
+  const [selectedImages, setSelectedImages] = useState<
+    Map<number, { epoch: number; index: number }>
+  >(new Map())
 
   const programMap = useMemo(() => new Map(programs.map((p) => [p.id, p.name])), [programs])
 
@@ -567,7 +576,7 @@ export default function SearchModal({
   // multi-selection — the ids are captured by the callback before reset.
   if (!open && prevSearchOpen) {
     if (selectMode) setSelectMode(false)
-    if (selectedImageIds.size > 0) setSelectedImageIds(new Set())
+    if (selectedImages.size > 0) setSelectedImages(new Map())
   }
   if (open !== prevSearchOpen) setPrevSearchOpen(open)
 
@@ -615,7 +624,9 @@ export default function SearchModal({
       }
 
       // 4. Collections — visible to every role (list is server-filtered).
-      collectCollectionResults(collections, terms, results)
+      if (collectionsEnabled) {
+        collectCollectionResults(collections, terms, results)
+      }
 
       // 5. Programs (hidden from students and staff)
       if (!suppressExtendedResults) {
@@ -679,6 +690,7 @@ export default function SearchModal({
       programs,
       users,
       collections,
+      collectionsEnabled,
       excludeHidden,
       suppressExtendedResults,
       programMap,
@@ -744,34 +756,46 @@ export default function SearchModal({
     [displayResults],
   )
 
-  // Selection is emitted in result order (not click order) so the
-  // Add-to-Collection payload matches the order the user reviewed.
-  const orderedSelectedIds = useMemo(() => {
-    const ids: number[] = []
-    for (const r of displayResults) {
-      if (r.payload.kind === 'image' && selectedImageIds.has(r.payload.image.id)) {
-        ids.push(r.payload.image.id)
-      }
-    }
-    return ids
-  }, [displayResults, selectedImageIds])
+  // Each new result set bumps an epoch; a check stamps the image with the
+  // epoch and its position in that set. Emitting sorts by (epoch, index),
+  // which is result order within one query and "order encountered" across
+  // queries — selections never silently drop when the query changes.
+  const resultEpochRef = useRef(0)
+  const prevDisplayRef = useRef(displayResults)
+  if (prevDisplayRef.current !== displayResults) {
+    prevDisplayRef.current = displayResults
+    resultEpochRef.current += 1
+  }
+  const resultEpoch = resultEpochRef.current
+
+  const orderedSelectedIds = useMemo(
+    () =>
+      [...selectedImages.entries()]
+        .sort((a, b) => a[1].epoch - b[1].epoch || a[1].index - b[1].index)
+        .map(([id]) => id),
+    [selectedImages],
+  )
 
   const toggleSelectMode = useCallback(() => {
     setSelectMode((prev) => !prev)
-    setSelectedImageIds(new Set())
+    setSelectedImages(new Map())
   }, [])
 
-  const toggleImageSelected = useCallback((imageId: number) => {
-    setSelectedImageIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(imageId)) {
-        next.delete(imageId)
-      } else {
-        next.add(imageId)
-      }
-      return next
-    })
-  }, [])
+  const toggleImageSelected = useCallback(
+    (imageId: number, resultIndex: number) => {
+      const epoch = resultEpoch
+      setSelectedImages((prev) => {
+        const next = new Map(prev)
+        if (next.has(imageId)) {
+          next.delete(imageId)
+        } else {
+          next.set(imageId, { epoch, index: resultIndex })
+        }
+        return next
+      })
+    },
+    [resultEpoch],
+  )
 
   const handleAddSelected = () => {
     if (orderedSelectedIds.length === 0) return
@@ -826,8 +850,8 @@ export default function SearchModal({
           fullWidth
           placeholder={
             suppressExtendedResults
-              ? 'Search categories, images, and collections — "quotes" for exact phrases'
-              : 'Search categories, images, collections, programs, people, the guide — "quotes" for exact phrases'
+              ? `Search ${collectionsEnabled ? 'categories, images, and collections' : 'categories and images'} — "quotes" for exact phrases`
+              : `Search ${collectionsEnabled ? 'categories, images, collections, programs, people, the guide' : 'categories, images, programs, people, the guide'} — "quotes" for exact phrases`
           }
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -854,6 +878,7 @@ export default function SearchModal({
             </Typography>
             {TYPE_FILTERS.filter(
               (f) =>
+                (f.key !== 'collection' || collectionsEnabled) &&
                 !(
                   suppressExtendedResults &&
                   (f.key === 'program' || f.key === 'user' || f.key === 'guide')
@@ -936,7 +961,7 @@ export default function SearchModal({
                     ? `Showing ${MAX_RESULTS} of ${groupedResults.length} results`
                     : `${groupedResults.length} result${groupedResults.length !== 1 ? 's' : ''}`}
                 </Typography>
-                {hasImageResults && onAddImagesToCollection != null && (
+                {(hasImageResults || selectMode) && onAddImagesToCollection != null && (
                   <Button
                     size="small"
                     data-testid="search-select-toggle"
@@ -946,7 +971,7 @@ export default function SearchModal({
                   </Button>
                 )}
               </Box>
-              {displayResults.map((result) => {
+              {displayResults.map((result, resultIndex) => {
                 const chipNames = getResultProgramNames(result, programMap)
                 const catPath = result.payload.kind === 'image' ? result.payload.categoryPath : null
                 const image = result.payload.kind === 'image' ? result.payload.image : null
@@ -1126,8 +1151,8 @@ export default function SearchModal({
                       >
                         <Checkbox
                           data-testid="search-select-checkbox"
-                          checked={selectedImageIds.has(image.id)}
-                          onChange={() => toggleImageSelected(image.id)}
+                          checked={selectedImages.has(image.id)}
+                          onChange={() => toggleImageSelected(image.id, resultIndex)}
                           slotProps={{
                             input: { 'aria-label': `Select ${image.name}` },
                           }}
@@ -1169,7 +1194,7 @@ export default function SearchModal({
             <Button
               size="small"
               disabled={orderedSelectedIds.length === 0}
-              onClick={() => setSelectedImageIds(new Set())}
+              onClick={() => setSelectedImages(new Map())}
             >
               Clear
             </Button>

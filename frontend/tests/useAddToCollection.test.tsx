@@ -184,6 +184,21 @@ describe('useVisibleCollections', () => {
     await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.collections.map((c) => c.name)).toEqual(['Editable', 'Read only'])
   })
+
+  it('clears the list when a refresh fails so stale rows are not served', async () => {
+    apiMocks.fetchCollections.mockResolvedValueOnce([
+      makeApiCollectionSummary({ id: 1, name: 'Editable' }),
+    ])
+    const { result } = renderHook(() => useVisibleCollections(true))
+    await waitFor(() => expect(result.current.collections).toHaveLength(1))
+
+    apiMocks.fetchCollections.mockRejectedValueOnce(new ApiError(500, 'boom'))
+    await act(async () => {
+      await result.current.reload()
+    })
+    expect(result.current.collections).toEqual([])
+    expect(result.current.error).toBe('Failed to load collections.')
+  })
 })
 
 describe('useEditableCollections', () => {

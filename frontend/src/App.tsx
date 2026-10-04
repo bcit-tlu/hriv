@@ -2844,6 +2844,7 @@ export default function App() {
         programs={programs}
         users={searchUsers}
         collections={searchableCollections.collections}
+        collectionsEnabled={collectionsEnabled}
         onSelectCollection={handleOpenCollection}
         onAddImagesToCollection={handleSearchAddToCollection}
         excludeHidden={isStudent}

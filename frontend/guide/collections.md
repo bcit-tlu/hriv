@@ -96,10 +96,11 @@ finish or cancel that first.
 
 In the top-bar **Search**, click **Select** next to the result count, tick
 each image you want, then click **Add to collection** in the footer. The
-same dialog opens with all of them selected, and they are added in the
-order they appeared in your results — not the order you ticked them. Only
-image results can be selected; categories, collections, and other kinds
-still open when you click them.
+same dialog opens with all of them selected. You can keep selecting across
+searches — images you picked under an earlier query still count, and they
+are added in the order they appeared in your results. Only image results
+can be selected; categories, collections, and other kinds still open when
+you click them.
 
 ## Find a collection
 

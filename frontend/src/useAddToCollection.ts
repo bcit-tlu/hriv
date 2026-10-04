@@ -98,6 +98,8 @@ export function useVisibleCollections(enabled: boolean) {
       setCollections(rows)
     } catch (err) {
       if (seq !== loadSeq.current) return
+      // A failed refresh must not keep serving deleted/inaccessible rows.
+      setCollections([])
       setError(userMessage(err, 'Failed to load collections.'))
     } finally {
       if (seq === loadSeq.current) setLoading(false)

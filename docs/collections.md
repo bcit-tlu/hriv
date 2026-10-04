@@ -580,16 +580,22 @@ searchOpen)` — a lazy list fetch each time the modal opens, shared with
 and no Collections chip appears.
 
 **Multi-select (image results only).** A **Select** toggle next to the
-result count appears when image results exist and `onAddImagesToCollection`
-is provided. Image rows become labelled checkboxes (`Select {image name}`)
-inside a `<label>` row — clicking anywhere toggles — while every other kind
-keeps its `CardActionArea` navigation and is never selectable (this avoids
-nested-interactive controls, see #1345). A sticky footer shows "N images
-selected" with **Clear** and **Add to collection**; the payload is emitted
-in result order (not click order) and opens `AddToCollectionDialog` with
-`imageIds`, reusing the #1415 dialog, capacity checks, and snackbar
-feedback. Closing the modal, cancelling select mode, or handing off resets
-the selection.
+result count appears when image results exist (or select mode is already
+on) and `onAddImagesToCollection` is provided. Image rows become labelled
+checkboxes (`Select {image name}`) inside a `<label>` row — clicking
+anywhere toggles — while every other kind keeps its `CardActionArea`
+navigation and is never selectable (this avoids nested-interactive
+controls, see #1345). Selections survive query and filter changes: each
+check records the result generation and position where the image
+appeared, so the footer count covers picks hidden by the current query
+and the payload emits them in "order encountered" — result order within
+one query, chronological batches across queries. A sticky footer shows
+"N images selected" with **Clear** and **Add to collection**, which opens
+`AddToCollectionDialog` with `imageIds`, reusing the #1415 dialog,
+capacity checks, and snackbar feedback. Closing the modal, cancelling
+select mode, or handing off resets the selection. When the collections
+feature flag is off, the modal hides collection results, the Collections
+chip, and the collections wording in the placeholder.
 
 **Image ids.** `App` keeps `addToCollectionImageIds` as state: the viewer
 button sets `[selectedImage.id]`, the search footer sets the checked ids;

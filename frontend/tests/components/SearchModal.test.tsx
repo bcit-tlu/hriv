@@ -134,6 +134,7 @@ const defaultProps = {
   programs: testPrograms,
   users: testUsers,
   collections: testCollections,
+  collectionsEnabled: true,
   excludeHidden: false,
   suppressExtendedResults: false,
   onSelectCategory: vi.fn(),
@@ -1265,5 +1266,67 @@ describe('SearchModal', () => {
     )
     expect(screen.queryByTestId('search-select-footer')).not.toBeInTheDocument()
     expect(screen.queryByTestId('search-select-checkbox')).not.toBeInTheDocument()
+  })
+
+  it('keeps selections across query changes and emits them in encounter order', async () => {
+    const user = userEvent.setup()
+    const onAddImagesToCollection = vi.fn()
+    render(
+      <SearchModal
+        {...defaultProps}
+        onAddImagesToCollection={onAddImagesToCollection}
+        open={true}
+      />,
+    )
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, collections, programs, people, the guide — "quotes" for exact phrases',
+    )
+
+    // First query: select Kidney Cross (id 11).
+    await user.type(input, 'kidney')
+    await user.click(screen.getByTestId('search-select-toggle'))
+    await user.click(screen.getByRole('checkbox', { name: 'Select Kidney Cross' }))
+    expect(screen.getByTestId('search-select-footer').textContent).toContain('1 image selected')
+
+    // A query with no image results hides the pick, but the count stays and
+    // the Cancel toggle remains reachable.
+    await user.clear(input)
+    await user.type(input, 'skull')
+    expect(screen.getByText('Skull comparison')).toBeInTheDocument()
+    expect(screen.queryByTestId('search-select-checkbox')).not.toBeInTheDocument()
+    expect(screen.getByTestId('search-select-toggle')).toHaveTextContent('Cancel')
+    expect(screen.getByTestId('search-select-footer').textContent).toContain('1 image selected')
+
+    // A second image in a later query joins the selection.
+    await user.clear(input)
+    await user.type(input, 'liver')
+    await user.click(screen.getByRole('checkbox', { name: 'Select Liver Section' }))
+    expect(screen.getByTestId('search-select-footer').textContent).toContain('2 images selected')
+
+    // Kidney was encountered first, so the payload is [11, 10] — not the
+    // current result order and never the click order.
+    await user.click(screen.getByTestId('search-add-to-collection'))
+    expect(onAddImagesToCollection).toHaveBeenCalledWith([11, 10])
+  })
+
+  it('hides collection results, the Collections chip, and collection copy when the feature is off', async () => {
+    const user = userEvent.setup()
+    render(<SearchModal {...defaultProps} collectionsEnabled={false} open={true} />)
+
+    // Placeholder copy falls back to the pre-collections wording.
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, programs, people, the guide — "quotes" for exact phrases',
+    )
+
+    // Collection entities never surface, even when the prop carries rows.
+    await user.type(input, 'skull')
+    expect(screen.queryByText('Skull comparison')).not.toBeInTheDocument()
+
+    // The Collections type chip is not offered on a disabled install.
+    await user.clear(input)
+    await user.type(input, 'section')
+    const chipLabels = screen.getAllByTestId('type-filter-chip').map((chip) => chip.textContent)
+    expect(chipLabels).toContain('Images')
+    expect(chipLabels).not.toContain('Collections')
   })
 })

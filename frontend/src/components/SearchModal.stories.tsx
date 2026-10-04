@@ -115,6 +115,7 @@ const meta = {
     programs,
     users,
     collections,
+    collectionsEnabled: true,
     excludeHidden: false,
     suppressExtendedResults: false,
     onSelectCategory: fn(),
