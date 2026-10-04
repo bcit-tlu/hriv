@@ -130,6 +130,9 @@ jobs:
           --health-retries 10
     env:
       REORDER_FIXTURE_DATABASE_URL: postgresql+asyncpg://hriv:hriv@localhost:5432/hriv_test
+      # Migrated alongside REORDER_FIXTURE_DATABASE_URL by the step below;
+      # gates the PostgreSQL-backed collections write-API tests (#1437).
+      TEST_DATABASE_URL: postgresql+asyncpg://hriv:hriv@localhost:5432/hriv_test
     steps:
       - uses: actions/checkout@v7
 

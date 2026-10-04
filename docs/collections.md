@@ -472,6 +472,12 @@ management / transfer UI.
 - `backend/tests/test_router_programs.py` — the real `DELETE /api/programs/{id}`
   against PostgreSQL (`REORDER_FIXTURE_DATABASE_URL`, run in CI): 204,
   owned collections survive as orphans, `collection_programs` rows gone.
+- `backend/tests/test_router_collections_db.py` — write-API persistence
+  against real PostgreSQL (`TEST_DATABASE_URL`, run in CI): `sort_order`
+  rewrite + link reuse on reorder, join-table scope set/clear on
+  restricted↔public transitions, cross-session OCC (409 with the current
+  `CollectionOut`, version incremented once), wholesale `viewport_state`
+  replacement, and delete-during-write → 404.
 - `backend/tests/test_schemas.py` — `CollectionCreate` / `CollectionUpdate` /
   `CollectionImagesUpdate` / `CollectionViewportUpdate` / `CollectionTransfer`
   validators.
