@@ -42,9 +42,11 @@ form's visibility options follow the role.
 - **Grouping.** Rows are split into _My collections_ (owner is the signed-in user), _Program
   collections_ and _Other collections_ (anything else an admin may edit, including orphaned
   collections). Empty groups are omitted; a client-side name filter narrows all three.
-- **Capacity.** A `synchronized` row is disabled with the `CAP_REACHED_TOOLTIP` tooltip when
-  `imageCount + imageIds.length` would exceed `SYNCHRONIZED_MAX_IMAGES` (4). Sequence
-  collections are never capped.
+- **Capacity.** A `synchronized` row is disabled with the `CAP_REACHED_TOOLTIP` tooltip only
+  when `imageCount` has already reached `SYNCHRONIZED_MAX_IMAGES` (4). Borderline rows stay
+  clickable because the summary count cannot see which `imageIds` are already members —
+  `addImagesToCollection` dedupes against the fetched member list and returns `full` only
+  when the genuinely-new images overflow. Sequence collections are never capped.
 - **`onAdd` decides whether to close.** The caller performs the add (`addImagesToCollection`
   fetches the current member list, skips images already present and issues the whole-replace
   `PUT /api/collections/{id}/images` with the current `version`) and reports the outcome through

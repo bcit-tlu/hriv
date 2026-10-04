@@ -306,10 +306,14 @@ re-checks).
   a spinner, a plain error `Alert`, and an empty state ("You don't have a
   collection you can add to yet.") follow the usual patterns. The filter and
   busy state reset each time the dialog opens.
-- **Given** a synchronized collection, **When** its image count plus the
-  images being added would exceed four, **Then** its row is disabled and
-  hovering it shows "Synchronized collections hold at most 4 images."
-  Sequence rows are never capped.
+- **Given** a synchronized collection, **When** it already holds four
+  images, **Then** its row is disabled and hovering it shows "Synchronized
+  collections hold at most 4 images." Under-cap rows stay clickable — the
+  summary count cannot see which selected ids are already members, so the
+  authoritative capacity check runs in `addImagesToCollection` against the
+  fetched member list; a genuinely overflowing add keeps the dialog open
+  with "Adding this selection to `<name>` would exceed the 4-image limit
+  for synchronized collections." Sequence rows are never capped.
 - **Given** a row is picked, **When** the add is in flight, **Then** every row
   and the footer buttons are disabled and the picked row shows a spinner.
 - **Given** the add succeeds, **Then** the dialog closes and a success

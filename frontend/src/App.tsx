@@ -1607,7 +1607,7 @@ export default function App() {
           return true
         }
         setErrorSnack(
-          `"${result.collection.name}" already holds ${SYNCHRONIZED_MAX_IMAGES} images, the most a synchronized collection can show.`,
+          `Adding this selection to "${result.collection.name}" would exceed the ${SYNCHRONIZED_MAX_IMAGES}-image limit for synchronized collections.`,
         )
         return false
       } catch (err) {

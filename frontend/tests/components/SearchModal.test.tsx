@@ -1309,6 +1309,35 @@ describe('SearchModal', () => {
     expect(onAddImagesToCollection).toHaveBeenCalledWith([11, 10])
   })
 
+  it('keeps the Cancel control reachable in no-result and empty-query states', async () => {
+    const user = userEvent.setup()
+    render(<SearchModal {...defaultProps} open={true} />)
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, collections, programs, people, the guide — "quotes" for exact phrases',
+    )
+
+    await user.type(input, 'section')
+    await user.click(screen.getByTestId('search-select-toggle'))
+    await user.click(screen.getByRole('checkbox', { name: 'Select Liver Section' }))
+
+    // A query with no matches: the footer and Cancel survive.
+    await user.clear(input)
+    await user.type(input, 'zzzz')
+    expect(screen.getByText(/No results found/)).toBeInTheDocument()
+    expect(screen.getByTestId('search-select-toggle')).toHaveTextContent('Cancel')
+    expect(screen.getByTestId('search-select-footer').textContent).toContain('1 image selected')
+
+    // An empty query offers the same escape hatch.
+    await user.clear(input)
+    expect(screen.getByText(/Start typing/)).toBeInTheDocument()
+    expect(screen.getByTestId('search-select-toggle')).toHaveTextContent('Cancel')
+    expect(screen.getByTestId('search-select-footer').textContent).toContain('1 image selected')
+
+    // Cancelling exits select mode entirely.
+    await user.click(screen.getByTestId('search-select-toggle'))
+    expect(screen.queryByTestId('search-select-footer')).not.toBeInTheDocument()
+  })
+
   it('hides collection results, the Collections chip, and collection copy when the feature is off', async () => {
     const user = userEvent.setup()
     render(<SearchModal {...defaultProps} collectionsEnabled={false} open={true} />)

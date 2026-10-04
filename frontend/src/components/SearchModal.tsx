@@ -924,14 +924,25 @@ export default function SearchModal({
           </Box>
         )}
 
-        <Box sx={{ flexGrow: 1, overflow: 'auto' }}>
+        <Box sx={{ flexGrow: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+          {/* While select mode is on, the Cancel control must stay reachable
+              even when the current query has no results to check. */}
+          {selectMode &&
+            onAddImagesToCollection != null &&
+            (query.trim().length === 0 || groupedResults.length === 0) && (
+              <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 0.5 }}>
+                <Button size="small" data-testid="search-select-toggle" onClick={toggleSelectMode}>
+                  Cancel
+                </Button>
+              </Box>
+            )}
           {query.trim().length === 0 ? (
             <Box
               sx={{
                 display: 'flex',
                 justifyContent: 'center',
                 alignItems: 'center',
-                height: '100%',
+                flexGrow: 1,
                 minHeight: 200,
               }}
             >
@@ -945,7 +956,7 @@ export default function SearchModal({
                 display: 'flex',
                 justifyContent: 'center',
                 alignItems: 'center',
-                height: '100%',
+                flexGrow: 1,
                 minHeight: 200,
               }}
             >

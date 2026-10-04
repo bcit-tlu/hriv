@@ -428,10 +428,13 @@ name filter narrows the list. Rows show name, image count and a type chip.
 The dialog takes `imageIds: number[]` so the multi-select flow (#1418) can
 reuse it; the viewer passes the selected image.
 
-**Capacity.** A `synchronized` row whose `image_count + imageIds.length`
-would exceed `SYNCHRONIZED_MAX_IMAGES` (4) is disabled with an explanatory
-tooltip; sequence rows are never capped. The rule is re-checked against the
-fresh member list before the write.
+**Capacity.** A `synchronized` row is disabled with an explanatory tooltip
+only when its `image_count` has already reached `SYNCHRONIZED_MAX_IMAGES`
+(4); sequence rows are never capped. Borderline rows stay clickable
+because the summary count cannot see which `imageIds` are already members
+— the rule is re-checked against the fresh member list before the write
+and a genuinely overflowing add returns `full` (count-neutral error
+snackbar; the dialog stays open).
 
 **Add.** `addImagesToCollection` fetches `GET /api/collections/{id}` for the
 current member list and `version`, drops ids already present, and issues the

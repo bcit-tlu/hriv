@@ -2055,7 +2055,7 @@ describe('App "Add to Collection" from the image view (#1415)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Pick collection' }))
     expect(
       await screen.findByText(
-        '"Skull set" already holds 4 images, the most a synchronized collection can show.',
+        'Adding this selection to "Skull set" would exceed the 4-image limit for synchronized collections.',
       ),
     ).toBeInTheDocument()
     expect(screen.getByTestId('add-to-collection-dialog')).toBeInTheDocument()
@@ -2162,5 +2162,31 @@ describe('App search collections integration (#1418)', () => {
       expect(addToCollectionMocks.addImagesToCollection).toHaveBeenCalledWith(9, [10, 11]),
     )
     expect(await screen.findByText('Added 2 images to "Skull set".')).toBeInTheDocument()
+  })
+
+  it('reports a genuinely overflowing synchronized add with a count-neutral message', async () => {
+    // Under-cap rows stay clickable (membership dedupe is authoritative), so
+    // a 'full' result can arrive from a collection holding fewer than four.
+    addToCollectionMocks.addImagesToCollection.mockResolvedValue({
+      status: 'full',
+      collection: { id: 9, name: 'Skull set' },
+    })
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Shell search' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add selected images to collection' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Pick collection' }))
+
+    await waitFor(() =>
+      expect(addToCollectionMocks.addImagesToCollection).toHaveBeenCalledWith(9, [10, 11]),
+    )
+    expect(
+      await screen.findByText(
+        'Adding this selection to "Skull set" would exceed the 4-image limit for synchronized collections.',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('add-to-collection-dialog')).toBeInTheDocument()
   })
 })
