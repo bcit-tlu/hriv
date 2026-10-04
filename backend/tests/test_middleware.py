@@ -255,8 +255,8 @@ async def test_audit_extracts_session_id() -> None:
 async def test_audit_extracts_user_from_jwt() -> None:
     mw = AuditMiddleware(app=AsyncMock())
 
-    from jose import jwt as jose_jwt
-    token = jose_jwt.encode(
+    import jwt
+    token = jwt.encode(
         {"sub": "42", "email": "test@example.com", "role": "admin"},
         "test-secret",
         algorithm="HS256",
@@ -279,8 +279,8 @@ async def test_audit_sets_span_attributes_for_authenticated_request() -> None:
     """User identity + correlation IDs are propagated to the OTEL span."""
     mw = AuditMiddleware(app=AsyncMock())
 
-    from jose import jwt as jose_jwt
-    token = jose_jwt.encode(
+    import jwt
+    token = jwt.encode(
         {"sub": "42", "email": "test@example.com", "role": "admin"},
         "test-secret",
         algorithm="HS256",
