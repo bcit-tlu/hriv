@@ -19,3 +19,16 @@ BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS = 90
 BULK_IMPORT_MAX_UPLOAD_BYTES = int(
     os.environ.get("BULK_IMPORT_MAX_UPLOAD_BYTES", str(20 * 1024 * 1024 * 1024))
 )
+
+# Whole-request ceiling for one bulk-import multipart body (#1432). The
+# endpoint accepts a *list* of parts — each individually capped at
+# BULK_IMPORT_MAX_UPLOAD_BYTES — so a batch of valid files is legitimately
+# larger than the per-part cap. This bound exists to cap the pod-local
+# temp spool that python-multipart fills before the endpoint runs; it is
+# deliberately generous (the per-part cap plus the zip budgets do the
+# semantic enforcement) and can be lowered toward real batch sizes.
+BULK_IMPORT_MAX_REQUEST_BYTES = int(
+    os.environ.get(
+        "BULK_IMPORT_MAX_REQUEST_BYTES", str(4 * BULK_IMPORT_MAX_UPLOAD_BYTES)
+    )
+)

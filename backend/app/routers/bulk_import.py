@@ -46,6 +46,7 @@ from ..schemas import MAX_NOTE_LENGTH, BulkImportJobOut, normalize_note_value
 from ..task_constants import (
     BULK_IMPORT_COORDINATOR_LIVENESS_KEY as _BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
     BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS as _BULK_IMPORT_COORDINATOR_LIVENESS_WINDOW_SECONDS,
+    BULK_IMPORT_MAX_REQUEST_BYTES as _MAX_REQUEST_BYTES,
     BULK_IMPORT_MAX_UPLOAD_BYTES as _MAX_UPLOAD_BYTES,
     SOURCE_IMAGE_PENDING_WAIT_SAFETY_CAP_SECONDS,
 )
@@ -107,10 +108,18 @@ def _validate_zip_limits() -> None:
         ("BULK_IMPORT_MAX_ENTRIES", _ZIP_MAX_ENTRIES),
         ("BULK_IMPORT_MIN_FREE_BYTES", _ZIP_MIN_FREE_BYTES),
         ("BULK_IMPORT_MAX_UPLOAD_BYTES", _MAX_UPLOAD_BYTES),
+        ("BULK_IMPORT_MAX_REQUEST_BYTES", _MAX_REQUEST_BYTES),
         ("BULK_IMPORT_MAX_ARCHIVE_ENTRIES", _ZIP_MAX_ARCHIVE_ENTRIES),
     ):
         if value <= 0:
             raise ValueError(f"{name} must be a positive integer, got {value}")
+    if _MAX_REQUEST_BYTES < _MAX_UPLOAD_BYTES:
+        raise ValueError(
+            "BULK_IMPORT_MAX_REQUEST_BYTES must be >= "
+            f"BULK_IMPORT_MAX_UPLOAD_BYTES ({_MAX_UPLOAD_BYTES}), got "
+            f"{_MAX_REQUEST_BYTES} — a single max-size part would no "
+            "longer fit in one request"
+        )
     if not math.isfinite(_ZIP_MAX_COMPRESSION_RATIO) or _ZIP_MAX_COMPRESSION_RATIO < 1:
         raise ValueError(
             "BULK_IMPORT_MAX_COMPRESSION_RATIO must be a finite number >= 1, "

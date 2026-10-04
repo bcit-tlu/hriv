@@ -21,7 +21,10 @@ from .auth import auth_settings
 from .database import settings
 from .image_validation import UPLOAD_MAX_BYTES
 from .maintenance import is_maintenance_mode
-from .task_constants import BULK_IMPORT_MAX_UPLOAD_BYTES
+from .task_constants import (
+    BULK_IMPORT_MAX_REQUEST_BYTES,
+    BULK_IMPORT_MAX_UPLOAD_BYTES,
+)
 
 logger = logging.getLogger(__name__)
 _meter = metrics.get_meter(__name__)
@@ -508,31 +511,62 @@ class MaintenanceMiddleware:
 # on pod-local temp storage *before* the endpoint runs, so per-file caps
 # inside the handlers cannot stop an oversized request body from
 # exhausting the pod's ephemeral-storage budget first. This middleware
-# counts the streamed request bytes and answers 413 the moment the cap is
+# counts the streamed request bytes and answers 413 the moment a cap is
 # crossed — including chunked requests, which a Content-Length pre-check
 # cannot see. The handler-side caps remain as a second layer.
 
 # Multipart boundary strings, part headers, and non-file form fields ride
-# inside the same request body as the capped file part.
+# inside the same request body as the capped file part. The middleware's
+# per-part counter also absorbs each part's header block, so it gets the
+# same slack the endpoint read loops do not need.
 _MULTIPART_OVERHEAD_BYTES = 1024 * 1024
 
 
-def _upload_body_limit(path: str) -> int | None:
-    """Streamed-body cap for the multipart upload paths, else ``None``."""
+def _upload_body_limits(path: str) -> tuple[int, int] | None:
+    """Return ``(per-part cap, whole-request cap)`` for an upload path.
+
+    ``None`` means the path is not a capped multipart upload route. The
+    per-part cap mirrors the endpoint's per-file limit (plus framing
+    slack); the request cap is the absolute spool bound for the whole
+    body — on the bulk-import route a valid batch is a *list* of parts
+    whose sum legitimately exceeds the per-part cap, so it gets its own
+    ``BULK_IMPORT_MAX_REQUEST_BYTES`` ceiling.
+    """
     if path == "/api/source-images/upload" or _IMAGE_REPLACE_ROUTE.fullmatch(
         path
     ):
-        return UPLOAD_MAX_BYTES + _MULTIPART_OVERHEAD_BYTES
+        limit = UPLOAD_MAX_BYTES + _MULTIPART_OVERHEAD_BYTES
+        return limit, limit
     if path.startswith("/api/admin/bulk-import"):
-        return BULK_IMPORT_MAX_UPLOAD_BYTES + _MULTIPART_OVERHEAD_BYTES
+        return (
+            BULK_IMPORT_MAX_UPLOAD_BYTES + _MULTIPART_OVERHEAD_BYTES,
+            BULK_IMPORT_MAX_REQUEST_BYTES + _MULTIPART_OVERHEAD_BYTES,
+        )
     return None
 
 
-def _upload_body_limit_detail(path: str) -> str:
+def _multipart_boundary(scope: Scope) -> bytes | None:
+    """Extract the multipart boundary parameter, if this is a multipart body."""
+    content_type = _header_value(scope, b"content-type")
+    if not content_type.lower().startswith("multipart/"):
+        return None
+    for piece in content_type.split(";")[1:]:
+        name, _, value = piece.strip().partition("=")
+        if name.strip().lower() == "boundary" and value:
+            return value.strip().strip('"').encode("latin-1")[:256]
+    return None
+
+
+def _upload_body_limit_detail(path: str, per_part: bool) -> str:
     if path.startswith("/api/admin/bulk-import"):
+        if per_part:
+            return (
+                "File exceeds the per-file size limit of "
+                f"{BULK_IMPORT_MAX_UPLOAD_BYTES / (1024 ** 3):g} GiB"
+            )
         return (
             "Bulk import request exceeds the size limit of "
-            f"{BULK_IMPORT_MAX_UPLOAD_BYTES / (1024 ** 3):g} GiB"
+            f"{BULK_IMPORT_MAX_REQUEST_BYTES / (1024 ** 3):g} GiB"
         )
     return (
         "File exceeds the per-upload size limit of "
@@ -543,60 +577,111 @@ def _upload_body_limit_detail(path: str) -> str:
 class UploadBodyLimitMiddleware:
     """Answer 413 for oversized upload bodies while they stream (#1432).
 
-    Pure ASGI (no buffering): a declared ``Content-Length`` over the route
-    cap is rejected without reading the body, and a chunked/lied-length
-    body is aborted mid-stream — the downstream app sees a client
-    disconnect and stops parsing, so nothing more reaches the temp spool.
+    Pure ASGI (no buffering): a declared ``Content-Length`` over the
+    request cap is rejected without reading the body, and a streamed body
+    is aborted mid-request — the downstream app sees a client disconnect
+    and stops parsing, so nothing more reaches the temp spool.
+
+    Two counters run over the streamed bytes:
+
+    - *per-part*: bytes since the last ``--boundary`` delimiter, enforcing
+      the same per-file cap the endpoint applies, so a batch of
+      individually valid files is not rejected for its combined size;
+    - *whole-request*: every byte of the body, enforcing the route's
+      spool bound (``BULK_IMPORT_MAX_REQUEST_BYTES`` on bulk import,
+      where a batch may carry many parts; the per-part cap plus 1 MiB of
+      framing slack on the single-file routes).
+
+    A delimiter forged inside file content only under-counts the forged
+    part — the endpoint's own read-loop cap still applies, so the
+    middleware stays a protective layer, not the semantic one.
     """
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http":
+        if scope["type"] != "http" or scope["method"] != "POST":
             await self.app(scope, receive, send)
             return
 
-        limit = (
-            _upload_body_limit(scope["path"])
-            if scope["method"] == "POST"
-            else None
-        )
-        if limit is None:
+        limits = _upload_body_limits(scope["path"])
+        if limits is None:
             await self.app(scope, receive, send)
             return
+        part_limit, request_limit = limits
 
-        detail = _upload_body_limit_detail(scope["path"])
+        part_detail = _upload_body_limit_detail(scope["path"], per_part=True)
+        request_detail = _upload_body_limit_detail(scope["path"], per_part=False)
 
-        # Fast path: a declared Content-Length over the cap never reads
-        # a single body byte.
+        # Fast path: a declared Content-Length over the request cap never
+        # reads a single body byte.
         declared = _parse_content_length(
             _header_value(scope, b"content-length") or None
         )
-        if isinstance(declared, int) and declared > limit:
+        if isinstance(declared, int) and declared > request_limit:
             await JSONResponse(
-                status_code=413, content={"detail": detail}
+                status_code=413, content={"detail": request_detail}
             )(scope, receive, send)
             return
 
+        # Per RFC 2046 part delimiters are CRLF + "--" + boundary; the
+        # body's first delimiter has no CRLF, so seeding `tail` with one
+        # makes the opening "--boundary" match the same pattern. `tail`
+        # keeps the trailing bytes of the previous chunk so a delimiter
+        # split across message chunks is still found.
+        boundary = _multipart_boundary(scope)
+        delimiter = b"\r\n--" + boundary if boundary else None
+        tail = b"\r\n" if boundary else b""
+        # Absolute stream offset where the in-progress part began.
+        part_start = 0
         received = 0
         answered = False
 
         async def limited_receive() -> Message:
-            nonlocal received, answered
+            nonlocal received, part_start, tail, answered
             if answered:
                 # The connection is dead from the app's perspective once
                 # we have answered; never touch the real channel again.
                 return {"type": "http.disconnect"}
             message = await receive()
-            if message["type"] == "http.request":
-                received += len(message.get("body", b""))
-                if received > limit:
-                    answered = True
-                    await JSONResponse(
-                        status_code=413, content={"detail": detail}
-                    )(scope, receive, send)
-                    return {"type": "http.disconnect"}
+            if message["type"] != "http.request":
+                return message
+
+            body = message.get("body", b"")
+            received += len(body)
+            detail = request_detail if received > request_limit else None
+
+            if delimiter is not None and detail is None:
+                window = tail + body
+                base = received - len(window)  # absolute offset of window[0]
+                pos = 0
+                while True:
+                    idx = window.find(delimiter, pos)
+                    if idx < 0:
+                        break
+                    # The bytes this delimiter closes belong to the
+                    # current part; a new part starts after it.
+                    if base + idx - part_start > part_limit:
+                        detail = part_detail
+                        break
+                    part_start = base + idx + len(delimiter)
+                    pos = idx + len(delimiter)
+                if detail is None and received - part_start > part_limit:
+                    detail = part_detail
+                tail = window[-(len(delimiter) - 1) :]
+            elif delimiter is None and detail is None:
+                # Non-multipart bodies have no parts to separate; the
+                # whole body counts as a single part.
+                if received > part_limit:
+                    detail = part_detail
+
+            if detail is not None:
+                answered = True
+                await JSONResponse(
+                    status_code=413, content={"detail": detail}
+                )(scope, receive, send)
+                return {"type": "http.disconnect"}
             return message
 
         async def limited_send(message: Message) -> None:

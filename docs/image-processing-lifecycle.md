@@ -120,14 +120,19 @@ cannot exhaust the data volume:
   512 MiB written (the same pattern as the filesystem-import staging check).
 
 The raw request body is also bounded: the ingress accepts unlimited
-bodies, so `UploadBodyLimitMiddleware` (pure ASGI) counts streamed request
-bytes on the multipart upload paths and answers 413 the moment
-`BULK_IMPORT_MAX_UPLOAD_BYTES` — or `UPLOAD_MAX_BYTES` for single-image
-upload and replacement — plus 1 MiB of multipart overhead is crossed,
-before python-multipart's temp-file spool can absorb the body. The
-endpoint read loops re-apply the per-part cap to each uploaded part (zip
-archives spooled to a temp file, plain images streamed to
-`source_images_dir`), and `write_upload_to_staging` enforces
+bodies, so `UploadBodyLimitMiddleware` (pure ASGI) watches the streamed
+body on the multipart upload paths and answers 413 the moment a cap is
+crossed, before python-multipart's temp-file spool can absorb it. It
+tracks two counters: bytes since the last multipart `--boundary`
+delimiter — a per-part cap matching the endpoint's per-file limit
+(`BULK_IMPORT_MAX_UPLOAD_BYTES` / `UPLOAD_MAX_BYTES`, plus 1 MiB of
+framing slack), so a batch of individually valid files is never rejected
+for its combined size — and total body bytes against a whole-request
+ceiling that bounds the pod-local spool (`BULK_IMPORT_MAX_REQUEST_BYTES`,
+80 GiB by default, on bulk import; the per-part cap plus slack on the
+single-file routes). The endpoint read loops re-apply the per-part cap to
+each uploaded part (zip archives spooled to a temp file, plain images
+streamed to `source_images_dir`), and `write_upload_to_staging` enforces
 `UPLOAD_MAX_BYTES` for single uploads and replacements; exceeding a cap
 returns 413 and removes the partial file.
 

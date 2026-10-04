@@ -12,7 +12,7 @@ from app.middleware import (
     MaintenanceMiddleware,
     UploadBodyLimitMiddleware,
     _normalize_path_fallback,
-    _upload_body_limit,
+    _upload_body_limits,
     _is_upload_path,
     _parse_content_length,
     _parse_exclude_prefixes,
@@ -893,28 +893,50 @@ def _list_send(sent: list[dict]):
     return send
 
 
-def test_upload_body_limit_covers_multipart_upload_routes() -> None:
-    """Multipart upload paths carry a cap; unrelated paths return None."""
-    from app.image_validation import UPLOAD_MAX_BYTES
-    from app.task_constants import BULK_IMPORT_MAX_UPLOAD_BYTES
+def _chunked(messages: list[dict]):
+    items = iter(messages)
 
-    assert _upload_body_limit("/api/source-images/upload") is not None
-    assert _upload_body_limit("/api/images/123/replace") is not None
-    assert _upload_body_limit("/api/admin/bulk-import/") is not None
-    assert (
-        _upload_body_limit("/api/source-images/upload")
-        == UPLOAD_MAX_BYTES + 1024 * 1024
+    async def receive() -> dict:
+        return next(items)
+
+    return receive
+
+
+def _multipart_body(boundary: bytes, parts: list[bytes]) -> bytes:
+    out = b""
+    for part in parts:
+        out += (
+            b"--" + boundary + b"\r\n"
+            b'Content-Disposition: form-data; name="files"; filename="f.png"\r\n'
+            b"Content-Type: image/png\r\n\r\n" + part + b"\r\n"
+        )
+    return out + b"--" + boundary + b"--\r\n"
+
+
+def test_upload_body_limits_covers_multipart_upload_routes() -> None:
+    """Multipart upload paths carry (per-part, request) caps; others None."""
+    from app.image_validation import UPLOAD_MAX_BYTES
+    from app.task_constants import (
+        BULK_IMPORT_MAX_REQUEST_BYTES,
+        BULK_IMPORT_MAX_UPLOAD_BYTES,
     )
-    assert (
-        _upload_body_limit("/api/admin/bulk-import/")
-        == BULK_IMPORT_MAX_UPLOAD_BYTES + 1024 * 1024
+
+    single = _upload_body_limits("/api/source-images/upload")
+    assert single == (
+        UPLOAD_MAX_BYTES + 1024 * 1024,
+        UPLOAD_MAX_BYTES + 1024 * 1024,
     )
-    assert _upload_body_limit("/api/images") is None
-    assert _upload_body_limit("/api/admin/tasks/123/upload") is None
+    assert _upload_body_limits("/api/images/123/replace") == single
+    assert _upload_body_limits("/api/admin/bulk-import/") == (
+        BULK_IMPORT_MAX_UPLOAD_BYTES + 1024 * 1024,
+        BULK_IMPORT_MAX_REQUEST_BYTES + 1024 * 1024,
+    )
+    assert _upload_body_limits("/api/images") is None
+    assert _upload_body_limits("/api/admin/tasks/123/upload") is None
 
 
 async def test_upload_body_limit_rejects_declared_length_without_reading() -> None:
-    """A Content-Length over the cap gets a 413 before any body is read."""
+    """A Content-Length over the request cap gets a 413 before any body."""
     sent: list[dict] = []
 
     async def receive() -> dict:
@@ -939,24 +961,21 @@ async def test_upload_body_limit_rejects_declared_length_without_reading() -> No
     assert starts[0]["status"] == 413
 
 
-async def test_upload_body_limit_aborts_chunked_body_over_cap() -> None:
-    """A chunked body (no Content-Length) is cut at the cap mid-stream.
+async def test_upload_body_limit_aborts_chunked_body_over_request_cap() -> None:
+    """A chunked body (no Content-Length) is cut at the request cap.
 
     The downstream app sees a client disconnect and its own response is
     suppressed — exactly one response (the middleware's 413) is sent.
     """
     sent: list[dict] = []
     app_saw_disconnect = False
-    chunks = iter(
+    chunks = _chunked(
         [
             {"type": "http.request", "body": b"aaaa", "more_body": True},
             {"type": "http.request", "body": b"bbbb", "more_body": True},
             {"type": "http.request", "body": b"cccc", "more_body": False},
         ]
     )
-
-    async def receive() -> dict:
-        return next(chunks)
 
     async def inner_app(scope, receive, send) -> None:
         nonlocal app_saw_disconnect
@@ -972,10 +991,11 @@ async def test_upload_body_limit_aborts_chunked_body_over_cap() -> None:
     scope = _make_scope(method="POST", path="/api/admin/bulk-import/")
 
     with (
-        patch("app.middleware.BULK_IMPORT_MAX_UPLOAD_BYTES", 4),
+        patch("app.middleware.BULK_IMPORT_MAX_UPLOAD_BYTES", 100),
+        patch("app.middleware.BULK_IMPORT_MAX_REQUEST_BYTES", 8),
         patch("app.middleware._MULTIPART_OVERHEAD_BYTES", 0),
     ):
-        await mw(scope, receive, _list_send(sent))
+        await mw(scope, chunks, _list_send(sent))
 
     starts = [m for m in sent if m["type"] == "http.response.start"]
     assert len(starts) == 1
@@ -983,18 +1003,129 @@ async def test_upload_body_limit_aborts_chunked_body_over_cap() -> None:
     assert app_saw_disconnect
 
 
+async def test_upload_body_limit_rejects_oversized_part_in_multipart() -> None:
+    """One multipart part over the per-file cap gets a 413 mid-stream."""
+    sent: list[dict] = []
+    boundary = b"testboundary"
+    body = _multipart_body(boundary, [b"x" * 50])
+    chunks = _chunked(
+        [{"type": "http.request", "body": body, "more_body": False}]
+    )
+
+    async def inner_app(scope, receive, send) -> None:
+        while True:
+            if (await receive())["type"] == "http.disconnect":
+                return
+
+    mw = UploadBodyLimitMiddleware(app=inner_app)
+    scope = _make_scope(
+        method="POST",
+        path="/api/source-images/upload",
+        headers={"content-type": 'multipart/form-data; boundary=testboundary'},
+    )
+
+    with (
+        patch("app.middleware.UPLOAD_MAX_BYTES", 20),
+        patch("app.middleware._MULTIPART_OVERHEAD_BYTES", 0),
+    ):
+        await mw(scope, chunks, _list_send(sent))
+
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert len(starts) == 1
+    assert starts[0]["status"] == 413
+    bodies = [m for m in sent if m["type"] == "http.response.body"]
+    assert b"per-upload size limit" in bodies[0]["body"]
+
+
+async def test_upload_body_limit_allows_batch_over_single_file_cap() -> None:
+    """Individually valid parts are not rejected for their sum (#1432).
+
+    Two parts (≈98 B each with headers) under a 120 B per-part cap pass
+    even though the ≈200 B body exceeds that cap — the endpoint applies
+    the limit per file, so the middleware must too.
+    """
+    sent: list[dict] = []
+    boundary = b"testboundary"
+    body = _multipart_body(boundary, [b"x" * 6, b"y" * 6])
+    chunks = _chunked(
+        [{"type": "http.request", "body": body, "more_body": False}]
+    )
+
+    async def inner_app(scope, receive, send) -> None:
+        await receive()
+        await send({"type": "http.response.start", "status": 201, "headers": []})
+        await send({"type": "http.response.body", "body": b"done"})
+
+    mw = UploadBodyLimitMiddleware(app=inner_app)
+    scope = _make_scope(
+        method="POST",
+        path="/api/admin/bulk-import/",
+        headers={"content-type": 'multipart/form-data; boundary=testboundary'},
+    )
+
+    with (
+        patch("app.middleware.BULK_IMPORT_MAX_UPLOAD_BYTES", 120),
+        patch("app.middleware.BULK_IMPORT_MAX_REQUEST_BYTES", 10_000),
+        patch("app.middleware._MULTIPART_OVERHEAD_BYTES", 0),
+    ):
+        await mw(scope, chunks, _list_send(sent))
+
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert starts[0]["status"] == 201
+
+
+async def test_upload_body_limit_catches_boundary_split_across_chunks() -> None:
+    """A delimiter split across message chunks still resets the counter."""
+    sent: list[dict] = []
+    boundary = b"boundary"
+    full = _multipart_body(boundary, [b"a" * 30, b"b" * 30])
+    split = 40  # deliberately inside the first part's data
+    chunks = _chunked(
+        [
+            {"type": "http.request", "body": full[:split], "more_body": True},
+            {"type": "http.request", "body": full[split:], "more_body": False},
+        ]
+    )
+
+    async def inner_app(scope, receive, send) -> None:
+        while True:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                return
+            if not message.get("more_body"):
+                break
+        await send({"type": "http.response.start", "status": 201, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    mw = UploadBodyLimitMiddleware(app=inner_app)
+    scope = _make_scope(
+        method="POST",
+        path="/api/admin/bulk-import/",
+        headers={"content-type": 'multipart/form-data; boundary=boundary'},
+    )
+
+    with (
+        patch("app.middleware.BULK_IMPORT_MAX_UPLOAD_BYTES", 40),
+        patch("app.middleware.BULK_IMPORT_MAX_REQUEST_BYTES", 10_000),
+        patch("app.middleware._MULTIPART_OVERHEAD_BYTES", 0),
+    ):
+        await mw(scope, chunks, _list_send(sent))
+
+    # Each part is ~30 B of data + ~90 B of headers ≈ 120 B — over the
+    # 40 B per-part cap, so the middleware must still cut it.
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert starts[0]["status"] == 413
+
+
 async def test_upload_body_limit_passes_through_within_cap() -> None:
     """A body under the cap streams through to the app untouched."""
     sent: list[dict] = []
-    chunks = iter(
+    chunks = _chunked(
         [
             {"type": "http.request", "body": b"aa", "more_body": True},
             {"type": "http.request", "body": b"bb", "more_body": False},
         ]
     )
-
-    async def receive() -> dict:
-        return next(chunks)
 
     async def inner_app(scope, receive, send) -> None:
         while True:
@@ -1011,7 +1142,7 @@ async def test_upload_body_limit_passes_through_within_cap() -> None:
         patch("app.middleware.UPLOAD_MAX_BYTES", 100),
         patch("app.middleware._MULTIPART_OVERHEAD_BYTES", 0),
     ):
-        await mw(scope, receive, _list_send(sent))
+        await mw(scope, chunks, _list_send(sent))
 
     starts = [m for m in sent if m["type"] == "http.response.start"]
     assert starts[0]["status"] == 201
