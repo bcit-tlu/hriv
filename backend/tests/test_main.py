@@ -313,13 +313,26 @@ async def test_storage_health_unwritable(monkeypatch) -> None:
     assert exc_info.value.status_code == 503
 
 
-async def test_readiness_ok() -> None:
+async def test_readiness_ok(monkeypatch) -> None:
     """readiness returns ready when the database and storage are reachable."""
     from app.main import app, readiness
 
-    db = AsyncMock()
-    result = await readiness(db=db)
+    monkeypatch.setattr("app.main._check_db_ready", AsyncMock(return_value=True))
+    result = await readiness()
     assert result == {"status": "ready", "version": app.version}
+
+
+async def test_readiness_db_unreachable(monkeypatch) -> None:
+    """readiness raises 503 when no fresh database connection can be made."""
+    from fastapi import HTTPException
+
+    from app.main import readiness
+
+    monkeypatch.setattr("app.main._check_db_ready", AsyncMock(return_value=False))
+
+    with pytest.raises(HTTPException) as exc_info:
+        await readiness()
+    assert exc_info.value.status_code == 503
 
 
 async def test_readiness_storage_unwritable(monkeypatch) -> None:
@@ -328,14 +341,86 @@ async def test_readiness_storage_unwritable(monkeypatch) -> None:
 
     from app.main import readiness
 
+    monkeypatch.setattr("app.main._check_db_ready", AsyncMock(return_value=True))
     monkeypatch.setattr(
         "app.main._check_storage_ready", AsyncMock(return_value=False)
     )
 
-    db = AsyncMock()
     with pytest.raises(HTTPException) as exc_info:
-        await readiness(db=db)
+        await readiness()
     assert exc_info.value.status_code == 503
+
+
+def _mock_probe_engine(*, connect_error: Exception | None = None) -> MagicMock:
+    """Build a mock ``get_probe_engine`` engine with a connect() context manager."""
+    engine = MagicMock()
+    if connect_error is not None:
+        engine.connect.side_effect = connect_error
+    else:
+        engine.connect.return_value.__aenter__.return_value = AsyncMock()
+    return engine
+
+
+async def test_check_db_ready_ok(monkeypatch) -> None:
+    """_check_db_ready returns True when a fresh connection runs SELECT 1."""
+    from app.main import _check_db_ready
+
+    engine = _mock_probe_engine()
+    monkeypatch.setattr(
+        "app.main.get_probe_engine", MagicMock(return_value=engine)
+    )
+
+    assert await _check_db_ready() is True
+    conn_cm = engine.connect.return_value
+    conn = conn_cm.__aenter__.return_value
+    conn.execute.assert_awaited_once()
+    conn_cm.__aexit__.assert_awaited_once()
+
+
+async def test_check_db_ready_connect_failure(monkeypatch) -> None:
+    """_check_db_ready returns False when the fresh connection is refused."""
+    from app.main import _check_db_ready
+
+    monkeypatch.setattr(
+        "app.main.get_probe_engine",
+        MagicMock(return_value=_mock_probe_engine(connect_error=OSError("refused"))),
+    )
+
+    assert await _check_db_ready() is False
+
+
+async def test_check_db_ready_query_failure(monkeypatch) -> None:
+    """_check_db_ready returns False when SELECT 1 fails on a fresh connection."""
+    from app.main import _check_db_ready
+
+    engine = _mock_probe_engine()
+    conn = engine.connect.return_value.__aenter__.return_value
+    conn.execute = AsyncMock(side_effect=OSError("connection reset"))
+    monkeypatch.setattr(
+        "app.main.get_probe_engine", MagicMock(return_value=engine)
+    )
+
+    assert await _check_db_ready() is False
+
+
+async def test_check_db_ready_timeout(monkeypatch) -> None:
+    """_check_db_ready returns False when the round-trip exceeds the bound."""
+    import asyncio
+
+    from app.main import _check_db_ready
+
+    engine = _mock_probe_engine()
+    conn = engine.connect.return_value.__aenter__.return_value
+
+    async def _hang(_stmt) -> None:
+        await asyncio.sleep(60)
+
+    conn.execute = AsyncMock(side_effect=_hang)
+    monkeypatch.setattr(
+        "app.main.get_probe_engine", MagicMock(return_value=engine)
+    )
+
+    assert await _check_db_ready(timeout=0.05) is False
 
 
 def test_check_storage_writable_ok() -> None:
