@@ -73,6 +73,7 @@ import {
   addImagesToCollection,
   createCollectionWithImages,
   useEditableCollections,
+  useVisibleCollections,
 } from './useAddToCollection'
 import { useFeatures } from './useFeatures'
 import { isAcceptedFile } from './fileUtils'
@@ -1551,15 +1552,27 @@ export default function App() {
     setSelectedCollectionItemId(null)
   }, [collectionsData.detail, selectedCollectionItemId])
 
-  // "Add to Collection" from the image view (#1415).
+  // "Add to Collection" from the image view (#1415) and from search
+  // multi-select (#1418) — both paths set the target image ids before opening.
   const [addToCollectionOpen, setAddToCollectionOpen] = useState(false)
+  const [addToCollectionImageIds, setAddToCollectionImageIds] = useState<number[]>([])
   const addToCollectionActive =
-    collectionsEnabled && addToCollectionOpen && selectedImage != null && currentUser != null
+    collectionsEnabled &&
+    addToCollectionOpen &&
+    addToCollectionImageIds.length > 0 &&
+    currentUser != null
   const editableCollections = useEditableCollections(addToCollectionActive)
-  const addToCollectionImageIds = useMemo(
-    () => (selectedImage ? [selectedImage.id] : []),
-    [selectedImage],
+
+  // Visible collections indexed by the search modal (#1418); the backend
+  // list is already access-filtered for the caller.
+  const searchableCollections = useVisibleCollections(
+    collectionsEnabled && searchOpen && currentUser != null,
   )
+
+  const handleSearchAddToCollection = useCallback((imageIds: number[]) => {
+    setAddToCollectionImageIds(imageIds)
+    setAddToCollectionOpen(true)
+  }, [])
 
   const reportAddedToCollection = useCallback(
     (collection: { id: number; name: string }, addedCount: number) => {
@@ -1594,7 +1607,7 @@ export default function App() {
           return true
         }
         setErrorSnack(
-          `"${result.collection.name}" already holds ${SYNCHRONIZED_MAX_IMAGES} images, the most a synchronized collection can show.`,
+          `Adding this selection to "${result.collection.name}" would exceed the ${SYNCHRONIZED_MAX_IMAGES}-image limit for synchronized collections.`,
         )
         return false
       } catch (err) {
@@ -2034,7 +2047,10 @@ export default function App() {
                         <Button
                           variant="outlined"
                           startIcon={<PlaylistAddIcon />}
-                          onClick={() => setAddToCollectionOpen(true)}
+                          onClick={() => {
+                            setAddToCollectionImageIds([selectedImage.id])
+                            setAddToCollectionOpen(true)
+                          }}
                           disabled={canvasEditActive}
                           sx={inactiveViewerActionSx}
                         >
@@ -2786,7 +2802,7 @@ export default function App() {
         onGroupUpdated={handleGroupUpdated}
       />
 
-      {collectionsEnabled && selectedImage && currentUser && (
+      {collectionsEnabled && currentUser && (
         <AddToCollectionDialog
           open={addToCollectionOpen}
           onClose={() => setAddToCollectionOpen(false)}
@@ -2827,6 +2843,10 @@ export default function App() {
         uncategorizedImages={uncategorizedImages}
         programs={programs}
         users={searchUsers}
+        collections={searchableCollections.collections}
+        collectionsEnabled={collectionsEnabled}
+        onSelectCollection={handleOpenCollection}
+        onAddImagesToCollection={handleSearchAddToCollection}
         excludeHidden={isStudent}
         suppressExtendedResults={isStudent || currentUser?.role === 'staff'}
         onSelectCategory={(catPath) => {

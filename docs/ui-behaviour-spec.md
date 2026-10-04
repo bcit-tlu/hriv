@@ -306,10 +306,14 @@ re-checks).
   a spinner, a plain error `Alert`, and an empty state ("You don't have a
   collection you can add to yet.") follow the usual patterns. The filter and
   busy state reset each time the dialog opens.
-- **Given** a synchronized collection, **When** its image count plus the
-  images being added would exceed four, **Then** its row is disabled and
-  hovering it shows "Synchronized collections hold at most 4 images."
-  Sequence rows are never capped.
+- **Given** a synchronized collection, **When** it already holds four
+  images, **Then** its row is disabled and hovering it shows "Synchronized
+  collections hold at most 4 images." Under-cap rows stay clickable — the
+  summary count cannot see which selected ids are already members, so the
+  authoritative capacity check runs in `addImagesToCollection` against the
+  fetched member list; a genuinely overflowing add keeps the dialog open
+  with "Adding this selection to `<name>` would exceed the 4-image limit
+  for synchronized collections." Sequence rows are never capped.
 - **Given** a row is picked, **When** the add is in flight, **Then** every row
   and the footer buttons are disabled and the picked row shows a spinner.
 - **Given** the add succeeds, **Then** the dialog closes and a success
@@ -341,11 +345,30 @@ re-checks).
   `Link URL`, so users can keep only annotation-derived image matches visible.
 - Type filter chips scope the searched fields, not just the result types: with
   a type chip active (and no Field chips selected), the query matches only the
-  field most closely associated with that type — `Categories` searches category
-  names, `Images` searches image titles, `Programs` searches program names,
-  `People` searches people names, and `Guide` searches guide titles. Selecting
-  any Field chip overrides that default scope, so `Images` + `Note` still
-  finds images whose notes match.
+  field(s) most closely associated with that type — `Categories` searches
+  category names, `Images` searches image titles, `Programs` searches program
+  names, `People` searches people names, `Guide` searches guide titles, and
+  `Collections` searches collection names and descriptions. Selecting any
+  Field chip overrides that default scope, so `Images` + `Note` still finds
+  images whose notes match.
+- Collections are a result kind for **every** role (unlike program/user/guide
+  kinds, they are not hidden from students): the modal indexes the caller's
+  `GET /api/collections` list, which the backend already access-filters, so a
+  student never sees a restricted-failing collection. A collection row shows
+  its type, image count, and owner, and selecting it navigates to
+  `?collection={id}`.
+- Multi-select is image-only: a **Select** toggle appears next to the result
+  count when image results exist (or select mode is already active). In
+  select mode, image rows gain checkboxes labelled `Select {image title}`
+  and the row click toggles the check instead of navigating; every other
+  kind stays navigable and is never selectable. Selections persist across
+  query and filter changes — the footer count includes picks hidden by the
+  current query and **Add to collection** opens `AddToCollectionDialog`
+  with the ids in "order encountered" (result order within a query,
+  chronological across queries). Closing the modal, toggling select mode
+  off, or handing off to the dialog resets the selection. When the
+  collections feature flag is off the modal hides collection results, the
+  Collections chip, and the collections wording in the placeholder.
 - Search result field labels render in a stronger secondary style so the field
   name reads as metadata rather than body text.
 - Staff searches also match the user guide: each guide page is split into

@@ -428,10 +428,13 @@ name filter narrows the list. Rows show name, image count and a type chip.
 The dialog takes `imageIds: number[]` so the multi-select flow (#1418) can
 reuse it; the viewer passes the selected image.
 
-**Capacity.** A `synchronized` row whose `image_count + imageIds.length`
-would exceed `SYNCHRONIZED_MAX_IMAGES` (4) is disabled with an explanatory
-tooltip; sequence rows are never capped. The rule is re-checked against the
-fresh member list before the write.
+**Capacity.** A `synchronized` row is disabled with an explanatory tooltip
+only when its `image_count` has already reached `SYNCHRONIZED_MAX_IMAGES`
+(4); sequence rows are never capped. Borderline rows stay clickable
+because the summary count cannot see which `imageIds` are already members
+— the rule is re-checked against the fresh member list before the write
+and a genuinely overflowing add returns `full` (count-neutral error
+snackbar; the dialog stays open).
 
 **Add.** `addImagesToCollection` fetches `GET /api/collections/{id}` for the
 current member list and `version`, drops ids already present, and issues the
@@ -556,8 +559,53 @@ offset. Saved entries that do not match the shape are ignored by
 "rotate your device" hint while the viewers stay mounted underneath, so
 rotating back restores the exact view instead of re-opening the images.
 
-_Planned_ (#1418–#1419): search integration / multi-select add, and
-ownership management / transfer UI.
+### Search integration and multi-select (#1418)
+
+**Where.** `components/SearchModal.tsx`, `useAddToCollection.ts`
+(`useVisibleCollections`), `App.tsx`. No new endpoints — the modal indexes
+the existing `GET /api/collections` list.
+
+**Collections as results.** `collection` is a sixth `ResultKind` with its
+own type chip and `CollectionsIcon`. Matches search `name` (primary) and
+`description`; the **Collections** chip scopes to both fields, matching the
+primary-field semantics of the other type chips. A row shows name, the
+`Collection` kind chip, type (`Synchronized`/`Sequence`), image count, and
+owner via `describeCollectionOwner`; selecting it calls
+`onSelectCollection` → `handleOpenCollection` → `?collection={id}`.
+Collections are **not** part of `suppressExtendedResults` — they appear for
+every role because the list endpoint is already access-filtered
+server-side, so a student never sees a restricted-failing collection.
+
+**Data.** `App` calls `useVisibleCollections(collectionsEnabled &&
+searchOpen)` — a lazy list fetch each time the modal opens, shared with
+`useEditableCollections` (which now derives from it and filters
+`permissions.canEdit`). When the feature flag is off the list stays empty
+and no Collections chip appears.
+
+**Multi-select (image results only).** A **Select** toggle next to the
+result count appears when image results exist (or select mode is already
+on) and `onAddImagesToCollection` is provided. Image rows become labelled
+checkboxes (`Select {image name}`) inside a `<label>` row — clicking
+anywhere toggles — while every other kind keeps its `CardActionArea`
+navigation and is never selectable (this avoids nested-interactive
+controls, see #1345). Selections survive query and filter changes: each
+check records the result generation and position where the image
+appeared, so the footer count covers picks hidden by the current query
+and the payload emits them in "order encountered" — result order within
+one query, chronological batches across queries. A sticky footer shows
+"N images selected" with **Clear** and **Add to collection**, which opens
+`AddToCollectionDialog` with `imageIds`, reusing the #1415 dialog,
+capacity checks, and snackbar feedback. Closing the modal, cancelling
+select mode, or handing off resets the selection. When the collections
+feature flag is off, the modal hides collection results, the Collections
+chip, and the collections wording in the placeholder.
+
+**Image ids.** `App` keeps `addToCollectionImageIds` as state: the viewer
+button sets `[selectedImage.id]`, the search footer sets the checked ids;
+the dialog renders whenever `collectionsEnabled && currentUser`, so
+search-driven adds work with no image open.
+
+_Planned_ (#1419): ownership management / transfer UI.
 
 ## Tests
 
@@ -634,3 +682,10 @@ ownership management / transfer UI.
   results; viewer button per role and flag, canvas-edit disabling,
   desaturation, success / info / error snackbars and **View collection**
   navigation.
+- `frontend/tests/components/SearchModal.test.tsx`,
+  `useAddToCollection.test.tsx`, `App.test.tsx` (#1418) — collection results
+  on name/description, Collections chip field scoping, `?collection={id}`
+  navigation, collections visible under `suppressExtendedResults`, Select
+  toggle gating (image results + handler only), image-only checkboxes,
+  result-order payload, Clear/close reset, `useVisibleCollections` keeping
+  non-editable rows, dialog plumbing with the multi-selected ids.

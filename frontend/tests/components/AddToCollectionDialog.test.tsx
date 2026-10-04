@@ -163,20 +163,28 @@ describe('AddToCollectionDialog', () => {
     expect(await screen.findByText(CAP_REACHED_TOOLTIP)).toBeInTheDocument()
   })
 
-  it('counts every image being added against the synchronized cap', () => {
+  it('keeps under-cap synchronized rows clickable — membership dedupe is authoritative', () => {
+    // The summary's imageCount cannot see which selected ids are already
+    // members, so a borderline row must stay clickable: the add helper
+    // dedupes and reports 'full' only for genuinely overflowing additions.
     renderDialog({
       imageIds: [42, 43],
       collections: [
-        makeCollectionSummary({ id: 1, name: 'Three so far', imageCount: 3 }),
-        makeCollectionSummary({ id: 2, name: 'Two so far', imageCount: 2 }),
+        makeCollectionSummary({
+          id: 1,
+          name: 'Three so far',
+          type: 'synchronized',
+          imageCount: 3,
+        }),
+        makeCollectionSummary({ id: 2, name: 'Full sync', type: 'synchronized', imageCount: 4 }),
       ],
     })
-    expect(screen.getByRole('button', { name: 'Add to Three so far' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'Add to Three so far' })).not.toHaveAttribute(
+      'aria-disabled',
+    )
+    expect(screen.getByRole('button', { name: 'Add to Full sync' })).toHaveAttribute(
       'aria-disabled',
       'true',
-    )
-    expect(screen.getByRole('button', { name: 'Add to Two so far' })).not.toHaveAttribute(
-      'aria-disabled',
     )
     expect(screen.getByText('Choose a collection for this 2 images.')).toBeInTheDocument()
   })

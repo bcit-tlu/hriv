@@ -93,7 +93,7 @@ TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
 
 ### Changed search modal
 
-- frontend: `npm test -- SearchModal`
+- frontend: `npm test -- SearchModal useAddToCollection`
 - See [ui-behaviour-spec.md](ui-behaviour-spec.md).
 
 ### Changed admin import/export
