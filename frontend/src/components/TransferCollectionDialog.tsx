@@ -76,7 +76,9 @@ export default function TransferCollectionDialog({
       setSelectedProgramId('')
       setError(null)
       setSaving(false)
-      auth?.refreshUsers?.()
+      // Refreshing the directory is only needed by the admin user picker —
+      // the instructor path offers programs only.
+      if (auth?.currentUser?.role === 'admin') auth.refreshUsers?.()
     }
     prevOpen.current = open
   }, [open, auth])
@@ -106,8 +108,14 @@ export default function TransferCollectionDialog({
   }
 
   return (
-    <Dialog open={open} onClose={saving ? undefined : onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Transfer ownership</DialogTitle>
+    <Dialog
+      open={open}
+      onClose={saving ? undefined : onClose}
+      maxWidth="sm"
+      fullWidth
+      aria-labelledby="transfer-collection-title"
+    >
+      <DialogTitle id="transfer-collection-title">Transfer ownership</DialogTitle>
       <DialogContent>
         {collection && (
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>

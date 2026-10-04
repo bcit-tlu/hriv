@@ -1206,5 +1206,40 @@ describe('useCollectionsData', () => {
       await expect(result.current.transfer(1, { userId: 9 })).rejects.toBeInstanceOf(ApiError)
       expect(result.current.collections[0].owner).toMatchObject({ kind: 'user', userId: 7 })
     })
+
+    it('transfer merges the 409 conflict record so a retry sends the fresh version', async () => {
+      // Bob bumps the open collection to v4 behind Alice's back; her first
+      // attempt 409s and the fresh record replaces detail + list state, so
+      // the retry carries v4 rather than failing on v3 again.
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1, version: 3 })])
+      fetchCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 1, version: 3 }))
+      transferCollectionMock
+        .mockRejectedValueOnce(new ApiError(409, 'Stale', makeApiCollection({ id: 1, version: 4 })))
+        .mockResolvedValueOnce(
+          makeApiCollection({
+            id: 1,
+            version: 5,
+            owner: { program_id: 2, name: 'Ultrasound' },
+          }),
+        )
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.version).toBe(3))
+      fetchCollectionsMock.mockImplementationOnce(() => new Promise(() => {}))
+
+      await act(async () => {
+        await expect(result.current.transfer(1, { programId: 2 })).rejects.toBeInstanceOf(ApiError)
+      })
+      expect(result.current.detail?.version).toBe(4)
+      expect(result.current.collections[0].version).toBe(4)
+
+      await act(async () => {
+        await result.current.transfer(1, { programId: 2 })
+      })
+      expect(transferCollectionMock).toHaveBeenLastCalledWith(1, {
+        program_id: 2,
+        version: 4,
+      })
+      expect(result.current.detail?.version).toBe(5)
+    })
   })
 })

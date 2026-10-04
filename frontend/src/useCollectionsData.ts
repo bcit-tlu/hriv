@@ -4,6 +4,7 @@ import {
   createCollection,
   deleteCollection,
   fetchCollection,
+  collectionConflictCurrent,
   fetchCollections,
   replaceCollectionImages,
   saveCollectionViewport,
@@ -465,25 +466,48 @@ export function useCollectionsData({
         if (!baseline || baseline.id !== id) {
           baseline = apiCollectionToCollection(await fetchCollection(id))
         }
-        const updated = apiCollectionToCollection(
-          await transferCollection(id, {
-            ...('userId' in target ? { user_id: target.userId } : { program_id: target.programId }),
-            version: baseline.version,
-          }),
-        )
-        setDetail((prev) => (prev?.id === id ? updated : prev))
-        setCollections((prev) => {
-          const rest = prev.filter((c) => c.id !== id)
-          return matchesCollectionFilters(
-            updated,
-            latest.current.filters,
-            latest.current.currentUser,
+        try {
+          const updated = apiCollectionToCollection(
+            await transferCollection(id, {
+              ...('userId' in target
+                ? { user_id: target.userId }
+                : { program_id: target.programId }),
+              version: baseline.version,
+            }),
           )
-            ? [updated, ...rest]
-            : rest
-        })
-        void latest.current.load()
-        return updated
+          setDetail((prev) => (prev?.id === id ? updated : prev))
+          setCollections((prev) => {
+            const rest = prev.filter((c) => c.id !== id)
+            return matchesCollectionFilters(
+              updated,
+              latest.current.filters,
+              latest.current.currentUser,
+            )
+              ? [updated, ...rest]
+              : rest
+          })
+          void latest.current.load()
+          return updated
+        } catch (err) {
+          // A 409 carries the authoritative record — merge it so the next
+          // attempt sends the fresh version instead of failing again.
+          const conflict = collectionConflictCurrent(err)
+          if (conflict) {
+            const current = apiCollectionToCollection(conflict)
+            setDetail((prev) => (prev?.id === id ? current : prev))
+            setCollections((prev) => {
+              const rest = prev.filter((c) => c.id !== id)
+              return matchesCollectionFilters(
+                current,
+                latest.current.filters,
+                latest.current.currentUser,
+              )
+                ? [current, ...rest]
+                : rest
+            })
+          }
+          throw err
+        }
       }
       const queued = mutationQueue.current.then(run, () => run(null))
       mutationQueue.current = queued.then(
