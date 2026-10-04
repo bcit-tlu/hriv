@@ -1204,7 +1204,7 @@ async def test_upload_body_limit_ignores_unrelated_paths_and_methods() -> None:
 
 
 async def test_upload_body_limit_ensures_spool_dir(tmp_path) -> None:
-    """Upload requests re-ensure the TMPDIR spool dir before the multipart
+    """Multipart requests re-ensure the TMPDIR spool dir before the
     parser's first tempfile rollover — a filesystem import can remove it
     after TMPDIR was already resolved (#1365)."""
     source_dir = tmp_path / "source_images"
@@ -1214,7 +1214,43 @@ async def test_upload_body_limit_ensures_spool_dir(tmp_path) -> None:
     scope = _make_scope(
         method="POST",
         path="/api/source-images/upload",
-        headers={"content-length": "10"},
+        headers={
+            "content-length": "10",
+            "content-type": "multipart/form-data; boundary=abc",
+        },
+    )
+
+    async def receive() -> dict:
+        return {
+            "type": "http.request",
+            "body": b"0123456789",
+            "more_body": False,
+        }
+
+    with patch("app.middleware.settings") as mock_settings:
+        mock_settings.source_images_dir = str(source_dir)
+        await mw(scope, receive, _list_send(sent))
+
+    assert (source_dir / ".staging").is_dir()
+    inner.assert_awaited_once()
+
+
+async def test_upload_body_limit_ensures_spool_dir_on_uncapped_route(
+    tmp_path,
+) -> None:
+    """The ensure is not tied to the body-limit gate: multipart routes the
+    cap doesn't cover (db import) still get it (#1365)."""
+    source_dir = tmp_path / "source_images"
+    sent: list[dict] = []
+    inner = AsyncMock()
+    mw = UploadBodyLimitMiddleware(app=inner)
+    scope = _make_scope(
+        method="POST",
+        path="/api/admin/tasks/db-import",
+        headers={
+            "content-length": "10",
+            "content-type": "multipart/form-data; boundary=abc",
+        },
     )
 
     async def receive() -> dict:

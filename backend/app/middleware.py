@@ -613,25 +613,30 @@ class UploadBodyLimitMiddleware:
             await self.app(scope, receive, send)
             return
 
+        # Any multipart parse can roll the spool onto TMPDIR, which lives
+        # inside the source-images tree — and a filesystem import can
+        # replace that tree wholesale — so ensure the dir exists before
+        # the parser's first tempfile rollover needs it (#1365). This is
+        # independent of the body-limit gate so every multipart route
+        # (upload, replace, bulk import, db import, ...) self-heals. If
+        # the dir truly cannot be created the spool write fails the
+        # request anyway, so a failure here is not fatal.
+        boundary = _multipart_boundary(scope)
+        if boundary is not None:
+            with contextlib.suppress(OSError):
+                await asyncio.to_thread(
+                    os.makedirs,
+                    os.path.join(
+                        settings.source_images_dir, UPLOAD_SPOOL_DIR_NAME
+                    ),
+                    exist_ok=True,
+                )
+
         limits = _upload_body_limits(scope["path"])
         if limits is None:
             await self.app(scope, receive, send)
             return
         part_limit, request_limit = limits
-
-        # TMPDIR points inside the source-images tree and a filesystem
-        # import can replace that tree wholesale, so ensure the spool dir
-        # exists before the parser's first tempfile rollover needs it
-        # (#1365). If it truly cannot be created the subsequent spool
-        # fails the request anyway, so a failure here is not fatal.
-        with contextlib.suppress(OSError):
-            await asyncio.to_thread(
-                os.makedirs,
-                os.path.join(
-                    settings.source_images_dir, UPLOAD_SPOOL_DIR_NAME
-                ),
-                exist_ok=True,
-            )
 
         part_detail = _upload_body_limit_detail(scope["path"], per_part=True)
         request_detail = _upload_body_limit_detail(scope["path"], per_part=False)
@@ -651,8 +656,8 @@ class UploadBodyLimitMiddleware:
         # body's first delimiter has no CRLF, so seeding `tail` with one
         # makes the opening "--boundary" match the same pattern. `tail`
         # keeps the trailing bytes of the previous chunk so a delimiter
-        # split across message chunks is still found.
-        boundary = _multipart_boundary(scope)
+        # split across message chunks is still found. `boundary` was
+        # already extracted above for the spool-dir ensure.
         delimiter = b"\r\n--" + boundary if boundary else None
         tail = b"\r\n" if boundary else b""
         # Absolute stream offset where the in-progress part began.
