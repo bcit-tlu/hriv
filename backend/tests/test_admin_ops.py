@@ -2580,6 +2580,67 @@ def test_swap_imported_entries_recreates_upload_spool_dir(tmp_path) -> None:
     assert (data_source / ".staging").is_dir()
 
 
+def _extracted_and_data_dirs(tmp_path):
+    extracted_dir = tmp_path / "staging" / "data"
+    extracted_source = extracted_dir / "source_images"
+    extracted_source.mkdir(parents=True)
+    (extracted_source / "new.tiff").write_text("new")
+    data_dir = tmp_path / "data"
+    data_source = data_dir / "source_images"
+    data_source.mkdir(parents=True)
+    return extracted_dir, data_dir, data_source
+
+
+def test_swap_imported_entries_fails_when_spool_recreate_fails(
+    tmp_path, monkeypatch
+) -> None:
+    """A persistent makedirs failure fails the import task so it stays
+    observable — local mode has no periodic sweep to retry it (#1365)."""
+    extracted_dir, data_dir, data_source = _extracted_and_data_dirs(tmp_path)
+
+    monkeypatch.setattr(
+        "app.admin_ops.os.makedirs",
+        MagicMock(side_effect=OSError("fs offline")),
+    )
+
+    with pytest.raises(RuntimeError, match="upload spool"):
+        _swap_imported_entries(
+            extracted_dir,
+            data_dir,
+            str(data_dir / "tiles"),
+            str(data_source),
+        )
+
+
+def test_swap_imported_entries_retries_transient_spool_failure(
+    tmp_path, monkeypatch
+) -> None:
+    """A transient makedirs error retries before the swap reports success."""
+    extracted_dir, data_dir, data_source = _extracted_and_data_dirs(tmp_path)
+
+    real_makedirs = os.makedirs
+    calls = []
+
+    def _flaky_makedirs(path, **kwargs):
+        calls.append(path)
+        if len(calls) == 1:
+            raise OSError("transient")
+        return real_makedirs(path, **kwargs)
+
+    monkeypatch.setattr("app.admin_ops.os.makedirs", _flaky_makedirs)
+    monkeypatch.setattr("app.admin_ops.time.sleep", lambda _s: None)
+
+    result = _swap_imported_entries(
+        extracted_dir,
+        data_dir,
+        str(data_dir / "tiles"),
+        str(data_source),
+    )
+
+    assert result["source_files"] == 1
+    assert (data_source / ".staging").is_dir()
+
+
 def test_compute_archive_sha256(tmp_path) -> None:
     payload = b"archive-bytes" * 1000
     archive = tmp_path / "a.tar.gz"

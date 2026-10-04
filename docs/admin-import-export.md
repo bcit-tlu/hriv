@@ -132,8 +132,9 @@ walking millions of generated tile files.
 
 - **Export contents:** source images and other authoritative filesystem data.
 - **Excluded:** the tile pyramid (`image_files/`, `image.dzi`,
-  `thumbnail.jpeg`, and other derived tile artifacts) plus `admin_tasks/`
-  scratch files.
+  `thumbnail.jpeg`, and other derived tile artifacts), `admin_tasks/`
+  scratch files, and `source_images/.staging/` — the `TMPDIR` upload
+  spool (#1365), whose contents are transient and unowned.
 - **Import behavior:** filesystem imports restore the source files only. After a
   successful files import, a **Rebuild Tiles** task is queued automatically; it
   regenerates missing or stale DZI pyramids from the restored source images. The
@@ -244,6 +245,15 @@ Because entries are moved into place with `os.rename`, `IMPORT_STAGING_DIR`
 this). If it is overridden to a different volume, the import fails fast at the
 preflight with a clear error rather than surfacing a cryptic cross-device
 (`EXDEV`) failure part-way through the swap.
+
+The swap replaces `source_images/` wholesale, and exports omit its transient
+`.staging/` upload-spool subdirectory — so after the swap the import recreates
+`<source_images_dir>/.staging` before reporting success (#1365). A running API
+pod's `TMPDIR` keeps pointing there; without this step the next multipart
+upload would fail on tempfile rollover. Creation gets a bounded retry for
+transient filesystem errors; a persistent failure fails the import task so it
+stays observable — re-running the import retries creation (local mode has no
+periodic reconciliation sweep).
 
 The admin UI's "Previously uploaded import archives" list shows cumulative
 storage usage (for example, "3 retained archives using 87.4 GiB") so operators
