@@ -331,40 +331,61 @@ export function useCollectionsData({
    * error so the caller can surface the message. Members the caller cannot
    * see are kept at the end (the backend carries them over, matching the
    * visible-only submit list).
+   *
+   * Drops are serialized through `reorderQueue`: each call runs only after
+   * the previous PUT settles, and the queue carries the last authoritative
+   * record forward so each PUT sends a `version` the server accepts even if
+   * React has not committed the previous response yet. Without this, two
+   * drags landing inside one PUT window send the same version — the loser
+   * would 409 and roll the detail back over the winner's saved order.
    */
-  const reorderImages = useCallback(async (id: number, imageIds: number[]): Promise<Collection> => {
-    const baseline = detailRef.current
-    if (!baseline || baseline.id !== id) {
-      throw new Error('The collection is not loaded.')
+  const reorderQueue = useRef<Promise<Collection | null>>(Promise.resolve(null))
+  const reorderImages = useCallback((id: number, imageIds: number[]): Promise<Collection> => {
+    const run = async (prior: Collection | null): Promise<Collection> => {
+      const baseline = prior?.id === id ? prior : detailRef.current
+      if (!baseline || baseline.id !== id) {
+        throw new Error('The collection is not loaded.')
+      }
+      const byId = new Map(baseline.images.map((img) => [img.id, img] as const))
+      const optimisticImages = [
+        ...imageIds
+          .map((imageId) => byId.get(imageId))
+          .filter((img): img is NonNullable<typeof img> => img != null),
+        ...baseline.images.filter((img) => !imageIds.includes(img.id)),
+      ]
+      setDetail({ ...baseline, images: optimisticImages })
+      try {
+        const updated = apiCollectionToCollection(
+          await replaceCollectionImages(id, {
+            image_ids: imageIds,
+            version: baseline.version,
+          }),
+        )
+        setDetail((prev) => (prev?.id === id ? updated : prev))
+        setCollections((prev) => {
+          const rest = prev.filter((c) => c.id !== id)
+          return matchesCollectionFilters(
+            updated,
+            latest.current.filters,
+            latest.current.currentUser,
+          )
+            ? [updated, ...rest]
+            : rest
+        })
+        void latest.current.load()
+        return updated
+      } catch (err) {
+        setDetail((prev) => (prev?.id === id ? baseline : prev))
+        throw err
+      }
     }
-    const byId = new Map(baseline.images.map((img) => [img.id, img] as const))
-    const optimisticImages = [
-      ...imageIds
-        .map((imageId) => byId.get(imageId))
-        .filter((img): img is NonNullable<typeof img> => img != null),
-      ...baseline.images.filter((img) => !imageIds.includes(img.id)),
-    ]
-    setDetail({ ...baseline, images: optimisticImages })
-    try {
-      const updated = apiCollectionToCollection(
-        await replaceCollectionImages(id, {
-          image_ids: imageIds,
-          version: baseline.version,
-        }),
-      )
-      setDetail((prev) => (prev?.id === id ? updated : prev))
-      setCollections((prev) => {
-        const rest = prev.filter((c) => c.id !== id)
-        return matchesCollectionFilters(updated, latest.current.filters, latest.current.currentUser)
-          ? [updated, ...rest]
-          : rest
-      })
-      void latest.current.load()
-      return updated
-    } catch (err) {
-      setDetail((prev) => (prev?.id === id ? baseline : prev))
-      throw err
-    }
+    const queued = reorderQueue.current.then(run, () => run(null))
+    // The chain never rejects — the next drop always gets a baseline.
+    reorderQueue.current = queued.then(
+      (updated) => updated,
+      () => null,
+    )
+    return queued
   }, [])
 
   /**

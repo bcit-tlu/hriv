@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -76,6 +76,9 @@ function SortableStripThumb({
   return (
     <Box
       ref={ref}
+      // Focusable so the dnd-kit KeyboardSensor can pick it up for reorder.
+      tabIndex={0}
+      role="button"
       aria-label={`Drag to reorder ${image.name}`}
       sx={{
         flex: '0 0 auto',
@@ -114,6 +117,16 @@ export default function SequenceCollectionViewer({
   // Images whose tiles failed mid-session (deleted / access lost / expired
   // renewal) are skipped by navigation and dimmed in the strip.
   const [failedIds, setFailedIds] = useState<ReadonlySet<number>>(() => new Set())
+  // Failed ids and reorder mode belong to this collection only — a different
+  // collection opened without an unmount must not inherit them.
+  const collectionId = collection.id
+  const previousCollectionId = useRef(collectionId)
+  useEffect(() => {
+    if (previousCollectionId.current === collectionId) return
+    previousCollectionId.current = collectionId
+    setFailedIds(new Set())
+    setReordering(false)
+  }, [collectionId])
 
   const available = useMemo(
     () => images.filter((img) => !failedIds.has(img.id)),
@@ -229,7 +242,9 @@ export default function SequenceCollectionViewer({
     )
   }
 
-  const position = `${currentIndex + 1} of ${available.length}`
+  // Position is over the full member list — the strip still shows every
+  // member (failed ones dimmed), so numbering must not renumber on failure.
+  const position = `${images.indexOf(current) + 1} of ${images.length}`
   const lockedOverlays = lockedOverlaysFromMetadata(current.metadataExtra)
 
   return (

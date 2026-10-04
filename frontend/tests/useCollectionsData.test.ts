@@ -703,7 +703,7 @@ describe('useCollectionsData', () => {
       )
 
       let reorderPromise!: Promise<unknown>
-      act(() => {
+      await act(async () => {
         reorderPromise = result.current.reorderImages(1, [12, 10, 11])
       })
       // Optimistic order is visible before the PUT resolves.
@@ -734,6 +734,64 @@ describe('useCollectionsData', () => {
 
       await expect(result.current.reorderImages(1, [11, 10])).rejects.toBeInstanceOf(ApiError)
       expect(result.current.detail?.images.map((i) => i.id)).toEqual([10, 11])
+    })
+
+    it('serializes overlapping reorders so the second PUT sees the new version', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1 })])
+      fetchCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({
+          id: 1,
+          version: 5,
+          images: [{ id: 10 }, { id: 11 }, { id: 12 }] as never,
+        }),
+      )
+      let resolveFirst!: (value: ReturnType<typeof makeApiCollection>) => void
+      replaceCollectionImagesMock
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              resolveFirst = resolve
+            }),
+        )
+        .mockResolvedValueOnce(
+          makeApiCollection({
+            id: 1,
+            version: 7,
+            images: [{ id: 12 }, { id: 11 }, { id: 10 }] as never,
+          }),
+        )
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.version).toBe(5))
+
+      // Two drops land while the first PUT is still in flight.
+      let first!: Promise<unknown>
+      let second!: Promise<unknown>
+      await act(async () => {
+        first = result.current.reorderImages(1, [12, 10, 11])
+        second = result.current.reorderImages(1, [12, 11, 10])
+      })
+      expect(replaceCollectionImagesMock).toHaveBeenCalledTimes(1)
+
+      await act(async () => {
+        resolveFirst(
+          makeApiCollection({
+            id: 1,
+            version: 6,
+            images: [{ id: 12 }, { id: 10 }, { id: 11 }] as never,
+          }),
+        )
+        await first
+      })
+      // The second PUT runs only now, carrying the first call's new version.
+      await act(async () => {
+        await second
+      })
+      expect(replaceCollectionImagesMock).toHaveBeenNthCalledWith(2, 1, {
+        image_ids: [12, 11, 10],
+        version: 6,
+      })
+      expect(result.current.detail?.images.map((i) => i.id)).toEqual([12, 11, 10])
+      expect(result.current.detail?.version).toBe(7)
     })
 
     it('reorderImages refuses to run before the detail has loaded', async () => {

@@ -480,7 +480,10 @@ describe('ImageViewer lifecycle telemetry', () => {
   })
 
   it('reports a non-auth open failure without attempting token renewal', async () => {
-    render(<ImageViewer tileSources="/tiles.dzi?tile_token=current" imageId={7} />)
+    const onError = vi.fn()
+    render(
+      <ImageViewer tileSources="/tiles.dzi?tile_token=current" imageId={7} onError={onError} />,
+    )
 
     act(() => viewer().fire('open-failed', { message: 'Malformed DZI descriptor' }))
 
@@ -490,6 +493,9 @@ describe('ImageViewer lifecycle telemetry', () => {
     expect(apiMocks.fetchImage).not.toHaveBeenCalled()
     expect(observabilityMocks.emitFrontendError).toHaveBeenCalledWith(
       expect.objectContaining({ errorCode: 'image_viewer_open_failed', imageId: 7 }),
+    )
+    expect(onError).toHaveBeenCalledWith(
+      'This image could not be loaded. It may have been removed or you may not have access to it.',
     )
   })
 

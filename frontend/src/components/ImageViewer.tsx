@@ -940,6 +940,12 @@ export default function ImageViewer({
         imageId: imageIdRef.current,
         categoryId: categoryIdRef.current,
       })
+      // Non-auth open failures (deleted image, dead tile host) used to only
+      // emit telemetry — surface them so hosts can react (the sequence
+      // viewer skips the broken member; the image view shows a snackbar).
+      onErrorRef.current?.(
+        'This image could not be loaded. It may have been removed or you may not have access to it.',
+      )
     })
 
     viewer.addHandler('tile-load-failed', (event) => {

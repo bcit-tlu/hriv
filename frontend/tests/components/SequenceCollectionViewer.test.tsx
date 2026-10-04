@@ -206,6 +206,32 @@ describe('SequenceCollectionViewer', () => {
     expect(screen.getByTestId('sequence-viewer-unavailable')).toBeInTheDocument()
   })
 
+  it('keeps member numbering stable when a member fails', () => {
+    const { rerender, props } = renderViewer()
+    act(() => {
+      ;(lastViewerProps!.onError as (m: string) => void)('gone')
+    })
+    // Slice 1 failed → skipped to Slice 2; position reads 2 of 3, not 1 of 2.
+    expect(props.onSelectItem).toHaveBeenCalledWith(101)
+    rerender(<SequenceCollectionViewer {...props} itemId={101} />)
+    expect(screen.getByTestId('sequence-position')).toHaveTextContent('2 of 3')
+    // The failed thumbnail stays visible but dimmed and disabled.
+    expect(screen.getByRole('button', { name: 'Go to Slice 1' })).toBeDisabled()
+  })
+
+  it('resets failures and reorder mode when a different collection opens', () => {
+    const { props, rerender } = renderViewer()
+    fireEvent.click(screen.getByTestId('sequence-reorder-toggle'))
+    act(() => {
+      ;(lastViewerProps!.onError as (m: string) => void)('gone')
+    })
+    const next = seqCollection({ id: 77, images: [makeImage({ id: 100, name: 'Slice 1' })] })
+    rerender(<SequenceCollectionViewer {...props} collection={next} itemId={100} />)
+    // Reorder mode exited and the shared image id is no longer failed.
+    expect(screen.queryByTestId('sequence-reorder-toggle')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Go to Slice 1' })).toBeEnabled()
+  })
+
   it('hides the reorder toggle from non-editors', () => {
     const collection = seqCollection({
       permissions: { canEdit: false, canDelete: false, canTransfer: false },
