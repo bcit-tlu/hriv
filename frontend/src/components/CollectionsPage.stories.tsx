@@ -158,6 +158,11 @@ function CollectionsPageExample(args: StoryArgs) {
           onOpenCollection={args.onOpenCollection}
           onCloseCollection={() => undefined}
           onOpenImage={args.onOpenImage}
+          selectedCollectionItemId={null}
+          onSelectCollectionItem={() => undefined}
+          onReorderImages={async () => undefined}
+          onCollectionImageRenewed={() => undefined}
+          onViewerError={() => undefined}
           loadCollection={async () => detail}
           onCreate={async () => undefined}
           onUpdate={async () => undefined}
@@ -178,7 +183,7 @@ const meta = {
     docs: {
       description: {
         component:
-          'The Collections tab: filter bar (type, My collections, owner — the owner select is hidden for students), responsive card grid, create button, and the detail placeholder that lists member images until the viewers land (#1416/#1417).',
+          'The Collections tab: filter bar (type, My collections, owner — the owner select is hidden for students), responsive card grid, create button, and the detail view — the sequence viewer for sequence collections (#1416), a member-list placeholder for synchronized until #1417 lands.',
       },
     },
   },

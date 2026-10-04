@@ -550,16 +550,24 @@ vi.mock('../src/components/PeoplePage', () => ({
 vi.mock('../src/components/CollectionsPage', () => ({
   default: ({
     selectedCollectionId,
+    selectedCollectionItemId,
     onOpenCollection,
     onCloseCollection,
     onOpenImage,
+    onSelectCollectionItem,
   }: {
     selectedCollectionId: number | null
+    selectedCollectionItemId: number | null
     onOpenCollection: (id: number) => void
     onCloseCollection: () => void
     onOpenImage: (image: typeof mockImage) => void
+    onSelectCollectionItem: (imageId: number) => void
   }) => (
-    <div data-testid="collections-page" data-selected={String(selectedCollectionId)}>
+    <div
+      data-testid="collections-page"
+      data-selected={String(selectedCollectionId)}
+      data-item={String(selectedCollectionItemId)}
+    >
       <button type="button" onClick={() => onOpenCollection(5)}>
         Open collection 5
       </button>
@@ -568,6 +576,9 @@ vi.mock('../src/components/CollectionsPage', () => ({
       </button>
       <button type="button" onClick={() => onOpenImage(mockImage)}>
         Open collection image
+      </button>
+      <button type="button" onClick={() => onSelectCollectionItem(99)}>
+        Select item 99
       </button>
     </div>
   ),
@@ -588,6 +599,8 @@ vi.mock('../src/useCollectionsData', () => ({
     create: vi.fn(),
     update: vi.fn(),
     remove: vi.fn(),
+    reorderImages: vi.fn(),
+    renewCollectionImage: vi.fn(),
   }),
 }))
 vi.mock('../src/components/ManagePage', () => ({ default: () => null }))
@@ -1785,6 +1798,68 @@ describe('App collections deep links (#1414)', () => {
       popStateHandler!('browse', [], null)
     })
     await waitFor(() => expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument())
+  })
+
+  it('restores ?collection={id}&item={image_id} on load (#1416)', async () => {
+    window.history.replaceState(null, '', '/?collection=5&item=99')
+    await renderWithCollectionsEnabled()
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '5')
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', '99')
+  })
+
+  it('ignores ?item= without a collection param', async () => {
+    window.history.replaceState(null, '', '/?item=99')
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+    expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Drop files on grid' })).toBeInTheDocument()
+  })
+
+  it('pushes ?collection={id}&item={image_id} history when the sequence position changes', async () => {
+    window.history.replaceState(null, '', '/?collection=5')
+    await renderWithCollectionsEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Select item 99' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', '99')
+    expect(pushNavStateMock).toHaveBeenLastCalledWith('collections', [], null, {
+      collection: '5',
+      item: '99',
+    })
+  })
+
+  it('restores the sequence position from the URL on back/forward', async () => {
+    window.history.replaceState(null, '', '/?collection=5')
+    await renderWithCollectionsEnabled()
+
+    window.history.replaceState(null, '', '/?collection=5&item=99')
+    act(() => {
+      popStateHandler!('collections', [], null)
+    })
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', '99')
+
+    window.history.replaceState(null, '', '/?collection=5')
+    act(() => {
+      popStateHandler!('collections', [], null)
+    })
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', 'null')
+  })
+
+  it('clears the sequence position when the collection is closed or another opens', async () => {
+    window.history.replaceState(null, '', '/?collection=5&item=99')
+    await renderWithCollectionsEnabled()
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', '99')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close collection' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', 'null')
+
+    window.history.replaceState(null, '', '/?collection=5&item=99')
+    act(() => {
+      popStateHandler!('collections', [], null)
+    })
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', '99')
+    fireEvent.click(screen.getByRole('button', { name: 'Open collection 5' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', 'null')
   })
 })
 

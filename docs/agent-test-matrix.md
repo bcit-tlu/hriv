@@ -49,6 +49,11 @@ TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
 - "Add to Collection" from the image view (#1415: `AddToCollectionDialog.tsx`,
   `useAddToCollection.ts`, the viewer action bar in `App.tsx`):
   `npm test -- AddToCollectionDialog useAddToCollection App.test`
+- Sequence collection viewer (#1416: `SequenceCollectionViewer.tsx`,
+  `?item=` in `useShareableImageState.ts`, `reorderImages` /
+  `renewCollectionImage` in `useCollectionsData.ts`, detail mount in
+  `CollectionsPage.tsx`):
+  `npm test -- SequenceCollectionViewer useCollectionsData useShareableImageState CollectionsPage App.test`
 - Storybook (stories + a11y): `npm run test:storybook -- Collection`
 - Collection visibility reuses the category dual gate — if you touched
   `visibility.py` also run the "Changed groups" set above. See

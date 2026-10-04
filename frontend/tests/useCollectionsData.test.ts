@@ -23,6 +23,7 @@ vi.mock('../src/api', async (importOriginal) => {
     createCollection: vi.fn(),
     updateCollection: vi.fn(),
     deleteCollection: vi.fn(),
+    replaceCollectionImages: vi.fn(),
   }
 })
 
@@ -31,6 +32,7 @@ import {
   deleteCollection,
   fetchCollection,
   fetchCollections,
+  replaceCollectionImages,
   updateCollection,
 } from '../src/api'
 
@@ -39,6 +41,7 @@ const fetchCollectionMock = vi.mocked(fetchCollection)
 const createCollectionMock = vi.mocked(createCollection)
 const updateCollectionMock = vi.mocked(updateCollection)
 const deleteCollectionMock = vi.mocked(deleteCollection)
+const replaceCollectionImagesMock = vi.mocked(replaceCollectionImages)
 
 function makeUser(overrides: Partial<User> = {}): User {
   return {
@@ -672,6 +675,208 @@ describe('useCollectionsData', () => {
       expect(result.current.collections.map((c) => c.id)).toEqual([2])
       expect(result.current.detail).toBeNull()
       await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(2))
+    })
+
+    it('reorderImages applies the order optimistically and sends the whole list (#1416)', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1 })])
+      fetchCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({
+          id: 1,
+          version: 5,
+          images: [
+            { id: 10, name: 'A' },
+            { id: 11, name: 'B' },
+            { id: 12, name: 'C' },
+          ] as never,
+        }),
+      )
+      replaceCollectionImagesMock.mockResolvedValueOnce(
+        makeApiCollection({
+          id: 1,
+          version: 6,
+          images: [{ id: 12 }, { id: 10 }, { id: 11 }] as never,
+        }),
+      )
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() =>
+        expect(result.current.detail?.images.map((i) => i.id)).toEqual([10, 11, 12]),
+      )
+
+      let reorderPromise!: Promise<unknown>
+      await act(async () => {
+        reorderPromise = result.current.reorderImages(1, [12, 10, 11])
+      })
+      // Optimistic order is visible before the PUT resolves.
+      expect(result.current.detail?.images.map((i) => i.id)).toEqual([12, 10, 11])
+      await act(async () => {
+        await reorderPromise
+      })
+      expect(replaceCollectionImagesMock).toHaveBeenCalledWith(1, {
+        image_ids: [12, 10, 11],
+        version: 5,
+      })
+      expect(result.current.detail?.images.map((i) => i.id)).toEqual([12, 10, 11])
+      expect(result.current.detail?.version).toBe(6)
+    })
+
+    it('reorderImages rolls detail back and propagates API errors', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1 })])
+      fetchCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({
+          id: 1,
+          version: 5,
+          images: [{ id: 10 }, { id: 11 }] as never,
+        }),
+      )
+      replaceCollectionImagesMock.mockRejectedValueOnce(new ApiError(409, 'Stale'))
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.images.map((i) => i.id)).toEqual([10, 11]))
+
+      await expect(result.current.reorderImages(1, [11, 10])).rejects.toBeInstanceOf(ApiError)
+      expect(result.current.detail?.images.map((i) => i.id)).toEqual([10, 11])
+    })
+
+    it('serializes overlapping reorders so the second PUT sees the new version', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1 })])
+      fetchCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({
+          id: 1,
+          version: 5,
+          images: [{ id: 10 }, { id: 11 }, { id: 12 }] as never,
+        }),
+      )
+      let resolveFirst!: (value: ReturnType<typeof makeApiCollection>) => void
+      replaceCollectionImagesMock
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              resolveFirst = resolve
+            }),
+        )
+        .mockResolvedValueOnce(
+          makeApiCollection({
+            id: 1,
+            version: 7,
+            images: [{ id: 12 }, { id: 11 }, { id: 10 }] as never,
+          }),
+        )
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.version).toBe(5))
+
+      // Two drops land while the first PUT is still in flight.
+      let first!: Promise<unknown>
+      let second!: Promise<unknown>
+      await act(async () => {
+        first = result.current.reorderImages(1, [12, 10, 11])
+        second = result.current.reorderImages(1, [12, 11, 10])
+      })
+      expect(replaceCollectionImagesMock).toHaveBeenCalledTimes(1)
+
+      await act(async () => {
+        resolveFirst(
+          makeApiCollection({
+            id: 1,
+            version: 6,
+            images: [{ id: 12 }, { id: 10 }, { id: 11 }] as never,
+          }),
+        )
+        await first
+      })
+      // The second PUT runs only now, carrying the first call's new version.
+      await act(async () => {
+        await second
+      })
+      expect(replaceCollectionImagesMock).toHaveBeenNthCalledWith(2, 1, {
+        image_ids: [12, 11, 10],
+        version: 6,
+      })
+      expect(result.current.detail?.images.map((i) => i.id)).toEqual([12, 11, 10])
+      expect(result.current.detail?.version).toBe(7)
+    })
+
+    it('a queued reorder still persists but never overwrites another open detail', async () => {
+      fetchCollectionsMock.mockResolvedValue([
+        makeApiCollectionSummary({ id: 1 }),
+        makeApiCollectionSummary({ id: 2 }),
+      ])
+      fetchCollectionMock
+        .mockResolvedValueOnce(
+          makeApiCollection({ id: 1, version: 5, images: [{ id: 10 }, { id: 11 }] as never }),
+        )
+        .mockResolvedValueOnce(makeApiCollection({ id: 2, name: 'Second', images: [] as never }))
+      let resolveFirst!: (value: ReturnType<typeof makeApiCollection>) => void
+      replaceCollectionImagesMock
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              resolveFirst = resolve
+            }),
+        )
+        .mockResolvedValueOnce(
+          makeApiCollection({ id: 1, version: 7, images: [{ id: 11 }, { id: 10 }] as never }),
+        )
+      const { result, rerender } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.id).toBe(1))
+
+      let first!: Promise<unknown>
+      let second!: Promise<unknown>
+      await act(async () => {
+        first = result.current.reorderImages(1, [11, 10])
+        second = result.current.reorderImages(1, [11, 10])
+      })
+      // Navigate to collection 2 while both PUTs are queued/in flight.
+      rerender({ selectedCollectionId: 2 })
+      await waitFor(() => expect(result.current.detail?.id).toBe(2))
+
+      await act(async () => {
+        resolveFirst(
+          makeApiCollection({ id: 1, version: 6, images: [{ id: 11 }, { id: 10 }] as never }),
+        )
+        await first
+      })
+      await act(async () => {
+        await second
+      })
+      // Both PUTs persisted collection 1's reorder…
+      expect(replaceCollectionImagesMock).toHaveBeenCalledTimes(2)
+      expect(replaceCollectionImagesMock).toHaveBeenNthCalledWith(2, 1, {
+        image_ids: [11, 10],
+        version: 6,
+      })
+      // …but collection 2's open detail was never displaced.
+      expect(result.current.detail?.id).toBe(2)
+      expect(result.current.detail?.name).toBe('Second')
+    })
+
+    it('reorderImages refuses to run before the detail has loaded', async () => {
+      const { result } = renderData()
+      await expect(result.current.reorderImages(1, [1])).rejects.toThrow(
+        'The collection is not loaded.',
+      )
+      expect(replaceCollectionImagesMock).not.toHaveBeenCalled()
+    })
+
+    it('renewCollectionImage swaps the member record inside detail', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1 })])
+      fetchCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, images: [{ id: 10 }, { id: 11 }] as never }),
+      )
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.images).toHaveLength(2))
+
+      act(() => {
+        result.current.renewCollectionImage(1, {
+          id: 11,
+          name: 'Renewed',
+          thumb: '/thumbs/new.jpg?token=x',
+          tile_sources: '/tiles/new.dzi?token=x',
+        } as never)
+      })
+      const renewed = result.current.detail?.images.find((i) => i.id === 11)
+      expect(renewed?.name).toBe('Renewed')
+      expect(renewed?.thumb).toContain('token=x')
+      // Other members untouched.
+      expect(result.current.detail?.images[0].id).toBe(10)
     })
   })
 })

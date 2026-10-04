@@ -1,0 +1,81 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as SequenceCollectionViewerStories from './SequenceCollectionViewer.stories'
+
+<Meta of={SequenceCollectionViewerStories} />
+
+<Title />
+
+<Subtitle>
+  The read-only viewer for sequence collections: one image at a time with Previous/Next, a position
+  readout, thumbnail-strip navigation, arrow-key support, and an editor-only reorder mode.
+</Subtitle>
+
+## When to use
+
+`CollectionsPage` mounts `SequenceCollectionViewer` when the open collection's `type` is
+`sequence`. It replaces the member list with a real viewer surface: the current image renders
+in `ImageViewer` with `canEditContent={false}`, and the canvas annotations, locked overlays,
+and measurement metadata stored on the image are shown read-only.
+
+The viewer is presentational. `App` owns the selected image (`?collection={id}&item={image_id}`)
+and passes it in through `CollectionsPage`, so the position is shareable and participates in
+browser history.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={SequenceCollectionViewerStories.Basic} />
+
+## Implementation guidance
+
+- **Read-only.** `ImageViewer` is mounted with `canEditContent={false}` and no annotation
+  mutation callbacks; "Open image" sends the user to the normal `?image={id}` browse view,
+  where annotations can be edited with the usual permissions.
+- **Per-image reset.** The viewer is keyed by image id, so switching items remounts it — no
+  viewport state bleeds between images.
+- **Navigation.** Previous/Next buttons, strip thumbnails (`Go to {name}` buttons), and
+  ←/→ arrow keys all change the current item. Arrow keys are handled on keydown-capture at
+  the sequence container so OpenSeadragon's own keyboard panning never sees them; editable
+  targets (inputs, textareas, selects, textboxes) are ignored, and the keys are given back
+  to dnd-kit's keyboard sensor while reordering.
+- **Fallback states.** An empty collection shows "no visible images"; if the current image's
+  tiles fail mid-session the viewer reports the error, dims that thumbnail, and skips to the
+  nearest still-available image. When every image has failed, an error alert replaces the
+  viewer.
+- **Reorder.** Editors (`permissions.canEdit`) get a Reorder toggle that swaps the strip for
+  `useSortable` thumbnails. On drop the hook PUTs the full id list with the collection
+  version (optimistic update, rollback on error); non-editors never see the toggle.
+- **Token renewal.** `onTileSourceRenewed` forwards the viewer's refreshed `ApiImage` to
+  `onImageRenewed`, and `RenewingThumbnail` does the same for strip thumbnails, so short-lived
+  tile/thumb tokens keep working.
+
+## Examples
+
+### Single image
+
+<Canvas of={SequenceCollectionViewerStories.SingleImage} />
+
+### Reorder mode
+
+<Canvas of={SequenceCollectionViewerStories.ReorderMode} />
+
+### Read-only member
+
+<Canvas of={SequenceCollectionViewerStories.ReadOnlyMember} />
+
+### Empty sequence
+
+<Canvas of={SequenceCollectionViewerStories.EmptySequence} />
+
+## Stories
+
+<Stories includePrimary={false} />

@@ -207,13 +207,46 @@ returned by the API (UX only — the backend re-checks).
   sent and the card disappears; a failure keeps the dialog open with the API
   message.
 - **Given** the user opens a card, **Then** the URL becomes
-  `?collection={id}` and the detail placeholder lists the ordered member
-  images with an **Open image** link (`?image={id}`) each; the viewer itself
-  arrives in #1416/#1417.
+  `?collection={id}`; a `sequence` collection mounts the sequence viewer
+  (#1416, below), while a `synchronized` collection still lists the ordered
+  member images with an **Open image** link (`?image={id}`) each — the
+  synchronized viewer arrives in #1417.
 - **Given** a `?collection={id}` URL is loaded or restored via back/forward,
   **Then** the Collections tab opens on that collection; **Given** the API
   returns **404**, **Then** the not-found `Alert` with **All collections** is
   shown instead.
+
+### Sequence collection viewer (`SequenceCollectionViewer.test.tsx`, `useCollectionsData.test.ts`, `useShareableImageState.test.ts`)
+
+See [collections.md](collections.md#sequence-collection-viewer-1416) for the
+full contract. Mounted by the collection detail for `sequence` collections;
+always read-only (`canEditContent={false}`).
+
+- **Given** a sequence collection is open with no `?item=`, **Then** the
+  first member renders with an `1 of N` position readout, **Previous**
+  disabled, and the member's canvas annotations / locked overlays /
+  measurement shown read-only.
+- **Given** `?collection={id}&item={image_id}`, **Then** the viewer opens on
+  that image; a non-member `item` id falls back to the first image and
+  `?item=` without `?collection=` is ignored.
+- **Given** the user clicks **Next** / **Previous**, a strip thumbnail, or
+  presses ← / → while the sequence has focus, **Then** the current image
+  changes, the position readout and `?item=` URL update, and the viewer
+  remounts (keyed by image id — no viewport bleed).
+- **Given** focus is in an input / textarea / select / textbox, **Then**
+  arrow keys do not navigate; the same applies while reorder mode is on.
+- **Given** **Open image** is clicked, **Then** the normal `?image={id}`
+  view opens where annotations can be edited.
+- **Given** the current image's tiles fail mid-session, **Then** the error
+  snackbar fires, that thumbnail dims/disables, and the viewer skips to the
+  nearest still-available image; when all members have failed, an error
+  `Alert` replaces the viewer.
+- **Given** the collection has no visible images, **Then** an info `Alert`
+  says there is nothing to show.
+- **Given** `permissions.can_edit`, **Then** a **Reorder** toggle appears;
+  in reorder mode the strip becomes draggable and a drop PUTs the whole
+  member id list with the collection `version`, reordering optimistically
+  and rolling back on error. Non-editors never see the toggle.
 
 ### "Add to Collection" from the image view (`AddToCollectionDialog.test.tsx`, `useAddToCollection.test.tsx`, `App.test.tsx`)
 

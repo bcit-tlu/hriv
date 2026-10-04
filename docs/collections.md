@@ -382,21 +382,25 @@ message. Deleting the open collection returns to the list.
 `permissions.can_edit` / `can_delete` from the API are true; the backend
 re-checks authority on every call.
 
-**Detail placeholder.** Selecting a card sets `?collection={id}` and renders
-the collection header (type/visibility chips, description, owner), an info
-alert that the viewer is coming (#1416 sequence / #1417 synchronized), and
-the ordered member list with an **Open image** link per row that navigates to
-`?image={id}`. Both types share this placeholder for now. A 404 (missing or
-not visible) renders the not-found alert with an _All collections_ action.
+**Detail placeholder (synchronized only).** Selecting a card sets
+`?collection={id}` and renders the collection header (type/visibility chips,
+description, owner). `sequence` collections mount the sequence viewer
+(#1416, below); `synchronized` collections still show an info alert that the
+viewer is coming (#1417) plus the ordered member list with an **Open image**
+link per row that navigates to `?image={id}`. A 404 (missing or not visible)
+renders the not-found alert with an _All collections_ action.
 
 **Deep links & history.** `useShareableImageState` parses `?collection={id}`
 ahead of `?image=` / `?category=`; a collection link wins if both are present.
 The list emits `?page=collections`, a selected collection emits
-`?collection={id}` (no `page` param). Both push history entries through
-`useNavigationHistory`, and `popstate` restores the selected collection from
-the URL, so back/forward moves between browse, image and collection views.
-Refreshing a `?collection=` URL re-opens that collection. `?item={image_id}`
-is reserved for the sequence viewer (#1416) and is not parsed yet.
+`?collection={id}` (no `page` param), and a selected sequence item adds
+`&item={image_id}` (#1416). Both push history entries through
+`useNavigationHistory`, and `popstate` restores the selected collection (and
+sequence item) from the URL, so back/forward moves between browse, image and
+collection views. Refreshing a `?collection=` URL re-opens that collection;
+refreshing `?collection={id}&item={image_id}` re-opens the sequence on that
+image (falling back to the first image when the id is not a visible member).
+`?item=` without `?collection=` is ignored.
 
 ### "Add to Collection" from the image view (#1415)
 
@@ -448,8 +452,59 @@ errors stay inside the create dialog as on the Collections tab.
 check are conveniences; the backend re-validates edit authority, image
 visibility, duplicates and the synchronized cap on every write.
 
-_Planned_ (#1416–#1419): sequence and synchronized viewers (read-only
-annotations), search integration / multi-select add, and ownership
+### Sequence collection viewer (#1416)
+
+**Where.** `components/SequenceCollectionViewer.tsx`, mounted by
+`CollectionsPage` for `type === 'sequence'` below the shared detail header.
+`App`/`useShareableImageState` own the selected item (`?item={image_id}`)
+and pass it down, so the position is shareable and participates in history.
+
+**Read-only surface.** One `ImageViewer` at a time, `key={image.id}` so
+switching items remounts it and no viewport state bleeds between images.
+`canEditContent={false}` and no annotation mutation callbacks — canvas
+annotations, locked overlays and measurement metadata from `metadataExtra`
+render read-only via `canvasAnnotationsFromMetadata` /
+`lockedOverlaysFromMetadata` / `measurementFromMetadata`
+(`components/imageViewerUtils.ts`). **Open image** navigates to the normal
+`?image={id}` view where annotations can be edited.
+
+**Toolbar.** A MUI `ButtonGroup` above the viewer (outside the OSD control
+bar): **Previous** / **Next**, an `n of N` live region, **Open image**, and —
+editors only (`permissions.can_edit`) — a **Reorder** toggle.
+
+**Navigation.** Buttons, strip thumbnails (`Go to {name}`) and ←/→ arrow
+keys all change the current item. Arrows are handled on keydown-capture at
+the sequence container so OpenSeadragon's own keyboard panning never sees
+them; editable targets (inputs, textareas, selects, `[role="textbox"]`,
+contenteditable) are skipped, and while reorder mode is on the keys belong
+to dnd-kit's `KeyboardSensor` instead.
+
+**Thumbnail strip.** `RenewingThumbnail` buttons under the viewer; the
+current item is outlined (`aria-current`). `onTileSourceRenewed` and the
+thumbnails' renewal callback flow through `onImageRenewed` →
+`useCollectionsData.renewCollectionImage`, which swaps the refreshed
+`ApiImage` into `detail` so short-lived tile/thumb tokens keep working.
+
+**Fallback states.** Empty collection → "no visible images" info alert. If
+the current image's tiles fail mid-session the viewer reports the error via
+`onError`, marks the id failed (dimmed, disabled thumbnail), and skips to
+the nearest still-available image (preferring the next one). When every
+image has failed, an error alert replaces the viewer.
+
+**Reorder.** The Reorder toggle swaps the strip for `useSortable`
+thumbnails (`type: 'sequence-strip-item'`; pointer: 250 ms touch delay /
+8 px mouse distance; a separate `DragDropProvider` — the locked
+`SortableTileGrid` collision contract is untouched). On drag-end the new
+order is computed with `move()`; a no-change drop or a cancel sends
+nothing. `useCollectionsData.reorderImages` applies the order to `detail`
+immediately, then sends the whole id list as
+`PUT /api/collections/{id}/images` (`image_ids` + `version`); on error it
+restores the prior order and surfaces the message via `onError`. Doing the
+optimistic reorder in the hook keeps `App`'s `detail` the single source of
+truth — the strip and any subsequent edits see the same member order.
+
+_Planned_ (#1417–#1419): synchronized viewer (read-only annotations with
+linked pan/zoom), search integration / multi-select add, and ownership
 management / transfer UI.
 
 ## Tests
@@ -495,9 +550,17 @@ management / transfer UI.
   `api.test.ts` (`fetchFeatures`), `App.test.tsx` (shell flag prop, deep-link
   fallback to browse when off, failed `/api/features` treated as off).
 - `frontend/tests/useShareableImageState.test.ts`,
-  `useNavigationHistory.test.ts`, `App.test.tsx` — `?collection={id}`
-  parse/emit precedence, history entries, deep-link restore on load and
-  back/forward.
+  `useNavigationHistory.test.ts`, `App.test.tsx` — `?collection={id}` and
+  `?collection={id}&item={image_id}` parse/emit precedence, history entries,
+  deep-link restore on load and back/forward, `?item=` alone ignored.
+- `frontend/tests/components/SequenceCollectionViewer.test.tsx`,
+  `useCollectionsData.test.ts` (#1416) — position readout, `?item=` restore
+  and non-member fallback, button / thumbnail / arrow-key navigation,
+  editable-target and reorder-mode key guards, read-only `ImageViewer` props
+  (annotations / overlays / measurement from `metadataExtra`), tile-renewal
+  forwarding, mid-session failure skip + all-failed state, editor-only
+  reorder toggle, `move()` reorder → `PUT` with version, optimistic order in
+  `detail`, rollback on error, `renewCollectionImage` member swap.
 - `frontend/tests/components/CollectionsPage.test.tsx`,
   `CollectionCard.test.tsx`, `CollectionEditDialog.test.tsx` — list/filter
   states, permission-gated actions, create/edit/delete flows, restricted

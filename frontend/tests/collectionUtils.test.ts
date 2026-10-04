@@ -8,6 +8,7 @@ import {
   canUseRestrictedVisibility,
   describeCollectionOwner,
   parseCollectionIdParam,
+  parseCollectionItemParam,
 } from '../src/collectionUtils'
 import { makeApiCollection, makeApiCollectionSummary } from './helpers/fixtures'
 
@@ -156,5 +157,31 @@ describe('parseCollectionIdParam', () => {
     )
     expect(parseCollectionIdParam('?collection=9007199254740993')).toBeNull()
     expect(parseCollectionIdParam(`?collection=${'9'.repeat(400)}`)).toBeNull()
+  })
+})
+
+describe('parseCollectionItemParam', () => {
+  it('parses the sequence position beside a collection id (#1416)', () => {
+    expect(parseCollectionItemParam('?collection=12&item=99')).toBe(99)
+    expect(parseCollectionItemParam('?item=3&collection=7')).toBe(3)
+  })
+
+  it('requires a valid ?collection= to be meaningful', () => {
+    expect(parseCollectionItemParam('?item=99')).toBeNull()
+    expect(parseCollectionItemParam('?collection=abc&item=99')).toBeNull()
+    expect(parseCollectionItemParam('?page=collections&item=99')).toBeNull()
+  })
+
+  it('rejects missing, non-numeric, negative, zero and decimal values', () => {
+    expect(parseCollectionItemParam('?collection=12')).toBeNull()
+    expect(parseCollectionItemParam('?collection=12&item=')).toBeNull()
+    expect(parseCollectionItemParam('?collection=12&item=abc')).toBeNull()
+    expect(parseCollectionItemParam('?collection=12&item=-1')).toBeNull()
+    expect(parseCollectionItemParam('?collection=12&item=0')).toBeNull()
+    expect(parseCollectionItemParam('?collection=12&item=1.5')).toBeNull()
+  })
+
+  it('rejects integers that cannot be represented exactly', () => {
+    expect(parseCollectionItemParam('?collection=12&item=9007199254740993')).toBeNull()
   })
 })

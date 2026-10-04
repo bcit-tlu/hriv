@@ -97,11 +97,23 @@ export function describeCollectionOwner(owner: CollectionOwner): string {
 
 /**
  * Parse the `?collection={id}` deep link. Returns `null` when the parameter is
- * missing or not a positive integer. `?item=` is reserved for #1416 and is
- * intentionally not parsed here.
+ * missing or not a positive integer.
  */
 export function parseCollectionIdParam(search: string): number | null {
   const raw = new URLSearchParams(search).get('collection')
+  if (raw == null || !/^\d+$/.test(raw)) return null
+  const id = Number(raw)
+  return Number.isSafeInteger(id) && id > 0 ? id : null
+}
+
+/**
+ * Parse the `?item={image_id}` sequence-position param (#1416). It is only
+ * meaningful next to a valid `?collection=` param — a bare `?item=` returns
+ * `null`. Returns `null` when missing or not a positive integer.
+ */
+export function parseCollectionItemParam(search: string): number | null {
+  if (parseCollectionIdParam(search) == null) return null
+  const raw = new URLSearchParams(search).get('item')
   if (raw == null || !/^\d+$/.test(raw)) return null
   const id = Number(raw)
   return Number.isSafeInteger(id) && id > 0 ? id : null
