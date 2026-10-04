@@ -12,6 +12,7 @@ import math
 import os
 import shutil
 import tempfile
+import threading
 import time
 import uuid
 import zipfile
@@ -268,8 +269,10 @@ class _ZipExtractBudget:
 def _extract_zip_image_entries(
     tmp_path: str,
     budget: _ZipExtractBudget,
+    file_entries: list[tuple[str, str]],
     target_dir: str,
-) -> list[tuple[str, str]]:
+    done: threading.Event,
+) -> None:
     """Extract eligible image entries from the zip archive at ``tmp_path``.
 
     Runs entirely on a worker thread (``asyncio.to_thread`` at the call
@@ -277,12 +280,13 @@ def _extract_zip_image_entries(
     synchronous CPU/IO work that would otherwise stall the API worker's
     event loop for the whole archive.
 
-    Returns ``(original_filename, stored_path)`` pairs. On failure every
-    path this archive staged is unlinked before the exception propagates
-    (``zipfile.BadZipFile`` / ``_ZipExtractLimitExceeded`` / ``OSError``),
-    mirroring the endpoint's ``file_entries`` sweep for prior archives.
+    Each staged entry is appended to ``file_entries`` as an
+    ``(original_filename, stored_path)`` pair as soon as it lands, so a
+    caller cancelled mid-extraction can still find and remove them — a
+    cancelled asyncio wrapper cannot carry the paths back. ``done`` is
+    set on every exit so the caller can confirm the thread has finished
+    before sweeping ``file_entries``.
     """
-    file_entries: list[tuple[str, str]] = []
     try:
         with zipfile.ZipFile(tmp_path, "r") as zf:
             for zip_entry in zf.namelist():
@@ -310,12 +314,8 @@ def _extract_zip_image_entries(
                 file_entries.append(
                     (sanitize_upload_filename(basename), stored_path)
                 )
-    except Exception:
-        for _, stored_path in file_entries:
-            with contextlib.suppress(OSError):
-                os.unlink(stored_path)
-        raise
-    return file_entries
+    finally:
+        done.set()
 
 
 @dataclass(frozen=True)
@@ -1801,36 +1801,31 @@ async def bulk_import_images(
                             # extraction run on a worker thread: both are
                             # synchronous CPU/IO that would otherwise stall
                             # this uvicorn worker's event loop for the
-                            # duration of a large archive. The shield keeps
-                            # request cancellation from propagating into
-                            # the task: a cancelled request cannot stop the
-                            # thread, so it keeps waiting for the result
-                            # and removes the staged paths instead of
-                            # leaving them orphaned on the data volume.
-                            extract_task = asyncio.create_task(
-                                asyncio.to_thread(
+                            # duration of a large archive. The thread cannot
+                            # be interrupted once started, so a cancelled
+                            # request waits on extract_done for it to finish;
+                            # the paths it appended to file_entries are then
+                            # removed by the CancelledError sweep below
+                            # instead of being orphaned mid-write.
+                            extract_done = threading.Event()
+                            try:
+                                await asyncio.to_thread(
                                     _extract_zip_image_entries,
                                     tmp_path,
                                     budget,
+                                    file_entries,
                                     settings.source_images_dir,
+                                    extract_done,
                                 )
-                            )
-                            try:
-                                extracted = await asyncio.shield(extract_task)
                             except asyncio.CancelledError:
-                                while True:
-                                    try:
-                                        extracted = await asyncio.shield(
-                                            extract_task
+                                while not extract_done.is_set():
+                                    with contextlib.suppress(
+                                        asyncio.CancelledError
+                                    ):
+                                        await asyncio.to_thread(
+                                            extract_done.wait
                                         )
-                                        break
-                                    except asyncio.CancelledError:
-                                        continue
-                                for _, staged_path in extracted:
-                                    with contextlib.suppress(OSError):
-                                        os.unlink(staged_path)
                                 raise
-                            file_entries.extend(extracted)
                         except zipfile.BadZipFile:
                             raise HTTPException(
                                 status_code=400,

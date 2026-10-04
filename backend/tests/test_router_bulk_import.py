@@ -687,9 +687,9 @@ async def test_bulk_import_images_cancelled_extraction_cleans_staged_files(tmp_p
     """A cancelled request still removes paths the worker thread staged.
 
     ``asyncio.to_thread`` cannot be interrupted once running: when the
-    request is cancelled mid-extraction the endpoint keeps waiting for the
-    worker under shield, then unlinks the paths it produced instead of
-    leaving them as unowned files on the data volume.
+    request is cancelled mid-extraction the endpoint keeps waiting on the
+    worker's ``done`` event for it to finish, then unlinks the paths it
+    appended instead of leaving them as unowned files on the data volume.
     """
     category = SimpleNamespace(id=1)
     db = AsyncMock()
@@ -713,12 +713,15 @@ async def test_bulk_import_images_cancelled_extraction_cleans_staged_files(tmp_p
     staged: list[str] = []
     real_helper = bulk_import_module._extract_zip_image_entries
 
-    def _gated_helper(*args, **kwargs):
+    def _gated_helper(*args):
         started.set()
         release.wait(timeout=10)
-        result = real_helper(*args, **kwargs)
-        staged.extend(path for _, path in result)
-        return result
+        file_entries = args[2]
+        staged_before = len(file_entries)
+        try:
+            real_helper(*args)
+        finally:
+            staged.extend(path for _, path in file_entries[staged_before:])
 
     with (
         patch("app.routers.bulk_import.settings") as mock_settings,
@@ -746,7 +749,7 @@ async def test_bulk_import_images_cancelled_extraction_cleans_staged_files(tmp_p
         release.set()
 
         with pytest.raises(asyncio.CancelledError):
-            await task
+            _ = await task
 
     assert staged, "worker did not stage any files before cancellation"
     assert all(not os.path.exists(path) for path in staged)

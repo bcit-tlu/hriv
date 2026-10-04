@@ -128,9 +128,9 @@ thread via `asyncio.to_thread` (`_extract_zip_image_entries`), so a large
 archive does not stall the API worker's event loop; the budget and the
 400/413/507 error mapping are unchanged. A request cancelled
 mid-extraction cannot interrupt the thread, so the endpoint keeps waiting
-for it under `asyncio.shield` and then unlinks every path the worker
-staged — plus everything staged earlier in the request — rather than
-leaving unowned files on the data volume.
+on the worker's done-event for it to finish and then unlinks every path
+the worker staged — plus everything staged earlier in the request —
+rather than leaving unowned files on the data volume.
 
 ## Status transitions
 
