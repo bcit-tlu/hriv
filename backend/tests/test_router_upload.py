@@ -208,6 +208,35 @@ async def test_upload_source_image_normalizes_empty_note(tmp_path) -> None:
     assert src.note is None
 
 
+async def test_upload_source_image_rejects_oversized_file(tmp_path) -> None:
+    """A file streamed past UPLOAD_MAX_BYTES gets a 413 (#1432).
+
+    The ingress accepts unlimited request bodies, so the staging write
+    loop is the layer bounding how much of one upload reaches disk; the
+    partially written staging artifact is discarded.
+    """
+    file = AsyncMock()
+    file.filename = "big.png"
+    file.content_type = "image/png"
+    file.read = AsyncMock(side_effect=[b"aa", b"bb", b"cc", b""])
+
+    db = AsyncMock()
+    bg = MagicMock()
+
+    with (
+        patch("app.routers.upload.settings") as mock_settings,
+        patch("app.upload_staging.UPLOAD_MAX_BYTES", 4),
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        with pytest.raises(HTTPException) as exc:
+            await upload_source_image(
+                file=file, background_tasks=bg, user=MagicMock(), db=db,
+            )
+    assert exc.value.status_code == 413
+    assert "per-upload size limit" in exc.value.detail
+    assert list(tmp_path.iterdir()) == []
+
+
 @pytest.mark.parametrize("recovery_succeeds", [True, False])
 async def test_upload_source_image_rejection_uses_fresh_session_when_bookkeeping_fails(
     tmp_path,

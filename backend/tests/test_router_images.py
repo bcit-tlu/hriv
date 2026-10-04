@@ -928,6 +928,38 @@ async def test_replace_image_normalizes_original_filename(
     assert src.original_filename == "<img src=x> .jpg"
 
 
+async def test_replace_image_rejects_oversized_file(tmp_path) -> None:
+    """A replacement streamed past UPLOAD_MAX_BYTES gets a 413 (#1432).
+
+    Same shared staging cap as the upload route; the partially written
+    staging artifact is discarded.
+    """
+    file = AsyncMock()
+    file.filename = "big.png"
+    file.content_type = "image/png"
+    file.read = AsyncMock(side_effect=[b"aa", b"bb", b"cc", b""])
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=_make_image())
+
+    with (
+        patch("app.routers.images.settings") as mock_settings,
+        patch("app.upload_staging.UPLOAD_MAX_BYTES", 4),
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        with pytest.raises(HTTPException) as exc:
+            await replace_image(
+                image_id=1,
+                file=file,
+                background_tasks=MagicMock(),
+                _user=_make_user(),
+                db=db,
+            )
+    assert exc.value.status_code == 413
+    assert "per-upload size limit" in exc.value.detail
+    assert list(tmp_path.iterdir()) == []
+
+
 @patch("os.path.getsize", return_value=1024)
 @patch("os.replace")
 @patch("os.makedirs")

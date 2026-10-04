@@ -88,6 +88,21 @@ _ZIP_MIN_FREE_BYTES = int(
 )
 _ZIP_FREE_SPACE_CHECK_INTERVAL_BYTES = 512 * 1024 * 1024
 _ZIP_NAME_DISPLAY_LIMIT = 40
+# Per-part streamed-bytes cap for the raw request body (#1432). The ingress
+# intentionally accepts unlimited request bodies, so the read loops are the
+# layer that bounds how much of one uploaded part reaches disk. The default
+# matches _ZIP_MAX_TOTAL_BYTES: a compliant archive's compressed size can
+# never legitimately exceed its decompressed content by a meaningful margin.
+_MAX_UPLOAD_BYTES = int(
+    os.environ.get("BULK_IMPORT_MAX_UPLOAD_BYTES", str(20 * 1024 * 1024 * 1024))
+)
+# Ceiling on one archive's central-directory entry count, checked right
+# after ZipFile() parses it (#1432). ``BULK_IMPORT_MAX_ENTRIES`` only counts
+# eligible image entries, so without this an archive of millions of tiny
+# non-image files still costs API memory/time proportional to its size.
+_ZIP_MAX_ARCHIVE_ENTRIES = int(
+    os.environ.get("BULK_IMPORT_MAX_ARCHIVE_ENTRIES", "10000")
+)
 
 
 def _validate_zip_limits() -> None:
@@ -96,6 +111,8 @@ def _validate_zip_limits() -> None:
         ("BULK_IMPORT_MAX_TOTAL_BYTES", _ZIP_MAX_TOTAL_BYTES),
         ("BULK_IMPORT_MAX_ENTRIES", _ZIP_MAX_ENTRIES),
         ("BULK_IMPORT_MIN_FREE_BYTES", _ZIP_MIN_FREE_BYTES),
+        ("BULK_IMPORT_MAX_UPLOAD_BYTES", _MAX_UPLOAD_BYTES),
+        ("BULK_IMPORT_MAX_ARCHIVE_ENTRIES", _ZIP_MAX_ARCHIVE_ENTRIES),
     ):
         if value <= 0:
             raise ValueError(f"{name} must be a positive integer, got {value}")
@@ -213,6 +230,21 @@ class _ZipExtractBudget:
                 f"{_ZIP_MAX_ENTRIES} image files",
             )
 
+    def check_central_directory(self, total_entries: int) -> None:
+        """Reject an archive whose raw entry count is oversized (#1432).
+
+        ``next_entry`` only counts eligible image entries, but ``ZipFile``
+        parses the entire central directory first — a flood of non-image
+        entries costs memory/time even though none are extracted.
+        """
+        if total_entries > _ZIP_MAX_ARCHIVE_ENTRIES:
+            raise _ZipExtractLimitExceeded(
+                413,
+                f"Zip archive '{self.archive_name}' contains {total_entries} "
+                f"entries, over the {_ZIP_MAX_ARCHIVE_ENTRIES} per-archive "
+                "limit",
+            )
+
     def prescreen(self, info: zipfile.ZipInfo) -> None:
         """Reject an entry from its central-directory metadata alone."""
         if info.file_size > _ZIP_MAX_ENTRY_BYTES:
@@ -289,6 +321,7 @@ def _extract_zip_image_entries(
     """
     try:
         with zipfile.ZipFile(tmp_path, "r") as zf:
+            budget.check_central_directory(len(zf.infolist()))
             for zip_entry in zf.namelist():
                 # Skip directories and hidden/system files
                 if zip_entry.endswith("/") or zip_entry.startswith("__MACOSX"):
@@ -1790,10 +1823,21 @@ async def bulk_import_images(
                         try:
                             with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
                                 tmp_path = tmp.name
+                                spooled_bytes = 0
                                 while True:
                                     chunk = await upload.read(UPLOAD_CHUNK_SIZE)
                                     if not chunk:
                                         break
+                                    spooled_bytes += len(chunk)
+                                    if spooled_bytes > _MAX_UPLOAD_BYTES:
+                                        raise HTTPException(
+                                            status_code=413,
+                                            detail=(
+                                                f"File '{_display_name(upload.filename)}' "
+                                                "exceeds the per-upload limit of "
+                                                f"{_format_gib(_MAX_UPLOAD_BYTES)}"
+                                            ),
+                                        )
                                     tmp.write(chunk)
 
                             budget.begin_archive(upload.filename)
@@ -1856,10 +1900,21 @@ async def bulk_import_images(
                         # Stream to disk in chunks (handles large TIFFs)
                         try:
                             with open(stored_path, "wb") as f:
+                                spooled_bytes = 0
                                 while True:
                                     chunk = await upload.read(UPLOAD_CHUNK_SIZE)
                                     if not chunk:
                                         break
+                                    spooled_bytes += len(chunk)
+                                    if spooled_bytes > _MAX_UPLOAD_BYTES:
+                                        raise HTTPException(
+                                            status_code=413,
+                                            detail=(
+                                                f"File '{_display_name(upload.filename)}' "
+                                                "exceeds the per-upload limit of "
+                                                f"{_format_gib(_MAX_UPLOAD_BYTES)}"
+                                            ),
+                                        )
                                     f.write(chunk)
                         except Exception:
                             with contextlib.suppress(OSError):

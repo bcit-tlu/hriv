@@ -756,6 +756,116 @@ async def test_bulk_import_images_cancelled_extraction_cleans_staged_files(tmp_p
     assert list(tmp_path.iterdir()) == []
 
 
+async def test_bulk_import_images_rejects_oversized_zip_upload(tmp_path) -> None:
+    """A zip part streamed past BULK_IMPORT_MAX_UPLOAD_BYTES gets a 413 (#1432).
+
+    The raw request body is uncapped at the ingress, so the spool loop
+    itself must bound how much of one uploaded part reaches disk.
+    """
+    category = SimpleNamespace(id=1)
+    db = AsyncMock()
+    db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
+    db.get = AsyncMock(return_value=category)
+    bg = MagicMock()
+
+    zip_payload = _zip_bytes({"a.png": b"png-a"})
+    upload = _make_upload("batch.zip", [zip_payload, b""])
+
+    with (
+        patch("app.routers.bulk_import.settings") as mock_settings,
+        patch(
+            "app.routers.bulk_import._MAX_UPLOAD_BYTES",
+            len(zip_payload) - 1,
+        ),
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        with pytest.raises(HTTPException) as exc:
+            await bulk_import_images(
+                files=[upload],
+                category_id=1,
+                background_tasks=bg,
+                _user=MagicMock(),
+                db=db,
+            )
+    assert exc.value.status_code == 413
+    assert "per-upload limit" in exc.value.detail
+    # Nothing staged or extracted survives the rejection.
+    assert list(tmp_path.iterdir()) == []
+
+
+async def test_bulk_import_images_rejects_oversized_plain_image(tmp_path) -> None:
+    """A plain-image part past the upload cap gets a 413 + cleanup (#1432)."""
+    category = SimpleNamespace(id=1)
+    db = AsyncMock()
+    db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
+    db.get = AsyncMock(return_value=category)
+    bg = MagicMock()
+
+    upload = _make_upload("big.png", [b"aa", b"bb", b"cc", b""])
+
+    with (
+        patch("app.routers.bulk_import.settings") as mock_settings,
+        patch("app.routers.bulk_import._MAX_UPLOAD_BYTES", 4),
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        with pytest.raises(HTTPException) as exc:
+            await bulk_import_images(
+                files=[upload],
+                category_id=1,
+                background_tasks=bg,
+                _user=MagicMock(),
+                db=db,
+            )
+    assert exc.value.status_code == 413
+    # The partially written image is unlinked, not left behind.
+    assert list(tmp_path.iterdir()) == []
+
+
+async def test_bulk_import_images_rejects_archive_over_entry_ceiling(tmp_path) -> None:
+    """An oversized central directory is rejected before extraction (#1432).
+
+    ``BULK_IMPORT_MAX_ENTRIES`` only counts eligible image entries, so an
+    archive of mostly non-image entries would otherwise cost API
+    memory/time proportional to its size. The ceiling is checked right
+    after ``ZipFile`` parses the central directory.
+    """
+    category = SimpleNamespace(id=1)
+    db = AsyncMock()
+    db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
+    db.get = AsyncMock(return_value=category)
+    bg = MagicMock()
+
+    upload = _make_upload(
+        "many.zip",
+        [
+            _zip_bytes({
+                "a.png": b"a",
+                "b.txt": b"b",
+                "c.txt": b"c",
+                "d.txt": b"d",
+            }),
+            b"",
+        ],
+    )
+
+    with (
+        patch("app.routers.bulk_import.settings") as mock_settings,
+        patch("app.routers.bulk_import._ZIP_MAX_ARCHIVE_ENTRIES", 3),
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        with pytest.raises(HTTPException) as exc:
+            await bulk_import_images(
+                files=[upload],
+                category_id=1,
+                background_tasks=bg,
+                _user=MagicMock(),
+                db=db,
+            )
+    assert exc.value.status_code == 413
+    assert "entries" in exc.value.detail
+    assert list(tmp_path.iterdir()) == []
+
+
 async def test_bulk_import_images_rejects_corrupt_zip(tmp_path) -> None:
     category = SimpleNamespace(id=1)
     db = AsyncMock()
