@@ -222,6 +222,22 @@ async def lifespan(app: FastAPI):
                 extra={"event": "worker.queue_unavailable"},
             )
 
+    # .strip() matches the endpoint's compare: a whitespace-only configured
+    # value is effectively unconfigured and must not suppress the warning.
+    if not settings.synthetic_ingest_token.strip():
+        log_missing_token = (
+            logger.warning
+            if settings.task_execution_mode == "required"
+            else logger.info
+        )
+        log_missing_token(
+            "SYNTHETIC_INGEST_TOKEN is not configured — the synthetic monitor "
+            "can only report results with its user JWT, which fails during "
+            "auth/DB outages exactly when the report matters (#1495). "
+            "Configure the shared ingest token for deployed environments.",
+            extra={"event": "synthetic.ingest_token_missing"},
+        )
+
     # In "required" mode a dedicated arq worker pod is guaranteed, so the
     # reconciliation sweep runs there instead (see
     # ``worker.WorkerSettings.cron_jobs``) — periodically, not just once at

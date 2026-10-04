@@ -60,6 +60,30 @@ async def test_lifespan_runs_reconciliation_sweep_in_local_mode(monkeypatch) -> 
     sweep.assert_awaited_once()
 
 
+async def test_lifespan_warns_on_whitespace_only_ingest_token(
+    monkeypatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A whitespace-only SYNTHETIC_INGEST_TOKEN is effectively unconfigured —
+    the startup warning must not be suppressed (#1495 review)."""
+    from app import main
+    from app.database import settings
+
+    monkeypatch.setattr(settings, "task_execution_mode", "required")
+    monkeypatch.setattr(settings, "synthetic_ingest_token", "  \n ")
+    monkeypatch.setattr(main, "setup_logging", MagicMock())
+    monkeypatch.setattr(main, "_check_oidc_connectivity", AsyncMock())
+    monkeypatch.setattr(main, "get_pool", AsyncMock(return_value=MagicMock()))
+
+    with caplog.at_level("WARNING", logger="app.main"):
+        async with main.lifespan(main.app):
+            pass
+
+    assert any(
+        getattr(r, "event", None) == "synthetic.ingest_token_missing"
+        for r in caplog.records
+    )
+
+
 async def test_lifespan_skips_reconciliation_sweep_in_required_mode(monkeypatch) -> None:
     """In ``required`` mode a dedicated arq worker pod runs the sweep
     periodically via a cron job instead (see ``worker.WorkerSettings``), so
@@ -526,6 +550,72 @@ def test_maintenance_wins_over_disabled_collections(monkeypatch) -> None:
     with patch("app.middleware.is_maintenance_mode", return_value=False):
         with TestClient(main_app, raise_server_exceptions=False) as client:
             assert client.get("/api/collections").status_code == 404
+
+
+_SYNTHETIC_RESULT_BODY = {
+    "event_version": 1,
+    "started_at": "2026-07-14T08:00:00Z",
+    "completed_at": "2026-07-14T08:00:03Z",
+    "success": False,
+    "duration_ms": 3000,
+    "failure_code": "login_failed",
+    "component_version": "1.2.3",
+    "steps": [
+        {"name": "frontend", "success": True, "duration_ms": 200},
+        {"name": "login", "success": False, "duration_ms": 300},
+    ],
+}
+
+
+def test_synthetic_result_ingest_token_through_http_stack(monkeypatch) -> None:
+    """A valid X-Synthetic-Ingest-Token posts a result through the full
+    middleware + dependency stack during maintenance — no user JWT and no
+    database access on the credential path (#1495)."""
+    from app.database import settings
+    from app.main import app as main_app
+    from app.synthetic_result import (
+        StoredSyntheticJourneyState,
+        SyntheticJourneyResult,
+    )
+
+    monkeypatch.setattr(settings, "synthetic_ingest_token", "sekrit")
+    result = SyntheticJourneyResult.model_validate(_SYNTHETIC_RESULT_BODY)
+    stored = StoredSyntheticJourneyState(
+        latest_result=result,
+        last_success_completed_at=result.completed_at,
+        updated_at=result.completed_at,
+    )
+    store = AsyncMock(return_value=stored)
+    with (
+        patch("app.middleware.is_maintenance_mode", return_value=True),
+        patch("app.routers.telemetry.check_rate_limit", AsyncMock(return_value=None)),
+        patch("app.routers.telemetry.store_synthetic_result", store),
+    ):
+        with TestClient(main_app, raise_server_exceptions=False) as client:
+            response = client.post(
+                "/api/telemetry/synthetic-result",
+                headers={"X-Synthetic-Ingest-Token": "sekrit"},
+                json=_SYNTHETIC_RESULT_BODY,
+            )
+
+    assert response.status_code == 202
+    store.assert_awaited_once()
+
+
+def test_synthetic_result_still_requires_credential_during_maintenance(
+    monkeypatch,
+) -> None:
+    """The maintenance exemption does not bypass the endpoint's own auth."""
+    from app.main import app as main_app
+
+    with patch("app.middleware.is_maintenance_mode", return_value=True):
+        with TestClient(main_app, raise_server_exceptions=False) as client:
+            response = client.post(
+                "/api/telemetry/synthetic-result",
+                json=_SYNTHETIC_RESULT_BODY,
+            )
+
+    assert response.status_code == 401
 
 
 async def test_features_endpoint_reports_collections_flag(monkeypatch) -> None:

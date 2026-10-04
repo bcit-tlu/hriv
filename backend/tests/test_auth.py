@@ -51,7 +51,7 @@ async def test_get_user_from_token_returns_user(
     db = AsyncMock()
     db.get.return_value = user
 
-    result = await auth._get_user_from_token(token, db)  # type: ignore[arg-type]
+    result = await auth.get_user_from_token(token, db)  # type: ignore[arg-type]
 
     assert result is user
     db.get.assert_awaited_once()
@@ -79,7 +79,7 @@ async def test_get_user_from_token_rejects_scoped_tokens(
     db.get.return_value = SimpleNamespace(id=7, active=True)
 
     with pytest.raises(HTTPException) as exc:
-        await auth._get_user_from_token(token, db)  # type: ignore[arg-type]
+        await auth.get_user_from_token(token, db)  # type: ignore[arg-type]
 
     assert exc.value.status_code == 401
 
@@ -100,7 +100,7 @@ async def test_get_user_from_token_rejects_missing_user(
     db.get.return_value = None
 
     with pytest.raises(HTTPException) as exc:
-        await auth._get_user_from_token(token, db)  # type: ignore[arg-type]
+        await auth.get_user_from_token(token, db)  # type: ignore[arg-type]
 
     assert exc.value.status_code == 401
 
@@ -122,7 +122,7 @@ async def test_get_user_from_token_rejects_stale_instance_epoch(
     db.get.return_value = SimpleNamespace(id=1, active=True)
 
     with pytest.raises(HTTPException) as exc:
-        await auth._get_user_from_token(token, db)  # type: ignore[arg-type]
+        await auth.get_user_from_token(token, db)  # type: ignore[arg-type]
 
     assert exc.value.status_code == 401
 
@@ -143,7 +143,7 @@ async def test_get_user_from_token_rejects_inactive_user(
     db.get.return_value = SimpleNamespace(id=1, active=False)
 
     with pytest.raises(HTTPException) as exc:
-        await auth._get_user_from_token(token, db)  # type: ignore[arg-type]
+        await auth.get_user_from_token(token, db)  # type: ignore[arg-type]
 
     assert exc.value.status_code == 401
 

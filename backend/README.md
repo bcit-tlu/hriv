@@ -315,6 +315,23 @@ Both buckets are Redis sliding windows (`rate:login:{ip}:{email}` and
 unavailable the limiter fails open and logs `rate_limit.redis_unavailable` /
 `rate_limit.redis_error` at WARNING — alert on those events.
 
+## Synthetic result ingest token
+
+`POST /api/telemetry/synthetic-result` accepts the synthetic monitor account's
+user JWT or the `X-Synthetic-Ingest-Token` shared secret, checked first and
+validated by constant-time compare with no database access so failure reports
+still land during auth/DB outages (#1495).
+
+| Environment variable                 | Default | Purpose                                                                                                                                                                                 |
+| ------------------------------------ | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SYNTHETIC_INGEST_TOKEN`             | unset   | Shared secret for `X-Synthetic-Ingest-Token`. Unset → token-path requests get 401 (JWT fallback still works); `required`-mode startup logs `synthetic.ingest_token_missing` at WARNING. |
+| `RATE_LIMIT_SYNTHETIC_INGEST_MAX`    | `30`    | Requests per `RATE_LIMIT_SYNTHETIC_INGEST_WINDOW` seconds on the synthetic-result path (token or JWT).                                                                                  |
+| `RATE_LIMIT_SYNTHETIC_INGEST_WINDOW` | `60`    | Window for the sliding Redis counter `rate:synthetic-ingest`.                                                                                                                           |
+
+The Helm chart renders `SYNTHETIC_INGEST_TOKEN` when
+`syntheticMonitoring.ingestTokenSecret.name` names a pre-existing secret also
+consumed by the monitor CronJob (`charts/backend/README.md`).
+
 ## Deployment rollout strategy
 
 The backend Deployment auto-selects a rollout strategy from chart values.

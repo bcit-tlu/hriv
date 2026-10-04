@@ -767,6 +767,24 @@ backend_oidc_cors_env="$(grep -F -A1 'name: CORS_ORIGINS' <<<"$backend_oidc_cors
 assert_contains "$backend_oidc_cors_env" 'value: "https://legacy-oidc-value.example.ca"' \
   "backend deployment should fall back to auth.openidConnect.corsOrigins when corsOrigins is unset"
 
+# ── Synthetic result ingest token (#1495) ───────────────────
+# Disabled by default (JWT-only ingestion); enabled by naming a secret.
+assert_not_contains "$backend_local_api" 'name: SYNTHETIC_INGEST_TOKEN' \
+  "backend deployment should not render SYNTHETIC_INGEST_TOKEN without syntheticMonitoring.ingestTokenSecret.name"
+
+backend_ingest_manifest="$(helm template test charts/backend \
+  --set syntheticMonitoring.ingestTokenSecret.name=hriv-synthetic-ingest)"
+backend_ingest_api="$(extract_top_level_yaml_doc "$backend_ingest_manifest" "Deployment" "test-hriv-backend")"
+assert_contains "$backend_ingest_api" 'name: SYNTHETIC_INGEST_TOKEN' \
+  "backend deployment should render SYNTHETIC_INGEST_TOKEN when ingestTokenSecret.name is set"
+backend_ingest_env="$(grep -F -A6 'name: SYNTHETIC_INGEST_TOKEN' <<<"$backend_ingest_api")"
+assert_contains "$backend_ingest_env" 'name: "hriv-synthetic-ingest"' \
+  "backend deployment should reference the configured ingest-token secret"
+assert_contains "$backend_ingest_env" 'key: "token"' \
+  "backend deployment should reference the default ingest-token key"
+assert_contains "$backend_ingest_env" 'optional: true' \
+  "ingest-token secretKeyRef must be optional so a missing key cannot block backend rollout"
+
 if backend_rebuild_local_output="$(helm template test charts/backend \
   --set tasks.rebuild.parallelEnabled=true 2>&1)"; then
   fail "expected durable rebuilding in local execution mode to be rejected"

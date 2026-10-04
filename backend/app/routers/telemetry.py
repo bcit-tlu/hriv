@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import re
+import secrets
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
@@ -32,11 +33,11 @@ from pydantic.config import ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..auth import get_current_user
+from ..auth import get_current_user, get_user_from_token, oauth2_scheme_optional
 from ..auth_events import is_synthetic_user
-from ..database import get_db
+from ..database import get_db, settings
 from ..models import Category, Image, User
-from ..rate_limit import check_telemetry_rate_limit
+from ..rate_limit import check_rate_limit, check_telemetry_rate_limit
 from ..reorder_metrics import REORDER_CLIENT_STATES, record_client_reorder_operation
 from ..reorder_telemetry import sanitize_reorder_operation_id
 from ..synthetic_result import (
@@ -456,13 +457,70 @@ async def ingest_telemetry_events(
 async def ingest_synthetic_result(
     result: SyntheticJourneyResult,
     request: Request,
-    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    bearer_token: Annotated[str | None, Depends(oauth2_scheme_optional)] = None,
+    x_synthetic_ingest_token: Annotated[str | None, Header()] = None,
 ) -> SyntheticResultIngestResponse:
-    """Persist the latest authoritative synthetic journey result for Prometheus."""
-    if not is_synthetic_user(user):
+    """Persist the latest authoritative synthetic journey result for Prometheus.
+
+    Two credential classes are accepted, and every caller must present one:
+
+    1. ``X-Synthetic-Ingest-Token`` — a shared static secret delivered to the
+       monitor CronJob out-of-band (``SYNTHETIC_INGEST_TOKEN``). Validation is
+       a constant-time compare needing **no database access**, so failure
+       reports still land during auth/DB outages — precisely when the monitor
+       cannot obtain a user JWT (#1495).
+    2. Synthetic-account Bearer JWT — the original path, kept for local
+       development and monitor images that predate the ingest token.
+
+    When both are present the ingest token wins; an invalid token is a 401,
+    never a silent fallback to the JWT path.
+    """
+    user: User | None = None
+    credential: str
+    if x_synthetic_ingest_token is not None:
+        # .strip() matches the monitor's handling: a secret provisioned with a
+        # trailing newline must still compare equal (headers can't carry it).
+        configured = settings.synthetic_ingest_token.strip()
+        if not configured or not secrets.compare_digest(
+            x_synthetic_ingest_token, configured
+        ):
+            logger.warning(
+                "Rejected synthetic result: invalid or unconfigured ingest token",
+                extra={"event": "synthetic.ingest_auth_failed"},
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid synthetic ingest token.",
+            )
+        credential = "ingest_token"
+    else:
+        if bearer_token is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Not authenticated",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        user = await get_user_from_token(bearer_token, db)
+        if not is_synthetic_user(user):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Synthetic result ingestion requires a synthetic account.",
+            )
+        credential = "user_jwt"
+
+    # Bounds abuse of a leaked ingest token and monitor misbehaviour alike;
+    # the limiter is fail-open when Redis is down, matching check_rate_limit.
+    retry_after = await check_rate_limit(
+        "rate:synthetic-ingest",
+        settings.rate_limit_synthetic_ingest_window,
+        settings.rate_limit_synthetic_ingest_max,
+    )
+    if retry_after is not None:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Synthetic result ingestion requires a synthetic account.",
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Synthetic result rate limit exceeded.",
+            headers={"Retry-After": str(retry_after)},
         )
 
     try:
@@ -481,7 +539,7 @@ async def ingest_synthetic_result(
             detail="Synthetic result storage is unavailable.",
         ) from exc
 
-    _log_synthetic_result(result, stored_state, request, user)
+    _log_synthetic_result(result, stored_state, request, user, credential)
     return SyntheticResultIngestResponse(
         status="stored",
         completed_at=stored_state.latest_result.completed_at.isoformat(),
@@ -492,7 +550,8 @@ def _log_synthetic_result(
     result: SyntheticJourneyResult,
     stored_state: StoredSyntheticJourneyState,
     request: Request,
-    user: User,
+    user: User | None,
+    credential: str,
 ) -> None:
     """Emit the authoritative synthetic result as a structured backend log."""
     step_names = [step.name for step in result.steps]
@@ -503,6 +562,7 @@ def _log_synthetic_result(
         "event.outcome": "success" if result.success else "failure",
         "event.synthetic": True,
         "synthetic.component_version": result.component_version or "unknown",
+        "synthetic.credential": credential,
         "synthetic.started_at": result.started_at.isoformat(),
         "synthetic.completed_at": result.completed_at.isoformat(),
         "synthetic.duration_ms": result.duration_ms,
@@ -514,9 +574,10 @@ def _log_synthetic_result(
             if stored_state.last_success_completed_at is not None
             else ""
         ),
-        "user.id": user.id,
-        "user.role": user.role,
     }
+    if user is not None:
+        extra["user.id"] = user.id
+        extra["user.role"] = user.role
     if result.failure_code is not None:
         extra["error.type"] = result.failure_code
 

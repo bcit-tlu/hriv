@@ -416,6 +416,25 @@ feedback:
 vault:
   enabled: false
 
+# ── Synthetic monitoring result ingestion ────────────────────
+# The synthetic-monitoring CronJob posts its authoritative journey result to
+# POST /api/telemetry/synthetic-result. It authenticates with a shared static
+# secret (X-Synthetic-Ingest-Token) instead of the monitor account's user JWT
+# so failure reports still land during auth/DB outages, when no login is
+# possible (hriv#1495). The same secret value is delivered to both the
+# CronJob and this Deployment.
+#
+# Leave ingestTokenSecret.name empty to disable the token path entirely:
+# the endpoint then accepts only JWT-authenticated synthetic accounts (local
+# dev). When set, the backend renders SYNTHETIC_INGEST_TOKEN from the named
+# secret/key; the key is marked optional so a missing key degrades to
+# JWT-only ingestion rather than blocking the rollout — the stale-result
+# metrics alert is the designed detector for that misconfiguration.
+syntheticMonitoring:
+  ingestTokenSecret:
+    name: ''
+    key: token
+
 # ── NetworkPolicy ─────────────────────────────────────────────
 # Restricts ingress to the API pods so only the frontend proxy and the
 # metrics scraper can reach the backend Service. This is the enforcement

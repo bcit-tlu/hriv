@@ -438,6 +438,19 @@ All endpoints except login require a valid JWT bearer token in the `Authorizatio
 | POST   | /api/jobs/{job_id}/cancel (idempotent rebuild cancellation)                                               | Yes           | admin                                                                                                         |
 | POST   | /api/jobs/{job_id}/items/{item_id}/retry (requeue one failed rebuild item)                                | Yes           | admin                                                                                                         |
 | POST   | /api/jobs/{job_id}/retry-failed (requeue all failed rebuild items)                                        | Yes           | admin                                                                                                         |
+| POST   | /api/telemetry/events (frontend observability event ingestion)                                            | Yes           | any authenticated user                                                                                        |
+| POST   | /api/telemetry/synthetic-result **§** (synthetic monitor journey result)                                  | Yes           | synthetic account **or** `X-Synthetic-Ingest-Token` shared secret                                             |
+
+The row marked **§** accepts either the synthetic monitor account's Bearer JWT
+(account must carry `metadata_.synthetic = true`) or the operator-provisioned
+`X-Synthetic-Ingest-Token` shared secret, checked first and validated without a
+database connection so result submission survives auth/DB outages (#1495).
+Unauthenticated requests and requests presenting both an invalid token and an
+invalid JWT return 401; a valid JWT from a non-synthetic account returns 403.
+The path also gained a dedicated sliding-window rate limit with this change
+(`rate:synthetic-ingest`, 30 requests per 60 s, fail-open when Redis is down),
+bounding abuse of a leaked token — an excess returns 429. See
+[synthetic-monitoring.md](synthetic-monitoring.md).
 
 All `/api/groups/` endpoints require the `admin` or `instructor` role (read
 endpoints are open to any instructor). Rows marked **†** are mutations that
