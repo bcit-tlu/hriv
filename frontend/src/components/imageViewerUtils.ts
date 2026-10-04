@@ -1,5 +1,7 @@
 /** Shared types, constants and helpers used by ImageViewer and its tests. */
 
+import { useRef } from 'react'
+
 import type { CanvasAnnotation } from './CanvasOverlay'
 
 export interface ViewportState {
@@ -291,8 +293,25 @@ export function viewportStateFromSaved(value: unknown): ViewportState | undefine
   if (typeof zoom !== 'number' || typeof x !== 'number' || typeof y !== 'number') {
     return undefined
   }
-  if (!Number.isFinite(zoom) || !Number.isFinite(x) || !Number.isFinite(y)) return undefined
+  if (!Number.isFinite(zoom) || zoom <= 0 || !Number.isFinite(x) || !Number.isFinite(y)) {
+    return undefined
+  }
   return rotation != null && typeof rotation === 'number' && Number.isFinite(rotation)
     ? { zoom, x, y, rotation }
     : { zoom, x, y }
+}
+
+/**
+ * Memoize a derived viewer prop by the serialized form of its source data so
+ * content-identical refreshes keep the same reference. `ImageViewer` includes
+ * `initialViewport`/`initialOverlays` in its mount-effect deps — a fresh
+ * array/object identity would destroy and recreate the OSD viewer on every
+ * unrelated collection update (renewed tile tokens, saved viewports, edits).
+ */
+export function useStableJson<T>(json: string, compute: () => T): T {
+  const ref = useRef<{ json: string; value: T } | null>(null)
+  if (ref.current == null || ref.current.json !== json) {
+    ref.current = { json, value: compute() }
+  }
+  return ref.current.value
 }

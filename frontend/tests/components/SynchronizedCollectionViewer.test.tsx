@@ -78,11 +78,11 @@ function makeFakeViewer(pos: FakePos): { viewer: FakeViewer; state: FakePos } {
     getZoom: vi.fn(() => state.zoom),
     getCenter: vi.fn(() => ({ x: state.x, y: state.y })),
     getRotation: vi.fn(() => state.rotation),
+    // Real OSD goHome preserves rotation — the component clears it separately.
     goHome: vi.fn(() => {
       state.zoom = 1
       state.x = 0.5
       state.y = 0.5
-      state.rotation = 0
       viewer.fire('viewport-change')
     }),
     zoomTo: vi.fn((z: number) => {
@@ -363,6 +363,9 @@ describe('SynchronizedCollectionViewer', () => {
     fireEvent.click(screen.getByTestId('synchronized-reset'))
     expect(fakeA.viewport!.goHome).toHaveBeenCalledWith(true)
     expect(mockState.fakes.get(101)!.viewport!.goHome).toHaveBeenCalledWith(true)
+    // goHome preserves rotation, so Reset must clear it explicitly.
+    expect(fakeA.viewport!.setRotation).toHaveBeenLastCalledWith(0, true)
+    expect(mockState.fakes.get(101)!.viewport!.setRotation).toHaveBeenLastCalledWith(0, true)
   })
 
   it('the Link views toggle pauses mirroring and re-arms on re-enable', () => {
@@ -458,6 +461,84 @@ describe('SynchronizedCollectionViewer', () => {
       ;(mockState.lastProps.get(100)!.onTileSourceRenewed as (i: unknown) => void)(fresh)
     })
     expect(props.onImageRenewed).toHaveBeenCalledWith(fresh)
+  })
+
+  it('keeps the replacement pair linked and saveable after the first member fails', async () => {
+    const collection = syncCollection({ images: images(3) })
+    const { b } = openPair()
+    const c = makeFakeViewer({ zoom: 1, x: 0.5, y: 0.5, rotation: 0 })
+    mockState.fakes.set(102, c.viewer)
+    const { props } = renderViewer({ collection })
+    act(() => {
+      mockState.fakes.get(100)!.open()
+      b.viewer.open()
+    })
+    // First member's tiles fail: the pair slides to (101, 102) without
+    // remounting the surviving viewer.
+    act(() => {
+      ;(mockState.lastProps.get(100)!.onError as (m: string) => void)('tiles expired')
+    })
+    expect(
+      screen.getAllByTestId('image-viewer').map((v) => v.getAttribute('data-image-id')),
+    ).toEqual(['101', '102'])
+    act(() => {
+      c.viewer.open()
+    })
+    // Mirroring works in both directions on the new pair.
+    act(() => {
+      b.viewer.viewport!.panTo({ x: 0.8, y: 0.8 })
+    })
+    expect(c.state.x).toBeCloseTo(0.8)
+    expect(c.state.y).toBeCloseTo(0.8)
+    act(() => {
+      c.viewer.viewport!.panTo({ x: 0.3, y: 0.3 })
+    })
+    expect(b.state.x).toBeCloseTo(0.3)
+    expect(b.state.y).toBeCloseTo(0.3)
+    // Save view persists the replacement pair's viewports.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('synchronized-save'))
+    })
+    await vi.waitFor(() =>
+      expect(props.onSaveViewport).toHaveBeenCalledWith({
+        '101': { zoom: 1, x: expect.closeTo(0.3), y: expect.closeTo(0.3), rotation: 0 },
+        '102': { zoom: 1, x: 0.3, y: 0.3, rotation: 0 },
+      }),
+    )
+  })
+
+  it('keeps viewer prop identities stable across unrelated collection updates', () => {
+    const meta = { locked_overlays: [{ x: 0.1, y: 0.2, w: 0.3, h: 0.4 }] }
+    const collection = syncCollection({
+      images: [makeImage({ id: 100, metadataExtra: meta }), makeImage({ id: 101 })],
+      viewportState: { '100': { zoom: 2, x: 0.4, y: 0.4, rotation: 10 } },
+    })
+    const { props, rerender } = renderViewer({ collection })
+    const before = mockState.lastProps.get(100)!
+    // A save response replaces the collection object with equal content —
+    // a remount here would discard unsaved navigation.
+    rerender(
+      <SynchronizedCollectionViewer
+        {...props}
+        collection={{ ...collection, version: collection.version + 1 }}
+      />,
+    )
+    const after = mockState.lastProps.get(100)!
+    expect(after.initialOverlays).toBe(before.initialOverlays)
+    expect(after.initialViewport).toBe(before.initialViewport)
+    expect(after.canvasAnnotations).toBe(before.canvasAnnotations)
+  })
+
+  it('ignores malformed saved viewport entries', () => {
+    const collection = syncCollection({
+      viewportState: {
+        '100': { zoom: 0, x: 0.5, y: 0.5 },
+        '101': { zoom: 2, x: 'nope', y: 0.5 },
+      },
+    })
+    renderViewer({ collection })
+    expect(mockState.lastProps.get(100)!.initialViewport).toBeUndefined()
+    expect(mockState.lastProps.get(101)!.initialViewport).toBeUndefined()
   })
 
   it('ignores viewport changes before both viewers have opened', () => {

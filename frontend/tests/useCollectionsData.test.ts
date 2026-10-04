@@ -935,6 +935,73 @@ describe('useCollectionsData', () => {
       expect(result.current.detail?.version).toBe(7)
     })
 
+    it('saveViewport after a collection edit uses the edited version, not the queued one', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1 })])
+      fetchCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 1, version: 5 }))
+      saveCollectionViewportMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 6, viewport_state: { '10': { zoom: 2 } } }),
+      )
+      updateCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, name: 'Renamed', version: 7 }),
+      )
+      saveCollectionViewportMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 8, viewport_state: { '10': { zoom: 3 } } }),
+      )
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.version).toBe(5))
+
+      await act(async () => {
+        await result.current.saveViewport(1, { '10': { zoom: 2 } })
+      })
+      expect(saveCollectionViewportMock).toHaveBeenLastCalledWith(1, {
+        viewport_state: { '10': { zoom: 2 } },
+        version: 5,
+      })
+      await act(async () => {
+        await result.current.update(1, { ...VALUES, name: 'Renamed' }, 6, null)
+      })
+      await act(async () => {
+        await result.current.saveViewport(1, { '10': { zoom: 3 } })
+      })
+      // The second save must not reuse the first save's queued version 6.
+      expect(saveCollectionViewportMock).toHaveBeenLastCalledWith(1, {
+        viewport_state: { '10': { zoom: 3 } },
+        version: 7,
+      })
+    })
+
+    it('reorderImages after a collection edit uses the edited version, not the queued one', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1 })])
+      fetchCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 5, images: [{ id: 10 }, { id: 11 }] as never }),
+      )
+      replaceCollectionImagesMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 6, images: [{ id: 11 }, { id: 10 }] as never }),
+      )
+      updateCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, name: 'Renamed', version: 7 }),
+      )
+      replaceCollectionImagesMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 8, images: [{ id: 10 }, { id: 11 }] as never }),
+      )
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.version).toBe(5))
+
+      await act(async () => {
+        await result.current.reorderImages(1, [11, 10])
+      })
+      await act(async () => {
+        await result.current.update(1, { ...VALUES, name: 'Renamed' }, 6, null)
+      })
+      await act(async () => {
+        await result.current.reorderImages(1, [10, 11])
+      })
+      expect(replaceCollectionImagesMock).toHaveBeenLastCalledWith(1, {
+        image_ids: [10, 11],
+        version: 7,
+      })
+    })
+
     it('saveViewport never displaces another open detail', async () => {
       fetchCollectionsMock.mockResolvedValue([
         makeApiCollectionSummary({ id: 1 }),

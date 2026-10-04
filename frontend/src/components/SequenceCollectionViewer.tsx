@@ -24,6 +24,7 @@ import {
   canvasAnnotationsFromMetadata,
   lockedOverlaysFromMetadata,
   measurementFromMetadata,
+  useStableJson,
 } from './imageViewerUtils'
 
 export interface SequenceCollectionViewerProps {
@@ -139,18 +140,22 @@ export default function SequenceCollectionViewer({
     return idx >= 0 ? idx : 0
   }, [available, itemId])
   const current = available[currentIndex] ?? null
-  // Memoized: fresh identities would re-run ImageViewer's mount effect (it
-  // depends on `initialOverlays`) and destroy the OSD viewer every render.
+  // Stable across unrelated collection updates (e.g. tile-token renewal swaps
+  // the member record): fresh identities would re-run ImageViewer's mount
+  // effect (it depends on `initialOverlays`) and destroy the OSD viewer.
   const currentMetadata = current?.metadataExtra
-  const lockedOverlays = useMemo(
+  const lockedOverlays = useStableJson(
+    JSON.stringify(currentMetadata?.locked_overlays ?? null),
     () => lockedOverlaysFromMetadata(currentMetadata),
-    [currentMetadata],
   )
-  const canvasAnnotations = useMemo(
+  const canvasAnnotations = useStableJson(
+    JSON.stringify(currentMetadata?.canvas_annotations ?? null),
     () => canvasAnnotationsFromMetadata(currentMetadata),
-    [currentMetadata],
   )
-  const measurement = useMemo(() => measurementFromMetadata(currentMetadata), [currentMetadata])
+  const measurement = useStableJson(
+    JSON.stringify([currentMetadata?.measurement_scale, currentMetadata?.measurement_unit]),
+    () => measurementFromMetadata(currentMetadata),
+  )
 
   const goTo = useCallback(
     (index: number) => {

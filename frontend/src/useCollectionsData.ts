@@ -342,9 +342,22 @@ export function useCollectionsData({
    * `saveViewport` shares the queue because it bumps the same `version`.
    */
   const mutationQueue = useRef<Promise<Collection | null>>(Promise.resolve(null))
+  /**
+   * Pick the freshest known record for `id` between the queue-carried `prior`
+   * (covers the pre-commit window after a queued mutation) and `detailRef`
+   * (covers writes outside the queue like `update` or a refetch). Version
+   * only ever increments, so the higher one is authoritative.
+   */
+  const baselineFor = (id: number, prior: Collection | null): Collection | null => {
+    const detail = detailRef.current?.id === id ? detailRef.current : null
+    const queued = prior?.id === id ? prior : null
+    if (detail == null) return queued
+    if (queued == null) return detail
+    return queued.version > detail.version ? queued : detail
+  }
   const reorderImages = useCallback((id: number, imageIds: number[]): Promise<Collection> => {
     const run = async (prior: Collection | null): Promise<Collection> => {
-      const baseline = prior?.id === id ? prior : detailRef.current
+      const baseline = baselineFor(id, prior)
       if (!baseline || baseline.id !== id) {
         throw new Error('The collection is not loaded.')
       }
@@ -402,7 +415,7 @@ export function useCollectionsData({
   const saveViewport = useCallback(
     (id: number, viewportState: Record<string, unknown>): Promise<Collection> => {
       const run = async (prior: Collection | null): Promise<Collection> => {
-        const baseline = prior?.id === id ? prior : detailRef.current
+        const baseline = baselineFor(id, prior)
         if (!baseline || baseline.id !== id) {
           throw new Error('The collection is not loaded.')
         }

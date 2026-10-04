@@ -25,6 +25,7 @@ import {
   canvasAnnotationsFromMetadata,
   lockedOverlaysFromMetadata,
   measurementFromMetadata,
+  useStableJson,
   viewportStateFromSaved,
   type MeasurementConfig,
   type OverlayRect,
@@ -92,16 +93,6 @@ function applyTarget(viewer: OpenSeadragon.Viewer, state: ViewportState): void {
   viewport.setRotation(state.rotation ?? 0, true)
 }
 
-function paneProps(collection: Collection, image: ImageItem | undefined): PaneProps | undefined {
-  if (!image) return undefined
-  return {
-    initialViewport: viewportStateFromSaved(collection.viewportState[String(image.id)]),
-    initialOverlays: lockedOverlaysFromMetadata(image.metadataExtra),
-    canvasAnnotations: canvasAnnotationsFromMetadata(image.metadataExtra),
-    measurement: measurementFromMetadata(image.metadataExtra),
-  }
-}
-
 /** Portrait detector — jsdom has no matchMedia, so the query is optional. */
 function usePortrait(): boolean {
   const [portrait, setPortrait] = useState(
@@ -132,21 +123,21 @@ export default function SynchronizedCollectionViewer({
   const [syncEnabled, setSyncEnabled] = useState(true)
   const [saving, setSaving] = useState(false)
 
-  // OSD handles arrive through onViewerReady; viewersRef feeds the sync
-  // handlers, the state copies re-run the attach effect on (re)mounts.
-  const [viewerA, setViewerA] = useState<OpenSeadragon.Viewer | null>(null)
-  const [viewerB, setViewerB] = useState<OpenSeadragon.Viewer | null>(null)
-  const viewersRef = useRef<{ a: OpenSeadragon.Viewer | null; b: OpenSeadragon.Viewer | null }>({
-    a: null,
-    b: null,
-  })
-  const openedRef = useRef({ a: false, b: false })
+  // OSD handles arrive through onViewerReady. They are registered by image
+  // id — not by pane — so when a member fails and the pair slides forward,
+  // the surviving viewer keeps its registration (and its pan/zoom) in the
+  // new slot instead of dropping out of the sync bridge.
+  const viewersByImage = useRef(new Map<number, OpenSeadragon.Viewer>())
+  const openedRef = useRef(new Set<number>())
   const offsetRef = useRef<ViewportOffset | null>(null)
   const syncingRef = useRef(false)
   const syncEnabledRef = useRef(true)
+  // Bumped on every registration change to re-run the attach effect.
+  const [readyTick, setReadyTick] = useState(0)
 
-  // Failures, link state and the captured offset belong to this collection —
-  // a different collection opened without an unmount must not inherit them.
+  // Failures, link state, viewer registrations and the captured offset belong
+  // to this collection — a different collection opened without an unmount
+  // must not inherit them.
   const collectionId = collection.id
   const previousCollectionId = useRef(collectionId)
   useEffect(() => {
@@ -156,6 +147,8 @@ export default function SynchronizedCollectionViewer({
     setSyncEnabled(true)
     syncEnabledRef.current = true
     offsetRef.current = null
+    viewersByImage.current.clear()
+    openedRef.current.clear()
   }, [collectionId])
 
   useEffect(() => {
@@ -168,57 +161,129 @@ export default function SynchronizedCollectionViewer({
   )
   const slotA = available[0]
   const slotB = available[1]
-  // Memoized per-image viewer props: fresh object identities would re-run
-  // ImageViewer's mount effect and destroy the OSD viewer every render.
-  const paneA = useMemo(() => paneProps(collection, slotA), [collection, slotA])
-  const paneB = useMemo(() => paneProps(collection, slotB), [collection, slotB])
-
-  // The offset pair is meaningless for a different image pair — recapture it.
   const slotAId = slotA?.id
   const slotBId = slotB?.id
+
+  // Memoized per-image viewer props keyed on serialized content — a fresh
+  // array/object identity would re-run ImageViewer's mount effect (it deps on
+  // `initialOverlays`/`initialViewport`) and destroy the OSD viewer on any
+  // unrelated collection update (tile renewal, save response, edits).
+  const overlaysA = useStableJson(
+    slotA ? JSON.stringify(slotA.metadataExtra?.locked_overlays ?? null) : '',
+    () => lockedOverlaysFromMetadata(slotA?.metadataExtra),
+  )
+  const overlaysB = useStableJson(
+    slotB ? JSON.stringify(slotB.metadataExtra?.locked_overlays ?? null) : '',
+    () => lockedOverlaysFromMetadata(slotB?.metadataExtra),
+  )
+  const annotationsA = useStableJson(
+    slotA ? JSON.stringify(slotA.metadataExtra?.canvas_annotations ?? null) : '',
+    () => canvasAnnotationsFromMetadata(slotA?.metadataExtra),
+  )
+  const annotationsB = useStableJson(
+    slotB ? JSON.stringify(slotB.metadataExtra?.canvas_annotations ?? null) : '',
+    () => canvasAnnotationsFromMetadata(slotB?.metadataExtra),
+  )
+  const measurementA = useStableJson(
+    slotA
+      ? JSON.stringify([
+          slotA.metadataExtra?.measurement_scale,
+          slotA.metadataExtra?.measurement_unit,
+        ])
+      : '',
+    () => measurementFromMetadata(slotA?.metadataExtra),
+  )
+  const measurementB = useStableJson(
+    slotB
+      ? JSON.stringify([
+          slotB.metadataExtra?.measurement_scale,
+          slotB.metadataExtra?.measurement_unit,
+        ])
+      : '',
+    () => measurementFromMetadata(slotB?.metadataExtra),
+  )
+
+  // `initialViewport` is mount-only input for ImageViewer — freeze the saved
+  // entry the first time an image occupies a pane so a later save/refetch
+  // (which replaces `collection`) cannot remount the viewer and discard
+  // unsaved navigation. Reset view reads `collection.viewportState` live.
+  const initialViewports = useRef({
+    collectionId,
+    map: new Map<number, ViewportState | undefined>(),
+  })
+  if (initialViewports.current.collectionId !== collectionId) {
+    initialViewports.current = { collectionId, map: new Map() }
+  }
+  const initialViewportFor = (image: ImageItem): ViewportState | undefined => {
+    const { map } = initialViewports.current
+    if (!map.has(image.id)) {
+      map.set(image.id, viewportStateFromSaved(collection.viewportState[String(image.id)]))
+    }
+    return map.get(image.id)
+  }
+
+  // The offset pair and stale snapshot entries are meaningless for a
+  // different image pair — drop both when the occupants change.
   useEffect(() => {
     offsetRef.current = null
+    const { map } = initialViewports.current
+    for (const id of [...map.keys()]) {
+      if (id !== slotAId && id !== slotBId) map.delete(id)
+    }
   }, [slotAId, slotBId])
 
-  const handleViewerReady = useCallback((slot: Slot, viewer: OpenSeadragon.Viewer | null) => {
-    viewersRef.current[slot] = viewer
-    if (!viewer) openedRef.current[slot] = false
-    if (slot === 'a') setViewerA(viewer)
-    else setViewerB(viewer)
+  const handleViewerReady = useCallback((imageId: number, viewer: OpenSeadragon.Viewer | null) => {
+    if (viewer) {
+      viewersByImage.current.set(imageId, viewer)
+    } else {
+      viewersByImage.current.delete(imageId)
+      openedRef.current.delete(imageId)
+    }
+    setReadyTick((tick) => tick + 1)
   }, [])
 
   /** Capture the current relative alignment as the offset the leader keeps. */
-  const armOffset = useCallback(() => {
-    const a = readViewport(viewersRef.current.a)
-    const b = readViewport(viewersRef.current.b)
+  const armOffset = useCallback((imgA: ImageItem, imgB: ImageItem) => {
+    const a = readViewport(viewersByImage.current.get(imgA.id) ?? null)
+    const b = readViewport(viewersByImage.current.get(imgB.id) ?? null)
     offsetRef.current = a && b ? offsetBetween(b, a) : null
   }, [])
 
   useEffect(() => {
     const detach: (() => void)[] = []
-    for (const [slot, viewer] of [
-      ['a', viewerA],
-      ['b', viewerB],
-    ] as const) {
+    const panes: [Slot, ImageItem][] = [
+      ...(slotA ? ([['a', slotA]] as [Slot, ImageItem][]) : []),
+      ...(slotB ? ([['b', slotB]] as [Slot, ImageItem][]) : []),
+    ]
+    for (const [slot, image] of panes) {
+      const viewer = viewersByImage.current.get(image.id)
       if (!viewer) {
-        openedRef.current[slot] = false
+        openedRef.current.delete(image.id)
         continue
       }
+      const otherImage = slot === 'a' ? slotB : slotA
       // 'open' is a once-handler: it runs after ImageViewer's own open handler
       // (registered at viewer creation, before onViewerReady), so the saved
       // viewport restore has already settled when the offset is captured.
       const markOpened = () => {
-        openedRef.current[slot] = true
-        if (openedRef.current.a && openedRef.current.b && syncEnabledRef.current) {
-          armOffset()
+        openedRef.current.add(image.id)
+        if (
+          otherImage &&
+          openedRef.current.has(otherImage.id) &&
+          syncEnabledRef.current &&
+          slotA &&
+          slotB
+        ) {
+          armOffset(slotA, slotB)
         }
       }
       const onViewportChange = () => {
         if (!syncEnabledRef.current || syncingRef.current) return
-        if (!openedRef.current.a || !openedRef.current.b) return
+        if (!otherImage || !openedRef.current.has(image.id)) return
+        if (!openedRef.current.has(otherImage.id)) return
         const leader = readViewport(viewer)
-        const follower = viewersRef.current[slot === 'a' ? 'b' : 'a']
-        const followerPos = readViewport(follower)
+        const follower = viewersByImage.current.get(otherImage.id)
+        const followerPos = readViewport(follower ?? null)
         if (!leader || !follower || !followerPos) return
         if (offsetRef.current == null) {
           // First armed event just locks the offset — applying here would be
@@ -260,16 +325,16 @@ export default function SynchronizedCollectionViewer({
     return () => {
       for (const d of detach) d()
     }
-  }, [viewerA, viewerB, armOffset])
+  }, [slotA, slotB, readyTick, armOffset])
 
   const handleSyncToggle = useCallback(
     (on: boolean) => {
       setSyncEnabled(on)
       syncEnabledRef.current = on
       // Re-arming preserves whatever relative alignment was set while unlinked.
-      if (on) armOffset()
+      if (on && slotA && slotB) armOffset(slotA, slotB)
     },
-    [armOffset],
+    [armOffset, slotA, slotB],
   )
 
   const handleViewerError = useCallback(
@@ -282,8 +347,8 @@ export default function SynchronizedCollectionViewer({
 
   const handleSave = useCallback(async () => {
     if (!slotA || !slotB) return
-    const a = readViewport(viewersRef.current.a)
-    const b = readViewport(viewersRef.current.b)
+    const a = readViewport(viewersByImage.current.get(slotA.id) ?? null)
+    const b = readViewport(viewersByImage.current.get(slotB.id) ?? null)
     if (!a || !b) return
     setSaving(true)
     try {
@@ -300,25 +365,28 @@ export default function SynchronizedCollectionViewer({
 
   const handleReset = useCallback(() => {
     if (!slotA || !slotB) return
-    const apply = (slot: Slot, image: ImageItem) => {
-      const viewer = viewersRef.current[slot]
+    const apply = (image: ImageItem) => {
+      const viewer = viewersByImage.current.get(image.id)
       const viewport = viewer?.viewport
       if (!viewer || !viewport) return
       const saved = viewportStateFromSaved(collection.viewportState[String(image.id)])
       if (saved) {
         applyTarget(viewer, saved)
       } else {
+        // goHome preserves rotation — clear it separately like ImageViewer's
+        // own Home action does.
         viewport.goHome(true)
+        viewport.setRotation(0, true)
       }
     }
     syncingRef.current = true
     try {
-      apply('a', slotA)
-      apply('b', slotB)
+      apply(slotA)
+      apply(slotB)
     } finally {
       syncingRef.current = false
     }
-    armOffset()
+    armOffset(slotA, slotB)
   }, [slotA, slotB, collection.viewportState, armOffset])
 
   if (available.length < 2) {
@@ -365,9 +433,25 @@ export default function SynchronizedCollectionViewer({
     )
   }
 
-  const panes: { slot: Slot; image: ImageItem; pane: PaneProps | undefined }[] = [
-    { slot: 'a', image: slotA, pane: paneA },
-    { slot: 'b', image: slotB, pane: paneB },
+  const panes: { image: ImageItem; pane: PaneProps }[] = [
+    {
+      image: slotA,
+      pane: {
+        initialViewport: initialViewportFor(slotA),
+        initialOverlays: overlaysA,
+        canvasAnnotations: annotationsA,
+        measurement: measurementA,
+      },
+    },
+    {
+      image: slotB,
+      pane: {
+        initialViewport: initialViewportFor(slotB),
+        initialOverlays: overlaysB,
+        canvasAnnotations: annotationsB,
+        measurement: measurementB,
+      },
+    },
   ]
 
   return (
@@ -424,7 +508,7 @@ export default function SynchronizedCollectionViewer({
 
       <Box sx={{ position: 'relative' }}>
         <Box sx={{ display: 'flex', gap: 2 }}>
-          {panes.map(({ slot, image, pane }) => (
+          {panes.map(({ image, pane }) => (
             <Box key={image.id} sx={{ flex: 1, minWidth: 0 }}>
               <Paper elevation={3} sx={{ borderRadius: 2, overflow: 'hidden' }}>
                 <ImageViewer
@@ -432,13 +516,13 @@ export default function SynchronizedCollectionViewer({
                   imageId={image.id}
                   categoryId={image.categoryId ?? undefined}
                   height="55vh"
-                  initialViewport={pane?.initialViewport}
-                  initialOverlays={pane?.initialOverlays}
-                  overlaysLocked={pane?.initialOverlays != null}
-                  canvasAnnotations={pane?.canvasAnnotations}
+                  initialViewport={pane.initialViewport}
+                  initialOverlays={pane.initialOverlays}
+                  overlaysLocked={pane.initialOverlays != null}
+                  canvasAnnotations={pane.canvasAnnotations}
                   canEditContent={false}
-                  measurement={pane?.measurement}
-                  onViewerReady={(viewer) => handleViewerReady(slot, viewer)}
+                  measurement={pane.measurement}
+                  onViewerReady={(viewer) => handleViewerReady(image.id, viewer)}
                   onTileSourceRenewed={onImageRenewed}
                   onError={(message) => handleViewerError(image, message)}
                 />
