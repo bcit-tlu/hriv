@@ -479,7 +479,9 @@ async def ingest_synthetic_result(
     user: User | None = None
     credential: str
     if x_synthetic_ingest_token is not None:
-        configured = settings.synthetic_ingest_token
+        # .strip() matches the monitor's handling: a secret provisioned with a
+        # trailing newline must still compare equal (headers can't carry it).
+        configured = settings.synthetic_ingest_token.strip()
         if not configured or not secrets.compare_digest(
             x_synthetic_ingest_token, configured
         ):

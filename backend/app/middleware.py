@@ -432,6 +432,11 @@ _MAINTENANCE_EXEMPT: tuple[str, ...] = (
     "/api/status",
     "/api/metrics",
     "/api/admin/maintenance",
+    # Synthetic result ingestion must stay reachable during maintenance so
+    # the monitor can publish its (typically failing) journey result instead
+    # of leaving Prometheus on a stale previous run. The endpoint enforces
+    # its own credential — exemption only skips the maintenance 503 (#1495).
+    "/api/telemetry/synthetic-result",
 )
 
 

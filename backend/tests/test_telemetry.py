@@ -639,6 +639,36 @@ async def test_synthetic_result_ingest_token_accepted(
     assert not hasattr(log, "user.id")
 
 
+async def test_synthetic_result_ingest_token_tolerates_trailing_whitespace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A provisioned value carrying a trailing newline still compares equal —
+    the monitor must strip it anyway because headers cannot carry newlines."""
+    from app.routers import telemetry
+
+    monkeypatch.setattr(telemetry.settings, "synthetic_ingest_token", "sekrit\n")
+    result = _make_synthetic_result()
+    stored_state = StoredSyntheticJourneyState(
+        latest_result=result,
+        last_success_completed_at=result.completed_at,
+        updated_at=result.completed_at,
+    )
+
+    with _allow_ingest_rate_limit(), patch(
+        "app.routers.telemetry.store_synthetic_result",
+        new_callable=AsyncMock,
+        return_value=stored_state,
+    ):
+        response = await ingest_synthetic_result(
+            result=result,
+            request=_make_request(),
+            db=MagicMock(),
+            x_synthetic_ingest_token="sekrit",
+        )
+
+    assert response.status == "stored"
+
+
 async def test_synthetic_result_ingest_token_rejects_wrong_token(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
