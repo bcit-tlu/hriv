@@ -2580,7 +2580,9 @@ def test_swap_imported_entries_recreates_upload_spool_dir(tmp_path) -> None:
     assert (data_source / ".staging").is_dir()
 
 
-def _extracted_and_data_dirs(tmp_path):
+def _extracted_and_data_dirs(
+    tmp_path: Path,
+) -> tuple[Path, Path, Path]:
     extracted_dir = tmp_path / "staging" / "data"
     extracted_source = extracted_dir / "source_images"
     extracted_source.mkdir(parents=True)
@@ -2591,25 +2593,29 @@ def _extracted_and_data_dirs(tmp_path):
     return extracted_dir, data_dir, data_source
 
 
-def test_swap_imported_entries_fails_when_spool_recreate_fails(
+def test_swap_imported_entries_survives_spool_recreate_failure(
     tmp_path, monkeypatch
 ) -> None:
-    """A persistent makedirs failure fails the import task so it stays
-    observable — local mode has no periodic sweep to retry it (#1365)."""
+    """A persistent makedirs failure logs an error but does not fail the
+    import — the restore succeeded, and the upload middleware recreates
+    the spool dir on the next request (#1365)."""
     extracted_dir, data_dir, data_source = _extracted_and_data_dirs(tmp_path)
 
     monkeypatch.setattr(
         "app.admin_ops.os.makedirs",
         MagicMock(side_effect=OSError("fs offline")),
     )
+    monkeypatch.setattr("app.admin_ops.time.sleep", lambda _s: None)
 
-    with pytest.raises(RuntimeError, match="upload spool"):
-        _swap_imported_entries(
-            extracted_dir,
-            data_dir,
-            str(data_dir / "tiles"),
-            str(data_source),
-        )
+    result = _swap_imported_entries(
+        extracted_dir,
+        data_dir,
+        str(data_dir / "tiles"),
+        str(data_source),
+    )
+
+    assert result["source_files"] == 1
+    assert (data_source / "new.tiff").read_text() == "new"
 
 
 def test_swap_imported_entries_retries_transient_spool_failure(

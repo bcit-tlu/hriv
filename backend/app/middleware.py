@@ -6,7 +6,10 @@ for large image uploads (1 GB+) where ``BaseHTTPMiddleware`` would hold
 the entire body in RAM before the streaming-to-disk handler runs.
 """
 
+import asyncio
+import contextlib
 import logging
+import os
 import re
 import time
 import uuid
@@ -26,6 +29,7 @@ from .task_constants import (
     BULK_IMPORT_MAX_REQUEST_BYTES,
     BULK_IMPORT_MAX_UPLOAD_BYTES,
 )
+from .upload_staging import UPLOAD_SPOOL_DIR_NAME
 
 logger = logging.getLogger(__name__)
 _meter = metrics.get_meter(__name__)
@@ -614,6 +618,20 @@ class UploadBodyLimitMiddleware:
             await self.app(scope, receive, send)
             return
         part_limit, request_limit = limits
+
+        # TMPDIR points inside the source-images tree and a filesystem
+        # import can replace that tree wholesale, so ensure the spool dir
+        # exists before the parser's first tempfile rollover needs it
+        # (#1365). If it truly cannot be created the subsequent spool
+        # fails the request anyway, so a failure here is not fatal.
+        with contextlib.suppress(OSError):
+            await asyncio.to_thread(
+                os.makedirs,
+                os.path.join(
+                    settings.source_images_dir, UPLOAD_SPOOL_DIR_NAME
+                ),
+                exist_ok=True,
+            )
 
         part_detail = _upload_body_limit_detail(scope["path"], per_part=True)
         request_detail = _upload_body_limit_detail(scope["path"], per_part=False)

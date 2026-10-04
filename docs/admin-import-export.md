@@ -248,12 +248,12 @@ preflight with a clear error rather than surfacing a cryptic cross-device
 
 The swap replaces `source_images/` wholesale, and exports omit its transient
 `.staging/` upload-spool subdirectory — so after the swap the import recreates
-`<source_images_dir>/.staging` before reporting success (#1365). A running API
-pod's `TMPDIR` keeps pointing there; without this step the next multipart
-upload would fail on tempfile rollover. Creation gets a bounded retry for
-transient filesystem errors; a persistent failure fails the import task so it
-stays observable — re-running the import retries creation (local mode has no
-periodic reconciliation sweep).
+`<source_images_dir>/.staging` (#1365). A running API pod's `TMPDIR` keeps
+pointing there; without this step the next multipart upload would fail on
+tempfile rollover. Creation retries briefly for transient filesystem errors;
+a persistent failure is logged but does not fail the import (the restore
+itself succeeded) — `UploadBodyLimitMiddleware` re-ensures the directory on
+every upload request, so the next upload self-heals in any execution mode.
 
 The admin UI's "Previously uploaded import archives" list shows cumulative
 storage usage (for example, "3 retained archives using 87.4 GiB") so operators
