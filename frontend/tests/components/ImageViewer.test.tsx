@@ -326,6 +326,16 @@ describe('ImageViewer lifecycle telemetry', () => {
     )
   })
 
+  it('reports the OSD instance through onViewerReady and null on unmount', () => {
+    const onViewerReady = vi.fn()
+    const { unmount } = render(
+      <ImageViewer tileSources="/tiles.dzi" imageId={7} onViewerReady={onViewerReady} />,
+    )
+    expect(onViewerReady).toHaveBeenCalledWith(viewer())
+    unmount()
+    expect(onViewerReady).toHaveBeenLastCalledWith(null)
+  })
+
   it('emits a dwell event and destroys the viewer and tracker on unmount', () => {
     const { unmount } = render(<ImageViewer tileSources="/tiles.dzi" imageId={7} />)
     const v = viewer()

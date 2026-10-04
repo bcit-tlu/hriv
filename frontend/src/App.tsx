@@ -1737,6 +1737,7 @@ export default function App() {
               onReorderImages={collectionsData.reorderImages}
               onCollectionImageRenewed={collectionsData.renewCollectionImage}
               onViewerError={setErrorSnack}
+              onSaveViewport={collectionsData.saveViewport}
               loadCollection={collectionsData.loadCollection}
               onCreate={collectionsData.create}
               onUpdate={collectionsData.update}

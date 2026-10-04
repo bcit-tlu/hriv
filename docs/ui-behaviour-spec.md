@@ -208,9 +208,8 @@ returned by the API (UX only — the backend re-checks).
   message.
 - **Given** the user opens a card, **Then** the URL becomes
   `?collection={id}`; a `sequence` collection mounts the sequence viewer
-  (#1416, below), while a `synchronized` collection still lists the ordered
-  member images with an **Open image** link (`?image={id}`) each — the
-  synchronized viewer arrives in #1417.
+  (#1416, below) and a `synchronized` collection mounts the synchronized
+  viewer (#1417, below).
 - **Given** a `?collection={id}` URL is loaded or restored via back/forward,
   **Then** the Collections tab opens on that collection; **Given** the API
   returns **404**, **Then** the not-found `Alert` with **All collections** is
@@ -247,6 +246,45 @@ always read-only (`canEditContent={false}`).
   in reorder mode the strip becomes draggable and a drop PUTs the whole
   member id list with the collection `version`, reordering optimistically
   and rolling back on error. Non-editors never see the toggle.
+
+### Synchronized collection viewer (`SynchronizedCollectionViewer.test.tsx`, `useCollectionsData.test.ts`, `ImageViewer.test.tsx`)
+
+See [collections.md](collections.md#synchronized-collection-viewer-1417)
+for the full contract. Mounted by the collection detail for `synchronized`
+collections; both panes are read-only `ImageViewer`s
+(`canEditContent={false}`) showing stored annotations, locked overlays and
+measurement metadata.
+
+- **Given** a synchronized collection with two or more visible members,
+  **Then** the first two render side by side (each pane captioned with the
+  member name and an **Open image** → `?image={id}` action) and, when more
+  than two are stored, a "Showing 2 of _N_" note appears — three/four-pane
+  layouts are future work.
+- **Given** the user pans, zooms or rotates either pane, **Then** the other
+  pane follows with `immediately=true`, shifted by the pair's relative
+  offset, and the follower never leads the sync (no oscillation).
+- **Given** the collection's `viewport_state` matches
+  `{ "<image_id>": {zoom, x, y, rotation} }`, **Then** each pane opens at
+  its saved position so the pair returns to where it was saved — the
+  relative offset between saved entries is the alignment around different
+  highlights; entries that don't match the shape are ignored.
+- **Given** `permissions.can_edit`, **Then** a **Save view** button appears
+  and clicking it PUTs both panes' current viewports as `viewport_state`
+  with the collection `version`; a failure surfaces `userMessage` on the
+  snackbar. Non-editors never see **Save view**.
+- **Given** the **Reset view** button (everyone), **When** clicked, **Then**
+  each pane re-applies its saved position — or its home when nothing is
+  saved — and the link offset re-arms.
+- **Given** the **Link views** switch, **When** toggled off, **Then** each
+  pane moves independently; **When** toggled back on, **Then** the pair
+  re-captures the current alignment instead of snapping.
+- **Given** `(orientation: portrait)`, **Then** a full-area hint
+  ("rotate your device") covers the pane area while the viewers stay mounted
+  underneath, and rotating back restores the exact view.
+- **Given** fewer than two visible members (or fewer than two whose tiles
+  survive), **Then** a fallback alert shows the ordered member list with
+  per-row **Open image** links; members whose tiles fail mid-session are
+  skipped so the pair slides forward.
 
 ### "Add to Collection" from the image view (`AddToCollectionDialog.test.tsx`, `useAddToCollection.test.tsx`, `App.test.tsx`)
 

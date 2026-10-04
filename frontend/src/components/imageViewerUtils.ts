@@ -279,3 +279,20 @@ export function measurementFromMetadata(
   if (scale == null && unit == null) return undefined
   return { scale, unit }
 }
+
+/**
+ * Validate one `viewport_state` entry (`{ zoom, x, y, rotation? }`) from a
+ * collection's persisted sync view. The backend stores the object opaquely,
+ * so malformed or stale-shape values are ignored rather than applied.
+ */
+export function viewportStateFromSaved(value: unknown): ViewportState | undefined {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const { zoom, x, y, rotation } = value as Record<string, unknown>
+  if (typeof zoom !== 'number' || typeof x !== 'number' || typeof y !== 'number') {
+    return undefined
+  }
+  if (!Number.isFinite(zoom) || !Number.isFinite(x) || !Number.isFinite(y)) return undefined
+  return rotation != null && typeof rotation === 'number' && Number.isFinite(rotation)
+    ? { zoom, x, y, rotation }
+    : { zoom, x, y }
+}

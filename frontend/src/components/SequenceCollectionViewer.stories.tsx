@@ -45,7 +45,9 @@ function makeImage(id: number, name: string): ImageItem {
     id,
     name,
     thumb: '/hriv-splash2.jpg',
-    tileSources: `/api/tiles/${id}/image.dzi`,
+    // .storybook/static/sample.dzi parses but serves no tiles, so the viewer
+    // mounts deterministically instead of racing an open-failed path.
+    tileSources: '/sample.dzi',
     active: true,
     sortOrder: id,
     version: 1,

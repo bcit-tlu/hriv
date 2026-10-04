@@ -12,10 +12,6 @@ import Divider from '@mui/material/Divider'
 import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
 import Link from '@mui/material/Link'
-import List from '@mui/material/List'
-import ListItem from '@mui/material/ListItem'
-import ListItemAvatar from '@mui/material/ListItemAvatar'
-import ListItemText from '@mui/material/ListItemText'
 import MenuItem from '@mui/material/MenuItem'
 import Select from '@mui/material/Select'
 import ToggleButton from '@mui/material/ToggleButton'
@@ -26,7 +22,6 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import CollectionsIcon from '@mui/icons-material/Collections'
 import DeleteIcon from '@mui/icons-material/Delete'
 import EditIcon from '@mui/icons-material/Edit'
-import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import { userMessage, type ApiImage } from '../api'
 import {
   COLLECTION_TYPE_LABELS,
@@ -46,8 +41,8 @@ import type {
 } from '../types'
 import CollectionCard, { CollectionVisibilityChip } from './CollectionCard'
 import CollectionEditDialog, { type CollectionFormValues } from './CollectionEditDialog'
-import RenewingThumbnail from './RenewingThumbnail'
 import SequenceCollectionViewer from './SequenceCollectionViewer'
+import SynchronizedCollectionViewer from './SynchronizedCollectionViewer'
 
 export interface CollectionsPageProps {
   currentUser: User | null
@@ -74,6 +69,8 @@ export interface CollectionsPageProps {
   onReorderImages: (id: number, imageIds: number[]) => Promise<unknown>
   onCollectionImageRenewed: (collectionId: number, image: ApiImage) => void
   onViewerError: (message: string) => void
+  /** Synchronized viewer mutation — whole-replace `viewport_state` (#1417). */
+  onSaveViewport: (id: number, viewportState: Record<string, unknown>) => Promise<unknown>
   /** Mutations — reject with an ApiError to surface the message in the dialog. */
   loadCollection: (id: number) => Promise<Collection>
   onCreate: (values: CollectionFormValues) => Promise<unknown>
@@ -163,73 +160,6 @@ function CollectionDetailHeader({
   )
 }
 
-function CollectionDetailPlaceholder({
-  collection,
-  onBack,
-  onOpenImage,
-  onEdit,
-  onDelete,
-}: {
-  collection: Collection
-  onBack: () => void
-  onOpenImage: (image: ImageItem) => void
-  onEdit?: () => void
-  onDelete?: () => void
-}) {
-  return (
-    <Box data-testid="collection-detail">
-      <CollectionDetailHeader
-        collection={collection}
-        onBack={onBack}
-        onEdit={onEdit}
-        onDelete={onDelete}
-      />
-
-      <Alert severity="info" sx={{ mt: 3 }}>
-        The {COLLECTION_TYPE_LABELS[collection.type].toLowerCase()} viewer is coming soon. Until
-        then, open each image individually below.
-      </Alert>
-
-      {collection.images.length === 0 ? (
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 3 }}>
-          This collection has no images yet.
-        </Typography>
-      ) : (
-        <List dense sx={{ mt: 2 }}>
-          {collection.images.map((img, index) => (
-            <ListItem
-              key={img.id}
-              divider
-              secondaryAction={
-                <Button
-                  size="small"
-                  endIcon={<OpenInNewIcon />}
-                  href={`?image=${img.id}`}
-                  onClick={(e) => {
-                    e.preventDefault()
-                    onOpenImage(img)
-                  }}
-                >
-                  Open image
-                </Button>
-              }
-            >
-              <ListItemAvatar>
-                <RenewingThumbnail
-                  image={img}
-                  alt=""
-                  sx={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 1 }}
-                />
-              </ListItemAvatar>
-              <ListItemText primary={`${index + 1}. ${img.name}`} />
-            </ListItem>
-          ))}
-        </List>
-      )}
-    </Box>
-  )
-}
-
 export default function CollectionsPage({
   currentUser,
   programs,
@@ -252,6 +182,7 @@ export default function CollectionsPage({
   onReorderImages,
   onCollectionImageRenewed,
   onViewerError,
+  onSaveViewport,
   loadCollection,
   onCreate,
   onUpdate,
@@ -383,15 +314,23 @@ export default function CollectionsPage({
           />
         </Box>
       )
-    } else if (detail) {
+    } else if (detail && detail.type === 'synchronized') {
       body = (
-        <CollectionDetailPlaceholder
-          collection={detail}
-          onBack={onCloseCollection}
-          onOpenImage={onOpenImage}
-          onEdit={() => void openEdit(detail)}
-          onDelete={() => requestDelete(detail)}
-        />
+        <Box data-testid="collection-detail">
+          <CollectionDetailHeader
+            collection={detail}
+            onBack={onCloseCollection}
+            onEdit={() => void openEdit(detail)}
+            onDelete={() => requestDelete(detail)}
+          />
+          <SynchronizedCollectionViewer
+            collection={detail}
+            onSaveViewport={(viewportState) => onSaveViewport(detail.id, viewportState)}
+            onOpenImage={onOpenImage}
+            onImageRenewed={(image) => onCollectionImageRenewed(detail.id, image)}
+            onError={onViewerError}
+          />
+        </Box>
       )
     } else {
       body = null

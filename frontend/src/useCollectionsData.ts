@@ -6,6 +6,7 @@ import {
   fetchCollection,
   fetchCollections,
   replaceCollectionImages,
+  saveCollectionViewport,
   updateCollection,
   userMessage,
   type ApiImage,
@@ -332,14 +333,15 @@ export function useCollectionsData({
    * see are kept at the end (the backend carries them over, matching the
    * visible-only submit list).
    *
-   * Drops are serialized through `reorderQueue`: each call runs only after
+   * Drops are serialized through `mutationQueue`: each call runs only after
    * the previous PUT settles, and the queue carries the last authoritative
    * record forward so each PUT sends a `version` the server accepts even if
    * React has not committed the previous response yet. Without this, two
    * drags landing inside one PUT window send the same version — the loser
    * would 409 and roll the detail back over the winner's saved order.
+   * `saveViewport` shares the queue because it bumps the same `version`.
    */
-  const reorderQueue = useRef<Promise<Collection | null>>(Promise.resolve(null))
+  const mutationQueue = useRef<Promise<Collection | null>>(Promise.resolve(null))
   const reorderImages = useCallback((id: number, imageIds: number[]): Promise<Collection> => {
     const run = async (prior: Collection | null): Promise<Collection> => {
       const baseline = prior?.id === id ? prior : detailRef.current
@@ -382,14 +384,56 @@ export function useCollectionsData({
         throw err
       }
     }
-    const queued = reorderQueue.current.then(run, () => run(null))
+    const queued = mutationQueue.current.then(run, () => run(null))
     // The chain never rejects — the next drop always gets a baseline.
-    reorderQueue.current = queued.then(
+    mutationQueue.current = queued.then(
       (updated) => updated,
       () => null,
     )
     return queued
   }, [])
+
+  /**
+   * Persist the synchronized viewer's saved positions (#1417) via the
+   * whole-replace `PUT …/viewport`, updating the open detail on success.
+   * Serialized with `reorderImages` through `mutationQueue` so a viewport
+   * save cannot send a version an in-flight reorder has already consumed.
+   */
+  const saveViewport = useCallback(
+    (id: number, viewportState: Record<string, unknown>): Promise<Collection> => {
+      const run = async (prior: Collection | null): Promise<Collection> => {
+        const baseline = prior?.id === id ? prior : detailRef.current
+        if (!baseline || baseline.id !== id) {
+          throw new Error('The collection is not loaded.')
+        }
+        const updated = apiCollectionToCollection(
+          await saveCollectionViewport(id, {
+            viewport_state: viewportState,
+            version: baseline.version,
+          }),
+        )
+        setDetail((prev) => (prev?.id === id ? updated : prev))
+        setCollections((prev) => {
+          const rest = prev.filter((c) => c.id !== id)
+          return matchesCollectionFilters(
+            updated,
+            latest.current.filters,
+            latest.current.currentUser,
+          )
+            ? [updated, ...rest]
+            : rest
+        })
+        return updated
+      }
+      const queued = mutationQueue.current.then(run, () => run(null))
+      mutationQueue.current = queued.then(
+        (updated) => updated,
+        () => null,
+      )
+      return queued
+    },
+    [],
+  )
 
   /**
    * Refresh a member's tokenized tile/thumb URLs inside the open collection
@@ -421,6 +465,7 @@ export function useCollectionsData({
     update,
     remove,
     reorderImages,
+    saveViewport,
     renewCollectionImage,
   }
 }

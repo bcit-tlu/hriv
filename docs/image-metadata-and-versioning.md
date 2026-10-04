@@ -88,6 +88,12 @@ the selected images.
 | `pyramid_detected`    | bool            | Processing                  | Whether a pyramidal structure was found |
 | `pyramid_level_count` | int             | Processing                  | Number of pyramid levels                |
 
+The synchronized collection viewer's persisted pane positions
+(`{ "<image_id>": {zoom, x, y, rotation} }`) are **not** image metadata —
+they live in `Collection.viewport_state`, a separate whole-replace JSONB
+column with its own `Collection.version` optimistic concurrency; see
+[collections.md](collections.md#synchronized-collection-viewer-1417).
+
 ### Image replacement behaviour
 
 When a source image is replaced (`process_replace_image`):

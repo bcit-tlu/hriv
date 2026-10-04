@@ -139,6 +139,18 @@ export default function SequenceCollectionViewer({
     return idx >= 0 ? idx : 0
   }, [available, itemId])
   const current = available[currentIndex] ?? null
+  // Memoized: fresh identities would re-run ImageViewer's mount effect (it
+  // depends on `initialOverlays`) and destroy the OSD viewer every render.
+  const currentMetadata = current?.metadataExtra
+  const lockedOverlays = useMemo(
+    () => lockedOverlaysFromMetadata(currentMetadata),
+    [currentMetadata],
+  )
+  const canvasAnnotations = useMemo(
+    () => canvasAnnotationsFromMetadata(currentMetadata),
+    [currentMetadata],
+  )
+  const measurement = useMemo(() => measurementFromMetadata(currentMetadata), [currentMetadata])
 
   const goTo = useCallback(
     (index: number) => {
@@ -245,7 +257,6 @@ export default function SequenceCollectionViewer({
   // Position is over the full member list — the strip still shows every
   // member (failed ones dimmed), so numbering must not renumber on failure.
   const position = `${images.indexOf(current) + 1} of ${images.length}`
-  const lockedOverlays = lockedOverlaysFromMetadata(current.metadataExtra)
 
   return (
     <Box data-testid="sequence-collection-viewer" onKeyDownCapture={handleKeyDownCapture}>
@@ -316,9 +327,9 @@ export default function SequenceCollectionViewer({
           height="60vh"
           initialOverlays={lockedOverlays}
           overlaysLocked={lockedOverlays != null}
-          canvasAnnotations={canvasAnnotationsFromMetadata(current.metadataExtra)}
+          canvasAnnotations={canvasAnnotations}
           canEditContent={false}
-          measurement={measurementFromMetadata(current.metadataExtra)}
+          measurement={measurement}
           onTileSourceRenewed={onImageRenewed}
           onError={handleViewerError}
         />

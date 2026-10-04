@@ -93,7 +93,11 @@ Collections are included in the admin database export/import round-trip
 [admin-import-export.md](admin-import-export.md).
 
 `viewport_state` is written as a whole-column replacement (never a partial
-JSONB merge). Its shape is finalised with the synchronized viewer (#1417).
+JSONB merge). The synchronized viewer (#1417) stores it as
+`{ "<image_id>": { "zoom": number, "x": number, "y": number,
+"rotation": number } }` — each member pane's absolute viewport position; the
+relative offset between panes is implicit in the pair. Keys the stored JSONB
+does not recognise are ignored by the frontend validator.
 
 ## Authorization
 
@@ -216,8 +220,10 @@ images, viewport) or `can_delete_collection` (DELETE) gets **403**.
   non-students see every image, this only affects students.
 
 **Viewport (`PUT …/viewport`).** `viewport_state` is overwritten with the
-submitted object — never a partial JSONB merge. Any JSON object is accepted
-until the synchronized viewer fixes the shape (#1417).
+submitted object — never a partial JSONB merge. The synchronized viewer
+(#1417) writes `{ "<image_id>": {zoom, x, y, rotation} }`; the backend keeps
+the column opaque, so foreign keys survive a round-trip but are ignored by
+the viewer's own validator.
 
 **Optimistic concurrency.** PATCH, images and viewport bodies carry the
 `version` the client last read. The server advances it atomically
@@ -382,13 +388,12 @@ message. Deleting the open collection returns to the list.
 `permissions.can_edit` / `can_delete` from the API are true; the backend
 re-checks authority on every call.
 
-**Detail placeholder (synchronized only).** Selecting a card sets
-`?collection={id}` and renders the collection header (type/visibility chips,
-description, owner). `sequence` collections mount the sequence viewer
-(#1416, below); `synchronized` collections still show an info alert that the
-viewer is coming (#1417) plus the ordered member list with an **Open image**
-link per row that navigates to `?image={id}`. A 404 (missing or not visible)
-renders the not-found alert with an _All collections_ action.
+**Detail view.** Selecting a card sets `?collection={id}` and renders the
+collection header (type/visibility chips, description, owner).
+`sequence` collections mount the sequence viewer (#1416, below) and
+`synchronized` collections mount the synchronized viewer (#1417, below). A
+404 (missing or not visible) renders the not-found alert with an
+_All collections_ action.
 
 **Deep links & history.** `useShareableImageState` parses `?collection={id}`
 ahead of `?image=` / `?category=`; a collection link wins if both are present.
@@ -503,9 +508,56 @@ restores the prior order and surfaces the message via `onError`. Doing the
 optimistic reorder in the hook keeps `App`'s `detail` the single source of
 truth — the strip and any subsequent edits see the same member order.
 
-_Planned_ (#1417–#1419): synchronized viewer (read-only annotations with
-linked pan/zoom), search integration / multi-select add, and ownership
-management / transfer UI.
+### Synchronized collection viewer (#1417)
+
+**Where.** `components/SynchronizedCollectionViewer.tsx`, mounted by
+`CollectionsPage` for `type === 'synchronized'` below the shared detail
+header.
+
+**Panes.** The first two visible members render side by side, each a
+read-only `ImageViewer` with the same prop set as the sequence viewer
+(`canEditContent={false}`; stored annotations, locked overlays and
+measurement metadata pass through from `metadataExtra`). A caption under
+each pane shows the member name (plus an _inactive_ marker) and an
+**Open image** action → `?image={id}`. More than two stored members produce
+a "Showing 2 of _N_" note — three/four-pane layouts are future work. Fewer
+than two visible (or surviving) members shows a fallback alert with the
+ordered member list and per-row **Open image** links; members whose tiles
+fail mid-session are skipped, so the pair slides forward.
+
+**Linked navigation.** `ImageViewer` exposes the OSD instance through a new
+`onViewerReady(viewer | null)` prop; the component attaches raw
+`viewport-change` handlers and mirrors zoom, center and rotation onto the
+other pane with `immediately=true` so the follower tracks during the
+leader's spring animation. A `syncingRef` guard makes every programmatic
+write a follower write — mirrored events never lead the sync, and viewer
+changes before both `open` events complete are ignored.
+
+**Offset.** The pair keeps a _relative offset_ — B's viewport relative to
+A's, captured once both panes have opened — as a multiplicative zoom ratio,
+an additive centre delta and an additive rotation delta. Saved positions
+around different highlights therefore stay aligned while navigation mirrors.
+Toggling the **Link views** switch off lets either side move independently;
+switching it back on re-captures the current alignment (it does not snap).
+
+**Persisted view.** **Save view** (editors only,
+`permissions.can_edit`) writes both panes' current viewports as
+`{ "<image_id>": {zoom, x, y, rotation} }` through
+`useCollectionsData.saveViewport` → `PUT …/viewport` (whole-replace +
+`version`), so the pair restores exactly after a reload or via a
+`?collection={id}` share link. `saveViewport` is serialized with
+`reorderImages` through the same mutation queue so the two writes can never
+consume each other's version. **Reset view** (everyone) re-applies the saved
+positions — or each viewer's home when nothing is saved — then re-arms the
+offset. Saved entries that do not match the shape are ignored by
+`viewportStateFromSaved` (`imageViewerUtils.ts`).
+
+**Orientation.** `(orientation: portrait)` covers the pane area with a
+"rotate your device" hint while the viewers stay mounted underneath, so
+rotating back restores the exact view instead of re-opening the images.
+
+_Planned_ (#1418–#1419): search integration / multi-select add, and
+ownership management / transfer UI.
 
 ## Tests
 
@@ -561,10 +613,20 @@ management / transfer UI.
   forwarding, mid-session failure skip + all-failed state, editor-only
   reorder toggle, `move()` reorder → `PUT` with version, optimistic order in
   `detail`, rollback on error, `renewCollectionImage` member swap.
+- `frontend/tests/components/SynchronizedCollectionViewer.test.tsx`,
+  `useCollectionsData.test.ts` (#1417) — two-pane render with read-only
+  props, `viewport-change` mirroring with the saved offset in both
+  directions, no write-back/oscillation, Link views toggle + re-arm, Save
+  view payload, Reset to saved/home, portrait hint, `< 2` fallback +
+  "Showing 2 of _N_", member failure slide-up, editor-only Save;
+  `saveViewport` whole-replace `PUT` with `version`, queue sharing with
+  `reorderImages`, cross-collection detail guard;
+  `ImageViewer.test.tsx` — `onViewerReady` mount/unmount contract.
 - `frontend/tests/components/CollectionsPage.test.tsx`,
   `CollectionCard.test.tsx`, `CollectionEditDialog.test.tsx` — list/filter
   states, permission-gated actions, create/edit/delete flows, restricted
-  picker gating per role, 409 reload.
+  picker gating per role, 409 reload, viewer mount + callback wiring per
+  collection type.
 - `frontend/tests/components/AddToCollectionDialog.test.tsx`,
   `useAddToCollection.test.tsx`, `App.test.tsx` (#1415) — grouping, filter,
   synchronized cap (per image count), in-flight locking, create path;

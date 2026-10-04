@@ -15,8 +15,8 @@ import * as CollectionsPageStories from './CollectionsPage.stories'
 
 <Subtitle>
   The Collections tab: filters, responsive card grid, create/edit/delete flows, and the detail view
-  — the sequence viewer for sequence collections, a member-list placeholder for synchronized until
-  that viewer arrives.
+  — the sequence viewer for sequence collections and the synchronized viewer for synchronized
+  collections.
 </Subtitle>
 
 ## When to use
@@ -52,10 +52,9 @@ stories drive it with deterministic fixtures.
 - **Delete.** Confirmation dialog following the existing delete-dialog pattern; a failure keeps
   the dialog open with the API message. Deleting the currently open collection returns to the list.
 - **Detail.** Header with type/visibility chips; `sequence` collections mount
-  `SequenceCollectionViewer` (see its own docs page), while `synchronized` still shows an info
-  alert that the viewer is coming plus an ordered member list with an **Open image** link
-  (`?image={id}`) per row. A 404 (`detailError`) renders the not-found alert with a way back
-  to the list.
+  `SequenceCollectionViewer` and `synchronized` collections mount
+  `SynchronizedCollectionViewer` (see their own docs pages). A 404 (`detailError`) renders the
+  not-found alert with a way back to the list.
 
 ## Examples
 
