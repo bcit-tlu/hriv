@@ -14,6 +14,7 @@ from contextvars import ContextVar
 
 import jwt
 from opentelemetry import metrics, trace
+from python_multipart.multipart import parse_options_header
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -546,15 +547,18 @@ def _upload_body_limits(path: str) -> tuple[int, int] | None:
 
 
 def _multipart_boundary(scope: Scope) -> bytes | None:
-    """Extract the multipart boundary parameter, if this is a multipart body."""
+    """Extract the multipart boundary parameter, if this is a multipart body.
+
+    Uses the same ``parse_options_header`` Starlette's MultipartParser
+    does, so quoted boundaries (including ones containing ``;``) are
+    interpreted identically to the parser being guarded.
+    """
     content_type = _header_value(scope, b"content-type")
     if not content_type.lower().startswith("multipart/"):
         return None
-    for piece in content_type.split(";")[1:]:
-        name, _, value = piece.strip().partition("=")
-        if name.strip().lower() == "boundary" and value:
-            return value.strip().strip('"').encode("latin-1")[:256]
-    return None
+    _maintype, params = parse_options_header(content_type.encode("latin-1"))
+    boundary = params.get(b"boundary")
+    return boundary[:256] if boundary else None
 
 
 def _upload_body_limit_detail(path: str, per_part: bool) -> str:

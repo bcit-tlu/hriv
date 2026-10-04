@@ -1148,6 +1148,44 @@ async def test_upload_body_limit_passes_through_within_cap() -> None:
     assert starts[0]["status"] == 201
 
 
+async def test_upload_body_limit_quoted_boundary_with_semicolon() -> None:
+    """A quoted boundary containing ``;`` is parsed like Starlette does.
+
+    Splitting Content-Type on ``;`` naively truncates a quoted boundary,
+    so delimiters would never match and a valid batch would count as one
+    giant part — a false 413. ``parse_options_header`` (the same parser
+    python-multipart uses) handles the quoting.
+    """
+    sent: list[dict] = []
+    boundary = b"abc;def"
+    body = _multipart_body(boundary, [b"x" * 6, b"y" * 6])
+    chunks = _chunked(
+        [{"type": "http.request", "body": body, "more_body": False}]
+    )
+
+    async def inner_app(scope, receive, send) -> None:
+        await receive()
+        await send({"type": "http.response.start", "status": 201, "headers": []})
+        await send({"type": "http.response.body", "body": b"done"})
+
+    mw = UploadBodyLimitMiddleware(app=inner_app)
+    scope = _make_scope(
+        method="POST",
+        path="/api/admin/bulk-import/",
+        headers={"content-type": 'multipart/form-data; boundary="abc;def"'},
+    )
+
+    with (
+        patch("app.middleware.BULK_IMPORT_MAX_UPLOAD_BYTES", 120),
+        patch("app.middleware.BULK_IMPORT_MAX_REQUEST_BYTES", 10_000),
+        patch("app.middleware._MULTIPART_OVERHEAD_BYTES", 0),
+    ):
+        await mw(scope, chunks, _list_send(sent))
+
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert starts[0]["status"] == 201
+
+
 async def test_upload_body_limit_ignores_unrelated_paths_and_methods() -> None:
     inner = AsyncMock()
     mw = UploadBodyLimitMiddleware(app=inner)
