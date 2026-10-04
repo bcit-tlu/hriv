@@ -1918,6 +1918,27 @@ def test_iter_export_files_skips_admin_tasks_and_tiles(tmp_path) -> None:
     assert names == {"a.bin": 10}
 
 
+def test_iter_export_files_skips_upload_spool_dir(tmp_path) -> None:
+    """``.staging/`` under source_images is never exported (#1365)."""
+    data_dir = tmp_path / "data"
+    source = data_dir / "source_images"
+    spool = source / ".staging"
+    spool.mkdir(parents=True)
+    (source / "committed.bin").write_bytes(b"0123456789")
+    (spool / "tmp-spooled-upload").write_bytes(b"live-spool")
+
+    with (
+        patch("app.admin_ops._TASKS_DIR", str(data_dir / "admin_tasks")),
+        patch("app.admin_ops.settings") as mock_settings,
+    ):
+        mock_settings.source_images_dir = str(source)
+        mock_settings.tiles_dir = str(data_dir / "tiles")
+        results = list(_iter_export_files(str(data_dir)))
+
+    names = {os.path.basename(p): sz for p, sz in results}
+    assert names == {"committed.bin": 10}
+
+
 async def test_run_files_export_reports_byte_progress(tmp_path) -> None:
     """Progress advances between 20% and 95% as bytes are archived.
 

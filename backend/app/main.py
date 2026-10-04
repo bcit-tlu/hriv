@@ -24,6 +24,7 @@ from .reconciliation import run_reconciliation_sweep
 from .schemas import FeaturesOut
 from .worker import TaskQueueUnavailableError, get_pool
 from .maintenance import is_maintenance_mode
+from .upload_staging import UPLOAD_SPOOL_DIR_NAME
 from .middleware import AuditMiddleware, CollectionsFeatureMiddleware, MaintenanceMiddleware, UploadBodyLimitMiddleware
 from .routers import (
     admin,
@@ -359,6 +360,17 @@ app.include_router(probe.router, prefix="/api")
 # unauthenticated StaticFiles mount of settings.tiles_dir is intentionally
 # gone; only the directory bootstrap remains.
 os.makedirs(settings.tiles_dir, exist_ok=True)
+
+# The deployment points TMPDIR at this directory so python-multipart's
+# SpooledTemporaryFile and other tempfile artifacts land on the
+# source-images PVC instead of pod-local /tmp (#1365). It must exist
+# before the first tempfile call resolves TMPDIR, so create it at import;
+# the startup reconciliation sweep then removes aged leftovers (a dead
+# request's spool files on the shared RWX volume).
+os.makedirs(
+    os.path.join(settings.source_images_dir, UPLOAD_SPOOL_DIR_NAME),
+    exist_ok=True,
+)
 
 
 @app.get("/api/health")

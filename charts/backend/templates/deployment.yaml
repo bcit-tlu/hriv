@@ -118,6 +118,12 @@ spec:
                   key: uri
             - name: SOURCE_IMAGES_DIR
               value: {{ .Values.env.SOURCE_IMAGES_DIR | quote }}
+            # Land every tempfile — including python-multipart's upload
+            # spool — on the source-images PVC, not the pod's 1 GiB
+            # ephemeral-storage budget (#1365). $(SOURCE_IMAGES_DIR)
+            # expands the env var defined just above.
+            - name: TMPDIR
+              value: "$(SOURCE_IMAGES_DIR)/.staging"
             - name: TILES_DIR
               value: {{ .Values.env.TILES_DIR | quote }}
             - name: EXPORT_PIGZ_THREADS

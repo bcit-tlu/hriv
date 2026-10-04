@@ -60,6 +60,7 @@ from .rebuild_fixture import (
     select_rebuild_fixture_rows,
     try_acquire_rebuild_fixture_archive_lock,
 )
+from .upload_staging import UPLOAD_SPOOL_DIR_NAME
 from .rebuild_locks import (
     acquire_rebuild_creation_lock,
     find_active_rebuild,
@@ -2260,9 +2261,11 @@ def _iter_export_entries(
 ) -> Iterator[tuple[str, str, int, bool]]:
     """Yield archive entries for the filesystem export.
 
-    The traversal excludes the generated tile tree under ``tiles/`` and
-    the ``admin_tasks/`` directory so the UI export stays source-only and
-    does not duplicate prior export artefacts.
+    The traversal excludes the generated tile tree under ``tiles/``, the
+    ``admin_tasks/`` directory, and the upload spool dir under
+    ``source_images/`` so the UI export stays source-only, does not
+    duplicate prior export artefacts, and never captures a live request's
+    transient tempfile (#1365).
 
     Each yielded tuple is ``(arcname, absolute_path, size_bytes, is_dir)``.
     ``size_bytes`` is ``0`` for directory entries.  If *cancel_event* is set
@@ -2271,6 +2274,13 @@ def _iter_export_entries(
     tasks_basename = os.path.basename(_TASKS_DIR)
     staging_basename = os.path.basename(_IMPORT_STAGING_DIR)
     tiles_basename = os.path.basename(os.path.normpath(settings.tiles_dir))
+    # The upload spool is nested under source_images_dir — resolve its
+    # path relative to the walk root so it is pruned wherever it sits.
+    spool_rel = os.path.relpath(
+        os.path.join(settings.source_images_dir, UPLOAD_SPOOL_DIR_NAME),
+        data_dir,
+    )
+    spool_parent_rel, spool_name = os.path.split(spool_rel)
 
     def _check_cancel() -> None:
         if cancel_event is not None and cancel_event.is_set():
@@ -2289,6 +2299,10 @@ def _iter_export_entries(
         for excluded in (tasks_basename, staging_basename, tiles_basename):
             if excluded in dirnames:
                 dirnames.remove(excluded)
+        # The upload spool dir lives under source_images/ — same prune,
+        # one level deeper (#1365).
+        if rel == spool_parent_rel and spool_name in dirnames:
+            dirnames.remove(spool_name)
 
         arcname = os.path.join("data", rel) if rel != "." else "data"
         yield arcname, dirpath, 0, True

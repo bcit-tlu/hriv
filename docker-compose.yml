@@ -101,6 +101,9 @@ services:
       - DATABASE_URL=postgresql+asyncpg://hriv:hriv@db:5432/hriv
       - REDIS_URL=redis://redis:6379
       - SOURCE_IMAGES_DIR=/data/source_images
+      # Upload spool + tempfiles land on the source-images volume, not the
+      # container's ephemeral storage (#1365).
+      - TMPDIR=/data/source_images/.staging
       - TILES_DIR=/data/tiles
       - SECURE_COOKIES=false
       - COLLECTIONS_ENABLED=${COLLECTIONS_ENABLED:-true}

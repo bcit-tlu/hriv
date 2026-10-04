@@ -89,6 +89,17 @@ aged final-path files that no `SourceImage` row owns
 (`upload.unowned_final_detected`) for operator reconciliation — it never
 deletes them automatically.
 
+The deployment also sets `TMPDIR=<source_images_dir>/.staging/` on the API
+container, so python-multipart's `SpooledTemporaryFile` upload spool and
+every other tempfile consumer land on the source-images PVC instead of the
+pod's 1 GiB ephemeral-storage budget (#1365). The directory is created at
+startup (next to the `tiles_dir` bootstrap in `app/main.py`); the sweep
+provisions it too and removes files inside it once their mtime ages past
+`STAGING_MAX_AGE_SECONDS`. On a shared RWX mount a sibling pod's in-flight
+spool can be listed, so the age bound is what keeps the sweep from
+deleting a live request's file — everything inside `.staging/` is a
+transient artifact never referenced by a committed row.
+
 ## Bulk-import zip extraction limits
 
 Bulk import (`POST /admin/bulk-import/`, admin/instructor only) expands
@@ -128,11 +139,12 @@ delimiter — a per-part cap matching the endpoint's per-file limit
 (`BULK_IMPORT_MAX_UPLOAD_BYTES` / `UPLOAD_MAX_BYTES`, plus 1 MiB of
 framing slack), so a batch of individually valid files is never rejected
 for its combined size — and total body bytes against a whole-request
-ceiling that bounds the pod-local spool (`BULK_IMPORT_MAX_REQUEST_BYTES`,
+ceiling that bounds the spool (`BULK_IMPORT_MAX_REQUEST_BYTES`,
 80 GiB by default, on bulk import; the per-part cap plus slack on the
 single-file routes). The endpoint read loops re-apply the per-part cap to
-each uploaded part (zip archives spooled to a temp file, plain images
-streamed to `source_images_dir`), and `write_upload_to_staging` enforces
+each uploaded part (zip archives are consumed in place from the spooled
+upload file — no second archive copy — and plain images stream to
+`source_images_dir`), and `write_upload_to_staging` enforces
 `UPLOAD_MAX_BYTES` for single uploads and replacements; exceeding a cap
 returns 413 and removes the partial file.
 
@@ -146,6 +158,14 @@ extracted for that request is unlinked before the response is sent. The
 frontend surfaces the 413 detail verbatim in the upload modal
 (`userMessage()` in `frontend/src/api.ts`). Defaults are listed in
 `backend/README.md`.
+
+Zip parts never get a second archive copy: the endpoint rewinds the
+already-spooled `UploadFile.file` and hands it straight to `zipfile`
+(#1365), so an archive larger than pod-local ephemeral storage — up to
+`BULK_IMPORT_MAX_UPLOAD_BYTES` — imports under the default chart profile.
+Combined with `TMPDIR` pointing at the PVC, a cancelled or crashed import
+leaves nothing on pod-local storage at all; a dead request's spool file
+ages out under the sweep described above.
 
 Central-directory parsing and the bounded extraction loop run on a worker
 thread via `asyncio.to_thread` (`_extract_zip_image_entries`), so a large

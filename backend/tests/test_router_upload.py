@@ -632,9 +632,34 @@ async def test_reconcile_staging_artifacts_removes_only_aged_staging(tmp_path) -
 
     assert removed == 1
     assert sorted(p.name for p in tmp_path.iterdir()) == [
+        ".staging",  # spool dir provisioned by the sweep (#1365)
         ".staging-fresh.png",
         "committed.png",
     ]
+
+
+async def test_reconcile_staging_artifacts_sweeps_aged_spool_files(tmp_path) -> None:
+    """Aged files inside ``.staging/`` are dead-request leftovers (#1365)."""
+    spool_dir = tmp_path / ".staging"
+    spool_dir.mkdir()
+    dead_spool = spool_dir / "tmpdeadzip"
+    live_spool = spool_dir / "tmplivezip"
+    dead_spool.write_bytes(b"crashed-upload")
+    live_spool.write_bytes(b"in-flight")
+
+    old_mtime = time.time() - 5 * 3600
+    os.utime(dead_spool, (old_mtime, old_mtime))
+
+    removed = await reconcile_staging_artifacts(str(tmp_path))
+
+    assert removed == 1
+    assert sorted(p.name for p in spool_dir.iterdir()) == ["tmplivezip"]
+
+
+async def test_reconcile_staging_artifacts_creates_spool_dir(tmp_path) -> None:
+    """``TMPDIR`` must resolve before the first tempfile call (#1365)."""
+    await reconcile_staging_artifacts(str(tmp_path))
+    assert (tmp_path / ".staging").is_dir()
 
 
 def _mock_ownership_probe(owned_paths: list[str]):

@@ -12,7 +12,6 @@ import math
 import os
 import shutil
 import struct
-import tempfile
 import threading
 import time
 import uuid
@@ -20,7 +19,7 @@ import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, BinaryIO
 
 from arq.connections import ArqRedis
 from arq.constants import abort_jobs_ss
@@ -319,7 +318,7 @@ _UINT16_MAX = 0xFFFF
 _UINT32_MAX = 0xFFFFFFFF
 
 
-def _zip_declared_entry_count(path: str) -> int | None:
+def _zip_declared_entry_count(archive: BinaryIO) -> int | None:
     """Return an archive's declared total entry count, or ``None``.
 
     ``ZipFile`` allocates the full ``ZipInfo`` list while parsing the
@@ -327,60 +326,68 @@ def _zip_declared_entry_count(path: str) -> int | None:
     checked from this cheap EOCD read first. ``None`` means the record
     could not be read (truncated/garbled/zip64-inconsistent); the caller
     then defers to ``ZipFile``'s own ``BadZipFile`` handling and the
-    post-open re-check of the parsed count.
+    post-open re-check of the parsed count. All reads are absolute seeks,
+    so ``archive`` may be positioned anywhere; the incoming position is
+    restored on exit. ``None`` is also returned for non-seekable streams
+    (a ``ZipFile``-compatible file object is always seekable, so this
+    only matters for misuse).
     """
+    pos = 0
     try:
-        with open(path, "rb") as f:
-            f.seek(0, os.SEEK_END)
-            size = f.tell()
-            if size < _EOCD_MIN_BYTES:
-                return None
-            f.seek(max(0, size - _EOCD_SEARCH_BYTES))
-            tail = f.read()
+        pos = archive.tell()
+        archive.seek(0, os.SEEK_END)
+        size = archive.tell()
+        if size < _EOCD_MIN_BYTES:
+            return None
+        archive.seek(max(0, size - _EOCD_SEARCH_BYTES))
+        tail = archive.read()
 
-            idx = tail.rfind(_EOCD_SIGNATURE)
-            if idx < 0 or idx + _EOCD_MIN_BYTES > len(tail):
-                return None
-            (
-                _sig,
-                _disk,
-                _cd_disk,
-                disk_entries,
-                total_entries,
-                cd_size,
-                cd_offset,
-                _comment_len,
-            ) = _EOCD_STRUCT.unpack(tail[idx : idx + _EOCD_MIN_BYTES])
-            if (
-                total_entries != _UINT16_MAX
-                and disk_entries != _UINT16_MAX
-                and cd_size != _UINT32_MAX
-                and cd_offset != _UINT32_MAX
-            ):
-                return total_entries
+        idx = tail.rfind(_EOCD_SIGNATURE)
+        if idx < 0 or idx + _EOCD_MIN_BYTES > len(tail):
+            return None
+        (
+            _sig,
+            _disk,
+            _cd_disk,
+            disk_entries,
+            total_entries,
+            cd_size,
+            cd_offset,
+            _comment_len,
+        ) = _EOCD_STRUCT.unpack(tail[idx : idx + _EOCD_MIN_BYTES])
+        if (
+            total_entries != _UINT16_MAX
+            and disk_entries != _UINT16_MAX
+            and cd_size != _UINT32_MAX
+            and cd_offset != _UINT32_MAX
+        ):
+            return total_entries
 
-            # ZIP64: the locator record sits immediately before the EOCD.
-            eocd_offset = size - len(tail) + idx
-            locator_offset = eocd_offset - _ZIP64_LOCATOR_STRUCT.size
-            if locator_offset < 0:
-                return None
-            f.seek(locator_offset)
-            locator = f.read(_ZIP64_LOCATOR_STRUCT.size)
-            if (
-                len(locator) != _ZIP64_LOCATOR_STRUCT.size
-                or locator[:4] != _ZIP64_LOCATOR_SIGNATURE
-            ):
-                # Claims ZIP64 but has no locator — let ZipFile raise.
-                return None
-            (_lsig, _ldisk, zip64_offset, _ldisks) = _ZIP64_LOCATOR_STRUCT.unpack(
-                locator
-            )
-            if zip64_offset + _ZIP64_EOCD_STRUCT.size > size:
-                return None
-            f.seek(zip64_offset)
-            z64 = f.read(_ZIP64_EOCD_STRUCT.size)
-    except OSError:
+        # ZIP64: the locator record sits immediately before the EOCD.
+        eocd_offset = size - len(tail) + idx
+        locator_offset = eocd_offset - _ZIP64_LOCATOR_STRUCT.size
+        if locator_offset < 0:
+            return None
+        archive.seek(locator_offset)
+        locator = archive.read(_ZIP64_LOCATOR_STRUCT.size)
+        if (
+            len(locator) != _ZIP64_LOCATOR_STRUCT.size
+            or locator[:4] != _ZIP64_LOCATOR_SIGNATURE
+        ):
+            # Claims ZIP64 but has no locator — let ZipFile raise.
+            return None
+        (_lsig, _ldisk, zip64_offset, _ldisks) = _ZIP64_LOCATOR_STRUCT.unpack(
+            locator
+        )
+        if zip64_offset + _ZIP64_EOCD_STRUCT.size > size:
+            return None
+        archive.seek(zip64_offset)
+        z64 = archive.read(_ZIP64_EOCD_STRUCT.size)
+    except (OSError, ValueError):
         return None
+    finally:
+        with contextlib.suppress(OSError, ValueError):
+            archive.seek(pos)
     if len(z64) != _ZIP64_EOCD_STRUCT.size or z64[:4] != _ZIP64_EOCD_SIGNATURE:
         return None
     fields = _ZIP64_EOCD_STRUCT.unpack(z64)
@@ -388,13 +395,13 @@ def _zip_declared_entry_count(path: str) -> int | None:
 
 
 def _extract_zip_image_entries(
-    tmp_path: str,
+    archive: BinaryIO,
     budget: _ZipExtractBudget,
     file_entries: list[tuple[str, str]],
     target_dir: str,
     done: threading.Event,
 ) -> None:
-    """Extract eligible image entries from the zip archive at ``tmp_path``.
+    """Extract eligible image entries from the open zip archive ``archive``.
 
     Runs entirely on a worker thread (``asyncio.to_thread`` at the call
     site): parsing the central directory and decompressing entries are
@@ -409,12 +416,12 @@ def _extract_zip_image_entries(
     before sweeping ``file_entries``.
     """
     try:
-        declared_entries = _zip_declared_entry_count(tmp_path)
+        declared_entries = _zip_declared_entry_count(archive)
         if declared_entries is not None:
             # Reject oversized central directories before ZipFile()
             # allocates one ZipInfo per record.
             budget.check_central_directory(declared_entries)
-        with zipfile.ZipFile(tmp_path, "r") as zf:
+        with zipfile.ZipFile(archive, "r") as zf:
             # The declared count can understate a malformed archive, so
             # the parsed total is re-checked after open as well.
             budget.check_central_directory(len(zf.infolist()))
@@ -1912,30 +1919,27 @@ async def bulk_import_images(
 
                     # Handle zip files
                     if upload.filename.lower().endswith(".zip"):
-                        # Stream zip to a temp file, then extract images.
-                        # The try/finally wraps the entire lifecycle so the
-                        # temp file is cleaned up even if streaming fails.
-                        tmp_path: str | None = None
+                        # The multipart parser already spooled the part to
+                        # a seekable file — hand it straight to zipfile so
+                        # no second archive copy is written anywhere
+                        # (#1365). In deployment the spool itself lives on
+                        # the source-images PVC (TMPDIR points at
+                        # <source_images_dir>/.staging), so nothing touches
+                        # the pod's 1 GiB ephemeral-storage budget.
+                        if (
+                            isinstance(upload.size, int)
+                            and upload.size > _MAX_UPLOAD_BYTES
+                        ):
+                            raise HTTPException(
+                                status_code=413,
+                                detail=(
+                                    f"File '{_display_name(upload.filename)}' "
+                                    "exceeds the per-upload limit of "
+                                    f"{_format_gib(_MAX_UPLOAD_BYTES)}"
+                                ),
+                            )
+                        await upload.seek(0)
                         try:
-                            with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
-                                tmp_path = tmp.name
-                                spooled_bytes = 0
-                                while True:
-                                    chunk = await upload.read(UPLOAD_CHUNK_SIZE)
-                                    if not chunk:
-                                        break
-                                    spooled_bytes += len(chunk)
-                                    if spooled_bytes > _MAX_UPLOAD_BYTES:
-                                        raise HTTPException(
-                                            status_code=413,
-                                            detail=(
-                                                f"File '{_display_name(upload.filename)}' "
-                                                "exceeds the per-upload limit of "
-                                                f"{_format_gib(_MAX_UPLOAD_BYTES)}"
-                                            ),
-                                        )
-                                    tmp.write(chunk)
-
                             budget.begin_archive(upload.filename)
                             # Central-directory parsing and bounded
                             # extraction run on a worker thread: both are
@@ -1951,7 +1955,7 @@ async def bulk_import_images(
                             try:
                                 await asyncio.to_thread(
                                     _extract_zip_image_entries,
-                                    tmp_path,
+                                    upload.file,
                                     budget,
                                     file_entries,
                                     settings.source_images_dir,
@@ -1980,10 +1984,6 @@ async def bulk_import_images(
                             raise HTTPException(
                                 status_code=exc.status_code, detail=exc.detail
                             )
-                        finally:
-                            if tmp_path is not None:
-                                with contextlib.suppress(OSError):
-                                    os.unlink(tmp_path)
                     else:
                         # Regular image file
                         if not _is_image_filename(upload.filename):
