@@ -107,6 +107,7 @@ function makeFakeViewer(pos: FakePos): { viewer: FakeViewer; state: FakePos } {
 const mockState = vi.hoisted(() => ({
   lastProps: new Map<number, Record<string, unknown>>(),
   fakes: new Map<number, FakeViewer>(),
+  mounts: new Map<number, number>(),
 }))
 
 vi.mock('../../src/components/ImageViewer', () => ({
@@ -114,14 +115,29 @@ vi.mock('../../src/components/ImageViewer', () => ({
     const imageId = props.imageId as number
     mockState.lastProps.set(imageId, props)
     useEffect(() => {
-      const fake = mockState.fakes.get(imageId) ?? null
+      // Mirror ImageViewer's mount-effect deps: a changed identity would
+      // destroy and recreate the real OSD viewer, so a remount here swaps in
+      // a fresh fake at its saved viewport — surfaced via `fakes` so tests
+      // detect the lost navigation instead of just prop churn.
+      const mounts = mockState.mounts.get(imageId) ?? 0
+      mockState.mounts.set(imageId, mounts + 1)
+      let fake = mounts === 0 ? mockState.fakes.get(imageId) : undefined
+      if (!fake) {
+        const saved = props.initialViewport as
+          { zoom: number; x: number; y: number; rotation?: number } | undefined
+        fake = makeFakeViewer(
+          saved
+            ? { zoom: saved.zoom, x: saved.x, y: saved.y, rotation: saved.rotation ?? 0 }
+            : { zoom: 1, x: 0.5, y: 0.5, rotation: 0 },
+        ).viewer
+        mockState.fakes.set(imageId, fake)
+      }
       ;(props.onViewerReady as ((v: unknown) => void) | undefined)?.(fake)
       return () => {
         ;(props.onViewerReady as ((v: unknown) => void) | undefined)?.(null)
       }
-      // The ready contract fires once per mount (keyed remount on image change).
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [imageId])
+    }, [imageId, props.initialOverlays, props.initialViewport])
     return <div data-testid="image-viewer" data-image-id={String(imageId)} />
   },
 }))
@@ -170,6 +186,7 @@ function openPair(
 beforeEach(() => {
   mockState.lastProps.clear()
   mockState.fakes.clear()
+  mockState.mounts.clear()
 })
 
 const realMatchMedia = window.matchMedia
