@@ -340,6 +340,25 @@ orphans (admin-only), and that an admin can reassign them with
 
 ---
 
+## Test Case 11: Collections UI — Create, View, Share, Transfer, Reassign (UI)
+
+**Purpose:** End-to-end walkthrough of the Collections tab, both viewer types,
+and the ownership-management UI (#1419). Requires `COLLECTIONS_ENABLED=true`
+(default in local dev). See [collections.md](collections.md).
+
+1. Login as `instructor@example.ca` and open the **Collections** tab.
+2. **New collection** → name "Skull study", type **Synchronized**, visibility **Public** → **Create**. **Assert:** the card appears with a Synchronized type chip and Public visibility chip.
+3. Open the collection; add images via an image's **Add to Collection** viewer action (or select images in **Search** → **Add to collection**). **Assert:** the synchronized viewer shows the panes with the link/reset controls.
+4. Switch to the library and copy the address bar (`?collection={id}`); open the URL in an incognito window logged in as a student. **Assert:** the public collection opens directly on the same view.
+5. Back as the instructor, open the collection's **Edit** → change the description and save. **Assert:** the detail header updates.
+6. Click **Transfer** in the detail header. **Assert:** only a program picker is offered, narrowed to programs the instructor belongs to; pick one and confirm. **Assert:** the header now reads "Managed by program _X_".
+7. Attempt a transfer to a user — **Assert:** there is no "A user" option for instructors (the API would 403 anyway).
+8. As `admin@example.ca`, delete that program (People → Programs). Reopen the Collections tab and pick **Owner → No owner (orphaned)**. **Assert:** the collection is listed with "No owner" and its public visibility still lets a student open it.
+9. From the orphaned card's transfer icon, assign it to a user (radio **A user** → pick an active account) — **Assert:** the card leaves the orphaned list and the new owner can edit it again.
+10. **Tablet check:** repeat steps 3–4 at a tablet viewport (~768px) for both a synchronized and a sequence collection; **Assert:** panes/thumbnails stay usable, the **Open image** action and viewer controls remain reachable, and no horizontal overflow appears.
+
+---
+
 ## API Endpoint Reference
 
 All endpoints except login require a valid JWT bearer token in the `Authorization` header.

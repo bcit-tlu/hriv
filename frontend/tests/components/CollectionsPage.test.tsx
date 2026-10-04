@@ -95,6 +95,7 @@ function makeProps(overrides: Partial<CollectionsPageProps> = {}): CollectionsPa
     onCreate: vi.fn().mockResolvedValue(undefined),
     onUpdate: vi.fn().mockResolvedValue(undefined),
     onDelete: vi.fn().mockResolvedValue(undefined),
+    onTransfer: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   }
 }
@@ -543,6 +544,126 @@ describe('CollectionsPage', () => {
       expect(await screen.findByText('Edit Collection')).toBeInTheDocument()
       expect(screen.getByDisplayValue('Open one')).toBeInTheDocument()
       expect(loadCollection).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('ownership and transfer (#1419)', () => {
+    it('shows a Managed by program hint for program-owned collections', () => {
+      renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({
+          id: 9,
+          owner: { kind: 'program', programId: 1, name: 'Radiography' },
+        }),
+      })
+      expect(screen.getByText(/Managed by program Radiography/)).toBeInTheDocument()
+    })
+
+    it('shows program and group restriction chips on a restricted detail', () => {
+      renderPage({
+        selectedCollectionId: 9,
+        programs: [{ id: 1, name: 'Radiography' }],
+        groups: [
+          {
+            id: 4,
+            name: 'Cohort A',
+            description: null,
+            createdByUserId: null,
+            memberIds: [],
+            instructorIds: [],
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+          },
+        ],
+        detail: makeCollection({
+          id: 9,
+          visibility: 'restricted',
+          programIds: [1, 99],
+          groupIds: [4],
+        }),
+      })
+      const chips = screen.getAllByTestId('detail-program-chip')
+      expect(chips.map((c) => c.textContent)).toEqual(['Radiography', 'Program 99'])
+      expect(screen.getByTestId('detail-group-chip')).toHaveTextContent('Cohort A')
+    })
+
+    it('gates the detail Transfer button on canTransfer', async () => {
+      const user = userEvent.setup()
+      const onTransfer = vi.fn().mockResolvedValue(undefined)
+      const { unmount } = renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({
+          id: 9,
+          permissions: { canEdit: true, canDelete: true, canTransfer: false },
+        }),
+        onTransfer,
+      })
+      expect(screen.queryByRole('button', { name: 'Transfer' })).not.toBeInTheDocument()
+      unmount()
+
+      renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({
+          id: 9,
+          permissions: { canEdit: true, canDelete: true, canTransfer: true },
+        }),
+        onTransfer,
+      })
+      await user.click(screen.getByRole('button', { name: 'Transfer' }))
+      const dialog = await screen.findByRole('dialog')
+      expect(within(dialog).getByText('Transfer ownership')).toBeInTheDocument()
+      await user.click(within(dialog).getByLabelText('New owning program'))
+      // No programs passed → confirm stays disabled; the affordance itself is what is gated here.
+      expect(within(dialog).getByTestId('transfer-confirm')).toBeDisabled()
+    })
+
+    it('shows a card Transfer affordance only when canTransfer', async () => {
+      const user = userEvent.setup()
+      renderPage({
+        collections: [
+          makeCollectionSummary({
+            id: 3,
+            name: 'Ownable',
+            permissions: { canEdit: true, canDelete: true, canTransfer: true },
+          }),
+          makeCollectionSummary({
+            id: 4,
+            name: 'Shared',
+            permissions: { canEdit: true, canDelete: true, canTransfer: false },
+          }),
+        ],
+      })
+      expect(screen.getByRole('button', { name: 'Transfer Ownable' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Transfer Shared' })).not.toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Transfer Ownable' }))
+      expect(await screen.findByRole('dialog')).toBeInTheDocument()
+      expect(within(screen.getByRole('dialog')).getByText('Transfer ownership')).toBeInTheDocument()
+    })
+
+    it('lets an admin reassign an orphaned collection from the card grid', async () => {
+      const user = userEvent.setup()
+      const onTransfer = vi.fn().mockResolvedValue(undefined)
+      renderPage({
+        currentUser: ADMIN,
+        programs: [{ id: 2, name: 'Ultrasound' }],
+        collections: [
+          makeCollectionSummary({
+            id: 5,
+            name: 'Orphaned set',
+            owner: null,
+            permissions: { canEdit: false, canDelete: true, canTransfer: true },
+          }),
+        ],
+        onTransfer,
+      })
+      expect(screen.getByText(/No owner/)).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Transfer Orphaned set' }))
+      const dialog = await screen.findByRole('dialog')
+      expect(within(dialog).getByText(/This collection is orphaned/)).toBeInTheDocument()
+      await user.click(within(dialog).getByLabelText('New owning program'))
+      await user.click(within(await screen.findByRole('listbox')).getByText('Ultrasound'))
+      await user.click(within(dialog).getByTestId('transfer-confirm'))
+      await waitFor(() => expect(onTransfer).toHaveBeenCalledWith(5, { programId: 2 }))
     })
   })
 })

@@ -11,6 +11,7 @@ import DeleteIcon from '@mui/icons-material/Delete'
 import EditIcon from '@mui/icons-material/Edit'
 import LockIcon from '@mui/icons-material/Lock'
 import PublicIcon from '@mui/icons-material/Public'
+import SwapHorizIcon from '@mui/icons-material/SwapHoriz'
 import ViewCarouselIcon from '@mui/icons-material/ViewCarousel'
 import ViewColumnIcon from '@mui/icons-material/ViewColumn'
 import { fetchCollection } from '../api'
@@ -31,6 +32,8 @@ export interface CollectionCardProps {
   onEdit?: (collection: CollectionSummary) => void
   /** Rendered only when `collection.permissions.canDelete` (UX gate — the API re-checks). */
   onDelete?: (collection: CollectionSummary) => void
+  /** Rendered only when `collection.permissions.canTransfer` (UX gate — the API re-checks). */
+  onTransfer?: (collection: CollectionSummary) => void
 }
 
 /**
@@ -89,12 +92,14 @@ export default function CollectionCard({
   onOpen,
   onEdit,
   onDelete,
+  onTransfer,
 }: CollectionCardProps) {
   const cover = collection.coverThumb
   const TypeIcon = collection.type === 'synchronized' ? ViewColumnIcon : ViewCarouselIcon
   const imageCountText = `${collection.imageCount} ${collection.imageCount === 1 ? 'image' : 'images'}`
   const showEdit = Boolean(onEdit) && collection.permissions.canEdit
   const showDelete = Boolean(onDelete) && collection.permissions.canDelete
+  const showTransfer = Boolean(onTransfer) && collection.permissions.canTransfer
 
   return (
     <Card data-testid="collection-card" elevation={2} sx={{ height: '100%', position: 'relative' }}>
@@ -141,7 +146,7 @@ export default function CollectionCard({
                 WebkitBoxOrient: 'vertical',
                 overflow: 'hidden',
                 wordBreak: 'break-word',
-                pr: showEdit || showDelete ? 8 : 0,
+                pr: showEdit || showDelete || showTransfer ? 8 : 0,
               }}
             >
               {collection.name}
@@ -163,7 +168,7 @@ export default function CollectionCard({
           </Box>
         </CardContent>
       </CardActionArea>
-      {(showEdit || showDelete) && (
+      {(showEdit || showDelete || showTransfer) && (
         <Box
           sx={{
             position: 'absolute',
@@ -181,6 +186,17 @@ export default function CollectionCard({
                 onClick={() => onEdit?.(collection)}
               >
                 <EditIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+          {showTransfer && (
+            <Tooltip title="Transfer ownership">
+              <IconButton
+                size="small"
+                aria-label={`Transfer ${collection.name}`}
+                onClick={() => onTransfer?.(collection)}
+              >
+                <SwapHorizIcon fontSize="small" />
               </IconButton>
             </Tooltip>
           )}

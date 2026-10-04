@@ -1755,6 +1755,7 @@ export default function App() {
               onCreate={collectionsData.create}
               onUpdate={collectionsData.update}
               onDelete={collectionsData.remove}
+              onTransfer={collectionsData.transfer}
             />
           ) : page === 'people' && canViewPeople ? (
             <PeoplePage

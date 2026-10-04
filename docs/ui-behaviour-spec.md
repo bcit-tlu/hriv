@@ -161,7 +161,7 @@ images> / Empty` format used on category tiles.
   arbitration for the next gesture. Covered by `measurement.test.ts`
   (`pinchRotationDeltaDegrees`, `createPinchRotationTracker`).
 
-### Collections tab (`CollectionsPage.test.tsx`, `CollectionCard.test.tsx`, `CollectionEditDialog.test.tsx`, `App.test.tsx`)
+### Collections tab (`CollectionsPage.test.tsx`, `CollectionCard.test.tsx`, `CollectionEditDialog.test.tsx`, `TransferCollectionDialog.test.tsx`, `App.test.tsx`)
 
 See [collections.md](collections.md#frontend-behaviour) for the full contract.
 All roles, including students, can list, open, and create collections;
@@ -214,6 +214,23 @@ returned by the API (UX only — the backend re-checks).
   **Then** the Collections tab opens on that collection; **Given** the API
   returns **404**, **Then** the not-found `Alert` with **All collections** is
   shown instead.
+- **Given** a collection whose `permissions.can_transfer` is true, **Then** a
+  **Transfer** action appears on its card and in the detail header; **Given**
+  it is false, **Then** neither affordance renders.
+- **Given** the transfer dialog is open as an **admin**, **Then** _A user_ /
+  _A program_ is offered — the user autocomplete lists active users only,
+  the program select lists all programs; **Given** an **instructor**,
+  **Then** only a program select appears, narrowed to their own programs.
+- **Given** a chosen target equal to the current owner, **Then** the
+  **Transfer** confirm stays disabled; **Given** the API returns **403** /
+  **409** / **422**, **Then** the message stays inline in the open dialog.
+- **Given** an admin viewing the owner facet's _No owner (orphaned)_ list,
+  **When** they open a card's transfer action and assign an owner, **Then**
+  `POST /api/collections/{id}/transfer` is sent and the card leaves the
+  filtered list.
+- **Given** the collection detail, **Then** the header shows the owner as
+  "Managed by program _X_" for program-owned collections, the visibility
+  chip, and — when `restricted` — a chip per attached program and group.
 
 ### Sequence collection viewer (`SequenceCollectionViewer.test.tsx`, `useCollectionsData.test.ts`, `useShareableImageState.test.ts`)
 

@@ -4,9 +4,11 @@ import {
   createCollection,
   deleteCollection,
   fetchCollection,
+  collectionConflictCurrent,
   fetchCollections,
   replaceCollectionImages,
   saveCollectionViewport,
+  transferCollection,
   updateCollection,
   userMessage,
   type ApiImage,
@@ -449,6 +451,75 @@ export function useCollectionsData({
   )
 
   /**
+   * Transfer ownership (#1419) via `POST …/transfer`. Serialized with
+   * reorder/viewport saves through `mutationQueue` because it carries the
+   * same `version`. When the target collection is not the open detail (e.g.
+   * an admin reassigning an orphan from the card list), the freshest record
+   * is fetched for its version before posting. A transferred collection can
+   * leave the visible list (transferred away under `mine`, or assigned out
+   * of `orphaned`) — `matchesCollectionFilters` decides list membership.
+   */
+  const transfer = useCallback(
+    (id: number, target: { userId: number } | { programId: number }): Promise<Collection> => {
+      const run = async (prior: Collection | null): Promise<Collection> => {
+        let baseline = baselineFor(id, prior)
+        if (!baseline || baseline.id !== id) {
+          baseline = apiCollectionToCollection(await fetchCollection(id))
+        }
+        try {
+          const updated = apiCollectionToCollection(
+            await transferCollection(id, {
+              ...('userId' in target
+                ? { user_id: target.userId }
+                : { program_id: target.programId }),
+              version: baseline.version,
+            }),
+          )
+          setDetail((prev) => (prev?.id === id ? updated : prev))
+          setCollections((prev) => {
+            const rest = prev.filter((c) => c.id !== id)
+            return matchesCollectionFilters(
+              updated,
+              latest.current.filters,
+              latest.current.currentUser,
+            )
+              ? [updated, ...rest]
+              : rest
+          })
+          void latest.current.load()
+          return updated
+        } catch (err) {
+          // A 409 carries the authoritative record — merge it so the next
+          // attempt sends the fresh version instead of failing again.
+          const conflict = collectionConflictCurrent(err)
+          if (conflict) {
+            const current = apiCollectionToCollection(conflict)
+            setDetail((prev) => (prev?.id === id ? current : prev))
+            setCollections((prev) => {
+              const rest = prev.filter((c) => c.id !== id)
+              return matchesCollectionFilters(
+                current,
+                latest.current.filters,
+                latest.current.currentUser,
+              )
+                ? [current, ...rest]
+                : rest
+            })
+          }
+          throw err
+        }
+      }
+      const queued = mutationQueue.current.then(run, () => run(null))
+      mutationQueue.current = queued.then(
+        (updated) => updated,
+        () => null,
+      )
+      return queued
+    },
+    [],
+  )
+
+  /**
    * Refresh a member's tokenized tile/thumb URLs inside the open collection
    * after the viewer's tile-token renewal (#1416), so a later remount does
    * not start from an expired source.
@@ -479,6 +550,7 @@ export function useCollectionsData({
     remove,
     reorderImages,
     saveViewport,
+    transfer,
     renewCollectionImage,
   }
 }

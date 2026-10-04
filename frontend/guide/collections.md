@@ -134,6 +134,25 @@ shows a "modified by another user" message with a **Reload** button. Reload
 picks up their changes so you can re-apply yours.
 :::
 
+## Transfer ownership
+
+If a collection shows a **Transfer** action (on its card or at the top of the
+collection page), you can hand it to a new owner:
+
+- **Administrators** can give it to any active user or to any program.
+- **Instructors** can give it to a program they belong to.
+
+Pick the new owner and confirm — the collection keeps its images and
+visibility; only who manages it changes. If the collection was edited by
+someone else while the dialog was open, you'll see the "modified by another
+user" message — reopen the dialog and try again.
+
+::: tip Orphaned collections
+When a collection's owner user or program is deleted, the collection becomes
+_orphaned_. Administrators can find these with the **Owner** filter's
+_No owner (orphaned)_ option and give them a new owner with **Transfer**.
+:::
+
 ## Share a link
 
 The address bar shows `?collection=…` while a collection is open. Copy it to

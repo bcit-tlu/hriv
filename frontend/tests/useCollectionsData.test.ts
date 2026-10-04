@@ -25,6 +25,7 @@ vi.mock('../src/api', async (importOriginal) => {
     deleteCollection: vi.fn(),
     replaceCollectionImages: vi.fn(),
     saveCollectionViewport: vi.fn(),
+    transferCollection: vi.fn(),
   }
 })
 
@@ -35,6 +36,7 @@ import {
   fetchCollections,
   replaceCollectionImages,
   saveCollectionViewport,
+  transferCollection,
   updateCollection,
 } from '../src/api'
 
@@ -45,6 +47,7 @@ const updateCollectionMock = vi.mocked(updateCollection)
 const deleteCollectionMock = vi.mocked(deleteCollection)
 const replaceCollectionImagesMock = vi.mocked(replaceCollectionImages)
 const saveCollectionViewportMock = vi.mocked(saveCollectionViewport)
+const transferCollectionMock = vi.mocked(transferCollection)
 
 function makeUser(overrides: Partial<User> = {}): User {
   return {
@@ -1063,6 +1066,180 @@ describe('useCollectionsData', () => {
       expect(renewed?.thumb).toContain('token=x')
       // Other members untouched.
       expect(result.current.detail?.images[0].id).toBe(10)
+    })
+
+    it('transfer posts the target with the detail version and updates row + detail (#1419)', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1, version: 3 })])
+      fetchCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 1, version: 3 }))
+      transferCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({
+          id: 1,
+          version: 4,
+          owner: { program_id: 2, name: 'Ultrasound' },
+        }),
+      )
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.version).toBe(3))
+      fetchCollectionsMock.mockImplementationOnce(() => new Promise(() => {}))
+
+      await act(async () => {
+        await result.current.transfer(1, { programId: 2 })
+      })
+      expect(transferCollectionMock).toHaveBeenCalledWith(1, { program_id: 2, version: 3 })
+      expect(result.current.detail).toMatchObject({
+        id: 1,
+        version: 4,
+        owner: { kind: 'program', programId: 2, name: 'Ultrasound' },
+      })
+      expect(result.current.collections[0].owner).toMatchObject({ kind: 'program', programId: 2 })
+    })
+
+    it('transfer fetches the record for its version when the collection is not open', async () => {
+      // Card-level reassignment (e.g. an orphaned row): no detail is loaded, so
+      // the hook fetches the freshest record before posting.
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 5, owner: null })])
+      fetchCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 5, owner: null, version: 7 }),
+      )
+      transferCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 5, version: 8, owner: { user_id: 9, name: 'New owner' } }),
+      )
+      const { result } = renderData()
+      await waitFor(() => expect(result.current.collections).toHaveLength(1))
+      fetchCollectionsMock.mockImplementationOnce(() => new Promise(() => {}))
+
+      await act(async () => {
+        await result.current.transfer(5, { userId: 9 })
+      })
+      expect(fetchCollectionMock).toHaveBeenCalledWith(5)
+      expect(transferCollectionMock).toHaveBeenCalledWith(5, { user_id: 9, version: 7 })
+      expect(result.current.collections[0].owner).toMatchObject({ kind: 'user', userId: 9 })
+      expect(result.current.detail).toBeNull()
+    })
+
+    it('transfer drops the row when the new owner no longer matches the filters', async () => {
+      // Under `mine`, transferring my collection to a program removes it.
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1 })])
+      fetchCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 1, version: 1 }))
+      transferCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, owner: { program_id: 2, name: 'Ultrasound' } }),
+      )
+      const { result } = renderData()
+      await waitFor(() => expect(result.current.collections).toHaveLength(1))
+      act(() => result.current.setFilters({ ...DEFAULT_COLLECTION_FILTERS, mine: true }))
+      // Let the filter-triggered reload settle (the mock ignores `mine` and
+      // returns the row again), then hang the transfer-triggered refresh so
+      // the client-side filter decision is what's under test.
+      await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledWith({ mine: true }))
+      await waitFor(() => expect(result.current.collections).toHaveLength(1))
+      fetchCollectionsMock.mockImplementationOnce(() => new Promise(() => {}))
+
+      await act(async () => {
+        await result.current.transfer(1, { programId: 2 })
+      })
+      expect(result.current.collections).toHaveLength(0)
+    })
+
+    it('transfer keeps an assigned row in the orphaned-filtered list out of view', async () => {
+      // Under the admin `orphaned` facet, assigning an owner removes the row.
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 5, owner: null })])
+      fetchCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 5, owner: null, version: 1 }),
+      )
+      transferCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 5, version: 2, owner: { user_id: 9, name: 'New owner' } }),
+      )
+      const { result } = renderData({}, makeUser({ role: 'admin' }))
+      await waitFor(() => expect(result.current.collections).toHaveLength(1))
+      act(() => result.current.setFilters({ ...DEFAULT_COLLECTION_FILTERS, owner: 'orphaned' }))
+      await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledWith({ orphaned: true }))
+      await waitFor(() => expect(result.current.collections).toHaveLength(1))
+      fetchCollectionsMock.mockImplementationOnce(() => new Promise(() => {}))
+
+      await act(async () => {
+        await result.current.transfer(5, { userId: 9 })
+      })
+      expect(result.current.collections).toHaveLength(0)
+    })
+
+    it('transfer queues behind an in-flight reorder and sends its fresh version', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1, version: 1 })])
+      fetchCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 1, images: [{ id: 10 }, { id: 11 }] as never }),
+      )
+      let resolveReorder!: (c: ReturnType<typeof makeApiCollection>) => void
+      replaceCollectionImagesMock.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveReorder = resolve
+          }),
+      )
+      transferCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 3, owner: { program_id: 2, name: 'Ultrasound' } }),
+      )
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.version).toBe(1))
+
+      let reorderPromise!: Promise<unknown>
+      let transferPromise!: Promise<unknown>
+      await act(async () => {
+        reorderPromise = result.current.reorderImages(1, [11, 10])
+        transferPromise = result.current.transfer(1, { programId: 2 })
+      })
+      // The transfer must not post until the reorder's version bump lands.
+      expect(transferCollectionMock).not.toHaveBeenCalled()
+      await act(async () => {
+        resolveReorder(makeApiCollection({ id: 1, version: 2 }))
+        await reorderPromise
+        await transferPromise
+      })
+      expect(transferCollectionMock).toHaveBeenCalledWith(1, { program_id: 2, version: 2 })
+    })
+
+    it('transfer propagates API errors without touching state', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1 })])
+      fetchCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 1, version: 1 }))
+      transferCollectionMock.mockRejectedValueOnce(new ApiError(403, 'Not yours to give'))
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.id).toBe(1))
+
+      await expect(result.current.transfer(1, { userId: 9 })).rejects.toBeInstanceOf(ApiError)
+      expect(result.current.collections[0].owner).toMatchObject({ kind: 'user', userId: 7 })
+    })
+
+    it('transfer merges the 409 conflict record so a retry sends the fresh version', async () => {
+      // Bob bumps the open collection to v4 behind Alice's back; her first
+      // attempt 409s and the fresh record replaces detail + list state, so
+      // the retry carries v4 rather than failing on v3 again.
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1, version: 3 })])
+      fetchCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 1, version: 3 }))
+      transferCollectionMock
+        .mockRejectedValueOnce(new ApiError(409, 'Stale', makeApiCollection({ id: 1, version: 4 })))
+        .mockResolvedValueOnce(
+          makeApiCollection({
+            id: 1,
+            version: 5,
+            owner: { program_id: 2, name: 'Ultrasound' },
+          }),
+        )
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.version).toBe(3))
+      fetchCollectionsMock.mockImplementationOnce(() => new Promise(() => {}))
+
+      await act(async () => {
+        await expect(result.current.transfer(1, { programId: 2 })).rejects.toBeInstanceOf(ApiError)
+      })
+      expect(result.current.detail?.version).toBe(4)
+      expect(result.current.collections[0].version).toBe(4)
+
+      await act(async () => {
+        await result.current.transfer(1, { programId: 2 })
+      })
+      expect(transferCollectionMock).toHaveBeenLastCalledWith(1, {
+        program_id: 2,
+        version: 4,
+      })
+      expect(result.current.detail?.version).toBe(5)
     })
   })
 })

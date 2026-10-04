@@ -59,6 +59,11 @@ TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
   `imageViewerUtils.ts`, `saveViewport` in `useCollectionsData.ts`, detail
   mount in `CollectionsPage.tsx`):
   `npm test -- SynchronizedCollectionViewer useCollectionsData ImageViewer CollectionsPage App.test`
+- Ownership/admin management UI (#1419: `TransferCollectionDialog.tsx`,
+  `transfer` in `useCollectionsData.ts`, `transferCollection` in `api.ts`,
+  detail header + card affordances in `CollectionsPage.tsx` /
+  `CollectionCard.tsx`):
+  `npm test -- TransferCollectionDialog CollectionsPage CollectionCard useCollectionsData api.test App.test`
 - Storybook (stories + a11y): `npm run test:storybook -- Collection`
 - Collection visibility reuses the category dual gate — if you touched
   `visibility.py` also run the "Changed groups" set above. See
