@@ -24,6 +24,7 @@ import {
   canvasAnnotationsFromMetadata,
   lockedOverlaysFromMetadata,
   measurementFromMetadata,
+  useStableJson,
 } from './imageViewerUtils'
 
 export interface SequenceCollectionViewerProps {
@@ -139,6 +140,22 @@ export default function SequenceCollectionViewer({
     return idx >= 0 ? idx : 0
   }, [available, itemId])
   const current = available[currentIndex] ?? null
+  // Stable across unrelated collection updates (e.g. tile-token renewal swaps
+  // the member record): fresh identities would re-run ImageViewer's mount
+  // effect (it depends on `initialOverlays`) and destroy the OSD viewer.
+  const currentMetadata = current?.metadataExtra
+  const lockedOverlays = useStableJson(
+    JSON.stringify(currentMetadata?.locked_overlays ?? null),
+    () => lockedOverlaysFromMetadata(currentMetadata),
+  )
+  const canvasAnnotations = useStableJson(
+    JSON.stringify(currentMetadata?.canvas_annotations ?? null),
+    () => canvasAnnotationsFromMetadata(currentMetadata),
+  )
+  const measurement = useStableJson(
+    JSON.stringify([currentMetadata?.measurement_scale, currentMetadata?.measurement_unit]),
+    () => measurementFromMetadata(currentMetadata),
+  )
 
   const goTo = useCallback(
     (index: number) => {
@@ -245,7 +262,6 @@ export default function SequenceCollectionViewer({
   // Position is over the full member list — the strip still shows every
   // member (failed ones dimmed), so numbering must not renumber on failure.
   const position = `${images.indexOf(current) + 1} of ${images.length}`
-  const lockedOverlays = lockedOverlaysFromMetadata(current.metadataExtra)
 
   return (
     <Box data-testid="sequence-collection-viewer" onKeyDownCapture={handleKeyDownCapture}>
@@ -316,9 +332,9 @@ export default function SequenceCollectionViewer({
           height="60vh"
           initialOverlays={lockedOverlays}
           overlaysLocked={lockedOverlays != null}
-          canvasAnnotations={canvasAnnotationsFromMetadata(current.metadataExtra)}
+          canvasAnnotations={canvasAnnotations}
           canEditContent={false}
-          measurement={measurementFromMetadata(current.metadataExtra)}
+          measurement={measurement}
           onTileSourceRenewed={onImageRenewed}
           onError={handleViewerError}
         />

@@ -15,13 +15,21 @@ vi.mock('../../src/api', async (importOriginal) => {
   return { ...actual, fetchCollection: vi.fn(), fetchImage: vi.fn() }
 })
 
-// Sequence detail mounts the real OpenSeadragon viewer, which jsdom cannot
-// run; stub the component and record its props so page wiring is assertable.
+// Sequence and synchronized details mount the real OpenSeadragon viewer,
+// which jsdom cannot run; stub both components and record their props so
+// page wiring is assertable.
 const sequenceViewerProps: { current: Record<string, unknown> | null } = { current: null }
 vi.mock('../../src/components/SequenceCollectionViewer', () => ({
   default: (props: Record<string, unknown>) => {
     sequenceViewerProps.current = props
     return <div data-testid="sequence-collection-viewer" />
+  },
+}))
+const synchronizedViewerProps: { current: Record<string, unknown> | null } = { current: null }
+vi.mock('../../src/components/SynchronizedCollectionViewer', () => ({
+  default: (props: Record<string, unknown>) => {
+    synchronizedViewerProps.current = props
+    return <div data-testid="synchronized-collection-viewer" />
   },
 }))
 
@@ -82,6 +90,7 @@ function makeProps(overrides: Partial<CollectionsPageProps> = {}): CollectionsPa
     onReorderImages: vi.fn().mockResolvedValue(undefined),
     onCollectionImageRenewed: vi.fn(),
     onViewerError: vi.fn(),
+    onSaveViewport: vi.fn().mockResolvedValue(undefined),
     loadCollection: vi.fn().mockResolvedValue(makeCollection()),
     onCreate: vi.fn().mockResolvedValue(undefined),
     onUpdate: vi.fn().mockResolvedValue(undefined),
@@ -104,6 +113,7 @@ describe('CollectionsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     sequenceViewerProps.current = null
+    synchronizedViewerProps.current = null
   })
 
   describe('list states', () => {
@@ -407,8 +417,11 @@ describe('CollectionsPage', () => {
       expect(onCloseCollection).toHaveBeenCalled()
     })
 
-    it('lists ordered members with Open image links for a synchronized collection', () => {
+    it('mounts the synchronized viewer with the header and wired callbacks (#1417)', () => {
       const onOpenImage = vi.fn()
+      const onSaveViewport = vi.fn().mockResolvedValue(undefined)
+      const onCollectionImageRenewed = vi.fn()
+      const onViewerError = vi.fn()
       const images = [
         makeImage({ id: 21, name: 'Frontal' }),
         makeImage({ id: 22, name: 'Lateral' }),
@@ -419,19 +432,34 @@ describe('CollectionsPage', () => {
         images,
         description: 'Two views',
       })
-      renderPage({ selectedCollectionId: 9, detail, onOpenImage })
+      renderPage({
+        selectedCollectionId: 9,
+        detail,
+        onOpenImage,
+        onSaveViewport,
+        onCollectionImageRenewed,
+        onViewerError,
+      })
 
       expect(screen.getByTestId('collection-detail')).toBeInTheDocument()
       expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Skull comparison')
       expect(screen.getByText('Two views')).toBeInTheDocument()
-      expect(screen.getByRole('alert')).toHaveTextContent('The synchronized viewer is coming soon')
-      expect(screen.getByText('1. Frontal')).toBeInTheDocument()
-      expect(screen.getByText('2. Lateral')).toBeInTheDocument()
+      expect(screen.getByTestId('synchronized-collection-viewer')).toBeInTheDocument()
 
-      const links = screen.getAllByRole('link', { name: 'Open image' })
-      expect(links.map((l) => l.getAttribute('href'))).toEqual(['?image=21', '?image=22'])
-      fireEvent.click(links[1])
-      expect(onOpenImage).toHaveBeenCalledWith(images[1])
+      const props = synchronizedViewerProps.current!
+      expect(props.collection).toBe(detail)
+      void (props.onSaveViewport as (s: Record<string, unknown>) => Promise<unknown>)({
+        '21': { zoom: 1, x: 0.5, y: 0.5, rotation: 0 },
+      })
+      expect(onSaveViewport).toHaveBeenCalledWith(9, {
+        '21': { zoom: 1, x: 0.5, y: 0.5, rotation: 0 },
+      })
+      ;(props.onOpenImage as (img: unknown) => void)(images[0])
+      expect(onOpenImage).toHaveBeenCalledWith(images[0])
+      ;(props.onImageRenewed as (img: unknown) => void)({ id: 21 })
+      expect(onCollectionImageRenewed).toHaveBeenCalledWith(9, { id: 21 })
+      ;(props.onError as (m: string) => void)('boom')
+      expect(onViewerError).toHaveBeenCalledWith('boom')
     })
 
     it('mounts the sequence viewer with the header and wired callbacks (#1416)', () => {
@@ -478,10 +506,10 @@ describe('CollectionsPage', () => {
       expect(onViewerError).toHaveBeenCalledWith('boom')
     })
 
-    it('explains when a collection has no images yet', () => {
+    it('still mounts the viewer when a synchronized collection has no images', () => {
       renderPage({ selectedCollectionId: 9, detail: makeCollection({ id: 9, images: [] }) })
-      expect(screen.getByText('This collection has no images yet.')).toBeInTheDocument()
-      expect(screen.queryByRole('link', { name: 'Open image' })).not.toBeInTheDocument()
+      // The empty-state fallback itself is covered by the viewer's own tests.
+      expect(screen.getByTestId('synchronized-collection-viewer')).toBeInTheDocument()
     })
 
     it('navigates back to the list', () => {

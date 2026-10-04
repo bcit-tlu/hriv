@@ -1,5 +1,7 @@
 /** Shared types, constants and helpers used by ImageViewer and its tests. */
 
+import { useRef } from 'react'
+
 import type { CanvasAnnotation } from './CanvasOverlay'
 
 export interface ViewportState {
@@ -278,4 +280,38 @@ export function measurementFromMetadata(
   const unit = typeof metadata.measurement_unit === 'string' ? metadata.measurement_unit : undefined
   if (scale == null && unit == null) return undefined
   return { scale, unit }
+}
+
+/**
+ * Validate one `viewport_state` entry (`{ zoom, x, y, rotation? }`) from a
+ * collection's persisted sync view. The backend stores the object opaquely,
+ * so malformed or stale-shape values are ignored rather than applied.
+ */
+export function viewportStateFromSaved(value: unknown): ViewportState | undefined {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const { zoom, x, y, rotation } = value as Record<string, unknown>
+  if (typeof zoom !== 'number' || typeof x !== 'number' || typeof y !== 'number') {
+    return undefined
+  }
+  if (!Number.isFinite(zoom) || zoom <= 0 || !Number.isFinite(x) || !Number.isFinite(y)) {
+    return undefined
+  }
+  return rotation != null && typeof rotation === 'number' && Number.isFinite(rotation)
+    ? { zoom, x, y, rotation }
+    : { zoom, x, y }
+}
+
+/**
+ * Memoize a derived viewer prop by the serialized form of its source data so
+ * content-identical refreshes keep the same reference. `ImageViewer` includes
+ * `initialViewport`/`initialOverlays` in its mount-effect deps — a fresh
+ * array/object identity would destroy and recreate the OSD viewer on every
+ * unrelated collection update (renewed tile tokens, saved viewports, edits).
+ */
+export function useStableJson<T>(json: string, compute: () => T): T {
+  const ref = useRef<{ json: string; value: T } | null>(null)
+  if (ref.current == null || ref.current.json !== json) {
+    ref.current = { json, value: compute() }
+  }
+  return ref.current.value
 }

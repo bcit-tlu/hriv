@@ -24,6 +24,7 @@ vi.mock('../src/api', async (importOriginal) => {
     updateCollection: vi.fn(),
     deleteCollection: vi.fn(),
     replaceCollectionImages: vi.fn(),
+    saveCollectionViewport: vi.fn(),
   }
 })
 
@@ -33,6 +34,7 @@ import {
   fetchCollection,
   fetchCollections,
   replaceCollectionImages,
+  saveCollectionViewport,
   updateCollection,
 } from '../src/api'
 
@@ -42,6 +44,7 @@ const createCollectionMock = vi.mocked(createCollection)
 const updateCollectionMock = vi.mocked(updateCollection)
 const deleteCollectionMock = vi.mocked(deleteCollection)
 const replaceCollectionImagesMock = vi.mocked(replaceCollectionImages)
+const saveCollectionViewportMock = vi.mocked(saveCollectionViewport)
 
 function makeUser(overrides: Partial<User> = {}): User {
   return {
@@ -854,6 +857,189 @@ describe('useCollectionsData', () => {
         'The collection is not loaded.',
       )
       expect(replaceCollectionImagesMock).not.toHaveBeenCalled()
+    })
+
+    it('saveViewport sends the whole state with version and updates detail (#1417)', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1 })])
+      fetchCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 5, images: [{ id: 10 }, { id: 11 }] as never }),
+      )
+      const viewportState = {
+        '10': { zoom: 2, x: 0.4, y: 0.4, rotation: 0 },
+        '11': { zoom: 3, x: 0.6, y: 0.5, rotation: 45 },
+      }
+      saveCollectionViewportMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 6, viewport_state: viewportState }),
+      )
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.version).toBe(5))
+
+      await act(async () => {
+        await result.current.saveViewport(1, viewportState)
+      })
+      expect(saveCollectionViewportMock).toHaveBeenCalledWith(1, {
+        viewport_state: viewportState,
+        version: 5,
+      })
+      expect(result.current.detail?.viewportState).toEqual(viewportState)
+      expect(result.current.detail?.version).toBe(6)
+    })
+
+    it('saveViewport queues behind an in-flight reorder and uses its version', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1 })])
+      fetchCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({
+          id: 1,
+          version: 5,
+          images: [{ id: 10 }, { id: 11 }] as never,
+        }),
+      )
+      let resolveReorder!: (value: ReturnType<typeof makeApiCollection>) => void
+      replaceCollectionImagesMock.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveReorder = resolve
+          }),
+      )
+      saveCollectionViewportMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 7, viewport_state: { '10': { zoom: 2 } } }),
+      )
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.version).toBe(5))
+
+      let reorderPromise!: Promise<unknown>
+      let savePromise!: Promise<unknown>
+      await act(async () => {
+        reorderPromise = result.current.reorderImages(1, [11, 10])
+        savePromise = result.current.saveViewport(1, { '10': { zoom: 2 } })
+      })
+      // The viewport PUT waits for the reorder PUT to settle.
+      expect(saveCollectionViewportMock).not.toHaveBeenCalled()
+      await act(async () => {
+        resolveReorder(
+          makeApiCollection({
+            id: 1,
+            version: 6,
+            images: [{ id: 11 }, { id: 10 }] as never,
+          }),
+        )
+        await reorderPromise
+      })
+      await act(async () => {
+        await savePromise
+      })
+      expect(saveCollectionViewportMock).toHaveBeenCalledWith(1, {
+        viewport_state: { '10': { zoom: 2 } },
+        version: 6,
+      })
+      expect(result.current.detail?.version).toBe(7)
+    })
+
+    it('saveViewport after a collection edit uses the edited version, not the queued one', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1 })])
+      fetchCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 1, version: 5 }))
+      saveCollectionViewportMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 6, viewport_state: { '10': { zoom: 2 } } }),
+      )
+      updateCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, name: 'Renamed', version: 7 }),
+      )
+      saveCollectionViewportMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 8, viewport_state: { '10': { zoom: 3 } } }),
+      )
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.version).toBe(5))
+
+      await act(async () => {
+        await result.current.saveViewport(1, { '10': { zoom: 2 } })
+      })
+      expect(saveCollectionViewportMock).toHaveBeenLastCalledWith(1, {
+        viewport_state: { '10': { zoom: 2 } },
+        version: 5,
+      })
+      await act(async () => {
+        await result.current.update(1, { ...VALUES, name: 'Renamed' }, 6, null)
+      })
+      await act(async () => {
+        await result.current.saveViewport(1, { '10': { zoom: 3 } })
+      })
+      // The second save must not reuse the first save's queued version 6.
+      expect(saveCollectionViewportMock).toHaveBeenLastCalledWith(1, {
+        viewport_state: { '10': { zoom: 3 } },
+        version: 7,
+      })
+    })
+
+    it('reorderImages after a collection edit uses the edited version, not the queued one', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1 })])
+      fetchCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 5, images: [{ id: 10 }, { id: 11 }] as never }),
+      )
+      replaceCollectionImagesMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 6, images: [{ id: 11 }, { id: 10 }] as never }),
+      )
+      updateCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, name: 'Renamed', version: 7 }),
+      )
+      replaceCollectionImagesMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 8, images: [{ id: 10 }, { id: 11 }] as never }),
+      )
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.version).toBe(5))
+
+      await act(async () => {
+        await result.current.reorderImages(1, [11, 10])
+      })
+      await act(async () => {
+        await result.current.update(1, { ...VALUES, name: 'Renamed' }, 6, null)
+      })
+      await act(async () => {
+        await result.current.reorderImages(1, [10, 11])
+      })
+      expect(replaceCollectionImagesMock).toHaveBeenLastCalledWith(1, {
+        image_ids: [10, 11],
+        version: 7,
+      })
+    })
+
+    it('saveViewport never displaces another open detail', async () => {
+      fetchCollectionsMock.mockResolvedValue([
+        makeApiCollectionSummary({ id: 1 }),
+        makeApiCollectionSummary({ id: 2 }),
+      ])
+      fetchCollectionMock
+        .mockResolvedValueOnce(makeApiCollection({ id: 1, version: 5 }))
+        .mockResolvedValueOnce(makeApiCollection({ id: 2, name: 'Second' }))
+      saveCollectionViewportMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 6, viewport_state: { '10': { zoom: 2 } } }),
+      )
+      const { result, rerender } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.id).toBe(1))
+
+      let savePromise!: Promise<unknown>
+      await act(async () => {
+        savePromise = result.current.saveViewport(1, { '10': { zoom: 2 } })
+      })
+      rerender({ selectedCollectionId: 2 })
+      await waitFor(() => expect(result.current.detail?.id).toBe(2))
+      await act(async () => {
+        await savePromise
+      })
+      // Collection 1's save persisted but collection 2's detail stayed.
+      expect(saveCollectionViewportMock).toHaveBeenCalledWith(1, {
+        viewport_state: { '10': { zoom: 2 } },
+        version: 5,
+      })
+      expect(result.current.detail?.id).toBe(2)
+      expect(result.current.detail?.name).toBe('Second')
+    })
+
+    it('saveViewport refuses to run before the detail has loaded', async () => {
+      const { result } = renderData()
+      await expect(result.current.saveViewport(1, {})).rejects.toThrow(
+        'The collection is not loaded.',
+      )
+      expect(saveCollectionViewportMock).not.toHaveBeenCalled()
     })
 
     it('renewCollectionImage swaps the member record inside detail', async () => {

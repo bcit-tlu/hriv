@@ -10,18 +10,40 @@ been switched on there — ask your administrator.)
 
 ## Two kinds of collection
 
-- **Synchronized** – up to four images shown side by side; pan and zoom will
-  move all of them together once the viewer arrives.
+- **Synchronized** – two images shown side by side; pan and zoom move both
+  of them together.
 - **Sequence** – any number of images in a fixed order, stepped through one
   at a time.
 
 You choose the type when you create a collection and can't change it later —
 create a new collection instead.
 
-::: note Synchronized viewer is on the way
-Sequence collections already open in a step-through viewer (below).
-Synchronized collections still list their images with an **Open image**
-link for each — the side-by-side viewer is coming in a later release.
+## Viewing a synchronized collection
+
+Open a synchronized collection and you get two read-only viewers side by
+side — the first two images in the collection — with annotations and
+measurement markings visible on each.
+
+- Pan, zoom or rotate either pane and the other follows, keeping its
+  relative position — handy when two views highlight different spots.
+- Each pane's caption shows the image name and an **Open image** link to
+  the normal image view.
+- If the collection holds more than two images, only the first two render —
+  a note tells you how many more are stored.
+- **Link views** (the switch above the viewers) unlinks the panes so you
+  can adjust one side on its own; switching it back on keeps the new
+  relative position.
+- **Reset view** returns both panes to the saved view (or their starting
+  positions if none was saved).
+- On a phone held upright the panes are replaced by a hint to rotate to
+  landscape — your view is still there when you rotate back.
+
+::: tip Saving the view
+If you can edit the collection, a **Save view** button stores both panes'
+current positions for everyone — next time the collection opens, it lands
+exactly there. Anyone can pan and zoom freely; only saving changes what
+others see. Use the saved positions to line the two images up around
+different highlights.
 :::
 
 ## Viewing a sequence collection
