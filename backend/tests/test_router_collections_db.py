@@ -191,7 +191,6 @@ async def test_replace_images_persists_order_reuses_links(session_factory) -> No
     async with session_factory() as session:
         admin = await _get_user(session, admin_id)
         engine = session.sync_session.get_bind()
-        engine = getattr(engine, "sync_engine", engine)
         captured: list[tuple[str, object, bool]] = []
 
         def _capture(conn, cursor, statement, parameters, context, executemany):
