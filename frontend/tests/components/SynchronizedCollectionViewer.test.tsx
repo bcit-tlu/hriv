@@ -545,6 +545,35 @@ describe('SynchronizedCollectionViewer', () => {
     expect(after.canvasAnnotations).toBe(before.canvasAnnotations)
   })
 
+  it('does not mint new mount-only props when unrelated metadata changes', () => {
+    const meta = {
+      locked_overlays: [{ x: 0.1, y: 0.2, w: 0.3, h: 0.4 }],
+      canvas_annotations: [{ id: 'a1', shapes: [] }],
+    }
+    const collection = syncCollection({
+      images: [makeImage({ id: 100, metadataExtra: meta }), makeImage({ id: 101 })],
+    })
+    const { props, rerender } = renderViewer({ collection })
+    const before = mockState.lastProps.get(100)!
+    // A refresh that changes only canvas_annotations must not replace the
+    // overlay array — a new identity would remount the viewer and discard
+    // unsaved navigation.
+    const edited = syncCollection({
+      images: [
+        makeImage({
+          id: 100,
+          metadataExtra: { ...meta, canvas_annotations: [{ id: 'a2', shapes: [] }] },
+        }),
+        makeImage({ id: 101 }),
+      ],
+    })
+    rerender(<SynchronizedCollectionViewer {...props} collection={edited} />)
+    const after = mockState.lastProps.get(100)!
+    expect(after.initialOverlays).toBe(before.initialOverlays)
+    expect(after.initialViewport).toBe(before.initialViewport)
+    expect(after.canvasAnnotations).not.toBe(before.canvasAnnotations)
+  })
+
   it('ignores malformed saved viewport entries', () => {
     const collection = syncCollection({
       viewportState: {

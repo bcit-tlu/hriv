@@ -182,34 +182,51 @@ export default function SynchronizedCollectionViewer({
     return map.get(image.id)
   }
 
-  // Per-image pane props cached by image id and serialized metadata: fresh
-  // array/object identities would re-run ImageViewer's mount effect (it deps
-  // on `initialOverlays`/`initialViewport`) and destroy the OSD viewer on any
-  // unrelated collection update (tile renewal, save response, edits) — or
-  // when a surviving image slides into the other pane after a member fails.
+  // Per-image pane props cached by image id with each prop invalidated by its
+  // own serialized metadata: a fresh `initialOverlays`/`initialViewport`
+  // identity re-runs ImageViewer's mount effect and destroys the OSD viewer,
+  // so an annotation or measurement edit must not mint new mount-only props.
   const panePropsCache = useRef({
     collectionId,
-    map: new Map<number, { key: string; value: PaneProps }>(),
+    map: new Map<
+      number,
+      { value: PaneProps; overlaysKey: string; annotationsKey: string; measurementKey: string }
+    >(),
   })
   if (panePropsCache.current.collectionId !== collectionId) {
     panePropsCache.current = { collectionId, map: new Map() }
   }
   const panePropsFor = (image: ImageItem): PaneProps => {
-    const key = JSON.stringify([
-      image.metadataExtra?.locked_overlays ?? null,
-      image.metadataExtra?.canvas_annotations ?? null,
+    const overlaysKey = JSON.stringify(image.metadataExtra?.locked_overlays ?? null)
+    const annotationsKey = JSON.stringify(image.metadataExtra?.canvas_annotations ?? null)
+    const measurementKey = JSON.stringify([
       image.metadataExtra?.measurement_scale ?? null,
       image.metadataExtra?.measurement_unit ?? null,
     ])
     const cached = panePropsCache.current.map.get(image.id)
-    if (cached && cached.key === key) return cached.value
-    const value: PaneProps = {
-      initialViewport: initialViewportFor(image),
-      initialOverlays: lockedOverlaysFromMetadata(image.metadataExtra),
-      canvasAnnotations: canvasAnnotationsFromMetadata(image.metadataExtra),
-      measurement: measurementFromMetadata(image.metadataExtra),
+    const value =
+      cached?.value ??
+      ({
+        initialViewport: initialViewportFor(image),
+        initialOverlays: undefined,
+        canvasAnnotations: [],
+        measurement: undefined,
+      } satisfies PaneProps)
+    if (!cached || cached.overlaysKey !== overlaysKey) {
+      value.initialOverlays = lockedOverlaysFromMetadata(image.metadataExtra)
     }
-    panePropsCache.current.map.set(image.id, { key, value })
+    if (!cached || cached.annotationsKey !== annotationsKey) {
+      value.canvasAnnotations = canvasAnnotationsFromMetadata(image.metadataExtra)
+    }
+    if (!cached || cached.measurementKey !== measurementKey) {
+      value.measurement = measurementFromMetadata(image.metadataExtra)
+    }
+    panePropsCache.current.map.set(image.id, {
+      value,
+      overlaysKey,
+      annotationsKey,
+      measurementKey,
+    })
     return value
   }
 
