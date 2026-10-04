@@ -108,6 +108,23 @@ class Settings(BaseSettings):
     rate_limit_telemetry_user_max: int = 600
     rate_limit_telemetry_window: int = 60  # seconds
 
+    # Shared static credential accepted by POST /api/telemetry/synthetic-result
+    # as an alternative to the monitor account's user JWT. The same secret is
+    # delivered to the synthetic-monitoring CronJob and the backend (flux-fleet
+    # ``hriv-synthetic-ingest`` VaultStaticSecret). Validation is a
+    # constant-time compare requiring no database access, so failure reports
+    # still land during authentication/database outages (#1495) — precisely
+    # when a user JWT cannot be obtained. Empty disables the token path so
+    # only JWT-authenticated synthetic accounts may report (local dev).
+    synthetic_ingest_token: str = ""
+
+    # Sliding-window rate limit for the synthetic-result ingest endpoint,
+    # enforced identically for both credential paths. The monitor posts at
+    # most a few results per CronJob run, so the budget only bounds abuse of
+    # a leaked ingest token or a misbehaving monitor.
+    rate_limit_synthetic_ingest_max: int = 30
+    rate_limit_synthetic_ingest_window: int = 60  # seconds
+
     # OIDC / OAuth settings (Phase 3 — Identity)
     oidc_enabled: bool = False
     oidc_issuer: str = ""

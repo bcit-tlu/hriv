@@ -295,6 +295,18 @@ spec:
             # backend fails fast in required mode without a concrete value.
             - name: CORS_ORIGINS
               value: {{ $corsOrigins | quote }}
+            {{- if .Values.syntheticMonitoring.ingestTokenSecret.name }}
+            # Shared static credential for the synthetic monitor's result
+            # posts; validates without DB access so failure reports land
+            # during auth/DB outages (hriv#1495). optional=true degrades a
+            # missing key to JWT-only ingestion rather than blocking rollout.
+            - name: SYNTHETIC_INGEST_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.syntheticMonitoring.ingestTokenSecret.name | quote }}
+                  key: {{ .Values.syntheticMonitoring.ingestTokenSecret.key | quote }}
+                  optional: true
+            {{- end }}
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:

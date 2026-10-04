@@ -315,6 +315,26 @@ These defaults are intentionally small because import staging now lives on the
 the chart defaults; no overlay change is required for the new storage keys to
 take effect.
 
+## Synthetic monitoring ingest token (`syntheticMonitoring.ingestTokenSecret`)
+
+The synthetic-monitoring CronJob posts its authoritative journey result to
+`POST /api/telemetry/synthetic-result`. It authenticates with a shared static
+secret (`X-Synthetic-Ingest-Token` header) rather than the monitor account's
+user JWT, so result reports still land during auth or database outages — the
+moments the monitor exists to detect (hriv#1495). The backend validates the
+token with a constant-time compare and no database access; an
+operator-provisioned sliding-window rate limit (`rate:synthetic-ingest`,
+default 30/60s) bounds abuse of a leaked token.
+
+Set `syntheticMonitoring.ingestTokenSecret.name` (and optionally `.key`,
+default `token`) to render `SYNTHETIC_INGEST_TOKEN` from a pre-existing secret
+consumed by both the backend and the CronJob — in bcit-tlu/flux-fleet this is
+the `hriv-synthetic-ingest` VaultStaticSecret. The key reference is
+`optional: true`: a missing key degrades to JWT-only ingestion instead of
+blocking the rollout, and the stale-result metrics alert remains the designed
+detector for that misconfiguration. Leave `name` empty to disable the token
+path entirely (JWT-only, suitable for local dev).
+
 ## Bootstrap admin seed (`bootstrapAdmin.*`)
 
 When `bootstrapAdmin.enabled=true` (the default), the chart renders a

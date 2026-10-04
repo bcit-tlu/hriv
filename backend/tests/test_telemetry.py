@@ -476,14 +476,35 @@ def _make_synthetic_result(
     )
 
 
+def _allow_ingest_rate_limit():
+    return patch(
+        "app.routers.telemetry.check_rate_limit",
+        new_callable=AsyncMock,
+        return_value=None,
+    )
+
+
+def _jwt_auth(user) -> MagicMock:
+    """Patcher resolving the Bearer-JWT credential path to *user*."""
+    return patch(
+        "app.routers.telemetry.get_user_from_token",
+        new_callable=AsyncMock,
+        return_value=user,
+    )
+
+
 async def test_synthetic_result_requires_synthetic_account() -> None:
     request = _make_request()
     user = SimpleNamespace(id=7, role="student", metadata_={})
 
-    with pytest.raises(HTTPException) as exc_info:
-        await ingest_synthetic_result(
-            result=_make_synthetic_result(), request=request, user=user
-        )
+    with _jwt_auth(user), _allow_ingest_rate_limit():
+        with pytest.raises(HTTPException) as exc_info:
+            await ingest_synthetic_result(
+                result=_make_synthetic_result(),
+                request=request,
+                db=MagicMock(),
+                bearer_token="jwt",
+            )
 
     assert exc_info.value.status_code == 403
 
@@ -503,13 +524,13 @@ async def test_synthetic_result_stored_and_logged(
         updated_at=result.completed_at,
     )
 
-    with patch(
+    with _jwt_auth(user), _allow_ingest_rate_limit(), patch(
         "app.routers.telemetry.store_synthetic_result",
         new_callable=AsyncMock,
         return_value=stored_state,
     ):
         response = await ingest_synthetic_result(
-            result=result, request=request, user=user
+            result=result, request=request, db=MagicMock(), bearer_token="jwt"
         )
 
     assert response == SyntheticResultIngestResponse(
@@ -518,6 +539,8 @@ async def test_synthetic_result_stored_and_logged(
     log = [r for r in caplog.records if r.message == "synthetic journey result stored"][0]
     assert getattr(log, "event.name") == "synthetic.journey.result"
     assert getattr(log, "event.synthetic") is True
+    assert getattr(log, "synthetic.credential") == "user_jwt"
+    assert getattr(log, "user.id") == 9
     assert getattr(log, "synthetic.component_version") == "1.2.3"
     assert getattr(log, "trace.parent") == request.headers.get("traceparent")
 
@@ -527,7 +550,7 @@ async def test_synthetic_result_rejects_stale_runs() -> None:
     user = SimpleNamespace(id=9, role="student", metadata_={"synthetic": True})
     latest_completed_at = _make_synthetic_result().completed_at
 
-    with patch(
+    with _jwt_auth(user), _allow_ingest_rate_limit(), patch(
         "app.routers.telemetry.store_synthetic_result",
         new_callable=AsyncMock,
         side_effect=StaleSyntheticResultError(latest_completed_at),
@@ -539,7 +562,8 @@ async def test_synthetic_result_rejects_stale_runs() -> None:
                     failure_code="tile_failed",
                 ),
                 request=request,
-                user=user,
+                db=MagicMock(),
+                bearer_token="jwt",
             )
 
     assert exc_info.value.status_code == 409
@@ -550,17 +574,154 @@ async def test_synthetic_result_maps_storage_errors() -> None:
     request = _make_request()
     user = SimpleNamespace(id=9, role="student", metadata_={"synthetic": True})
 
-    with patch(
+    with _jwt_auth(user), _allow_ingest_rate_limit(), patch(
         "app.routers.telemetry.store_synthetic_result",
         new_callable=AsyncMock,
         side_effect=SyntheticResultStorageUnavailableError,
     ):
         with pytest.raises(HTTPException) as exc_info:
             await ingest_synthetic_result(
-                result=_make_synthetic_result(), request=request, user=user
+                result=_make_synthetic_result(),
+                request=request,
+                db=MagicMock(),
+                bearer_token="jwt",
             )
 
     assert exc_info.value.status_code == 503
+
+
+async def test_synthetic_result_requires_a_credential() -> None:
+    """Neither ingest token nor Bearer JWT → 401."""
+    with pytest.raises(HTTPException) as exc_info:
+        await ingest_synthetic_result(
+            result=_make_synthetic_result(),
+            request=_make_request(),
+            db=MagicMock(),
+        )
+
+    assert exc_info.value.status_code == 401
+
+
+async def test_synthetic_result_ingest_token_accepted(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The shared ingest token authenticates without touching the database."""
+    caplog.set_level("INFO", logger="app.routers.telemetry")
+    from app.routers import telemetry
+
+    monkeypatch.setattr(telemetry.settings, "synthetic_ingest_token", "sekrit")
+    result = _make_synthetic_result()
+    stored_state = StoredSyntheticJourneyState(
+        latest_result=result,
+        last_success_completed_at=result.completed_at,
+        updated_at=result.completed_at,
+    )
+    db = MagicMock()
+
+    with _jwt_auth(MagicMock()) as jwt_patch, _allow_ingest_rate_limit(), patch(
+        "app.routers.telemetry.store_synthetic_result",
+        new_callable=AsyncMock,
+        return_value=stored_state,
+    ):
+        response = await ingest_synthetic_result(
+            result=result,
+            request=_make_request(),
+            db=db,
+            x_synthetic_ingest_token="sekrit",
+        )
+
+    assert response.status == "stored"
+    # Token path must not resolve a user: zero database access (#1495).
+    jwt_patch.assert_not_awaited()
+    db.get.assert_not_called()
+    log = [r for r in caplog.records if r.message == "synthetic journey result stored"][0]
+    assert getattr(log, "synthetic.credential") == "ingest_token"
+    assert not hasattr(log, "user.id")
+
+
+async def test_synthetic_result_ingest_token_rejects_wrong_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.routers import telemetry
+
+    monkeypatch.setattr(telemetry.settings, "synthetic_ingest_token", "sekrit")
+
+    with pytest.raises(HTTPException) as exc_info:
+        await ingest_synthetic_result(
+            result=_make_synthetic_result(),
+            request=_make_request(),
+            db=MagicMock(),
+            x_synthetic_ingest_token="wrong",
+        )
+
+    assert exc_info.value.status_code == 401
+
+
+async def test_synthetic_result_ingest_token_rejects_unconfigured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A supplied token is 401 when the backend has no token configured."""
+    from app.routers import telemetry
+
+    monkeypatch.setattr(telemetry.settings, "synthetic_ingest_token", "")
+
+    with pytest.raises(HTTPException) as exc_info:
+        await ingest_synthetic_result(
+            result=_make_synthetic_result(),
+            request=_make_request(),
+            db=MagicMock(),
+            x_synthetic_ingest_token="anything",
+        )
+
+    assert exc_info.value.status_code == 401
+
+
+async def test_synthetic_result_ingest_token_wins_over_jwt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An invalid ingest token is a 401, not a silent fallback to the JWT."""
+    from app.routers import telemetry
+
+    monkeypatch.setattr(telemetry.settings, "synthetic_ingest_token", "sekrit")
+    user = SimpleNamespace(id=9, role="student", metadata_={"synthetic": True})
+
+    with _jwt_auth(user) as jwt_patch:
+        with pytest.raises(HTTPException) as exc_info:
+            await ingest_synthetic_result(
+                result=_make_synthetic_result(),
+                request=_make_request(),
+                db=MagicMock(),
+                bearer_token="jwt",
+                x_synthetic_ingest_token="wrong",
+            )
+
+    assert exc_info.value.status_code == 401
+    jwt_patch.assert_not_awaited()
+
+
+async def test_synthetic_result_rate_limited(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exceeded ingest budget returns 429 with Retry-After on either path."""
+    from app.routers import telemetry
+
+    monkeypatch.setattr(telemetry.settings, "synthetic_ingest_token", "sekrit")
+
+    with patch(
+        "app.routers.telemetry.check_rate_limit",
+        new_callable=AsyncMock,
+        return_value=42,
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            await ingest_synthetic_result(
+                result=_make_synthetic_result(),
+                request=_make_request(),
+                db=MagicMock(),
+                x_synthetic_ingest_token="sekrit",
+            )
+
+    assert exc_info.value.status_code == 429
+    assert exc_info.value.headers["Retry-After"] == "42"
 
 async def test_telemetry_enriches_image_and_category_names(
     caplog: pytest.LogCaptureFixture,
