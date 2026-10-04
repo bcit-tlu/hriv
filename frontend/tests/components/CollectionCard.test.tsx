@@ -87,6 +87,32 @@ describe('CollectionCard', () => {
     expect(screen.queryByRole('button', { name: /^Delete/ })).not.toBeInTheDocument()
   })
 
+  it('shows a transfer affordance only when canTransfer grants it', () => {
+    const onTransfer = vi.fn()
+    const collection = makeCollectionSummary({
+      name: 'Mine',
+      permissions: { canEdit: false, canDelete: false, canTransfer: true },
+    })
+    const { unmount } = render(
+      <CollectionCard collection={collection} onOpen={vi.fn()} onTransfer={onTransfer} />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Transfer Mine' }))
+    expect(onTransfer).toHaveBeenCalledWith(collection)
+    unmount()
+
+    render(
+      <CollectionCard
+        collection={makeCollectionSummary({
+          name: 'Shared',
+          permissions: { canEdit: true, canDelete: true, canTransfer: false },
+        })}
+        onOpen={vi.fn()}
+        onTransfer={onTransfer}
+      />,
+    )
+    expect(screen.queryByRole('button', { name: 'Transfer Shared' })).not.toBeInTheDocument()
+  })
+
   it('does not open the collection when an action button is clicked', () => {
     const onOpen = vi.fn()
     const onDelete = vi.fn()

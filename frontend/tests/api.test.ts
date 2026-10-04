@@ -62,6 +62,7 @@ import {
   deleteCollection,
   replaceCollectionImages,
   saveCollectionViewport,
+  transferCollection,
   collectionConflictCurrent,
   fetchOidcEnabled,
   getOidcLoginUrl,
@@ -1065,6 +1066,20 @@ describe('Collections API', () => {
     expect(url).toBe('/api/collections/5/viewport')
     expect(init.method).toBe('PUT')
     expect(JSON.parse(init.body)).toEqual({ viewport_state: { zoom: 2 }, version: 4 })
+  })
+
+  it('transferCollection POSTs exactly one owner target with version', async () => {
+    mockFetch.mockReturnValue(jsonResponse(makeApiCollection()))
+    await transferCollection(5, { user_id: 9, version: 4 })
+    let [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/collections/5/transfer')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body)).toEqual({ user_id: 9, version: 4 })
+
+    await transferCollection(5, { program_id: 3, version: 4 })
+    ;[url, init] = mockFetch.mock.calls[1]
+    expect(url).toBe('/api/collections/5/transfer')
+    expect(JSON.parse(init.body)).toEqual({ program_id: 3, version: 4 })
   })
 
   it('a stale-version 409 exposes the current CollectionOut via collectionConflictCurrent', async () => {

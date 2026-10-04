@@ -31,6 +31,7 @@ docker compose up -d --build   # frontend :5173, backend :8000, db, redis, worke
 | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------- |
 | Seed accounts/data, API auth token                                                         | [references/seed-data.md](references/seed-data.md)                     |
 | UI navigation, tabs, modals, category/group/program management, in-app guide               | [references/ui-navigation.md](references/ui-navigation.md)             |
+| Collections tab, viewers, filters, ownership transfer, orphaned-collection admin flow      | [references/collections.md](references/collections.md)                 |
 | OpenSeadragon viewer toolbar, magnification badge, canvas annotation edit mode (Fabric.js) | [references/viewer.md](references/viewer.md)                           |
 | Metadata operations (optimistic concurrency, `metadata_extra_merge`, injecting test data)  | [references/metadata-ops.md](references/metadata-ops.md)               |
 | Drag-and-drop, tile reorder persistence, file drops, synthetic events                      | [references/drag-and-drop.md](references/drag-and-drop.md)             |

@@ -547,31 +547,50 @@ vi.mock('../src/components/PeoplePage', () => ({
     <div data-testid="people-page" data-readonly={String(readOnly)} />
   ),
 }))
-vi.mock('../src/components/CollectionsPage', () => ({
-  default: ({
-    selectedCollectionId,
-    onOpenCollection,
-    onCloseCollection,
-    onOpenImage,
-  }: {
-    selectedCollectionId: number | null
-    onOpenCollection: (id: number) => void
-    onCloseCollection: () => void
-    onOpenImage: (image: typeof mockImage) => void
-  }) => (
-    <div data-testid="collections-page" data-selected={String(selectedCollectionId)}>
-      <button type="button" onClick={() => onOpenCollection(5)}>
-        Open collection 5
-      </button>
-      <button type="button" onClick={onCloseCollection}>
-        Close collection
-      </button>
-      <button type="button" onClick={() => onOpenImage(mockImage)}>
-        Open collection image
-      </button>
-    </div>
-  ),
+const collectionsPageProps = vi.hoisted(() => ({
+  current: null as Record<string, unknown> | null,
 }))
+vi.mock('../src/components/CollectionsPage', () => ({
+  default: (props: Record<string, unknown>) => {
+    collectionsPageProps.current = props
+    const {
+      selectedCollectionId,
+      selectedCollectionItemId,
+      onOpenCollection,
+      onCloseCollection,
+      onOpenImage,
+      onSelectCollectionItem,
+    } = props as {
+      selectedCollectionId: number | null
+      selectedCollectionItemId: number | null
+      onOpenCollection: (id: number) => void
+      onCloseCollection: () => void
+      onOpenImage: (image: typeof mockImage) => void
+      onSelectCollectionItem: (imageId: number) => void
+    }
+    return (
+      <div
+        data-testid="collections-page"
+        data-selected={String(selectedCollectionId)}
+        data-item={String(selectedCollectionItemId)}
+      >
+        <button type="button" onClick={() => onOpenCollection(5)}>
+          Open collection 5
+        </button>
+        <button type="button" onClick={onCloseCollection}>
+          Close collection
+        </button>
+        <button type="button" onClick={() => onOpenImage(mockImage)}>
+          Open collection image
+        </button>
+        <button type="button" onClick={() => onSelectCollectionItem(99)}>
+          Select item 99
+        </button>
+      </div>
+    )
+  },
+}))
+const collectionsDataMocks = vi.hoisted(() => ({ transfer: vi.fn() }))
 vi.mock('../src/useCollectionsData', () => ({
   useCollectionsData: () => ({
     collections: [],
@@ -588,6 +607,10 @@ vi.mock('../src/useCollectionsData', () => ({
     create: vi.fn(),
     update: vi.fn(),
     remove: vi.fn(),
+    reorderImages: vi.fn(),
+    saveViewport: vi.fn(),
+    transfer: collectionsDataMocks.transfer,
+    renewCollectionImage: vi.fn(),
   }),
 }))
 vi.mock('../src/components/ManagePage', () => ({ default: () => null }))
@@ -595,10 +618,19 @@ const addToCollectionMocks = vi.hoisted(() => ({
   addImagesToCollection: vi.fn(),
   createCollectionWithImages: vi.fn(),
 }))
+const searchCollectionMocks = vi.hoisted(() => ({
+  collections: [] as { id: number; name: string }[],
+}))
 vi.mock('../src/useAddToCollection', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/useAddToCollection')>()),
   ...addToCollectionMocks,
   useEditableCollections: () => ({ collections: [], loading: false, error: null, reload: vi.fn() }),
+  useVisibleCollections: (enabled: boolean) => ({
+    collections: enabled ? searchCollectionMocks.collections : [],
+    loading: false,
+    error: null,
+    reload: vi.fn(),
+  }),
 }))
 vi.mock('../src/components/AddToCollectionDialog', () => ({
   default: ({
@@ -713,21 +745,34 @@ vi.mock('../src/components/SearchModal', () => ({
   default: ({
     open,
     users,
+    collections,
     onClose,
     onSelectImage,
+    onSelectCollection,
+    onAddImagesToCollection,
   }: {
     open: boolean
     users: unknown[]
+    collections?: { id: number; name: string }[]
     onClose: () => void
     onSelectImage: (image: typeof mockSecondImage, categoryPath: typeof mockCategories) => void
+    onSelectCollection?: (collectionId: number) => void
+    onAddImagesToCollection?: (imageIds: number[]) => void
   }) => (
     <>
       {open && <div>search users: {users.length}</div>}
+      {open && <div data-testid="search-collection-count">{collections?.length ?? 0}</div>}
       <button type="button" onClick={onClose}>
         Close search
       </button>
       <button type="button" onClick={() => onSelectImage(mockSecondImage, mockCategories)}>
         Select second image from search
+      </button>
+      <button type="button" onClick={() => onSelectCollection?.(5)}>
+        Select collection 5
+      </button>
+      <button type="button" onClick={() => onAddImagesToCollection?.([10, 11])}>
+        Add selected images to collection
       </button>
     </>
   ),
@@ -1786,6 +1831,81 @@ describe('App collections deep links (#1414)', () => {
     })
     await waitFor(() => expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument())
   })
+
+  it('restores ?collection={id}&item={image_id} on load (#1416)', async () => {
+    window.history.replaceState(null, '', '/?collection=5&item=99')
+    await renderWithCollectionsEnabled()
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '5')
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', '99')
+  })
+
+  it('forwards collection transfer calls to collectionsData.transfer (#1419)', async () => {
+    window.history.replaceState(null, '', '/?page=collections')
+    await renderWithCollectionsEnabled()
+    const onTransfer = collectionsPageProps.current?.onTransfer as (
+      id: number,
+      target: unknown,
+    ) => Promise<unknown>
+    await act(async () => {
+      await onTransfer(5, { programId: 2 })
+    })
+    expect(collectionsDataMocks.transfer).toHaveBeenCalledWith(5, { programId: 2 })
+  })
+
+  it('ignores ?item= without a collection param', async () => {
+    window.history.replaceState(null, '', '/?item=99')
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+    expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Drop files on grid' })).toBeInTheDocument()
+  })
+
+  it('pushes ?collection={id}&item={image_id} history when the sequence position changes', async () => {
+    window.history.replaceState(null, '', '/?collection=5')
+    await renderWithCollectionsEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Select item 99' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', '99')
+    expect(pushNavStateMock).toHaveBeenLastCalledWith('collections', [], null, {
+      collection: '5',
+      item: '99',
+    })
+  })
+
+  it('restores the sequence position from the URL on back/forward', async () => {
+    window.history.replaceState(null, '', '/?collection=5')
+    await renderWithCollectionsEnabled()
+
+    window.history.replaceState(null, '', '/?collection=5&item=99')
+    act(() => {
+      popStateHandler!('collections', [], null)
+    })
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', '99')
+
+    window.history.replaceState(null, '', '/?collection=5')
+    act(() => {
+      popStateHandler!('collections', [], null)
+    })
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', 'null')
+  })
+
+  it('clears the sequence position when the collection is closed or another opens', async () => {
+    window.history.replaceState(null, '', '/?collection=5&item=99')
+    await renderWithCollectionsEnabled()
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', '99')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close collection' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', 'null')
+
+    window.history.replaceState(null, '', '/?collection=5&item=99')
+    act(() => {
+      popStateHandler!('collections', [], null)
+    })
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', '99')
+    fireEvent.click(screen.getByRole('button', { name: 'Open collection 5' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', 'null')
+  })
 })
 
 describe('App collections feature flag (COLLECTIONS_ENABLED)', () => {
@@ -1958,7 +2078,7 @@ describe('App "Add to Collection" from the image view (#1415)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Pick collection' }))
     expect(
       await screen.findByText(
-        '"Skull set" already holds 4 images, the most a synchronized collection can show.',
+        'Adding this selection to "Skull set" would exceed the 4-image limit for synchronized collections.',
       ),
     ).toBeInTheDocument()
     expect(screen.getByTestId('add-to-collection-dialog')).toBeInTheDocument()
@@ -1994,5 +2114,102 @@ describe('App "Add to Collection" from the image view (#1415)', () => {
     expect(await screen.findByText('Added to "Fresh".')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'View collection' }))
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '11')
+  })
+})
+
+describe('App search collections integration (#1418)', () => {
+  const originalUrl = `${window.location.pathname}${window.location.search}`
+
+  beforeEach(() => {
+    resetFixtures()
+    popStateHandler = null
+    addToCollectionMocks.addImagesToCollection.mockReset()
+    addToCollectionMocks.createCollectionWithImages.mockReset()
+    searchCollectionMocks.collections = []
+  })
+
+  afterEach(() => {
+    window.history.replaceState(null, '', originalUrl)
+  })
+
+  it("passes the caller's visible collections to the search modal when the flag is on", async () => {
+    searchCollectionMocks.collections = [{ id: 5, name: 'Skull set' }]
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Shell search' }))
+    expect(await screen.findByTestId('search-collection-count')).toHaveTextContent('1')
+  })
+
+  it('passes no collections to the search modal when the flag is off', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({ collections: false })
+    searchCollectionMocks.collections = [{ id: 5, name: 'Skull set' }]
+    render(<App />)
+    await waitFor(() => expect(apiMocks.fetchFeatures).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: 'Shell search' }))
+    expect(await screen.findByTestId('search-collection-count')).toHaveTextContent('0')
+  })
+
+  it('navigates to ?collection={id} when a collection result is selected', async () => {
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Shell search' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Select collection 5' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '5')
+    expect(pushNavStateMock).toHaveBeenLastCalledWith('collections', [], null, { collection: '5' })
+  })
+
+  it('opens Add to Collection with the multi-selected image ids even with no image open', async () => {
+    addToCollectionMocks.addImagesToCollection.mockResolvedValue({
+      status: 'added',
+      collection: { id: 9, name: 'Skull set' },
+      addedCount: 2,
+    })
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+    // No image is open — selection came from search results.
+    fireEvent.click(screen.getByRole('button', { name: 'Shell search' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add selected images to collection' }))
+
+    expect(screen.getByTestId('add-to-collection-dialog')).toHaveAttribute(
+      'data-image-ids',
+      '10,11',
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Pick collection' }))
+    await waitFor(() =>
+      expect(addToCollectionMocks.addImagesToCollection).toHaveBeenCalledWith(9, [10, 11]),
+    )
+    expect(await screen.findByText('Added 2 images to "Skull set".')).toBeInTheDocument()
+  })
+
+  it('reports a genuinely overflowing synchronized add with a count-neutral message', async () => {
+    // Under-cap rows stay clickable (membership dedupe is authoritative), so
+    // a 'full' result can arrive from a collection holding fewer than four.
+    addToCollectionMocks.addImagesToCollection.mockResolvedValue({
+      status: 'full',
+      collection: { id: 9, name: 'Skull set' },
+    })
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Shell search' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add selected images to collection' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Pick collection' }))
+
+    await waitFor(() =>
+      expect(addToCollectionMocks.addImagesToCollection).toHaveBeenCalledWith(9, [10, 11]),
+    )
+    expect(
+      await screen.findByText(
+        'Adding this selection to "Skull set" would exceed the 4-image limit for synchronized collections.',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('add-to-collection-dialog')).toBeInTheDocument()
   })
 })

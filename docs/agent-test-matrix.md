@@ -49,6 +49,21 @@ TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
 - "Add to Collection" from the image view (#1415: `AddToCollectionDialog.tsx`,
   `useAddToCollection.ts`, the viewer action bar in `App.tsx`):
   `npm test -- AddToCollectionDialog useAddToCollection App.test`
+- Sequence collection viewer (#1416: `SequenceCollectionViewer.tsx`,
+  `?item=` in `useShareableImageState.ts`, `reorderImages` /
+  `renewCollectionImage` in `useCollectionsData.ts`, detail mount in
+  `CollectionsPage.tsx`):
+  `npm test -- SequenceCollectionViewer useCollectionsData useShareableImageState CollectionsPage App.test`
+- Synchronized collection viewer (#1417: `SynchronizedCollectionViewer.tsx`,
+  `onViewerReady` in `ImageViewer.tsx`, `viewportStateFromSaved` in
+  `imageViewerUtils.ts`, `saveViewport` in `useCollectionsData.ts`, detail
+  mount in `CollectionsPage.tsx`):
+  `npm test -- SynchronizedCollectionViewer useCollectionsData ImageViewer CollectionsPage App.test`
+- Ownership/admin management UI (#1419: `TransferCollectionDialog.tsx`,
+  `transfer` in `useCollectionsData.ts`, `transferCollection` in `api.ts`,
+  detail header + card affordances in `CollectionsPage.tsx` /
+  `CollectionCard.tsx`):
+  `npm test -- TransferCollectionDialog CollectionsPage CollectionCard useCollectionsData api.test App.test`
 - Storybook (stories + a11y): `npm run test:storybook -- Collection`
 - Collection visibility reuses the category dual gate — if you touched
   `visibility.py` also run the "Changed groups" set above. See
@@ -83,7 +98,7 @@ TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
 
 ### Changed search modal
 
-- frontend: `npm test -- SearchModal`
+- frontend: `npm test -- SearchModal useAddToCollection`
 - See [ui-behaviour-spec.md](ui-behaviour-spec.md).
 
 ### Changed admin import/export

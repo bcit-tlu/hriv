@@ -10,19 +10,57 @@ been switched on there — ask your administrator.)
 
 ## Two kinds of collection
 
-- **Synchronized** – up to four images shown side by side; pan and zoom will
-  move all of them together once the viewer arrives.
+- **Synchronized** – two images shown side by side; pan and zoom move both
+  of them together.
 - **Sequence** – any number of images in a fixed order, stepped through one
   at a time.
 
 You choose the type when you create a collection and can't change it later —
 create a new collection instead.
 
-::: note Viewers are on the way
-For now, opening a collection lists its images with an **Open image** link
-for each. The side-by-side and step-through viewers are coming in a later
-release.
+## Viewing a synchronized collection
+
+Open a synchronized collection and you get two read-only viewers side by
+side — the first two images in the collection — with annotations and
+measurement markings visible on each.
+
+- Pan, zoom or rotate either pane and the other follows, keeping its
+  relative position — handy when two views highlight different spots.
+- Each pane's caption shows the image name and an **Open image** link to
+  the normal image view.
+- If the collection holds more than two images, only the first two render —
+  a note tells you how many more are stored.
+- **Link views** (the switch above the viewers) unlinks the panes so you
+  can adjust one side on its own; switching it back on keeps the new
+  relative position.
+- **Reset view** returns both panes to the saved view (or their starting
+  positions if none was saved).
+- On a phone held upright the panes are replaced by a hint to rotate to
+  landscape — your view is still there when you rotate back.
+
+::: tip Saving the view
+If you can edit the collection, a **Save view** button stores both panes'
+current positions for everyone — next time the collection opens, it lands
+exactly there. Anyone can pan and zoom freely; only saving changes what
+others see. Use the saved positions to line the two images up around
+different highlights.
 :::
+
+## Viewing a sequence collection
+
+Open a sequence collection and you get a read-only viewer that shows one
+image at a time — annotations and measurement markings on each image are
+visible but can't be changed here.
+
+- Step through with **Previous** / **Next**, click a thumbnail in the strip
+  below the viewer, or press the ← and → arrow keys.
+- The position (`n of N`) is part of the page link, so copying the URL
+  shares the exact image you're looking at.
+- **Open image** jumps to the normal image view, where you can edit
+  annotations with the usual permissions.
+- If you can edit the collection, a **Reorder** button turns the thumbnail
+  strip into a drag-and-drop list; drag images into place and choose
+  **Done**.
 
 ## Create a collection
 
@@ -54,6 +92,16 @@ Type in the filter box to narrow a long list.
 The button is unavailable while you are editing annotations on the canvas —
 finish or cancel that first.
 
+### Add several images at once (from search)
+
+In the top-bar **Search**, click **Select** next to the result count, tick
+each image you want, then click **Add to collection** in the footer. The
+same dialog opens with all of them selected. You can keep selecting across
+searches — images you picked under an earlier query still count, and they
+are added in the order they appeared in your results. Only image results
+can be selected; categories, collections, and other kinds still open when
+you click them.
+
 ## Find a collection
 
 Use the filters above the grid:
@@ -65,6 +113,10 @@ Use the filters above the grid:
 
 Each card shows the cover image, how many images it holds, who owns it, and
 chips for its type and visibility.
+
+Collections also appear in the top-bar **Search** — both name and
+description are searched, and the **Collections** chip narrows results to
+just collections. Choosing a result opens it here.
 
 ## Edit or delete
 
@@ -80,6 +132,25 @@ the collection page show **pencil** and **trash** icons.
 If someone else edited the collection while your dialog was open, saving
 shows a "modified by another user" message with a **Reload** button. Reload
 picks up their changes so you can re-apply yours.
+:::
+
+## Transfer ownership
+
+If a collection shows a **Transfer** action (on its card or at the top of the
+collection page), you can hand it to a new owner:
+
+- **Administrators** can give it to any active user or to any program.
+- **Instructors** can give it to a program they belong to.
+
+Pick the new owner and confirm — the collection keeps its images and
+visibility; only who manages it changes. If the collection was edited by
+someone else while the dialog was open, you'll see the "modified by another
+user" message — reopen the dialog and try again.
+
+::: tip Orphaned collections
+When a collection's owner user or program is deleted, the collection becomes
+_orphaned_. Administrators can find these with the **Owner** filter's
+_No owner (orphaned)_ option and give them a new owner with **Transfer**.
 :::
 
 ## Share a link

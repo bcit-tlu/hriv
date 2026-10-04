@@ -63,12 +63,17 @@ import {
   updateImageInTree,
 } from './treeUtils'
 import UploadImageModal from './components/UploadImageModal'
-import { SYNCHRONIZED_MAX_IMAGES, parseCollectionIdParam } from './collectionUtils'
+import {
+  SYNCHRONIZED_MAX_IMAGES,
+  parseCollectionIdParam,
+  parseCollectionItemParam,
+} from './collectionUtils'
 import { useCollectionsData } from './useCollectionsData'
 import {
   addImagesToCollection,
   createCollectionWithImages,
   useEditableCollections,
+  useVisibleCollections,
 } from './useAddToCollection'
 import { useFeatures } from './useFeatures'
 import { isAcceptedFile } from './fileUtils'
@@ -166,9 +171,13 @@ export default function App() {
   const features = useFeatures()
   const collectionsEnabled = features?.collections === true
 
-  // `?collection={id}` implies the Collections page (deep link, #1414).
+  // `?collection={id}` implies the Collections page (deep link, #1414);
+  // `&item={image_id}` is the sequence viewer position (#1416).
   const [selectedCollectionId, setSelectedCollectionId] = useState<number | null>(() =>
     parseCollectionIdParam(window.location.search),
+  )
+  const [selectedCollectionItemId, setSelectedCollectionItemId] = useState<number | null>(() =>
+    parseCollectionItemParam(window.location.search),
   )
   const [page, setPage] = useState<Page>(() => {
     if (parseCollectionIdParam(window.location.search) != null) return 'collections'
@@ -554,6 +563,7 @@ export default function App() {
     page,
     path,
     collectionId: selectedCollectionId,
+    collectionItemId: selectedCollectionItemId,
     setPath,
     setSelectedImage,
   })
@@ -646,9 +656,13 @@ export default function App() {
       ) as Page
       setPage(validPage)
       // The collection id lives in the URL (`?collection=`), which the browser
-      // has already restored by the time popstate fires.
+      // has already restored by the time popstate fires. `?item=` (sequence
+      // position) is restored the same way.
       setSelectedCollectionId(
         validPage === 'collections' ? parseCollectionIdParam(window.location.search) : null,
+      )
+      setSelectedCollectionItemId(
+        validPage === 'collections' ? parseCollectionItemParam(window.location.search) : null,
       )
 
       if (validPage !== 'browse') {
@@ -1493,6 +1507,7 @@ export default function App() {
       runCanvasNavigation(() => {
         setPage('collections')
         setSelectedCollectionId(id)
+        setSelectedCollectionItemId(null)
         clearImage()
         setPath([])
         pushNavState('collections', [], null, { collection: String(id) })
@@ -1503,18 +1518,61 @@ export default function App() {
 
   const handleCloseCollection = useCallback(() => {
     setSelectedCollectionId(null)
+    setSelectedCollectionItemId(null)
     pushNavState('collections')
   }, [pushNavState])
 
-  // "Add to Collection" from the image view (#1415).
-  const [addToCollectionOpen, setAddToCollectionOpen] = useState(false)
-  const addToCollectionActive =
-    collectionsEnabled && addToCollectionOpen && selectedImage != null && currentUser != null
-  const editableCollections = useEditableCollections(addToCollectionActive)
-  const addToCollectionImageIds = useMemo(
-    () => (selectedImage ? [selectedImage.id] : []),
-    [selectedImage],
+  // Sequence viewer: `?collection={id}&item={image_id}` keeps the position
+  // shareable and in history, so back steps through viewed items (#1416).
+  const handleSelectCollectionItem = useCallback(
+    (imageId: number) => {
+      setSelectedCollectionItemId(imageId)
+      if (selectedCollectionId != null) {
+        pushNavState('collections', [], null, {
+          collection: String(selectedCollectionId),
+          item: String(imageId),
+        })
+      }
+    },
+    [pushNavState, selectedCollectionId],
   )
+
+  // Drop an `?item=` that does not resolve to a visible member (deleted image,
+  // or one hidden from this user); the URL sync effect then silently rewrites
+  // the link to the bare `?collection={id}`.
+  useEffect(() => {
+    const detail = collectionsData.detail
+    if (
+      detail == null ||
+      selectedCollectionItemId == null ||
+      detail.images.some((img) => img.id === selectedCollectionItemId)
+    ) {
+      return
+    }
+    setSelectedCollectionItemId(null)
+  }, [collectionsData.detail, selectedCollectionItemId])
+
+  // "Add to Collection" from the image view (#1415) and from search
+  // multi-select (#1418) — both paths set the target image ids before opening.
+  const [addToCollectionOpen, setAddToCollectionOpen] = useState(false)
+  const [addToCollectionImageIds, setAddToCollectionImageIds] = useState<number[]>([])
+  const addToCollectionActive =
+    collectionsEnabled &&
+    addToCollectionOpen &&
+    addToCollectionImageIds.length > 0 &&
+    currentUser != null
+  const editableCollections = useEditableCollections(addToCollectionActive)
+
+  // Visible collections indexed by the search modal (#1418); the backend
+  // list is already access-filtered for the caller.
+  const searchableCollections = useVisibleCollections(
+    collectionsEnabled && searchOpen && currentUser != null,
+  )
+
+  const handleSearchAddToCollection = useCallback((imageIds: number[]) => {
+    setAddToCollectionImageIds(imageIds)
+    setAddToCollectionOpen(true)
+  }, [])
 
   const reportAddedToCollection = useCallback(
     (collection: { id: number; name: string }, addedCount: number) => {
@@ -1549,7 +1607,7 @@ export default function App() {
           return true
         }
         setErrorSnack(
-          `"${result.collection.name}" already holds ${SYNCHRONIZED_MAX_IMAGES} images, the most a synchronized collection can show.`,
+          `Adding this selection to "${result.collection.name}" would exceed the ${SYNCHRONIZED_MAX_IMAGES}-image limit for synchronized collections.`,
         )
         return false
       } catch (err) {
@@ -1687,10 +1745,17 @@ export default function App() {
               onOpenCollection={handleOpenCollection}
               onCloseCollection={handleCloseCollection}
               onOpenImage={handleOpenCollectionImage}
+              selectedCollectionItemId={selectedCollectionItemId}
+              onSelectCollectionItem={handleSelectCollectionItem}
+              onReorderImages={collectionsData.reorderImages}
+              onCollectionImageRenewed={collectionsData.renewCollectionImage}
+              onViewerError={setErrorSnack}
+              onSaveViewport={collectionsData.saveViewport}
               loadCollection={collectionsData.loadCollection}
               onCreate={collectionsData.create}
               onUpdate={collectionsData.update}
               onDelete={collectionsData.remove}
+              onTransfer={collectionsData.transfer}
             />
           ) : page === 'people' && canViewPeople ? (
             <PeoplePage
@@ -1983,7 +2048,10 @@ export default function App() {
                         <Button
                           variant="outlined"
                           startIcon={<PlaylistAddIcon />}
-                          onClick={() => setAddToCollectionOpen(true)}
+                          onClick={() => {
+                            setAddToCollectionImageIds([selectedImage.id])
+                            setAddToCollectionOpen(true)
+                          }}
                           disabled={canvasEditActive}
                           sx={inactiveViewerActionSx}
                         >
@@ -2735,7 +2803,7 @@ export default function App() {
         onGroupUpdated={handleGroupUpdated}
       />
 
-      {collectionsEnabled && selectedImage && currentUser && (
+      {collectionsEnabled && currentUser && (
         <AddToCollectionDialog
           open={addToCollectionOpen}
           onClose={() => setAddToCollectionOpen(false)}
@@ -2776,6 +2844,10 @@ export default function App() {
         uncategorizedImages={uncategorizedImages}
         programs={programs}
         users={searchUsers}
+        collections={searchableCollections.collections}
+        collectionsEnabled={collectionsEnabled}
+        onSelectCollection={handleOpenCollection}
+        onAddImagesToCollection={handleSearchAddToCollection}
         excludeHidden={isStudent}
         suppressExtendedResults={isStudent || currentUser?.role === 'staff'}
         onSelectCategory={(catPath) => {
