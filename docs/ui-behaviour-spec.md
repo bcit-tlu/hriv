@@ -116,7 +116,10 @@ images> / Empty` format used on category tiles.
   filled `#263238` corner handles with a white stroke) is applied to every
   annotation object — loaded, drawn, pasted, or toolbar-created — so selected
   objects stay legible over imagery. The dashed guides are black and wrap the
-  annotation's painted bounds including its stroke.
+  annotation's painted bounds including its stroke. Arrow annotations inflate
+  their Fabric bounding box to include the arrowhead (`ArrowLine` in
+  `src/components/arrowLine.ts`), so the selection box and hit area cover the
+  whole painted glyph and stay grabbable.
 - The canvas annotation toolbar starts flush against the top of the viewer
   frame, horizontally centred. Its left-edge grip handle moves it anywhere
   inside the frame: drag with a pointer (grab/grabbing cursor,

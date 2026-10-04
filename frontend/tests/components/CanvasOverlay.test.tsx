@@ -646,6 +646,44 @@ describe('CanvasOverlay', () => {
       expect(guide.stroke).toBe('#000000')
     })
 
+    it('wraps an arrow guide around the arrowhead too', () => {
+      ;(viewer.viewport.pixelFromPoint as Mock).mockImplementation(
+        (pt: { x: number; y: number }) => ({ x: pt.x * 1000, y: pt.y * 1000 }),
+      )
+      render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[
+            makeAnnotation({
+              id: 'arrow-guide',
+              type: 'arrow',
+              vpX: 0.1,
+              vpY: 0.1,
+              vpWidth: 0,
+              vpHeight: 0,
+              vpX2: 0.4,
+              vpY2: 0.1,
+              strokeWidth: 2,
+            }),
+          ]}
+          onAnnotationsChange={noop}
+          canEdit={true}
+          editMode={true}
+          onEditModeChange={noop}
+        />,
+      )
+
+      const fc = fabricTestState.canvases.at(-1)
+      const guide = fc
+        .getObjects()
+        .find((obj: { _annotationGuideFor?: string }) => obj._annotationGuideFor === 'arrow-guide')
+
+      // Shaft spans 300px x 0; the guide must also cover the ~24px head
+      // painted past each side of the bare line bounds (#1363).
+      expect(guide.width).toBeGreaterThanOrEqual(300 + 48)
+      expect(guide.height).toBeGreaterThanOrEqual(48)
+    })
+
     it('removes guides from selected annotations while preserving guides on unselected ones', () => {
       render(
         <CanvasOverlay

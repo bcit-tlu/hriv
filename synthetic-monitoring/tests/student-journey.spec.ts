@@ -13,10 +13,7 @@ import { SyntheticJourneyRecorder } from './journeyRecorder'
  * Steps are wrapped in `test.step(...)` so the reporter (and CI logs) show a
  * readable, timed breakdown of the journey.
  */
-test('synthetic student can log in, browse, and view an image', async ({
-  page,
-  baseURL,
-}) => {
+test('synthetic student can log in, browse, and view an image', async ({ page, baseURL }) => {
   const email = process.env.SYNTHETIC_EMAIL || 'synthetic.student@example.ca'
   const password = process.env.SYNTHETIC_PASSWORD || 'password'
   const categoryPathValue = process.env.SYNTHETIC_CATEGORY_PATH?.trim() || 'Synthetic Monitoring'
