@@ -169,7 +169,8 @@ edit/delete controls are gated by `permissions.can_edit` / `can_delete`
 returned by the API (UX only — the backend re-checks).
 
 - **Given** a user opens the Collections tab (`?page=collections`), **When**
-  `GET /api/collections` resolves, **Then** a responsive card grid renders one
+  `GET /api/collections` resolves, **Then** a fixed-width flex-wrap card grid
+  (300px tiles, matching the Browse tile grid) renders one
   `CollectionCard` per summary (cover, name, image count, owner, type chip,
   visibility chip); an empty result shows the empty state (whose
   **Create a collection** link opens the create dialog when no filters are

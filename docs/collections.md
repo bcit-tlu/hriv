@@ -330,8 +330,9 @@ drawer. `?page=collections` opens the list. `App` only mounts
 `useCollectionsData` while the tab is active, so browsing images never hits
 `/api/collections`.
 
-**List.** `GET /api/collections` rendered as a responsive card grid
-(1 → 2 → 3 → 4 columns at `xs/sm/md/lg`). Each `CollectionCard` shows the
+**List.** `GET /api/collections` rendered as a fixed-width flex-wrap card
+grid (300px tiles, `gap: 2` — the same parameters as the Browse tile grid, so
+cards do not stretch with the viewport). Each `CollectionCard` shows the
 cover (`RenewingThumbnail` with a collection-scoped renewer that refreshes the
 token via `GET /api/collections/{id}`; a renewed cover that loads and later
 expires again is renewed once more, while a cover that never loads is renewed
