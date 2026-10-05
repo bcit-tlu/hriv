@@ -63,8 +63,9 @@ export async function addImagesToCollection(
  * Remove `imageIds` from a collection's member list — the undo path for the
  * Browse drop-add gesture (#1530). When `base` (the record returned by the
  * add being undone) is supplied, the whole-replace `PUT /images` carries its
- * `version`, so any intervening membership change by another editor 409s
- * instead of silently rebasing over it — matching the move-undo convention.
+ * `version`, so any intervening write to the collection — membership or
+ * otherwise — 409s instead of silently rebasing over it (the undo surfaces
+ * an error snackbar), matching the move-undo convention.
  * Without `base` the current record is fetched first, giving lenient
  * "remove from latest" semantics. Ids that are not members are ignored;
  * when nothing is removed the PUT is skipped.

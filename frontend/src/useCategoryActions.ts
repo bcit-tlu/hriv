@@ -715,9 +715,9 @@ export function useCategoryActions({
         await loadUncategorizedCollections?.()
         setMoveSnack({
           message: `Added “${imgName}” to “${result.collection.name}”.`,
-          // Undo pins the post-add record's version: a later membership
-          // change by another editor surfaces as a conflict instead of the
-          // undo silently rebasing over it (repo undo convention).
+          // Undo pins the post-add record's version: a later write to the
+          // collection by another editor surfaces as a conflict instead of
+          // the undo silently rebasing over it (repo undo convention).
           onUndo: async () => {
             try {
               setMoveSnack(null)

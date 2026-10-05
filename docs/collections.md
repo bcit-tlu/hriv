@@ -519,9 +519,9 @@ gated. A successful add refreshes the scope (the tile's
 `imageCount`/`coverThumb` come from the summary row) and offers an undo
 snackbar that removes the member via `removeImagesFromCollection` (the same
 whole-replace `PUT …/images`). Undo pins the version returned by the add:
-an intervening membership write by another editor answers 409, which the
-snackbar reports as an undo failure rather than silently rebasing over the
-other change. Already-member drops surface an info snackbar; a full
+any intervening write to the collection — membership, name, placement —
+answers 409, which the snackbar reports as an undo failure rather than
+silently rebasing over the other change. Already-member drops surface an info snackbar; a full
 synchronized collection surfaces the 4-image limit error. See
 `docs/drag-and-drop.md` for the collision contract.
 
