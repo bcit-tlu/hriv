@@ -43,6 +43,9 @@ function sortableSource(id: string, index: number, initialIndex = index) {
 
 let capturedOnDragEnd: DragEndHandler | undefined
 let capturedOnDragStart: DragStartHandler | undefined
+// Per-tile `useSortable` inputs keyed by tile id — lets tests assert the
+// `disabled` config (boolean or granular {draggable, droppable}, #1530).
+const sortableInputs = new Map<string | number, { disabled?: unknown }>()
 
 vi.mock('@dnd-kit/react', async () => {
   const actual = await vi.importActual<typeof import('@dnd-kit/react')>('@dnd-kit/react')
@@ -53,6 +56,18 @@ vi.mock('@dnd-kit/react', async () => {
       capturedOnDragStart = props.onDragStart as DragStartHandler | undefined
       const ActualProvider = actual.DragDropProvider as React.ComponentType<Record<string, unknown>>
       return <ActualProvider {...props} />
+    },
+  }
+})
+
+vi.mock('@dnd-kit/react/sortable', async () => {
+  const actual =
+    await vi.importActual<typeof import('@dnd-kit/react/sortable')>('@dnd-kit/react/sortable')
+  return {
+    ...actual,
+    useSortable: (input: { id: string | number; disabled?: unknown }) => {
+      sortableInputs.set(input.id, { disabled: input.disabled })
+      return actual.useSortable(input)
     },
   }
 })
@@ -114,6 +129,7 @@ describe('SortableTileGrid', () => {
   beforeEach(() => {
     capturedOnDragEnd = undefined
     capturedOnDragStart = undefined
+    sortableInputs.clear()
     tileOrdering = makeTileOrdering()
   })
 
@@ -259,6 +275,7 @@ describe('SortableTileGrid', () => {
 describe('DroppableCategoryZone (rendering + accept)', () => {
   beforeEach(() => {
     capturedOnDragEnd = undefined
+    sortableInputs.clear()
     tileOrdering = makeTileOrdering()
   })
 
@@ -324,6 +341,7 @@ describe('DroppableCategoryZone (rendering + accept)', () => {
 describe('DroppableCollectionZone (#1530)', () => {
   beforeEach(() => {
     capturedOnDragEnd = undefined
+    sortableInputs.clear()
     tileOrdering = makeTileOrdering()
   })
 
@@ -353,13 +371,77 @@ describe('DroppableCollectionZone (#1530)', () => {
     expect(screen.getAllByRole('region', { name: 'Add to collection' })).toHaveLength(1)
   })
 
-  it('still renders the zone for non-editors (disabled state)', () => {
+  it('renders the zone for collection owners regardless of role (canEditContent=false)', () => {
     renderGrid({
       currentCollections: [makeCollectionSummary({ id: 5 })],
       canEditContent: false,
     })
 
     expect(screen.getAllByRole('region', { name: 'Add to collection' })).toHaveLength(1)
+  })
+
+  it('enables drag-only image tiles for non-curators who own a collection', () => {
+    renderGrid({
+      currentImages: [makeImage({ id: 42, sortOrder: 1 })],
+      currentCollections: [makeCollectionSummary({ id: 5 })],
+      canEditContent: false,
+    })
+
+    // The image is draggable toward the add zone but never a reorder
+    // target; the collection sortable stays fully disabled (no reorder).
+    expect(sortableInputs.get('img-42')?.disabled).toEqual({
+      draggable: false,
+      droppable: true,
+    })
+    expect(sortableInputs.get('col-5')?.disabled).toBe(true)
+  })
+
+  it('keeps image tiles fully disabled for non-curators with no editable collection', () => {
+    renderGrid({
+      currentImages: [makeImage({ id: 42, sortOrder: 1 })],
+      currentCollections: [
+        makeCollectionSummary({
+          id: 5,
+          permissions: { canEdit: false, canDelete: false, canTransfer: false },
+        }),
+      ],
+      canEditContent: false,
+    })
+
+    expect(sortableInputs.get('img-42')?.disabled).toBe(true)
+  })
+
+  it('keeps image tiles fully enabled for curators', () => {
+    renderGrid({
+      currentImages: [makeImage({ id: 42, sortOrder: 1 })],
+      currentCollections: [makeCollectionSummary({ id: 5 })],
+      canEditContent: true,
+    })
+
+    expect(sortableInputs.get('img-42')?.disabled).toBe(false)
+  })
+
+  it('dispatches onDropImageOnCollection for a non-curator owner', async () => {
+    const onDropImageOnCollection = vi.fn()
+    renderGrid({
+      currentImages: [makeImage({ id: 42, sortOrder: 1 })],
+      currentCollections: [makeCollectionSummary({ id: 5 })],
+      canEditContent: false,
+      onDropImageOnCollection,
+    })
+
+    await act(async () => {
+      await capturedOnDragEnd!({
+        operation: {
+          source: { id: 'img-42' },
+          target: { id: `${DROP_COL_PREFIX}5` },
+          canceled: false,
+        },
+      })
+    })
+
+    expect(onDropImageOnCollection).toHaveBeenCalledWith(42, 5)
+    expect(tileOrdering.reportOrder).not.toHaveBeenCalled()
   })
 
   it('does not show the overlay text when not hovering', () => {
@@ -423,6 +505,7 @@ describe('DroppableCollectionZone (#1530)', () => {
 describe('handleDragEnd — move guards', () => {
   beforeEach(() => {
     capturedOnDragEnd = undefined
+    sortableInputs.clear()
     tileOrdering = makeTileOrdering()
   })
 
@@ -552,6 +635,7 @@ describe('handleDragEnd — move guards', () => {
 describe('handleDragEnd — reorder branches', () => {
   beforeEach(() => {
     capturedOnDragEnd = undefined
+    sortableInputs.clear()
     tileOrdering = makeTileOrdering()
   })
 
@@ -695,6 +779,7 @@ describe('handleDragEnd — reorder branches', () => {
 describe('drag-and-drop spec contract (docs/drag-and-drop.md)', () => {
   beforeEach(() => {
     capturedOnDragEnd = undefined
+    sortableInputs.clear()
     tileOrdering = makeTileOrdering()
   })
 
@@ -887,6 +972,7 @@ describe('drag-and-drop spec contract (docs/drag-and-drop.md)', () => {
 describe('collection tiles (#1529)', () => {
   beforeEach(() => {
     capturedOnDragEnd = undefined
+    sortableInputs.clear()
     tileOrdering = makeTileOrdering()
   })
 

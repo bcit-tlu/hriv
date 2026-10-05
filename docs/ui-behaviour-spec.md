@@ -275,7 +275,10 @@ returned by the API (UX only — the backend re-checks).
   error snackbar names the limit. **Given** the collection is not editable
   (`permissions.can_edit` false) or the drag source is a category or
   collection tile, **Then** no add zone is offered — the far-half reorder
-  behaviour is unchanged.
+  behaviour is unchanged. The add zone is ownership-gated, not curatorial:
+  a non-`canEditContent` viewer who owns a collection sees it and gets
+  drag-only image tiles (draggable toward the zone, never reorder targets);
+  move, reorder, and category filing stay `canEditContent`-gated.
 
 ### Sequence collection viewer (`SequenceCollectionViewer.test.tsx`, `useCollectionsData.test.ts`, `useShareableImageState.test.ts`)
 

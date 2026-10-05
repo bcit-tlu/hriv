@@ -1239,7 +1239,13 @@ describe('useCategoryActions', () => {
         await onUndo()
       })
 
-      expect(removeImagesFromCollectionApi).toHaveBeenCalledWith(7, [42])
+      // The post-add record is pinned as the removal's base so an
+      // intervening membership change conflicts instead of rebasing (#1530).
+      expect(removeImagesFromCollectionApi).toHaveBeenCalledWith(
+        7,
+        [42],
+        expect.objectContaining({ id: 7, version: 4 }),
+      )
     })
 
     it('undo failure shows an error snack', async () => {

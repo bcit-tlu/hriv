@@ -15,6 +15,7 @@ import { useSortable } from '@dnd-kit/react/sortable'
 import { arrayMove, move } from '@dnd-kit/helpers'
 import { CollisionPriority } from '@dnd-kit/abstract'
 import { PointerActivationConstraints } from '@dnd-kit/dom'
+import type { SortableDisabled } from '@dnd-kit/dom/sortable'
 import type { Draggable } from '@dnd-kit/abstract'
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/react'
 
@@ -47,9 +48,15 @@ const NO_GROUPS: Group[] = []
 interface SortableTileProps {
   id: string
   index: number
-  disabled: boolean
+  disabled: boolean | SortableDisabled
   children: React.ReactNode
 }
+
+// Drag-only mode for a non-curator's image tile (#1530): an image is
+// draggable toward an editable collection's "Add to collection" zone, but
+// its droppable side stays off so it can never act as a reorder target —
+// reorder and category moves remain `canEditContent`-gated.
+const IMG_DRAG_ONLY: SortableDisabled = { draggable: false, droppable: true }
 
 // Optimistic reflow: each tile is a sortable, so the grid reflows continuously
 // during a drag to preview the resulting order. The dragged source dims and the
@@ -67,6 +74,10 @@ function SortableTile({ id, index, disabled, children }: SortableTileProps) {
     collisionDetector: farHalfReorderCollision,
   })
 
+  // The grab cursor keys off the *draggable* side only — a drag-only tile
+  // (`IMG_DRAG_ONLY`) still reads as grabbable.
+  const dragOff = disabled === true || (typeof disabled === 'object' && disabled.draggable === true)
+
   return (
     <Box
       ref={ref}
@@ -75,7 +86,7 @@ function SortableTile({ id, index, disabled, children }: SortableTileProps) {
         position: 'relative',
         width: 300,
         maxWidth: '100%',
-        cursor: disabled ? undefined : isDragSource ? 'grabbing' : 'grab',
+        cursor: dragOff ? undefined : isDragSource ? 'grabbing' : 'grab',
       }}
       onDragStart={(e) => e.preventDefault()}
     >
@@ -87,7 +98,7 @@ function SortableTile({ id, index, disabled, children }: SortableTileProps) {
 interface GridTileProps {
   item: TileItem
   index: number
-  disabled: boolean
+  disabled: boolean | SortableDisabled
   renderCategoryTile: (cat: Category, wrapDroppable?: boolean) => React.ReactNode
   renderImageTile: (img: ImageItem) => React.ReactNode
   renderCollectionTile: (collection: CollectionSummary) => React.ReactNode
@@ -394,6 +405,17 @@ export default function SortableTileGrid({
         : builtItems,
     [builtItems, tileOrdering.displayOrder],
   )
+
+  // Membership editing is ownership-gated, not curatorial (#1530): a
+  // non-`canEditContent` viewer (e.g. a student owning a collection) still
+  // gets image drag handles — but only toward `drop-col-*` zones on
+  // collections they can edit; every sortable's droppable side stays off,
+  // so no reorder target exists and tile order remains read-only for them.
+  const hasEditableCollection = useMemo(
+    () => builtItems.some((i) => i.type === 'collection' && i.data.permissions.canEdit),
+    [builtItems],
+  )
+  const imageDragOnly = !canEditContent && hasEditableCollection
 
   const [items, setItems] = useState<TileItem[]>(() => orderedItems)
   const [activeItem, setActiveItem] = useState<TileItem | null>(null)
@@ -704,7 +726,13 @@ export default function SortableTileGrid({
       )
       if (!collection.permissions.canEdit) return tile
       return (
-        <DroppableCollectionZone collectionId={collection.id} disabled={!canEditContent}>
+        // Enabled by ownership (`permissions.canEdit`) regardless of role —
+        // membership editing is not curatorial, unlike `canEditContent`-gated
+        // move/reorder (#1530).
+        <DroppableCollectionZone
+          collectionId={collection.id}
+          disabled={!collection.permissions.canEdit}
+        >
           {tile}
         </DroppableCollectionZone>
       )
@@ -757,7 +785,13 @@ export default function SortableTileGrid({
               key={tileId(item)}
               item={item}
               index={index}
-              disabled={!canEditContent}
+              disabled={
+                canEditContent
+                  ? false
+                  : item.type === 'image' && imageDragOnly
+                    ? IMG_DRAG_ONLY
+                    : true
+              }
               renderCategoryTile={renderCategoryTile}
               renderImageTile={renderImageTile}
               renderCollectionTile={renderCollectionTile}

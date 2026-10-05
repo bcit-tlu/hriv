@@ -12,7 +12,12 @@ import {
   useCollectionsData,
 } from '../src/useCollectionsData'
 import type { CollectionFormValues } from '../src/components/CollectionEditDialog'
-import { makeApiCollection, makeApiCollectionSummary, makeCollection } from './helpers/fixtures'
+import {
+  makeApiCollection,
+  makeApiCollectionSummary,
+  makeCollection,
+  makeImage,
+} from './helpers/fixtures'
 
 vi.mock('../src/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/api')>()
@@ -1468,6 +1473,32 @@ describe('useCollectionsData', () => {
         version: 6,
       })
       expect(result.current.detail).toMatchObject({ id: 1, version: 7 })
+    })
+
+    it('removeImages with a base record skips the fetch and PUTs at the base version', async () => {
+      // The Browse undo pins the post-add record: the write conflicts if
+      // another editor's change landed in between instead of rebasing (#1530).
+      const base = makeCollection({
+        id: 1,
+        version: 6,
+        images: [makeImage({ id: 10 }), makeImage({ id: 42 })],
+      })
+      replaceCollectionImagesMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 7, images: [{ id: 10 }] as never[] }),
+      )
+      const { result } = renderData()
+      await waitFor(() => expect(result.current.loading).toBe(false))
+      const fetchesBefore = fetchCollectionMock.mock.calls.length
+
+      await act(async () => {
+        await result.current.removeImages(1, [42], base)
+      })
+
+      expect(fetchCollectionMock.mock.calls.length).toBe(fetchesBefore)
+      expect(replaceCollectionImagesMock).toHaveBeenCalledWith(1, {
+        image_ids: [10],
+        version: 6,
+      })
     })
   })
 })

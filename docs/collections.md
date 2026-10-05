@@ -510,13 +510,20 @@ is serialized through the collection mutation queue so it never sends a
 stale `version`). The `drop-col-<id>` zone renders only when the
 collection's `permissions.canEdit` is set — unlike filing, which is
 curatorial — and accepts `img-` drags only; category/collection drags fall
-through to the far-half reorder contract unchanged. A successful add
-refreshes the scope (the tile's `imageCount`/`coverThumb` come from the
-summary row) and offers an undo snackbar that removes the member via
-`removeImagesFromCollection` (the same whole-replace `PUT …/images`).
-Already-member drops surface an info snackbar; a full synchronized
-collection surfaces the 4-image limit error. See `docs/drag-and-drop.md`
-for the collision contract.
+through to the far-half reorder contract unchanged. Membership editing is
+ownership-gated rather than curatorial, so when the grid contains an
+editable collection, a non-`canEditContent` viewer (e.g. a student who owns
+it) gets drag-only image tiles — draggable toward `drop-col-*` zones but
+never reorder targets; move/reorder/category filing stay `canEditContent`
+gated. A successful add refreshes the scope (the tile's
+`imageCount`/`coverThumb` come from the summary row) and offers an undo
+snackbar that removes the member via `removeImagesFromCollection` (the same
+whole-replace `PUT …/images`). Undo pins the version returned by the add:
+an intervening membership write by another editor answers 409, which the
+snackbar reports as an undo failure rather than silently rebasing over the
+other change. Already-member drops surface an info snackbar; a full
+synchronized collection surfaces the 4-image limit error. See
+`docs/drag-and-drop.md` for the collision contract.
 
 ### "Add to Collection" from the image view (#1415)
 

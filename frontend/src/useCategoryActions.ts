@@ -67,9 +67,15 @@ export interface UseCategoryActionsDeps {
   ) => Promise<AddToCollectionResult>
   /**
    * Removes member images from a collection — the undo path for the Browse
-   * drop-add gesture (`useCollectionsData.removeImages`; #1530).
+   * drop-add gesture (`useCollectionsData.removeImages`; #1530). `base` pins
+   * the version the removal expects, so undo conflicts rather than rebasing
+   * over another editor's intervening membership change.
    */
-  removeImagesFromCollectionApi?: (collectionId: number, imageIds: number[]) => Promise<Collection>
+  removeImagesFromCollectionApi?: (
+    collectionId: number,
+    imageIds: number[],
+    base?: Collection,
+  ) => Promise<Collection>
   currentCategories: Category[]
   ancestorProgramIds: number[]
   getPathRestriction: (depth?: number) => number[]
@@ -709,10 +715,13 @@ export function useCategoryActions({
         await loadUncategorizedCollections?.()
         setMoveSnack({
           message: `Added “${imgName}” to “${result.collection.name}”.`,
+          // Undo pins the post-add record's version: a later membership
+          // change by another editor surfaces as a conflict instead of the
+          // undo silently rebasing over it (repo undo convention).
           onUndo: async () => {
             try {
               setMoveSnack(null)
-              await removeImagesFromCollectionApi(collectionId, [imageId])
+              await removeImagesFromCollectionApi(collectionId, [imageId], result.collection)
               await loadCategories()
               await loadUncategorizedCollections?.()
             } catch (undoErr) {

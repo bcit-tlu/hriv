@@ -628,11 +628,14 @@ export function useCollectionsData({
   /**
    * Remove member images — the undo path for the drop-add gesture (#1530),
    * serialized through `mutationQueue` like the other versioned writes.
+   * `base` (the record returned by the mutation being undone) pins the PUT's
+   * `version`, so an intervening membership change conflicts instead of
+   * being silently overwritten.
    */
   const removeImages = useCallback(
-    (id: number, imageIds: number[]): Promise<Collection> => {
+    (id: number, imageIds: number[], base?: Collection): Promise<Collection> => {
       const run = async (): Promise<Collection> => {
-        const updated = await removeImagesFromCollection(id, imageIds)
+        const updated = await removeImagesFromCollection(id, imageIds, base)
         mergeUpdated(updated)
         return updated
       }

@@ -152,7 +152,12 @@ keyed on `isPastTileCenterAlongDrag(pointer, center, delta)`:
   two detectors would otherwise overlap on the dragged tile. The collection
   zone adds a source-type `accept` filter (`img-` only) — it renders only for
   `permissions.canEdit` collections, so read-only collection tiles behave like
-  image tiles (near-half dead-zone, far-half reorder).
+  image tiles (near-half dead-zone, far-half reorder). Membership editing is
+  ownership-gated, not curatorial: when the grid contains an editable
+  collection, a non-`canEditContent` viewer's image sortables run
+  `{ draggable: false, droppable: true }` — draggable toward `drop-col-*`
+  zones but never reorder targets, so move/reorder/category filing stay
+  `canEditContent`-gated while owners of any role can drop-add.
 
 `DroppableCategoryZone` wraps the **full tile rect** (no inset), so the move-zone
 shape is the whole tile and "Move here" detection works.
