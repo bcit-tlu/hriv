@@ -128,7 +128,7 @@ def _collections_enabled() -> bool:
     deployments with existing data can never leak collection tiles into a
     scope or deadlock a reorder against invisible members (epic #1525).
     """
-    return bool(getattr(settings, "collections_enabled", False))
+    return settings.collections_enabled
 
 
 def _collection_scope_where(parent_category_id: int | None):

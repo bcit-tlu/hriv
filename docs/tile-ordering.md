@@ -199,8 +199,13 @@ the server knows keep their authoritative slots, and departed members drop
 out. A membership 400 additionally triggers one automatic
 fetch-merge-retry per save so drift the caller cannot see (e.g. a
 collection filed mid-session) self-heals rather than surfacing an
-unresolvable conflict; a second 400 falls through to the normal conflict
-flow. A `beforeunload` guard warns when unsaved
+unresolvable conflict. The retry is deliberately narrow: it runs only
+when the recovered member list shows pure membership drift (the relative
+order of continuing members is unchanged — membership moves bump the
+scope revision just like reorders, so the CAS token alone cannot
+distinguish the two) and the dragged tile still exists; a concurrent
+committed reorder or a deleted dragged tile falls through to the normal
+conflict flow, as does a second 400. A `beforeunload` guard warns when unsaved
 order remains. Stale grid instances are fenced by a per-scope generation
 counter (`claimGeneration`), so callbacks from an unmounted grid cannot
 overwrite a remounted one.

@@ -124,6 +124,32 @@ export function mergeOrderPreservingPositions(
   )
 }
 
+/**
+ * True when `current` differs from `previous` only in membership — the
+ * relative order of members present in both lists is unchanged, so the
+ * drift is explained by members entering or leaving the scope rather than
+ * by a concurrent committed reorder. Membership changes bump the scope
+ * revision server-side just like reorders do, so the CAS revision alone
+ * cannot distinguish the two; without this guard the membership-400
+ * auto-retry could silently overwrite another editor's committed order
+ * (#1538 review). Returns false when no previous member list was captured
+ * — an unreachable safeguard that keeps the explicit conflict path.
+ */
+function isMembershipOnlyDrift(
+  previous: TileOrderItemRef[] | undefined,
+  current: TileOrderItemRef[],
+): boolean {
+  if (previous === undefined) return false
+  const currentKeys = new Set(current.map(refKey))
+  const previousKeys = new Set(previous.map(refKey))
+  const continuingOld = previous.filter((ref) => currentKeys.has(refKey(ref)))
+  const continuingNew = current.filter((ref) => previousKeys.has(refKey(ref)))
+  return (
+    continuingOld.length === continuingNew.length &&
+    continuingOld.every((ref, i) => refKey(ref) === refKey(continuingNew[i]))
+  )
+}
+
 export class TileOrderingCoordinator {
   private scopes = new Map<string, ScopeState>()
   private listeners = new Set<() => void>()
@@ -529,8 +555,12 @@ export class TileOrderingCoordinator {
     const epoch = this.epoch
     // A membership 400 triggers one merge-and-retry per flush invocation —
     // a second 400 means the scope is genuinely drifting under the save and
-    // falls through to the normal conflict path.
+    // falls through to the normal conflict path. The retry keeps the same
+    // operation ID and drag context so telemetry records one
+    // submitted→terminal lifecycle, not an orphaned submission (#1538).
     let membershipRetried = false
+    let retriedOperationId: string | undefined
+    let retriedDrag: ReorderDragContext | undefined
     // Persist snapshots until no newer local changes remain. Each iteration
     // submits the newest snapshot only (coalescing anything in between).
     for (;;) {
@@ -583,9 +613,14 @@ export class TileOrderingCoordinator {
       // queued/coalesced events correlate with submission and completion.
       const queuedOperationId = this.pendingOperationIds.get(scopeKey(scope))
       this.pendingOperationIds.delete(scopeKey(scope))
-      const drag = this.dragContexts.get(scopeKey(scope))
+      const freshDrag = this.dragContexts.get(scopeKey(scope))
       this.dragContexts.delete(scopeKey(scope))
-      const operationId = queuedOperationId ?? newReorderOperationId()
+      // A queued snapshot minted its own ID/context while the prior save
+      // was in flight — it wins over the carried retry identity. The retry
+      // fallback applies only to the resubmitted order itself.
+      const isQueuedSnapshot = queuedOperationId !== undefined
+      const drag = freshDrag ?? (isQueuedSnapshot ? undefined : retriedDrag)
+      const operationId = queuedOperationId ?? retriedOperationId ?? newReorderOperationId()
       const startedAt = performance.now()
       this.setScope(scope, {
         ...state,
@@ -667,22 +702,34 @@ export class TileOrderingCoordinator {
       } catch (err) {
         if (epoch !== this.epoch) return
         // 409: the CAS revision is stale. 400: scope membership changed
-        // underneath the client (membership changes do not bump the
-        // revision) — the tile-order contract says to treat it like 409 and
-        // refresh via GET (docs/tile-ordering.md).
+        // underneath the client — the tile-order contract says to treat it
+        // like 409 and refresh via GET (docs/tile-ordering.md).
         let conflict = tileOrderConflictCurrent(err)
         if (conflict === null && err instanceof ApiError && err.status === 400) {
           try {
             const current = await getTileOrder(scope)
             if (epoch !== this.epoch) return
-            this.scopeMembers.set(scopeKey(scope), refsOf(current))
-            if (!membershipRetried) {
-              // Membership drift the caller's pending order couldn't model
-              // (e.g. a collection filed mid-session) — merge against the
-              // authoritative member list and retry once rather than
-              // surfacing a conflict the user can't meaningfully resolve.
+            const members = refsOf(current)
+            const previousMembers = this.scopeMembers.get(scopeKey(scope))
+            this.scopeMembers.set(scopeKey(scope), members)
+            // Auto-retry only for pure membership drift (#1528; #1538
+            // review): if the continuing members' relative order moved, a
+            // concurrent committed reorder is hiding under the membership
+            // change and a silent retry would overwrite it — surface the
+            // conflict. Same when the dragged tile itself departed: the
+            // merged retry would report a successful save for a drag that
+            // went nowhere.
+            const draggedDeparted =
+              drag !== undefined &&
+              !members.some((ref) => ref.type === drag.itemType && ref.id === drag.itemId)
+            if (
+              !membershipRetried &&
+              !draggedDeparted &&
+              isMembershipOnlyDrift(previousMembers, members)
+            ) {
               membershipRetried = true
-              const members = refsOf(current)
+              retriedOperationId = operationId
+              retriedDrag = drag
               const after = this.getScope(scope)
               this.setScope(scope, {
                 ...after,

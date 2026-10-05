@@ -979,6 +979,90 @@ describe('TileOrderingCoordinator', () => {
     expect(events.some((e) => e.state === 'conflicted')).toBe(true)
   })
 
+  it('conflicts when membership drift hides a committed reorder', async () => {
+    // #1538 review: the recovery GET shows the continuing members'
+    // relative order changed (another editor committed a reorder alongside
+    // the membership change) — auto-retrying would silently overwrite it.
+    mockedPut.mockRejectedValueOnce(new ApiError(400, 'Missing scope collections: [9]'))
+    mockedGet.mockResolvedValueOnce(response(1, refs(1, 2, 3))).mockResolvedValueOnce(
+      response(3, [
+        { type: 'image', id: 3 },
+        { type: 'collection', id: 9 },
+        { type: 'image', id: 2 },
+        { type: 'image', id: 1 },
+      ]),
+    )
+
+    coordinator.reportOrder(null, refs(3, 1, 2))
+    await flushMicrotasks()
+
+    const state = coordinator.getScope(null)
+    expect(state.status).toBe('conflict')
+    expect(mockedPut).toHaveBeenCalledTimes(1)
+    expect(state.conflictOrder).toEqual([
+      { type: 'image', id: 3 },
+      { type: 'collection', id: 9 },
+      { type: 'image', id: 2 },
+      { type: 'image', id: 1 },
+    ])
+    expect(events.some((e) => e.state === 'conflicted')).toBe(true)
+  })
+
+  it('conflicts instead of retrying when the dragged tile departed', async () => {
+    // #1538 review: the deleted tile was the one the user dragged — the
+    // merged retry would report a successful save for a drag that went
+    // nowhere.
+    mockedPut.mockRejectedValueOnce(new ApiError(400, 'Images not in scope: [2]'))
+    mockedGet
+      .mockResolvedValueOnce(response(1, refs(1, 2, 3)))
+      .mockResolvedValueOnce(response(2, refs(1, 3)))
+
+    coordinator.reportOrder(null, refs(3, 1, 2), undefined, {
+      itemType: 'image',
+      itemId: 2,
+      fromIndex: 1,
+      toIndex: 0,
+    })
+    await flushMicrotasks()
+
+    const state = coordinator.getScope(null)
+    expect(state.status).toBe('conflict')
+    expect(mockedPut).toHaveBeenCalledTimes(1)
+    expect(state.conflictOrder).toEqual(refs(1, 3))
+  })
+
+  it('reuses the operation ID across the internal membership retry', async () => {
+    // #1538 review: the merge-retry is one logical save — both PUTs carry
+    // the same operation ID so telemetry records one submitted→committed
+    // lifecycle instead of an orphaned submission.
+    mockedPut.mockRejectedValueOnce(new ApiError(400, 'Missing scope collections: [9]'))
+    mockedGet.mockResolvedValueOnce(response(1, refs(1, 2, 3))).mockResolvedValueOnce(
+      response(2, [
+        { type: 'image', id: 1 },
+        { type: 'collection', id: 9 },
+        { type: 'image', id: 2 },
+        { type: 'image', id: 3 },
+      ]),
+    )
+    mockedPut.mockResolvedValueOnce(
+      response(3, [
+        { type: 'image', id: 3 },
+        { type: 'collection', id: 9 },
+        { type: 'image', id: 1 },
+        { type: 'image', id: 2 },
+      ]),
+    )
+
+    coordinator.reportOrder(null, refs(3, 1, 2))
+    await flushMicrotasks()
+
+    expect(mockedPut).toHaveBeenCalledTimes(2)
+    expect(mockedPut.mock.calls[0][3]).toBe(mockedPut.mock.calls[1][3])
+    const submitted = events.filter((e) => e.state === 'submitted')
+    expect(submitted).toHaveLength(2)
+    expect(submitted[0].operationId).toBe(submitted[1].operationId)
+  })
+
   it('submits verbatim when the order carries refs the member list lacks', async () => {
     // Members for scope 7 seeded before a new image landed: the caller's
     // order is a superset of the last-known members, so it submits verbatim

@@ -37,6 +37,7 @@ import {
   type FlatCategoryOption,
 } from './categoryOptionUtils'
 import {
+  collectCategorySortOrders,
   collectCollectionsByParent,
   collectImagesByParent,
   diffParentMoves,
@@ -520,6 +521,7 @@ export default function ManageCategoriesDialog({
           options,
           imagesByParent,
           collectionsByParent,
+          collectCategorySortOrders(categories),
           (parentId) => tileOrderingCoordinator.getScope(parentId).displayOrder,
           dragId,
         )

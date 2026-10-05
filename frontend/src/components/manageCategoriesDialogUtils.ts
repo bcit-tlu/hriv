@@ -116,6 +116,24 @@ export function collectImagesByParent(
  * members like images: filed collections ride on `Category.collections`,
  * root collections come from `GET /api/collections?uncategorized=true`.
  */
+/**
+ * Category ID → tile-order `sort_order`, walked from the Category tree.
+ * `FlatCategoryOption` drops sortOrder; the template reconstruction in
+ * `interleavedTileOrders` needs real category positions to resolve member
+ * ties with the backend's canonical ordering (#1538 review).
+ */
+export function collectCategorySortOrders(cats: Category[]): Map<number, number> {
+  const map = new Map<number, number>()
+  function walk(nodes: Category[]) {
+    for (const node of nodes) {
+      map.set(node.id, node.sortOrder)
+      walk(node.children)
+    }
+  }
+  walk(cats)
+  return map
+}
+
 export function collectCollectionsByParent(
   cats: Category[],
   uncategorized: CollectionSummary[],
@@ -169,6 +187,7 @@ export function interleavedTileOrders(
   oldCatList: FlatOption[],
   imagesByParent: Map<string, ImageItem[]>,
   collectionsByParent: Map<string, CollectionSummary[]>,
+  categorySortOrders: Map<number, number>,
   displayOrderFor?: (parentId: number | null) => TileOrderItemRef[] | null,
   draggedCategoryId?: number,
 ): ScopeOrder[] {
@@ -204,14 +223,24 @@ export function interleavedTileOrders(
     const parentId = parentKey === 'null' ? null : Number(parentKey)
 
     // Build the old interleaved template from old categories + collections
-    // + images. Old categories don't carry a meaningful sortOrder in
-    // FlatOption, so infer positions: they occupied the gaps left by images
-    // and collections in [0, N)
-    type Slot = { type: 'cat' | 'col' | 'img'; index: number; sortOrder: number }
+    // + images. Images and collections carry their real tile-order
+    // positions; categories take theirs from `categorySortOrders` (FlatOption
+    // drops sortOrder) — a category missing from the map falls back to
+    // gap-filling the positions non-categories occupy.
+    type Slot = { ref: TileOrderItemRef; sortOrder: number }
     const oldSlots: Slot[] = [
-      ...oldCats.map((_, i): Slot => ({ type: 'cat', index: i, sortOrder: -1 })),
-      ...collections.map((col, i): Slot => ({ type: 'col', index: i, sortOrder: col.sortOrder })),
-      ...images.map((img, i): Slot => ({ type: 'img', index: i, sortOrder: img.sortOrder })),
+      ...oldCats.map((cat): Slot => ({
+        ref: { type: 'category', id: cat.id },
+        sortOrder: categorySortOrders.get(cat.id) ?? -1,
+      })),
+      ...collections.map((col): Slot => ({
+        ref: { type: 'collection', id: col.id },
+        sortOrder: col.sortOrder,
+      })),
+      ...images.map((img): Slot => ({
+        ref: { type: 'image', id: img.id },
+        sortOrder: img.sortOrder,
+      })),
     ]
     let catPos = 0
     const occupiedSortOrders = new Set([
@@ -219,21 +248,29 @@ export function interleavedTileOrders(
       ...collections.map((c) => c.sortOrder),
     ])
     for (const slot of oldSlots) {
-      if (slot.type === 'cat') {
+      if (slot.ref.type === 'category' && slot.sortOrder < 0) {
         while (occupiedSortOrders.has(catPos)) catPos++
         slot.sortOrder = catPos
         catPos++
       }
     }
-    oldSlots.sort((a, b) => a.sortOrder - b.sortOrder)
-
-    const oldOrder: TileOrderItemRef[] = oldSlots.map((slot) =>
-      slot.type === 'cat'
-        ? { type: 'category', id: oldCats[slot.index].id }
-        : slot.type === 'col'
-          ? { type: 'collection', id: collections[slot.index].id }
-          : { type: 'image', id: images[slot.index].id },
+    // Canonical tie-break — category < collection < image, then id — so a
+    // member tied with a category at one position (e.g. a freshly created
+    // collection at sort_order 0) keeps the server's order instead of
+    // displacing it when only categories were dragged (#1538 review).
+    const slotPriority: Record<TileOrderItemRef['type'], number> = {
+      category: 0,
+      collection: 1,
+      image: 2,
+    }
+    oldSlots.sort(
+      (a, b) =>
+        a.sortOrder - b.sortOrder ||
+        slotPriority[a.ref.type] - slotPriority[b.ref.type] ||
+        a.ref.id - b.ref.id,
     )
+
+    const oldOrder: TileOrderItemRef[] = oldSlots.map((slot) => slot.ref)
 
     // Re-rank members the coordinator's newest order knows about; members
     // it does not know keep their original slot (mirrors reorderFlatOptions).

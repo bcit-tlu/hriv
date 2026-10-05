@@ -132,7 +132,7 @@ describe('interleavedTileOrders', () => {
       makeFlatOption({ id: 1, parentId: null }),
       makeFlatOption({ id: 2, parentId: null }),
     ]
-    expect(interleavedTileOrders(cats, cats, new Map(), new Map())).toEqual([])
+    expect(interleavedTileOrders(cats, cats, new Map(), new Map(), new Map())).toEqual([])
   })
 
   it('returns the full category order for a same-parent swap', () => {
@@ -144,7 +144,7 @@ describe('interleavedTileOrders', () => {
       makeFlatOption({ id: 2, parentId: null }),
       makeFlatOption({ id: 1, parentId: null }),
     ]
-    expect(interleavedTileOrders(newCats, oldCats, new Map(), new Map())).toEqual([
+    expect(interleavedTileOrders(newCats, oldCats, new Map(), new Map(), new Map())).toEqual([
       {
         scope: null,
         order: [
@@ -169,7 +169,7 @@ describe('interleavedTileOrders', () => {
     const imagesByParent = new Map([
       ['null', [makeImage({ id: 10, sortOrder: 1 }), makeImage({ id: 11, sortOrder: 3 })]],
     ])
-    expect(interleavedTileOrders(newCats, oldCats, imagesByParent, new Map())).toEqual([
+    expect(interleavedTileOrders(newCats, oldCats, imagesByParent, new Map(), new Map())).toEqual([
       {
         scope: null,
         order: [
@@ -197,7 +197,9 @@ describe('interleavedTileOrders', () => {
     const collectionsByParent = new Map([
       ['null', [makeCollectionSummary({ id: 30, sortOrder: 1 })]],
     ])
-    expect(interleavedTileOrders(newCats, oldCats, imagesByParent, collectionsByParent)).toEqual([
+    expect(
+      interleavedTileOrders(newCats, oldCats, imagesByParent, collectionsByParent, new Map()),
+    ).toEqual([
       {
         scope: null,
         order: [
@@ -205,6 +207,40 @@ describe('interleavedTileOrders', () => {
           { type: 'collection', id: 30 },
           { type: 'category', id: 1 },
           { type: 'image', id: 10 },
+        ],
+      },
+    ])
+  })
+
+  it('resolves tied positions with the canonical category-first rule', () => {
+    // #1538 review: a collection created at sort_order 0 ties a category
+    // already at 0. Server canonical order is cat_A(0), col_30(0), cat_B(1)
+    // — a category swap must keep col_30 in the middle, not displace it
+    // ahead of both categories as gap-fill reconstruction did.
+    const oldCats = [
+      makeFlatOption({ id: 1, parentId: null }),
+      makeFlatOption({ id: 2, parentId: null }),
+    ]
+    const newCats = [
+      makeFlatOption({ id: 2, parentId: null }),
+      makeFlatOption({ id: 1, parentId: null }),
+    ]
+    const collectionsByParent = new Map([
+      ['null', [makeCollectionSummary({ id: 30, sortOrder: 0 })]],
+    ])
+    const categorySortOrders = new Map([
+      [1, 0],
+      [2, 1],
+    ])
+    expect(
+      interleavedTileOrders(newCats, oldCats, new Map(), collectionsByParent, categorySortOrders),
+    ).toEqual([
+      {
+        scope: null,
+        order: [
+          { type: 'category', id: 2 },
+          { type: 'collection', id: 30 },
+          { type: 'category', id: 1 },
         ],
       },
     ])
@@ -219,7 +255,13 @@ describe('interleavedTileOrders', () => {
     const collectionsByParent = new Map([
       ['5', [makeCollectionSummary({ id: 30, categoryId: 5, sortOrder: 0 })]],
     ])
-    const scopes = interleavedTileOrders(newCats, oldCats, new Map(), collectionsByParent)
+    const scopes = interleavedTileOrders(
+      newCats,
+      oldCats,
+      new Map(),
+      collectionsByParent,
+      new Map(),
+    )
     const dest = scopes.find((s) => s.scope === 5)!
     expect(dest.order).toEqual([
       { type: 'collection', id: 30 },
@@ -254,6 +296,7 @@ describe('interleavedTileOrders', () => {
         oldCats,
         imagesByParent,
         collectionsByParent,
+        new Map(),
         () => displayOrder,
       ),
     ).toEqual([
@@ -285,7 +328,7 @@ describe('interleavedTileOrders', () => {
       ['null', [makeImage({ id: 10, sortOrder: 1 })]],
       ['1', [makeImage({ id: 20, sortOrder: 0 })]],
     ])
-    const scopes = interleavedTileOrders(newCats, oldCats, imagesByParent, new Map())
+    const scopes = interleavedTileOrders(newCats, oldCats, imagesByParent, new Map(), new Map())
 
     const root = scopes.find((s) => s.scope === null)!
     // Root: cat_A, img_root — cat_B slot collapsed
@@ -311,7 +354,15 @@ describe('interleavedTileOrders', () => {
       makeFlatOption({ id: 2, parentId: null }),
       makeFlatOption({ id: 1, parentId: null }),
     ]
-    const scopes = interleavedTileOrders(newCats, oldCats, new Map(), new Map(), undefined, 2)
+    const scopes = interleavedTileOrders(
+      newCats,
+      oldCats,
+      new Map(),
+      new Map(),
+      new Map(),
+      undefined,
+      2,
+    )
     expect(scopes[0].dragContext).toEqual({
       itemType: 'category',
       itemId: 2,
@@ -330,7 +381,15 @@ describe('interleavedTileOrders', () => {
       makeFlatOption({ id: 2, parentId: 1 }),
     ]
     const imagesByParent = new Map([['null', [makeImage({ id: 10, sortOrder: 1 })]]])
-    const scopes = interleavedTileOrders(newCats, oldCats, imagesByParent, new Map(), undefined, 2)
+    const scopes = interleavedTileOrders(
+      newCats,
+      oldCats,
+      imagesByParent,
+      new Map(),
+      new Map(),
+      undefined,
+      2,
+    )
 
     const root = scopes.find((s) => s.scope === null)!
     expect(root.dragContext).toEqual({
@@ -362,7 +421,7 @@ describe('interleavedTileOrders', () => {
       makeFlatOption({ id: 3, parentId: 1 }),
       makeFlatOption({ id: 4, parentId: 1 }),
     ]
-    const scopes = interleavedTileOrders(newCats, oldCats, new Map(), new Map())
+    const scopes = interleavedTileOrders(newCats, oldCats, new Map(), new Map(), new Map())
     expect(scopes).toEqual([
       {
         scope: null,
@@ -380,7 +439,7 @@ describe('interleavedTileOrders', () => {
     const imagesByParent = new Map([
       ['null', [makeImage({ id: 10, sortOrder: 0 }), makeImage({ id: 11, sortOrder: 2 })]],
     ])
-    const scopes = interleavedTileOrders(newCats, oldCats, imagesByParent, new Map())
+    const scopes = interleavedTileOrders(newCats, oldCats, imagesByParent, new Map(), new Map())
 
     const root = scopes.find((s) => s.scope === null)!
     expect(root.order).toEqual([
@@ -395,7 +454,7 @@ describe('interleavedTileOrders', () => {
   it('skips scopes left with no members after a move', () => {
     const oldCats = [makeFlatOption({ id: 1, parentId: null })]
     const newCats = [makeFlatOption({ id: 1, parentId: 5 })]
-    const scopes = interleavedTileOrders(newCats, oldCats, new Map(), new Map())
+    const scopes = interleavedTileOrders(newCats, oldCats, new Map(), new Map(), new Map())
     // Root lost its only member — no empty order is reported for it.
     expect(scopes.find((s) => s.scope === null)).toBeUndefined()
     expect(scopes.find((s) => s.scope === 5)!.order).toEqual([{ type: 'category', id: 1 }])
@@ -423,7 +482,7 @@ describe('interleavedTileOrders', () => {
       { type: 'image' as const, id: 10 },
     ]
     expect(
-      interleavedTileOrders(newCats, oldCats, imagesByParent, new Map(), (parentId) =>
+      interleavedTileOrders(newCats, oldCats, imagesByParent, new Map(), new Map(), (parentId) =>
         parentId === null ? displayOrder : null,
       ),
     ).toEqual([
@@ -450,7 +509,14 @@ describe('interleavedTileOrders', () => {
       { type: 'category' as const, id: 1 },
     ]
     expect(
-      interleavedTileOrders(newCats, oldCats, imagesByParent, new Map(), () => displayOrder),
+      interleavedTileOrders(
+        newCats,
+        oldCats,
+        imagesByParent,
+        new Map(),
+        new Map(),
+        () => displayOrder,
+      ),
     ).toEqual([])
   })
 
@@ -474,7 +540,7 @@ describe('interleavedTileOrders', () => {
       { type: 'category' as const, id: 2 },
     ]
     expect(
-      interleavedTileOrders(newCats, oldCats, new Map(), new Map(), () => displayOrder),
+      interleavedTileOrders(newCats, oldCats, new Map(), new Map(), new Map(), () => displayOrder),
     ).toEqual([])
   })
 
@@ -498,7 +564,14 @@ describe('interleavedTileOrders', () => {
       { type: 'category' as const, id: 1 },
     ]
     expect(
-      interleavedTileOrders(newCats, oldCats, imagesByParent, new Map(), () => displayOrder),
+      interleavedTileOrders(
+        newCats,
+        oldCats,
+        imagesByParent,
+        new Map(),
+        new Map(),
+        () => displayOrder,
+      ),
     ).toEqual([])
   })
 
@@ -520,7 +593,14 @@ describe('interleavedTileOrders', () => {
       { type: 'image' as const, id: 99 },
     ]
     expect(
-      interleavedTileOrders(newCats, oldCats, imagesByParent, new Map(), () => staleDisplay),
+      interleavedTileOrders(
+        newCats,
+        oldCats,
+        imagesByParent,
+        new Map(),
+        new Map(),
+        () => staleDisplay,
+      ),
     ).toEqual([
       {
         scope: null,
@@ -550,7 +630,7 @@ describe('interleavedTileOrders', () => {
     const imagesByParent = new Map([
       ['null', [makeImage({ id: 10, sortOrder: 1 }), makeImage({ id: 11, sortOrder: 4 })]],
     ])
-    expect(interleavedTileOrders(newCats, oldCats, imagesByParent, new Map())).toEqual([
+    expect(interleavedTileOrders(newCats, oldCats, imagesByParent, new Map(), new Map())).toEqual([
       {
         scope: null,
         order: [
