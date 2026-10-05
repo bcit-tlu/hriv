@@ -45,28 +45,17 @@ describe('CollectionCard', () => {
     expect(onOpen).toHaveBeenCalledWith(collection)
   })
 
-  it('shows edit/delete only when the API grants the permission', () => {
+  it('shows edit only when the API grants the permission', () => {
     const onEdit = vi.fn()
-    const onDelete = vi.fn()
     const collection = makeCollectionSummary({
       permissions: { canEdit: true, canDelete: false, canTransfer: false },
     })
-    render(
-      <CollectionCard
-        collection={collection}
-        onOpen={vi.fn()}
-        onEdit={onEdit}
-        onDelete={onDelete}
-      />,
-    )
+    render(<CollectionCard collection={collection} onOpen={vi.fn()} onEdit={onEdit} />)
     fireEvent.click(screen.getByRole('button', { name: 'Edit Skull comparison' }))
     expect(onEdit).toHaveBeenCalledWith(collection)
-    expect(
-      screen.queryByRole('button', { name: 'Delete Skull comparison' }),
-    ).not.toBeInTheDocument()
   })
 
-  it('hides both actions when neither permission is granted', () => {
+  it('hides the edit action when the permission is not granted', () => {
     render(
       <CollectionCard
         collection={makeCollectionSummary({
@@ -74,16 +63,15 @@ describe('CollectionCard', () => {
         })}
         onOpen={vi.fn()}
         onEdit={vi.fn()}
-        onDelete={vi.fn()}
       />,
     )
     expect(screen.queryByRole('button', { name: /^Edit/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /^Delete/ })).not.toBeInTheDocument()
   })
 
   it('hides actions when no handlers are supplied even if permitted', () => {
     render(<CollectionCard collection={makeCollectionSummary()} onOpen={vi.fn()} />)
     expect(screen.queryByRole('button', { name: /^Edit/ })).not.toBeInTheDocument()
+    // Delete lives only inside the edit dialog (#1554), never on the card.
     expect(screen.queryByRole('button', { name: /^Delete/ })).not.toBeInTheDocument()
   })
 
@@ -137,12 +125,10 @@ describe('CollectionCard', () => {
 
   it('does not open the collection when an action button is clicked', () => {
     const onOpen = vi.fn()
-    const onDelete = vi.fn()
-    render(
-      <CollectionCard collection={makeCollectionSummary()} onOpen={onOpen} onDelete={onDelete} />,
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'Delete Skull comparison' }))
-    expect(onDelete).toHaveBeenCalled()
+    const onMove = vi.fn()
+    render(<CollectionCard collection={makeCollectionSummary()} onOpen={onOpen} onMove={onMove} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Move Skull comparison to a category' }))
+    expect(onMove).toHaveBeenCalled()
     expect(onOpen).not.toHaveBeenCalled()
   })
 })

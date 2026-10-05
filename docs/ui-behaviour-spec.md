@@ -22,24 +22,34 @@ Three capability flags in `AuthContext.tsx` drive all gating:
 
 ### Tab / navigation visibility (`AppShell.tsx` — `AppShell.test.tsx`)
 
-| Surface               | Student | Staff | Instructor | Admin |
-| --------------------- | ------- | ----- | ---------- | ----- |
-| Home                  | ✓       | ✓     | ✓          | ✓     |
-| Collections tab       | ✓       | ✓     | ✓          | ✓     |
-| Images tab            | —       | —     | ✓          | ✓     |
-| Manage dropdown       | —       | —     | ✓          | ✓     |
-| Manage → Categories   | —       | —     | ✓          | ✓     |
-| Manage → Programs     | —       | —     | —          | ✓     |
-| Manage → Groups       | —       | —     | ✓          | ✓     |
-| Manage → Announcement | —       | —     | ✓          | ✓     |
-| People tab            | —       | ✓     | —          | ✓     |
-| Admin tab             | —       | —     | —          | ✓     |
+| Surface                                            | Student | Staff | Instructor | Admin |
+| -------------------------------------------------- | ------- | ----- | ---------- | ----- |
+| Home                                               | ✓       | ✓     | ✓          | ✓     |
+| Collections tab (Sequence / Synchronized sub-menu) | ✓       | ✓     | ✓          | ✓     |
+| Images tab                                         | —       | —     | ✓          | ✓     |
+| Manage dropdown                                    | —       | ✓     | ✓          | ✓     |
+| Manage → Categories                                | —       | —     | ✓          | ✓     |
+| Manage → Collections                               | —       | ✓     | ✓          | ✓     |
+| Manage → Programs                                  | —       | —     | —          | ✓     |
+| Manage → Groups                                    | —       | —     | ✓          | ✓     |
+| Manage → Announcement                              | —       | —     | ✓          | ✓     |
+| People tab                                         | —       | ✓     | —          | ✓     |
+| Admin tab                                          | —       | —     | —          | ✓     |
 
 - **Given** a student is logged in, **When** the app bar renders, **Then** only
   Home and **Collections** are shown (no Images, Manage, People, or Admin).
+- **Given** the Collections tab, **When** clicked, **Then** a sub-menu (same
+  `Tab` → `Menu` pattern as Manage) offers **Sequence** and **Synchronized**
+  (#1554); each opens `?page=collections&type=` and a missing/invalid `type`
+  defaults to Sequence. The compact drawer shows both items flattened in.
+- **Given** a staff user, **Then** the Manage dropdown renders with only the
+  **Collections** item (Categories/Groups/Announcement stay
+  edit-content-only); **Given** a student, **Then** no Manage surface at all.
 - **Given** the deployment has `COLLECTIONS_ENABLED=false` (`GET /api/features`
-  → `collections: false`), **Then** the Collections tab/drawer entry is absent
-  for every role and `?collection=` / `?page=collections` open Home instead
+  → `collections: false`), **Then** the Collections tab/drawer entry and the
+  Manage → Collections item are absent
+  for every role and `?collection=` / `?page=collections` /
+  `?page=manage-collections` open Home instead
   (see [collections.md](collections.md)).
 - **Given** a student on a compact (mobile) viewport, **Then** Home and
   Collections stay inline in the app bar (two tabs never collapse behind a
@@ -161,26 +171,31 @@ images> / Empty` format used on category tiles.
   arbitration for the next gesture. Covered by `measurement.test.ts`
   (`pinchRotationDeltaDegrees`, `createPinchRotationTracker`).
 
-### Collections tab (`CollectionsPage.test.tsx`, `CollectionCard.test.tsx`, `CollectionEditDialog.test.tsx`, `CollectionOwnersDialog.test.tsx`, `App.test.tsx`)
+### Collections pages + manage table (`CollectionsPage.test.tsx`, `CollectionCard.test.tsx`, `CollectionEditDialog.test.tsx`, `CollectionOwnersDialog.test.tsx`, `ManageCollectionsPage.test.tsx`, `App.test.tsx`)
 
 See [collections.md](collections.md#frontend-behaviour) for the full contract.
 All roles, including students, can list, open, and create collections;
 edit/delete controls are gated by `permissions.can_edit` / `can_delete`
 returned by the API (UX only — the backend re-checks).
 
-- **Given** a user opens the Collections tab (`?page=collections`), **When**
-  `GET /api/collections` resolves, **Then** a fixed-width flex-wrap card grid
+- **Given** a user picks **Sequence** or **Synchronized** in the Collections
+  sub-menu (`?page=collections&type=`), **When**
+  `GET /api/collections?type=` resolves, **Then** a fixed-width flex-wrap card grid
   (300px tiles, matching the Browse tile grid) renders one
-  `CollectionCard` per summary (cover, name, image count, owners, type chip,
+  `CollectionCard` per summary of that type (cover, name, image count, owners,
   visibility chip); an empty result shows the empty state (whose
   **Create a collection** link opens the create dialog when no filters are
   active) and a failed request shows a plain error `Alert` with no action.
-- **Given** the list, **When** the user picks a type toggle,
-  **My collections**, or an **Owner**, **Then** the list re-fetches with
-  `type=` / `mine=true` / `owner_user_id=` or `owner_program_id=`; selecting
+- **Given** a `CollectionCard`, **Then** the type chip, **Move** and
+  **Owners** actions sit in a top-right cover overlay (the CategoryTile
+  scrim convention, #1554), **Edit** sits in the metadata area, and no
+  Delete affordance exists on the card.
+- **Given** the list, **When** the user toggles
+  **My collections** or picks an **Owner**, **Then** the list re-fetches with
+  `mine=true` / `owner_user_id=` or `owner_program_id=`; selecting
   **My collections** resets and disables the owner select.
 - **Given** a student, **Then** the **Owner** select is not rendered at all
-  (only the type toggle and **My collections** remain) and `owner_user_id` /
+  (only **My collections** remains) and `owner_user_id` /
   `owner_program_id` are never sent; admin, instructor and staff keep it.
 - **Given** an admin, **Then** the owner select also offers _No owner
   (orphaned)_ (`orphaned=true`); **Given** any other role, **Then** that option
@@ -203,21 +218,36 @@ returned by the API (UX only — the backend re-checks).
 - **Given** the edit `PATCH` returns **409**, **Then** the dialog shows the
   "modified by another user" message with a **Reload** action that re-seeds
   the form from the current record in the error `detail`.
-- **Given** a card whose `permissions.can_delete` is true, **When** the user
-  clicks **Delete** and confirms, **Then** `DELETE /api/collections/{id}` is
-  sent and the card disappears; a failure keeps the dialog open with the API
-  message.
+- **Given** an open edit dialog on a collection whose
+  `permissions.can_delete` is true, **Then** a **Delete Collection** button
+  sits at the bottom of the dialog (#1554 — the `EditImageModal` pattern);
+  **When** clicked once it arms ("This action cannot be undone. Click again
+  to confirm."), **When** clicked again `DELETE /api/collections/{id}` is
+  sent; a failure keeps the dialog open with the API message.
 - **Given** the user opens a card, **Then** the URL becomes
   `?collection={id}`; a `sequence` collection mounts the sequence viewer
   (#1416, below) and a `synchronized` collection mounts the synchronized
   viewer (#1417, below).
 - **Given** a `?collection={id}` URL is loaded or restored via back/forward,
-  **Then** the Collections tab opens on that collection; **Given** the API
-  returns **404**, **Then** the not-found `Alert` with **All collections** is
-  shown instead.
+  **Then** the collections page for that collection's type opens on it;
+  **Given** the API
+  returns **404**, **Then** the not-found `Alert` with a back-to-list action
+  is shown instead.
 - **Given** a collection whose `permissions.can_transfer` is true, **Then** an
-  **Owners** action appears on its card and in the detail header; **Given**
+  **Owners** action appears in its card overlay, the detail header, and its
+  manage-table row; **Given**
   it is false, **Then** neither affordance renders.
+- **Given** a non-student opens **Manage → Collections**
+  (`?page=manage-collections`), **Then** a table of every API-visible
+  collection renders (thumbnail, ID, name, type, visibility, owners, image
+  count, category breadcrumb, modified, actions) with stored filter facets,
+  sortable columns and pagination (#1554); **Given** a student deep-links the
+  page, **Then** the table renders nothing (role gate) and telemetry reports
+  browse.
+- **Given** a staff user on the manage table, **Then** every API-returned row
+  shows and row actions follow `permissions` — Edit only where `canEdit`,
+  and never Move/Owners/Delete; **Given** an admin or instructor, **Then**
+  Move and (where `canTransfer`) Owners are also offered.
 - **Given** the owners dialog is open (`CollectionOwnersDialog`), **Then**
   the staged state shows the current user owners as chips plus the owning
   program. The **User owners** autocomplete offers scope tabs — _Students_

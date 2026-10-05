@@ -43,7 +43,8 @@ one child issue at a time on `main`.
   is `false`, `getNavigationItems` drops the Collections item
   (`requiresCollections`), `AppShell` omits the desktop tab and drawer entry,
   `useCollectionsData` never fetches, and `App.tsx` falls back from
-  `?collection={id}` / `?page=collections` to browse (`effectivePage` reports
+  `?collection={id}` / `?page=collections` / `?page=manage-collections` to
+  browse (`effectivePage` reports
   `browse` to telemetry). When `true`, behaviour is exactly as described in
   the sections below.
 - **Deployment.** Helm value `collections.enabled` (default `false`) renders
@@ -409,40 +410,57 @@ followed by `PUT …/owners` or `POST …/transfer`.
 
 ## Frontend behaviour
 
-### Collections tab, CRUD and deep links (#1414)
+### Collections pages, CRUD and deep links (#1414, per-type split #1554)
 
 **Where.** `frontend/src/api.ts` (`ApiCollection*` wire shapes,
 `fetchCollections` / `fetchCollection` / `createCollection` /
 `updateCollection` / `deleteCollection` / `replaceCollectionImages` /
 `saveCollectionViewport`, `collectionConflictCurrent`), `types.ts`
 (`Collection`, `CollectionSummary`, `CollectionType`, `CollectionVisibility`,
-`CollectionOwner`, `CollectionPermissions`), `collectionUtils.ts` (mapping,
+`CollectionOwner`, `CollectionPermissions`, `CollectionPageType`),
+`collectionUtils.ts` (mapping,
 labels, `canUseRestrictedVisibility`, `parseCollectionIdParam`),
 `useCollectionsData.ts` (list/detail state + mutations),
 `components/CollectionsPage.tsx`, `CollectionCard.tsx`,
-`CollectionEditDialog.tsx`, plus `navigation.ts`, `AppShell.tsx`,
+`CollectionEditDialog.tsx`, `components/ManageCollectionsPage.tsx`,
+plus `navigation.ts`, `AppShell.tsx`,
 `useShareableImageState.ts`, `useNavigationHistory.ts` and `App.tsx`.
 Everything in this section is conditional on the deployment flag
 (`useFeatures.ts`; see [Feature flag](#feature-flag-collections_enabled)).
 
-**Navigation.** A **Collections** tab is shown to every authenticated role
+**Navigation.** The **Collections** tab is shown to every authenticated role
 (students included) in both the desktop app bar and the compact/mobile
-drawer. `?page=collections` opens the list. `App` only mounts
-`useCollectionsData` while the tab is active, so browsing images never hits
-`/api/collections`.
+drawer, and opens a sub-menu (the same `Tab` → `Menu` pattern as **Manage**)
+with **Sequence** and **Synchronized** entries (#1554). Each item opens the
+same `CollectionsPage` locked to one type via `?page=collections&type=`;
+a missing or invalid `type` defaults to `sequence`. A `collectionPageType`
+state in `App` keeps the list filter, the URL param and the detail view in
+sync — opening a collection whose type differs from the current page type
+updates the page, so detail back-navigation always returns to the matching
+typed list. `App` only mounts
+`useCollectionsData` while a collections page is active, so browsing images
+never hits `/api/collections`. Non-students additionally get
+**Manage → Collections** (`?page=manage-collections`) — see
+[Manage Collections table](#manage-collections-table-1554) below.
 
-**List.** `GET /api/collections` rendered as a fixed-width flex-wrap card
-grid (300px tiles, `gap: 2` — the same parameters as the Browse tile grid, so
-cards do not stretch with the viewport). Each `CollectionCard` shows the
+**List.** `GET /api/collections?type=` rendered as a fixed-width flex-wrap
+card grid (300px tiles, `gap: 2` — the same parameters as the Browse tile
+grid, so cards do not stretch with the viewport). Each `CollectionCard`
+shows the
 cover (`RenewingThumbnail` with a collection-scoped renewer that refreshes the
 token via `GET /api/collections/{id}`; a renewed cover that loads and later
 expires again is renewed once more, while a cover that never loads is renewed
 only once), name, image count, the co-owner names joined by `describeCollectionOwners`
-(`No owner` when orphaned), a type chip
-and a visibility chip that reuses the category restriction palette. Filters:
-type toggle (All / Synchronized / Sequence), **My collections** (`mine=true`;
-clears and disables the owner facet), and — for admin, instructor and staff
-only — an **Owner** select built from the owners in the loaded list
+(`No owner` when orphaned), and a visibility chip that
+reuses the category restriction palette. The type chip, **Move** and
+**Owners** actions sit in a top-right cover overlay — the same
+`top: 4, right: 4` white-on-`rgba(0,0,0,0.25)` scrim convention as
+`CategoryTile` (#1554); **Edit** stays in the metadata area and Delete is
+gone from the card entirely (edit dialog only). Filters — type is the page,
+not a facet (#1554): a **My collections** chip (`mine=true`;
+clears and disables the owner facet) and — for admin, instructor and staff
+only — an **Owner** select built from the owners in the loaded list, both
+in the header row left of **New collection**
 (`owner_user_id` / `owner_program_id`). Students never see the Owner select
 and `toCollectionApiFilters` never emits `owner_*` for them. Admins
 additionally get _No owner (orphaned)_ → `orphaned=true`;
@@ -478,7 +496,7 @@ attach logic: instructors can only select programs they belong to
 (`getAttachableProgramIds`) and groups they manage; already-attached scope
 stays enabled so it can be removed. At least one program or group is required
 for `restricted`; `program_ids` / `group_ids` are sent as `[]` for any other
-visibility. Create from the Collections tab posts `image_ids: []`; create from
+visibility. Create from a Collections page posts `image_ids: []`; create from
 the image view (#1415, below) posts the selected image id(s). Every role —
 staff included — gets the **New collection** button and the unfiltered
 empty-state create link (#1531).
@@ -492,9 +510,13 @@ the visibility radio and the program/group pickers render read-only while
 name and description stay editable; the backend field-level split enforces
 the same boundary regardless.
 
-**Delete.** Confirmation dialog (existing delete-dialog pattern) →
-`DELETE /api/collections/{id}`; failures stay in the dialog with the API
-message. Deleting the open collection returns to the list.
+**Delete.** Lives inside `CollectionEditDialog` only (#1554 — the
+`EditImageModal` convention; there is no card or detail-header delete):
+a **Delete Collection** button at the bottom of the dialog content arms on
+first click ("This action cannot be undone. Click again to confirm."), the
+second click calls `DELETE /api/collections/{id}`, and failures stay in the
+dialog's error area with the API message. Deleting the open collection
+returns to the list.
 
 **Owners (`CollectionOwnersDialog`, #1531).** An **Owners** action on cards
 and the detail header (gated on `permissions.canTransfer`) manages the
@@ -505,18 +527,22 @@ user-owner set and the program owner — see "Ownership management UI" below.
 re-checks authority on every call.
 
 **Detail view.** Selecting a card sets `?collection={id}` and renders the
-collection header (type/visibility chips, description, owner).
+collection header (type/visibility chips, description, owner; actions:
+**Move**, **Edit**, **Owners** — no Delete, #1554).
 `sequence` collections mount the sequence viewer (#1416, below) and
 `synchronized` collections mount the synchronized viewer (#1417, below). A
-404 (missing or not visible) renders the not-found alert with an
-_All collections_ action.
+404 (missing or not visible) renders the not-found alert with a
+back-to-list action.
 
 **Deep links & history.** `useShareableImageState` parses `?collection={id}`
 ahead of `?image=` / `?category=`; a collection link wins if both are present.
-The list emits `?page=collections`, a selected collection emits
+The list emits `?page=collections&type=sequence|synchronized` (#1554 — bare
+`?page=collections` links were updated to carry `type`, and the param
+defaults to `sequence`), a selected collection emits
 `?collection={id}` (no `page` param), a selected sequence item adds
 `&item={image_id}` (#1416), and a collection opened from a Browse tile adds
-`?cat=` carrying its originating scope (#1529). Both push history entries
+`?cat=` carrying its originating scope (#1529). `popstate` parses `type` as
+well, so back/forward restores the typed list. Both push history entries
 through `useNavigationHistory`, and `popstate` restores the selected
 collection (and sequence item) from the URL, so back/forward moves between
 browse, image and collection views. Refreshing a `?collection=` URL re-opens
@@ -524,6 +550,40 @@ that collection;
 refreshing `?collection={id}&item={image_id}` re-opens the sequence on that
 image (falling back to the first image when the id is not a visible member).
 `?item=` without `?collection=` is ignored.
+
+### Manage Collections table (#1554)
+
+**Where.** `components/ManageCollectionsPage.tsx`, mounted by `App` for
+`page === 'manage-collections'`; the **Manage → Collections** sub-menu item
+gates on `canEditContent || canViewPeople` (admins, instructors, staff —
+students never see Manage). Everything below the nav item shares the flag
+gate too.
+
+**Table.** `GET /api/collections` with no API filters — the server already
+scopes the list per role, and every facet is client-side, mirroring
+`ManagePage`'s idiom: stored filter facets in a `FilterBar` (Name text,
+Type, Visibility, Owner incl. _No owner (orphaned)_, Category tree panel —
+persisted under the `manage-collections` table-preferences key), sortable
+columns (`TableSortLabel`), client-side `TablePagination` with the shared
+rows-per-page preference, and a Category column rendering
+`CategoryBreadcrumb` (extracted from `ManagePage`; segments link into
+Browse, hidden-subtree rows get the eye icon). Columns: thumbnail
+(`RenewingThumbnail`), ID, Name, Type, Visibility
+(`CollectionVisibilityChip`), Owners (`describeCollectionOwners`), image
+count, Category, Modified, Actions.
+
+**Actions.** Row click opens the edit dialog for `permissions.canEdit`
+rows — fetching the full record first, since summaries omit the restricted
+scope — and calls `onOpenCollection` (the collection detail view) for
+read-only rows. Action icons: **Edit** (`canEdit`), **Owners**
+(`canTransfer`, `CollectionOwnersDialog`), **Move** (admin/instructor only
+via `canFileCollections` plus the `onMoveCollection` handler → shared
+`MoveCollectionDialog`). Staff therefore get Edit only where the API
+grants it and never see Move/Owners/Delete affordances they cannot use;
+Delete stays inside the edit dialog, same convention as `EditImageModal`.
+Owners/transfer saves fetch a fresh record for `version` before PUT/POST,
+and the page refetches after every mutation or whenever the `categories`
+prop changes — the signal that a Move (or its snackbar undo) landed.
 
 ### Browse tile integration (#1529)
 
@@ -642,7 +702,7 @@ whole-replace `PUT /api/collections/{id}/images` with `[...existing,
 **New collection…** opens the shared `CollectionEditDialog` in create mode;
 `createCollectionWithImages` posts the form with `image_ids` preset to the
 selected image(s) and the success snackbar offers **View collection**. Form
-errors stay inside the create dialog as on the Collections tab.
+errors stay inside the create dialog as on the collections pages.
 
 **Permissions are UX gates only.** `can_edit` filtering and the capacity
 check are conveniences; the backend re-validates edit authority, image
@@ -797,13 +857,15 @@ search-driven adds work with no image open.
 
 The write API's owner endpoints — `PUT /api/collections/{id}/owners` and
 `POST /api/collections/{id}/transfer` (#1531) — are surfaced on the
-Collections tab — there is no separate Admin section.
+collections pages and the Manage → Collections table (#1554) — there is no
+separate Admin section.
 
-**Entry points.** An **Owners** button appears on the detail header and an
-owners icon on each `CollectionCard`, both gated on
+**Entry points.** An **Owners** button appears on the detail header, an
+owners icon on each `CollectionCard`'s cover overlay (#1554) and on
+manage-table rows, all gated on
 `permissions.can_transfer` (the API re-checks regardless). On an orphaned
 collection — found via the admin-only _No owner (orphaned)_ owner facet —
-the card action is the reassignment flow.
+the action is the reassignment flow.
 
 **`CollectionOwnersDialog`.** One dialog covers both ownership surfaces:
 
@@ -881,8 +943,18 @@ the shared group-chip palette.
 - `frontend/tests/collectionUtils.test.ts` — wire → domain mapping, role
   gating for `restricted`, `?collection=` parsing.
 - `frontend/tests/navigation.test.ts`, `components/AppShell.test.tsx` —
-  Collections tab for every role (desktop + compact drawer), and hidden for
+  Collections sub-menu (Sequence / Synchronized) for every role (desktop +
+  compact drawer), Manage → Collections for non-students, and hidden for
   every role when `collectionsEnabled` is false.
+- Per-type pages + manage table (#1554): `CollectionsPage.test.tsx`
+  (locked `collectionPageType`, header filters, edit-dialog delete flow),
+  `CollectionCard.test.tsx` (cover-overlay type chip / Move / Owners,
+  non-propagating actions, no delete affordance),
+  `CollectionEditDialog.test.tsx` (delete arm/confirm/failure),
+  `ManageCollectionsPage.test.tsx` (unfiltered fetch, facets/sort, row
+  actions on `permissions`, staff Move hidden, breadcrumb navigation,
+  categories-change refetch), `App.test.tsx` (`collectionPageType` state,
+  `?type=` emit/parse, detail→type sync, `manage-collections` gate).
 - Feature flag: `backend/tests/test_database.py` (`COLLECTIONS_ENABLED`
   default / env parsing), `test_router_collections.py` (router-wide
   `require_collections_enabled` dependency, 404 when off), `test_main.py`
@@ -891,7 +963,8 @@ the shared group-chip palette.
   fallback to browse when off, failed `/api/features` treated as off).
 - `frontend/tests/useShareableImageState.test.ts`,
   `useNavigationHistory.test.ts`, `App.test.tsx` — `?collection={id}` and
-  `?collection={id}&item={image_id}` parse/emit precedence, history entries,
+  `?collection={id}&item={image_id}` parse/emit precedence, `?type=` on
+  collections-page URLs (default `sequence`), history entries,
   deep-link restore on load and back/forward, `?item=` alone ignored.
 - Browse tile integration (#1529): `useBrowseData.test.ts` (nested-scope
   collections from the tree, root `?uncategorized` fetch, flag-off no-fetch

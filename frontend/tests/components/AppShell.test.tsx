@@ -17,6 +17,8 @@ function makeProps(overrides: Partial<AppShellProps> = {}): AppShellProps {
     canManageUsers: true,
     canViewPeople: true,
     collectionsEnabled: true,
+    collectionType: 'sequence',
+    onCollectionsTypeChange: vi.fn(),
     currentUser: {
       name: 'Test User',
       email: 'test@example.com',
@@ -198,9 +200,24 @@ describe('AppShell', () => {
       expect(screen.getByRole('tab', { name: 'Manage' })).toBeInTheDocument()
     })
 
-    it('hides Images and Manage tabs when not canEditContent', () => {
-      render(<AppShell {...makeProps({ canEditContent: false })} />)
+    it('hides Images and Manage tabs for students (neither capability)', () => {
+      render(<AppShell {...makeProps({ canEditContent: false, canViewPeople: false })} />)
       expect(screen.queryByRole('tab', { name: 'Images' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('tab', { name: 'Manage' })).not.toBeInTheDocument()
+    })
+
+    it('shows the Manage tab for staff when collections are enabled (#1554)', () => {
+      render(<AppShell {...makeProps({ canEditContent: false, canViewPeople: true })} />)
+      expect(screen.queryByRole('tab', { name: 'Images' })).not.toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: 'Manage' })).toBeInTheDocument()
+    })
+
+    it('hides the Manage tab for staff when the collections flag is off', () => {
+      render(
+        <AppShell
+          {...makeProps({ canEditContent: false, canViewPeople: true, collectionsEnabled: false })}
+        />,
+      )
       expect(screen.queryByRole('tab', { name: 'Manage' })).not.toBeInTheDocument()
     })
 
@@ -229,7 +246,14 @@ describe('AppShell', () => {
       expect(screen.getByRole('tab', { name: 'People' })).toBeInTheDocument()
       expect(screen.queryByRole('tab', { name: 'Admin' })).not.toBeInTheDocument()
       expect(screen.queryByRole('tab', { name: 'Images' })).not.toBeInTheDocument()
-      expect(screen.queryByRole('tab', { name: 'Manage' })).not.toBeInTheDocument()
+      // Staff get Manage only for the Collections table (#1554) — every
+      // other item stays admin/instructor-gated.
+      fireEvent.click(screen.getByRole('tab', { name: 'Manage' }))
+      expect(screen.getByRole('menuitem', { name: 'Collections' })).toBeInTheDocument()
+      expect(screen.queryByRole('menuitem', { name: 'Categories' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('menuitem', { name: 'Programs' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('menuitem', { name: 'Groups' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('menuitem', { name: 'Announcement' })).not.toBeInTheDocument()
     })
 
     it('calls onHomeClick when Home tab is clicked while already on browse', () => {
@@ -659,12 +683,12 @@ describe('AppShell', () => {
       expect(screen.queryByRole('menuitem', { name: 'Collections' })).not.toBeInTheDocument()
     })
 
-    it('navigates to Collections from the collapsed menu', () => {
-      const onTabChange = vi.fn()
-      render(<AppShell {...makeProps({ onTabChange })} />)
+    it('navigates to a Collections type page from the collapsed menu', () => {
+      const onCollectionsTypeChange = vi.fn()
+      render(<AppShell {...makeProps({ onCollectionsTypeChange })} />)
       fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
-      fireEvent.click(screen.getByRole('menuitem', { name: 'Collections' }))
-      expect(onTabChange).toHaveBeenCalledWith('collections')
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Synchronized collections' }))
+      expect(onCollectionsTypeChange).toHaveBeenCalledWith('synchronized')
     })
 
     it('closes the drawer when the close button is clicked', async () => {

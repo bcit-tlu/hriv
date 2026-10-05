@@ -1,0 +1,56 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as CategoryBreadcrumbStories from './CategoryBreadcrumb.stories'
+
+<Meta of={CategoryBreadcrumbStories} />
+
+<Title />
+
+<Subtitle>
+  Colon-separated browse-location breadcrumb used by the manage tables: each ancestor segment is a
+  link into Browse at that depth, and a hidden-subtree eye icon marks rows filed under a restricted
+  category.
+</Subtitle>
+
+## When to use
+
+`ManagePage` renders it in the Category column for images; `ManageCollectionsPage` renders the same
+breadcrumb for each collection's filed category (#1554 — extracted from `ManagePage` so both tables
+share the markup). Pass the flat category tree through `buildCategoryPaths` once per tree change and
+hand the resulting map to each row.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={CategoryBreadcrumbStories.Basic} />
+
+## Implementation guidance
+
+- **Segments link.** Each ancestor and the leaf call `onNavigate` with the path slice up to that
+  depth; clicks stop propagation so table rows don't also fire their row action.
+- **Fallbacks.** `categoryId: null` renders an em-dash (uncategorized / Browse root); an id missing
+  from the map renders the raw id rather than crashing on a stale reference.
+- **Hidden marker.** `getCategoryHiddenStateFromPath` decides the eye icon — pass the themed
+  `hiddenColor` (visibility palette `inactive`) so the glyph matches each table's palette.
+
+## Examples
+
+### Hidden subtree
+
+<Canvas of={CategoryBreadcrumbStories.HiddenSubtree} />
+
+### Uncategorized
+
+<Canvas of={CategoryBreadcrumbStories.Uncategorized} />
+
+## Stories
+
+<Stories includePrimary={false} />

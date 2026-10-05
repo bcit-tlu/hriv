@@ -34,7 +34,7 @@ const meta = {
     docs: {
       description: {
         component:
-          'Collections-tab card showing the cover thumbnail, name, image count, owner, type chip and visibility chip. Edit/delete icons appear only when the API grants `permissions.canEdit` / `permissions.canDelete`.',
+          'Collections-page card showing the cover thumbnail, name, image count, owner and visibility chip. The type chip, Move and Owners actions sit in a top-right cover overlay (CategoryTile scrim convention, #1554); Edit sits in the metadata area, permission-gated. Delete is not a card action — it lives inside the edit dialog.',
       },
     },
   },
@@ -42,7 +42,6 @@ const meta = {
     collection: makeSummary(),
     onOpen: fn(),
     onEdit: fn(),
-    onDelete: fn(),
   },
   // Padding keeps the card's elevation shadow inside Chromatic's content-cropped snapshot.
   decorators: [
@@ -102,6 +101,35 @@ export const Restricted: Story = {
   parameters: {
     // Restricted chip reuses the group-chip palette — known contrast debt, see #1345.
     a11y: { test: 'todo' },
+  },
+}
+
+export const Curatorial: Story = {
+  args: {
+    collection: makeSummary({
+      id: 7,
+      name: 'Filed into Browse',
+      permissions: { canEdit: true, canDelete: true, canChangeScope: true, canTransfer: true },
+    }),
+    onTransfer: fn(),
+    onMove: fn(),
+  },
+  parameters: {
+    a11y: { test: 'todo' },
+  },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement)
+    // Overlay actions stop propagation — the card does not open.
+    await userEvent.click(
+      canvas.getByRole('button', { name: 'Move Filed into Browse to a category' }),
+    )
+    await expect(args.onMove).toHaveBeenCalledWith(args.collection)
+    await expect(args.onOpen).not.toHaveBeenCalled()
+    await userEvent.click(
+      canvas.getByRole('button', { name: 'Manage owners of Filed into Browse' }),
+    )
+    await expect(args.onTransfer).toHaveBeenCalledWith(args.collection)
+    await expect(args.onOpen).not.toHaveBeenCalled()
   },
 }
 

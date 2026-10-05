@@ -4,9 +4,11 @@ import type { NavigationItem } from '../src/navigation'
 
 const ALL_IDS = [
   'home',
-  'collections',
+  'collections-sequence',
+  'collections-synchronized',
   'images',
   'categories',
+  'manage-collections',
   'programs',
   'groups',
   'announcement',
@@ -51,10 +53,10 @@ describe('getNavigationItems', () => {
       canViewPeople: false,
     })
     const ids = items.map((i) => i.id)
-    expect(ids).toEqual(['home', 'collections'])
+    expect(ids).toEqual(['home', 'collections-sequence', 'collections-synchronized'])
   })
 
-  it('returns home + people for staff (view-only with people access)', () => {
+  it('returns type pages + people for staff — plus the manage collections table (#1554)', () => {
     const items = getNavigationItems({
       collectionsEnabled: true,
       canEditContent: false,
@@ -62,10 +64,16 @@ describe('getNavigationItems', () => {
       canViewPeople: true,
     })
     const ids = items.map((i) => i.id)
-    expect(ids).toEqual(['home', 'collections', 'people'])
+    expect(ids).toEqual([
+      'home',
+      'collections-sequence',
+      'collections-synchronized',
+      'manage-collections',
+      'people',
+    ])
   })
 
-  it('collections is a primary item for every role (#1414)', () => {
+  it('collections type pages are primary items for every role (#1554)', () => {
     for (const canEditContent of [true, false]) {
       for (const canManageUsers of [true, false]) {
         for (const canViewPeople of [true, false]) {
@@ -75,16 +83,19 @@ describe('getNavigationItems', () => {
             canManageUsers,
             canViewPeople,
           })
-          const collections = items.find((i) => i.id === 'collections')
-          expect(collections).toBeDefined()
-          expect(collections?.section).toBe('primary')
-          expect(collections?.page).toBe('collections')
+          for (const type of ['sequence', 'synchronized'] as const) {
+            const item = items.find((i) => i.id === `collections-${type}`)
+            expect(item).toBeDefined()
+            expect(item?.section).toBe('primary')
+            expect(item?.page).toBe('collections')
+            expect(item?.collectionType).toBe(type)
+          }
         }
       }
     }
   })
 
-  it('staff never sees admin or manage items', () => {
+  it('staff sees only the collections table among manage items (#1554)', () => {
     const items = getNavigationItems({
       collectionsEnabled: true,
       canEditContent: false,
@@ -93,7 +104,9 @@ describe('getNavigationItems', () => {
     })
     const ids = items.map((i) => i.id)
     expect(ids).not.toContain('admin')
-    expect(items.filter((i) => i.section === 'manage')).toEqual([])
+    expect(items.filter((i) => i.section === 'manage').map((i) => i.id)).toEqual([
+      'manage-collections',
+    ])
   })
 
   it('includes manage-section items for instructor with correct sections', () => {
@@ -104,7 +117,12 @@ describe('getNavigationItems', () => {
       canViewPeople: false,
     })
     const manageItems = items.filter((i) => i.section === 'manage')
-    expect(manageItems.map((i) => i.id).sort()).toEqual(['announcement', 'categories', 'groups'])
+    expect(manageItems.map((i) => i.id).sort()).toEqual([
+      'announcement',
+      'categories',
+      'groups',
+      'manage-collections',
+    ])
   })
 
   it('includes account-section items only for admin or staff', () => {
@@ -183,7 +201,9 @@ describe('getNavigationItems', () => {
     ]
     for (const caps of roles) {
       const ids = getNavigationItems({ ...caps, collectionsEnabled: false }).map((i) => i.id)
-      expect(ids).not.toContain('collections')
+      expect(ids).not.toContain('collections-sequence')
+      expect(ids).not.toContain('collections-synchronized')
+      expect(ids).not.toContain('manage-collections')
       expect(ids[0]).toBe('home')
     }
     expect(

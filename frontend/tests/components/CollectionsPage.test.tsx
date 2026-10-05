@@ -74,6 +74,7 @@ function makeAuth(user: User): AuthContextValue {
 
 function makeProps(overrides: Partial<CollectionsPageProps> = {}): CollectionsPageProps {
   return {
+    collectionPageType: 'sequence',
     currentUser: ADMIN,
     programs: [],
     groups: [],
@@ -172,14 +173,14 @@ describe('CollectionsPage', () => {
   })
 
   describe('filters', () => {
-    it('changes the type filter', () => {
-      const onFiltersChange = vi.fn()
-      renderPage({ onFiltersChange })
-      fireEvent.click(screen.getByRole('button', { name: 'Synchronized' }))
-      expect(onFiltersChange).toHaveBeenCalledWith({
-        ...DEFAULT_COLLECTION_FILTERS,
-        type: 'synchronized',
-      })
+    it('renders the type page heading and has no in-page type toggle (#1554)', () => {
+      const { unmount } = renderPage({ collectionPageType: 'sequence' })
+      expect(screen.getByRole('heading', { name: 'Sequence collections' })).toBeInTheDocument()
+      // Type is the page (nav sub-menu), not a filter — the toggle is gone.
+      expect(screen.queryByRole('button', { name: 'All' })).not.toBeInTheDocument()
+      unmount()
+      renderPage({ collectionPageType: 'synchronized' })
+      expect(screen.getByRole('heading', { name: 'Synchronized collections' })).toBeInTheDocument()
     })
 
     it('toggles My collections and resets the owner facet', () => {
@@ -364,43 +365,57 @@ describe('CollectionsPage', () => {
     })
   })
 
-  describe('delete', () => {
+  // Delete lives only inside the edit dialog (#1554) — same click-to-confirm
+  // pattern as EditImageModal; there is no card or detail-header delete.
+  describe('delete (in the edit dialog)', () => {
     it('confirms before deleting and closes the dialog on success', async () => {
       const user = userEvent.setup()
       const onDelete = vi.fn().mockResolvedValue(undefined)
+      const editing = makeCollection({ id: 4, name: 'Doomed' })
       renderPage({
         collections: [makeCollectionSummary({ id: 4, name: 'Doomed' })],
+        loadCollection: vi.fn().mockResolvedValue(editing),
         onDelete,
       })
-      await user.click(screen.getByRole('button', { name: 'Delete Doomed' }))
+      await user.click(screen.getByRole('button', { name: 'Edit Doomed' }))
       const dialog = await screen.findByRole('dialog')
-      expect(within(dialog).getByText('Delete Collection')).toBeInTheDocument()
-      expect(within(dialog).getByText('Doomed')).toBeInTheDocument()
+      const deleteButton = within(dialog).getByRole('button', { name: 'Delete Collection' })
       expect(onDelete).not.toHaveBeenCalled()
-      await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
+      await user.click(deleteButton)
+      await user.click(within(dialog).getByRole('button', { name: 'Confirm Delete Collection' }))
       await waitFor(() => expect(onDelete).toHaveBeenCalledWith(4))
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     })
 
-    it('cancels without deleting', async () => {
+    it('arms the delete button without deleting on the first click', async () => {
       const user = userEvent.setup()
       const onDelete = vi.fn()
-      renderPage({ collections: [makeCollectionSummary({ id: 4, name: 'Kept' })], onDelete })
-      await user.click(screen.getByRole('button', { name: 'Delete Kept' }))
-      await user.click(
-        within(await screen.findByRole('dialog')).getByRole('button', { name: 'Cancel' }),
-      )
-      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      renderPage({
+        collections: [makeCollectionSummary({ id: 4, name: 'Kept' })],
+        loadCollection: vi.fn().mockResolvedValue(makeCollection({ id: 4, name: 'Kept' })),
+        onDelete,
+      })
+      await user.click(screen.getByRole('button', { name: 'Edit Kept' }))
+      const dialog = await screen.findByRole('dialog')
+      await user.click(within(dialog).getByRole('button', { name: 'Delete Collection' }))
+      expect(
+        within(dialog).getByRole('button', { name: 'Confirm Delete Collection' }),
+      ).toBeInTheDocument()
       expect(onDelete).not.toHaveBeenCalled()
     })
 
     it('keeps the dialog open and shows the API message when deletion fails', async () => {
       const user = userEvent.setup()
       const onDelete = vi.fn().mockRejectedValue(new ApiError(403, 'Not yours'))
-      renderPage({ collections: [makeCollectionSummary({ id: 4, name: 'Locked' })], onDelete })
-      await user.click(screen.getByRole('button', { name: 'Delete Locked' }))
+      renderPage({
+        collections: [makeCollectionSummary({ id: 4, name: 'Locked' })],
+        loadCollection: vi.fn().mockResolvedValue(makeCollection({ id: 4, name: 'Locked' })),
+        onDelete,
+      })
+      await user.click(screen.getByRole('button', { name: 'Edit Locked' }))
       const dialog = await screen.findByRole('dialog')
-      await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
+      await user.click(within(dialog).getByRole('button', { name: 'Delete Collection' }))
+      await user.click(within(dialog).getByRole('button', { name: 'Confirm Delete Collection' }))
       expect(await within(dialog).findByText('Not yours')).toBeInTheDocument()
       expect(screen.getByRole('dialog')).toBeInTheDocument()
     })
@@ -408,11 +423,14 @@ describe('CollectionsPage', () => {
     it('closes the detail view after deleting the open collection', async () => {
       const user = userEvent.setup()
       const onCloseCollection = vi.fn()
+      const onDelete = vi.fn().mockResolvedValue(undefined)
       const detail = makeCollection({ id: 9, name: 'Open one' })
-      renderPage({ selectedCollectionId: 9, detail, onCloseCollection })
-      await user.click(screen.getByRole('button', { name: 'Delete' }))
+      renderPage({ selectedCollectionId: 9, detail, onCloseCollection, onDelete })
+      await user.click(screen.getByRole('button', { name: 'Edit' }))
       const dialog = await screen.findByRole('dialog')
-      await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
+      await user.click(within(dialog).getByRole('button', { name: 'Delete Collection' }))
+      await user.click(within(dialog).getByRole('button', { name: 'Confirm Delete Collection' }))
+      await waitFor(() => expect(onDelete).toHaveBeenCalledWith(9))
       await waitFor(() => expect(onCloseCollection).toHaveBeenCalled())
     })
   })
@@ -540,7 +558,7 @@ describe('CollectionsPage', () => {
       expect(onCloseCollection).toHaveBeenCalled()
     })
 
-    it('gates the detail Edit/Delete buttons on API permissions', () => {
+    it('gates the detail Edit button on API permissions', () => {
       renderPage({
         selectedCollectionId: 9,
         detail: makeCollection({
@@ -549,6 +567,7 @@ describe('CollectionsPage', () => {
         }),
       })
       expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+      // Delete lives only inside the edit dialog (#1554), never on the header.
       expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
     })
 

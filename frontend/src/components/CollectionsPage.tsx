@@ -4,41 +4,32 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
-import Dialog from '@mui/material/Dialog'
-import DialogActions from '@mui/material/DialogActions'
-import DialogContent from '@mui/material/DialogContent'
-import DialogTitle from '@mui/material/DialogTitle'
-import Divider from '@mui/material/Divider'
 import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
 import Link from '@mui/material/Link'
 import MenuItem from '@mui/material/MenuItem'
 import Select from '@mui/material/Select'
-import ToggleButton from '@mui/material/ToggleButton'
-import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
 import AddIcon from '@mui/icons-material/Add'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import CollectionsIcon from '@mui/icons-material/Collections'
-import DeleteIcon from '@mui/icons-material/Delete'
 import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
 import EditIcon from '@mui/icons-material/Edit'
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz'
 import { userMessage, type ApiImage } from '../api'
 import {
   COLLECTION_TYPE_LABELS,
-  COLLECTION_VISIBILITY_LABELS,
   describeCollectionOwner,
   describeCollectionOwners,
 } from '../collectionUtils'
 import { getGroupChipColors } from '../theme'
 import { useColorMode } from '../useColorMode'
+import type { CollectionPageType } from './AppShell'
 import type { CollectionListFilters, CollectionOwnerFilter } from '../useCollectionsData'
 import type {
   Collection,
   CollectionOwner,
   CollectionSummary,
-  CollectionType,
   Group,
   ImageItem,
   Program,
@@ -51,6 +42,8 @@ import SequenceCollectionViewer from './SequenceCollectionViewer'
 import SynchronizedCollectionViewer from './SynchronizedCollectionViewer'
 
 export interface CollectionsPageProps {
+  /** Which type page is rendered — headings, empty state, type chip context. */
+  collectionPageType: CollectionPageType
   currentUser: User | null
   programs: Program[]
   groups: Group[]
@@ -117,7 +110,6 @@ function CollectionDetailHeader({
   onBack,
   backLabel = 'All collections',
   onEdit,
-  onDelete,
   onTransfer,
   onMove,
 }: {
@@ -127,7 +119,6 @@ function CollectionDetailHeader({
   onBack: () => void
   backLabel?: string
   onEdit?: () => void
-  onDelete?: () => void
   onTransfer?: () => void
   onMove?: () => void
 }) {
@@ -233,17 +224,6 @@ function CollectionDetailHeader({
               Owners
             </Button>
           )}
-          {collection.permissions.canDelete && onDelete && (
-            <Button
-              variant="outlined"
-              size="small"
-              color="error"
-              startIcon={<DeleteIcon />}
-              onClick={onDelete}
-            >
-              Delete
-            </Button>
-          )}
         </Box>
       </Box>
     </>
@@ -281,15 +261,12 @@ export default function CollectionsPage({
   onTransfer,
   onMoveCollection,
   detailBackLabel,
+  collectionPageType,
 }: CollectionsPageProps) {
   const [editorOpen, setEditorOpen] = useState(false)
   const [editing, setEditing] = useState<Collection | null>(null)
   const [editLoadError, setEditLoadError] = useState<string | null>(null)
   const [transferTarget, setTransferTarget] = useState<CollectionSummary | null>(null)
-  const [deleteTarget, setDeleteTarget] = useState<CollectionSummary | null>(null)
-  const [deleteOpen, setDeleteOpen] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const [deleteError, setDeleteError] = useState<string | null>(null)
   const editRequestRef = useRef(0)
 
   const isAdmin = currentUser?.role === 'admin'
@@ -322,25 +299,13 @@ export default function CollectionsPage({
     }
   }
 
-  const requestDelete = (summary: CollectionSummary) => {
-    setDeleteTarget(summary)
-    setDeleteError(null)
-    setDeleteOpen(true)
-  }
-
-  const confirmDelete = async () => {
-    if (!deleteTarget) return
-    setDeleting(true)
-    setDeleteError(null)
-    try {
-      await onDelete(deleteTarget.id)
-      setDeleteOpen(false)
-      if (selectedCollectionId === deleteTarget.id) onCloseCollection()
-    } catch (err) {
-      setDeleteError(userMessage(err, 'Failed to delete collection.'))
-    } finally {
-      setDeleting(false)
-    }
+  // Delete lives inside the edit dialog only (#1554) — mirrors
+  // EditImageModal's delete-in-dialog convention.
+  const deleteFromDialog = async () => {
+    if (!editing) return
+    await onDelete(editing.id)
+    setEditorOpen(false)
+    if (selectedCollectionId === editing.id) onCloseCollection()
   }
 
   const handleSave = async (
@@ -402,7 +367,6 @@ export default function CollectionsPage({
             onBack={onCloseCollection}
             backLabel={detailBackLabel}
             onEdit={() => void openEdit(detail)}
-            onDelete={() => requestDelete(detail)}
             onTransfer={() => setTransferTarget(detail)}
             onMove={
               canFileCollections && onMoveCollection ? () => onMoveCollection(detail) : undefined
@@ -429,7 +393,6 @@ export default function CollectionsPage({
             onBack={onCloseCollection}
             backLabel={detailBackLabel}
             onEdit={() => void openEdit(detail)}
-            onDelete={() => requestDelete(detail)}
             onTransfer={() => setTransferTarget(detail)}
             onMove={
               canFileCollections && onMoveCollection ? () => onMoveCollection(detail) : undefined
@@ -457,62 +420,50 @@ export default function CollectionsPage({
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: 1,
-            mb: 2,
+            mb: 3,
           }}
         >
           <Typography variant="h5" component="h1">
-            Collections
+            {COLLECTION_TYPE_LABELS[collectionPageType]} collections
           </Typography>
-          <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
-            New collection
-          </Button>
-        </Box>
-
-        <Box
-          data-testid="collection-filters"
-          sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1.5, mb: 3 }}
-        >
-          <ToggleButtonGroup
-            size="small"
-            exclusive
-            value={filters.type}
-            aria-label="Collection type"
-            onChange={(_e, v: CollectionType | 'all' | null) => {
-              if (v != null) onFiltersChange({ ...filters, type: v })
-            }}
+          {/* Type is the page, not a filter (#1554): the remaining filters
+              live in the header row, left of New collection. */}
+          <Box
+            data-testid="collection-filters"
+            sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1.5 }}
           >
-            <ToggleButton value="all">All</ToggleButton>
-            <ToggleButton value="synchronized">{COLLECTION_TYPE_LABELS.synchronized}</ToggleButton>
-            <ToggleButton value="sequence">{COLLECTION_TYPE_LABELS.sequence}</ToggleButton>
-          </ToggleButtonGroup>
-          <Chip
-            label="My collections"
-            clickable
-            color={filters.mine ? 'primary' : 'default'}
-            variant={filters.mine ? 'filled' : 'outlined'}
-            onClick={() => onFiltersChange({ ...filters, mine: !filters.mine, owner: 'any' })}
-            aria-pressed={filters.mine}
-          />
-          {showOwnerFilter && (
-            <FormControl size="small" sx={{ minWidth: 180 }} disabled={filters.mine}>
-              <InputLabel id="collection-owner-filter-label">Owner</InputLabel>
-              <Select
-                labelId="collection-owner-filter-label"
-                label="Owner"
-                value={selectedOwnerKnown ? ownerValue : 'any'}
-                onChange={(e) => {
-                  const choice = ownerChoices.find((c) => c.key === e.target.value)
-                  onFiltersChange({ ...filters, owner: choice?.value ?? 'any' })
-                }}
-              >
-                {ownerChoices.map((c) => (
-                  <MenuItem key={c.key} value={c.key}>
-                    {c.label}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          )}
+            <Chip
+              label="My collections"
+              clickable
+              color={filters.mine ? 'primary' : 'default'}
+              variant={filters.mine ? 'filled' : 'outlined'}
+              onClick={() => onFiltersChange({ ...filters, mine: !filters.mine, owner: 'any' })}
+              aria-pressed={filters.mine}
+            />
+            {showOwnerFilter && (
+              <FormControl size="small" sx={{ minWidth: 180 }} disabled={filters.mine}>
+                <InputLabel id="collection-owner-filter-label">Owner</InputLabel>
+                <Select
+                  labelId="collection-owner-filter-label"
+                  label="Owner"
+                  value={selectedOwnerKnown ? ownerValue : 'any'}
+                  onChange={(e) => {
+                    const choice = ownerChoices.find((c) => c.key === e.target.value)
+                    onFiltersChange({ ...filters, owner: choice?.value ?? 'any' })
+                  }}
+                >
+                  {ownerChoices.map((c) => (
+                    <MenuItem key={c.key} value={c.key}>
+                      {c.label}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+            <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
+              New collection
+            </Button>
+          </Box>
         </Box>
 
         {error ? (
@@ -531,7 +482,7 @@ export default function CollectionsPage({
               No collections yet
             </Typography>
             <Typography variant="body2" sx={{ mt: 0.5 }}>
-              {filters.mine || filters.type !== 'all' || filters.owner !== 'any' ? (
+              {filters.mine || filters.owner !== 'any' ? (
                 'No collections match the current filters.'
               ) : (
                 <>
@@ -557,7 +508,6 @@ export default function CollectionsPage({
                   collection={c}
                   onOpen={(col) => onOpenCollection(col.id)}
                   onEdit={(col) => void openEdit(col)}
-                  onDelete={requestDelete}
                   onTransfer={setTransferTarget}
                   onMove={canFileCollections ? onMoveCollection : undefined}
                 />
@@ -582,9 +532,11 @@ export default function CollectionsPage({
         open={editorOpen}
         onClose={() => setEditorOpen(false)}
         collection={editing}
+        defaultType={collectionPageType}
         programs={programs}
         groups={groups}
         onSave={handleSave}
+        onDelete={editing?.permissions.canDelete ? deleteFromDialog : undefined}
       />
 
       <CollectionOwnersDialog
@@ -595,60 +547,6 @@ export default function CollectionsPage({
         onSaveOwners={onSaveOwners}
         onTransfer={onTransfer}
       />
-
-      <Dialog
-        open={deleteOpen}
-        onClose={() => {
-          if (!deleting) setDeleteOpen(false)
-        }}
-        TransitionProps={{ onExited: () => setDeleteTarget(null) }}
-        maxWidth="xs"
-        fullWidth
-      >
-        <DialogTitle>Delete Collection</DialogTitle>
-        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
-          {deleteError && (
-            <Alert severity="error" onClose={() => setDeleteError(null)}>
-              {deleteError}
-            </Alert>
-          )}
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            Are you sure you want to delete <strong>{deleteTarget?.name}</strong>? The images it
-            references are not deleted.
-          </Typography>
-          {deleteTarget && (
-            <Typography variant="caption" color="text.secondary">
-              {COLLECTION_TYPE_LABELS[deleteTarget.type]} ·{' '}
-              {COLLECTION_VISIBILITY_LABELS[deleteTarget.visibility]}
-            </Typography>
-          )}
-          <Divider />
-          <Box>
-            <Button
-              color="error"
-              variant="contained"
-              onClick={() => void confirmDelete()}
-              disabled={deleting}
-              startIcon={deleting ? <CircularProgress size={16} color="inherit" /> : undefined}
-              fullWidth
-            >
-              Delete
-            </Button>
-            <Typography
-              variant="caption"
-              color="error"
-              sx={{ display: 'block', mt: 0.5, textAlign: 'center' }}
-            >
-              This action cannot be undone.
-            </Typography>
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteOpen(false)} disabled={deleting}>
-            Cancel
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   )
 }

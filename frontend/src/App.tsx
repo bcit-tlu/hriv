@@ -37,9 +37,10 @@ import NoteDisplay from './components/NoteDisplay'
 import ManageCategoriesDialog from './components/ManageCategoriesDialog'
 import AdminPage from './components/AdminPage'
 import AppShell from './components/AppShell'
-import type { Page } from './components/AppShell'
+import type { CollectionPageType, Page } from './components/AppShell'
 import AddEditPersonModal from './components/AddEditPersonModal'
 import CollectionsPage from './components/CollectionsPage'
+import ManageCollectionsPage from './components/ManageCollectionsPage'
 import AddToCollectionDialog from './components/AddToCollectionDialog'
 import type { CollectionFormValues } from './components/CollectionEditDialog'
 import ManagePage from './components/ManagePage'
@@ -164,6 +165,9 @@ export default function App() {
     canEditContent,
     canViewPeople,
   } = useAuth()
+  // Manage > Collections table (#1554): instructors, staff, and admins —
+  // everyone except students.
+  const canManageCollections = canEditContent || canViewPeople
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
 
@@ -187,10 +191,23 @@ export default function App() {
     if (parseCollectionIdParam(window.location.search) == null) return false
     return new URLSearchParams(window.location.search).get('cat') != null
   })
+  // Which Collections type page is active (#1554) — `?type=` deep links
+  // restore it; bare `?page=collections` defaults to sequence.
+  const [collectionPageType, setCollectionPageType] = useState<CollectionPageType>(() => {
+    const t = new URLSearchParams(window.location.search).get('type')
+    return t === 'synchronized' ? 'synchronized' : 'sequence'
+  })
   const [page, setPage] = useState<Page>(() => {
     if (parseCollectionIdParam(window.location.search) != null) return 'collections'
     const p = new URLSearchParams(window.location.search).get('page')
-    if (p === 'collections' || p === 'manage' || p === 'people' || p === 'admin' || p === 'guide')
+    if (
+      p === 'collections' ||
+      p === 'manage' ||
+      p === 'manage-collections' ||
+      p === 'people' ||
+      p === 'admin' ||
+      p === 'guide'
+    )
       return p
     return 'browse'
   })
@@ -203,14 +220,23 @@ export default function App() {
       ? 'browse'
       : (page === 'admin' && !canManageUsers) || (page === 'people' && !canViewPeople)
         ? 'browse'
-        : page === 'collections' && features != null && !features.collections
+        : (page === 'collections' || page === 'manage-collections') &&
+            features != null &&
+            !features.collections
           ? 'browse'
-          : page
+          : page === 'manage-collections' && !canManageCollections
+            ? 'browse'
+            : page
 
   // A collections deep link on a deployment with the flag off falls back to
   // browse once the flags are known (the page renders nothing until then).
   useEffect(() => {
-    if (features == null || features.collections || page !== 'collections') return
+    if (
+      features == null ||
+      features.collections ||
+      (page !== 'collections' && page !== 'manage-collections')
+    )
+      return
     // eslint-disable-next-line react-hooks/set-state-in-effect -- URL state can only be corrected once the flags arrive
     setPage('browse')
     setSelectedCollectionId(null)
@@ -359,10 +385,38 @@ export default function App() {
   // active; the `move`/`loadCollection` actions are mounted unconditionally
   // so Browse-grid collection moves (#1529) keep list/detail state in sync.
   const collectionsData = useCollectionsData({
-    enabled: collectionsEnabled && page === 'collections' && currentUser != null,
+    enabled:
+      collectionsEnabled &&
+      (page === 'collections' || page === 'manage-collections') &&
+      currentUser != null,
     currentUser,
     selectedCollectionId,
   })
+
+  // #1554: the page's type is the list's type filter — keep them in lockstep.
+  useEffect(() => {
+    if (collectionsData.filters.type !== collectionPageType) {
+      collectionsData.setFilters({ ...collectionsData.filters, type: collectionPageType })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- filters.type is compared, not set
+  }, [collectionPageType, collectionsData.filters, collectionsData.setFilters])
+
+  // A collection detail opened via `?collection=` self-corrects the type
+  // page so Back returns to the right list. Only a detail matching the
+  // *current* selection may drive this — a stale detail left over from a
+  // previous selection must not override explicit type-page navigation.
+  useEffect(() => {
+    const t = collectionsData.detail?.type
+    if (
+      selectedCollectionId != null &&
+      collectionsData.detail?.id === selectedCollectionId &&
+      t != null &&
+      t !== collectionPageType
+    ) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- detail-driven sync, guarded by selection + inequality
+      setCollectionPageType(t)
+    }
+  }, [collectionsData.detail, collectionPageType, selectedCollectionId])
 
   // Navigation-safe reorder coordinator for the current Browse scope
   // (epic #975, issue #979).
@@ -586,6 +640,7 @@ export default function App() {
     collectionId: selectedCollectionId,
     collectionItemId: selectedCollectionItemId,
     collectionFromBrowse,
+    collectionPageType,
     setPath,
     setSelectedImage,
   })
@@ -673,17 +728,29 @@ export default function App() {
       }
       setCanvasEditActive(false)
       const validPage = (
-        ['browse', 'collections', 'manage', 'people', 'admin', 'guide'].includes(popPage)
+        [
+          'browse',
+          'collections',
+          'manage',
+          'manage-collections',
+          'people',
+          'admin',
+          'guide',
+        ].includes(popPage)
           ? popPage
           : 'browse'
       ) as Page
       setPage(validPage)
       // The collection id lives in the URL (`?collection=`), which the browser
       // has already restored by the time popstate fires. `?item=` (sequence
-      // position) is restored the same way.
+      // position) and `?type=` (type page, #1554) are restored the same way.
       setSelectedCollectionId(
         validPage === 'collections' ? parseCollectionIdParam(window.location.search) : null,
       )
+      if (validPage === 'collections') {
+        const poppedType = new URLSearchParams(window.location.search).get('type')
+        setCollectionPageType(poppedType === 'synchronized' ? 'synchronized' : 'sequence')
+      }
       setSelectedCollectionItemId(
         validPage === 'collections' ? parseCollectionItemParam(window.location.search) : null,
       )
@@ -1539,14 +1606,38 @@ export default function App() {
         setCollectionFromBrowse(false)
         clearImage()
         setPath([])
-        pushNavState(v)
+        pushNavState(v, [], null, v === 'collections' ? { type: collectionPageType } : undefined)
         if (v === 'browse') {
           loadCategories()
           loadUncategorizedImages()
         }
       })
     },
-    [clearImage, pushNavState, loadCategories, loadUncategorizedImages, runCanvasNavigation],
+    [
+      clearImage,
+      pushNavState,
+      loadCategories,
+      loadUncategorizedImages,
+      runCanvasNavigation,
+      collectionPageType,
+    ],
+  )
+
+  // Collections tab sub-menu (#1554): Sequence/Synchronized pickers. Same
+  // navigation reset as a tab change plus the `type` dimension.
+  const handleCollectionsTypeChange = useCallback(
+    (t: CollectionPageType) => {
+      runCanvasNavigation(() => {
+        setPage('collections')
+        setCollectionPageType(t)
+        setSelectedCollectionId(null)
+        setCollectionFromBrowse(false)
+        clearImage()
+        setPath([])
+        pushNavState('collections', [], null, { type: t })
+      })
+    },
+    [clearImage, pushNavState, runCanvasNavigation],
   )
 
   // Called only when already on browse (AppShell gates the click);
@@ -1599,8 +1690,8 @@ export default function App() {
       )
       return
     }
-    pushNavState('collections')
-  }, [collectionFromBrowse, path, pushNavState])
+    pushNavState('collections', [], null, { type: collectionPageType })
+  }, [collectionFromBrowse, path, pushNavState, collectionPageType])
 
   // Sequence viewer: `?collection={id}&item={image_id}` keeps the position
   // shareable and in history, so back steps through viewed items (#1416).
@@ -1766,6 +1857,8 @@ export default function App() {
       canManageUsers={canManageUsers}
       canViewPeople={canViewPeople}
       collectionsEnabled={collectionsEnabled}
+      collectionType={collectionPageType}
+      onCollectionsTypeChange={handleCollectionsTypeChange}
       currentUser={currentUser}
       announcement={announcement}
       annMessage={annMessage}
@@ -1820,6 +1913,7 @@ export default function App() {
             <AdminPage onChangelogEntriesChanged={bumpChangelogVersion} />
           ) : page === 'collections' && !collectionsEnabled ? null : page === 'collections' ? (
             <CollectionsPage
+              collectionPageType={collectionPageType}
               currentUser={currentUser}
               programs={programs}
               groups={groups}
@@ -1850,6 +1944,28 @@ export default function App() {
               onTransfer={collectionsData.transfer}
               onMoveCollection={canEditContent ? handleRequestMoveCollection : undefined}
               detailBackLabel={collectionFromBrowse ? 'Back to Browse' : undefined}
+            />
+          ) : page === 'manage-collections' &&
+            (!collectionsEnabled || !canManageCollections) ? null : page ===
+            'manage-collections' ? (
+            <ManageCollectionsPage
+              categories={categories}
+              programs={programs}
+              groups={groups}
+              currentUser={currentUser}
+              onNavigateCategory={(categoryPath) => {
+                runCanvasNavigation(() => {
+                  setPath(categoryPath)
+                  setPage('browse')
+                  pushNavState(
+                    'browse',
+                    categoryPath.map((c) => c.id),
+                  )
+                })
+              }}
+              onMoveCollection={canEditContent ? handleRequestMoveCollection : undefined}
+              onOpenCollection={(id) => handleOpenCollection(id)}
+              onError={setErrorSnack}
             />
           ) : page === 'people' && canViewPeople ? (
             <PeoplePage
