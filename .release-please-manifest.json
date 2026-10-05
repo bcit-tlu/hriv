@@ -3,5 +3,5 @@
   "backend": "0.64.5",
   "backup": "0.16.6",
   "restore-validation": "0.1.15",
-  "synthetic-monitoring": "1.2.7"
+  "synthetic-monitoring": "1.2.8"
 }
