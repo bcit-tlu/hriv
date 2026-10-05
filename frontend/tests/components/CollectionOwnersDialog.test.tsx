@@ -201,6 +201,42 @@ describe('CollectionOwnersDialog (#1531)', () => {
     expect(screen.queryByRole('button', { name: 'Everyone' })).not.toBeInTheDocument()
   })
 
+  it('drops stale suggestions synchronously when the search scope changes', async () => {
+    const user = userEvent.setup()
+    // First fetch resolves; every later fetch pends forever, so the window
+    // between a scope change and its refetch is fully deterministic.
+    fetchUsersPagedMock.mockReturnValue(new Promise(() => {}))
+    fetchUsersPagedMock.mockResolvedValueOnce({
+      items: [
+        {
+          id: 11,
+          name: 'Staff Alex',
+          email: 'alex@example.com',
+          role: 'staff',
+          active: true,
+          program_ids: [],
+          program_names: [],
+          group_ids: [],
+          group_names: [],
+          last_access: null,
+          metadata_extra: null,
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        },
+      ],
+      total: 1,
+    })
+    renderDialog() // admin — Everyone mode; the first fetch resolves.
+    const input = screen.getByLabelText('User owners')
+    await user.click(input)
+    await screen.findByRole('option', { name: /Staff Alex/ })
+    await user.click(screen.getByRole('button', { name: 'Students' }))
+    // The Everyone-mode result must be gone immediately, before the
+    // pending refetch could ever resolve.
+    await user.click(input)
+    expect(screen.queryByRole('option', { name: /Staff Alex/ })).not.toBeInTheDocument()
+  })
+
   it('narrows only the student search by the optional program filter', async () => {
     const user = userEvent.setup()
     renderDialog({}, makeAuth('instructor', 7, [1]))

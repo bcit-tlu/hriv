@@ -433,9 +433,9 @@ async def update_collection(
     Field-level authority (#1531): content fields (``name`` / ``description``
     / ``type`` echo) require ``can_edit_collection``; scope fields
     (``visibility`` / ``program_ids`` / ``group_ids``) require
-    ``can_change_collection_scope`` — a student co-owner may edit content
-    but not scope, while a student sole owner holds both. ``staff`` hold
-    neither. A ``version``-only PATCH counts as a content write.
+    ``can_change_collection_scope`` — a student or staff co-owner may edit
+    content but not scope, while a sole owner holds both. A
+    ``version``-only PATCH counts as a content write.
 
     Leaving ``restricted`` clears the program/group scope; sending a
     non-empty scope for a non-restricted collection is 422. Newly attached

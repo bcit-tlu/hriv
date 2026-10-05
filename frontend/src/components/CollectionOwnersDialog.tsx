@@ -215,7 +215,12 @@ export default function CollectionOwnersDialog({
           exclusive
           value={roleTab}
           onChange={(_e, v: 'student' | 'instructor' | 'all' | null) => {
-            if (v != null) setRoleTab(v)
+            if (v != null) {
+              setRoleTab(v)
+              // Scope changed — drop stale suggestions now, not when the
+              // debounced refetch resolves (they're wrong for the new role).
+              setUserOptions([])
+            }
           }}
           aria-label="Owner search scope"
           disabled={saving || programAssigned}
@@ -265,7 +270,10 @@ export default function CollectionOwnersDialog({
             filterSelectedOptions
             getOptionLabel={(p) => p.name}
             isOptionEqualToValue={(a, b) => a.id === b.id}
-            onChange={(_e, ps) => setProgramFilterIds(ps.map((p) => p.id))}
+            onChange={(_e, ps) => {
+              setProgramFilterIds(ps.map((p) => p.id))
+              setUserOptions([])
+            }}
             disabled={saving || programAssigned}
             renderInput={(params) => (
               <TextField
