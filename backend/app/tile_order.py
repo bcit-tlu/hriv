@@ -108,7 +108,12 @@ def validate_submitted_items(
 async def load_scope_members(
     db: AsyncSession, parent_category_id: int | None
 ) -> tuple[set[int], set[int]]:
-    """Load member category/image IDs for a scope in two bounded queries."""
+    """Load member category/image IDs for a scope in two bounded queries.
+
+    Collections join the member contract in #1528 (epic #1525 C3): until
+    then ``collections.sort_order``/``category_id`` exist and move bumps
+    scope revisions, but collection rows are intentionally not members here.
+    """
     cat_where = (
         Category.parent_id.is_(None)
         if parent_category_id is None

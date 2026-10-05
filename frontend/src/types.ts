@@ -23,6 +23,8 @@ export interface Category {
   parentId: number | null
   children: Category[]
   images: ImageItem[]
+  /** Collections filed into this category (#1527); `[]` when the flag is off. */
+  collections: CollectionSummary[]
   programIds: number[]
   groupIds: number[]
   status?: string | null
@@ -112,6 +114,10 @@ export interface CollectionSummary {
   imageCount: number
   coverThumb: string | null
   version: number
+  /** Category the collection is filed into (null = Browse root). */
+  categoryId: number | null
+  /** Tile-order position inside its category/root scope. */
+  sortOrder: number
   createdAt: string
   updatedAt: string
   permissions: CollectionPermissions

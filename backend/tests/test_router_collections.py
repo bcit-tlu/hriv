@@ -11,7 +11,7 @@ from fastapi import HTTPException
 from sqlalchemy.exc import InvalidRequestError
 from sqlalchemy.sql.dml import Update
 
-from app.models import Collection, CollectionImage, Group, Image, Program, User
+from app.models import Category, Collection, CollectionImage, Group, Image, Program, User
 from app.routers import collections as collections_router
 from app.routers.collections import (
     _unseen_links,
@@ -20,6 +20,7 @@ from app.routers.collections import (
     delete_collection,
     get_collection,
     list_collections,
+    move_collection,
     replace_collection_images,
     replace_collection_viewport,
     require_collections_enabled,
@@ -29,6 +30,7 @@ from app.routers.collections import (
 from app.schemas import (
     CollectionCreate,
     CollectionImagesUpdate,
+    CollectionMove,
     CollectionTransfer,
     CollectionUpdate,
     CollectionViewportUpdate,
@@ -83,6 +85,8 @@ def _collection(
     programs: list[int] | None = None,
     groups: list[int] | None = None,
     type: str = "sequence",
+    category_id: int | None = None,
+    sort_order: int = 0,
 ) -> SimpleNamespace:
     owner = SimpleNamespace(id=user_id, name=f"user{user_id}") if user_id else None
     owner_program = (
@@ -100,6 +104,8 @@ def _collection(
         owner_program_id=owner_program_id,
         owner=owner,
         owner_program=owner_program,
+        category_id=category_id,
+        sort_order=sort_order,
         viewport_state={"1": {"zoom": 1.0}},
         version=3,
         created_at=NOW,
@@ -193,9 +199,16 @@ def _links(collection) -> list[tuple[int, int]]:
 def _no_excluded(monkeypatch: pytest.MonkeyPatch) -> None:
     """Default: student visibility excludes nothing; tests override as needed."""
     monkeypatch.setattr(
-        collections_router,
-        "get_student_excluded_category_ids",
+        "app.collection_views.get_student_excluded_category_ids",
         AsyncMock(return_value=set()),
+    )
+    # Revision bumps (tile-order scopes / browse ETag) write to real tables;
+    # stub them here — tests that assert on them install their own spies.
+    monkeypatch.setattr(
+        collections_router, "bump_scopes", AsyncMock()
+    )
+    monkeypatch.setattr(
+        collections_router, "bump_browse_revision", AsyncMock(return_value=1)
     )
 
 
@@ -328,7 +341,7 @@ async def test_list_student_image_count_omits_hidden_images(
 ) -> None:
     excluded = AsyncMock(return_value={20})
     monkeypatch.setattr(
-        collections_router, "get_student_excluded_category_ids", excluded
+        "app.collection_views.get_student_excluded_category_ids", excluded
     )
     images = [_image(1, category_id=20), _image(2, category_id=21), _image(3, active=False)]
     col = _collection(1, "public", user_id=10, images=images)
@@ -346,7 +359,7 @@ async def test_list_non_student_does_not_compute_exclusions(
 ) -> None:
     excluded = AsyncMock(return_value=set())
     monkeypatch.setattr(
-        collections_router, "get_student_excluded_category_ids", excluded
+        "app.collection_views.get_student_excluded_category_ids", excluded
     )
     col = _collection(1, "public", user_id=10, images=[_image(1, active=False)])
     out = await list_collections(_user("staff", id=3), db=_mock_db([col]))
@@ -389,8 +402,7 @@ async def test_get_collection_student_omits_invisible_images(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        collections_router,
-        "get_student_excluded_category_ids",
+        "app.collection_views.get_student_excluded_category_ids",
         AsyncMock(return_value={20}),
     )
     images = [
@@ -511,7 +523,7 @@ async def test_create_student_invisible_image_is_422(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     excluded = AsyncMock(return_value={20})
-    monkeypatch.setattr(collections_router, "get_student_excluded_category_ids", excluded)
+    monkeypatch.setattr("app.collection_views.get_student_excluded_category_ids", excluded)
     images = [_image(1, category_id=20), _image(2, category_id=21), _image(3, active=False)]
     body = CollectionCreate(name="C", type="sequence", image_ids=[1, 2, 3])
     student = _user("student", id=2, programs=[1], groups=[5])
@@ -817,7 +829,7 @@ async def test_replace_images_student_invisible_is_422(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     excluded = AsyncMock(return_value={20})
-    monkeypatch.setattr(collections_router, "get_student_excluded_category_ids", excluded)
+    monkeypatch.setattr("app.collection_views.get_student_excluded_category_ids", excluded)
     col = _collection(1, "private", user_id=2)
     images = [_image(1, category_id=20), _image(2, category_id=21), _image(3, active=False)]
     student = _user("student", id=2, programs=[1], groups=[5])
@@ -869,7 +881,7 @@ async def test_replace_images_student_retains_unseen_members(
     # GET omits images 1 (excluded category) and 3 (inactive), so a client
     # can only ever submit [2, 4]; the PUT must not drop the hidden members.
     monkeypatch.setattr(
-        collections_router, "get_student_excluded_category_ids", AsyncMock(return_value={20})
+        "app.collection_views.get_student_excluded_category_ids", AsyncMock(return_value={20})
     )
     hidden_a, visible_b, hidden_c, visible_d = (
         _image(1, category_id=20),
@@ -909,7 +921,7 @@ async def test_replace_images_unseen_members_count_toward_synchronized_cap(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        collections_router, "get_student_excluded_category_ids", AsyncMock(return_value={20})
+        "app.collection_views.get_student_excluded_category_ids", AsyncMock(return_value={20})
     )
     hidden = _image(9, category_id=20)
     visible = [_image(i) for i in range(1, 5)]
@@ -1394,3 +1406,215 @@ def test_require_restricted_authority() -> None:
         with pytest.raises(HTTPException) as exc:
             collections_router._require_restricted_authority(_user(role, id=3))
         assert exc.value.status_code == 403
+
+
+# ── move (browse placement, #1527) ────────────────────────
+
+
+def _move_db(
+    collection=None,
+    category=None,
+    cas_rowcount: int = 1,
+) -> AsyncMock:
+    """Mock session for ``move_collection``: ``db.get`` answers Collection /
+    Category lookups, ``execute`` answers the optimistic-concurrency UPDATE.
+    """
+    db = AsyncMock()
+
+    async def _get(entity, pk):
+        if entity is Collection:
+            return collection
+        if entity is Category:
+            return category
+        return None
+
+    db.get = AsyncMock(side_effect=_get)
+    result = MagicMock()
+    result.rowcount = cas_rowcount
+    db.execute = AsyncMock(return_value=result)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+    return db
+
+
+def _move(category_id: int | None, version: int = 3) -> CollectionMove:
+    return CollectionMove(category_id=category_id, version=version)
+
+
+async def test_move_endpoint_is_admin_instructor_only() -> None:
+    route = next(
+        r for r in collections_router.router.routes if r.path.endswith("/move")
+    )
+    gate = next(
+        dep.call
+        for dep in route.dependant.dependencies
+        if dep.call.__name__ == "_check"
+    )
+    for role in ("student", "staff"):
+        with pytest.raises(HTTPException) as exc:
+            await gate(current_user=_user(role))
+        assert exc.value.status_code == 403
+    for role in ("admin", "instructor"):
+        assert (await gate(current_user=_user(role))).role == role
+
+
+async def test_move_admin_files_collection_into_category(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    col = _collection(1, "public", user_id=10, category_id=7, sort_order=2)
+    cat = SimpleNamespace(id=3)
+    db = _move_db(collection=col, category=cat)
+    out = await move_collection(1, _move(3), _user("admin"), db=db)
+    assert col.category_id == 3
+    assert col.version == 4 and out.version == 4
+    collections_router.bump_scopes.assert_awaited_once()
+    assert collections_router.bump_scopes.call_args.args[1] == {7, 3}
+    collections_router.bump_browse_revision.assert_awaited_once()
+    db.commit.assert_awaited_once()
+    db.refresh.assert_awaited_once_with(col)
+
+
+async def test_move_instructor_to_root_via_null(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    col = _collection(1, "private", user_id=99, category_id=7)
+    db = _move_db(collection=col)
+    out = await move_collection(1, _move(None), _user("instructor", id=5), db=db)
+    assert col.category_id is None
+    collections_router.bump_scopes.assert_awaited_once()
+    # root scope is keyed 0
+    assert collections_router.bump_scopes.call_args.args[1] == {7, 0}
+    assert out.category_id is None
+
+
+async def test_move_uncategorized_into_category() -> None:
+    col = _collection(1, "public", user_id=10, category_id=None)
+    cat = SimpleNamespace(id=9)
+    db = _move_db(collection=col, category=cat)
+    await move_collection(1, _move(9), _user("admin"), db=db)
+    assert col.category_id == 9
+    assert collections_router.bump_scopes.call_args.args[1] == {0, 9}
+
+
+async def test_move_same_category_is_noop_without_bumps() -> None:
+    col = _collection(1, "public", user_id=10, category_id=3)
+    cat = SimpleNamespace(id=3)
+    db = _move_db(collection=col, category=cat)
+    out = await move_collection(1, _move(3), _user("admin"), db=db)
+    assert col.category_id == 3
+    collections_router.bump_scopes.assert_not_awaited()
+    collections_router.bump_browse_revision.assert_not_awaited()
+    # The version CAS still runs so stale tokens get a 409.
+    assert col.version == 4 and out.version == 4
+
+
+async def test_move_missing_collection_is_404() -> None:
+    db = _move_db(collection=None)
+    with pytest.raises(HTTPException) as exc:
+        await move_collection(9, _move(3), _user("admin"), db=db)
+    assert exc.value.status_code == 404
+    db.commit.assert_not_awaited()
+
+
+async def test_move_unknown_category_is_422() -> None:
+    col = _collection(1, "public", user_id=10, category_id=None)
+    db = _move_db(collection=col, category=None)
+    with pytest.raises(HTTPException) as exc:
+        await move_collection(1, _move(99), _user("admin"), db=db)
+    assert exc.value.status_code == 422 and "99" in exc.value.detail
+    assert col.category_id is None
+    db.commit.assert_not_awaited()
+
+
+async def test_move_stale_version_is_409_with_current_collection() -> None:
+    col = _collection(1, "public", user_id=10, category_id=7)
+    db = _move_db(collection=col, category=SimpleNamespace(id=3), cas_rowcount=0)
+    with pytest.raises(HTTPException) as exc:
+        await move_collection(1, _move(3, version=1), _user("admin"), db=db)
+    assert exc.value.status_code == 409
+    assert exc.value.detail["id"] == 1 and exc.value.detail["version"] == 3
+    assert col.category_id == 7
+
+
+async def test_move_body_rejects_missing_version() -> None:
+    with pytest.raises(Exception):
+        CollectionMove(category_id=3)
+
+
+async def test_move_does_not_change_sort_order() -> None:
+    col = _collection(1, "public", user_id=10, category_id=7, sort_order=4)
+    db = _move_db(collection=col, category=SimpleNamespace(id=3))
+    out = await move_collection(1, _move(3), _user("admin"), db=db)
+    assert col.sort_order == 4 and out.sort_order == 4
+
+
+async def test_move_lock_order_scopes_then_row_then_browse() -> None:
+    """Deadlock guard (epic #1525): move must lock scope revisions, then the
+    collection row (via the version CAS), then browse_state — the same
+    row-before-browse order as PATCH, so concurrent move+PATCH cannot
+    deadlock."""
+    order: list[str] = []
+    collections_router.bump_scopes.side_effect = lambda *a, **k: order.append(
+        "scopes"
+    )
+    collections_router.bump_browse_revision.side_effect = (
+        lambda *a, **k: order.append("browse")
+    )
+    col = _collection(1, "public", user_id=10, category_id=7)
+    db = _move_db(collection=col, category=SimpleNamespace(id=3))
+    inner = db.execute
+
+    async def _record(stmt):
+        order.append("row")
+        return await inner(stmt)
+
+    db.execute = AsyncMock(side_effect=_record)
+    await move_collection(1, _move(3), _user("admin"), db=db)
+    assert order == ["scopes", "row", "browse"]
+
+
+async def test_delete_lock_order_scopes_then_row_then_browse() -> None:
+    order: list[str] = []
+    collections_router.bump_scopes.side_effect = lambda *a, **k: order.append(
+        "scopes"
+    )
+    collections_router.bump_browse_revision.side_effect = (
+        lambda *a, **k: order.append("browse")
+    )
+    col = _collection(1, "public", user_id=10, category_id=7)
+    owner = _user("instructor", id=10)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=col)
+    db.delete = AsyncMock(side_effect=lambda *a: order.append("row"))
+    db.commit = AsyncMock()
+    await delete_collection(1, owner, db=db)
+    assert order == ["scopes", "row", "browse"]
+
+
+async def test_list_uncategorized_filter() -> None:
+    cols = [_collection(1, "public", user_id=10)]
+    db = _mock_db(cols)
+    await list_collections(_user("admin"), db=db, uncategorized=True)
+    stmt = db.execute.call_args.args[0]
+    compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+    assert "category_id IS NULL" in compiled
+
+
+async def test_list_student_hides_collections_in_excluded_categories(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A student-visible collection filed into an excluded category must not
+    surface in the list — the category ancestor gate applies on top of the
+    collection's own visibility gate."""
+    monkeypatch.setattr(
+        "app.collection_views.get_student_excluded_category_ids",
+        AsyncMock(return_value={8}),
+    )
+    cols = [
+        _collection(1, "public", user_id=10, category_id=8),  # hidden category
+        _collection(2, "public", user_id=10, category_id=3),  # visible category
+        _collection(3, "public", user_id=10),  # uncategorized
+    ]
+    student = _user("student", id=2, programs=[1], groups=[5])
+    out = await list_collections(student, db=_mock_db(cols))
+    assert [c.id for c in out] == [2, 3]

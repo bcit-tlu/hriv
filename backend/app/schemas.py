@@ -404,6 +404,10 @@ class CategoryOut(CategoryBase):
 class CategoryTree(CategoryOut):
     children: list["CategoryTree"] = []
     images: list["ImageOut"] = []
+    # Collections filed into this category (epic #1525). Present only when the
+    # ``COLLECTIONS_ENABLED`` flag is on; uncategorized collections are not in
+    # the tree — like uncategorized images they are listed separately at root.
+    collections: list["CollectionSummaryOut"] = []
 
 
 # ── Image ─────────────────────────────────────────────────
@@ -678,10 +682,6 @@ class UserOut(UserBase):
     model_config = {"from_attributes": True, "populate_by_name": True}
 
 
-# Rebuild forward refs for nested models
-CategoryTree.model_rebuild()
-
-
 # ── Collection ────────────────────────────────────────────
 
 class CollectionOwnerOut(BaseModel):
@@ -712,6 +712,10 @@ class CollectionSummaryOut(BaseModel):
     image_count: int = 0
     cover_thumb: str | None = None
     version: int = 1
+    # Browse placement (epic #1525): the category the collection is filed in
+    # (``None`` = uncategorized) and its tile-order position in that scope.
+    category_id: int | None = None
+    sort_order: int = 0
     created_at: datetime
     updated_at: datetime
     permissions: CollectionPermissionsOut = CollectionPermissionsOut()
@@ -817,6 +821,19 @@ class CollectionUpdate(BaseModel):
     )
 
 
+class CollectionMove(BaseModel):
+    """POST ``/{id}/move`` body filing a collection into a category.
+
+    ``category_id`` is required but nullable: an explicit ``null`` files the
+    collection at the Browse root (uncategorized), mirroring
+    ``ImageUpdate.category_id`` semantics. ``version`` is the optimistic
+    concurrency token.
+    """
+
+    category_id: int | None
+    version: int
+
+
 class CollectionImagesUpdate(BaseModel):
     """PUT body replacing the whole ordered image list (add/remove/reorder).
 
@@ -863,3 +880,8 @@ class FeaturesOut(BaseModel):
     """
 
     collections: bool
+
+
+# Rebuild forward refs for nested models (``CategoryTree`` embeds
+# ``ImageOut`` and ``CollectionSummaryOut``, both defined below it).
+CategoryTree.model_rebuild()

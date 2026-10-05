@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
 from .browse_state import bump_browse_revision
+from .collection_views import image_ids_in_filed_collections
 from .database import async_session, settings
 from .auth_events import actor_log_fields
 from .models import Image, SourceImage, User
@@ -811,8 +812,13 @@ async def process_source_image(source_image_id: int) -> None:
                 src.status = "completed"
                 src.progress = 100
                 src.status_message = "Completed"
-                # Only images that are attached to a category appear in the tree.
-                if img.category_id is not None:
+                # Images attached to a category appear in the tree; an
+                # uncategorized image may still sit on a filed collection's
+                # tile (cover/count) — see #1527.
+                if (
+                    img.category_id is not None
+                    or await image_ids_in_filed_collections(db, {img.id})
+                ):
                     await bump_browse_revision(db)
                 await db.commit()
 
@@ -1096,8 +1102,13 @@ async def process_replace_image(
                 src.status = "completed"
                 src.progress = 100
                 src.status_message = "Completed"
-                # Only images that are attached to a category appear in the tree.
-                if img.category_id is not None:
+                # Images attached to a category appear in the tree; an
+                # uncategorized image may still sit on a filed collection's
+                # tile (cover/count) — see #1527.
+                if (
+                    img.category_id is not None
+                    or await image_ids_in_filed_collections(db, {img.id})
+                ):
                     await bump_browse_revision(db)
                 await db.commit()
 
@@ -1603,7 +1614,10 @@ async def promote_source_image_tile_rebuild(
             img.width = prepared.image_width
             img.height = prepared.image_height
             img.version = img.version + 1
-            if img.category_id is not None:
+            if (
+                img.category_id is not None
+                or await image_ids_in_filed_collections(session, {img.id})
+            ):
                 await bump_browse_revision(session)
     except (Exception, asyncio.CancelledError):
         await rollback_promoted_tile_rebuild(promoted)

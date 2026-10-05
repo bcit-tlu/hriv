@@ -530,6 +530,7 @@ class Collection(Base):
         ),
         Index("idx_collections_user", "user_id"),
         Index("idx_collections_owner_program", "owner_program_id"),
+        Index("idx_collections_category", "category_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -547,6 +548,16 @@ class Collection(Base):
     )
     owner_program_id: Mapped[int | None] = mapped_column(
         ForeignKey("programs.id", ondelete="SET NULL"), nullable=True,
+    )
+    # Browse placement (epic #1525): the category the collection is filed in;
+    # NULL = uncategorized (shown at the Browse root like uncategorized
+    # images). Deleting the category unfiles the collection rather than
+    # deleting it. ``sort_order`` is the tile-order position inside the scope.
+    category_id: Mapped[int | None] = mapped_column(
+        ForeignKey("categories.id", ondelete="SET NULL"), nullable=True,
+    )
+    sort_order: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
     )
     viewport_state: Mapped[dict] = mapped_column(
         JSONB,

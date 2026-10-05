@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
+from app.routers import users as users_router
 from app.routers.users import (
     VALID_ROLES,
     _set_user_programs,
@@ -60,6 +61,15 @@ def _make_user(
         last_access=now,
         created_at=now,
         updated_at=now,
+    )
+
+
+@pytest.fixture(autouse=True)
+def _patch_browse_bump(monkeypatch: pytest.MonkeyPatch) -> None:
+    """bump_browse_revision writes to browse_state; stub it for mocked
+    sessions (#1527 — owner names render on filed collection tiles)."""
+    monkeypatch.setattr(
+        "app.routers.users.bump_browse_revision", AsyncMock(return_value=1)
     )
 
 
@@ -586,8 +596,11 @@ async def test_delete_user_success() -> None:
     admin = _make_user(id=99, role="admin")
     user = _make_user(id=1)
 
+    owns = MagicMock()
+    owns.first.return_value = None
     db = AsyncMock()
     db.get = AsyncMock(return_value=user)
+    db.execute = AsyncMock(return_value=owns)
     db.delete = AsyncMock()
     db.commit = AsyncMock()
 
@@ -781,3 +794,62 @@ async def test_bulk_delete_users_not_found() -> None:
     with pytest.raises(HTTPException) as exc:
         await bulk_delete_users(body, admin, db)
     assert exc.value.status_code == 404
+
+
+# ── Browse revision invalidation (epic #1525 / #1527) ──
+
+
+async def test_update_user_rename_bumps_browse_revision() -> None:
+    """Owner names render on filed collection tiles — a rename must
+    invalidate the category-tree ETag."""
+    user = _make_user(id=1, name="Ada")
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=user)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    await update_user(1, UserUpdate(name="Grace"), MagicMock(), db)
+    users_router.bump_browse_revision.assert_awaited_once()
+
+
+async def test_update_user_non_name_change_skips_browse_bump() -> None:
+    user = _make_user(id=1, name="Ada")
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=user)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    await update_user(1, UserUpdate(role="instructor"), MagicMock(), db)
+    users_router.bump_browse_revision.assert_not_awaited()
+
+
+async def test_delete_user_owning_filed_collection_bumps() -> None:
+    """Deleting a user cascade-deletes their owned collections — a filed
+    collection disappears from the tree, so the ETag must advance."""
+    admin = _make_user(id=99, role="admin")
+    user = _make_user(id=1)
+    owns = MagicMock()
+    owns.first.return_value = MagicMock()  # owns ≥1 filed collection
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=user)
+    db.execute = AsyncMock(return_value=owns)
+    db.delete = AsyncMock()
+    db.commit = AsyncMock()
+
+    await delete_user(1, admin, db)
+    users_router.bump_browse_revision.assert_awaited_once()
+
+
+async def test_delete_user_without_filed_collections_skips_bump() -> None:
+    admin = _make_user(id=99, role="admin")
+    user = _make_user(id=1)
+    owns = MagicMock()
+    owns.first.return_value = None
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=user)
+    db.execute = AsyncMock(return_value=owns)
+    db.delete = AsyncMock()
+    db.commit = AsyncMock()
+
+    await delete_user(1, admin, db)
+    users_router.bump_browse_revision.assert_not_awaited()

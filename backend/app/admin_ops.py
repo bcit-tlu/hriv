@@ -1292,6 +1292,8 @@ async def run_db_export(task_id: int) -> None:
                         "visibility": c.visibility,
                         "user_id": c.user_id,
                         "owner_program_id": c.owner_program_id,
+                        "category_id": c.category_id,
+                        "sort_order": c.sort_order,
                         "viewport_state": c.viewport_state,
                         "version": c.version,
                         "image_ids": [
@@ -1707,6 +1709,8 @@ async def run_db_import(task_id: int) -> None:
                         visibility=c.get("visibility", "private"),
                         user_id=c.get("user_id"),
                         owner_program_id=c.get("owner_program_id"),
+                        category_id=c.get("category_id"),
+                        sort_order=c.get("sort_order", 0),
                         viewport_state=c.get("viewport_state") or {},
                         version=c.get("version", 1),
                         created_at=_parse_dt(c.get("created_at")),

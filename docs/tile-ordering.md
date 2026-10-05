@@ -88,7 +88,8 @@ Within **one database transaction** the endpoint:
 3. rejects duplicated, foreign-scope, or missing IDs (HTTP 400) — the
    submitted items must be exactly the scope's members. A 400 can also mean
    scope membership changed underneath the client (a tile was moved in or
-   out). Moves through the category/image update endpoints bump the
+   out). Moves through the category/image update endpoints — and
+   `POST /api/collections/{id}/move` (#1527) — bump the
    revision of both the source and destination scopes, so a client holding
    a pre-move revision gets a 409; other membership changes (create,
    delete) do not bump the revision and are caught only by this

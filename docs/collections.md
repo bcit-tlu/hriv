@@ -63,14 +63,16 @@ one child issue at a time on `main`.
 ## Data model
 
 Migration `0030_collections` (`backend/app/models.py`: `Collection`,
-`CollectionImage`, `collection_programs`, `collection_groups`).
+`CollectionImage`, `collection_programs`, `collection_groups`); migration
+`0031_collection_categories` adds `collections.category_id` +
+`collections.sort_order` so collections file into the Browse hierarchy.
 
-| Table                 | Purpose                                                                                                                                                                                                                            |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `collections`         | `name`, `description`, `type` (`synchronized` / `sequence`, CHECK), `visibility` (`private` / `public` / `restricted`, CHECK, default `private`), `user_id`, `owner_program_id`, `viewport_state` (JSONB, default `{}`), `version` |
-| `collection_images`   | Ordered membership: PK `(collection_id, image_id)`, `sort_order`; index `idx_collection_images_order (collection_id, sort_order)`                                                                                                  |
-| `collection_programs` | Program scope for `visibility = restricted`                                                                                                                                                                                        |
-| `collection_groups`   | Group scope for `visibility = restricted`                                                                                                                                                                                          |
+| Table                 | Purpose                                                                                                                                                                                                                                                                                                                                         |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `collections`         | `name`, `description`, `type` (`synchronized` / `sequence`, CHECK), `visibility` (`private` / `public` / `restricted`, CHECK, default `private`), `user_id`, `owner_program_id`, `category_id` (nullable FK → `categories`, `SET NULL` on delete; #1527), `sort_order` (tile-order position), `viewport_state` (JSONB, default `{}`), `version` |
+| `collection_images`   | Ordered membership: PK `(collection_id, image_id)`, `sort_order`; index `idx_collection_images_order (collection_id, sort_order)`                                                                                                                                                                                                               |
+| `collection_programs` | Program scope for `visibility = restricted`                                                                                                                                                                                                                                                                                                     |
+| `collection_groups`   | Group scope for `visibility = restricted`                                                                                                                                                                                                                                                                                                       |
 
 ### Ownership
 
@@ -87,6 +89,26 @@ program (`owner_program_id`, FK `SET NULL`) — enforced by
   manageable only by admins until reassigned.
 - Deleting a **group** removes its `collection_groups` rows; unlike categories,
   a group attached to a collection does not block group deletion.
+- Deleting a **category** does _not_ delete its collections:
+  `category_id` becomes `NULL` (`SET NULL`) and the collection resurfaces at
+  the Browse root — the same reparenting rule as images.
+
+### Browse placement (#1527)
+
+`category_id` files a collection into the category tree like an image:
+`NULL` = uncategorized (shown at the Browse root via `?uncategorized`),
+otherwise the collection tile appears inside that category's node in
+`GET /api/categories/tree` (`CategoryTree.collections`). `sort_order` is the
+tile-order position inside that scope (category or root), shared with
+categories and images.
+
+Moving is curatorial, not ownership-bound: `POST /api/collections/{id}/move`
+is admin/instructor-only (like moving images and categories) and is
+deliberately separate from the owner-gated PATCH. The move bumps the
+tile-order scope revisions of both the source and destination scopes and
+the global browse revision, so in-flight reorder clients get a 409 and the
+tree ETag invalidates. `visibility` still gates _who sees_ the tile;
+placement only gates _where_ it sits.
 
 Collections are included in the admin database export/import round-trip
 (`collections` key with ordered `image_ids`, `program_ids`, `group_ids`); see
@@ -117,6 +139,12 @@ The restricted dual gate mirrors
 the collection either has no scope rows or shares at least one entry with the
 student. An empty scope on a dimension is unrestricted on that dimension.
 Callers must always pass **both** `user_program_ids` and `user_group_ids`.
+
+A filed collection is additionally gated by its **category's** ancestor
+visibility: a student sees the collection only when the collection gate AND
+the category gate both pass (a hidden/restricted category hides everything
+inside it, mirroring images). This applies identically to `GET
+/api/collections`, `GET /api/collections/{id}` and the category tree embed.
 
 ### Images inside a collection
 
@@ -155,20 +183,28 @@ below answers `404` while `COLLECTIONS_ENABLED` is off (see
 
 | Method | Endpoint                         | Min role                                                               | Notes                                                                                                                                                                                                                                                                                                                                 |
 | ------ | -------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/collections`               | student                                                                | Visible collections as `CollectionSummaryOut[]`. Query: `type`, `mine`, `owner_user_id`, `owner_program_id`, `orphaned` (**admin only**, others **403**). Ordered by `updated_at` desc.                                                                                                                                               |
+| GET    | `/api/collections`               | student                                                                | Visible collections as `CollectionSummaryOut[]`. Query: `type`, `mine`, `owner_user_id`, `owner_program_id`, `orphaned` (**admin only**, others **403**), `uncategorized` (only collections filed at the Browse root, `category_id IS NULL`). Ordered by `updated_at` desc.                                                           |
 | GET    | `/api/collections/{id}`          | student                                                                | `CollectionOut` (summary + ordered `images: ImageOut[]`, `program_ids`, `group_ids`, `viewport_state`). **404** when missing _or_ not visible (no existence leak).                                                                                                                                                                    |
 | POST   | `/api/collections`               | student                                                                | Create; owner = caller (`user_id`). Body `CollectionCreate`: `name`, `description?`, `type`, `visibility` (default `private`), ordered `image_ids`, `program_ids` / `group_ids` (restricted only). **201** `CollectionOut`.                                                                                                           |
 | PATCH  | `/api/collections/{id}`          | student (must pass `can_edit_collection`)                              | Body `CollectionUpdate`: any of `name`, `description`, `visibility`, `program_ids`, `group_ids` + required `version`. `type` is immutable (**422** if changed). Returns fresh `CollectionOut`.                                                                                                                                        |
 | DELETE | `/api/collections/{id}`          | student (must pass `can_delete_collection`)                            | **204**.                                                                                                                                                                                                                                                                                                                              |
 | PUT    | `/api/collections/{id}/images`   | student (must pass `can_edit_collection`)                              | Replace the whole ordered image list (add / remove / reorder in one call). Body `CollectionImagesUpdate`: `image_ids`, `version`. `sort_order` is rewritten to `0..n-1`. Returns fresh `CollectionOut`.                                                                                                                               |
 | PUT    | `/api/collections/{id}/viewport` | student (must pass `can_edit_collection`)                              | Replace `viewport_state` wholesale. Body `CollectionViewportUpdate`: `viewport_state` (JSON object), `version`. Returns fresh `CollectionOut`.                                                                                                                                                                                        |
+| POST   | `/api/collections/{id}/move`     | admin / instructor (any — filing is curatorial, not ownership-bound)   | File the collection into a category. Body `CollectionMove`: `category_id` (required, `null` = Browse root) + `version`. **404** missing collection, **422** unknown category, **409** stale version. Keeps `sort_order`; bumps source+destination scope revisions and the browse revision. Returns fresh `CollectionOut`.             |
 | POST   | `/api/collections/{id}/transfer` | instructor (must pass `can_transfer_collection`; to a user: **admin**) | Reassign ownership. Body `CollectionTransfer`: exactly one of `user_id` / `program_id` (**422** otherwise) + required `version`. **404** if not visible, **403** if not transferable, **422** unknown / deactivated target, **409** stale version. Returns fresh `CollectionOut` with the new `owner` and re-evaluated `permissions`. |
 
 `CollectionSummaryOut`: `id`, `name`, `description`, `type`, `visibility`,
 `owner` (`{user_id, name}` | `{program_id, name}` | `null` when orphaned),
 `image_count` (visible-to-caller), `cover_thumb` (first visible image thumb),
-`version`, `created_at`, `updated_at`, `permissions {can_edit, can_delete,
-can_transfer}`.
+`version`, `category_id`, `sort_order`, `created_at`, `updated_at`,
+`permissions {can_edit, can_delete, can_transfer}`.
+
+Each `CategoryTree` node additionally carries `collections:
+CollectionSummaryOut[]` — the collections filed into that category, subject
+to the same visibility filtering as `GET /api/collections` (collection gate
+AND category ancestor gate). When `COLLECTIONS_ENABLED` is off the field is
+always empty and the collections query is skipped entirely, so flag-off
+deployments neither leak collection data nor grow the tree query count.
 
 Image URLs (`cover_thumb`, `images[].thumb`, `images[].tile_sources`) are
 tokenized at serialization time exactly like `GET /api/images/{id}` (see

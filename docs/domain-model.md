@@ -53,7 +53,10 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   `sequence`, CHECK `ck_collections_type`); `visibility` (`private` / `public` /
   `restricted`, CHECK `ck_collections_visibility`, default `private`);
   `user_id` (FK to User, **CASCADE**); `owner_program_id` (FK to Program,
-  **SET NULL**); `viewport_state` (JSONB, default `{}`); `version` (optimistic
+  **SET NULL**); `category_id` (FK to Category, **SET NULL** — #1527, files
+  the collection into the Browse hierarchy; `NULL` = uncategorized root);
+  `sort_order` (tile-order position inside its scope); `viewport_state`
+  (JSONB, default `{}`); `version` (optimistic
   concurrency, starts at 1). CHECK `ck_collections_single_owner`
   (`num_nonnulls(user_id, owner_program_id) <= 1`) — both `NULL` = orphaned.
 - **Relationships:** `owner` (User), `owner_program` (Program); `image_links`
@@ -63,7 +66,8 @@ the schema** — change the model _and_ generate a migration in the same PR (see
 - **Deletion:** `CASCADE` to `collection_images`, `collection_programs`,
   `collection_groups`. Deleting a user deletes their collections; deleting a
   program orphans its collections; deleting an image removes it from every
-  collection.
+  collection; deleting a category unfiles its collections (`category_id` →
+  `NULL`), the same reparenting rule as images.
 - See [Collections](collections.md).
 
 ### CollectionImage _(added in `0030_collections`)_

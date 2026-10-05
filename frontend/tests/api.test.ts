@@ -62,6 +62,7 @@ import {
   deleteCollection,
   replaceCollectionImages,
   saveCollectionViewport,
+  moveCollection,
   transferCollection,
   collectionConflictCurrent,
   fetchOidcEnabled,
@@ -982,6 +983,7 @@ describe('Collections API', () => {
       owner_user_id: 7,
       owner_program_id: 3,
       orphaned: true,
+      uncategorized: true,
     })
     const [url] = mockFetch.mock.calls[0]
     const qs = new URL(url, 'http://x').searchParams
@@ -990,6 +992,7 @@ describe('Collections API', () => {
     expect(qs.get('owner_user_id')).toBe('7')
     expect(qs.get('owner_program_id')).toBe('3')
     expect(qs.get('orphaned')).toBe('true')
+    expect(qs.get('uncategorized')).toBe('true')
   })
 
   it('fetchCollections omits falsy boolean filters (never sends mine=false / orphaned=false)', async () => {
@@ -1066,6 +1069,20 @@ describe('Collections API', () => {
     expect(url).toBe('/api/collections/5/viewport')
     expect(init.method).toBe('PUT')
     expect(JSON.parse(init.body)).toEqual({ viewport_state: { zoom: 2 }, version: 4 })
+  })
+
+  it('moveCollection POSTs category_id with version (null = root)', async () => {
+    mockFetch.mockReturnValue(jsonResponse(makeApiCollection()))
+    await moveCollection(5, { category_id: 12, version: 4 })
+    let [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/collections/5/move')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body)).toEqual({ category_id: 12, version: 4 })
+
+    await moveCollection(5, { category_id: null, version: 5 })
+    ;[url, init] = mockFetch.mock.calls[1]
+    expect(url).toBe('/api/collections/5/move')
+    expect(JSON.parse(init.body)).toEqual({ category_id: null, version: 5 })
   })
 
   it('transferCollection POSTs exactly one owner target with version', async () => {

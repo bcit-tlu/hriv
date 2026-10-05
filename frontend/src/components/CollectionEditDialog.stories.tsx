@@ -75,6 +75,8 @@ const existing: Collection = {
   owner: { kind: 'user', userId: 7, name: 'Ada Lovelace' },
   imageCount: 2,
   coverThumb: null,
+  categoryId: null,
+  sortOrder: 0,
   version: 3,
   createdAt: FIXED_AT,
   updatedAt: FIXED_AT,

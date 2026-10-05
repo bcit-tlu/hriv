@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth import get_current_user, require_role
 from ..auth_events import actor_log_fields
 from ..browse_state import bump_browse_revision
+from ..collection_views import image_ids_in_filed_collections
 from ..database import async_session, get_db, settings
 from ..filenames import sanitize_upload_filename, storage_extension
 from ..image_validation import is_valid_image
@@ -183,6 +184,14 @@ async def bulk_update_images(
                 for key, value in update_data.items():
                     setattr(img, key, value)
                 img.version = img.version + 1
+            if not browse_dirty:
+                # Uncategorized-staying images can still affect the tree via
+                # filed collections that render their thumb/active state.
+                root_ids = [
+                    img.id for img in changed_images if img.category_id is None
+                ]
+                if root_ids and await image_ids_in_filed_collections(db, root_ids):
+                    browse_dirty = True
             if browse_dirty:
                 await bump_browse_revision(db)
             await db.commit()
@@ -256,7 +265,13 @@ async def update_image(
             # cache.
             is_dirty = any(getattr(img, key) != value for key, value in update_data.items())
             browse_affects_tree = (
-                img.category_id is not None or new_category_id is not None
+                img.category_id is not None
+                or new_category_id is not None
+                # An uncategorized image can still render on a filed
+                # collection's tile (cover/count) — see #1527.
+                or bool(
+                    await image_ids_in_filed_collections(db, {img.id})
+                )
             )
             browse_dirty = browse_affects_tree and is_dirty
 
@@ -490,6 +505,7 @@ async def replace_image(
                 if has_metadata and (
                     metadata_snapshot["category_id"] is not None
                     or img.category_id is not None
+                    or await image_ids_in_filed_collections(db, {img.id})
                 ):
                     await bump_browse_revision(db)
                 commit_attempted = True
@@ -611,6 +627,9 @@ async def replace_image(
                             if (
                                 metadata_snapshot["category_id"] is not None
                                 or new_category_id is not None
+                                or await image_ids_in_filed_collections(
+                                    db, {target_image_id}
+                                )
                             ):
                                 await bump_browse_revision(db)
                             await db.commit()
@@ -668,7 +687,13 @@ async def bulk_delete_images(
             if len(images) != len(set(body.image_ids)):
                 raise HTTPException(status_code=404, detail="One or more images not found")
             deleted_images = [(img.id, img.name, img.category_id) for img in images]
-            browse_dirty = any(category_id is not None for _, _, category_id in deleted_images)
+            browse_dirty = any(
+                category_id is not None for _, _, category_id in deleted_images
+            ) or bool(
+                await image_ids_in_filed_collections(
+                    db, {image_id for image_id, _, _ in deleted_images}
+                )
+            )
             for img in images:
                 await db.delete(img)
             if browse_dirty:
@@ -706,8 +731,14 @@ async def delete_image(
                 raise HTTPException(status_code=404, detail="Image not found")
             image_name = img.name
             category_id = img.category_id
+            # Read collection membership before the delete: the delete
+            # cascades collection_images rows away (and the check's own
+            # SELECT would autoflush it), so this must run first.
+            member_of_filed = bool(
+                await image_ids_in_filed_collections(db, {image_id})
+            )
             await db.delete(img)
-            if category_id is not None:
+            if category_id is not None or member_of_filed:
                 await bump_browse_revision(db)
             await db.commit()
             logger.info(

@@ -73,6 +73,8 @@ describe('collectionUtils mapping', () => {
       imageCount: 2,
       coverThumb: '/thumbs/skull.jpg?token=abc',
       version: 1,
+      categoryId: null,
+      sortOrder: 0,
       createdAt: '2026-01-01T00:00:00Z',
       updatedAt: '2026-01-02T00:00:00Z',
       permissions: { canEdit: false, canDelete: true, canTransfer: true },
