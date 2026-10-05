@@ -154,6 +154,16 @@ def collection_out(ctx: _ViewerContext, collection: Collection) -> CollectionOut
         program_ids=[p.id for p in collection.programs],
         group_ids=[g.id for g in collection.groups],
         viewport_state=dict(collection.viewport_state or {}),
+        # Nominal membership for unfiltered viewers (non-students). For
+        # students the true total would disclose how many images are
+        # restricted from them, so the count is clamped to ``len(images) + 1``:
+        # enough to signal "hidden members exist" (the restricted-members
+        # message deliberately reveals that much) without leaking the total.
+        member_count=(
+            len(collection.image_links)
+            if ctx.excluded_category_ids is None
+            else min(len(collection.image_links), len(images) + 1)
+        ),
     )
 
 

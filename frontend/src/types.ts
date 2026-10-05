@@ -129,4 +129,8 @@ export interface Collection extends CollectionSummary {
   programIds: number[]
   groupIds: number[]
   viewportState: Record<string, unknown>
+  /** Nominal member count for unfiltered viewers; for students the backend
+   * clamps it to `imageCount + 1` when members are hidden, so it signals
+   * "restricted members exist" without revealing how many (#1529). */
+  memberCount: number
 }

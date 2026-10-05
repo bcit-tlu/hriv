@@ -4,7 +4,7 @@ import SortableTileGrid from '../../src/components/SortableTileGrid'
 import type { SortableTileGridProps } from '../../src/components/SortableTileGrid'
 import type { Group, Program } from '../../src/types'
 import { DROP_PREFIX } from '../../src/components/sortableTileGridUtils'
-import { makeCategory, makeImage } from '../helpers/fixtures'
+import { makeCategory, makeCollectionSummary, makeImage } from '../helpers/fixtures'
 import type { TileOrderItemRef } from '../../src/api'
 
 const expectEffectiveOpacity = (element: Element | null, opacity: string) => {
@@ -543,6 +543,32 @@ describe('handleDragEnd — reorder branches', () => {
     )
   })
 
+  it('reorders a collection tile among siblings (#1529)', async () => {
+    renderGrid({
+      currentImages: [makeImage({ id: 10, name: 'A', sortOrder: 0 })],
+      currentCollections: [makeCollectionSummary({ id: 5, sortOrder: 1 })],
+    })
+
+    await act(async () => {
+      await capturedOnDragEnd!({
+        operation: {
+          source: sortableSource('col-5', 0, 1),
+          target: { id: 'img-10' },
+          canceled: false,
+        },
+      })
+    })
+
+    expect(tileOrdering.reportOrder).toHaveBeenCalledWith(
+      [
+        { type: 'collection', id: 5 },
+        { type: 'image', id: 10 },
+      ],
+      expect.any(Number),
+      expect.any(Object),
+    )
+  })
+
   it('renders items in the coordinator display order when provided', () => {
     tileOrdering.displayOrder = [
       { type: 'image', id: 11 },
@@ -756,5 +782,79 @@ describe('drag-and-drop spec contract (docs/drag-and-drop.md)', () => {
       unmount()
     })
     expect(onDragActiveChange).toHaveBeenCalledWith(false)
+  })
+})
+
+describe('collection tiles (#1529)', () => {
+  beforeEach(() => {
+    capturedOnDragEnd = undefined
+    tileOrdering = makeTileOrdering()
+  })
+
+  it('renders collection tiles via CollectionCard with name and count', () => {
+    renderGrid({
+      currentCollections: [makeCollectionSummary({ id: 3, name: 'Epithelium set', imageCount: 4 })],
+    })
+
+    expect(screen.getByText('Epithelium set')).toBeInTheDocument()
+    expect(screen.getByText(/4 images/)).toBeInTheDocument()
+  })
+
+  it('dispatches a col- drop on a category move zone to onDropCollectionOnCategory', async () => {
+    const onDropCollectionOnCategory = vi.fn()
+    const onDropImageOnCategory = vi.fn()
+    renderGrid({
+      currentCategories: [makeCategory({ id: 5, label: 'Target', sortOrder: 0 })],
+      currentCollections: [makeCollectionSummary({ id: 9, sortOrder: 1 })],
+      onDropCollectionOnCategory,
+      onDropImageOnCategory,
+    })
+
+    await act(async () => {
+      await capturedOnDragEnd!({
+        operation: {
+          source: { id: 'col-9' },
+          target: { id: `${DROP_PREFIX}5` },
+          canceled: false,
+        },
+      })
+    })
+
+    expect(onDropCollectionOnCategory).toHaveBeenCalledWith(9, 5)
+    expect(onDropImageOnCategory).not.toHaveBeenCalled()
+    expect(tileOrdering.reportOrder).not.toHaveBeenCalled()
+  })
+
+  it('hides the move affordance from non-editors', () => {
+    renderGrid({
+      currentCollections: [makeCollectionSummary({ id: 3, name: 'Set' })],
+      canEditContent: false,
+      onMoveCollection: vi.fn(),
+    })
+    expect(screen.queryByRole('button', { name: /Move Set to a category/ })).not.toBeInTheDocument()
+  })
+
+  it('invokes onMoveCollection from the card action for editors', () => {
+    const onMoveCollection = vi.fn()
+    const collection = makeCollectionSummary({ id: 3, name: 'Set' })
+    renderGrid({
+      currentCollections: [collection],
+      canEditContent: true,
+      onMoveCollection,
+    })
+    screen.getByRole('button', { name: /Move Set to a category/ }).click()
+    expect(onMoveCollection).toHaveBeenCalledWith(collection)
+  })
+
+  it('invokes onCollectionClick when the card body is clicked', () => {
+    const onCollectionClick = vi.fn()
+    const collection = makeCollectionSummary({ id: 3, name: 'Set' })
+    renderGrid({
+      currentCollections: [collection],
+      canEditContent: false,
+      onCollectionClick,
+    })
+    screen.getByText('Set').click()
+    expect(onCollectionClick).toHaveBeenCalledWith(collection)
   })
 })

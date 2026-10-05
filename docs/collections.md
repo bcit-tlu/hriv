@@ -199,6 +199,15 @@ below answers `404` while `COLLECTIONS_ENABLED` is off (see
 `version`, `category_id`, `sort_order`, `created_at`, `updated_at`,
 `permissions {can_edit, can_delete, can_transfer}`.
 
+`CollectionOut` adds `member_count` (#1529). For non-students it is the
+nominal member total; for students it is clamped to `len(images) + 1` when
+members are hidden, so it signals _that_ restricted members exist — the
+"all images restricted" message intentionally reveals that much — without
+disclosing how many. It is detail-only so list rows and Browse tiles cannot
+leak hidden membership; viewers use it to tell an all-restricted collection
+(`member_count > 0`, no visible `images`) apart from a truly empty one
+(`member_count === 0`).
+
 Each `CategoryTree` node additionally carries `collections:
 CollectionSummaryOut[]` — the collections filed into that category, subject
 to the same visibility filtering as `GET /api/collections` (collection gate
@@ -435,14 +444,63 @@ _All collections_ action.
 **Deep links & history.** `useShareableImageState` parses `?collection={id}`
 ahead of `?image=` / `?category=`; a collection link wins if both are present.
 The list emits `?page=collections`, a selected collection emits
-`?collection={id}` (no `page` param), and a selected sequence item adds
-`&item={image_id}` (#1416). Both push history entries through
-`useNavigationHistory`, and `popstate` restores the selected collection (and
-sequence item) from the URL, so back/forward moves between browse, image and
-collection views. Refreshing a `?collection=` URL re-opens that collection;
+`?collection={id}` (no `page` param), a selected sequence item adds
+`&item={image_id}` (#1416), and a collection opened from a Browse tile adds
+`?cat=` carrying its originating scope (#1529). Both push history entries
+through `useNavigationHistory`, and `popstate` restores the selected
+collection (and sequence item) from the URL, so back/forward moves between
+browse, image and collection views. Refreshing a `?collection=` URL re-opens
+that collection;
 refreshing `?collection={id}&item={image_id}` re-opens the sequence on that
 image (falling back to the first image when the id is not a visible member).
 `?item=` without `?collection=` is ignored.
+
+### Browse tile integration (#1529)
+
+**Where.** `useBrowseData.ts` (nested `resolvePathNode` collections + root
+`uncategorizedCollections` loader), `components/SortableTileGrid.tsx`
+(`GridTile`/`DragOverlay` collection branches), `components/CollectionCard.tsx`
+(`onMove`), `components/MoveCollectionDialog.tsx`,
+`useCategoryActions.ts` (move/undo handlers), `useCollectionsData.ts` (`move`).
+
+**Tiles.** When `COLLECTIONS_ENABLED` is on, collections render in the Browse
+tile grid alongside categories and images — the same shared `CollectionCard`
+the Collections tab uses (C1 parity), wrapped in the standard sortable tile so
+dimensions, drag activation and reflow match image/category tiles. Nested
+scopes read `CategoryTree.collections`; the root scope fetches
+`GET /api/collections?uncategorized=true`. With the flag off nothing is
+fetched or rendered and the scope's freshness counts as satisfied for
+background-refresh bookkeeping.
+
+**Ordering & moving.** Collection tiles carry `col-{id}` draggable ids and
+participate in the mixed category/image/collection tile-order contract
+(#1528). Dropping a collection onto a category tile's move zone files it into
+that category (the same API as `POST /api/collections/{id}/move`) — like
+images and categories. Filing is curatorial: any admin/instructor sees the
+**Move** affordance on Browse tiles, list cards and the detail header,
+independent of `permissions.canEdit`; students and staff get no move UI. The
+move dialog (`MoveCollectionDialog`) offers every category plus "Top level",
+preselects the current category, and no-ops on an unchanged destination. A
+successful move refreshes the category tree and the root collection list,
+invalidates both scopes' tile-order revisions, and offers an undo snackbar
+that re-posts the previous category with the version from the move response.
+
+**Browse context.** Opening a collection tile keeps the originating Browse
+scope: the URL becomes `?collection={id}&cat={ancestor path}`, the detail
+back button reads **Back to Browse**, and closing returns to that scope
+instead of the Collections list. Back/forward restores both the collection
+and the scope — `useNavigationHistory` carries a `collectionFromBrowse` flag
+in history state for root-scope entries (where no `?cat=` is needed). Links
+without `?cat=` behave exactly as before (`?collection={id}` opens the
+Collections list context).
+
+**Counts and empty states.** Category tiles include descendant collection
+counts in their detail line (`· N collections`), and the Browse empty-state
+guard treats a scope with only collections as non-empty. On the detail side,
+`CollectionOut.member_count` (nominal for staff; clamped to "hidden members
+exist" for students) lets viewers distinguish "no members yet" from "all
+members restricted" — `image_count`/`imageCount` remains visible-only so
+list rows and tiles never leak hidden membership.
 
 ### "Add to Collection" from the image view (#1415)
 
@@ -719,6 +777,17 @@ program and group using the shared group-chip palette.
   `useNavigationHistory.test.ts`, `App.test.tsx` — `?collection={id}` and
   `?collection={id}&item={image_id}` parse/emit precedence, history entries,
   deep-link restore on load and back/forward, `?item=` alone ignored.
+- Browse tile integration (#1529): `useBrowseData.test.ts` (nested-scope
+  collections from the tree, root `?uncategorized` fetch, flag-off no-fetch
+  and freshness), `SortableTileGrid.test.tsx` (`col-` tiles, drag dispatch to
+  reorder vs `onDropCollectionOnCategory`), `useCategoryActions.test.ts`
+  (collection move/undo, no-op destination, root-scope lookup),
+  `MoveCollectionDialog.test.tsx`, `CollectionsPage.test.tsx` (role-gated
+  Move, `Back to Browse` label, all-restricted notice),
+  `useCollectionsData.test.ts` (`move` row/detail sync),
+  `CategoryTile.test.tsx` (recursive collection counts), viewer tests
+  (all-restricted empty state); backend `test_router_collections.py`
+  (`member_count` on `CollectionOut`, absent from summaries).
 - `frontend/tests/components/SequenceCollectionViewer.test.tsx`,
   `useCollectionsData.test.ts` (#1416) — position readout, `?item=` restore
   and non-member fallback, button / thumbnail / arrow-key navigation,

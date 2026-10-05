@@ -98,6 +98,7 @@ import {
 import type { ApiImage, ApiUser } from './api'
 import { mergeRenewedImageItemUrls } from './tileTokenRenewal'
 import MoveCategoryDialog from './components/MoveCategoryDialog'
+import MoveCollectionDialog from './components/MoveCollectionDialog'
 import MoveRestrictionConfirmDialog from './components/MoveRestrictionConfirmDialog'
 import FailedUploadsDialog from './components/FailedUploadsDialog'
 import {
@@ -179,6 +180,13 @@ export default function App() {
   const [selectedCollectionItemId, setSelectedCollectionItemId] = useState<number | null>(() =>
     parseCollectionItemParam(window.location.search),
   )
+  // Whether the open collection detail was reached from a Browse tile
+  // (#1529): close/back then returns to the Browse scope in `path` rather
+  // than the Collections list. Deep links carrying `?cat=` start true.
+  const [collectionFromBrowse, setCollectionFromBrowse] = useState<boolean>(() => {
+    if (parseCollectionIdParam(window.location.search) == null) return false
+    return new URLSearchParams(window.location.search).get('cat') != null
+  })
   const [page, setPage] = useState<Page>(() => {
     if (parseCollectionIdParam(window.location.search) != null) return 'collections'
     const p = new URLSearchParams(window.location.search).get('page')
@@ -206,6 +214,7 @@ export default function App() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- URL state can only be corrected once the flags arrive
     setPage('browse')
     setSelectedCollectionId(null)
+    setCollectionFromBrowse(false)
   }, [features, page])
 
   const lastEmittedPageRef = useRef<FrontendPage | null>(null)
@@ -318,7 +327,7 @@ export default function App() {
   const [frontendVersion, setFrontendVersion] = useState<string | null>(null)
   const [changelogVersion, setChangelogVersion] = useState(0)
 
-  // Browse data (categories, images, programs, background refresh)
+  // Browse data (categories, images, collections, programs, background refresh)
   const {
     categories,
     categoriesLoading,
@@ -326,11 +335,14 @@ export default function App() {
     uncategorizedImages,
     uncategorizedLoaded,
     setUncategorizedImages,
+    uncategorizedCollections,
+    currentCollections,
     programs,
     groups,
     setGroups,
     loadCategories,
     loadUncategorizedImages,
+    loadUncategorizedCollections,
     loadPrograms,
     loadGroups,
     refreshCategories,
@@ -341,7 +353,16 @@ export default function App() {
     getPathGroupRestriction,
     ancestorGroupIds,
     currentCategories,
-  } = useBrowseData({ path, currentUser, dragActive })
+  } = useBrowseData({ path, currentUser, dragActive, collectionsEnabled })
+
+  // Collections data (#1414). The list fetch runs only while the tab is
+  // active; the `move`/`loadCollection` actions are mounted unconditionally
+  // so Browse-grid collection moves (#1529) keep list/detail state in sync.
+  const collectionsData = useCollectionsData({
+    enabled: collectionsEnabled && page === 'collections' && currentUser != null,
+    currentUser,
+    selectedCollectionId,
+  })
 
   // Navigation-safe reorder coordinator for the current Browse scope
   // (epic #975, issue #979).
@@ -564,6 +585,7 @@ export default function App() {
     path,
     collectionId: selectedCollectionId,
     collectionItemId: selectedCollectionItemId,
+    collectionFromBrowse,
     setPath,
     setSelectedImage,
   })
@@ -633,6 +655,7 @@ export default function App() {
       catIds: number[],
       imageId: number | null,
       traversal?: { historyIndex?: number },
+      poppedCollectionFromBrowse?: boolean,
     ) => {
       if (canvasSavingRef.current && traversal) {
         setErrorSnack('Please wait for the annotation save to finish.')
@@ -665,6 +688,22 @@ export default function App() {
         validPage === 'collections' ? parseCollectionItemParam(window.location.search) : null,
       )
 
+      if (validPage === 'collections') {
+        // A collection entry pushed from a Browse tile restores the Browse
+        // scope behind it (#1529): `?cat=` rides in the popped URL and the
+        // state flag marks entries where the scope was the (param-less) root.
+        const fromBrowse =
+          poppedCollectionFromBrowse === true ||
+          new URLSearchParams(window.location.search).get('cat') != null
+        setCollectionFromBrowse(fromBrowse)
+        setPath(fromBrowse ? resolveCategoryPath(categoriesRef.current, catIds) : [])
+        setSelectedImage(null)
+        setViewportState(undefined)
+        setOverlays([])
+        return true
+      }
+
+      setCollectionFromBrowse(false)
       if (validPage !== 'browse') {
         setPath([])
         setSelectedImage(null)
@@ -708,6 +747,7 @@ export default function App() {
         catIds,
         imageId,
         traversal ? { historyIndex: traversal.toIndex } : undefined,
+        traversal?.collectionFromBrowse,
       ),
   )
 
@@ -843,6 +883,7 @@ export default function App() {
     if (currentUser) {
       loadCategories()
       loadUncategorizedImages()
+      loadUncategorizedCollections()
       loadPrograms()
       if (currentUser.role === 'admin' || currentUser.role === 'instructor') {
         loadGroups()
@@ -856,6 +897,7 @@ export default function App() {
     usersLoading,
     loadCategories,
     loadUncategorizedImages,
+    loadUncategorizedCollections,
     loadPrograms,
     loadGroups,
     loadAnnouncement,
@@ -1148,6 +1190,13 @@ export default function App() {
     handleRequestMoveCategory,
     handleDropImageOnCategory,
     handleDropCategoryOnCategory,
+    moveCollectionOpen,
+    setMoveCollectionOpen,
+    movingCollection,
+    setMovingCollection,
+    handleRequestMoveCollection,
+    handleMoveCollection,
+    handleDropCollectionOnCategory,
     handleSetCardImage,
     pendingMoveConfirm,
     confirmPendingMove,
@@ -1155,8 +1204,11 @@ export default function App() {
   } = useCategoryActions({
     categories,
     uncategorizedImages,
+    uncategorizedCollections,
     loadCategories,
     loadUncategorizedImages,
+    loadUncategorizedCollections,
+    moveCollectionApi: collectionsEnabled ? collectionsData.move : undefined,
     currentCategories,
     ancestorProgramIds,
     getPathRestriction,
@@ -1352,13 +1404,19 @@ export default function App() {
     // Capture before fetching: a save committing while these requests are in
     // flight is newer than the fetched data and must survive the release.
     const marker = tileOrderingCoordinator.marker()
-    const [catResult, imgResult] = await Promise.allSettled([
+    const [catResult, imgResult, colResult] = await Promise.allSettled([
       refreshCategories(),
       refreshUncategorizedImages(),
+      loadUncategorizedCollections(),
     ])
+    // The collection loader is a `load*` variant: it resolves `false` on
+    // failure rather than rejecting, and resolves `true` flag-off (#1529).
+    const collectionsFresh = colResult.status === 'fulfilled' && colResult.value === true
     logDrag('App.handleReorderComplete fetched', {
       categories: catResult.status,
       images: imgResult.status,
+      collections: colResult.status,
+      collectionsFresh,
       dragActive: dragActiveRef.current,
     })
     if (catResult.status === 'rejected') {
@@ -1366,6 +1424,9 @@ export default function App() {
     }
     if (imgResult.status === 'rejected') {
       setWarnSnack('Could not refresh images after reorder.')
+    }
+    if (!collectionsFresh) {
+      setWarnSnack('Could not refresh collections after reorder.')
     }
     // If a new drag started while we were refreshing, the grid must not see
     // stale prop churn and this refresh may have been aborted, so queue a
@@ -1378,11 +1439,11 @@ export default function App() {
     // Once fresh authoritative data landed, drop the coordinator's cached
     // order for clean scopes so order changes made elsewhere (e.g. Manage
     // Categories) become visible immediately instead of on the next poll.
-    if (catResult.status === 'fulfilled' && imgResult.status === 'fulfilled') {
+    if (catResult.status === 'fulfilled' && imgResult.status === 'fulfilled' && collectionsFresh) {
       tileOrderingCoordinator.releaseCleanScopes(marker)
       logDrag('App.handleReorderComplete released clean scopes', { marker })
     }
-  }, [refreshCategories, refreshUncategorizedImages])
+  }, [refreshCategories, refreshUncategorizedImages, loadUncategorizedCollections])
 
   const handleDragActiveChange = useCallback((source: 'browse' | 'manage', active: boolean) => {
     if (source === 'browse') {
@@ -1471,6 +1532,7 @@ export default function App() {
       runCanvasNavigation(() => {
         setPage(v)
         setSelectedCollectionId(null)
+        setCollectionFromBrowse(false)
         clearImage()
         setPath([])
         pushNavState(v)
@@ -1495,32 +1557,46 @@ export default function App() {
     })
   }, [clearImage, pushNavState, loadCategories, loadUncategorizedImages, runCanvasNavigation])
 
-  // Collections tab data (#1414). Fetches only while the tab is active.
-  const collectionsData = useCollectionsData({
-    enabled: collectionsEnabled && page === 'collections' && currentUser != null,
-    currentUser,
-    selectedCollectionId,
-  })
-
   const handleOpenCollection = useCallback(
-    (id: number) => {
+    (id: number, opts?: { fromBrowse?: boolean }) => {
       runCanvasNavigation(() => {
+        const fromBrowse = opts?.fromBrowse === true
         setPage('collections')
         setSelectedCollectionId(id)
         setSelectedCollectionItemId(null)
         clearImage()
-        setPath([])
-        pushNavState('collections', [], null, { collection: String(id) })
+        // From a Browse tile the detail sits "on top of" the current scope:
+        // `path` keeps the Browse location, the URL carries `?cat=` so the
+        // deep link restores it, and Close returns to Browse (#1529).
+        setCollectionFromBrowse(fromBrowse)
+        if (!fromBrowse) setPath([])
+        pushNavState(
+          'collections',
+          fromBrowse ? path.map((c) => c.id) : [],
+          null,
+          { collection: String(id) },
+          { collectionFromBrowse: fromBrowse },
+        )
       })
     },
-    [clearImage, pushNavState, runCanvasNavigation],
+    [clearImage, path, pushNavState, runCanvasNavigation],
   )
 
   const handleCloseCollection = useCallback(() => {
     setSelectedCollectionId(null)
     setSelectedCollectionItemId(null)
+    if (collectionFromBrowse) {
+      // `path` still holds the Browse scope the tile was opened from (#1529).
+      setCollectionFromBrowse(false)
+      setPage('browse')
+      pushNavState(
+        'browse',
+        path.map((c) => c.id),
+      )
+      return
+    }
     pushNavState('collections')
-  }, [pushNavState])
+  }, [collectionFromBrowse, path, pushNavState])
 
   // Sequence viewer: `?collection={id}&item={image_id}` keeps the position
   // shareable and in history, so back steps through viewed items (#1416).
@@ -1528,13 +1604,19 @@ export default function App() {
     (imageId: number) => {
       setSelectedCollectionItemId(imageId)
       if (selectedCollectionId != null) {
-        pushNavState('collections', [], null, {
-          collection: String(selectedCollectionId),
-          item: String(imageId),
-        })
+        pushNavState(
+          'collections',
+          collectionFromBrowse ? path.map((c) => c.id) : [],
+          null,
+          {
+            collection: String(selectedCollectionId),
+            item: String(imageId),
+          },
+          { collectionFromBrowse },
+        )
       }
     },
-    [pushNavState, selectedCollectionId],
+    [collectionFromBrowse, path, pushNavState, selectedCollectionId],
   )
 
   // Drop an `?item=` that does not resolve to a visible member (deleted image,
@@ -1569,14 +1651,9 @@ export default function App() {
     collectionsEnabled && searchOpen && currentUser != null,
   )
 
-  // Root-scope collections for the manage-categories dialog: collections
-  // are tile-order members, so its submitted orders must carry them (issue
-  // #1528). Loaded lazily while the dialog is open; C4 will lift this into
-  // the shared browse data when collection tiles render in the grid.
-  const rootScopeCollections = useVisibleCollections(
-    collectionsEnabled && dialogOpen && currentUser != null,
-    { uncategorized: true },
-  )
+  // Root-scope collections ride `useBrowseData` now that the Browse grid
+  // renders them (#1529) — the manage-categories dialog shares that list so
+  // its submitted orders carry collection members (issue #1528).
 
   const handleSearchAddToCollection = useCallback((imageIds: number[]) => {
     setAddToCollectionImageIds(imageIds)
@@ -1644,6 +1721,7 @@ export default function App() {
         const catPath = img.categoryId != null ? findCategoryPath(categories, img.categoryId) : null
         setPath(catPath ?? [])
         setSelectedCollectionId(null)
+        setCollectionFromBrowse(false)
         setPage('browse')
         pushNavState('browse', catPath?.map((c) => c.id) ?? [], img.id)
       })
@@ -1765,6 +1843,8 @@ export default function App() {
               onUpdate={collectionsData.update}
               onDelete={collectionsData.remove}
               onTransfer={collectionsData.transfer}
+              onMoveCollection={canEditContent ? handleRequestMoveCollection : undefined}
+              detailBackLabel={collectionFromBrowse ? 'Back to Browse' : undefined}
             />
           ) : page === 'people' && canViewPeople ? (
             <PeoplePage
@@ -2444,6 +2524,7 @@ export default function App() {
                 currentCategories={currentCategories}
                 currentImages={currentImages}
                 uncategorizedImages={uncategorizedImages}
+                currentCollections={currentCollections}
                 path={path}
                 canEditContent={canEditContent}
                 fileDragActive={fileDragActive}
@@ -2455,6 +2536,9 @@ export default function App() {
                 onEditCategoryName={setEditNameCategory}
                 onDropImageOnCategory={handleDropImageOnCategory}
                 onDropCategoryOnCategory={handleDropCategoryOnCategory}
+                onDropCollectionOnCategory={handleDropCollectionOnCategory}
+                onCollectionClick={(col) => handleOpenCollection(col.id, { fromBrowse: true })}
+                onMoveCollection={handleRequestMoveCollection}
                 onDropFilesOnCategory={handleFilesDropOnCategory}
                 onImageClick={handleImageClick}
                 onEditImageDetails={setBrowseEditImage}
@@ -2498,7 +2582,9 @@ export default function App() {
               ) : (
                 currentCategories.length === 0 &&
                 currentImages.length === 0 &&
-                (path.length > 0 || uncategorizedImages.length === 0) && (
+                currentCollections.length === 0 &&
+                (path.length > 0 ||
+                  (uncategorizedImages.length === 0 && uncategorizedCollections.length === 0)) && (
                   <Typography
                     variant="body1"
                     color="text.secondary"
@@ -2521,7 +2607,7 @@ export default function App() {
         onClose={() => setDialogOpen(false)}
         categories={categories}
         uncategorizedImages={uncategorizedImages}
-        uncategorizedCollections={rootScopeCollections.collections}
+        uncategorizedCollections={uncategorizedCollections}
         onCategoryNavigate={handleManageCategoryNavigate}
         onAddCategory={addCategoryInline}
         onDeleteCategory={deleteCategoryInline}
@@ -2543,6 +2629,24 @@ export default function App() {
         }}
         onMove={handleMoveCategory}
         category={movingCategory}
+        categories={categories}
+        onAddCategory={addCategoryInline}
+        onEditCategory={editCategoryInline}
+        onToggleVisibility={toggleCategoryVisibility}
+        programs={programs}
+        groups={groups}
+      />
+
+      {/* Move collection dialog (#1529) — files a collection into a Browse
+          category or back to the root; admin/instructor entry points only. */}
+      <MoveCollectionDialog
+        open={moveCollectionOpen}
+        onClose={() => {
+          setMoveCollectionOpen(false)
+          setMovingCollection(null)
+        }}
+        onMove={handleMoveCollection}
+        collection={movingCollection}
         categories={categories}
         onAddCategory={addCategoryInline}
         onEditCategory={editCategoryInline}

@@ -74,6 +74,7 @@ function makeCollection(images: ImageItem[], canEdit: boolean): Collection {
     programIds: [],
     groupIds: [],
     viewportState: {},
+    memberCount: images.length,
   }
 }
 

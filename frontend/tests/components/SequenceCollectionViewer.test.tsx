@@ -197,6 +197,13 @@ describe('SequenceCollectionViewer', () => {
     expect(screen.queryByTestId('image-viewer')).not.toBeInTheDocument()
   })
 
+  it('says all images are restricted when members exist but none are visible (#1529)', () => {
+    renderViewer({ collection: seqCollection({ images: [], memberCount: 3 }) })
+    expect(screen.getByTestId('sequence-viewer-empty')).toHaveTextContent(
+      'All images in this collection are currently restricted.',
+    )
+  })
+
   it('shows the unavailable state after every image has failed', () => {
     const collection = seqCollection({ images: images(1) })
     renderViewer({ collection })

@@ -233,6 +233,41 @@ returned by the API (UX only — the backend re-checks).
   "Managed by program _X_" for program-owned collections, the visibility
   chip, and — when `restricted` — a chip per attached program and group.
 
+#### Collections in the Browse tile grid (#1529)
+
+(`SortableTileGrid.test.tsx`, `useBrowseData.test.ts`,
+`useCategoryActions.test.ts`, `MoveCollectionDialog.test.tsx`,
+`CategoryTile.test.tsx`, `App.test.tsx`)
+
+- **Given** `COLLECTIONS_ENABLED` is on, **Then** collection tiles render in
+  the Browse tile grid beside categories and images — filed collections
+  inside their category's scope, uncategorized collections at the root —
+  using the shared `CollectionCard` inside the standard sortable tile.
+- **Given** the flag is off, **Then** no collection fetch is issued for the
+  Browse root, no collection tile renders anywhere in the grid, and a scope
+  containing only collections is not treated as pending work.
+- **Given** an admin or instructor, **Then** collection tiles and collection
+  detail headers offer **Move** (`MoveCollectionDialog` or drag onto a
+  category tile's move zone) regardless of `permissions.can_edit`; **Given**
+  a student or staff member, **Then** no collection move UI renders.
+- **Given** a collection move (dialog or drop), **Then** an unchanged
+  destination no-ops; otherwise the category tree and root collection list
+  refresh, both scopes' tile-order revisions invalidate, and an undo snackbar
+  re-posts the previous category with the version from the move response.
+- **Given** a collection opened from a Browse tile, **Then** the URL carries
+  `?collection={id}&cat={path}`, the detail back button reads **Back to
+  Browse**, and closing it returns to the originating scope; **Given** a
+  `?collection={id}` link without `?cat=`, **Then** the detail opens in the
+  Collections list context as before.
+- **Given** a category containing collections, **Then** its tile detail line
+  includes `N collections` summed over descendants; **Given** a Browse scope
+  holding only collections, **Then** the empty-state message does not render.
+- **Given** a collection whose members are all restricted (`member_count > 0`
+  but no visible `images`), **Then** the detail header and both viewers show
+  the "All images in this collection are currently restricted." notice;
+  **Given** `member_count` is `0`, **Then** the ordinary empty-collection
+  copy renders instead.
+
 ### Sequence collection viewer (`SequenceCollectionViewer.test.tsx`, `useCollectionsData.test.ts`, `useShareableImageState.test.ts`)
 
 See [collections.md](collections.md#sequence-collection-viewer-1416) for the

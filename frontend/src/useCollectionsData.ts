@@ -6,6 +6,7 @@ import {
   fetchCollection,
   collectionConflictCurrent,
   fetchCollections,
+  moveCollection,
   replaceCollectionImages,
   saveCollectionViewport,
   transferCollection,
@@ -520,6 +521,69 @@ export function useCollectionsData({
   )
 
   /**
+   * File a collection into a Browse category (#1527/#1529). Serialized with
+   * reorder/viewport saves through `mutationQueue` because it carries the
+   * same `version` — a move posted while a viewer write is in flight would
+   * otherwise 409 on the version that write is about to consume. When the
+   * queue carries a fresher record than the one the dialog captured, its
+   * version wins. The `POST …/move` response is the fresh detail record, so
+   * an open detail and the list row update in place. On a 409 the conflict's
+   * authoritative record is merged (as in `transfer`) so a retry posts the
+   * fresh version instead of failing again.
+   */
+  const move = useCallback(
+    (id: number, categoryId: number | null, version: number): Promise<Collection> => {
+      const run = async (prior: Collection | null): Promise<Collection> => {
+        const baseline = baselineFor(id, prior)
+        const effectiveVersion = baseline && baseline.version > version ? baseline.version : version
+        try {
+          const updated = apiCollectionToCollection(
+            await moveCollection(id, { category_id: categoryId, version: effectiveVersion }),
+          )
+          setDetail((prev) => (prev?.id === id ? updated : prev))
+          setCollections((prev) => {
+            const rest = prev.filter((c) => c.id !== id)
+            return matchesCollectionFilters(
+              updated,
+              latest.current.filters,
+              latest.current.currentUser,
+            )
+              ? [updated, ...rest]
+              : rest
+          })
+          return updated
+        } catch (err) {
+          // A 409 carries the authoritative record — merge it so the next
+          // attempt sends the fresh version instead of failing again.
+          const conflict = collectionConflictCurrent(err)
+          if (conflict) {
+            const current = apiCollectionToCollection(conflict)
+            setDetail((prev) => (prev?.id === id ? current : prev))
+            setCollections((prev) => {
+              const rest = prev.filter((c) => c.id !== id)
+              return matchesCollectionFilters(
+                current,
+                latest.current.filters,
+                latest.current.currentUser,
+              )
+                ? [current, ...rest]
+                : rest
+            })
+          }
+          throw err
+        }
+      }
+      const queued = mutationQueue.current.then(run, () => run(null))
+      mutationQueue.current = queued.then(
+        (updated) => updated,
+        () => null,
+      )
+      return queued
+    },
+    [],
+  )
+
+  /**
    * Refresh a member's tokenized tile/thumb URLs inside the open collection
    * after the viewer's tile-token renewal (#1416), so a later remount does
    * not start from an expired source.
@@ -550,6 +614,7 @@ export function useCollectionsData({
     remove,
     reorderImages,
     saveViewport,
+    move,
     transfer,
     renewCollectionImage,
   }

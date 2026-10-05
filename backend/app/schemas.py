@@ -737,6 +737,14 @@ class CollectionOut(CollectionSummaryOut):
     program_ids: list[int] = []
     group_ids: list[int] = []
     viewport_state: dict = {}
+    # Nominal member count for unfiltered viewers (non-students), so the
+    # detail view can distinguish "empty collection" from "all members are
+    # restricted" (epic #1525 / #1529). For students the count is clamped to
+    # ``len(images) + 1`` when members are hidden: it signals that restricted
+    # members exist — the restricted-members message intentionally reveals
+    # that — without disclosing how many. Detail-only: summaries keep the
+    # visible-only ``image_count`` so tiles never reveal hidden membership.
+    member_count: int = 0
 
 
 CollectionType = Literal["synchronized", "sequence"]

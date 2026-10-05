@@ -17,13 +17,14 @@ import { PointerActivationConstraints } from '@dnd-kit/dom'
 import type { Draggable } from '@dnd-kit/abstract'
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/react'
 
-import type { Category, Group, ImageItem, Program } from '../types'
+import type { Category, CollectionSummary, Group, ImageItem, Program } from '../types'
 import type { ApiImage, TileOrderItemRef } from '../api'
 import type { ReorderDragContext } from '../tileOrdering'
 import { DndMonitor, logDrag, recordTileRender } from '../dndInstrumentation'
 import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
 import { getCategoryHiddenStateFromPath } from '../treeUtils'
 import CategoryTile from './CategoryTile'
+import CollectionCard from './CollectionCard'
 import ImageTile from './ImageTile'
 import FileDropZone from './FileDropZone'
 import {
@@ -87,6 +88,7 @@ interface GridTileProps {
   disabled: boolean
   renderCategoryTile: (cat: Category, wrapDroppable?: boolean) => React.ReactNode
   renderImageTile: (img: ImageItem) => React.ReactNode
+  renderCollectionTile: (collection: CollectionSummary) => React.ReactNode
 }
 
 // Memoized: grid-level state changes (drag start/end sets `activeItem`) must
@@ -100,6 +102,7 @@ const GridTile = memo(function GridTile({
   disabled,
   renderCategoryTile,
   renderImageTile,
+  renderCollectionTile,
 }: GridTileProps) {
   // Dev-trace render counter (issue #1100): a no-op unless a traced drag is
   // active. Commit-phase hook so Strict Mode's double-invoked render bodies
@@ -111,11 +114,9 @@ const GridTile = memo(function GridTile({
     <SortableTile id={tileId(item)} index={index} disabled={disabled}>
       {item.type === 'category'
         ? renderCategoryTile(item.data, true)
-        : item.type === 'image'
-          ? renderImageTile(item.data)
-          : // Collection tiles render with the Browse UI in #1529 (C4); the
-            // member type exists in the order contract already (#1528).
-            null}
+        : item.type === 'collection'
+          ? renderCollectionTile(item.data)
+          : renderImageTile(item.data)}
     </SortableTile>
   )
 })
@@ -213,6 +214,13 @@ export interface SortableTileGridProps {
   currentCategories: Category[]
   currentImages: ImageItem[]
   uncategorizedImages: ImageItem[]
+  /**
+   * Collections filed into the current scope (#1529): the path node's
+   * `collections` for nested scopes, or the uncategorized list at root —
+   * already scope-merged by the caller. Defaults to none so surfaces that
+   * predate collections keep working.
+   */
+  currentCollections?: CollectionSummary[]
   path: Category[]
   canEditContent: boolean
   fileDragActive: boolean
@@ -226,6 +234,12 @@ export interface SortableTileGridProps {
   onDropImageOnCategory?: (imageId: number, categoryId: number) => void
   onDropCategoryOnCategory?: (categoryId: number, targetCategoryId: number) => void
   onDropFilesOnCategory?: (categoryId: number, files: File[]) => void
+
+  onCollectionClick?: (collection: CollectionSummary) => void
+  /** Opens the Move Collection dialog — admin/instructor-only call sites. */
+  onMoveCollection?: (collection: CollectionSummary) => void
+  /** A `col-` tile dropped on a category's near-half move zone (#1529). */
+  onDropCollectionOnCategory?: (collectionId: number, targetCategoryId: number) => void
 
   onImageClick: (img: ImageItem) => void
   onEditImageDetails?: (img: ImageItem) => void
@@ -261,6 +275,7 @@ export default function SortableTileGrid({
   currentCategories,
   currentImages,
   uncategorizedImages,
+  currentCollections = [],
   path,
   canEditContent,
   fileDragActive,
@@ -273,6 +288,9 @@ export default function SortableTileGrid({
   onDropImageOnCategory,
   onDropCategoryOnCategory,
   onDropFilesOnCategory,
+  onCollectionClick,
+  onMoveCollection,
+  onDropCollectionOnCategory,
   onImageClick,
   onEditImageDetails,
   onImageRenewed,
@@ -294,8 +312,8 @@ export default function SortableTileGrid({
   const parentId = path.length > 0 ? path[path.length - 1].id : null
 
   const builtItems = useMemo(
-    () => buildTileItems(currentCategories, visibleImages),
-    [currentCategories, visibleImages],
+    () => buildTileItems(currentCategories, visibleImages, currentCollections),
+    [currentCategories, visibleImages, currentCollections],
   )
   const orderedItems = useMemo(
     () =>
@@ -436,6 +454,8 @@ export default function SortableTileGrid({
             onDropImageOnCategory?.(Number(sourceId.slice(4)), targetCatId)
           } else if (sourceId.startsWith('cat-')) {
             onDropCategoryOnCategory?.(Number(sourceId.slice(4)), targetCatId)
+          } else if (sourceId.startsWith('col-')) {
+            onDropCollectionOnCategory?.(Number(sourceId.slice(4)), targetCatId)
           }
           return
         }
@@ -506,7 +526,13 @@ export default function SortableTileGrid({
         }
       }
     },
-    [items, tileOrdering, onDropCategoryOnCategory, onDropImageOnCategory],
+    [
+      items,
+      tileOrdering,
+      onDropCategoryOnCategory,
+      onDropImageOnCategory,
+      onDropCollectionOnCategory,
+    ],
   )
 
   const renderCategoryTile = useCallback(
@@ -570,6 +596,22 @@ export default function SortableTileGrid({
     [canEditContent, pathHiddenState, onImageClick, onEditImageDetails, onImageRenewed],
   )
 
+  // Collection tiles (#1529): the shared CollectionCard already matches the
+  // C1 Browse tile params; the SortableTile wrapper provides the fixed 300px
+  // width and drag affordance. Move is role-gated by canEditContent — filing
+  // is curatorial, not ownership-bound (unlike the card's own permission-
+  // gated edit/delete/transfer buttons, which stay off in Browse).
+  const renderCollectionTile = useCallback(
+    (collection: CollectionSummary) => (
+      <CollectionCard
+        collection={collection}
+        onOpen={onCollectionClick ?? (() => {})}
+        onMove={canEditContent ? onMoveCollection : undefined}
+      />
+    ),
+    [canEditContent, onCollectionClick, onMoveCollection],
+  )
+
   const sensors = useMemo(
     () => [
       PointerSensor.configure({
@@ -618,6 +660,7 @@ export default function SortableTileGrid({
               disabled={!canEditContent}
               renderCategoryTile={renderCategoryTile}
               renderImageTile={renderImageTile}
+              renderCollectionTile={renderCollectionTile}
             />
           ))}
           {canEditContent && <FileDropZone isDragActive={fileDragActive} onDrop={onFilesDrop} />}
@@ -635,9 +678,9 @@ export default function SortableTileGrid({
             >
               {activeItem.type === 'category'
                 ? renderCategoryTile(activeItem.data)
-                : activeItem.type === 'image'
-                  ? renderImageTile(activeItem.data)
-                  : null}
+                : activeItem.type === 'collection'
+                  ? renderCollectionTile(activeItem.data)
+                  : renderImageTile(activeItem.data)}
             </Box>
           ) : null}
         </DragOverlay>

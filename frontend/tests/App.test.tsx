@@ -161,6 +161,7 @@ function resetFixtures() {
   apiMocks.deleteGroup.mockResolvedValue(undefined)
   browseDataFns.refreshCategories.mockResolvedValue([])
   browseDataFns.refreshUncategorizedImages.mockResolvedValue([])
+  browseDataFns.loadUncategorizedCollections.mockResolvedValue(true)
   mockImage.active = true
   mockImage.categoryId = 1
   mockImage.note = null
@@ -200,6 +201,7 @@ const browseDataFns = {
   setGroups: vi.fn(),
   loadCategories: vi.fn(),
   loadUncategorizedImages: vi.fn(),
+  loadUncategorizedCollections: vi.fn(),
   loadPrograms: vi.fn(),
   loadGroups: vi.fn(),
   refreshCategories: vi.fn(),
@@ -354,6 +356,13 @@ const categoryActionsMock = {
   handleRequestMoveCategory: vi.fn(),
   handleDropImageOnCategory: vi.fn(),
   handleDropCategoryOnCategory: vi.fn(),
+  handleDropCollectionOnCategory: vi.fn(),
+  moveCollectionOpen: false,
+  setMoveCollectionOpen: vi.fn(),
+  movingCollection: null,
+  setMovingCollection: vi.fn(),
+  handleRequestMoveCollection: vi.fn(),
+  handleMoveCollection: vi.fn(),
   handleSetCardImage: vi.fn(),
 }
 
@@ -432,6 +441,7 @@ vi.mock('../src/components/SortableTileGrid', () => ({
     currentCategories,
     onImageClick,
     onCategoryClick,
+    onCollectionClick,
     onFilesDrop,
     fileDragActive,
     onDragActiveChange,
@@ -440,6 +450,7 @@ vi.mock('../src/components/SortableTileGrid', () => ({
     currentCategories: typeof mockCategories
     onImageClick: (img: typeof mockImage) => void
     onCategoryClick: (category: (typeof mockCategories)[number]) => void
+    onCollectionClick?: (collection: { id: number }) => void
     onFilesDrop: (files: File[]) => void
     fileDragActive: boolean
     onDragActiveChange?: (active: boolean) => void
@@ -463,6 +474,11 @@ vi.mock('../src/components/SortableTileGrid', () => ({
       <button type="button" onClick={() => onDragActiveChange?.(false)}>
         End browse drag
       </button>
+      {onCollectionClick && (
+        <button type="button" onClick={() => onCollectionClick({ id: 5 })}>
+          Open collection tile
+        </button>
+      )}
       {currentImages.map((image, index) => (
         <button key={image.id} type="button" onClick={() => onImageClick(image)}>
           {index === 0 ? 'Open image' : `Open image ${image.id}`}
@@ -590,7 +606,7 @@ vi.mock('../src/components/CollectionsPage', () => ({
     )
   },
 }))
-const collectionsDataMocks = vi.hoisted(() => ({ transfer: vi.fn() }))
+const collectionsDataMocks = vi.hoisted(() => ({ transfer: vi.fn(), move: vi.fn() }))
 vi.mock('../src/useCollectionsData', () => ({
   useCollectionsData: () => ({
     collections: [],
@@ -610,6 +626,7 @@ vi.mock('../src/useCollectionsData', () => ({
     reorderImages: vi.fn(),
     saveViewport: vi.fn(),
     transfer: collectionsDataMocks.transfer,
+    move: collectionsDataMocks.move,
     renewCollectionImage: vi.fn(),
   }),
 }))
@@ -799,6 +816,8 @@ vi.mock('../src/useBrowseData', () => ({
     uncategorizedImages: [],
     uncategorizedLoaded: true,
     setUncategorizedImages: vi.fn(),
+    uncategorizedCollections: [],
+    currentCollections: [],
     programs: mockPrograms,
     groups: mockGroups,
     ...browseDataFns,
@@ -812,12 +831,23 @@ vi.mock('../src/useBrowseData', () => ({
 }))
 
 const pushNavStateMock = vi.fn()
-let popStateHandler: ((page: string, catIds: number[], imageId: number | null) => boolean) | null =
-  null
+let popStateHandler:
+  | ((
+      page: string,
+      catIds: number[],
+      imageId: number | null,
+      traversal?: { collectionFromBrowse?: boolean },
+    ) => boolean)
+  | null = null
 
 vi.mock('../src/useNavigationHistory', () => ({
   useNavigationHistory: (
-    onPopState: (page: string, catIds: number[], imageId: number | null) => boolean,
+    onPopState: (
+      page: string,
+      catIds: number[],
+      imageId: number | null,
+      traversal?: { collectionFromBrowse?: boolean },
+    ) => boolean,
   ) => {
     popStateHandler = onPopState
     return { pushNavState: pushNavStateMock, replayPopState: vi.fn() }
@@ -1793,7 +1823,15 @@ describe('App collections deep links (#1414)', () => {
     await renderWithCollectionsEnabled()
     fireEvent.click(screen.getByRole('button', { name: 'Open collection 5' }))
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '5')
-    expect(pushNavStateMock).toHaveBeenLastCalledWith('collections', [], null, { collection: '5' })
+    expect(pushNavStateMock).toHaveBeenLastCalledWith(
+      'collections',
+      [],
+      null,
+      { collection: '5' },
+      {
+        collectionFromBrowse: false,
+      },
+    )
 
     fireEvent.click(screen.getByRole('button', { name: 'Close collection' }))
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', 'null')
@@ -1867,10 +1905,16 @@ describe('App collections deep links (#1414)', () => {
     await renderWithCollectionsEnabled()
     fireEvent.click(screen.getByRole('button', { name: 'Select item 99' }))
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', '99')
-    expect(pushNavStateMock).toHaveBeenLastCalledWith('collections', [], null, {
-      collection: '5',
-      item: '99',
-    })
+    expect(pushNavStateMock).toHaveBeenLastCalledWith(
+      'collections',
+      [],
+      null,
+      {
+        collection: '5',
+        item: '99',
+      },
+      { collectionFromBrowse: false },
+    )
   })
 
   it('restores the sequence position from the URL on back/forward', async () => {
@@ -1905,6 +1949,77 @@ describe('App collections deep links (#1414)', () => {
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', '99')
     fireEvent.click(screen.getByRole('button', { name: 'Open collection 5' }))
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', 'null')
+  })
+})
+
+describe('App collection browse context (#1529)', () => {
+  const originalUrl = `${window.location.pathname}${window.location.search}`
+
+  beforeEach(() => {
+    resetFixtures()
+    popStateHandler = null
+  })
+
+  afterEach(() => {
+    window.history.replaceState(null, '', originalUrl)
+  })
+
+  async function renderWithCollectionsEnabled() {
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+  }
+
+  it('opens a collection tile from a nested scope with ?cat context and returns to it on close', async () => {
+    await renderWithCollectionsEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Open category' }))
+    expect(pushNavStateMock).toHaveBeenLastCalledWith('browse', [1])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open collection tile' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '5')
+    expect(pushNavStateMock).toHaveBeenLastCalledWith(
+      'collections',
+      [1],
+      null,
+      { collection: '5' },
+      {
+        collectionFromBrowse: true,
+      },
+    )
+    expect(collectionsPageProps.current?.detailBackLabel).toBe('Back to Browse')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close collection' }))
+    expect(pushNavStateMock).toHaveBeenLastCalledWith('browse', [1])
+    await waitFor(() => expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument())
+  })
+
+  it('uses the default collections label when opened from the list page', async () => {
+    window.history.replaceState(null, '', '/?page=collections')
+    await renderWithCollectionsEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Open collection 5' }))
+    expect(pushNavStateMock).toHaveBeenLastCalledWith(
+      'collections',
+      [],
+      null,
+      { collection: '5' },
+      {
+        collectionFromBrowse: false,
+      },
+    )
+    expect(collectionsPageProps.current?.detailBackLabel).toBeUndefined()
+  })
+
+  it('restores the browse context for a collection entry on back/forward', async () => {
+    await renderWithCollectionsEnabled()
+    expect(popStateHandler).not.toBeNull()
+
+    window.history.replaceState(null, '', '/?collection=12&cat=1')
+    act(() => {
+      popStateHandler!('collections', [1], null, { collectionFromBrowse: true })
+    })
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '12')
+    expect(collectionsPageProps.current?.detailBackLabel).toBe('Back to Browse')
   })
 })
 
@@ -2052,7 +2167,15 @@ describe('App "Add to Collection" from the image view (#1415)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'View collection' }))
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '9')
-    expect(pushNavStateMock).toHaveBeenLastCalledWith('collections', [], null, { collection: '9' })
+    expect(pushNavStateMock).toHaveBeenLastCalledWith(
+      'collections',
+      [],
+      null,
+      { collection: '9' },
+      {
+        collectionFromBrowse: false,
+      },
+    )
   })
 
   it('reports an already-present image as an informational no-op and closes', async () => {
@@ -2159,7 +2282,15 @@ describe('App search collections integration (#1418)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Shell search' }))
     fireEvent.click(screen.getByRole('button', { name: 'Select collection 5' }))
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '5')
-    expect(pushNavStateMock).toHaveBeenLastCalledWith('collections', [], null, { collection: '5' })
+    expect(pushNavStateMock).toHaveBeenLastCalledWith(
+      'collections',
+      [],
+      null,
+      { collection: '5' },
+      {
+        collectionFromBrowse: false,
+      },
+    )
   })
 
   it('opens Add to Collection with the multi-selected image ids even with no image open', async () => {

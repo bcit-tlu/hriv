@@ -403,9 +403,11 @@ export default function SynchronizedCollectionViewer({
     return (
       <Box data-testid="synchronized-viewer-fallback">
         <Alert severity="info" sx={{ mt: 3 }}>
-          {images.length < 2
-            ? 'A synchronized comparison needs at least two visible images. Open an image below to view it on its own.'
-            : 'Fewer than two of the images in this collection could be loaded. They may have been removed or you may no longer have access to them.'}
+          {images.length === 0 && collection.memberCount > 0
+            ? 'All images in this collection are currently restricted.'
+            : images.length < 2
+              ? 'A synchronized comparison needs at least two visible images. Open an image below to view it on its own.'
+              : 'Fewer than two of the images in this collection could be loaded. They may have been removed or you may no longer have access to them.'}
         </Alert>
         {images.length > 0 && (
           <List dense sx={{ mt: 2 }}>

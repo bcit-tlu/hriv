@@ -85,6 +85,7 @@ const existing: Collection = {
   programIds: [1],
   groupIds: [10],
   viewportState: {},
+  memberCount: 0,
 }
 
 interface StoryArgs {

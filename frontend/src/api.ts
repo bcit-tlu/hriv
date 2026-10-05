@@ -699,6 +699,13 @@ export interface ApiCollection extends ApiCollectionSummary {
   program_ids: number[]
   group_ids: number[]
   viewport_state: Record<string, unknown>
+  /**
+   * Nominal member count including members hidden from the caller
+   * (#1529): `image_count` counts only visible members, so
+   * `member_count > image_count` distinguishes "all restricted" from
+   * "empty" on the detail view.
+   */
+  member_count: number
 }
 
 export interface CollectionFilters {
@@ -712,7 +719,10 @@ export interface CollectionFilters {
   uncategorized?: boolean
 }
 
-export function fetchCollections(filters: CollectionFilters = {}): Promise<ApiCollectionSummary[]> {
+export function fetchCollections(
+  filters: CollectionFilters = {},
+  init?: RequestInit,
+): Promise<ApiCollectionSummary[]> {
   const params = new URLSearchParams()
   if (filters.type) params.set('type', filters.type)
   if (filters.mine) params.set('mine', 'true')
@@ -722,7 +732,7 @@ export function fetchCollections(filters: CollectionFilters = {}): Promise<ApiCo
   if (filters.orphaned) params.set('orphaned', 'true')
   if (filters.uncategorized) params.set('uncategorized', 'true')
   const qs = params.toString()
-  return request(`/collections${qs ? `?${qs}` : ''}`)
+  return request(`/collections${qs ? `?${qs}` : ''}`, init)
 }
 
 export function fetchCollection(id: number): Promise<ApiCollection> {

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import Box from '@mui/material/Box'
 import FormControl from '@mui/material/FormControl'
 import IconButton from '@mui/material/IconButton'
@@ -103,6 +103,7 @@ export default function CategoryPickerSelect({
   programs,
   groups,
 }: CategoryPickerSelectProps) {
+  const labelId = useId()
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [addParentId, setAddParentId] = useState<number | null>(null)
   const [addParentLabel, setAddParentLabel] = useState<string | undefined>(undefined)
@@ -271,13 +272,17 @@ export default function CategoryPickerSelect({
   return (
     <>
       <FormControl fullWidth variant="outlined">
-        <InputLabel shrink={value != null || includeRoot || !!placeholder || undefined}>
+        <InputLabel
+          id={labelId}
+          shrink={value != null || includeRoot || !!placeholder || undefined}
+        >
           {label}
         </InputLabel>
         <Select
           value={selectValue}
           onChange={handleChange}
           label={label}
+          labelId={labelId}
           displayEmpty={includeRoot || !!placeholder}
           renderValue={(selected) => {
             if (selected === '') {

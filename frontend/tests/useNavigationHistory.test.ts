@@ -133,6 +133,64 @@ describe('useNavigationHistory', () => {
       expect((state as NavHistoryState).page).toBe('collections')
     })
 
+    it('keeps ?cat= next to ?collection= for a Browse-scoped detail (#1529)', () => {
+      const onPopState = vi.fn()
+      const { result } = renderHook(() => useNavigationHistory(onPopState))
+
+      act(() => {
+        result.current.pushNavState(
+          'collections',
+          [1, 2],
+          null,
+          { collection: '12' },
+          {
+            collectionFromBrowse: true,
+          },
+        )
+      })
+
+      const [state, , url] = pushStateSpy.mock.calls[0]
+      expect(url).toBe(`${window.location.pathname}?cat=1%2C2&collection=12`)
+      const nav = state as NavHistoryState
+      expect(nav.page).toBe('collections')
+      expect(nav.catIds).toEqual([1, 2])
+      expect(nav.collectionFromBrowse).toBe(true)
+    })
+
+    it('writes a bare ?collection={id} for a browse-root open (flag in state only)', () => {
+      const onPopState = vi.fn()
+      const { result } = renderHook(() => useNavigationHistory(onPopState))
+
+      act(() => {
+        result.current.pushNavState(
+          'collections',
+          [],
+          null,
+          { collection: '12' },
+          {
+            collectionFromBrowse: true,
+          },
+        )
+      })
+
+      const [state, , url] = pushStateSpy.mock.calls[0]
+      expect(url).toBe(`${window.location.pathname}?collection=12`)
+      expect((state as NavHistoryState).collectionFromBrowse).toBe(true)
+    })
+
+    it('omits ?cat= and the flag for a Collections-page open', () => {
+      const onPopState = vi.fn()
+      const { result } = renderHook(() => useNavigationHistory(onPopState))
+
+      act(() => {
+        result.current.pushNavState('collections', [1, 2], null, { collection: '12' })
+      })
+
+      const [state, , url] = pushStateSpy.mock.calls[0]
+      expect(url).toBe(`${window.location.pathname}?collection=12`)
+      expect((state as NavHistoryState).collectionFromBrowse).toBeUndefined()
+    })
+
     it('writes ?page=collections for the Collections list without a selection', () => {
       const onPopState = vi.fn()
       const { result } = renderHook(() => useNavigationHistory(onPopState))
@@ -340,6 +398,35 @@ describe('useNavigationHistory', () => {
       window.dispatchEvent(event)
 
       expect(onPopState).toHaveBeenCalledWith('manage', [1, 2], 99, {
+        fromIndex: 3,
+        toIndex: 4,
+      })
+    })
+
+    it('surfaces collectionFromBrowse in the traversal for Browse-opened collection entries (#1529)', () => {
+      window.history.replaceState(buildNavHistoryState('collections', [1], null, 3), '', '/')
+      const onPopState = vi.fn()
+      renderHook(() => useNavigationHistory(onPopState))
+
+      const navState = buildNavHistoryState('collections', [1, 2], null, 4, true)
+      window.dispatchEvent(new PopStateEvent('popstate', { state: navState }))
+
+      expect(onPopState).toHaveBeenCalledWith('collections', [1, 2], null, {
+        fromIndex: 3,
+        toIndex: 4,
+        collectionFromBrowse: true,
+      })
+    })
+
+    it('omits collectionFromBrowse for collection entries without the flag', () => {
+      window.history.replaceState(buildNavHistoryState('collections', [], null, 3), '', '/')
+      const onPopState = vi.fn()
+      renderHook(() => useNavigationHistory(onPopState))
+
+      const navState = buildNavHistoryState('collections', [], null, 4)
+      window.dispatchEvent(new PopStateEvent('popstate', { state: navState }))
+
+      expect(onPopState).toHaveBeenCalledWith('collections', [], null, {
         fromIndex: 3,
         toIndex: 4,
       })

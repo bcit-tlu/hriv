@@ -245,7 +245,9 @@ export default function SequenceCollectionViewer({
   if (images.length === 0) {
     return (
       <Alert severity="info" sx={{ mt: 3 }} data-testid="sequence-viewer-empty">
-        This collection has no visible images to show.
+        {collection.memberCount > 0
+          ? 'All images in this collection are currently restricted.'
+          : 'This collection has no visible images to show.'}
       </Alert>
     )
   }

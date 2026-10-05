@@ -16,7 +16,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import CategoryTile from '../../src/components/CategoryTile'
 import type { Group, Program } from '../../src/types'
-import { makeCategory } from '../helpers/fixtures'
+import { makeCategory, makeCollectionSummary } from '../helpers/fixtures'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -259,6 +259,37 @@ describe('CategoryTile', () => {
       )
       // 2 direct children + 3 grandchildren = 5
       expect(screen.getByText(/5 sub-categories/)).toBeInTheDocument()
+    })
+
+    it('counts filed collections recursively (#1529)', () => {
+      render(
+        <CategoryTile
+          category={makeCategory({
+            collections: [makeCollectionSummary({ id: 7 })],
+            children: [
+              makeCategory({
+                id: 2,
+                label: 'Child',
+                collections: [makeCollectionSummary({ id: 8 }), makeCollectionSummary({ id: 9 })],
+              }),
+            ],
+          })}
+          onClick={vi.fn()}
+          programs={[]}
+        />,
+      )
+      expect(screen.getByText(/3 collections/)).toBeInTheDocument()
+    })
+
+    it('uses the singular form for one collection', () => {
+      render(
+        <CategoryTile
+          category={makeCategory({ collections: [makeCollectionSummary({ id: 7 })] })}
+          onClick={vi.fn()}
+          programs={[]}
+        />,
+      )
+      expect(screen.getByText(/1 collection\b/)).toBeInTheDocument()
     })
 
     it('shows image count', () => {

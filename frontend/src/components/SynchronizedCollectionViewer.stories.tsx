@@ -78,6 +78,7 @@ function makeCollection(
     programIds: [],
     groupIds: [],
     viewportState,
+    memberCount: images.length,
   }
 }
 

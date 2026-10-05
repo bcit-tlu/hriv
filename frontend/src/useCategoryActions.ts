@@ -1,18 +1,20 @@
 import { useState, useCallback, useMemo } from 'react'
 import {
+  collectionConflictCurrent,
   createCategory as apiCreateCategory,
   deleteCategory as apiDeleteCategory,
   updateCategory as apiUpdateCategory,
   updateImage as apiUpdateImage,
   userMessage,
 } from './api'
+import { apiCollectionToCollection } from './collectionUtils'
 import { tileOrderingCoordinator, type ScopeId } from './tileOrdering'
 import type { ParentMove, ScopeOrder } from './components/manageCategoriesDialogUtils'
 import { computeMoveRestrictionChange } from './categoryUtils'
 import { emitEvent } from './observability'
 import type { MoveRestrictionChange } from './categoryUtils'
-import { findImageInTree, findCategoryPath } from './treeUtils'
-import type { Category, ImageItem } from './types'
+import { findCollectionInTree, findImageInTree, findCategoryPath } from './treeUtils'
+import type { Category, Collection, CollectionSummary, ImageItem } from './types'
 
 export interface PendingMoveConfirm {
   categoryId: number
@@ -38,8 +40,21 @@ function moveDestinationLabel(parentId: number | null, ancestorPath: Category[])
 export interface UseCategoryActionsDeps {
   categories: Category[]
   uncategorizedImages: ImageItem[]
+  /** Root-scope collections (#1529) — the DnD move source list. */
+  uncategorizedCollections?: CollectionSummary[]
   loadCategories: () => Promise<unknown>
   loadUncategorizedImages: (opts?: { signal?: AbortSignal }) => Promise<unknown>
+  loadUncategorizedCollections?: (opts?: { signal?: AbortSignal }) => Promise<unknown>
+  /**
+   * Performs `POST /api/collections/{id}/move` (#1527) and keeps the
+   * Collections-page list/detail state in sync (`useCollectionsData.move`).
+   * Absent while collections are disabled — the move handlers no-op then.
+   */
+  moveCollectionApi?: (
+    id: number,
+    categoryId: number | null,
+    version: number,
+  ) => Promise<Collection>
   currentCategories: Category[]
   ancestorProgramIds: number[]
   getPathRestriction: (depth?: number) => number[]
@@ -59,8 +74,11 @@ type CategoryStatusUpdate = 'active' | 'hidden'
 export function useCategoryActions({
   categories,
   uncategorizedImages,
+  uncategorizedCollections = [],
   loadCategories,
   loadUncategorizedImages,
+  loadUncategorizedCollections,
+  moveCollectionApi,
   currentCategories,
   ancestorProgramIds,
   getPathRestriction,
@@ -82,6 +100,8 @@ export function useCategoryActions({
   )
   const [moveCatOpen, setMoveCatOpen] = useState(false)
   const [movingCategory, setMovingCategory] = useState<Category | null>(null)
+  const [moveCollectionOpen, setMoveCollectionOpen] = useState(false)
+  const [movingCollection, setMovingCollection] = useState<CollectionSummary | null>(null)
   const [pendingMoveConfirm, setPendingMoveConfirm] = useState<PendingMoveConfirm | null>(null)
 
   const editCategoryContext = useMemo(() => {
@@ -536,6 +556,102 @@ export function useCategoryActions({
     [categories, doDropCategoryOnCategory],
   )
 
+  /**
+   * File a collection into a category via `POST /collections/{id}/move`
+   * (epic #1525 / #1529). Mirrors the image move: no restriction-confirm —
+   * a collection is a leaf, so the category ancestor gate is the only
+   * change, same as moving an image. The move bumps both scopes' tile-order
+   * revisions server-side, so the coordinator's cached revisions are stale.
+   */
+  const doMoveCollection = useCallback(
+    async (collection: CollectionSummary, newCategoryId: number | null) => {
+      if (!moveCollectionApi) return
+      const prevCategoryId = collection.categoryId ?? null
+      if (prevCategoryId === newCategoryId) {
+        setMoveCollectionOpen(false)
+        setMovingCollection(null)
+        return
+      }
+      const targetName =
+        newCategoryId === null
+          ? 'the Browse root'
+          : (findCategoryPath(categories, newCategoryId)?.at(-1)?.label ?? 'category')
+      try {
+        const updated = await moveCollectionApi(collection.id, newCategoryId, collection.version)
+        tileOrderingCoordinator.invalidateRevision(prevCategoryId)
+        tileOrderingCoordinator.invalidateRevision(newCategoryId)
+        setMoveCollectionOpen(false)
+        setMovingCollection(null)
+        await loadCategories()
+        await loadUncategorizedCollections?.()
+        setMoveSnack({
+          message:
+            newCategoryId === null
+              ? `Moved “${collection.name}” to ${targetName}`
+              : `Moved “${collection.name}” to “${targetName}”`,
+          onUndo: async () => {
+            try {
+              setMoveSnack(null)
+              // Undo targets the pre-move scope with the version the move
+              // response returned — the API bumps it on every write.
+              await moveCollectionApi(collection.id, prevCategoryId, updated.version)
+              tileOrderingCoordinator.invalidateRevision(prevCategoryId)
+              tileOrderingCoordinator.invalidateRevision(newCategoryId)
+              await loadCategories()
+              await loadUncategorizedCollections?.()
+            } catch (undoErr) {
+              setErrorSnack(userMessage(undoErr, 'Failed to undo move.'))
+            }
+          },
+        })
+      } catch (err) {
+        console.error('Failed to move collection', err)
+        // A 409 carries the authoritative record — refresh the open dialog's
+        // collection so a retry posts the fresh version instead of
+        // re-failing on the stale one captured when it opened (#1529).
+        const conflict = collectionConflictCurrent(err)
+        if (conflict) setMovingCollection(apiCollectionToCollection(conflict))
+        setErrorSnack(userMessage(err, 'Failed to move collection.'))
+      }
+    },
+    [
+      categories,
+      moveCollectionApi,
+      loadCategories,
+      loadUncategorizedCollections,
+      setMoveSnack,
+      setErrorSnack,
+    ],
+  )
+
+  /** Dialog entry point — the picker keeps the collection's current scope
+   *  preselected so an unchanged "Move" is a no-op. */
+  const handleRequestMoveCollection = useCallback((collection: CollectionSummary) => {
+    setMovingCollection(collection)
+    setMoveCollectionOpen(true)
+  }, [])
+
+  const handleMoveCollection = useCallback(
+    async (newCategoryId: number | null) => {
+      if (!movingCollection) return
+      await doMoveCollection(movingCollection, newCategoryId)
+    },
+    [movingCollection, doMoveCollection],
+  )
+
+  /** Browse-grid drop: a `col-` tile dropped on a category's near-half move
+   *  zone lands here (issue #1529). */
+  const handleDropCollectionOnCategory = useCallback(
+    async (collectionId: number, targetCategoryId: number) => {
+      const found = findCollectionInTree(categories, collectionId)
+      const col = found?.collection ?? uncategorizedCollections.find((c) => c.id === collectionId)
+      if (!col) return
+      if (col.categoryId === targetCategoryId) return
+      await doMoveCollection(col, targetCategoryId)
+    },
+    [categories, uncategorizedCollections, doMoveCollection],
+  )
+
   const handleSetCardImage = useCallback(
     async (categoryId: number, imageId: number | null) => {
       try {
@@ -629,6 +745,13 @@ export function useCategoryActions({
     handleRequestMoveCategory,
     handleDropImageOnCategory,
     handleDropCategoryOnCategory,
+    moveCollectionOpen,
+    setMoveCollectionOpen,
+    movingCollection,
+    setMovingCollection,
+    handleRequestMoveCollection,
+    handleMoveCollection,
+    handleDropCollectionOnCategory,
     handleSetCardImage,
   }
 }
