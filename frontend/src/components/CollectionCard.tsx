@@ -172,7 +172,10 @@ export default function CollectionCard({
         <Box
           sx={{
             position: 'absolute',
-            top: 148,
+            // 8px below the 160px cover, on the card body — keeps the
+            // controls off the image (they have no scrim, unlike
+            // CategoryTile's cover-overlay actions).
+            top: 168,
             right: 8,
             display: 'flex',
             gap: 0.25,
