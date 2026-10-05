@@ -41,7 +41,7 @@ export type ScopeId = number | null
  * from where, to where) even though persistence submits the whole scope.
  */
 export interface ReorderDragContext {
-  itemType: 'category' | 'image'
+  itemType: 'category' | 'collection' | 'image'
   itemId: number
   fromIndex: number
   toIndex: number
@@ -98,6 +98,58 @@ function refsOf(response: TileOrderResponse): TileOrderItemRef[] {
   return response.items.map(({ type, id }) => ({ type, id }))
 }
 
+/**
+ * Merge a caller's local order with the server's authoritative membership
+ * (epic #1525 / issue #1528): members the caller submitted keep the local
+ * order; members the server knows but the caller did not model (e.g.
+ * collection tiles not yet rendered by the submitting surface) keep their
+ * positions — each unknown member stays in its authoritative slot while
+ * known members re-fill the slots known members occupied, in local order.
+ * Local refs absent from the authoritative list (departed members) drop out.
+ *
+ * Distinct from `reapplyLocalOrder`'s conflict-resolution merge, which
+ * deliberately appends newcomers at the end because the user is choosing
+ * "keep my order" against a server change they were shown.
+ */
+export function mergeOrderPreservingPositions(
+  local: TileOrderItemRef[],
+  authoritative: TileOrderItemRef[],
+): TileOrderItemRef[] {
+  const authoritativeKeys = new Set(authoritative.map(refKey))
+  const localKeys = new Set(local.map(refKey))
+  const survivingLocal = local.filter((ref) => authoritativeKeys.has(refKey(ref)))
+  let nextLocal = 0
+  return authoritative.map((ref) =>
+    localKeys.has(refKey(ref)) ? survivingLocal[nextLocal++] : ref,
+  )
+}
+
+/**
+ * True when `current` differs from `previous` only in membership — the
+ * relative order of members present in both lists is unchanged, so the
+ * drift is explained by members entering or leaving the scope rather than
+ * by a concurrent committed reorder. Membership changes bump the scope
+ * revision server-side just like reorders do, so the CAS revision alone
+ * cannot distinguish the two; without this guard the membership-400
+ * auto-retry could silently overwrite another editor's committed order
+ * (#1538 review). Returns false when no previous member list was captured
+ * — an unreachable safeguard that keeps the explicit conflict path.
+ */
+function isMembershipOnlyDrift(
+  previous: TileOrderItemRef[] | undefined,
+  current: TileOrderItemRef[],
+): boolean {
+  if (previous === undefined) return false
+  const currentKeys = new Set(current.map(refKey))
+  const previousKeys = new Set(previous.map(refKey))
+  const continuingOld = previous.filter((ref) => currentKeys.has(refKey(ref)))
+  const continuingNew = current.filter((ref) => previousKeys.has(refKey(ref)))
+  return (
+    continuingOld.length === continuingNew.length &&
+    continuingOld.every((ref, i) => refKey(ref) === refKey(continuingNew[i]))
+  )
+}
+
 export class TileOrderingCoordinator {
   private scopes = new Map<string, ScopeState>()
   private listeners = new Set<() => void>()
@@ -130,6 +182,16 @@ export class TileOrderingCoordinator {
    * `submitted` emission. Coalesced drops keep the latest drag's detail.
    */
   private dragContexts = new Map<string, ReorderDragContext>()
+  /**
+   * Latest authoritative member list per scope, captured from every
+   * GET/409/PUT response. Submitting surfaces don't necessarily model every
+   * member type (a grid may not render collection tiles yet, and the
+   * manage-categories dialog works from its own data) — before each PUT the
+   * pending order is merged against this list so unknown members keep their
+   * slots instead of tripping the contract's exact-membership 400 (issue
+   * #1528).
+   */
+  private scopeMembers = new Map<string, TileOrderItemRef[]>()
   /** Notified after each successful commit (see `onCommitted`). */
   private commitListeners = new Set<(scope: ScopeId) => void>()
 
@@ -194,6 +256,7 @@ export class TileOrderingCoordinator {
       ) {
         this.scopes.delete(key)
         this.lastWrite.delete(key)
+        this.scopeMembers.delete(key)
         changed = true
       }
     }
@@ -242,6 +305,7 @@ export class TileOrderingCoordinator {
     this.generations.clear()
     if (this.scopes.size === 0 && this.pendingOperationIds.size === 0) return
     this.scopes.clear()
+    this.scopeMembers.clear()
     this.pendingOperationIds.clear()
     for (const listener of this.listeners) listener()
   }
@@ -489,6 +553,14 @@ export class TileOrderingCoordinator {
 
   private async flush(scope: ScopeId): Promise<void> {
     const epoch = this.epoch
+    // A membership 400 triggers one merge-and-retry per flush invocation —
+    // a second 400 means the scope is genuinely drifting under the save and
+    // falls through to the normal conflict path. The retry keeps the same
+    // operation ID and drag context so telemetry records one
+    // submitted→terminal lifecycle, not an orphaned submission (#1538).
+    let membershipRetried = false
+    let retriedOperationId: string | undefined
+    let retriedDrag: ReorderDragContext | undefined
     // Persist snapshots until no newer local changes remain. Each iteration
     // submits the newest snapshot only (coalescing anything in between).
     for (;;) {
@@ -506,7 +578,9 @@ export class TileOrderingCoordinator {
         const seedStartedAt = performance.now()
         try {
           const current = await getTileOrder(scope)
+          if (epoch !== this.epoch) return
           revision = current.revision
+          this.scopeMembers.set(scopeKey(scope), refsOf(current))
         } catch (err) {
           if (epoch !== this.epoch) return
           emitReorderDiagnostic({
@@ -539,9 +613,14 @@ export class TileOrderingCoordinator {
       // queued/coalesced events correlate with submission and completion.
       const queuedOperationId = this.pendingOperationIds.get(scopeKey(scope))
       this.pendingOperationIds.delete(scopeKey(scope))
-      const drag = this.dragContexts.get(scopeKey(scope))
+      const freshDrag = this.dragContexts.get(scopeKey(scope))
       this.dragContexts.delete(scopeKey(scope))
-      const operationId = queuedOperationId ?? newReorderOperationId()
+      // A queued snapshot minted its own ID/context while the prior save
+      // was in flight — it wins over the carried retry identity. The retry
+      // fallback applies only to the resubmitted order itself.
+      const isQueuedSnapshot = queuedOperationId !== undefined
+      const drag = freshDrag ?? (isQueuedSnapshot ? undefined : retriedDrag)
+      const operationId = queuedOperationId ?? retriedOperationId ?? newReorderOperationId()
       const startedAt = performance.now()
       this.setScope(scope, {
         ...state,
@@ -549,27 +628,49 @@ export class TileOrderingCoordinator {
         pending: null,
         inFlight: order,
       })
-      const categoryCount = order.filter((r) => r.type === 'category').length
-      const imageCount = order.filter((r) => r.type === 'image').length
+      // Merge the pending order against the latest authoritative membership
+      // so members the submitting surface doesn't model (e.g. collection
+      // tiles a grid or dialog has not loaded) keep their server positions
+      // instead of tripping the contract's exact-membership 400. Only when
+      // every submitted ref is a known member, though: an order containing
+      // refs the member list lacks is submitted verbatim — the extra may be
+      // a legitimately new member the seed GET predates, and if it is
+      // foreign the server's exact-membership 400 (plus the merge-retry
+      // below) resolves it correctly rather than silently dropping intent.
+      const knownMembers = this.scopeMembers.get(scopeKey(scope))
+      const memberKeys = knownMembers !== undefined ? new Set(knownMembers.map(refKey)) : undefined
+      const submitOrder =
+        memberKeys !== undefined && order.every((ref) => memberKeys.has(refKey(ref)))
+          ? mergeOrderPreservingPositions(order, knownMembers!)
+          : order
+
+      const categoryCount = submitOrder.filter((r) => r.type === 'category').length
+      const collectionCount = submitOrder.filter((r) => r.type === 'collection').length
+      const imageCount = submitOrder.filter((r) => r.type === 'image').length
       emitReorderDiagnostic({
         operationId,
         state: 'submitted',
         scopeCategoryId: scope,
         // Persistence re-indexes the whole scope: 'mixed' when the scope
-        // holds both kinds, otherwise the dragged tile's type.
-        itemType: categoryCount > 0 && imageCount > 0 ? 'mixed' : drag?.itemType,
+        // holds more than one kind, otherwise the dragged tile's type.
+        itemType:
+          [categoryCount, collectionCount, imageCount].filter((n) => n > 0).length > 1
+            ? 'mixed'
+            : drag?.itemType,
         itemId: drag?.itemId,
         fromIndex: drag?.fromIndex,
         toIndex: drag?.toIndex,
         categoryCount,
+        collectionCount,
         imageCount,
         queueDepth: 0,
         localRevision: revision,
       })
 
       try {
-        const response = await putTileOrder(scope, revision, order, operationId)
+        const response = await putTileOrder(scope, revision, submitOrder, operationId)
         if (epoch !== this.epoch) return
+        this.scopeMembers.set(scopeKey(scope), refsOf(response))
         emitReorderDiagnostic({
           operationId,
           state: 'committed',
@@ -601,19 +702,55 @@ export class TileOrderingCoordinator {
       } catch (err) {
         if (epoch !== this.epoch) return
         // 409: the CAS revision is stale. 400: scope membership changed
-        // underneath the client (membership changes do not bump the
-        // revision) — the tile-order contract says to treat it like 409 and
-        // refresh via GET (docs/tile-ordering.md).
+        // underneath the client — the tile-order contract says to treat it
+        // like 409 and refresh via GET (docs/tile-ordering.md).
         let conflict = tileOrderConflictCurrent(err)
         if (conflict === null && err instanceof ApiError && err.status === 400) {
           try {
-            conflict = await getTileOrder(scope)
+            const current = await getTileOrder(scope)
+            if (epoch !== this.epoch) return
+            const members = refsOf(current)
+            const previousMembers = this.scopeMembers.get(scopeKey(scope))
+            this.scopeMembers.set(scopeKey(scope), members)
+            // Auto-retry only for pure membership drift (#1528; #1538
+            // review): if the continuing members' relative order moved, a
+            // concurrent committed reorder is hiding under the membership
+            // change and a silent retry would overwrite it — surface the
+            // conflict. Same when the dragged tile itself departed: the
+            // merged retry would report a successful save for a drag that
+            // went nowhere.
+            const draggedDeparted =
+              drag !== undefined &&
+              !members.some((ref) => ref.type === drag.itemType && ref.id === drag.itemId)
+            if (
+              !membershipRetried &&
+              !draggedDeparted &&
+              isMembershipOnlyDrift(previousMembers, members)
+            ) {
+              membershipRetried = true
+              retriedOperationId = operationId
+              retriedDrag = drag
+              const after = this.getScope(scope)
+              this.setScope(scope, {
+                ...after,
+                status: 'dirty',
+                revision: current.revision,
+                inFlight: null,
+                pending: mergeOrderPreservingPositions(after.pending ?? order, members),
+                displayOrder: mergeOrderPreservingPositions(after.displayOrder ?? order, members),
+              })
+              continue
+            }
+            conflict = current
           } catch {
             conflict = null
           }
           if (epoch !== this.epoch) return
         }
         if (conflict !== null) {
+          // Conflict responses carry the authoritative order too — refresh
+          // the member list so the next save merges against it.
+          this.scopeMembers.set(scopeKey(scope), refsOf(conflict))
           emitReorderDiagnostic({
             operationId,
             state: 'conflicted',

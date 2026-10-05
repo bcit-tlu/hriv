@@ -12,8 +12,31 @@ import { makeCollection, makeCollectionSummary, makeImage } from '../helpers/fix
 
 vi.mock('../../src/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api')>()
-  return { ...actual, fetchCollection: vi.fn(), fetchImage: vi.fn() }
+  return {
+    ...actual,
+    fetchCollection: vi.fn(),
+    fetchImage: vi.fn(),
+    fetchUsersPaged: vi.fn().mockResolvedValue({ items: [], total: 0 }),
+  }
 })
+
+// Sequence and synchronized details mount the real OpenSeadragon viewer,
+// which jsdom cannot run; stub both components and record their props so
+// page wiring is assertable.
+const sequenceViewerProps: { current: Record<string, unknown> | null } = { current: null }
+vi.mock('../../src/components/SequenceCollectionViewer', () => ({
+  default: (props: Record<string, unknown>) => {
+    sequenceViewerProps.current = props
+    return <div data-testid="sequence-collection-viewer" />
+  },
+}))
+const synchronizedViewerProps: { current: Record<string, unknown> | null } = { current: null }
+vi.mock('../../src/components/SynchronizedCollectionViewer', () => ({
+  default: (props: Record<string, unknown>) => {
+    synchronizedViewerProps.current = props
+    return <div data-testid="synchronized-collection-viewer" />
+  },
+}))
 
 const ADMIN: User = {
   id: 1,
@@ -67,10 +90,18 @@ function makeProps(overrides: Partial<CollectionsPageProps> = {}): CollectionsPa
     onOpenCollection: vi.fn(),
     onCloseCollection: vi.fn(),
     onOpenImage: vi.fn(),
+    selectedCollectionItemId: null,
+    onSelectCollectionItem: vi.fn(),
+    onReorderImages: vi.fn().mockResolvedValue(undefined),
+    onCollectionImageRenewed: vi.fn(),
+    onViewerError: vi.fn(),
+    onSaveViewport: vi.fn().mockResolvedValue(undefined),
     loadCollection: vi.fn().mockResolvedValue(makeCollection()),
     onCreate: vi.fn().mockResolvedValue(undefined),
     onUpdate: vi.fn().mockResolvedValue(undefined),
     onDelete: vi.fn().mockResolvedValue(undefined),
+    onSaveOwners: vi.fn().mockResolvedValue(undefined),
+    onTransfer: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   }
 }
@@ -86,7 +117,11 @@ function renderPage(overrides: Partial<CollectionsPageProps> = {}) {
 }
 
 describe('CollectionsPage', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    sequenceViewerProps.current = null
+    synchronizedViewerProps.current = null
+  })
 
   describe('list states', () => {
     it('shows a spinner while loading an empty list', () => {
@@ -212,6 +247,20 @@ describe('CollectionsPage', () => {
   })
 
   describe('create / edit', () => {
+    it('shows New collection for staff (staff create with student parity)', () => {
+      renderPage({ currentUser: STAFF })
+      expect(screen.getByRole('button', { name: 'New collection' })).toBeInTheDocument()
+    })
+
+    it('offers staff the empty-state create affordance too', async () => {
+      const user = userEvent.setup()
+      const onCreate = vi.fn().mockResolvedValue(undefined)
+      renderPage({ currentUser: STAFF, collections: [], onCreate })
+      const link = await screen.findByRole('button', { name: 'Create a collection' })
+      await user.click(link)
+      expect(await screen.findByText('New Collection')).toBeInTheDocument()
+    })
+
     it('opens the create dialog and forwards the values to onCreate', async () => {
       const user = userEvent.setup()
       const onCreate = vi.fn().mockResolvedValue(undefined)
@@ -389,35 +438,99 @@ describe('CollectionsPage', () => {
       expect(onCloseCollection).toHaveBeenCalled()
     })
 
-    it.each(['synchronized', 'sequence'] as const)(
-      'lists ordered members with Open image links for a %s collection',
-      (type) => {
-        const onOpenImage = vi.fn()
-        const images = [
-          makeImage({ id: 21, name: 'Frontal' }),
-          makeImage({ id: 22, name: 'Lateral' }),
-        ]
-        const detail = makeCollection({ id: 9, type, images, description: 'Two views' })
-        renderPage({ selectedCollectionId: 9, detail, onOpenImage })
+    it('mounts the synchronized viewer with the header and wired callbacks (#1417)', () => {
+      const onOpenImage = vi.fn()
+      const onSaveViewport = vi.fn().mockResolvedValue(undefined)
+      const onCollectionImageRenewed = vi.fn()
+      const onViewerError = vi.fn()
+      const images = [
+        makeImage({ id: 21, name: 'Frontal' }),
+        makeImage({ id: 22, name: 'Lateral' }),
+      ]
+      const detail = makeCollection({
+        id: 9,
+        type: 'synchronized',
+        images,
+        description: 'Two views',
+      })
+      renderPage({
+        selectedCollectionId: 9,
+        detail,
+        onOpenImage,
+        onSaveViewport,
+        onCollectionImageRenewed,
+        onViewerError,
+      })
 
-        expect(screen.getByTestId('collection-detail')).toBeInTheDocument()
-        expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Skull comparison')
-        expect(screen.getByText('Two views')).toBeInTheDocument()
-        expect(screen.getByRole('alert')).toHaveTextContent(`The ${type} viewer is coming soon`)
-        expect(screen.getByText('1. Frontal')).toBeInTheDocument()
-        expect(screen.getByText('2. Lateral')).toBeInTheDocument()
+      expect(screen.getByTestId('collection-detail')).toBeInTheDocument()
+      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Skull comparison')
+      expect(screen.getByText('Two views')).toBeInTheDocument()
+      expect(screen.getByTestId('synchronized-collection-viewer')).toBeInTheDocument()
 
-        const links = screen.getAllByRole('link', { name: 'Open image' })
-        expect(links.map((l) => l.getAttribute('href'))).toEqual(['?image=21', '?image=22'])
-        fireEvent.click(links[1])
-        expect(onOpenImage).toHaveBeenCalledWith(images[1])
-      },
-    )
+      const props = synchronizedViewerProps.current!
+      expect(props.collection).toBe(detail)
+      void (props.onSaveViewport as (s: Record<string, unknown>) => Promise<unknown>)({
+        '21': { zoom: 1, x: 0.5, y: 0.5, rotation: 0 },
+      })
+      expect(onSaveViewport).toHaveBeenCalledWith(9, {
+        '21': { zoom: 1, x: 0.5, y: 0.5, rotation: 0 },
+      })
+      ;(props.onOpenImage as (img: unknown) => void)(images[0])
+      expect(onOpenImage).toHaveBeenCalledWith(images[0])
+      ;(props.onImageRenewed as (img: unknown) => void)({ id: 21 })
+      expect(onCollectionImageRenewed).toHaveBeenCalledWith(9, { id: 21 })
+      ;(props.onError as (m: string) => void)('boom')
+      expect(onViewerError).toHaveBeenCalledWith('boom')
+    })
 
-    it('explains when a collection has no images yet', () => {
+    it('mounts the sequence viewer with the header and wired callbacks (#1416)', () => {
+      const onOpenImage = vi.fn()
+      const onSelectCollectionItem = vi.fn()
+      const onReorderImages = vi.fn().mockResolvedValue(undefined)
+      const onCollectionImageRenewed = vi.fn()
+      const onViewerError = vi.fn()
+      const images = [
+        makeImage({ id: 21, name: 'Frontal' }),
+        makeImage({ id: 22, name: 'Lateral' }),
+      ]
+      const detail = makeCollection({ id: 9, type: 'sequence', images, description: 'Two views' })
+      renderPage({
+        selectedCollectionId: 9,
+        detail,
+        onOpenImage,
+        selectedCollectionItemId: 22,
+        onSelectCollectionItem,
+        onReorderImages,
+        onCollectionImageRenewed,
+        onViewerError,
+      })
+
+      expect(screen.getByTestId('collection-detail')).toBeInTheDocument()
+      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Skull comparison')
+      expect(screen.getByText('Two views')).toBeInTheDocument()
+      expect(screen.getByTestId('sequence-collection-viewer')).toBeInTheDocument()
+      // The member list / coming-soon alert only remain for synchronized.
+      expect(screen.queryByText('1. Frontal')).not.toBeInTheDocument()
+
+      const props = sequenceViewerProps.current!
+      expect(props.collection).toBe(detail)
+      expect(props.itemId).toBe(22)
+      ;(props.onSelectItem as (id: number) => void)(21)
+      expect(onSelectCollectionItem).toHaveBeenCalledWith(21)
+      ;(props.onOpenImage as (img: unknown) => void)(images[0])
+      expect(onOpenImage).toHaveBeenCalledWith(images[0])
+      void (props.onReorder as (ids: number[]) => Promise<unknown>)([22, 21])
+      expect(onReorderImages).toHaveBeenCalledWith(9, [22, 21])
+      ;(props.onImageRenewed as (img: unknown) => void)({ id: 21 })
+      expect(onCollectionImageRenewed).toHaveBeenCalledWith(9, { id: 21 })
+      ;(props.onError as (m: string) => void)('boom')
+      expect(onViewerError).toHaveBeenCalledWith('boom')
+    })
+
+    it('still mounts the viewer when a synchronized collection has no images', () => {
       renderPage({ selectedCollectionId: 9, detail: makeCollection({ id: 9, images: [] }) })
-      expect(screen.getByText('This collection has no images yet.')).toBeInTheDocument()
-      expect(screen.queryByRole('link', { name: 'Open image' })).not.toBeInTheDocument()
+      // The empty-state fallback itself is covered by the viewer's own tests.
+      expect(screen.getByTestId('synchronized-collection-viewer')).toBeInTheDocument()
     })
 
     it('navigates back to the list', () => {
@@ -451,6 +564,201 @@ describe('CollectionsPage', () => {
       expect(await screen.findByText('Edit Collection')).toBeInTheDocument()
       expect(screen.getByDisplayValue('Open one')).toBeInTheDocument()
       expect(loadCollection).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('ownership and transfer (#1419)', () => {
+    it('shows a Managed by program hint for program-owned collections', () => {
+      renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({
+          id: 9,
+          owners: [{ kind: 'program', programId: 1, name: 'Radiography' }],
+        }),
+      })
+      expect(screen.getByText(/Managed by program Radiography/)).toBeInTheDocument()
+    })
+
+    it('shows program and group restriction chips on a restricted detail', () => {
+      renderPage({
+        selectedCollectionId: 9,
+        programs: [{ id: 1, name: 'Radiography' }],
+        groups: [
+          {
+            id: 4,
+            name: 'Cohort A',
+            description: null,
+            createdByUserId: null,
+            memberIds: [],
+            instructorIds: [],
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+          },
+        ],
+        detail: makeCollection({
+          id: 9,
+          visibility: 'restricted',
+          programIds: [1, 99],
+          groupIds: [4],
+        }),
+      })
+      const chips = screen.getAllByTestId('detail-program-chip')
+      expect(chips.map((c) => c.textContent)).toEqual(['Radiography', 'Program 99'])
+      expect(screen.getByTestId('detail-group-chip')).toHaveTextContent('Cohort A')
+    })
+
+    it('gates the detail Owners button on canTransfer', async () => {
+      const user = userEvent.setup()
+      const onTransfer = vi.fn().mockResolvedValue(undefined)
+      const { unmount } = renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({
+          id: 9,
+          permissions: { canEdit: true, canDelete: true, canTransfer: false },
+        }),
+        onTransfer,
+      })
+      expect(screen.queryByRole('button', { name: 'Owners' })).not.toBeInTheDocument()
+      unmount()
+
+      renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({
+          id: 9,
+          permissions: { canEdit: true, canDelete: true, canTransfer: true },
+        }),
+        onTransfer,
+      })
+      await user.click(screen.getByRole('button', { name: 'Owners' }))
+      const dialog = await screen.findByRole('dialog')
+      expect(within(dialog).getByRole('heading', { name: 'Owners' })).toBeInTheDocument()
+      // Nothing changed → confirm stays disabled; the affordance itself is what is gated here.
+      expect(within(dialog).getByTestId('owners-confirm')).toBeDisabled()
+    })
+
+    it('shows a card owners affordance only when canTransfer', async () => {
+      const user = userEvent.setup()
+      renderPage({
+        collections: [
+          makeCollectionSummary({
+            id: 3,
+            name: 'Ownable',
+            permissions: { canEdit: true, canDelete: true, canTransfer: true },
+          }),
+          makeCollectionSummary({
+            id: 4,
+            name: 'Shared',
+            permissions: { canEdit: true, canDelete: true, canTransfer: false },
+          }),
+        ],
+      })
+      expect(screen.getByRole('button', { name: 'Manage owners of Ownable' })).toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: 'Manage owners of Shared' }),
+      ).not.toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Manage owners of Ownable' }))
+      expect(await screen.findByRole('dialog')).toBeInTheDocument()
+      expect(
+        within(screen.getByRole('dialog')).getByRole('heading', { name: 'Owners' }),
+      ).toBeInTheDocument()
+    })
+
+    it('lets an admin reassign an orphaned collection from the card grid', async () => {
+      const user = userEvent.setup()
+      const onTransfer = vi.fn().mockResolvedValue(undefined)
+      renderPage({
+        currentUser: ADMIN,
+        programs: [{ id: 2, name: 'Ultrasound' }],
+        collections: [
+          makeCollectionSummary({
+            id: 5,
+            name: 'Orphaned set',
+            owners: [],
+            permissions: { canEdit: false, canDelete: true, canTransfer: true },
+          }),
+        ],
+        onTransfer,
+      })
+      expect(screen.getByText(/No owner/)).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Manage owners of Orphaned set' }))
+      const dialog = await screen.findByRole('dialog')
+      expect(within(dialog).getByText(/This collection is orphaned/)).toBeInTheDocument()
+      await user.click(within(dialog).getByLabelText('Owning program'))
+      await user.click(within(await screen.findByRole('listbox')).getByText('Ultrasound'))
+      await user.click(within(dialog).getByTestId('owners-confirm'))
+      await waitFor(() => expect(onTransfer).toHaveBeenCalledWith(5, 2))
+    })
+  })
+
+  describe('browse integration (#1529)', () => {
+    it('uses the provided label for the detail back button', () => {
+      const onCloseCollection = vi.fn()
+      renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({ id: 9 }),
+        onCloseCollection,
+        detailBackLabel: 'Back to Browse',
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Back to Browse' }))
+      expect(onCloseCollection).toHaveBeenCalled()
+    })
+
+    it('offers Move on the detail header for admins regardless of ownership', async () => {
+      const user = userEvent.setup()
+      const onMoveCollection = vi.fn()
+      const detail = makeCollection({
+        id: 9,
+        name: 'Filed one',
+        // Someone else's collection: filing is curatorial, not owner-scoped.
+        permissions: { canEdit: false, canDelete: false, canTransfer: false },
+      })
+      renderPage({ selectedCollectionId: 9, detail, onMoveCollection })
+      await user.click(screen.getByRole('button', { name: 'Move' }))
+      expect(onMoveCollection).toHaveBeenCalledWith(detail)
+    })
+
+    it('hides the detail Move button for non-curatorial roles', () => {
+      renderPage({
+        currentUser: STUDENT,
+        selectedCollectionId: 9,
+        detail: makeCollection({ id: 9 }),
+        onMoveCollection: vi.fn(),
+      })
+      expect(screen.queryByRole('button', { name: 'Move' })).not.toBeInTheDocument()
+    })
+
+    it('offers Move on list cards for instructors and calls onMoveCollection', async () => {
+      const user = userEvent.setup()
+      const onMoveCollection = vi.fn()
+      const collection = makeCollectionSummary({ id: 7, name: 'Lab 2' })
+      renderPage({ currentUser: INSTRUCTOR, collections: [collection], onMoveCollection })
+      await user.click(screen.getByRole('button', { name: 'Move Lab 2 to a category' }))
+      expect(onMoveCollection).toHaveBeenCalledWith(collection)
+    })
+
+    it('omits the card Move affordance when onMoveCollection is not provided', () => {
+      renderPage({ collections: [makeCollectionSummary({ id: 7, name: 'Lab 2' })] })
+      expect(
+        screen.queryByRole('button', { name: 'Move Lab 2 to a category' }),
+      ).not.toBeInTheDocument()
+    })
+
+    it('shows the all-restricted notice when members exist but none are visible', () => {
+      renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({ id: 9, images: [], memberCount: 3 }),
+      })
+      expect(screen.getByTestId('collection-all-restricted')).toHaveTextContent(
+        'All images in this collection are currently restricted.',
+      )
+    })
+
+    it('omits the all-restricted notice for a truly empty collection', () => {
+      renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({ id: 9, images: [], memberCount: 0 }),
+      })
+      expect(screen.queryByTestId('collection-all-restricted')).not.toBeInTheDocument()
     })
   })
 })

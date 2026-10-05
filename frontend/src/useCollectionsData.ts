@@ -1,20 +1,33 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { addImagesToCollection, removeImagesFromCollection } from './useAddToCollection'
+import type { AddToCollectionResult } from './useAddToCollection'
 import {
   ApiError,
   createCollection,
   deleteCollection,
   fetchCollection,
+  collectionConflictCurrent,
   fetchCollections,
+  moveCollection,
+  replaceCollectionImages,
+  replaceCollectionOwners,
+  saveCollectionViewport,
+  transferCollection,
   updateCollection,
   userMessage,
+  type ApiImage,
   type CollectionFilters,
 } from './api'
-import { apiCollectionSummaryToSummary, apiCollectionToCollection } from './collectionUtils'
+import {
+  apiCollectionSummaryToSummary,
+  apiCollectionToCollection,
+  apiImageToItem,
+} from './collectionUtils'
 import type { CollectionFormValues } from './components/CollectionEditDialog'
 import type { Collection, CollectionOwner, CollectionSummary, CollectionType, User } from './types'
 
 /** Owner facet of the Collections list filter bar. */
-export type CollectionOwnerFilter = 'any' | 'orphaned' | NonNullable<CollectionOwner>
+export type CollectionOwnerFilter = 'any' | 'orphaned' | CollectionOwner
 
 export interface CollectionListFilters {
   type: CollectionType | 'all'
@@ -120,23 +133,27 @@ export function matchesCollectionFilters(
   user: Pick<User, 'id'> | null,
 ): boolean {
   if (filters.type !== 'all' && row.type !== filters.type) return false
-  if (filters.mine) return row.owner?.kind === 'user' && row.owner.userId === user?.id
+  // Owner filters match membership in the co-owner set (#1531); orphaned
+  // means no user owners and no program owner (an empty owners list).
+  if (filters.mine) return row.owners.some((o) => o.kind === 'user' && o.userId === user?.id)
   if (filters.owner === 'any') return true
-  if (filters.owner === 'orphaned') return row.owner == null
+  if (filters.owner === 'orphaned') return row.owners.length === 0
   const owner = filters.owner
-  if (owner.kind === 'user') return row.owner?.kind === 'user' && row.owner.userId === owner.userId
-  return row.owner?.kind === 'program' && row.owner.programId === owner.programId
+  if (owner.kind === 'user')
+    return row.owners.some((o) => o.kind === 'user' && o.userId === owner.userId)
+  return row.owners.some((o) => o.kind === 'program' && o.programId === owner.programId)
 }
 
-function uniqueOwners(collections: CollectionSummary[]): NonNullable<CollectionOwner>[] {
+function uniqueOwners(collections: CollectionSummary[]): CollectionOwner[] {
   const seen = new Set<string>()
-  const owners: NonNullable<CollectionOwner>[] = []
+  const owners: CollectionOwner[] = []
   for (const c of collections) {
-    if (c.owner == null) continue
-    const key = c.owner.kind === 'user' ? `u${c.owner.userId}` : `p${c.owner.programId}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    owners.push(c.owner)
+    for (const owner of c.owners) {
+      const key = owner.kind === 'user' ? `u${owner.userId}` : `p${owner.programId}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      owners.push(owner)
+    }
   }
   return owners.sort((a, b) => a.name.localeCompare(b.name))
 }
@@ -170,10 +187,14 @@ export function useCollectionsData({
     (next: CollectionListFilters) => setFilterState({ userId, filters: next }),
     [userId],
   )
-  const [ownerOptions, setOwnerOptions] = useState<NonNullable<CollectionOwner>[]>([])
+  const [ownerOptions, setOwnerOptions] = useState<CollectionOwner[]>([])
   const [detail, setDetail] = useState<Collection | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
+  const detailRef = useRef<Collection | null>(null)
+  useEffect(() => {
+    detailRef.current = detail
+  }, [detail])
   const loadSeq = useRef(0)
   // The user whose rows are in `collections`; another account starts empty
   // even if its own first load fails.
@@ -314,6 +335,395 @@ export function useCollectionsData({
     void latest.current.load()
   }, [])
 
+  /**
+   * Reorder the open collection's images (#1416 sequence viewer). Applies the
+   * new order optimistically to `detail`, persists with the whole-replace
+   * `PUT …/images` carrying the loaded `version`, and rolls `detail` back on
+   * error so the caller can surface the message. Members the caller cannot
+   * see are kept at the end (the backend carries them over, matching the
+   * visible-only submit list).
+   *
+   * Drops are serialized through `mutationQueue`: each call runs only after
+   * the previous PUT settles, and the queue carries the last authoritative
+   * record forward so each PUT sends a `version` the server accepts even if
+   * React has not committed the previous response yet. Without this, two
+   * drags landing inside one PUT window send the same version — the loser
+   * would 409 and roll the detail back over the winner's saved order.
+   * `saveViewport` shares the queue because it bumps the same `version`.
+   */
+  const mutationQueue = useRef<Promise<Collection | null>>(Promise.resolve(null))
+  /**
+   * Pick the freshest known record for `id` between the queue-carried `prior`
+   * (covers the pre-commit window after a queued mutation) and `detailRef`
+   * (covers writes outside the queue like `update` or a refetch). Version
+   * only ever increments, so the higher one is authoritative.
+   */
+  const baselineFor = (id: number, prior: Collection | null): Collection | null => {
+    const detail = detailRef.current?.id === id ? detailRef.current : null
+    const queued = prior?.id === id ? prior : null
+    if (detail == null) return queued
+    if (queued == null) return detail
+    return queued.version > detail.version ? queued : detail
+  }
+  const reorderImages = useCallback((id: number, imageIds: number[]): Promise<Collection> => {
+    const run = async (prior: Collection | null): Promise<Collection> => {
+      const baseline = baselineFor(id, prior)
+      if (!baseline || baseline.id !== id) {
+        throw new Error('The collection is not loaded.')
+      }
+      const byId = new Map(baseline.images.map((img) => [img.id, img] as const))
+      const optimisticImages = [
+        ...imageIds
+          .map((imageId) => byId.get(imageId))
+          .filter((img): img is NonNullable<typeof img> => img != null),
+        ...baseline.images.filter((img) => !imageIds.includes(img.id)),
+      ]
+      // Only paint the optimistic order when this collection is still open —
+      // a queued drop can run after the user opened another collection, and
+      // must not overwrite its detail (the PUT still persists the reorder).
+      setDetail((prev) => (prev?.id === id ? { ...baseline, images: optimisticImages } : prev))
+      try {
+        const updated = apiCollectionToCollection(
+          await replaceCollectionImages(id, {
+            image_ids: imageIds,
+            version: baseline.version,
+          }),
+        )
+        setDetail((prev) => (prev?.id === id ? updated : prev))
+        setCollections((prev) => {
+          const rest = prev.filter((c) => c.id !== id)
+          return matchesCollectionFilters(
+            updated,
+            latest.current.filters,
+            latest.current.currentUser,
+          )
+            ? [updated, ...rest]
+            : rest
+        })
+        void latest.current.load()
+        return updated
+      } catch (err) {
+        setDetail((prev) => (prev?.id === id ? baseline : prev))
+        throw err
+      }
+    }
+    const queued = mutationQueue.current.then(run, () => run(null))
+    // The chain never rejects — the next drop always gets a baseline.
+    mutationQueue.current = queued.then(
+      (updated) => updated,
+      () => null,
+    )
+    return queued
+  }, [])
+
+  /**
+   * Persist the synchronized viewer's saved positions (#1417) via the
+   * whole-replace `PUT …/viewport`, updating the open detail on success.
+   * Serialized with `reorderImages` through `mutationQueue` so a viewport
+   * save cannot send a version an in-flight reorder has already consumed.
+   */
+  const saveViewport = useCallback(
+    (id: number, viewportState: Record<string, unknown>): Promise<Collection> => {
+      const run = async (prior: Collection | null): Promise<Collection> => {
+        const baseline = baselineFor(id, prior)
+        if (!baseline || baseline.id !== id) {
+          throw new Error('The collection is not loaded.')
+        }
+        const updated = apiCollectionToCollection(
+          await saveCollectionViewport(id, {
+            viewport_state: viewportState,
+            version: baseline.version,
+          }),
+        )
+        setDetail((prev) => (prev?.id === id ? updated : prev))
+        setCollections((prev) => {
+          const rest = prev.filter((c) => c.id !== id)
+          return matchesCollectionFilters(
+            updated,
+            latest.current.filters,
+            latest.current.currentUser,
+          )
+            ? [updated, ...rest]
+            : rest
+        })
+        return updated
+      }
+      const queued = mutationQueue.current.then(run, () => run(null))
+      mutationQueue.current = queued.then(
+        (updated) => updated,
+        () => null,
+      )
+      return queued
+    },
+    [],
+  )
+
+  /**
+   * Reassign *program* ownership (#1531) via `POST …/transfer` —
+   * `programId` sets the owning program (the API clears the user-owner rows)
+   * and `null` clears it, leaving the user owners in place. Serialized with
+   * reorder/viewport saves through `mutationQueue` because it carries the
+   * same `version`. When the target collection is not the open detail (e.g.
+   * an admin reassigning an orphan from the card list), the freshest record
+   * is fetched for its version before posting. A transferred collection can
+   * leave the visible list (transferred away under `mine`, or assigned out
+   * of `orphaned`) — `matchesCollectionFilters` decides list membership.
+   */
+  const transfer = useCallback((id: number, programId: number | null): Promise<Collection> => {
+    const run = async (prior: Collection | null): Promise<Collection> => {
+      let baseline = baselineFor(id, prior)
+      if (!baseline || baseline.id !== id) {
+        baseline = apiCollectionToCollection(await fetchCollection(id))
+      }
+      try {
+        const updated = apiCollectionToCollection(
+          await transferCollection(id, {
+            program_id: programId,
+            version: baseline.version,
+          }),
+        )
+        setDetail((prev) => (prev?.id === id ? updated : prev))
+        setCollections((prev) => {
+          const rest = prev.filter((c) => c.id !== id)
+          return matchesCollectionFilters(
+            updated,
+            latest.current.filters,
+            latest.current.currentUser,
+          )
+            ? [updated, ...rest]
+            : rest
+        })
+        void latest.current.load()
+        return updated
+      } catch (err) {
+        // A 409 carries the authoritative record — merge it so the next
+        // attempt sends the fresh version instead of failing again.
+        const conflict = collectionConflictCurrent(err)
+        if (conflict) {
+          const current = apiCollectionToCollection(conflict)
+          setDetail((prev) => (prev?.id === id ? current : prev))
+          setCollections((prev) => {
+            const rest = prev.filter((c) => c.id !== id)
+            return matchesCollectionFilters(
+              current,
+              latest.current.filters,
+              latest.current.currentUser,
+            )
+              ? [current, ...rest]
+              : rest
+          })
+        }
+        throw err
+      }
+    }
+    const queued = mutationQueue.current.then(run, () => run(null))
+    mutationQueue.current = queued.then(
+      (updated) => updated,
+      () => null,
+    )
+    return queued
+  }, [])
+
+  /**
+   * Replace the whole user-owner set (#1531) via `PUT …/owners`. Same queue
+   * and conflict-merge conventions as `transfer` — the two endpoints race
+   * the same `version`, so a save posted behind a transfer must not send a
+   * token the transfer has already consumed.
+   */
+  const saveOwners = useCallback((id: number, userIds: number[]): Promise<Collection> => {
+    const run = async (prior: Collection | null): Promise<Collection> => {
+      let baseline = baselineFor(id, prior)
+      if (!baseline || baseline.id !== id) {
+        baseline = apiCollectionToCollection(await fetchCollection(id))
+      }
+      try {
+        const updated = apiCollectionToCollection(
+          await replaceCollectionOwners(id, {
+            user_ids: userIds,
+            version: baseline.version,
+          }),
+        )
+        setDetail((prev) => (prev?.id === id ? updated : prev))
+        setCollections((prev) => {
+          const rest = prev.filter((c) => c.id !== id)
+          return matchesCollectionFilters(
+            updated,
+            latest.current.filters,
+            latest.current.currentUser,
+          )
+            ? [updated, ...rest]
+            : rest
+        })
+        void latest.current.load()
+        return updated
+      } catch (err) {
+        const conflict = collectionConflictCurrent(err)
+        if (conflict) {
+          const current = apiCollectionToCollection(conflict)
+          setDetail((prev) => (prev?.id === id ? current : prev))
+          setCollections((prev) => {
+            const rest = prev.filter((c) => c.id !== id)
+            return matchesCollectionFilters(
+              current,
+              latest.current.filters,
+              latest.current.currentUser,
+            )
+              ? [current, ...rest]
+              : rest
+          })
+        }
+        throw err
+      }
+    }
+    const queued = mutationQueue.current.then(run, () => run(null))
+    mutationQueue.current = queued.then(
+      (updated) => updated,
+      () => null,
+    )
+    return queued
+  }, [])
+
+  /**
+   * File a collection into a Browse category (#1527/#1529). Serialized with
+   * reorder/viewport saves through `mutationQueue` because it carries the
+   * same `version` — a move posted while a viewer write is in flight would
+   * otherwise 409 on the version that write is about to consume. When the
+   * queue carries a fresher record than the one the dialog captured, its
+   * version wins. The `POST …/move` response is the fresh detail record, so
+   * an open detail and the list row update in place. On a 409 the conflict's
+   * authoritative record is merged (as in `transfer`) so a retry posts the
+   * fresh version instead of failing again.
+   */
+  const move = useCallback(
+    (id: number, categoryId: number | null, version: number): Promise<Collection> => {
+      const run = async (prior: Collection | null): Promise<Collection> => {
+        const baseline = baselineFor(id, prior)
+        const effectiveVersion = baseline && baseline.version > version ? baseline.version : version
+        try {
+          const updated = apiCollectionToCollection(
+            await moveCollection(id, { category_id: categoryId, version: effectiveVersion }),
+          )
+          setDetail((prev) => (prev?.id === id ? updated : prev))
+          setCollections((prev) => {
+            const rest = prev.filter((c) => c.id !== id)
+            return matchesCollectionFilters(
+              updated,
+              latest.current.filters,
+              latest.current.currentUser,
+            )
+              ? [updated, ...rest]
+              : rest
+          })
+          return updated
+        } catch (err) {
+          // A 409 carries the authoritative record — merge it so the next
+          // attempt sends the fresh version instead of failing again.
+          const conflict = collectionConflictCurrent(err)
+          if (conflict) {
+            const current = apiCollectionToCollection(conflict)
+            setDetail((prev) => (prev?.id === id ? current : prev))
+            setCollections((prev) => {
+              const rest = prev.filter((c) => c.id !== id)
+              return matchesCollectionFilters(
+                current,
+                latest.current.filters,
+                latest.current.currentUser,
+              )
+                ? [current, ...rest]
+                : rest
+            })
+          }
+          throw err
+        }
+      }
+      const queued = mutationQueue.current.then(run, () => run(null))
+      mutationQueue.current = queued.then(
+        (updated) => updated,
+        () => null,
+      )
+      return queued
+    },
+    [],
+  )
+
+  /**
+   * Merge an authoritative collection record into the open detail and the
+   * Collections-page list row (`matchesCollectionFilters` decides list
+   * membership, as in `move`). No list reload: the response record is
+   * already authoritative for the fields membership changes touch.
+   */
+  const mergeUpdated = useCallback((updated: Collection) => {
+    setDetail((prev) => (prev?.id === updated.id ? updated : prev))
+    setCollections((prev) => {
+      const rest = prev.filter((c) => c.id !== updated.id)
+      return matchesCollectionFilters(updated, latest.current.filters, latest.current.currentUser)
+        ? [updated, ...rest]
+        : rest
+    })
+  }, [])
+
+  /**
+   * Add member images to a collection — the Browse drop-add gesture (#1530).
+   * `addImagesToCollection` fetches the current record itself, so running it
+   * inside `mutationQueue` means its fetch post-dates any queued write and
+   * the PUT always carries a fresh `version`. The returned record (fresh on
+   * every status, even `already`/`full`) is merged into detail/list state.
+   */
+  const addImages = useCallback(
+    (id: number, imageIds: number[]): Promise<AddToCollectionResult> => {
+      const run = async (): Promise<AddToCollectionResult> => {
+        const result = await addImagesToCollection(id, imageIds)
+        mergeUpdated(result.collection)
+        return result
+      }
+      const queued = mutationQueue.current.then(run, () => run())
+      mutationQueue.current = queued.then(
+        (result) => result.collection,
+        () => null,
+      )
+      return queued
+    },
+    [mergeUpdated],
+  )
+
+  /**
+   * Remove member images — the undo path for the drop-add gesture (#1530),
+   * serialized through `mutationQueue` like the other versioned writes.
+   * `base` (the record returned by the mutation being undone) pins the PUT's
+   * `version`, so any intervening write to the collection conflicts instead
+   * of being silently overwritten.
+   */
+  const removeImages = useCallback(
+    (id: number, imageIds: number[], base?: Collection): Promise<Collection> => {
+      const run = async (): Promise<Collection> => {
+        const updated = await removeImagesFromCollection(id, imageIds, base)
+        mergeUpdated(updated)
+        return updated
+      }
+      const queued = mutationQueue.current.then(run, () => run())
+      mutationQueue.current = queued.then(
+        (updated) => updated,
+        () => null,
+      )
+      return queued
+    },
+    [mergeUpdated],
+  )
+
+  /**
+   * Refresh a member's tokenized tile/thumb URLs inside the open collection
+   * after the viewer's tile-token renewal (#1416), so a later remount does
+   * not start from an expired source.
+   */
+  const renewCollectionImage = useCallback((collectionId: number, image: ApiImage) => {
+    const fresh = apiImageToItem(image)
+    setDetail((prev) =>
+      prev?.id === collectionId
+        ? { ...prev, images: prev.images.map((img) => (img.id === fresh.id ? fresh : img)) }
+        : prev,
+    )
+  }, [])
+
   return {
     collections,
     loading,
@@ -329,5 +739,13 @@ export function useCollectionsData({
     create,
     update,
     remove,
+    reorderImages,
+    saveViewport,
+    move,
+    transfer,
+    saveOwners,
+    addImages,
+    removeImages,
+    renewCollectionImage,
   }
 }

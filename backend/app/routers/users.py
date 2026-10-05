@@ -6,8 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import require_role, hash_password
 from ..authz import ADMIN_PROGRAM_NAME
+from ..browse_state import bump_browse_revision
 from ..database import get_db
-from ..models import Program, User
+from ..models import Collection, Program, User
+from ..tile_order import bump_scopes, scope_key_for
 from ..schemas import (
     UserCreate,
     UserUpdate,
@@ -27,6 +29,51 @@ _admin = require_role("admin")
 _people_viewer = require_role("admin", "instructor", "staff")
 
 VALID_ROLES = {"admin", "instructor", "staff", "student"}
+
+
+async def _delete_sole_owned_collections(
+    db: AsyncSession, departing_ids: set[int]
+) -> bool:
+    """Apply the multi-owner user-deletion rule (#1531): a collection dies
+    when every owner row belongs to a departing user AND it has no program
+    owner; otherwise the departing users' owner rows cascade away with the
+    ``collection_owners`` FK and the collection survives for its remaining
+    owners. ``collections.user_id`` is creator-only audit (SET NULL), so it
+    plays no part in this decision.
+
+    Runs *before* the user rows are deleted (the ``collection_owners`` FK
+    cascade would otherwise erase the owner rows first and hide which
+    collections were sole-owned). Returns True when any affected collection
+    was filed into a category so the caller can invalidate the tree ETag —
+    whether it died or merely lost an owner, its Browse tile changes.
+    """
+    if not departing_ids:
+        return False
+    affected = (
+        (
+            await db.execute(
+                select(Collection).where(
+                    Collection.owners.any(User.id.in_(departing_ids))
+                )
+            )
+        )
+        .scalars()
+        .unique()
+        .all()
+    )
+    dying = [
+        c
+        for c in affected
+        if c.owner_program_id is None
+        and all(o.id in departing_ids for o in c.owners)
+    ]
+    if dying:
+        await bump_scopes(
+            db, {scope_key_for(c.category_id) for c in dying}
+        )
+        for collection in dying:
+            await db.delete(collection)
+    return any(c.category_id is not None for c in affected)
 
 
 async def _set_user_programs(
@@ -243,8 +290,11 @@ async def bulk_delete_users(
     users = result.scalars().unique().all()
     if len(users) != len(set(body.user_ids)):
         raise HTTPException(status_code=404, detail="One or more users not found")
+    filed_affected = await _delete_sole_owned_collections(db, set(body.user_ids))
     for user in users:
         await db.delete(user)
+    if filed_affected:
+        await bump_browse_revision(db)
     await db.commit()
 
 
@@ -288,10 +338,15 @@ async def update_user(
             update_data["password_hash"] = hash_password(pwd)
     if "email" in update_data and update_data["email"] is not None:
         update_data["email"] = update_data["email"].lower()
+    # The owner's name renders on filed collection tiles — capture the
+    # rename before setattr so the tree ETag can be invalidated (#1527).
+    name_changed = "name" in update_data and update_data["name"] != user.name
     for key, value in update_data.items():
         setattr(user, key, value)
     if program_ids is not None:
         await _set_user_programs(db, user, program_ids)
+    if name_changed:
+        await bump_browse_revision(db)
     await db.commit()
     await db.refresh(user)
     return user_to_out(user)
@@ -308,5 +363,8 @@ async def delete_user(
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    filed_affected = await _delete_sole_owned_collections(db, {user_id})
     await db.delete(user)
+    if filed_affected:
+        await bump_browse_revision(db)
     await db.commit()

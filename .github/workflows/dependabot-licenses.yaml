@@ -1,0 +1,134 @@
+name: dependabot-licenses
+
+# Dependabot bumps lockfiles but cannot run repo tooling, so its PRs fail the
+# THIRD-PARTY-LICENSES.txt drift gate in ci.yaml until a human regenerates the
+# notices. This workflow fixes that automatically.
+#
+# Why `workflow_run` and not `push`/`pull_request`: events caused by
+# Dependabot itself get a read-only GITHUB_TOKEN and no Actions secrets —
+# the fixup could neither mint the app token nor push (GitHub docs:
+# "Workflows triggered by Dependabot are treated as if opened from a fork").
+# `workflow_run` always executes the default-branch copy of this file in the
+# trusted context, so secrets and a writable push are available.
+#
+# Why the app token for the push: a GITHUB_TOKEN push would be swallowed by
+# the anti-recursion guard and the PR's check suite would never re-run — same
+# rationale as release-please.yaml.
+#
+# The app token is minted only after regeneration completes, so dependency
+# install/build code (`poetry install`, `npm ci`) never runs while a writable
+# credential exists in the job's git config/environment.
+
+on:
+  workflow_run:
+    workflows: ['[CI] Test, build & publish']
+    types: [completed]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
+
+jobs:
+  regen-licenses:
+    # React only to failed ci runs on in-repo Dependabot branches. A regen
+    # that produces no diff exits without pushing, so the job cannot loop on
+    # failures that license drift did not cause.
+    if: >-
+      github.event.workflow_run.conclusion == 'failure'
+      && github.event.workflow_run.head_repository.full_name == github.repository
+      && startsWith(github.event.workflow_run.head_branch, 'dependabot/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Install poetry
+        run: pip install poetry
+
+      # Regenerate notices for each component whose manifest/lockfile changed
+      # relative to main — covers first pushes (event.before is the null SHA)
+      # and grouped updates spread over several pushes.
+      - name: Regenerate notices for touched components
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --depth=1 origin main
+          changed=$(git diff --name-only origin/main...HEAD)
+          printf 'Changed files vs main:\n%s\n' "$changed"
+
+          for dir in backend backup restore-validation; do
+            if printf '%s\n' "$changed" | grep -q "^${dir}/\(poetry\.lock\|pyproject\.toml\)"; then
+              echo "::group::Regenerate $dir THIRD-PARTY-LICENSES.txt"
+              (
+                cd "$dir"
+                poetry config virtualenvs.in-project true
+                if [ "$dir" = backup ]; then
+                  poetry install --no-root --quiet
+                else
+                  poetry install --with dev --quiet
+                fi
+                poetry run python scripts/generate_third_party_licenses.py
+              )
+              echo "::endgroup::"
+            fi
+          done
+
+          if printf '%s\n' "$changed" | grep -q '^frontend/package\(-lock\)\?\.json'; then
+            echo "::group::Regenerate frontend THIRD-PARTY-LICENSES.txt"
+            (
+              cd frontend
+              npm ci --no-audit --no-fund
+              npm run licenses:generate
+            )
+            echo "::endgroup::"
+          fi
+
+      - name: Check for drift
+        id: drift
+        shell: bash
+        run: |
+          if [ -z "$(git status --porcelain -- '**/THIRD-PARTY-LICENSES.txt')" ]; then
+            echo 'Notices already up to date — nothing to do.'
+            echo 'dirty=false' >> "$GITHUB_OUTPUT"
+          else
+            git status --porcelain -- '**/THIRD-PARTY-LICENSES.txt'
+            echo 'dirty=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Mint GitHub App token
+        id: app-token
+        if: steps.drift.outputs.dirty == 'true'
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+
+      - name: Commit and push regenerated notices
+        if: steps.drift.outputs.dirty == 'true'
+        shell: bash
+        env:
+          PUSH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add '**/THIRD-PARTY-LICENSES.txt'
+          git commit -m 'chore(deps): regenerate THIRD-PARTY-LICENSES'
+          # Push via an explicit URL so the app token never lands in the
+          # checkout's persisted git credentials during earlier steps.
+          git push "https://x-access-token:${PUSH_TOKEN}@github.com/${{ github.repository }}" "HEAD:${HEAD_BRANCH}"

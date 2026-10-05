@@ -208,6 +208,35 @@ async def test_upload_source_image_normalizes_empty_note(tmp_path) -> None:
     assert src.note is None
 
 
+async def test_upload_source_image_rejects_oversized_file(tmp_path) -> None:
+    """A file streamed past UPLOAD_MAX_BYTES gets a 413 (#1432).
+
+    The ingress accepts unlimited request bodies, so the staging write
+    loop is the layer bounding how much of one upload reaches disk; the
+    partially written staging artifact is discarded.
+    """
+    file = AsyncMock()
+    file.filename = "big.png"
+    file.content_type = "image/png"
+    file.read = AsyncMock(side_effect=[b"aa", b"bb", b"cc", b""])
+
+    db = AsyncMock()
+    bg = MagicMock()
+
+    with (
+        patch("app.routers.upload.settings") as mock_settings,
+        patch("app.upload_staging.UPLOAD_MAX_BYTES", 4),
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        with pytest.raises(HTTPException) as exc:
+            await upload_source_image(
+                file=file, background_tasks=bg, user=MagicMock(), db=db,
+            )
+    assert exc.value.status_code == 413
+    assert "per-upload size limit" in exc.value.detail
+    assert list(tmp_path.iterdir()) == []
+
+
 @pytest.mark.parametrize("recovery_succeeds", [True, False])
 async def test_upload_source_image_rejection_uses_fresh_session_when_bookkeeping_fails(
     tmp_path,
@@ -603,9 +632,34 @@ async def test_reconcile_staging_artifacts_removes_only_aged_staging(tmp_path) -
 
     assert removed == 1
     assert sorted(p.name for p in tmp_path.iterdir()) == [
+        ".staging",  # spool dir provisioned by the sweep (#1365)
         ".staging-fresh.png",
         "committed.png",
     ]
+
+
+async def test_reconcile_staging_artifacts_sweeps_aged_spool_files(tmp_path) -> None:
+    """Aged files inside ``.staging/`` are dead-request leftovers (#1365)."""
+    spool_dir = tmp_path / ".staging"
+    spool_dir.mkdir()
+    dead_spool = spool_dir / "tmpdeadzip"
+    live_spool = spool_dir / "tmplivezip"
+    dead_spool.write_bytes(b"crashed-upload")
+    live_spool.write_bytes(b"in-flight")
+
+    old_mtime = time.time() - 5 * 3600
+    os.utime(dead_spool, (old_mtime, old_mtime))
+
+    removed = await reconcile_staging_artifacts(str(tmp_path))
+
+    assert removed == 1
+    assert sorted(p.name for p in spool_dir.iterdir()) == ["tmplivezip"]
+
+
+async def test_reconcile_staging_artifacts_creates_spool_dir(tmp_path) -> None:
+    """``TMPDIR`` must resolve before the first tempfile call (#1365)."""
+    await reconcile_staging_artifacts(str(tmp_path))
+    assert (tmp_path / ".staging").is_dir()
 
 
 def _mock_ownership_probe(owned_paths: list[str]):

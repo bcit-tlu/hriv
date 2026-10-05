@@ -49,6 +49,18 @@ from app.processing import (
     tiles_present_on_disk,
 )
 
+
+@pytest.fixture(autouse=True)
+def _patch_filed_membership(monkeypatch: pytest.MonkeyPatch) -> None:
+    """image_ids_in_filed_collections runs a real SELECT (#1527); unit tests
+    mock the session, so default it to "no membership" — a test that wants a
+    member image installs its own return value."""
+    monkeypatch.setattr(
+        "app.processing.image_ids_in_filed_collections",
+        AsyncMock(return_value=set()),
+    )
+
+
 # ── ProgressTracker tests ────────────────────────────────
 
 
@@ -1608,6 +1620,7 @@ async def test_promote_source_image_tile_rebuild_stages_without_commit(
         source_checksum=None, tile_settings_hash=None, tiles_generated_at=None,
     )
     img = SimpleNamespace(
+        id=10,
         tile_sources="/api/tiles/5/old.dzi", thumb="old", width=1, height=1,
         version=3, category_id=category_id,
     )
@@ -1709,6 +1722,7 @@ async def test_promote_source_image_tile_rebuild_restores_on_swap_failure() -> N
         source_checksum=None, tile_settings_hash=None, tiles_generated_at=None,
     )
     img = SimpleNamespace(
+        id=10,
         tile_sources="/api/tiles/5/old.dzi", thumb="old", width=1, height=1,
         version=3, category_id=None,
     )
@@ -1744,6 +1758,7 @@ async def test_promote_source_image_tile_rebuild_restores_on_update_failure() ->
         source_checksum=None, tile_settings_hash=None, tiles_generated_at=None,
     )
     img = SimpleNamespace(
+        id=10,
         tile_sources="/api/tiles/5/old.dzi", thumb="old", width=1, height=1,
         version=None,
     )
@@ -1900,6 +1915,7 @@ async def test_rebuild_source_image_tiles_success() -> None:
         source_checksum=None, tile_settings_hash=None, tiles_generated_at=None,
     )
     img = SimpleNamespace(
+        id=10,
         tile_sources="/api/tiles/5/old.dzi", thumb="old", width=1, height=1,
         version=3, category_id=None,
     )
@@ -1946,6 +1962,7 @@ async def test_rebuild_source_image_tiles_restores_on_commit_failure() -> None:
         source_checksum=None, tile_settings_hash=None, tiles_generated_at=None,
     )
     img = SimpleNamespace(
+        id=10,
         tile_sources="/api/tiles/5/old.dzi", thumb="old", width=1, height=1,
         version=3, category_id=None,
     )
@@ -1992,6 +2009,7 @@ async def test_rebuild_source_image_tiles_restores_on_commit_cancellation() -> N
         source_checksum=None, tile_settings_hash=None, tiles_generated_at=None,
     )
     img = SimpleNamespace(
+        id=10,
         tile_sources="/api/tiles/5/old.dzi", thumb="old", width=1, height=1,
         version=3, category_id=None,
     )

@@ -15,8 +15,9 @@ from ..authz import (
     can_attach_group_to_category,
     can_attach_program_to_category,
 )
-from ..database import get_db
-from ..models import Category, Group, Image, Program, User
+from ..collection_views import _ViewerContext, collection_summary_out
+from ..database import get_db, settings
+from ..models import Category, Collection, Group, Image, Program, User
 from ..schemas import (
     CategoryCreate,
     CategoryUpdate,
@@ -217,13 +218,15 @@ async def _load_tree(
     db: AsyncSession,
     parent_id: int | None,
     *,
+    user: User | None = None,
     user_role: str = "admin",
     user_program_ids: set[int] | None = None,
     user_group_ids: set[int] | None = None,
 ) -> list[CategoryTree]:
     """Build the full category tree using two flat queries instead of
     recursive per-level SELECTs.  This reduces the number of DB round-trips
-    from O(depth) to exactly 2 regardless of tree depth.
+    from O(depth) to exactly 2 regardless of tree depth (3 when collections
+    are embedded — see below).
 
     When *user_role* is ``"student"`` and *user_program_ids* is provided,
     categories with program restrictions are filtered to only those matching
@@ -231,6 +234,14 @@ async def _load_tree(
     restrictions (empty ``programs``) are visible to everyone.  Filtering
     cascades: if a parent category is hidden from a student, its entire
     subtree is also hidden—even if children have no program restrictions.
+
+    When ``settings.collections_enabled`` is on and *user* is provided, each
+    category node also embeds the collections filed into it
+    (``CategoryTree.collections``), filtered by the same visibility rules as
+    ``GET /api/collections`` — a collection is embedded only when its own
+    visibility gate AND the category's ancestor gate both pass. With the
+    flag off (or no caller context) the query is skipped so flag-off
+    deployments never leak collection data into the tree.
     """
 
     # ── Query 1: all categories in one shot ──
@@ -260,6 +271,21 @@ async def _load_tree(
             all_categories, user_program_ids or set(), user_group_ids or set(),
         )
 
+    # ── Query 3: all collections in one shot (flag- and user-gated) ──
+    collections_by_cat: dict[int, list[Collection]] = {}
+    coll_ctx: _ViewerContext | None = None
+    if settings.collections_enabled and user is not None:
+        coll_result = await db.execute(
+            select(Collection).order_by(Collection.sort_order, Collection.id)
+        )
+        all_collections = coll_result.scalars().unique().all()
+        coll_ctx = _ViewerContext(
+            user, excluded if user_role == "student" else None
+        )
+        for coll in all_collections:
+            if coll.category_id is not None and coll_ctx.can_view(coll):
+                collections_by_cat.setdefault(coll.category_id, []).append(coll)
+
     # ── Recursive assembly (in-memory only, no DB calls) ──
     def _assemble(pid: int | None) -> list[CategoryTree]:
         tree: list[CategoryTree] = []
@@ -285,6 +311,10 @@ async def _load_tree(
                 images=[
                     ImageOut.model_validate(img)
                     for img in cat_images
+                ],
+                collections=[
+                    collection_summary_out(coll_ctx, coll)
+                    for coll in collections_by_cat.get(cat.id, [])
                 ],
             ))
         return tree
@@ -336,6 +366,7 @@ async def get_category_tree(
     build_started = time.monotonic()
     tree = await _load_tree(
         db, None,
+        user=_user,
         user_role=_user.role,
         user_program_ids=user_program_ids,
         user_group_ids=user_group_ids,
@@ -590,6 +621,14 @@ async def delete_category(
         raise HTTPException(status_code=404, detail="Category not found")
     category_id_value = cat.id
     category_label = cat.label
+    # Deleting a category removes its tile from the parent scope, and every
+    # image/collection in the deleted subtree reparents to root via
+    # ON DELETE SET NULL — bump both scopes first (revision-then-rows lock
+    # order), then delete the row, then bump the browse revision last so
+    # the row lock precedes browse_state as in PATCH /categories.
+    await bump_scopes(
+        db, {scope_key_for(cat.parent_id), scope_key_for(None)}
+    )
     await db.delete(cat)
     await bump_browse_revision(db)
     await db.commit()

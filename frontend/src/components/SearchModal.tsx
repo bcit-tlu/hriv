@@ -1,7 +1,9 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useRef } from 'react'
 import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
+import Checkbox from '@mui/material/Checkbox'
 import Chip from '@mui/material/Chip'
 import Dialog from '@mui/material/Dialog'
 import DialogContent from '@mui/material/DialogContent'
@@ -11,6 +13,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import CategoryIcon from '@mui/icons-material/Folder'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
+import CollectionsIcon from '@mui/icons-material/Collections'
 import CopyrightIcon from '@mui/icons-material/Copyright'
 import ImageIcon from '@mui/icons-material/Image'
 import LinkIcon from '@mui/icons-material/Link'
@@ -21,15 +24,16 @@ import BadgeIcon from '@mui/icons-material/Badge'
 import SchoolIcon from '@mui/icons-material/School'
 import SearchIcon from '@mui/icons-material/Search'
 import TextFieldsIcon from '@mui/icons-material/TextFields'
-import type { Category, ImageItem, Program } from '../types'
+import type { Category, CollectionSummary, ImageItem, Program } from '../types'
 import type { ApiImage, ApiUser } from '../api'
+import { describeCollectionOwners } from '../collectionUtils'
 import { buildGuideIndex, type GuideSearchSection } from '../guideSearch'
 import { parseSearchQuery } from '../searchQuery'
 import RenewingThumbnail from './RenewingThumbnail'
 
 // ── Result types ───────────────────────────────────────
 
-type ResultKind = 'category' | 'image' | 'program' | 'user' | 'guide'
+type ResultKind = 'category' | 'image' | 'program' | 'user' | 'guide' | 'collection'
 
 interface FieldMatch {
   field: string
@@ -54,7 +58,8 @@ interface SearchResult {
   /** Length of the matched query string */
   matchLength: number
   /** Extra payload needed for navigation */
-  payload: CategoryPayload | ImagePayload | ProgramPayload | UserPayload | GuidePayload
+  payload:
+    CategoryPayload | ImagePayload | ProgramPayload | UserPayload | GuidePayload | CollectionPayload
 }
 
 interface GroupedResult {
@@ -62,7 +67,8 @@ interface GroupedResult {
   entityId: number | string
   label: string
   matches: FieldMatch[]
-  payload: CategoryPayload | ImagePayload | ProgramPayload | UserPayload | GuidePayload
+  payload:
+    CategoryPayload | ImagePayload | ProgramPayload | UserPayload | GuidePayload | CollectionPayload
 }
 
 interface CategoryPayload {
@@ -91,6 +97,11 @@ interface GuidePayload {
   kind: 'guide'
   slug: string
   anchor?: string
+}
+
+interface CollectionPayload {
+  kind: 'collection'
+  collection: CollectionSummary
 }
 
 // ── Filter definitions ─────────────────────────────────
@@ -136,17 +147,24 @@ const TYPE_FILTERS: FilterDef<TypeFilter>[] = [
     icon: <MenuBookIcon fontSize="small" />,
     tooltip: 'Search only guide titles',
   },
+  {
+    key: 'collection',
+    label: 'Collections',
+    icon: <CollectionsIcon fontSize="small" />,
+    tooltip: 'Search only collection names and descriptions',
+  },
 ]
 
-/** Field searched when a type chip is active and no Field chips are selected —
- *  each type searches only the field most closely associated with it
- *  (e.g. Images searches image titles, Categories searches category names). */
-const PRIMARY_FIELD_BY_KIND: Record<ResultKind, string> = {
-  category: 'Name',
-  image: 'Name',
-  program: 'Name',
-  user: 'Name',
-  guide: 'Title',
+/** Fields searched when a type chip is active and no Field chips are selected —
+ *  each type searches only the fields most closely associated with it
+ *  (e.g. Images searches image titles, Collections searches name + description). */
+const PRIMARY_FIELDS_BY_KIND: Record<ResultKind, readonly string[]> = {
+  category: ['Name'],
+  image: ['Name'],
+  program: ['Name'],
+  user: ['Name'],
+  guide: ['Title'],
+  collection: ['Name', 'Description'],
 }
 
 const FIELD_FILTERS: FilterDef<FieldFilter>[] = [
@@ -230,6 +248,8 @@ function iconForKind(kind: ResultKind) {
       return <PersonIcon sx={{ color: '#5b7a8a' }} />
     case 'guide':
       return <MenuBookIcon sx={{ color: '#8a6a5b' }} />
+    case 'collection':
+      return <CollectionsIcon sx={{ color: '#7a5b8a' }} />
   }
 }
 
@@ -245,6 +265,8 @@ function labelForKind(kind: ResultKind): string {
       return 'User'
     case 'guide':
       return 'Guide'
+    case 'collection':
+      return 'Collection'
   }
 }
 
@@ -432,6 +454,35 @@ function collectGuideResults(terms: string[], results: SearchResult[]): void {
   }
 }
 
+function collectCollectionResults(
+  collections: CollectionSummary[],
+  terms: string[],
+  results: SearchResult[],
+): void {
+  for (const collection of collections) {
+    const fields: { field: string; value: string | null | undefined }[] = [
+      { field: 'Name', value: collection.name },
+      { field: 'Description', value: collection.description },
+    ]
+    for (const { field, value } of fields) {
+      if (!value) continue
+      const m = findFirstTermMatch(value, terms)
+      if (m) {
+        results.push({
+          kind: 'collection',
+          entityId: collection.id,
+          label: collection.name,
+          field,
+          fieldValue: value,
+          matchIndex: m.index,
+          matchLength: m.length,
+          payload: { kind: 'collection', collection },
+        })
+      }
+    }
+  }
+}
+
 interface SearchModalProps {
   open: boolean
   onClose: () => void
@@ -439,6 +490,12 @@ interface SearchModalProps {
   uncategorizedImages: ImageItem[]
   programs: Program[]
   users: ApiUser[]
+  /** The caller's visible collections — the backend list is already
+   *  access-filtered, so every row here may surface in results. */
+  collections?: CollectionSummary[]
+  /** Whether the collections feature is enabled — gates the Collections
+   *  chip, collection results, and the placeholder copy. */
+  collectionsEnabled?: boolean
   /** Hide categories/images with a non-published status (students only). */
   excludeHidden: boolean
   /** Restrict results to categories/images — no program, user, or guide
@@ -450,6 +507,11 @@ interface SearchModalProps {
   onSelectProgram: (programName: string) => void
   onSelectUser: (userId: number) => void
   onSelectGuide?: (slug: string, anchor?: string) => void
+  /** Navigate to a collection result (`?collection={id}`). */
+  onSelectCollection?: (collectionId: number) => void
+  /** Opens the Add-to-Collection dialog with the multi-selected image ids.
+   *  When absent the multi-select affordance is hidden entirely. */
+  onAddImagesToCollection?: (imageIds: number[]) => void
   /** Pre-fill the search query when the modal opens. */
   initialQuery?: string
   /** Pre-select a type filter when the modal opens. */
@@ -463,6 +525,8 @@ export default function SearchModal({
   uncategorizedImages,
   programs,
   users,
+  collections = [],
+  collectionsEnabled = false,
   excludeHidden,
   suppressExtendedResults,
   onSelectCategory,
@@ -471,12 +535,23 @@ export default function SearchModal({
   onSelectProgram,
   onSelectUser,
   onSelectGuide,
+  onSelectCollection,
+  onAddImagesToCollection,
   initialQuery,
   initialTypeFilter,
 }: SearchModalProps) {
   const [query, setQuery] = useState('')
   const [typeFilters, setTypeFilters] = useState<Set<TypeFilter>>(new Set())
   const [fieldFilters, setFieldFilters] = useState<Set<FieldFilter>>(new Set())
+  // Multi-select mode: image results get checkboxes feeding a sticky footer
+  // action; non-image kinds are never selectable. Each check records the
+  // result generation and position where the image appeared so a selection
+  // accumulated across several queries still emits in "order encountered".
+  // (#1418)
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedImages, setSelectedImages] = useState<
+    Map<number, { epoch: number; index: number }>
+  >(new Map())
 
   const programMap = useMemo(() => new Map(programs.map((p) => [p.id, p.name])), [programs])
 
@@ -496,6 +571,12 @@ export default function SearchModal({
     setTypeFilters(new Set())
     setFieldFilters(new Set())
     setWasSeeded(false)
+  }
+  // Closing (or handing off to the collection dialog) always clears the
+  // multi-selection — the ids are captured by the callback before reset.
+  if (!open && prevSearchOpen) {
+    if (selectMode) setSelectMode(false)
+    if (selectedImages.size > 0) setSelectedImages(new Map())
   }
   if (open !== prevSearchOpen) setPrevSearchOpen(open)
 
@@ -542,7 +623,12 @@ export default function SearchModal({
         addImageMatches(img, terms, [], results, programMap)
       }
 
-      // 4. Programs (hidden from students and staff)
+      // 4. Collections — visible to every role (list is server-filtered).
+      if (collectionsEnabled) {
+        collectCollectionResults(collections, terms, results)
+      }
+
+      // 5. Programs (hidden from students and staff)
       if (!suppressExtendedResults) {
         for (const prog of programs) {
           const m = findFirstTermMatch(prog.name, terms)
@@ -561,12 +647,12 @@ export default function SearchModal({
         }
       }
 
-      // 5. Guide pages (editor-only content)
+      // 6. Guide pages (editor-only content)
       if (!suppressExtendedResults) {
         collectGuideResults(terms, results)
       }
 
-      // 6. Users (hidden from students and staff)
+      // 7. Users (hidden from students and staff)
       if (!suppressExtendedResults) {
         for (const user of users) {
           const userFields: { field: string; value: string }[] = [
@@ -603,6 +689,8 @@ export default function SearchModal({
       uncategorizedImages,
       programs,
       users,
+      collections,
+      collectionsEnabled,
       excludeHidden,
       suppressExtendedResults,
       programMap,
@@ -616,10 +704,10 @@ export default function SearchModal({
     let filtered = allResults
     if (typeFilters.size > 0) {
       filtered = filtered.filter((r) => typeFilters.has(r.kind))
-      // A type chip also scopes the query to the field most closely
+      // A type chip also scopes the query to the fields most closely
       // associated with that type; explicit Field chips override that scope.
       if (fieldFilters.size === 0) {
-        filtered = filtered.filter((r) => r.field === PRIMARY_FIELD_BY_KIND[r.kind])
+        filtered = filtered.filter((r) => PRIMARY_FIELDS_BY_KIND[r.kind].includes(r.field))
       }
     }
     if (fieldFilters.size > 0) {
@@ -663,6 +751,58 @@ export default function SearchModal({
 
   const displayResults = useMemo(() => groupedResults.slice(0, MAX_RESULTS), [groupedResults])
 
+  const hasImageResults = useMemo(
+    () => displayResults.some((r) => r.payload.kind === 'image'),
+    [displayResults],
+  )
+
+  // Each new result set bumps an epoch; a check stamps the image with the
+  // epoch and its position in that set. Emitting sorts by (epoch, index),
+  // which is result order within one query and "order encountered" across
+  // queries — selections never silently drop when the query changes.
+  const resultEpochRef = useRef(0)
+  const prevDisplayRef = useRef(displayResults)
+  if (prevDisplayRef.current !== displayResults) {
+    prevDisplayRef.current = displayResults
+    resultEpochRef.current += 1
+  }
+  const resultEpoch = resultEpochRef.current
+
+  const orderedSelectedIds = useMemo(
+    () =>
+      [...selectedImages.entries()]
+        .sort((a, b) => a[1].epoch - b[1].epoch || a[1].index - b[1].index)
+        .map(([id]) => id),
+    [selectedImages],
+  )
+
+  const toggleSelectMode = useCallback(() => {
+    setSelectMode((prev) => !prev)
+    setSelectedImages(new Map())
+  }, [])
+
+  const toggleImageSelected = useCallback(
+    (imageId: number, resultIndex: number) => {
+      const epoch = resultEpoch
+      setSelectedImages((prev) => {
+        const next = new Map(prev)
+        if (next.has(imageId)) {
+          next.delete(imageId)
+        } else {
+          next.set(imageId, { epoch, index: resultIndex })
+        }
+        return next
+      })
+    },
+    [resultEpoch],
+  )
+
+  const handleAddSelected = () => {
+    if (orderedSelectedIds.length === 0) return
+    onClose()
+    onAddImagesToCollection?.(orderedSelectedIds)
+  }
+
   const handleSelect = (result: GroupedResult) => {
     onClose()
     switch (result.payload.kind) {
@@ -681,6 +821,9 @@ export default function SearchModal({
       case 'guide':
         onSelectGuide?.(result.payload.slug, result.payload.anchor)
         break
+      case 'collection':
+        onSelectCollection?.(result.payload.collection.id)
+        break
     }
   }
 
@@ -690,6 +833,7 @@ export default function SearchModal({
       onClose={onClose}
       maxWidth="md"
       fullWidth
+      aria-label="Search"
       slotProps={{
         paper: {
           sx: {
@@ -706,8 +850,8 @@ export default function SearchModal({
           fullWidth
           placeholder={
             suppressExtendedResults
-              ? 'Search categories and images — "quotes" for exact phrases'
-              : 'Search categories, images, programs, people, the guide — "quotes" for exact phrases'
+              ? `Search ${collectionsEnabled ? 'categories, images, and collections' : 'categories and images'} — "quotes" for exact phrases`
+              : `Search ${collectionsEnabled ? 'categories, images, collections, programs, people, the guide' : 'categories, images, programs, people, the guide'} — "quotes" for exact phrases`
           }
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -734,6 +878,7 @@ export default function SearchModal({
             </Typography>
             {TYPE_FILTERS.filter(
               (f) =>
+                (f.key !== 'collection' || collectionsEnabled) &&
                 !(
                   suppressExtendedResults &&
                   (f.key === 'program' || f.key === 'user' || f.key === 'guide')
@@ -779,14 +924,25 @@ export default function SearchModal({
           </Box>
         )}
 
-        <Box sx={{ flexGrow: 1, overflow: 'auto' }}>
+        <Box sx={{ flexGrow: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+          {/* While select mode is on, the Cancel control must stay reachable
+              even when the current query has no results to check. */}
+          {selectMode &&
+            onAddImagesToCollection != null &&
+            (query.trim().length === 0 || groupedResults.length === 0) && (
+              <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 0.5 }}>
+                <Button size="small" data-testid="search-select-toggle" onClick={toggleSelectMode}>
+                  Cancel
+                </Button>
+              </Box>
+            )}
           {query.trim().length === 0 ? (
             <Box
               sx={{
                 display: 'flex',
                 justifyContent: 'center',
                 alignItems: 'center',
-                height: '100%',
+                flexGrow: 1,
                 minHeight: 200,
               }}
             >
@@ -800,7 +956,7 @@ export default function SearchModal({
                 display: 'flex',
                 justifyContent: 'center',
                 alignItems: 'center',
-                height: '100%',
+                flexGrow: 1,
                 minHeight: 200,
               }}
             >
@@ -810,166 +966,260 @@ export default function SearchModal({
             </Box>
           ) : (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-                {groupedResults.length > MAX_RESULTS
-                  ? `Showing ${MAX_RESULTS} of ${groupedResults.length} results`
-                  : `${groupedResults.length} result${groupedResults.length !== 1 ? 's' : ''}`}
-              </Typography>
-              {displayResults.map((result) => {
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                <Typography variant="body2" color="text.secondary" sx={{ flexGrow: 1 }}>
+                  {groupedResults.length > MAX_RESULTS
+                    ? `Showing ${MAX_RESULTS} of ${groupedResults.length} results`
+                    : `${groupedResults.length} result${groupedResults.length !== 1 ? 's' : ''}`}
+                </Typography>
+                {(hasImageResults || selectMode) && onAddImagesToCollection != null && (
+                  <Button
+                    size="small"
+                    data-testid="search-select-toggle"
+                    onClick={toggleSelectMode}
+                  >
+                    {selectMode ? 'Cancel' : 'Select'}
+                  </Button>
+                )}
+              </Box>
+              {displayResults.map((result, resultIndex) => {
                 const chipNames = getResultProgramNames(result, programMap)
                 const catPath = result.payload.kind === 'image' ? result.payload.categoryPath : null
                 const image = result.payload.kind === 'image' ? result.payload.image : null
-                return (
-                  <Card key={`${result.kind}-${result.entityId}`} variant="outlined">
-                    <CardActionArea
-                      data-testid="search-result-action-area"
-                      onClick={() => handleSelect(result)}
-                      sx={{ p: 2, display: 'flex', alignItems: 'flex-start', gap: 2 }}
-                    >
-                      {image?.thumb ? (
-                        <RenewingThumbnail
-                          image={image}
-                          alt={result.label}
-                          onImageRenewed={onImageRenewed}
+                // Only image results are selectable; in select mode the row
+                // becomes a <label> around a real checkbox so clicking
+                // anywhere toggles and keyboard users reach the control.
+                const selectable = selectMode && image != null
+                const rowInner = (
+                  <>
+                    {image?.thumb ? (
+                      <RenewingThumbnail
+                        image={image}
+                        alt={result.label}
+                        onImageRenewed={onImageRenewed}
+                        sx={{
+                          width: 40,
+                          height: 40,
+                          objectFit: 'cover',
+                          borderRadius: 0.5,
+                          flexShrink: 0,
+                        }}
+                      />
+                    ) : result.kind !== 'program' ? (
+                      <Box sx={{ mt: 0.25 }}>{iconForKind(result.kind)}</Box>
+                    ) : null}
+                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                      <Box
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 1,
+                          mb: 0.25,
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        {result.kind === 'program' ? (
+                          <Chip
+                            data-testid="program-result-chip"
+                            label={result.label}
+                            size="small"
+                          />
+                        ) : (
+                          <Typography variant="subtitle2" noWrap>
+                            {result.label}
+                          </Typography>
+                        )}
+                        <Typography
+                          variant="caption"
                           sx={{
-                            width: 40,
-                            height: 40,
-                            objectFit: 'cover',
-                            borderRadius: 0.5,
-                            flexShrink: 0,
-                          }}
-                        />
-                      ) : result.kind !== 'program' ? (
-                        <Box sx={{ mt: 0.25 }}>{iconForKind(result.kind)}</Box>
-                      ) : null}
-                      <Box sx={{ minWidth: 0, flex: 1 }}>
-                        <Box
-                          sx={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 1,
-                            mb: 0.25,
-                            flexWrap: 'wrap',
+                            px: 1,
+                            py: 0.25,
+                            borderRadius: 1,
+                            bgcolor: 'action.hover',
+                            whiteSpace: 'nowrap',
                           }}
                         >
-                          {result.kind === 'program' ? (
-                            <Chip
-                              data-testid="program-result-chip"
-                              label={result.label}
-                              size="small"
-                            />
-                          ) : (
-                            <Typography variant="subtitle2" noWrap>
-                              {result.label}
-                            </Typography>
-                          )}
-                          <Typography
-                            variant="caption"
-                            sx={{
-                              px: 1,
-                              py: 0.25,
-                              borderRadius: 1,
-                              bgcolor: 'action.hover',
-                              whiteSpace: 'nowrap',
-                            }}
-                          >
-                            {labelForKind(result.kind)}
-                          </Typography>
-                          {!suppressExtendedResults && chipNames.length > 0 && (
-                            <Box
-                              sx={{
-                                display: 'flex',
-                                gap: 0.5,
-                                ml: 'auto',
-                                flexWrap: 'wrap',
-                                justifyContent: 'flex-end',
-                              }}
-                            >
-                              {chipNames.map((name) => (
-                                <Chip
-                                  key={name}
-                                  data-testid="program-chip"
-                                  label={name}
-                                  size="small"
-                                  color="primary"
-                                />
-                              ))}
-                            </Box>
-                          )}
-                        </Box>
-                        {result.matches.map((fm, mi) => {
-                          const { before, match, after } = contextSnippet(
-                            fm.fieldValue,
-                            fm.matchIndex,
-                            fm.matchLength,
-                          )
-                          return (
-                            <Typography
-                              key={mi}
-                              variant="body2"
-                              color="text.secondary"
-                              sx={{ wordBreak: 'break-word' }}
-                            >
-                              <Typography
-                                variant="caption"
-                                color="text.secondary"
-                                component="span"
-                                sx={{ fontWeight: 700 }}
-                              >
-                                {fm.field}:{' '}
-                              </Typography>
-                              {before}
-                              <Box
-                                component="span"
-                                sx={{
-                                  bgcolor: 'warning.light',
-                                  color: 'warning.contrastText',
-                                  borderRadius: 0.5,
-                                  px: 0.25,
-                                }}
-                              >
-                                {match}
-                              </Box>
-                              {after}
-                            </Typography>
-                          )
-                        })}
-                        {catPath && catPath.length > 0 && (
+                          {labelForKind(result.kind)}
+                        </Typography>
+                        {!suppressExtendedResults && chipNames.length > 0 && (
                           <Box
                             sx={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              mt: 0.5,
+                              display: 'flex',
+                              gap: 0.5,
+                              ml: 'auto',
                               flexWrap: 'wrap',
+                              justifyContent: 'flex-end',
                             }}
                           >
-                            <CategoryIcon sx={{ fontSize: 14, color: 'text.disabled', mr: 0.5 }} />
-                            {catPath.map((cat, ci) => (
-                              <Box
-                                component="span"
-                                key={cat.id}
-                                sx={{ display: 'inline-flex', alignItems: 'center' }}
-                              >
-                                {ci > 0 && (
-                                  <ChevronRightIcon
-                                    sx={{ fontSize: 14, color: 'text.disabled', mx: 0.25 }}
-                                  />
-                                )}
-                                <Typography variant="caption" color="text.secondary">
-                                  {cat.label}
-                                </Typography>
-                              </Box>
+                            {chipNames.map((name) => (
+                              <Chip
+                                key={name}
+                                data-testid="program-chip"
+                                label={name}
+                                size="small"
+                                color="primary"
+                              />
                             ))}
                           </Box>
                         )}
                       </Box>
-                    </CardActionArea>
+                      {result.matches.map((fm, mi) => {
+                        const { before, match, after } = contextSnippet(
+                          fm.fieldValue,
+                          fm.matchIndex,
+                          fm.matchLength,
+                        )
+                        return (
+                          <Typography
+                            key={mi}
+                            variant="body2"
+                            color="text.secondary"
+                            sx={{ wordBreak: 'break-word' }}
+                          >
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              component="span"
+                              sx={{ fontWeight: 700 }}
+                            >
+                              {fm.field}:{' '}
+                            </Typography>
+                            {before}
+                            <Box
+                              component="span"
+                              sx={{
+                                bgcolor: 'warning.light',
+                                color: 'warning.contrastText',
+                                borderRadius: 0.5,
+                                px: 0.25,
+                              }}
+                            >
+                              {match}
+                            </Box>
+                            {after}
+                          </Typography>
+                        )
+                      })}
+                      {catPath && catPath.length > 0 && (
+                        <Box
+                          sx={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            mt: 0.5,
+                            flexWrap: 'wrap',
+                          }}
+                        >
+                          <CategoryIcon sx={{ fontSize: 14, color: 'text.disabled', mr: 0.5 }} />
+                          {catPath.map((cat, ci) => (
+                            <Box
+                              component="span"
+                              key={cat.id}
+                              sx={{ display: 'inline-flex', alignItems: 'center' }}
+                            >
+                              {ci > 0 && (
+                                <ChevronRightIcon
+                                  sx={{ fontSize: 14, color: 'text.disabled', mx: 0.25 }}
+                                />
+                              )}
+                              <Typography variant="caption" color="text.secondary">
+                                {cat.label}
+                              </Typography>
+                            </Box>
+                          ))}
+                        </Box>
+                      )}
+                      {result.payload.kind === 'collection' && (
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ display: 'block', mt: 0.5 }}
+                        >
+                          {result.payload.collection.type === 'synchronized'
+                            ? 'Synchronized'
+                            : 'Sequence'}{' '}
+                          · {result.payload.collection.imageCount}{' '}
+                          {result.payload.collection.imageCount === 1 ? 'image' : 'images'} ·{' '}
+                          {describeCollectionOwners(result.payload.collection.owners)}
+                        </Typography>
+                      )}
+                    </Box>
+                  </>
+                )
+                return (
+                  <Card key={`${result.kind}-${result.entityId}`} variant="outlined">
+                    {selectable ? (
+                      <Box
+                        component="label"
+                        data-testid="search-select-row"
+                        sx={{
+                          p: 2,
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: 2,
+                          cursor: 'pointer',
+                          '&:hover': { bgcolor: 'action.hover' },
+                        }}
+                      >
+                        <Checkbox
+                          data-testid="search-select-checkbox"
+                          checked={selectedImages.has(image.id)}
+                          onChange={() => toggleImageSelected(image.id, resultIndex)}
+                          slotProps={{
+                            input: { 'aria-label': `Select ${image.name}` },
+                          }}
+                          sx={{ p: 0.5, mt: -0.5 }}
+                        />
+                        {rowInner}
+                      </Box>
+                    ) : (
+                      <CardActionArea
+                        data-testid="search-result-action-area"
+                        onClick={() => handleSelect(result)}
+                        sx={{ p: 2, display: 'flex', alignItems: 'flex-start', gap: 2 }}
+                      >
+                        {rowInner}
+                      </CardActionArea>
+                    )}
                   </Card>
                 )
               })}
             </Box>
           )}
         </Box>
+
+        {selectMode && (
+          <Box
+            data-testid="search-select-footer"
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              pt: 1.5,
+              borderTop: 1,
+              borderColor: 'divider',
+            }}
+          >
+            <Typography variant="body2" color="text.secondary" sx={{ flexGrow: 1 }}>
+              {orderedSelectedIds.length} image{orderedSelectedIds.length === 1 ? '' : 's'} selected
+            </Typography>
+            <Button
+              size="small"
+              disabled={orderedSelectedIds.length === 0}
+              onClick={() => setSelectedImages(new Map())}
+            >
+              Clear
+            </Button>
+            <Button
+              variant="contained"
+              size="small"
+              data-testid="search-add-to-collection"
+              disabled={orderedSelectedIds.length === 0}
+              onClick={handleAddSelected}
+            >
+              Add to collection
+            </Button>
+          </Box>
+        )}
       </DialogContent>
     </Dialog>
   )

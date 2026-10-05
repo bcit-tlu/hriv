@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   createCollection,
   fetchCollection,
@@ -6,6 +6,7 @@ import {
   replaceCollectionImages,
   userMessage,
 } from './api'
+import type { CollectionFilters } from './api'
 import {
   SYNCHRONIZED_MAX_IMAGES,
   apiCollectionSummaryToSummary,
@@ -58,6 +59,31 @@ export async function addImagesToCollection(
   }
 }
 
+/**
+ * Remove `imageIds` from a collection's member list — the undo path for the
+ * Browse drop-add gesture (#1530). When `base` (the record returned by the
+ * add being undone) is supplied, the whole-replace `PUT /images` carries its
+ * `version`, so any intervening write to the collection — membership or
+ * otherwise — 409s instead of silently rebasing over it (the undo surfaces
+ * an error snackbar), matching the move-undo convention.
+ * Without `base` the current record is fetched first, giving lenient
+ * "remove from latest" semantics. Ids that are not members are ignored;
+ * when nothing is removed the PUT is skipped.
+ */
+export async function removeImagesFromCollection(
+  collectionId: number,
+  imageIds: readonly number[],
+  base?: Collection,
+): Promise<Collection> {
+  const current = base ?? apiCollectionToCollection(await fetchCollection(collectionId))
+  const drop = new Set(imageIds)
+  const keep = current.images.filter((img) => !drop.has(img.id)).map((img) => img.id)
+  if (keep.length === current.images.length) return current
+  return apiCollectionToCollection(
+    await replaceCollectionImages(collectionId, { image_ids: keep, version: current.version }),
+  )
+}
+
 /** Create a collection that starts with `imageIds` (in order, de-duplicated). */
 export async function createCollectionWithImages(
   values: CollectionFormValues,
@@ -78,25 +104,35 @@ export async function createCollectionWithImages(
 }
 
 /**
- * Collections the caller may add images to (`permissions.can_edit`), loaded
- * on each `enabled` false → true transition (dialog open).
+ * Collections the caller may see, loaded on each `enabled` false → true
+ * transition (modal open). The list endpoint is already access-filtered by
+ * the backend, so no client-side visibility filtering happens here.
  */
-export function useEditableCollections(enabled: boolean) {
+export function useVisibleCollections(enabled: boolean, filters?: CollectionFilters) {
   const [collections, setCollections] = useState<CollectionSummary[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const loadSeq = useRef(0)
+  // Latest filter set by ref so callers may pass an inline object without
+  // defeating the load callback's memoization; filters don't change across
+  // a single dialog/modal lifecycle.
+  const filtersRef = useRef(filters)
+  useEffect(() => {
+    filtersRef.current = filters
+  }, [filters])
 
   const load = useCallback(async () => {
     const seq = ++loadSeq.current
     setLoading(true)
     setError(null)
     try {
-      const rows = (await fetchCollections()).map(apiCollectionSummaryToSummary)
+      const rows = (await fetchCollections(filtersRef.current)).map(apiCollectionSummaryToSummary)
       if (seq !== loadSeq.current) return
-      setCollections(rows.filter((c) => c.permissions.canEdit))
+      setCollections(rows)
     } catch (err) {
       if (seq !== loadSeq.current) return
+      // A failed refresh must not keep serving deleted/inaccessible rows.
+      setCollections([])
       setError(userMessage(err, 'Failed to load collections.'))
     } finally {
       if (seq === loadSeq.current) setLoading(false)
@@ -112,4 +148,14 @@ export function useEditableCollections(enabled: boolean) {
   }, [enabled, load])
 
   return { collections, loading, error, reload: load }
+}
+
+/**
+ * Collections the caller may add images to (`permissions.can_edit`), loaded
+ * on each `enabled` false → true transition (dialog open).
+ */
+export function useEditableCollections(enabled: boolean) {
+  const { collections, ...rest } = useVisibleCollections(enabled)
+  const editable = useMemo(() => collections.filter((c) => c.permissions.canEdit), [collections])
+  return { collections: editable, ...rest }
 }

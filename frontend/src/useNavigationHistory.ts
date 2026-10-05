@@ -6,6 +6,12 @@ export interface NavHistoryState {
   page: string
   catIds: number[]
   imageId: number | null
+  /**
+   * `?collection=` entries opened from a Browse tile (#1529): "back" from
+   * the detail returns to Browse (restoring `catIds`) rather than the
+   * Collections list. Absent/false on entries from the Collections tab.
+   */
+  collectionFromBrowse?: boolean
   /** Position assigned to app-owned history entries for guarded traversal. */
   historyIndex?: number
   /** Identifies entries whose numeric positions belong to the same history segment. */
@@ -51,12 +57,14 @@ export function buildNavHistoryState(
   catIds: number[],
   imageId: number | null,
   historyIndex = historyIndexOf(window.history.state) ?? 0,
+  collectionFromBrowse?: boolean,
 ): NavHistoryState {
   return {
     _hriv: true,
     page,
     catIds,
     imageId,
+    collectionFromBrowse,
     historyIndex,
     historyKey: currentHistoryKey(),
   }
@@ -65,6 +73,11 @@ export function buildNavHistoryState(
 export interface NavigationTraversal {
   fromIndex: number
   toIndex?: number
+  /**
+   * Popped `?collection=` entry was opened from a Browse tile (#1529) —
+   * present only when true so existing traversal comparisons stay equal.
+   */
+  collectionFromBrowse?: boolean
 }
 
 interface HistoryEntrySnapshot {
@@ -126,9 +139,11 @@ export function useNavigationHistory(
       const page = state?.page ?? 'browse'
       const catIds = state?.catIds ?? []
       const imageId = state?.imageId ?? null
+      const collectionFromBrowse = state?.collectionFromBrowse === true
       const fromIndex = currentIndexRef.current
-      const traversal =
+      const traversal: NavigationTraversal =
         targetIndex === undefined ? { fromIndex } : { fromIndex, toIndex: targetIndex }
+      if (collectionFromBrowse) traversal.collectionFromBrowse = true
 
       if (replayingLegacyEntryRef.current) {
         const migratedIndex = fromIndex - 1
@@ -232,7 +247,9 @@ export function useNavigationHistory(
   /**
    * Push a history entry. `catIds` and `imageId` are only meaningful
    * for the "browse" page — they are stored in state but omitted from
-   * the URL for other pages.
+   * the URL for other pages, except that a `?collection=` entry opened
+   * from Browse (#1529) also writes `?cat=` so the deep link restores
+   * the Browse location behind the detail view.
    */
   const pushNavState = useCallback(
     (
@@ -240,14 +257,25 @@ export function useNavigationHistory(
       catIds: number[] = [],
       imageId: number | null = null,
       extraParams?: Record<string, string>,
+      opts?: { collectionFromBrowse?: boolean },
     ) => {
       if (!enableHistorySync) return
       const historyIndex = currentIndexRef.current + 1
-      const state = buildNavHistoryState(page, catIds, imageId, historyIndex)
+      const state = buildNavHistoryState(
+        page,
+        catIds,
+        imageId,
+        historyIndex,
+        opts?.collectionFromBrowse,
+      )
       const params = new URLSearchParams()
       if (extraParams?.collection != null) {
         // `?collection={id}` alone identifies the Collections page (see
-        // parseShareableUrlParams), matching what the URL-sync effect writes.
+        // parseShareableUrlParams); `?cat=` rides along when the detail was
+        // opened from a Browse tile so the deep link restores that scope.
+        if (opts?.collectionFromBrowse && catIds.length > 0) {
+          params.set('cat', catIds.join(','))
+        }
       } else if (page !== 'browse') {
         params.set('page', page)
       } else {

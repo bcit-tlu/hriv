@@ -28,8 +28,7 @@ export function canUseRestrictedVisibility(role: Role | undefined | null): boole
   return role === 'admin' || role === 'instructor'
 }
 
-export function apiCollectionOwnerToOwner(owner: ApiCollectionOwner): CollectionOwner {
-  if (owner == null) return null
+export function apiCollectionOwnerToOwner(owner: ApiCollectionOwner): CollectionOwner | null {
   if (owner.user_id != null) return { kind: 'user', userId: owner.user_id, name: owner.name }
   if (owner.program_id != null) {
     return { kind: 'program', programId: owner.program_id, name: owner.name }
@@ -44,15 +43,20 @@ export function apiCollectionSummaryToSummary(api: ApiCollectionSummary): Collec
     description: api.description,
     type: api.type,
     visibility: api.visibility,
-    owner: apiCollectionOwnerToOwner(api.owner),
+    owners: api.owners
+      .map(apiCollectionOwnerToOwner)
+      .filter((o): o is CollectionOwner => o != null),
     imageCount: api.image_count,
     coverThumb: api.cover_thumb,
     version: api.version,
+    categoryId: api.category_id,
+    sortOrder: api.sort_order,
     createdAt: api.created_at,
     updatedAt: api.updated_at,
     permissions: {
       canEdit: api.permissions.can_edit,
       canDelete: api.permissions.can_delete,
+      canChangeScope: api.permissions.can_change_scope,
       canTransfer: api.permissions.can_transfer,
     },
   }
@@ -86,22 +90,40 @@ export function apiCollectionToCollection(api: ApiCollection): Collection {
     programIds: api.program_ids,
     groupIds: api.group_ids,
     viewportState: api.viewport_state,
+    memberCount: api.member_count,
   }
 }
 
 /** Human-readable owner line for cards and the detail header. */
 export function describeCollectionOwner(owner: CollectionOwner): string {
-  if (owner == null) return 'No owner'
   return owner.kind === 'program' ? `${owner.name} (program)` : owner.name
+}
+
+/** Plural owner line (#1531): joins co-owner names; 'No owner' when orphaned. */
+export function describeCollectionOwners(owners: CollectionOwner[]): string {
+  if (owners.length === 0) return 'No owner'
+  return owners.map(describeCollectionOwner).join(', ')
 }
 
 /**
  * Parse the `?collection={id}` deep link. Returns `null` when the parameter is
- * missing or not a positive integer. `?item=` is reserved for #1416 and is
- * intentionally not parsed here.
+ * missing or not a positive integer.
  */
 export function parseCollectionIdParam(search: string): number | null {
   const raw = new URLSearchParams(search).get('collection')
+  if (raw == null || !/^\d+$/.test(raw)) return null
+  const id = Number(raw)
+  return Number.isSafeInteger(id) && id > 0 ? id : null
+}
+
+/**
+ * Parse the `?item={image_id}` sequence-position param (#1416). It is only
+ * meaningful next to a valid `?collection=` param — a bare `?item=` returns
+ * `null`. Returns `null` when missing or not a positive integer.
+ */
+export function parseCollectionItemParam(search: string): number | null {
+  if (parseCollectionIdParam(search) == null) return null
+  const raw = new URLSearchParams(search).get('item')
   if (raw == null || !/^\d+$/.test(raw)) return null
   const id = Number(raw)
   return Number.isSafeInteger(id) && id > 0 ? id : null

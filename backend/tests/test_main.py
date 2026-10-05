@@ -60,6 +60,30 @@ async def test_lifespan_runs_reconciliation_sweep_in_local_mode(monkeypatch) -> 
     sweep.assert_awaited_once()
 
 
+async def test_lifespan_warns_on_whitespace_only_ingest_token(
+    monkeypatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A whitespace-only SYNTHETIC_INGEST_TOKEN is effectively unconfigured —
+    the startup warning must not be suppressed (#1495 review)."""
+    from app import main
+    from app.database import settings
+
+    monkeypatch.setattr(settings, "task_execution_mode", "required")
+    monkeypatch.setattr(settings, "synthetic_ingest_token", "  \n ")
+    monkeypatch.setattr(main, "setup_logging", MagicMock())
+    monkeypatch.setattr(main, "_check_oidc_connectivity", AsyncMock())
+    monkeypatch.setattr(main, "get_pool", AsyncMock(return_value=MagicMock()))
+
+    with caplog.at_level("WARNING", logger="app.main"):
+        async with main.lifespan(main.app):
+            pass
+
+    assert any(
+        getattr(r, "event", None) == "synthetic.ingest_token_missing"
+        for r in caplog.records
+    )
+
+
 async def test_lifespan_skips_reconciliation_sweep_in_required_mode(monkeypatch) -> None:
     """In ``required`` mode a dedicated arq worker pod runs the sweep
     periodically via a cron job instead (see ``worker.WorkerSettings``), so
@@ -313,13 +337,26 @@ async def test_storage_health_unwritable(monkeypatch) -> None:
     assert exc_info.value.status_code == 503
 
 
-async def test_readiness_ok() -> None:
+async def test_readiness_ok(monkeypatch) -> None:
     """readiness returns ready when the database and storage are reachable."""
     from app.main import app, readiness
 
-    db = AsyncMock()
-    result = await readiness(db=db)
+    monkeypatch.setattr("app.main._check_db_ready", AsyncMock(return_value=True))
+    result = await readiness()
     assert result == {"status": "ready", "version": app.version}
+
+
+async def test_readiness_db_unreachable(monkeypatch) -> None:
+    """readiness raises 503 when no fresh database connection can be made."""
+    from fastapi import HTTPException
+
+    from app.main import readiness
+
+    monkeypatch.setattr("app.main._check_db_ready", AsyncMock(return_value=False))
+
+    with pytest.raises(HTTPException) as exc_info:
+        await readiness()
+    assert exc_info.value.status_code == 503
 
 
 async def test_readiness_storage_unwritable(monkeypatch) -> None:
@@ -328,14 +365,86 @@ async def test_readiness_storage_unwritable(monkeypatch) -> None:
 
     from app.main import readiness
 
+    monkeypatch.setattr("app.main._check_db_ready", AsyncMock(return_value=True))
     monkeypatch.setattr(
         "app.main._check_storage_ready", AsyncMock(return_value=False)
     )
 
-    db = AsyncMock()
     with pytest.raises(HTTPException) as exc_info:
-        await readiness(db=db)
+        await readiness()
     assert exc_info.value.status_code == 503
+
+
+def _mock_probe_engine(*, connect_error: Exception | None = None) -> MagicMock:
+    """Build a mock ``get_probe_engine`` engine with a connect() context manager."""
+    engine = MagicMock()
+    if connect_error is not None:
+        engine.connect.side_effect = connect_error
+    else:
+        engine.connect.return_value.__aenter__.return_value = AsyncMock()
+    return engine
+
+
+async def test_check_db_ready_ok(monkeypatch) -> None:
+    """_check_db_ready returns True when a fresh connection runs SELECT 1."""
+    from app.main import _check_db_ready
+
+    engine = _mock_probe_engine()
+    monkeypatch.setattr(
+        "app.main.get_probe_engine", MagicMock(return_value=engine)
+    )
+
+    assert await _check_db_ready() is True
+    conn_cm = engine.connect.return_value
+    conn = conn_cm.__aenter__.return_value
+    conn.execute.assert_awaited_once()
+    conn_cm.__aexit__.assert_awaited_once()
+
+
+async def test_check_db_ready_connect_failure(monkeypatch) -> None:
+    """_check_db_ready returns False when the fresh connection is refused."""
+    from app.main import _check_db_ready
+
+    monkeypatch.setattr(
+        "app.main.get_probe_engine",
+        MagicMock(return_value=_mock_probe_engine(connect_error=OSError("refused"))),
+    )
+
+    assert await _check_db_ready() is False
+
+
+async def test_check_db_ready_query_failure(monkeypatch) -> None:
+    """_check_db_ready returns False when SELECT 1 fails on a fresh connection."""
+    from app.main import _check_db_ready
+
+    engine = _mock_probe_engine()
+    conn = engine.connect.return_value.__aenter__.return_value
+    conn.execute = AsyncMock(side_effect=OSError("connection reset"))
+    monkeypatch.setattr(
+        "app.main.get_probe_engine", MagicMock(return_value=engine)
+    )
+
+    assert await _check_db_ready() is False
+
+
+async def test_check_db_ready_timeout(monkeypatch) -> None:
+    """_check_db_ready returns False when the round-trip exceeds the bound."""
+    import asyncio
+
+    from app.main import _check_db_ready
+
+    engine = _mock_probe_engine()
+    conn = engine.connect.return_value.__aenter__.return_value
+
+    async def _hang(_stmt) -> None:
+        await asyncio.sleep(60)
+
+    conn.execute = AsyncMock(side_effect=_hang)
+    monkeypatch.setattr(
+        "app.main.get_probe_engine", MagicMock(return_value=engine)
+    )
+
+    assert await _check_db_ready(timeout=0.05) is False
 
 
 def test_check_storage_writable_ok() -> None:
@@ -443,6 +552,72 @@ def test_maintenance_wins_over_disabled_collections(monkeypatch) -> None:
             assert client.get("/api/collections").status_code == 404
 
 
+_SYNTHETIC_RESULT_BODY = {
+    "event_version": 1,
+    "started_at": "2026-07-14T08:00:00Z",
+    "completed_at": "2026-07-14T08:00:03Z",
+    "success": False,
+    "duration_ms": 3000,
+    "failure_code": "login_failed",
+    "component_version": "1.2.3",
+    "steps": [
+        {"name": "frontend", "success": True, "duration_ms": 200},
+        {"name": "login", "success": False, "duration_ms": 300},
+    ],
+}
+
+
+def test_synthetic_result_ingest_token_through_http_stack(monkeypatch) -> None:
+    """A valid X-Synthetic-Ingest-Token posts a result through the full
+    middleware + dependency stack during maintenance — no user JWT and no
+    database access on the credential path (#1495)."""
+    from app.database import settings
+    from app.main import app as main_app
+    from app.synthetic_result import (
+        StoredSyntheticJourneyState,
+        SyntheticJourneyResult,
+    )
+
+    monkeypatch.setattr(settings, "synthetic_ingest_token", "sekrit")
+    result = SyntheticJourneyResult.model_validate(_SYNTHETIC_RESULT_BODY)
+    stored = StoredSyntheticJourneyState(
+        latest_result=result,
+        last_success_completed_at=result.completed_at,
+        updated_at=result.completed_at,
+    )
+    store = AsyncMock(return_value=stored)
+    with (
+        patch("app.middleware.is_maintenance_mode", return_value=True),
+        patch("app.routers.telemetry.check_rate_limit", AsyncMock(return_value=None)),
+        patch("app.routers.telemetry.store_synthetic_result", store),
+    ):
+        with TestClient(main_app, raise_server_exceptions=False) as client:
+            response = client.post(
+                "/api/telemetry/synthetic-result",
+                headers={"X-Synthetic-Ingest-Token": "sekrit"},
+                json=_SYNTHETIC_RESULT_BODY,
+            )
+
+    assert response.status_code == 202
+    store.assert_awaited_once()
+
+
+def test_synthetic_result_still_requires_credential_during_maintenance(
+    monkeypatch,
+) -> None:
+    """The maintenance exemption does not bypass the endpoint's own auth."""
+    from app.main import app as main_app
+
+    with patch("app.middleware.is_maintenance_mode", return_value=True):
+        with TestClient(main_app, raise_server_exceptions=False) as client:
+            response = client.post(
+                "/api/telemetry/synthetic-result",
+                json=_SYNTHETIC_RESULT_BODY,
+            )
+
+    assert response.status_code == 401
+
+
 async def test_features_endpoint_reports_collections_flag(monkeypatch) -> None:
     from app.database import settings
     from app.main import features
@@ -483,3 +658,43 @@ def test_otel_route_details_resolves_included_routes() -> None:
         "app": main_app,
     }
     assert _get_route_details(scope) == "/api/auth/oidc/enabled"
+
+
+def test_upload_body_limit_rejects_oversized_upload_through_stack(
+    monkeypatch,
+) -> None:
+    """A multipart upload body over the cap gets a middleware 413 (#1432).
+
+    The limit fires while the body streams through the ASGI stack — before
+    python-multipart spools it to temp storage and before auth runs, so
+    even an unauthenticated request cannot fill pod-local disk.
+    """
+    from app.main import app as main_app
+
+    monkeypatch.setattr("app.middleware.UPLOAD_MAX_BYTES", 64)
+    monkeypatch.setattr("app.middleware._MULTIPART_OVERHEAD_BYTES", 0)
+
+    with TestClient(main_app, raise_server_exceptions=False) as client:
+        response = client.post(
+            "/api/source-images/upload",
+            files={"file": ("big.png", b"x" * 4096, "image/png")},
+        )
+
+    assert response.status_code == 413
+
+
+def test_upload_body_limit_passes_small_upload_to_endpoint_auth(
+    monkeypatch,
+) -> None:
+    """An under-cap upload body streams through to the endpoint's auth."""
+    from app.main import app as main_app
+
+    monkeypatch.setattr("app.middleware.UPLOAD_MAX_BYTES", 1024 * 1024)
+
+    with TestClient(main_app, raise_server_exceptions=False) as client:
+        response = client.post(
+            "/api/source-images/upload",
+            files={"file": ("ok.png", b"x" * 64, "image/png")},
+        )
+
+    assert response.status_code == 401

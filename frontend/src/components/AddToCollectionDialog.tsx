@@ -21,7 +21,6 @@ import AddIcon from '@mui/icons-material/Add'
 import SearchIcon from '@mui/icons-material/Search'
 import { AuthContext } from '../authContextValue'
 import { COLLECTION_TYPE_LABELS, SYNCHRONIZED_MAX_IMAGES } from '../collectionUtils'
-import { fitsCollectionCapacity } from '../useAddToCollection'
 import type { CollectionSummary, Group, Program } from '../types'
 import CollectionEditDialog, { type CollectionFormValues } from './CollectionEditDialog'
 
@@ -91,8 +90,8 @@ export default function AddToCollectionDialog({
     const program: CollectionSummary[] = []
     const other: CollectionSummary[] = []
     for (const c of matching) {
-      if (c.owner?.kind === 'user' && c.owner.userId === currentUser?.id) mine.push(c)
-      else if (c.owner?.kind === 'program') program.push(c)
+      if (c.owners.some((o) => o.kind === 'user' && o.userId === currentUser?.id)) mine.push(c)
+      else if (c.owners.some((o) => o.kind === 'program')) program.push(c)
       else other.push(c)
     }
     return [
@@ -209,11 +208,15 @@ export default function AddToCollectionDialog({
                   }
                 >
                   {section.items.map((collection) => {
-                    const full = !fitsCollectionCapacity(
-                      collection,
-                      collection.imageCount,
-                      imageIds,
-                    )
+                    // Only a genuinely-full synchronized collection is
+                    // disabled outright: `imageCount` cannot see which
+                    // selected ids are already members, so the capacity
+                    // check is left to `addImagesToCollection`, which
+                    // dedupes against the real member list and reports
+                    // 'full' only when the *new* images overflow.
+                    const full =
+                      collection.type === 'synchronized' &&
+                      collection.imageCount >= SYNCHRONIZED_MAX_IMAGES
                     const disabled = full || busy
                     const countText = `${collection.imageCount} ${
                       collection.imageCount === 1 ? 'image' : 'images'

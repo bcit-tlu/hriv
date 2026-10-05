@@ -109,14 +109,20 @@ Used by `App.tsx`, `ManageCategoriesDialog`, `CategoryPickerSelect`, and
 ## Tree loading & ETag caching
 
 The category tree is loaded in **exactly two database queries** regardless of
-depth (`backend/app/routers/categories.py`, `_load_tree()`):
+depth (`backend/app/routers/categories.py`, `_load_tree()`) — three when
+`COLLECTIONS_ENABLED` is on:
 
 1. Fetch **all** categories in one query.
 2. Fetch **all** images in one query.
+3. Fetch **all** collections in one query (skipped entirely when the flag is
+   off, so flag-off deployments keep the two-query shape).
 
-The tree is then assembled in memory by indexing images by `category_id` and
-categories by `parent_id`. For students, excluded categories and inactive images
-are filtered out during assembly (using `compute_excluded_category_ids`). When
+The tree is then assembled in memory by indexing images and collections by
+`category_id` and categories by `parent_id`. For students, excluded
+categories and inactive images are filtered out during assembly (using
+`compute_excluded_category_ids`), and a filed collection surfaces only when
+the collection's own visibility gate AND its category's ancestor gate both
+pass (`collection_views._ViewerContext`). When
 modifying the category/image models, keep this flat-query assembly working.
 
 The tree endpoint also supports **conditional requests**:
@@ -133,6 +139,7 @@ The tree endpoint also supports **conditional requests**:
 | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Dual-gate + cascade enforcement                        | `backend/app/visibility.py`                                                                                                                                                                                                               |
 | Student guards on tree/images                          | `backend/app/routers/categories.py`, `backend/app/routers/images.py`                                                                                                                                                                      |
+| Collection visibility + category-gate (tree embed)     | `backend/app/collection_views.py` (`_ViewerContext`), `backend/app/routers/categories.py` (query 3), `backend/app/authz.py` (`can_view_collection`)                                                                                       |
 | Intersection warning                                   | `backend/app/routers/categories.py` (`_intersection_warnings`)                                                                                                                                                                            |
 | Frontend narrowing                                     | `frontend/src/categoryUtils.ts`                                                                                                                                                                                                           |
 | Frontend visibility cascade helpers                    | `frontend/src/treeUtils.ts` (`isCategoryHiddenInTree`)                                                                                                                                                                                    |

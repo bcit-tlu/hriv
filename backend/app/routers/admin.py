@@ -22,7 +22,7 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.responses import Response, StreamingResponse
-from jose import JWTError, jwt
+import jwt
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1454,7 +1454,7 @@ def _validate_download_token(token: str, task_id: int) -> dict:
             auth_settings.jwt_secret,
             algorithms=[auth_settings.jwt_algorithm],
         )
-    except JWTError:
+    except jwt.PyJWTError:
         raise HTTPException(
             status_code=401, detail="Invalid or expired download token"
         )

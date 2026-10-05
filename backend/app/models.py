@@ -87,6 +87,18 @@ collection_groups = Table(
     Column("group_id", Integer, ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True),
 )
 
+# Multi-owner co-management (#1531): each row grants one user an ownership
+# stake in the collection. User-owners coexist with the optional
+# ``owner_program_id`` program owner; a collection is orphaned only when it
+# has no owner rows AND no program owner.
+collection_owners = Table(
+    "collection_owners",
+    Base.metadata,
+    Column("collection_id", Integer, ForeignKey("collections.id", ondelete="CASCADE"), primary_key=True),
+    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+    Index("idx_collection_owners_user", "user_id"),
+)
+
 
 class Program(Base):
     __tablename__ = "programs"
@@ -503,13 +515,15 @@ SYNCHRONIZED_COLLECTION_MAX_IMAGES = 4
 
 
 class Collection(Base):
-    """A user- or program-owned grouping of existing images.
+    """A user- and/or program-owned grouping of existing images.
 
     Collections never duplicate image or category rows; they reference
-    ``images`` through ``collection_images``. Exactly one of ``user_id`` /
-    ``owner_program_id`` is set for an owned collection; both are ``NULL``
-    when the owning program was deleted (an *orphaned* collection that only
-    admins may manage until it is reassigned). ``visibility == "restricted"``
+    ``images`` through ``collection_images``. User ownership is the set of
+    ``collection_owners`` rows (co-management, #1531); ``owner_program_id``
+    optionally names an owning program alongside them. A collection is
+    *orphaned* — admin-managed until reassigned — when it has no owner rows
+    AND ``owner_program_id IS NULL``. ``user_id`` is creator-only audit
+    (SET NULL on user delete), not ownership. ``visibility == "restricted"``
     is scoped by ``collection_programs`` / ``collection_groups`` using the
     same dual-gate semantics as categories (see ``visibility``).
     """
@@ -524,12 +538,9 @@ class Collection(Base):
             "visibility IN ('private', 'public', 'restricted')",
             name="ck_collections_visibility",
         ),
-        CheckConstraint(
-            "num_nonnulls(user_id, owner_program_id) <= 1",
-            name="ck_collections_single_owner",
-        ),
         Index("idx_collections_user", "user_id"),
         Index("idx_collections_owner_program", "owner_program_id"),
+        Index("idx_collections_category", "category_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -542,11 +553,23 @@ class Collection(Base):
         default="private",
         server_default=text("'private'"),
     )
+    # Creator audit only (#1531): the owning users live in
+    # ``collection_owners``, so this must not cascade-delete the collection.
     user_id: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=True,
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True,
     )
     owner_program_id: Mapped[int | None] = mapped_column(
         ForeignKey("programs.id", ondelete="SET NULL"), nullable=True,
+    )
+    # Browse placement (epic #1525): the category the collection is filed in;
+    # NULL = uncategorized (shown at the Browse root like uncategorized
+    # images). Deleting the category unfiles the collection rather than
+    # deleting it. ``sort_order`` is the tile-order position inside the scope.
+    category_id: Mapped[int | None] = mapped_column(
+        ForeignKey("categories.id", ondelete="SET NULL"), nullable=True,
+    )
+    sort_order: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
     )
     viewport_state: Mapped[dict] = mapped_column(
         JSONB,
@@ -562,7 +585,10 @@ class Collection(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    owner: Mapped["User | None"] = relationship("User", lazy="selectin")
+    creator: Mapped["User | None"] = relationship("User", lazy="selectin")
+    owners: Mapped[list["User"]] = relationship(
+        "User", secondary=collection_owners, lazy="selectin",
+    )
     owner_program: Mapped["Program | None"] = relationship("Program", lazy="selectin")
     programs: Mapped[list["Program"]] = relationship(
         "Program", secondary=collection_programs, lazy="selectin",

@@ -13,7 +13,7 @@ the per-tile hot path never touches the DB.
 from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from jose import JWTError, jwt
+import jwt
 
 from .auth import auth_settings
 
@@ -62,7 +62,7 @@ def validate_tile_token(token: str, source_image_id: int) -> None:
             auth_settings.jwt_secret,
             algorithms=[auth_settings.jwt_algorithm],
         )
-    except JWTError:
+    except jwt.PyJWTError:
         raise TileTokenError(401, "Invalid or expired tile token")
     if payload.get("purpose") != TILE_TOKEN_PURPOSE:
         raise TileTokenError(401, "Invalid or expired tile token")

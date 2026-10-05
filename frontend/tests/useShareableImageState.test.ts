@@ -256,8 +256,8 @@ describe('useShareableImageState', () => {
       expect(result.current.overlays).toEqual([{ x: 0.1, y: 0.2, w: 0.3, h: 0.4 }])
     })
 
-    it('parses ?collection={id} and ignores image/cat params on a collection link (#1414)', () => {
-      window.history.replaceState(null, '', '/?collection=12&image=42&cat=1')
+    it('parses ?collection={id} and ignores image params on a collection link (#1414)', () => {
+      window.history.replaceState(null, '', '/?collection=12&image=42')
       const setSelectedImage = vi.fn()
       const setPath = vi.fn()
       const img = makeImage({ id: 42 })
@@ -277,6 +277,45 @@ describe('useShareableImageState', () => {
       expect(result.current.pendingImageId.current).toBeNull()
       expect(setSelectedImage).not.toHaveBeenCalled()
       expect(setPath).not.toHaveBeenCalled()
+    })
+
+    it('restores ?cat= alongside ?collection= as the Browse return scope (#1529)', () => {
+      window.history.replaceState(null, '', '/?collection=12&cat=1')
+      const setPath = vi.fn()
+      const child = makeCategory({ id: 2, label: 'Child' })
+      const root = makeCategory({ id: 1, label: 'Root', children: [child] })
+      renderHook(() =>
+        useShareableImageState(
+          makeDeps({
+            setPath,
+            page: 'collections',
+            collectionId: 12,
+            categories: [root],
+            categoriesLoading: false,
+          }),
+        ),
+      )
+      expect(setPath).toHaveBeenCalledWith([root])
+    })
+
+    it('still ignores ?image= when ?collection= and ?cat= are both present', () => {
+      window.history.replaceState(null, '', '/?collection=12&cat=1&image=42')
+      const setSelectedImage = vi.fn()
+      const img = makeImage({ id: 42 })
+      const cat = makeCategory({ id: 1, label: 'Root', images: [img] })
+      const { result } = renderHook(() =>
+        useShareableImageState(
+          makeDeps({
+            setSelectedImage,
+            page: 'collections',
+            collectionId: 12,
+            categories: [cat],
+            categoriesLoading: false,
+          }),
+        ),
+      )
+      expect(result.current.pendingImageId.current).toBeNull()
+      expect(setSelectedImage).not.toHaveBeenCalled()
     })
 
     it('ignores a non-numeric ?collection= and falls through to image parsing', () => {
@@ -396,6 +435,83 @@ describe('useShareableImageState', () => {
       renderHook(() => useShareableImageState(makeDeps({ page: 'browse', collectionId: 12 })))
       const url = replaceStateSpy.mock.calls[replaceStateSpy.mock.calls.length - 1][2] as string
       expect(url).not.toContain('collection=')
+    })
+
+    it('writes &item={id} for the open sequence position (#1416)', () => {
+      renderHook(() =>
+        useShareableImageState(
+          makeDeps({ page: 'collections', collectionId: 12, collectionItemId: 99 }),
+        ),
+      )
+      const url = replaceStateSpy.mock.calls[replaceStateSpy.mock.calls.length - 1][2] as string
+      expect(url).toBe('/?collection=12&item=99')
+    })
+
+    it('omits &item= while no sequence position is selected', () => {
+      renderHook(() =>
+        useShareableImageState(
+          makeDeps({ page: 'collections', collectionId: 12, collectionItemId: null }),
+        ),
+      )
+      const url = replaceStateSpy.mock.calls[replaceStateSpy.mock.calls.length - 1][2] as string
+      expect(url).toBe('/?collection=12')
+    })
+
+    it('keeps ?cat= next to ?collection= while a Browse-scoped detail is open (#1529)', () => {
+      const cat = makeCategory({ id: 3, label: 'Scope' })
+      renderHook(() =>
+        useShareableImageState(
+          makeDeps({
+            page: 'collections',
+            collectionId: 12,
+            collectionFromBrowse: true,
+            path: [cat],
+          }),
+        ),
+      )
+      const url = replaceStateSpy.mock.calls[replaceStateSpy.mock.calls.length - 1][2] as string
+      expect(url).toBe('/?cat=3&collection=12')
+    })
+
+    it('omits ?cat= for a collection opened outside Browse', () => {
+      const cat = makeCategory({ id: 3, label: 'Scope' })
+      renderHook(() =>
+        useShareableImageState(makeDeps({ page: 'collections', collectionId: 12, path: [cat] })),
+      )
+      const url = replaceStateSpy.mock.calls[replaceStateSpy.mock.calls.length - 1][2] as string
+      expect(url).toBe('/?collection=12')
+    })
+
+    it('keeps collectionFromBrowse in history state on URL sync (#1529)', () => {
+      // A root-scope Browse origin has no `?cat=` to mark it, so the state
+      // flag is the only carrier — the replaceState must not strip it.
+      renderHook(() =>
+        useShareableImageState(
+          makeDeps({ page: 'collections', collectionId: 12, collectionFromBrowse: true }),
+        ),
+      )
+      const state = replaceStateSpy.mock.calls[replaceStateSpy.mock.calls.length - 1][0] as {
+        collectionFromBrowse?: boolean
+      }
+      expect(state.collectionFromBrowse).toBe(true)
+    })
+
+    it('leaves collectionFromBrowse unset for a Collections-page entry (#1529)', () => {
+      renderHook(() => useShareableImageState(makeDeps({ page: 'collections', collectionId: 12 })))
+      const state = replaceStateSpy.mock.calls[replaceStateSpy.mock.calls.length - 1][0] as {
+        collectionFromBrowse?: boolean
+      }
+      expect(state.collectionFromBrowse).toBeFalsy()
+    })
+
+    it('does not leak &item= outside an open collection', () => {
+      renderHook(() =>
+        useShareableImageState(
+          makeDeps({ page: 'collections', collectionId: null, collectionItemId: 99 }),
+        ),
+      )
+      const url = replaceStateSpy.mock.calls[replaceStateSpy.mock.calls.length - 1][2] as string
+      expect(url).not.toContain('item=')
     })
 
     it('skips URL sync when enableUrlSync is false', () => {

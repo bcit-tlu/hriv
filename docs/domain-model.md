@@ -45,25 +45,35 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   deleted.
 - See [Groups](groups.md) for membership/lifecycle invariants.
 
-### Collection _(added in `0030_collections`)_
+### Collection _(added in `0030_collections`; multi-owner in `0032`)_
 
 - **Purpose:** user- or program-owned grouping of existing images for
   `sequence` or `synchronized` viewing; never duplicates image/category rows.
 - **Key fields:** `name`; `description` (nullable); `type` (`synchronized` /
   `sequence`, CHECK `ck_collections_type`); `visibility` (`private` / `public` /
   `restricted`, CHECK `ck_collections_visibility`, default `private`);
-  `user_id` (FK to User, **CASCADE**); `owner_program_id` (FK to Program,
-  **SET NULL**); `viewport_state` (JSONB, default `{}`); `version` (optimistic
-  concurrency, starts at 1). CHECK `ck_collections_single_owner`
-  (`num_nonnulls(user_id, owner_program_id) <= 1`) — both `NULL` = orphaned.
-- **Relationships:** `owner` (User), `owner_program` (Program); `image_links`
+  `user_id` (FK to User, **SET NULL** — #1531; creator-audit only, not an
+  ownership edge); `owner_program_id` (FK to Program,
+  **SET NULL**); `category_id` (FK to Category, **SET NULL** — #1527, files
+  the collection into the Browse hierarchy; `NULL` = uncategorized root);
+  `sort_order` (tile-order position inside its scope); `viewport_state`
+  (JSONB, default `{}`); `version` (optimistic
+  concurrency, starts at 1). User co-ownership lives in `collection_owners`
+  (M2M); a collection with no owner rows and `owner_program_id` NULL is
+  **orphaned** (admin-only until repaired).
+- **Relationships:** `owners` (Users, M2M via `collection_owners`, eager
+  `selectin`, ordered by name); `owner_program` (Program); `image_links`
   (ordered `CollectionImage` rows, `cascade="all, delete-orphan"`,
   `order_by sort_order`); `programs` / `groups` (M2M via `collection_programs` /
   `collection_groups`, eager `selectin`) — restricted-visibility scope.
 - **Deletion:** `CASCADE` to `collection_images`, `collection_programs`,
-  `collection_groups`. Deleting a user deletes their collections; deleting a
-  program orphans its collections; deleting an image removes it from every
-  collection.
+  `collection_groups`, `collection_owners`. Deleting a user removes their
+  `collection_owners` rows, nulls the audit `user_id`, then deletes each
+  collection for which they were the sole owner (co-owned and program-owned
+  collections survive); deleting a program orphans collections that have no
+  remaining user owners; deleting an image removes it from every
+  collection; deleting a category unfiles its collections (`category_id` →
+  `NULL`), the same reparenting rule as images.
 - See [Collections](collections.md).
 
 ### CollectionImage _(added in `0030_collections`)_
@@ -232,6 +242,7 @@ the schema** — change the model _and_ generate a migration in the same PR (see
 | `group_members`       | `(group_id, user_id)`         | both `CASCADE` | members must be **students** (422 on mismatch)                                     |
 | `group_instructors`   | `(group_id, user_id)`         | both `CASCADE` | instructors must be **instructors** (422); last instructor cannot be removed (409) |
 | `category_groups`     | `(category_id, group_id)`     | both `CASCADE` | group attached to a category cannot be deleted (409)                               |
+| `collection_owners`   | `(collection_id, user_id)`    | both `CASCADE` | user co-owners; see [Collections](collections.md) — `0032`                         |
 | `collection_programs` | `(collection_id, program_id)` | both `CASCADE` | restricted-visibility scope; see [Collections](collections.md)                     |
 | `collection_groups`   | `(collection_id, group_id)`   | both `CASCADE` | restricted-visibility scope                                                        |
 
@@ -245,7 +256,8 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   than delete the child: `images.category_id`, `source_images.category_id`,
   `source_images.image_id`, `source_images.uploaded_by`, `bulk_import_jobs.category_id`,
   `bulk_import_jobs.requested_by`, `admin_tasks.created_by`,
-  `groups.created_by_user_id`, `collections.owner_program_id`.
+  `groups.created_by_user_id`, `collections.owner_program_id`,
+  `collections.user_id` (creator audit — #1531).
 - **`active` (Image) vs `status` (Category)** are independent visibility
   mechanisms — don't conflate them.
 - **`sort_order`** exists on both `Category` and `Image` for manual ordering.

@@ -318,126 +318,182 @@ curl -s http://localhost:8000/api/categories/ -H "Authorization: Bearer $TOKEN"
 
 **Purpose:** Verify that deleting a program leaves its collections in place as
 orphans (admin-only), and that an admin can reassign them with
-`POST /api/collections/{id}/transfer`. See [collections.md](collections.md)
-("Ownership & lifecycle").
+`PUT /api/collections/{id}/owners`. See [collections.md](collections.md)
+("Owner management", "Ownership & lifecycle").
 
 1. Obtain tokens for `admin@example.ca` and `instructor@example.ca` (Test Case 4b).
 2. As admin, create a throw-away program: `POST /api/programs {"name": "Orphan Test"}` → note its `id` as `$PID`, and add the instructor to it (`PATCH /api/users/{instructor_id}` with `program_ids` including `$PID`).
 3. As the instructor, create a collection: `POST /api/collections {"name": "Orphan me", "type": "sequence", "visibility": "public", "image_ids": [1]}` → note `id` as `$CID` and `version`.
 4. As the instructor, move it onto the program: `POST /api/collections/$CID/transfer {"program_id": $PID, "version": <version>}`.
-   **Assert:** `200`, `owner` is `{"program_id": $PID, "name": "Orphan Test"}`, `version` incremented, `permissions.can_edit` is `true`.
-5. As the instructor, try to hand it to a user: `POST /api/collections/$CID/transfer {"user_id": <own id>, "version": <version>}`.
-   **Assert:** `403` (only admins may transfer to a user).
+   **Assert:** `200`, `owners` is `[{"user_id": null, "program_id": $PID, "name": "Orphan Test"}]` (the program becomes the sole owner — user-owner rows are cleared), `version` incremented, `permissions.can_edit` is `true`.
+5. As the instructor, stage a co-owner on the program-owned collection: `PUT /api/collections/$CID/owners {"user_ids": [<instructor id>], "version": <version>}`.
+   **Assert:** `200` — instructors of the owning program may manage user owners; `owners` lists the instructor first (user owners sort by name) then the program entry.
 6. As admin, delete the program: `DELETE /api/programs/$PID`.
-   **Assert:** `204`.
-7. As admin, `GET /api/collections?orphaned=true`.
-   **Assert:** `$CID` is listed with `owner: null`; `GET /api/collections/$CID` still returns the collection and its image.
-8. As the instructor, `PATCH /api/collections/$CID {"name": "x", "version": <version>}` and `POST /api/collections/$CID/transfer {"program_id": <another program>, "version": <version>}`.
-   **Assert:** both `403` — the orphan is admin-only even though the instructor created it. As a student, `GET /api/collections/$CID` still returns `200` (public visibility survives orphaning).
-9. As admin, reassign it: `POST /api/collections/$CID/transfer {"user_id": <instructor id>, "version": <version>}`.
-   **Assert:** `200`, `owner` is `{"user_id": <instructor id>, "name": ...}`, `version` incremented; the instructor can PATCH it again (`200`).
-10. Optional: repeat step 9 with a stale `version` → `409` whose `detail` is the current collection; with a deactivated user's id → `422`; with an unknown id → `422`; with both `user_id` and `program_id` → `422`.
+   **Assert:** `204`. The staged instructor owner keeps the collection un-orphaned — `GET /api/collections/$CID` still shows the instructor in `owners` and the instructor can PATCH it (`200`).
+7. As the instructor, empty the owner set on the now-user-owned collection: `PUT /api/collections/$CID/owners {"user_ids": [], "version": <version>}`.
+   **Assert:** `422` — a collection with no program owner may not lose its last user owner.
+8. As admin, create a second throw-away program (`POST /api/programs {"name": "Orphan Test 2"}` → `$PID2`), then a collection (`POST /api/collections` → `$CID2`) and `POST /api/collections/$CID2/transfer {"program_id": $PID2, ...}` so `$PID2` is its sole owner. Delete `$PID2` without staging any user owners.
+   **Assert:** `GET /api/collections?orphaned=true` lists `$CID2` with `owners: []`; `GET /api/collections/$CID2` still returns the collection and its image.
+9. As the instructor, `PATCH /api/collections/$CID2 {"name": "x", "version": <version>}`, `PUT /api/collections/$CID2/owners {"user_ids": [<instructor id>], "version": <version>}`, and `POST /api/collections/$CID2/transfer {"program_id": <another program>, "version": <version>}`.
+   **Assert:** all `403` — the orphan is admin-only even though the instructor created it. As a student, `GET /api/collections/$CID2` still returns `200` (public visibility survives orphaning).
+10. As admin, reassign it: `PUT /api/collections/$CID2/owners {"user_ids": [<instructor id>], "version": <version>}`.
+    **Assert:** `200`, `owners` is `[{"user_id": <instructor id>, "program_id": null, "name": ...}]`, `version` incremented; the instructor can PATCH it again (`200`).
+11. Optional: repeat step 10 with a stale `version` → `409` whose `detail` is the current collection; with a deactivated user's id → `422`; with an unknown id → `422`. As admin, `POST /api/collections/$CID2/transfer {"program_id": $PID3}` then `{"program_id": null}` → `200` (clears the program, user owners retained); on a program-owned collection with no user owners, `{"program_id": null}` → `422`.
 
 ---
 
-## API Endpoint Reference
+## Test Case 11: Collections UI — Create, View, Share, Transfer, Reassign (UI)
+
+**Purpose:** End-to-end walkthrough of the Collections tab, both viewer types,
+and the ownership-management UI (#1419). Requires `COLLECTIONS_ENABLED=true`
+(default in local dev). See [collections.md](collections.md).
+
+1. Login as `instructor@example.ca` and open the **Collections** tab.
+2. **New collection** → name "Skull study", type **Synchronized**, visibility **Public** → **Create**. **Assert:** the card appears with a Synchronized type chip and Public visibility chip.
+3. Open the collection; add images via an image's **Add to Collection** viewer action (or select images in **Search** → **Add to collection**). **Assert:** the synchronized viewer shows the panes with the link/reset controls.
+4. Switch to the library and copy the address bar (`?collection={id}`); open the URL in an incognito window logged in as a student. **Assert:** the public collection opens directly on the same view.
+5. Back as the instructor, open the collection's **Edit** → change the description and save. **Assert:** the detail header updates.
+6. Click **Owners** in the detail header. **Assert:** the dialog shows the instructor in the user-owner autocomplete, **Students / Instructors** search tabs (no **Everyone** — that's admin-only), and a program select narrowed to programs the instructor belongs to. On the **Students** tab, pick a program in **Filter by program** — **Assert:** only students in that program appear; the **Instructors** tab ignores the program filter (group-picker parity). Switch to **Instructors**, type a colleague's name and pick them. **Assert:** the card/detail header now lists both owners, and the new co-owner can edit the collection.
+7. With both user owners in place, pick a program in the same dialog. **Assert:** the user-owner autocomplete disables with the "clears the user owners" hint; save. **Assert:** the header now shows the program as sole owner.
+8. As `admin@example.ca`, delete that program (People → Programs). Reopen the Collections tab and pick **Owner → No owner (orphaned)**. **Assert:** the collection is listed with "No owner" and its public visibility still lets a student open it.
+9. From the orphaned card's **Owners** action, pick an active account in the user-owner autocomplete and save — **Assert:** the card leaves the orphaned list and the new owner can edit it again.
+10. As `staff@example.ca`, open the Collections tab — **Assert:** every collection is listed (staff see all like instructors) and the **New collection** button is present. Create a private **Sequence** collection, add an image, rename it via **Edit**, and delete it — all succeed (staff hold the same owner rights as students). **Assert:** no **Owners** action appears on the card (staff can never manage owners).
+11. **Tablet check:** repeat steps 3–4 at a tablet viewport (~768px) for both a synchronized and a sequence collection; **Assert:** panes/thumbnails stay usable, the **Open image** action and viewer controls remain reachable, and no horizontal overflow appears.
+
+---
+
+## Test Case 12: Collections in the Browse Hierarchy — Tiles, Filing, Drag-Add (UI)
+
+**Purpose:** Walk the Browse-side collection surface from epic #1525 — tiles
+nested inside categories, move filing, mixed-tile reorder, and the
+image-onto-collection add gesture. Requires `COLLECTIONS_ENABLED=true` and
+the seeded **Italian Cathedrals** sequence collection (filed under
+_Architecture → Italian_, public, instructor-owned). See
+[docs/drag-and-drop.md](drag-and-drop.md) and
+[docs/tile-ordering.md](tile-ordering.md).
+
+1. Login as `instructor@example.ca`, open **Browse** → drill into _Architecture → Italian_. **Assert:** the Italian Cathedrals collection tile renders beside category and image tiles (same size and hover parameters), shows its type chip, owner name, and image count.
+2. Open the collection tile. **Assert:** the sequence viewer loads and the URL carries `?collection={id}`; Back returns to the same Browse scope.
+3. Back on Browse, drag the collection tile past an image tile's centre. **Assert:** the mixed order persists after a reload (`PUT /api/tile-order` with interleaved `collection`/`image` refs — categories sort first, then collections, then images at equal sort_order).
+4. Drag the collection tile onto another category tile's **Move into category** zone (near half). **Assert:** the collection disappears from the current scope and appears inside the target category; undo via the snackbar to restore it.
+5. Drag an image tile onto the collection tile's near half. **Assert:** the **Add to collection** overlay highlights; on drop the image count grows and a snackbar offers **Undo**. The far half still reorders normally.
+6. Click the collection card's **Move** button (rendered for admins/instructors on Browse tiles and on the collection detail header). File the collection back to _Top level_, then into _Italian_ again via the dialog. **Assert:** both directions work and the undo snackbar re-posts the previous category.
+7. Login as `student@example.ca` and browse to _Italian_. **Assert:** the public collection tile is visible and opens, but no **Move** affordance renders on it (filing is curatorial) and no drag handles appear on any tile (all Browse dragging needs `canEditContent`; the add zone also requires `canEdit` on the collection itself).
+8. With `COLLECTIONS_ENABLED=false`, restart and reload Browse. **Assert:** no collection tiles render anywhere, reordering works on categories/images alone, and `GET /api/categories/tree` nodes carry empty `collections` lists.
+
+---
 
 All endpoints except login require a valid JWT bearer token in the `Authorization` header.
 
-| Method | Endpoint                                                                                                  | Auth Required | Minimum Role                                                                                                  |
-| ------ | --------------------------------------------------------------------------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------- |
-| POST   | /api/auth/login                                                                                           | No            | —                                                                                                             |
-| GET    | /api/health                                                                                               | No            | —                                                                                                             |
-| GET    | /api/features                                                                                             | No            | — (deployment feature flags, e.g. `collections`)                                                              |
-| GET    | /api/health/ready                                                                                         | No            | —                                                                                                             |
-| GET    | /api/health/storage                                                                                       | No            | —                                                                                                             |
-| GET    | /api/health/queue                                                                                         | No            | — ‡                                                                                                           |
-| GET    | /api/_probe                                                                                               | No            | — (internal readiness canary via included router; nginx-blocked on the public ingress)                        |
-| GET    | /api/categories/                                                                                          | Yes           | student                                                                                                       |
-| POST   | /api/categories/                                                                                          | Yes           | instructor                                                                                                    |
-| GET    | /api/categories/tree                                                                                      | Yes           | student                                                                                                       |
-| GET    | /api/categories/{id}                                                                                      | Yes           | student                                                                                                       |
-| PATCH  | /api/categories/{id}                                                                                      | Yes           | instructor                                                                                                    |
-| DELETE | /api/categories/{id}                                                                                      | Yes           | instructor                                                                                                    |
-| GET    | /api/images/                                                                                              | Yes           | student                                                                                                       |
-| POST   | /api/images/                                                                                              | Yes           | instructor                                                                                                    |
-| GET    | /api/images/{id}                                                                                          | Yes           | student                                                                                                       |
-| PATCH  | /api/images/{id}                                                                                          | Yes           | instructor                                                                                                    |
-| DELETE | /api/images/{id}                                                                                          | Yes           | instructor                                                                                                    |
-| DELETE | /api/images/bulk                                                                                          | Yes           | instructor                                                                                                    |
-| GET    | /api/tile-order                                                                                           | Yes           | instructor                                                                                                    |
-| PUT    | /api/tile-order                                                                                           | Yes           | instructor                                                                                                    |
-| GET    | /api/tiles/{source_image_id}/{path}                                                                       | Yes           | valid tile token (image-scoped, from tokenized `tile_sources`/`thumb` URLs)                                   |
-| GET    | /api/tiles-auth (nginx `auth_request` validator; 204/401/403)                                             | Yes           | valid tile token                                                                                              |
-| GET    | /api/users/                                                                                               | Yes           | staff ¶                                                                                                       |
-| POST   | /api/users/                                                                                               | Yes           | admin                                                                                                         |
-| GET    | /api/users/{id}                                                                                           | Yes           | admin                                                                                                         |
-| PATCH  | /api/users/{id}                                                                                           | Yes           | admin                                                                                                         |
-| DELETE | /api/users/{id}                                                                                           | Yes           | admin                                                                                                         |
-| PATCH  | /api/users/bulk/program                                                                                   | Yes           | admin                                                                                                         |
-| PATCH  | /api/users/bulk/role                                                                                      | Yes           | admin                                                                                                         |
-| PATCH  | /api/users/bulk/active                                                                                    | Yes           | admin                                                                                                         |
-| DELETE | /api/users/bulk                                                                                           | Yes           | admin                                                                                                         |
-| GET    | /api/programs/                                                                                            | Yes           | student                                                                                                       |
-| GET    | /api/programs/{id}                                                                                        | Yes           | student                                                                                                       |
-| POST   | /api/programs/                                                                                            | Yes           | admin                                                                                                         |
-| PATCH  | /api/programs/{id}                                                                                        | Yes           | admin                                                                                                         |
-| DELETE | /api/programs/{id}                                                                                        | Yes           | admin                                                                                                         |
-| GET    | /api/groups/                                                                                              | Yes           | instructor                                                                                                    |
-| POST   | /api/groups/                                                                                              | Yes           | instructor                                                                                                    |
-| GET    | /api/groups/{id}                                                                                          | Yes           | instructor                                                                                                    |
-| PATCH  | /api/groups/{id}                                                                                          | Yes           | instructor †                                                                                                  |
-| DELETE | /api/groups/{id}                                                                                          | Yes           | instructor †                                                                                                  |
-| GET    | /api/groups/{id}/members                                                                                  | Yes           | instructor                                                                                                    |
-| POST   | /api/groups/{id}/members/bulk                                                                             | Yes           | instructor †                                                                                                  |
-| DELETE | /api/groups/{id}/members/bulk                                                                             | Yes           | instructor †                                                                                                  |
-| POST   | /api/groups/{id}/members/{user_id}                                                                        | Yes           | instructor †                                                                                                  |
-| DELETE | /api/groups/{id}/members/{user_id}                                                                        | Yes           | instructor †                                                                                                  |
-| GET    | /api/groups/{id}/instructors                                                                              | Yes           | instructor                                                                                                    |
-| POST   | /api/groups/{id}/instructors/bulk                                                                         | Yes           | instructor †                                                                                                  |
-| DELETE | /api/groups/{id}/instructors/bulk                                                                         | Yes           | instructor †                                                                                                  |
-| POST   | /api/groups/{id}/instructors/{user_id}                                                                    | Yes           | instructor †                                                                                                  |
-| DELETE | /api/groups/{id}/instructors/{user_id}                                                                    | Yes           | instructor †                                                                                                  |
-| GET    | /api/collections                                                                                          | Yes           | student (`orphaned=true` filter: admin) — all `/api/collections*` routes 404 when `COLLECTIONS_ENABLED=false` |
-| GET    | /api/collections/{id}                                                                                     | Yes           | student (404 if not visible)                                                                                  |
-| POST   | /api/collections                                                                                          | Yes           | student (`visibility=restricted`: instructor, with attach authority)                                          |
-| PATCH  | /api/collections/{id}                                                                                     | Yes           | student (owner / instructor of owning program / admin; 404 if not visible)                                    |
-| DELETE | /api/collections/{id}                                                                                     | Yes           | student (owner / instructor of owning program / admin; 404 if not visible)                                    |
-| PUT    | /api/collections/{id}/images                                                                              | Yes           | student (owner / instructor of owning program / admin; 404 if not visible)                                    |
-| PUT    | /api/collections/{id}/viewport                                                                            | Yes           | student (owner / instructor of owning program / admin; 404 if not visible)                                    |
-| POST   | /api/collections/{id}/transfer                                                                            | Yes           | instructor (owner / in owning program, to own program; to user: admin) ¤                                      |
-| GET    | /api/changelog/                                                                                           | Yes           | instructor                                                                                                    |
-| POST   | /api/changelog/                                                                                           | Yes           | admin                                                                                                         |
-| POST   | /api/changelog/mark-read                                                                                  | Yes           | instructor                                                                                                    |
-| PATCH  | /api/changelog/{id}                                                                                       | Yes           | admin                                                                                                         |
-| DELETE | /api/changelog/{id}                                                                                       | Yes           | admin                                                                                                         |
-| GET    | /api/admin/version                                                                                        | Yes           | instructor                                                                                                    |
-| GET    | /api/admin/export                                                                                         | Yes           | admin                                                                                                         |
-| POST   | /api/admin/import                                                                                         | Yes           | admin                                                                                                         |
-| POST   | /api/admin/tasks/rebuild-tiles                                                                            | Yes           | admin                                                                                                         |
-| POST   | /api/admin/tasks/{task_id}/download-token (mints path-scoped `HttpOnly` download cookie; 204)             | Yes           | admin                                                                                                         |
-| GET    | /api/admin/tasks/{task_id}/download (streams result file)                                                 | Yes           | valid admin download cookie (task-bound, 60 s TTL, cleared on success)                                        |
-| GET    | /api/admin/backups/snapshots                                                                              | Yes           | admin                                                                                                         |
-| GET    | /api/admin/backups/snapshots/{name}/manifest                                                              | Yes           | admin                                                                                                         |
-| POST   | /api/admin/tasks/file-restore                                                                             | Yes           | admin                                                                                                         |
-| GET    | /api/admin/tasks/{task_id}/upload (status for resumable upload)                                           | Yes           | admin                                                                                                         |
-| PUT    | /api/admin/tasks/{task_id}/upload (raw `application/octet-stream`; multipart/form-data rejected with 415) | Yes           | admin                                                                                                         |
-| PATCH  | /api/admin/tasks/{task_id}/upload (raw chunk; `Upload-Offset` + `Upload-Length` headers)                  | Yes           | admin                                                                                                         |
-| POST   | /api/admin/tasks/{task_id}/upload/finalize (finalize chunked upload)                                      | Yes           | admin                                                                                                         |
-| GET    | /api/admin/tasks/files-import/archives                                                                    | Yes           | admin                                                                                                         |
-| GET    | /api/admin/tasks/files-import/archive-retention                                                           | Yes           | admin                                                                                                         |
-| POST   | /api/admin/tasks/files-import/rerun                                                                       | Yes           | admin                                                                                                         |
-| DELETE | /api/admin/tasks/files-import/archives/{archive_task_id}                                                  | Yes           | admin                                                                                                         |
-| GET    | /api/admin/tasks/backup-archives                                                                          | Yes           | admin                                                                                                         |
-| DELETE | /api/admin/tasks/backup-archives/{task_id}/{artifact_role}                                                | Yes           | admin                                                                                                         |
-| GET    | /api/jobs/ (list, read-only)                                                                              | Yes           | admin                                                                                                         |
-| GET    | /api/jobs/{job_id} (single job supervisor state, read-only; no items)                                     | Yes           | admin                                                                                                         |
-| GET    | /api/jobs/{job_id}/items (bounded keyset-paginated item inspection)                                       | Yes           | admin                                                                                                         |
-| GET    | /api/jobs/rebuild-tiles (parallel-rebuild capability probe)                                               | Yes           | admin                                                                                                         |
-| POST   | /api/jobs/rebuild-tiles (create durable rebuild job; 409 when disabled/active)                            | Yes           | admin                                                                                                         |
-| POST   | /api/jobs/{job_id}/cancel (idempotent rebuild cancellation)                                               | Yes           | admin                                                                                                         |
-| POST   | /api/jobs/{job_id}/items/{item_id}/retry (requeue one failed rebuild item)                                | Yes           | admin                                                                                                         |
-| POST   | /api/jobs/{job_id}/retry-failed (requeue all failed rebuild items)                                        | Yes           | admin                                                                                                         |
+| Method | Endpoint                                                                                                  | Auth Required | Minimum Role                                                                                                                        |
+| ------ | --------------------------------------------------------------------------------------------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | /api/auth/login                                                                                           | No            | —                                                                                                                                   |
+| GET    | /api/health                                                                                               | No            | —                                                                                                                                   |
+| GET    | /api/features                                                                                             | No            | — (deployment feature flags, e.g. `collections`)                                                                                    |
+| GET    | /api/health/ready                                                                                         | No            | —                                                                                                                                   |
+| GET    | /api/health/storage                                                                                       | No            | —                                                                                                                                   |
+| GET    | /api/health/queue                                                                                         | No            | — ‡                                                                                                                                 |
+| GET    | /api/_probe                                                                                               | No            | — (internal readiness canary via included router; nginx-blocked on the public ingress)                                              |
+| GET    | /api/categories/                                                                                          | Yes           | student                                                                                                                             |
+| POST   | /api/categories/                                                                                          | Yes           | instructor                                                                                                                          |
+| GET    | /api/categories/tree                                                                                      | Yes           | student                                                                                                                             |
+| GET    | /api/categories/{id}                                                                                      | Yes           | student                                                                                                                             |
+| PATCH  | /api/categories/{id}                                                                                      | Yes           | instructor                                                                                                                          |
+| DELETE | /api/categories/{id}                                                                                      | Yes           | instructor                                                                                                                          |
+| GET    | /api/images/                                                                                              | Yes           | student                                                                                                                             |
+| POST   | /api/images/                                                                                              | Yes           | instructor                                                                                                                          |
+| GET    | /api/images/{id}                                                                                          | Yes           | student                                                                                                                             |
+| PATCH  | /api/images/{id}                                                                                          | Yes           | instructor                                                                                                                          |
+| DELETE | /api/images/{id}                                                                                          | Yes           | instructor                                                                                                                          |
+| DELETE | /api/images/bulk                                                                                          | Yes           | instructor                                                                                                                          |
+| GET    | /api/tile-order                                                                                           | Yes           | instructor                                                                                                                          |
+| PUT    | /api/tile-order                                                                                           | Yes           | instructor                                                                                                                          |
+| GET    | /api/tiles/{source_image_id}/{path}                                                                       | Yes           | valid tile token (image-scoped, from tokenized `tile_sources`/`thumb` URLs)                                                         |
+| GET    | /api/tiles-auth (nginx `auth_request` validator; 204/401/403)                                             | Yes           | valid tile token                                                                                                                    |
+| GET    | /api/users/                                                                                               | Yes           | staff ¶                                                                                                                             |
+| POST   | /api/users/                                                                                               | Yes           | admin                                                                                                                               |
+| GET    | /api/users/{id}                                                                                           | Yes           | admin                                                                                                                               |
+| PATCH  | /api/users/{id}                                                                                           | Yes           | admin                                                                                                                               |
+| DELETE | /api/users/{id}                                                                                           | Yes           | admin                                                                                                                               |
+| PATCH  | /api/users/bulk/program                                                                                   | Yes           | admin                                                                                                                               |
+| PATCH  | /api/users/bulk/role                                                                                      | Yes           | admin                                                                                                                               |
+| PATCH  | /api/users/bulk/active                                                                                    | Yes           | admin                                                                                                                               |
+| DELETE | /api/users/bulk                                                                                           | Yes           | admin                                                                                                                               |
+| GET    | /api/programs/                                                                                            | Yes           | student                                                                                                                             |
+| GET    | /api/programs/{id}                                                                                        | Yes           | student                                                                                                                             |
+| POST   | /api/programs/                                                                                            | Yes           | admin                                                                                                                               |
+| PATCH  | /api/programs/{id}                                                                                        | Yes           | admin                                                                                                                               |
+| DELETE | /api/programs/{id}                                                                                        | Yes           | admin                                                                                                                               |
+| GET    | /api/groups/                                                                                              | Yes           | instructor                                                                                                                          |
+| POST   | /api/groups/                                                                                              | Yes           | instructor                                                                                                                          |
+| GET    | /api/groups/{id}                                                                                          | Yes           | instructor                                                                                                                          |
+| PATCH  | /api/groups/{id}                                                                                          | Yes           | instructor †                                                                                                                        |
+| DELETE | /api/groups/{id}                                                                                          | Yes           | instructor †                                                                                                                        |
+| GET    | /api/groups/{id}/members                                                                                  | Yes           | instructor                                                                                                                          |
+| POST   | /api/groups/{id}/members/bulk                                                                             | Yes           | instructor †                                                                                                                        |
+| DELETE | /api/groups/{id}/members/bulk                                                                             | Yes           | instructor †                                                                                                                        |
+| POST   | /api/groups/{id}/members/{user_id}                                                                        | Yes           | instructor †                                                                                                                        |
+| DELETE | /api/groups/{id}/members/{user_id}                                                                        | Yes           | instructor †                                                                                                                        |
+| GET    | /api/groups/{id}/instructors                                                                              | Yes           | instructor                                                                                                                          |
+| POST   | /api/groups/{id}/instructors/bulk                                                                         | Yes           | instructor †                                                                                                                        |
+| DELETE | /api/groups/{id}/instructors/bulk                                                                         | Yes           | instructor †                                                                                                                        |
+| POST   | /api/groups/{id}/instructors/{user_id}                                                                    | Yes           | instructor †                                                                                                                        |
+| DELETE | /api/groups/{id}/instructors/{user_id}                                                                    | Yes           | instructor †                                                                                                                        |
+| GET    | /api/collections                                                                                          | Yes           | student (`orphaned=true` filter: admin) — all `/api/collections*` routes 404 when `COLLECTIONS_ENABLED=false`                       |
+| GET    | /api/collections/{id}                                                                                     | Yes           | student (404 if not visible)                                                                                                        |
+| POST   | /api/collections                                                                                          | Yes           | student (all roles; `visibility=restricted`: instructor, with attach authority)                                                     |
+| PATCH  | /api/collections/{id}                                                                                     | Yes           | student (co-owner for content fields — staff included; scope fields need admin / instructor / sole student-or-staff owner)          |
+| DELETE | /api/collections/{id}                                                                                     | Yes           | student (sole user-owner, no program owner — staff follow the same rule / instructor of owning program / admin; 404 if not visible) |
+| PUT    | /api/collections/{id}/images                                                                              | Yes           | student (owner or co-owner — staff included / instructor of owning program / admin; 404 if not visible)                             |
+| PUT    | /api/collections/{id}/viewport                                                                            | Yes           | student (owner or co-owner — staff included / instructor of owning program / admin; 404 if not visible)                             |
+| POST   | /api/collections/{id}/move                                                                                | Yes           | admin / instructor (any — filing is curatorial, not ownership-bound)                                                                |
+| PUT    | /api/collections/{id}/owners                                                                              | Yes           | admin / instructor (co-owner or in owning program) — replaces the user-owner set ¤                                                  |
+| POST   | /api/collections/{id}/transfer                                                                            | Yes           | admin / instructor (co-owner or in owning program, to own program) — program owner only ¤                                           |
+| GET    | /api/changelog/                                                                                           | Yes           | instructor                                                                                                                          |
+| POST   | /api/changelog/                                                                                           | Yes           | admin                                                                                                                               |
+| POST   | /api/changelog/mark-read                                                                                  | Yes           | instructor                                                                                                                          |
+| PATCH  | /api/changelog/{id}                                                                                       | Yes           | admin                                                                                                                               |
+| DELETE | /api/changelog/{id}                                                                                       | Yes           | admin                                                                                                                               |
+| GET    | /api/admin/version                                                                                        | Yes           | instructor                                                                                                                          |
+| GET    | /api/admin/export                                                                                         | Yes           | admin                                                                                                                               |
+| POST   | /api/admin/import                                                                                         | Yes           | admin                                                                                                                               |
+| POST   | /api/admin/tasks/rebuild-tiles                                                                            | Yes           | admin                                                                                                                               |
+| POST   | /api/admin/tasks/{task_id}/download-token (mints path-scoped `HttpOnly` download cookie; 204)             | Yes           | admin                                                                                                                               |
+| GET    | /api/admin/tasks/{task_id}/download (streams result file)                                                 | Yes           | valid admin download cookie (task-bound, 60 s TTL, cleared on success)                                                              |
+| GET    | /api/admin/backups/snapshots                                                                              | Yes           | admin                                                                                                                               |
+| GET    | /api/admin/backups/snapshots/{name}/manifest                                                              | Yes           | admin                                                                                                                               |
+| POST   | /api/admin/tasks/file-restore                                                                             | Yes           | admin                                                                                                                               |
+| GET    | /api/admin/tasks/{task_id}/upload (status for resumable upload)                                           | Yes           | admin                                                                                                                               |
+| PUT    | /api/admin/tasks/{task_id}/upload (raw `application/octet-stream`; multipart/form-data rejected with 415) | Yes           | admin                                                                                                                               |
+| PATCH  | /api/admin/tasks/{task_id}/upload (raw chunk; `Upload-Offset` + `Upload-Length` headers)                  | Yes           | admin                                                                                                                               |
+| POST   | /api/admin/tasks/{task_id}/upload/finalize (finalize chunked upload)                                      | Yes           | admin                                                                                                                               |
+| GET    | /api/admin/tasks/files-import/archives                                                                    | Yes           | admin                                                                                                                               |
+| GET    | /api/admin/tasks/files-import/archive-retention                                                           | Yes           | admin                                                                                                                               |
+| POST   | /api/admin/tasks/files-import/rerun                                                                       | Yes           | admin                                                                                                                               |
+| DELETE | /api/admin/tasks/files-import/archives/{archive_task_id}                                                  | Yes           | admin                                                                                                                               |
+| GET    | /api/admin/tasks/backup-archives                                                                          | Yes           | admin                                                                                                                               |
+| DELETE | /api/admin/tasks/backup-archives/{task_id}/{artifact_role}                                                | Yes           | admin                                                                                                                               |
+| GET    | /api/jobs/ (list, read-only)                                                                              | Yes           | admin                                                                                                                               |
+| GET    | /api/jobs/{job_id} (single job supervisor state, read-only; no items)                                     | Yes           | admin                                                                                                                               |
+| GET    | /api/jobs/{job_id}/items (bounded keyset-paginated item inspection)                                       | Yes           | admin                                                                                                                               |
+| GET    | /api/jobs/rebuild-tiles (parallel-rebuild capability probe)                                               | Yes           | admin                                                                                                                               |
+| POST   | /api/jobs/rebuild-tiles (create durable rebuild job; 409 when disabled/active)                            | Yes           | admin                                                                                                                               |
+| POST   | /api/jobs/{job_id}/cancel (idempotent rebuild cancellation)                                               | Yes           | admin                                                                                                                               |
+| POST   | /api/jobs/{job_id}/items/{item_id}/retry (requeue one failed rebuild item)                                | Yes           | admin                                                                                                                               |
+| POST   | /api/jobs/{job_id}/retry-failed (requeue all failed rebuild items)                                        | Yes           | admin                                                                                                                               |
+| POST   | /api/telemetry/events (frontend observability event ingestion)                                            | Yes           | any authenticated user                                                                                                              |
+| POST   | /api/telemetry/synthetic-result **§** (synthetic monitor journey result)                                  | Yes           | synthetic account **or** `X-Synthetic-Ingest-Token` shared secret                                                                   |
+
+The row marked **§** accepts either the synthetic monitor account's Bearer JWT
+(account must carry `metadata_.synthetic = true`) or the operator-provisioned
+`X-Synthetic-Ingest-Token` shared secret, checked first and validated without a
+database connection so result submission survives auth/DB outages (#1495).
+Unauthenticated requests and requests presenting both an invalid token and an
+invalid JWT return 401; a valid JWT from a non-synthetic account returns 403.
+The path also gained a dedicated sliding-window rate limit with this change
+(`rate:synthetic-ingest`, 30 requests per 60 s, fail-open when Redis is down),
+bounding abuse of a leaked token — an excess returns 429. See
+[synthetic-monitoring.md](synthetic-monitoring.md).
 
 All `/api/groups/` endpoints require the `admin` or `instructor` role (read
 endpoints are open to any instructor). Rows marked **†** are mutations that
@@ -454,15 +510,21 @@ Rows marked **‡** return minimal health status; they return **503** when the
 queue is degraded in required task-execution mode. Detailed queue state is
 available from `/api/metrics`.
 
-The row marked **¤** (`POST /api/collections/{id}/transfer`) is
-visibility-first: a caller who cannot view the collection gets **404**, one who
-can view it but fails `can_transfer_collection` gets **403**. Instructors may
-transfer only a collection they own or one owned by a program they belong to,
-and only onto a program they belong to (never to a user — **403**). Admins may
-transfer any collection to any program or any active user (unknown or
-deactivated target → **422**). Collections **orphaned** by a program deletion
-(both owner columns `NULL`) can only be transferred, edited or deleted by
-admins. See [collections.md](collections.md) and Test Case 10.
+The rows marked **¤** (`PUT /api/collections/{id}/owners` and
+`POST /api/collections/{id}/transfer`) are visibility-first: a caller who
+cannot view the collection gets **404**, one who can view it but fails
+`can_transfer_collection` gets **403**. `PUT /owners` replaces the
+**user-owner set** — admins and instructors (co-owners, or members of the
+owning program) may set it to any list of active users (unknown or
+deactivated ids → **422**); emptying it while no program owns the collection
+→ **422** (orphan guard). `POST /transfer` reassigns the **program** owner:
+instructors may pick only a program they belong to, admins any program;
+assigning a program deletes the user-owner rows (the program becomes the
+sole owner), and `program_id: null` clears it — but only when at least one
+user-owner row remains (**422** otherwise). Collections **orphaned** by a
+program deletion (no user owners and no program owner) can only be managed,
+edited or deleted by admins. See [collections.md](collections.md) and Test
+Case 10.
 
 Filesystem-import uploads use raw request bodies only. `PUT /api/admin/tasks/{task_id}/upload` streams an `application/octet-stream` body directly to disk, rejects multipart form uploads with 415, and preflights declared `Content-Length` against the admin-tasks volume so a full archive can fail fast with 507 before streaming begins.
 

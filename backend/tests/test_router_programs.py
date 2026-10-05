@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.database import AppSession
 from app.models import Collection, Program, User, collection_programs
+from app.routers import programs as programs_router
 from app.routers.programs import (
     list_programs,
     get_program,
@@ -289,3 +290,33 @@ async def test_delete_program_orphans_owned_collections_and_drops_scope(
             )
         ).all()
         assert sorted(tuple(r) for r in scope_rows) == [(scoped.id, survivor_id)]
+
+
+async def test_update_program_rename_bumps_browse_revision() -> None:
+    """A program's name renders as the owner on its filed collections'
+    Browse tiles — a rename must invalidate the tree ETag (#1527)."""
+    prog = SimpleNamespace(id=1, name="OldName")
+    dup = MagicMock()
+    dup.scalar_one_or_none.return_value = None
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=prog)
+    db.execute = AsyncMock(return_value=dup)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    await update_program(1, ProgramUpdate(name="NewName"), MagicMock(), db)
+    programs_router.bump_browse_revision.assert_awaited_once()
+
+
+async def test_update_program_same_name_skips_browse_bump() -> None:
+    prog = SimpleNamespace(id=1, name="OldName")
+    dup = MagicMock()
+    dup.scalar_one_or_none.return_value = None
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=prog)
+    db.execute = AsyncMock(return_value=dup)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    await update_program(1, ProgramUpdate(name="OldName"), MagicMock(), db)
+    programs_router.bump_browse_revision.assert_not_awaited()

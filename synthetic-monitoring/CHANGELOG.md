@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.2.8](https://github.com/bcit-tlu/hriv/compare/synthetic-monitoring-v1.2.7...synthetic-monitoring-v1.2.8) (2026-10-05)
+
+
+### Bug Fixes
+
+* **frontend:** include arrowhead in canvas arrow bounding box ([#1363](https://github.com/bcit-tlu/hriv/issues/1363)) ([#1516](https://github.com/bcit-tlu/hriv/issues/1516)) ([7ae6302](https://github.com/bcit-tlu/hriv/commit/7ae630228abd1ccda6e9d8321a702ab00e299d34))
+
+## [1.2.7](https://github.com/bcit-tlu/hriv/compare/synthetic-monitoring-v1.2.6...synthetic-monitoring-v1.2.7) (2026-10-04)
+
+
+### Bug Fixes
+
+* **backend,monitoring:** report synthetic results without a user session ([#1507](https://github.com/bcit-tlu/hriv/issues/1507)) ([9b2ee92](https://github.com/bcit-tlu/hriv/commit/9b2ee92f62d1e2f2e862afd7a3b41dd0295d8f3f))
+
 ## [1.2.6](https://github.com/bcit-tlu/hriv/compare/synthetic-monitoring-v1.2.5...synthetic-monitoring-v1.2.6) (2026-09-27)
 
 

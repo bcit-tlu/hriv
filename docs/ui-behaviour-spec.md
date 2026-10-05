@@ -116,7 +116,10 @@ images> / Empty` format used on category tiles.
   filled `#263238` corner handles with a white stroke) is applied to every
   annotation object — loaded, drawn, pasted, or toolbar-created — so selected
   objects stay legible over imagery. The dashed guides are black and wrap the
-  annotation's painted bounds including its stroke.
+  annotation's painted bounds including its stroke. Arrow annotations inflate
+  their Fabric bounding box to include the arrowhead (`ArrowLine` in
+  `src/components/arrowLine.ts`), so the selection box and hit area cover the
+  whole painted glyph and stay grabbable.
 - The canvas annotation toolbar starts flush against the top of the viewer
   frame, horizontally centred. Its left-edge grip handle moves it anywhere
   inside the frame: drag with a pointer (grab/grabbing cursor,
@@ -158,7 +161,7 @@ images> / Empty` format used on category tiles.
   arbitration for the next gesture. Covered by `measurement.test.ts`
   (`pinchRotationDeltaDegrees`, `createPinchRotationTracker`).
 
-### Collections tab (`CollectionsPage.test.tsx`, `CollectionCard.test.tsx`, `CollectionEditDialog.test.tsx`, `App.test.tsx`)
+### Collections tab (`CollectionsPage.test.tsx`, `CollectionCard.test.tsx`, `CollectionEditDialog.test.tsx`, `CollectionOwnersDialog.test.tsx`, `App.test.tsx`)
 
 See [collections.md](collections.md#frontend-behaviour) for the full contract.
 All roles, including students, can list, open, and create collections;
@@ -166,8 +169,9 @@ edit/delete controls are gated by `permissions.can_edit` / `can_delete`
 returned by the API (UX only — the backend re-checks).
 
 - **Given** a user opens the Collections tab (`?page=collections`), **When**
-  `GET /api/collections` resolves, **Then** a responsive card grid renders one
-  `CollectionCard` per summary (cover, name, image count, owner, type chip,
+  `GET /api/collections` resolves, **Then** a fixed-width flex-wrap card grid
+  (300px tiles, matching the Browse tile grid) renders one
+  `CollectionCard` per summary (cover, name, image count, owners, type chip,
   visibility chip); an empty result shows the empty state (whose
   **Create a collection** link opens the create dialog when no filters are
   active) and a failed request shows a plain error `Alert` with no action.
@@ -204,13 +208,156 @@ returned by the API (UX only — the backend re-checks).
   sent and the card disappears; a failure keeps the dialog open with the API
   message.
 - **Given** the user opens a card, **Then** the URL becomes
-  `?collection={id}` and the detail placeholder lists the ordered member
-  images with an **Open image** link (`?image={id}`) each; the viewer itself
-  arrives in #1416/#1417.
+  `?collection={id}`; a `sequence` collection mounts the sequence viewer
+  (#1416, below) and a `synchronized` collection mounts the synchronized
+  viewer (#1417, below).
 - **Given** a `?collection={id}` URL is loaded or restored via back/forward,
   **Then** the Collections tab opens on that collection; **Given** the API
   returns **404**, **Then** the not-found `Alert` with **All collections** is
   shown instead.
+- **Given** a collection whose `permissions.can_transfer` is true, **Then** an
+  **Owners** action appears on its card and in the detail header; **Given**
+  it is false, **Then** neither affordance renders.
+- **Given** the owners dialog is open (`CollectionOwnersDialog`), **Then**
+  the staged state shows the current user owners as chips plus the owning
+  program. The **User owners** autocomplete offers scope tabs — _Students_
+  (default) and _Instructors_ for instructors, plus _Everyone_ for admins;
+  on the _Students_ tab an optional **Filter by program** chip set narrows
+  the search (`GET /api/users/?role=&program_id=`).
+- **Given** a program is selected in **Owning program**, **Then** the user
+  picker disables (assigning a program clears user owners server-side);
+  for instructors the select lists only their own programs.
+- **Given** the staged result would leave no user owner and no program
+  owner, **Then** confirm stays disabled (orphan guard); **Given** the API
+  returns **403** / **409** / **422**, **Then** the message stays inline in
+  the open dialog. On save, changed user owners `PUT` first, then a changed
+  program `POST`s `/transfer`.
+- **Given** an admin viewing the owner facet's _No owner (orphaned)_ list,
+  **When** they open a card's **Owners** action and assign an owner, **Then**
+  `PUT /api/collections/{id}/owners` is sent and the card leaves the
+  filtered list.
+- **Given** the collection detail, **Then** the header shows owners as a
+  comma-joined list (`describeCollectionOwners` — user names, `_X_ (program)`
+  for a program owner, `No owner` when orphaned), the visibility chip, and —
+  when `restricted` — a chip per attached program and group.
+
+#### Collections in the Browse tile grid (#1529)
+
+(`SortableTileGrid.test.tsx`, `useBrowseData.test.ts`,
+`useCategoryActions.test.ts`, `MoveCollectionDialog.test.tsx`,
+`CategoryTile.test.tsx`, `App.test.tsx`)
+
+- **Given** `COLLECTIONS_ENABLED` is on, **Then** collection tiles render in
+  the Browse tile grid beside categories and images — filed collections
+  inside their category's scope, uncategorized collections at the root —
+  using the shared `CollectionCard` inside the standard sortable tile.
+- **Given** the flag is off, **Then** no collection fetch is issued for the
+  Browse root, no collection tile renders anywhere in the grid, and a scope
+  containing only collections is not treated as pending work.
+- **Given** an admin or instructor, **Then** collection tiles and collection
+  detail headers offer **Move** (`MoveCollectionDialog` or drag onto a
+  category tile's move zone) regardless of `permissions.can_edit`; **Given**
+  a student or staff member, **Then** no collection move UI renders.
+- **Given** a collection move (dialog or drop), **Then** an unchanged
+  destination no-ops; otherwise the category tree and root collection list
+  refresh, both scopes' tile-order revisions invalidate, and an undo snackbar
+  re-posts the previous category with the version from the move response.
+- **Given** a collection opened from a Browse tile, **Then** the URL carries
+  `?collection={id}&cat={path}`, the detail back button reads **Back to
+  Browse**, and closing it returns to the originating scope; **Given** a
+  `?collection={id}` link without `?cat=`, **Then** the detail opens in the
+  Collections list context as before.
+- **Given** a category containing collections, **Then** its tile detail line
+  includes `N collections` summed over descendants; **Given** a Browse scope
+  holding only collections, **Then** the empty-state message does not render.
+- **Given** a collection whose members are all restricted (`member_count > 0`
+  but no visible `images`), **Then** the detail header and both viewers show
+  the "All images in this collection are currently restricted." notice;
+  **Given** `member_count` is `0`, **Then** the ordinary empty-collection
+  copy renders instead.
+- **Given** an image dragged onto an editable collection tile's near half
+  (#1530), **Then** an "Add to collection" overlay appears and the drop adds
+  the image as a member with a snackbar offering **Undo**; **Given** the
+  image is already a member, **Then** an informational snackbar reports it;
+  **Given** the add would exceed the synchronized 4-image cap, **Then** an
+  error snackbar names the limit. **Given** the collection is not editable
+  (`permissions.can_edit` false) or the drag source is a category or
+  collection tile, **Then** no add zone is offered — the far-half reorder
+  behaviour is unchanged. The add zone is ownership-gated, not curatorial:
+  a non-`canEditContent` viewer who owns a collection sees it and gets
+  drag-only image tiles (draggable toward the zone, never reorder targets);
+  move, reorder, and category filing stay `canEditContent`-gated.
+
+### Sequence collection viewer (`SequenceCollectionViewer.test.tsx`, `useCollectionsData.test.ts`, `useShareableImageState.test.ts`)
+
+See [collections.md](collections.md#sequence-collection-viewer-1416) for the
+full contract. Mounted by the collection detail for `sequence` collections;
+always read-only (`canEditContent={false}`).
+
+- **Given** a sequence collection is open with no `?item=`, **Then** the
+  first member renders with an `1 of N` position readout, **Previous**
+  disabled, and the member's canvas annotations / locked overlays /
+  measurement shown read-only.
+- **Given** `?collection={id}&item={image_id}`, **Then** the viewer opens on
+  that image; a non-member `item` id falls back to the first image and
+  `?item=` without `?collection=` is ignored.
+- **Given** the user clicks **Next** / **Previous**, a strip thumbnail, or
+  presses ← / → while the sequence has focus, **Then** the current image
+  changes, the position readout and `?item=` URL update, and the viewer
+  remounts (keyed by image id — no viewport bleed).
+- **Given** focus is in an input / textarea / select / textbox, **Then**
+  arrow keys do not navigate; the same applies while reorder mode is on.
+- **Given** **Open image** is clicked, **Then** the normal `?image={id}`
+  view opens where annotations can be edited.
+- **Given** the current image's tiles fail mid-session, **Then** the error
+  snackbar fires, that thumbnail dims/disables, and the viewer skips to the
+  nearest still-available image; when all members have failed, an error
+  `Alert` replaces the viewer.
+- **Given** the collection has no visible images, **Then** an info `Alert`
+  says there is nothing to show.
+- **Given** `permissions.can_edit`, **Then** a **Reorder** toggle appears;
+  in reorder mode the strip becomes draggable and a drop PUTs the whole
+  member id list with the collection `version`, reordering optimistically
+  and rolling back on error. Non-editors never see the toggle.
+
+### Synchronized collection viewer (`SynchronizedCollectionViewer.test.tsx`, `useCollectionsData.test.ts`, `ImageViewer.test.tsx`)
+
+See [collections.md](collections.md#synchronized-collection-viewer-1417)
+for the full contract. Mounted by the collection detail for `synchronized`
+collections; both panes are read-only `ImageViewer`s
+(`canEditContent={false}`) showing stored annotations, locked overlays and
+measurement metadata.
+
+- **Given** a synchronized collection with two or more visible members,
+  **Then** the first two render side by side (each pane captioned with the
+  member name and an **Open image** → `?image={id}` action) and, when more
+  than two are stored, a "Showing 2 of _N_" note appears — three/four-pane
+  layouts are future work.
+- **Given** the user pans, zooms or rotates either pane, **Then** the other
+  pane follows with `immediately=true`, shifted by the pair's relative
+  offset, and the follower never leads the sync (no oscillation).
+- **Given** the collection's `viewport_state` matches
+  `{ "<image_id>": {zoom, x, y, rotation} }`, **Then** each pane opens at
+  its saved position so the pair returns to where it was saved — the
+  relative offset between saved entries is the alignment around different
+  highlights; entries that don't match the shape are ignored.
+- **Given** `permissions.can_edit`, **Then** a **Save view** button appears
+  and clicking it PUTs both panes' current viewports as `viewport_state`
+  with the collection `version`; a failure surfaces `userMessage` on the
+  snackbar. Non-editors never see **Save view**.
+- **Given** the **Reset view** button (everyone), **When** clicked, **Then**
+  each pane re-applies its saved position — or its home when nothing is
+  saved — and the link offset re-arms.
+- **Given** the **Link views** switch, **When** toggled off, **Then** each
+  pane moves independently; **When** toggled back on, **Then** the pair
+  re-captures the current alignment instead of snapping.
+- **Given** `(orientation: portrait)`, **Then** a full-area hint
+  ("rotate your device") covers the pane area while the viewers stay mounted
+  underneath, and rotating back restores the exact view.
+- **Given** fewer than two visible members (or fewer than two whose tiles
+  survive), **Then** a fallback alert shows the ordered member list with
+  per-row **Open image** links; members whose tiles fail mid-session are
+  skipped so the pair slides forward.
 
 ### "Add to Collection" from the image view (`AddToCollectionDialog.test.tsx`, `useAddToCollection.test.tsx`, `App.test.tsx`)
 
@@ -232,10 +379,14 @@ re-checks).
   a spinner, a plain error `Alert`, and an empty state ("You don't have a
   collection you can add to yet.") follow the usual patterns. The filter and
   busy state reset each time the dialog opens.
-- **Given** a synchronized collection, **When** its image count plus the
-  images being added would exceed four, **Then** its row is disabled and
-  hovering it shows "Synchronized collections hold at most 4 images."
-  Sequence rows are never capped.
+- **Given** a synchronized collection, **When** it already holds four
+  images, **Then** its row is disabled and hovering it shows "Synchronized
+  collections hold at most 4 images." Under-cap rows stay clickable — the
+  summary count cannot see which selected ids are already members, so the
+  authoritative capacity check runs in `addImagesToCollection` against the
+  fetched member list; a genuinely overflowing add keeps the dialog open
+  with "Adding this selection to `<name>` would exceed the 4-image limit
+  for synchronized collections." Sequence rows are never capped.
 - **Given** a row is picked, **When** the add is in flight, **Then** every row
   and the footer buttons are disabled and the picked row shows a spinner.
 - **Given** the add succeeds, **Then** the dialog closes and a success
@@ -267,11 +418,30 @@ re-checks).
   `Link URL`, so users can keep only annotation-derived image matches visible.
 - Type filter chips scope the searched fields, not just the result types: with
   a type chip active (and no Field chips selected), the query matches only the
-  field most closely associated with that type — `Categories` searches category
-  names, `Images` searches image titles, `Programs` searches program names,
-  `People` searches people names, and `Guide` searches guide titles. Selecting
-  any Field chip overrides that default scope, so `Images` + `Note` still
-  finds images whose notes match.
+  field(s) most closely associated with that type — `Categories` searches
+  category names, `Images` searches image titles, `Programs` searches program
+  names, `People` searches people names, `Guide` searches guide titles, and
+  `Collections` searches collection names and descriptions. Selecting any
+  Field chip overrides that default scope, so `Images` + `Note` still finds
+  images whose notes match.
+- Collections are a result kind for **every** role (unlike program/user/guide
+  kinds, they are not hidden from students): the modal indexes the caller's
+  `GET /api/collections` list, which the backend already access-filters, so a
+  student never sees a restricted-failing collection. A collection row shows
+  its type, image count, and owners, and selecting it navigates to
+  `?collection={id}`.
+- Multi-select is image-only: a **Select** toggle appears next to the result
+  count when image results exist (or select mode is already active). In
+  select mode, image rows gain checkboxes labelled `Select {image title}`
+  and the row click toggles the check instead of navigating; every other
+  kind stays navigable and is never selectable. Selections persist across
+  query and filter changes — the footer count includes picks hidden by the
+  current query and **Add to collection** opens `AddToCollectionDialog`
+  with the ids in "order encountered" (result order within a query,
+  chronological across queries). Closing the modal, toggling select mode
+  off, or handing off to the dialog resets the selection. When the
+  collections feature flag is off the modal hides collection results, the
+  Collections chip, and the collections wording in the placeholder.
 - Search result field labels render in a stronger secondary style so the field
   name reads as metadata rather than body text.
 - Staff searches also match the user guide: each guide page is split into

@@ -352,7 +352,7 @@ class TileOrderScope(BaseModel):
 
 
 class TileOrderItemRef(BaseModel):
-    type: Literal["category", "image"]
+    type: Literal["category", "collection", "image"]
     id: int
 
 
@@ -404,6 +404,10 @@ class CategoryOut(CategoryBase):
 class CategoryTree(CategoryOut):
     children: list["CategoryTree"] = []
     images: list["ImageOut"] = []
+    # Collections filed into this category (epic #1525). Present only when the
+    # ``COLLECTIONS_ENABLED`` flag is on; uncategorized collections are not in
+    # the tree — like uncategorized images they are listed separately at root.
+    collections: list["CollectionSummaryOut"] = []
 
 
 # ── Image ─────────────────────────────────────────────────
@@ -678,14 +682,12 @@ class UserOut(UserBase):
     model_config = {"from_attributes": True, "populate_by_name": True}
 
 
-# Rebuild forward refs for nested models
-CategoryTree.model_rebuild()
-
-
 # ── Collection ────────────────────────────────────────────
 
 class CollectionOwnerOut(BaseModel):
-    """Owner of a collection: exactly one of ``user_id`` / ``program_id``."""
+    """One owner of a collection: a user (``user_id``) or the owning program
+    (``program_id``). Exactly one of the two ids is set.
+    """
 
     user_id: int | None = None
     program_id: int | None = None
@@ -698,6 +700,7 @@ class CollectionPermissionsOut(BaseModel):
     """
 
     can_edit: bool = False
+    can_change_scope: bool = False
     can_delete: bool = False
     can_transfer: bool = False
 
@@ -708,10 +711,16 @@ class CollectionSummaryOut(BaseModel):
     description: str | None = None
     type: str
     visibility: str
-    owner: CollectionOwnerOut | None = None
+    # Co-owners (#1531): one entry per ``collection_owners`` row, plus an
+    # entry for the owning program when set. Empty = orphaned (admin-managed).
+    owners: list[CollectionOwnerOut] = []
     image_count: int = 0
     cover_thumb: str | None = None
     version: int = 1
+    # Browse placement (epic #1525): the category the collection is filed in
+    # (``None`` = uncategorized) and its tile-order position in that scope.
+    category_id: int | None = None
+    sort_order: int = 0
     created_at: datetime
     updated_at: datetime
     permissions: CollectionPermissionsOut = CollectionPermissionsOut()
@@ -733,6 +742,14 @@ class CollectionOut(CollectionSummaryOut):
     program_ids: list[int] = []
     group_ids: list[int] = []
     viewport_state: dict = {}
+    # Nominal member count for unfiltered viewers (non-students), so the
+    # detail view can distinguish "empty collection" from "all members are
+    # restricted" (epic #1525 / #1529). For students the count is clamped to
+    # ``len(images) + 1`` when members are hidden: it signals that restricted
+    # members exist — the restricted-members message intentionally reveals
+    # that — without disclosing how many. Detail-only: summaries keep the
+    # visible-only ``image_count`` so tiles never reveal hidden membership.
+    member_count: int = 0
 
 
 CollectionType = Literal["synchronized", "sequence"]
@@ -817,6 +834,19 @@ class CollectionUpdate(BaseModel):
     )
 
 
+class CollectionMove(BaseModel):
+    """POST ``/{id}/move`` body filing a collection into a category.
+
+    ``category_id`` is required but nullable: an explicit ``null`` files the
+    collection at the Browse root (uncategorized), mirroring
+    ``ImageUpdate.category_id`` semantics. ``version`` is the optimistic
+    concurrency token.
+    """
+
+    category_id: int | None
+    version: int
+
+
 class CollectionImagesUpdate(BaseModel):
     """PUT body replacing the whole ordered image list (add/remove/reorder).
 
@@ -840,20 +870,34 @@ class CollectionViewportUpdate(BaseModel):
     version: int
 
 
-class CollectionTransfer(BaseModel):
-    """POST ``…/transfer`` body: the new owner is exactly one of ``user_id``
-    / ``program_id``; ``version`` is the optimistic concurrency token.
+class CollectionOwnersUpdate(BaseModel):
+    """PUT ``…/owners`` body (#1531): replace the whole user-owner set.
+    Targets may be any active user; ``version`` is the optimistic
+    concurrency token. The router 422s when the result would orphan the
+    collection (empty owner set with no program owner).
     """
 
-    user_id: int | None = None
-    program_id: int | None = None
+    user_ids: list[int]
     version: int
 
-    @model_validator(mode="after")
-    def _exactly_one_owner(self) -> "CollectionTransfer":
-        if (self.user_id is None) == (self.program_id is None):
-            raise ValueError("Provide exactly one of user_id or program_id")
-        return self
+    @field_validator("user_ids")
+    @classmethod
+    def _dedupe(cls, v: list[int]) -> list[int]:
+        return list(dict.fromkeys(v))
+
+
+class CollectionTransfer(BaseModel):
+    """POST ``…/transfer`` body (#1531): reassign *program* ownership.
+
+    ``program_id`` is required but nullable — an explicit ``null`` clears
+    the program owner (mirroring ``CollectionMove.category_id``), which the
+    router 422s unless user-owners remain. Setting a program clears the
+    user-owner rows; user ownership is managed wholesale through
+    ``PUT /owners`` instead.
+    """
+
+    program_id: int | None
+    version: int
 
 
 class FeaturesOut(BaseModel):
@@ -863,3 +907,8 @@ class FeaturesOut(BaseModel):
     """
 
     collections: bool
+
+
+# Rebuild forward refs for nested models (``CategoryTree`` embeds
+# ``ImageOut`` and ``CollectionSummaryOut``, both defined below it).
+CategoryTree.model_rebuild()

@@ -29,7 +29,7 @@ describe('CollectionCard', () => {
   it('pluralises the image count and falls back to a placeholder cover', () => {
     render(
       <CollectionCard
-        collection={makeCollectionSummary({ imageCount: 3, coverThumb: null, owner: null })}
+        collection={makeCollectionSummary({ imageCount: 3, coverThumb: null, owners: [] })}
         onOpen={vi.fn()}
       />,
     )
@@ -85,6 +85,54 @@ describe('CollectionCard', () => {
     render(<CollectionCard collection={makeCollectionSummary()} onOpen={vi.fn()} />)
     expect(screen.queryByRole('button', { name: /^Edit/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^Delete/ })).not.toBeInTheDocument()
+  })
+
+  it('shows an owners affordance only when canTransfer grants it', () => {
+    const onTransfer = vi.fn()
+    const collection = makeCollectionSummary({
+      name: 'Mine',
+      permissions: { canEdit: false, canDelete: false, canTransfer: true },
+    })
+    const { unmount } = render(
+      <CollectionCard collection={collection} onOpen={vi.fn()} onTransfer={onTransfer} />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Manage owners of Mine' }))
+    expect(onTransfer).toHaveBeenCalledWith(collection)
+    unmount()
+
+    render(
+      <CollectionCard
+        collection={makeCollectionSummary({
+          name: 'Shared',
+          permissions: { canEdit: true, canDelete: true, canTransfer: false },
+        })}
+        onOpen={vi.fn()}
+        onTransfer={onTransfer}
+      />,
+    )
+    expect(
+      screen.queryByRole('button', { name: 'Manage owners of Shared' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('shows a move affordance whenever onMove is supplied (#1529 — role-gated, not permission-gated)', () => {
+    const onMove = vi.fn()
+    const collection = makeCollectionSummary({
+      name: 'Shared',
+      // Move must appear even when the viewer cannot edit the collection:
+      // filing is curatorial (any admin/instructor), unlike edit/delete.
+      permissions: { canEdit: false, canDelete: false, canTransfer: false },
+    })
+    render(<CollectionCard collection={collection} onOpen={vi.fn()} onMove={onMove} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Move Shared to a category' }))
+    expect(onMove).toHaveBeenCalledWith(collection)
+  })
+
+  it('hides the move affordance when onMove is not supplied', () => {
+    render(<CollectionCard collection={makeCollectionSummary({ name: 'Mine' })} onOpen={vi.fn()} />)
+    expect(
+      screen.queryByRole('button', { name: 'Move Mine to a category' }),
+    ).not.toBeInTheDocument()
   })
 
   it('does not open the collection when an action button is clicked', () => {

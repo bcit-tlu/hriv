@@ -60,6 +60,12 @@ interface ImageViewerProps {
   onTileSourceRenewed?: (image: ApiImage) => void
   /** Surface unrecoverable viewer errors through the app's existing error UI. */
   onError?: (message: string) => void
+  /**
+   * Receives the OpenSeadragon instance once mounted (and `null` before
+   * destroy) so parents like the synchronized collection viewer can attach
+   * raw `viewport-change` handlers and drive the viewport imperatively.
+   */
+  onViewerReady?: (viewer: OpenSeadragon.Viewer | null) => void
 }
 
 interface DragState {
@@ -91,6 +97,7 @@ export default function ImageViewer({
   onCanvasEditModeChange,
   onTileSourceRenewed,
   onError,
+  onViewerReady,
 }: ImageViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<OpenSeadragon.Viewer | null>(null)
@@ -121,6 +128,7 @@ export default function ImageViewer({
   const pendingRenewalViewportRef = useRef<ViewportState | null>(null)
   const onTileSourceRenewedRef = useRef(onTileSourceRenewed)
   const onErrorRef = useRef(onError)
+  const onViewerReadyRef = useRef(onViewerReady)
   const onCanvasEditModeChangeRef = useRef(onCanvasEditModeChange)
   const getCurrentTileSources = useEffectEvent(() => tileSources)
   const resetRenewalState = useCallback(() => {
@@ -149,6 +157,9 @@ export default function ImageViewer({
   useEffect(() => {
     onErrorRef.current = onError
   }, [onError])
+  useEffect(() => {
+    onViewerReadyRef.current = onViewerReady
+  }, [onViewerReady])
   useEffect(() => {
     onCanvasEditModeChangeRef.current = onCanvasEditModeChange
   }, [onCanvasEditModeChange])
@@ -871,6 +882,7 @@ export default function ImageViewer({
 
     // Expose viewer instance to React state for child components
     setViewerInstance(viewer)
+    onViewerReadyRef.current?.(viewer)
 
     // Restore viewport state and initial overlays after the image has loaded
     viewer.addOnceHandler('open', () => {
@@ -940,6 +952,12 @@ export default function ImageViewer({
         imageId: imageIdRef.current,
         categoryId: categoryIdRef.current,
       })
+      // Non-auth open failures (deleted image, dead tile host) used to only
+      // emit telemetry — surface them so hosts can react (the sequence
+      // viewer skips the broken member; the image view shows a snackbar).
+      onErrorRef.current?.(
+        'This image could not be loaded. It may have been removed or you may not have access to it.',
+      )
     })
 
     viewer.addHandler('tile-load-failed', (event) => {
@@ -1011,6 +1029,7 @@ export default function ImageViewer({
         renewalTimerRef.current = null
       }
       selectionTracker.destroy()
+      onViewerReadyRef.current?.(null)
       viewer.destroy()
       viewerRef.current = null
     }

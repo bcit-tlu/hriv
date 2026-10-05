@@ -37,13 +37,44 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
 - Feature flag (`COLLECTIONS_ENABLED`, `GET /api/features`, `useFeatures`): add
   `tests/test_database.py tests/test_main.py` (backend) and
   `npm test -- useFeatures` (frontend); chart: `bash scripts/test-helm-chart-regressions.sh`.
-- Ownership transfer / program-deletion orphaning (#1413) also runs
+- Ownership transfer / program-deletion orphaning (#1413, #1531) also runs
   `tests/test_router_programs.py` (the real `DELETE /api/programs/{id}` →
-  orphan test needs `REORDER_FIXTURE_DATABASE_URL`, otherwise it skips).
+  orphan test needs `REORDER_FIXTURE_DATABASE_URL`, otherwise it skips) and
+  `tests/test_router_users.py` (user deletion: sole-owned collections die,
+  co-owned survive).
+- `tests/test_router_collections_db.py` is the PostgreSQL-backed write-API
+  persistence suite — it runs when `TEST_DATABASE_URL` is set (CI sets it;
+  locally `docker compose up -d db migrate` then `export
+TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
+  otherwise it skips.
 - frontend: `npm test -- CollectionsPage CollectionCard CollectionEditDialog collectionUtils useCollectionsData api.test navigation AppShell useShareableImageState useNavigationHistory App.test`
 - "Add to Collection" from the image view (#1415: `AddToCollectionDialog.tsx`,
   `useAddToCollection.ts`, the viewer action bar in `App.tsx`):
   `npm test -- AddToCollectionDialog useAddToCollection App.test`
+- Sequence collection viewer (#1416: `SequenceCollectionViewer.tsx`,
+  `?item=` in `useShareableImageState.ts`, `reorderImages` /
+  `renewCollectionImage` in `useCollectionsData.ts`, detail mount in
+  `CollectionsPage.tsx`):
+  `npm test -- SequenceCollectionViewer useCollectionsData useShareableImageState CollectionsPage App.test`
+- Synchronized collection viewer (#1417: `SynchronizedCollectionViewer.tsx`,
+  `onViewerReady` in `ImageViewer.tsx`, `viewportStateFromSaved` in
+  `imageViewerUtils.ts`, `saveViewport` in `useCollectionsData.ts`, detail
+  mount in `CollectionsPage.tsx`):
+  `npm test -- SynchronizedCollectionViewer useCollectionsData ImageViewer CollectionsPage App.test`
+- Ownership/admin management UI (#1419, #1531: `CollectionOwnersDialog.tsx`,
+  `transfer` + `saveOwners` in `useCollectionsData.ts`, `transferCollection` +
+  `replaceCollectionOwners` in `api.ts`, detail header + card affordances in
+  `CollectionsPage.tsx` / `CollectionCard.tsx`):
+  `npm test -- CollectionOwnersDialog CollectionsPage CollectionCard useCollectionsData api.test App.test`
+- Browse tile integration (#1529: collection tiles in `SortableTileGrid.tsx`,
+  `currentCollections`/`uncategorizedCollections` in `useBrowseData.ts`,
+  move handlers in `useCategoryActions.ts`, `MoveCollectionDialog.tsx`,
+  `?collection=&cat=` context in `useShareableImageState.ts` /
+  `useNavigationHistory.ts`, `member_count` in `collection_views.py`; #1530
+  image→collection drop-add: `drop-col-` zone + `onDropImageOnCollection` in
+  `SortableTileGrid.tsx`, `removeImagesFromCollectionApi` undo in
+  `useCategoryActions.ts`):
+  `npm test -- SortableTileGrid useBrowseData useCategoryActions MoveCollectionDialog CollectionsPage CollectionCard CategoryTile useCollectionsData useShareableImageState useNavigationHistory App.test`
 - Storybook (stories + a11y): `npm run test:storybook -- Collection`
 - Collection visibility reuses the category dual gate — if you touched
   `visibility.py` also run the "Changed groups" set above. See
@@ -78,7 +109,7 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
 
 ### Changed search modal
 
-- frontend: `npm test -- SearchModal`
+- frontend: `npm test -- SearchModal useAddToCollection`
 - See [ui-behaviour-spec.md](ui-behaviour-spec.md).
 
 ### Changed admin import/export

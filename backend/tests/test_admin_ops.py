@@ -54,7 +54,7 @@ from app.admin_ops import (
     run_rebuild_tiles,
 )
 from app.database import settings
-from app.models import AdminTask
+from app.models import AdminTask, User
 from app.worker import EnqueueResult, TaskQueueUnavailableError
 
 # ── Helper unit tests ──────────────────────────────────────
@@ -1171,8 +1171,11 @@ async def test_run_db_export_success(tmp_path) -> None:
             visibility="restricted",
             user_id=1,
             owner_program_id=None,
+            category_id=2,
+            sort_order=1,
             viewport_state={"offsets": []},
             version=2,
+            owners=[SimpleNamespace(id=1), SimpleNamespace(id=2)],
             # 9_400_000 is a rebuild-fixture image (not exported) → dropped.
             image_links=[
                 SimpleNamespace(image_id=9_400_005, sort_order=0),
@@ -1257,8 +1260,11 @@ async def test_run_db_export_success(tmp_path) -> None:
             "visibility": "restricted",
             "user_id": 1,
             "owner_program_id": None,
+            "category_id": 2,
+            "sort_order": 1,
             "viewport_state": {"offsets": []},
             "version": 2,
+            "owner_ids": [1, 2],
             "image_ids": [9_400_005],
             "program_ids": [2],
             "group_ids": [],
@@ -1459,6 +1465,9 @@ def _full_dump() -> dict:
                 "type": "sequence",
                 "visibility": "public",
                 "user_id": 1,
+                "owner_ids": [1, 2],
+                "category_id": 2,
+                "sort_order": 4,
                 "image_ids": [2, 1],
                 "program_ids": [1],
                 "group_ids": [],
@@ -1470,6 +1479,14 @@ def _full_dump() -> dict:
                 "id": 8,
                 "name": "Orphan",
                 "type": "synchronized",
+                "image_ids": [],
+            },
+            {
+                # Legacy dump shape: user_id only → backfills one owner row.
+                "id": 9,
+                "name": "Legacy",
+                "type": "sequence",
+                "user_id": 2,
                 "image_ids": [],
             },
         ],
@@ -1494,6 +1511,34 @@ async def test_run_db_import_happy_path(tmp_path) -> None:
     task = _make_import_task(str(input_file))
 
     mock_session, factory = _make_import_session(task)
+    # The owner-rows rebuild selects User rows — answer with the imported
+    # users; every other SELECT resolves to an empty set (#1531).
+    imported = {
+        u["id"]: User(
+            id=u["id"],
+            name=u["name"],
+            email=u["email"],
+            role=u.get("role", "student"),
+        )
+        for u in _full_dump()["users"]
+    }
+
+    async def _exec(stmt, *_args, **_kwargs):
+        result = MagicMock()
+        entity = getattr(stmt, "column_descriptions", [{}])[0].get("entity")
+        rows = []
+        if entity is User:
+            # Honour the ``id IN (...)`` bound values so each collection's
+            # owner_ids resolves to exactly its own owners.
+            wanted: set = set()
+            for value in stmt.compile().params.values():
+                if isinstance(value, (list, tuple)):
+                    wanted.update(value)
+            rows = [u for u in imported.values() if u.id in wanted]
+        result.scalars.return_value.all.return_value = rows
+        return result
+
+    mock_session.execute = AsyncMock(side_effect=_exec)
 
     with patch("app.admin_ops.get_async_session", return_value=factory):
         await run_db_import(1)
@@ -1516,18 +1561,28 @@ async def test_run_db_import_happy_path(tmp_path) -> None:
     imported_collections = {
         obj.id: obj for obj in add_calls if type(obj).__name__ == "Collection"
     }
-    assert set(imported_collections) == {7, 8}
+    assert set(imported_collections) == {7, 8, 9}
     seq = imported_collections[7]
     assert seq.type == "sequence" and seq.visibility == "public"
     assert seq.user_id == 1 and seq.version == 3
+    assert seq.category_id == 2 and seq.sort_order == 4
     assert [(l.image_id, l.sort_order) for l in seq.image_links] == [(2, 0), (1, 1)]
+    # owner_ids [1, 2] → two owner rows on the collection (#1531).
+    assert sorted(o.id for o in seq.owners) == [1, 2]
     orphan = imported_collections[8]
     assert orphan.user_id is None and orphan.owner_program_id is None
     assert orphan.visibility == "private" and orphan.viewport_state == {}
-    assert orphan.image_links == []
+    assert orphan.category_id is None and orphan.sort_order == 0
+    assert orphan.image_links == [] and list(orphan.owners) == []
+    legacy = imported_collections[9]
+    # Legacy dump: user_id doubles as the sole owner row.
+    assert legacy.user_id == 2 and [o.id for o in legacy.owners] == [2]
     executed_sql = [
         str(c.args[0]) for c in mock_session.execute.call_args_list
     ]
+    assert executed_sql.index(
+        "DELETE FROM collection_owners"
+    ) < executed_sql.index("DELETE FROM collections")
     assert executed_sql.index("DELETE FROM collection_images") < executed_sql.index(
         "DELETE FROM images"
     )
@@ -1916,6 +1971,27 @@ def test_iter_export_files_skips_admin_tasks_and_tiles(tmp_path) -> None:
 
     names = {os.path.basename(p): sz for p, sz in results}
     assert names == {"a.bin": 10}
+
+
+def test_iter_export_files_skips_upload_spool_dir(tmp_path) -> None:
+    """``.staging/`` under source_images is never exported (#1365)."""
+    data_dir = tmp_path / "data"
+    source = data_dir / "source_images"
+    spool = source / ".staging"
+    spool.mkdir(parents=True)
+    (source / "committed.bin").write_bytes(b"0123456789")
+    (spool / "tmp-spooled-upload").write_bytes(b"live-spool")
+
+    with (
+        patch("app.admin_ops._TASKS_DIR", str(data_dir / "admin_tasks")),
+        patch("app.admin_ops.settings") as mock_settings,
+    ):
+        mock_settings.source_images_dir = str(source)
+        mock_settings.tiles_dir = str(data_dir / "tiles")
+        results = list(_iter_export_files(str(data_dir)))
+
+    names = {os.path.basename(p): sz for p, sz in results}
+    assert names == {"committed.bin": 10}
 
 
 async def test_run_files_export_reports_byte_progress(tmp_path) -> None:
@@ -2532,6 +2608,98 @@ def test_swap_imported_entries_keeps_success_on_backup_cleanup_failure(
     assert result["source_files"] == 1
     assert (data_source / "new.tiff").read_text() == "new"
     assert not (data_source / "old.tiff").exists()
+
+
+def test_swap_imported_entries_recreates_upload_spool_dir(tmp_path) -> None:
+    """The export omits ``.staging``, so the swap must recreate it or the
+    running API's TMPDIR points at a missing directory (#1365)."""
+    extracted_dir = tmp_path / "staging" / "data"
+    extracted_source = extracted_dir / "source_images"
+    extracted_source.mkdir(parents=True)
+    (extracted_source / "new.tiff").write_text("new")
+
+    data_dir = tmp_path / "data"
+    data_source = data_dir / "source_images"
+    data_source.mkdir(parents=True)
+    (data_source / "old.tiff").write_text("old")
+    (data_source / ".staging").mkdir()  # present before the restore
+
+    result = _swap_imported_entries(
+        extracted_dir,
+        data_dir,
+        str(data_dir / "tiles"),
+        str(data_source),
+    )
+
+    assert result["source_files"] == 1
+    assert (data_source / ".staging").is_dir()
+
+
+def _extracted_and_data_dirs(
+    tmp_path: Path,
+) -> tuple[Path, Path, Path]:
+    extracted_dir = tmp_path / "staging" / "data"
+    extracted_source = extracted_dir / "source_images"
+    extracted_source.mkdir(parents=True)
+    (extracted_source / "new.tiff").write_text("new")
+    data_dir = tmp_path / "data"
+    data_source = data_dir / "source_images"
+    data_source.mkdir(parents=True)
+    return extracted_dir, data_dir, data_source
+
+
+def test_swap_imported_entries_survives_spool_recreate_failure(
+    tmp_path, monkeypatch
+) -> None:
+    """A persistent makedirs failure logs an error but does not fail the
+    import — the restore succeeded, and the upload middleware recreates
+    the spool dir on the next request (#1365)."""
+    extracted_dir, data_dir, data_source = _extracted_and_data_dirs(tmp_path)
+
+    monkeypatch.setattr(
+        "app.admin_ops.os.makedirs",
+        MagicMock(side_effect=OSError("fs offline")),
+    )
+    monkeypatch.setattr("app.admin_ops.time.sleep", lambda _s: None)
+
+    result = _swap_imported_entries(
+        extracted_dir,
+        data_dir,
+        str(data_dir / "tiles"),
+        str(data_source),
+    )
+
+    assert result["source_files"] == 1
+    assert (data_source / "new.tiff").read_text() == "new"
+
+
+def test_swap_imported_entries_retries_transient_spool_failure(
+    tmp_path, monkeypatch
+) -> None:
+    """A transient makedirs error retries before the swap reports success."""
+    extracted_dir, data_dir, data_source = _extracted_and_data_dirs(tmp_path)
+
+    real_makedirs = os.makedirs
+    calls = []
+
+    def _flaky_makedirs(path, **kwargs):
+        calls.append(path)
+        if len(calls) == 1:
+            raise OSError("transient")
+        return real_makedirs(path, **kwargs)
+
+    monkeypatch.setattr("app.admin_ops.os.makedirs", _flaky_makedirs)
+    monkeypatch.setattr("app.admin_ops.time.sleep", lambda _s: None)
+
+    result = _swap_imported_entries(
+        extracted_dir,
+        data_dir,
+        str(data_dir / "tiles"),
+        str(data_source),
+    )
+
+    assert result["source_files"] == 1
+    assert (data_source / ".staging").is_dir()
 
 
 def test_compute_archive_sha256(tmp_path) -> None:

@@ -52,13 +52,15 @@ function makeSummary(overrides: Partial<CollectionSummary> = {}): CollectionSumm
     description: null,
     type: 'synchronized',
     visibility: 'private',
-    owner: { kind: 'user', userId: 7, name: 'Ada Lovelace' },
+    owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace' }],
     imageCount: 2,
     coverThumb: '/hriv-splash2.jpg',
+    categoryId: null,
+    sortOrder: 0,
     version: 1,
     createdAt: FIXED_AT,
     updatedAt: FIXED_AT,
-    permissions: { canEdit: true, canDelete: true, canTransfer: false },
+    permissions: { canEdit: true, canDelete: true, canChangeScope: true, canTransfer: false },
     ...overrides,
   }
 }
@@ -68,7 +70,9 @@ function makeImage(id: number, name: string): ImageItem {
     id,
     name,
     thumb: '/hriv-splash2.jpg',
-    tileSources: `/api/tiles/${id}/image.dzi`,
+    // .storybook/static/sample.dzi parses but serves no tiles, so mounted
+    // viewers are deterministic instead of racing an open-failed fallback.
+    tileSources: '/sample.dzi',
     active: true,
     sortOrder: id,
     version: 1,
@@ -83,16 +87,16 @@ const summaries: CollectionSummary[] = [
     type: 'sequence',
     visibility: 'public',
     imageCount: 6,
-    owner: { kind: 'program', programId: 1, name: 'Radiography' },
-    permissions: { canEdit: false, canDelete: false, canTransfer: false },
+    owners: [{ kind: 'program', programId: 1, name: 'Radiography' }],
+    permissions: { canEdit: false, canDelete: false, canChangeScope: false, canTransfer: false },
   }),
   makeSummary({
     id: 3,
     name: 'Cohort 2026A review set',
     visibility: 'restricted',
     imageCount: 4,
-    owner: { kind: 'user', userId: 8, name: 'Grace Hopper' },
-    permissions: { canEdit: false, canDelete: false, canTransfer: false },
+    owners: [{ kind: 'user', userId: 8, name: 'Grace Hopper' }],
+    permissions: { canEdit: false, canDelete: false, canChangeScope: false, canTransfer: false },
   }),
   makeSummary({
     id: 4,
@@ -110,6 +114,7 @@ const detail: Collection = {
   programIds: [],
   groupIds: [],
   viewportState: {},
+  memberCount: 2,
 }
 
 interface StoryArgs {
@@ -158,10 +163,18 @@ function CollectionsPageExample(args: StoryArgs) {
           onOpenCollection={args.onOpenCollection}
           onCloseCollection={() => undefined}
           onOpenImage={args.onOpenImage}
+          selectedCollectionItemId={null}
+          onSelectCollectionItem={() => undefined}
+          onReorderImages={async () => undefined}
+          onCollectionImageRenewed={() => undefined}
+          onViewerError={() => undefined}
+          onSaveViewport={async () => undefined}
           loadCollection={async () => detail}
           onCreate={async () => undefined}
           onUpdate={async () => undefined}
           onDelete={async () => undefined}
+          onSaveOwners={async () => undefined}
+          onTransfer={async () => undefined}
         />
       </Box>
     </AuthContext.Provider>
@@ -178,7 +191,7 @@ const meta = {
     docs: {
       description: {
         component:
-          'The Collections tab: filter bar (type, My collections, owner — the owner select is hidden for students), responsive card grid, create button, and the detail placeholder that lists member images until the viewers land (#1416/#1417).',
+          'The Collections tab: filter bar (type, My collections, owner — the owner select is hidden for students), responsive card grid, create button, and the detail view — the sequence viewer for sequence collections (#1416) and the synchronized viewer for synchronized collections (#1417).',
       },
     },
   },
@@ -259,12 +272,15 @@ export const Detail: Story = {
   args: { selectedCollectionId: 1, detail },
   parameters: {
     a11y: { test: 'todo' },
+    // The synchronized detail mounts real OpenSeadragon viewers whose tile
+    // fetches fail in the sandbox; freeze the frame for a stable snapshot.
+    chromatic: { pauseAnimationAtEnd: true, delay: 300 },
   },
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement)
-    const links = canvas.getAllByRole('link', { name: 'Open image' })
-    await expect(links).toHaveLength(2)
-    await userEvent.click(links[0])
+    const buttons = canvas.getAllByRole('button', { name: /^Open Skull/ })
+    await expect(buttons).toHaveLength(2)
+    await userEvent.click(buttons[0])
     await expect(args.onOpenImage).toHaveBeenCalledWith(detail.images[0])
   },
 }

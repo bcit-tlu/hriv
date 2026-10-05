@@ -138,3 +138,39 @@ def test_collections_enabled_reads_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("COLLECTIONS_ENABLED", "true")
 
     assert Settings().collections_enabled is True
+
+
+def test_probe_engine_uses_null_pool(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The readiness-probe engine must never reuse connections (#1496)."""
+    from sqlalchemy.pool import NullPool
+
+    from app import database
+
+    monkeypatch.setattr(database, "_probe_engine", None)
+    try:
+        engine = database.get_probe_engine()
+        assert isinstance(engine.pool, NullPool)
+        assert database.get_probe_engine() is engine
+    finally:
+        monkeypatch.setattr(database, "_probe_engine", None)
+
+
+async def test_dispose_probe_engine_closes_and_clears(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """dispose_probe_engine disposes the cached engine exactly once."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from app import database
+
+    engine = MagicMock()
+    engine.dispose = AsyncMock()
+    monkeypatch.setattr(database, "_probe_engine", engine)
+
+    await database.dispose_probe_engine()
+    engine.dispose.assert_awaited_once()
+    assert database._probe_engine is None
+
+    # Second call is a no-op when the engine was never recreated.
+    await database.dispose_probe_engine()
+    engine.dispose.assert_awaited_once()

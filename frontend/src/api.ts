@@ -382,6 +382,9 @@ export interface ApiCategory {
 export interface ApiCategoryTree extends ApiCategory {
   children: ApiCategoryTree[]
   images: ApiImage[]
+  /** Collections filed into this category (#1527); `[]` when the
+   *  COLLECTIONS_ENABLED flag is off. */
+  collections: ApiCollectionSummary[]
 }
 
 export interface ApiImage {
@@ -537,7 +540,7 @@ export function deleteCategory(id: number): Promise<void> {
 // ── Tile order (atomic combined ordering; docs/tile-ordering.md) ──
 
 export interface TileOrderItemRef {
-  type: 'category' | 'image'
+  type: 'category' | 'collection' | 'image'
   id: number
 }
 
@@ -658,16 +661,21 @@ export function bulkDeleteImages(body: { image_ids: number[] }): Promise<void> {
 export type ApiCollectionType = 'synchronized' | 'sequence'
 export type ApiCollectionVisibility = 'private' | 'public' | 'restricted'
 
-/** Exactly one of `user_id` / `program_id` is set; the other key is present but `null`. */
+/**
+ * One owner entry in `owners` (#1531): a user (`user_id` set) or the owning
+ * program (`program_id` set) — exactly one id is non-null. An empty `owners`
+ * array means the collection is orphaned.
+ */
 export type ApiCollectionOwner = {
   user_id?: number | null
   program_id?: number | null
   name: string
-} | null
+}
 
 export interface ApiCollectionPermissions {
   can_edit: boolean
   can_delete: boolean
+  can_change_scope: boolean
   can_transfer: boolean
 }
 
@@ -677,10 +685,14 @@ export interface ApiCollectionSummary {
   description: string | null
   type: ApiCollectionType
   visibility: ApiCollectionVisibility
-  owner: ApiCollectionOwner
+  owners: ApiCollectionOwner[]
   image_count: number
   cover_thumb: string | null
   version: number
+  /** Category the collection is filed into; `null` = uncategorized (Browse root). */
+  category_id: number | null
+  /** Tile-order position inside its category/root scope. */
+  sort_order: number
   created_at: string
   updated_at: string
   permissions: ApiCollectionPermissions
@@ -692,6 +704,13 @@ export interface ApiCollection extends ApiCollectionSummary {
   program_ids: number[]
   group_ids: number[]
   viewport_state: Record<string, unknown>
+  /**
+   * Nominal member count including members hidden from the caller
+   * (#1529): `image_count` counts only visible members, so
+   * `member_count > image_count` distinguishes "all restricted" from
+   * "empty" on the detail view.
+   */
+  member_count: number
 }
 
 export interface CollectionFilters {
@@ -701,9 +720,14 @@ export interface CollectionFilters {
   owner_program_id?: number
   /** Admin-only; the API returns 403 for anyone else, so callers must not set it for non-admins. */
   orphaned?: boolean
+  /** Only collections filed at the Browse root (`category_id IS NULL`). */
+  uncategorized?: boolean
 }
 
-export function fetchCollections(filters: CollectionFilters = {}): Promise<ApiCollectionSummary[]> {
+export function fetchCollections(
+  filters: CollectionFilters = {},
+  init?: RequestInit,
+): Promise<ApiCollectionSummary[]> {
   const params = new URLSearchParams()
   if (filters.type) params.set('type', filters.type)
   if (filters.mine) params.set('mine', 'true')
@@ -711,8 +735,9 @@ export function fetchCollections(filters: CollectionFilters = {}): Promise<ApiCo
   if (filters.owner_program_id != null)
     params.set('owner_program_id', String(filters.owner_program_id))
   if (filters.orphaned) params.set('orphaned', 'true')
+  if (filters.uncategorized) params.set('uncategorized', 'true')
   const qs = params.toString()
-  return request(`/collections${qs ? `?${qs}` : ''}`)
+  return request(`/collections${qs ? `?${qs}` : ''}`, init)
 }
 
 export function fetchCollection(id: number): Promise<ApiCollection> {
@@ -763,6 +788,44 @@ export function saveCollectionViewport(
   body: { viewport_state: Record<string, unknown>; version: number },
 ): Promise<ApiCollection> {
   return request(`/collections/${id}/viewport`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+/**
+ * File a collection into a Browse category (#1527): `category_id: null`
+ * moves it to the root (uncategorized). Admin/instructor-only — filing is
+ * curatorial like moving images/categories, independent of ownership.
+ */
+export function moveCollection(
+  id: number,
+  body: { category_id: number | null; version: number },
+): Promise<ApiCollection> {
+  return request(`/collections/${id}/move`, { method: 'POST', body: JSON.stringify(body) })
+}
+
+/**
+ * Reassign *program* ownership (#1531): `program_id` sets the owning program
+ * (which clears the user-owner rows) and `null` clears it. Authorization
+ * lives on the server: admins may assign any program, instructors only
+ * programs they belong to (403); user co-ownership is managed through
+ * `replaceCollectionOwners` instead.
+ */
+export function transferCollection(
+  id: number,
+  body: { program_id: number | null; version: number },
+): Promise<ApiCollection> {
+  return request(`/collections/${id}/transfer`, { method: 'POST', body: JSON.stringify(body) })
+}
+
+/**
+ * Replace the whole user-owner set (#1531). Targets must be active users
+ * (422 otherwise); the result must not orphan the collection — at least one
+ * owner row or a program owner is required. Admin / owning-instructor only.
+ */
+export function replaceCollectionOwners(
+  id: number,
+  body: { user_ids: number[]; version: number },
+): Promise<ApiCollection> {
+  return request(`/collections/${id}/owners`, { method: 'PUT', body: JSON.stringify(body) })
 }
 
 /**

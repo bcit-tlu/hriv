@@ -254,6 +254,11 @@ per-pod ceiling above is `hriv_db_pool_size + hriv_db_pool_max_overflow`
 (`hriv_db_pool_overflow` is the raw live counter, negative below `pool_size`).
 See `docs/observability-conventions.md` → Database Pool Metrics.
 
+The readiness probe's dedicated `NullPool` engine sits outside this budget by
+design (#1496): each `/api/_probe` or `/api/health/ready` call adds at most
+one transient connection, held only for the `SELECT 1` round-trip — never
+counted against `poolSize`.
+
 ## Worker configuration
 
 Beyond resources, the worker Deployment exposes:
@@ -297,7 +302,14 @@ The defaults are chosen to tolerate transient node or database load:
   the probe handler is registered through `app.include_router` and is not in
   `otel.excludedUrls`, so it traverses the same instrumented middleware and
   route-dispatch path as real endpoints; a routed-API failure marks pods
-  unready instead of passing silently (#1473).
+  unready instead of passing silently (#1473). Its database check opens a
+  _fresh_ connection through a dedicated `NullPool` engine (`SELECT 1`, then
+  close) rather than borrowing the request-path pool — a pooled checkout can
+  reuse a session that authenticated before Vault rotated or revoked the
+  dynamic PostgreSQL credentials, which kept pods Ready through the
+  2026-10-02 outage while every new connection failed (#1496). Probes
+  therefore cost one extra connection round-trip per readiness interval,
+  never a held pool slot.
 
 Initial delays and periods remain the same defaults as the previous chart
 behavior, but both probes can be overridden in values if a cluster needs
@@ -314,6 +326,26 @@ These defaults are intentionally small because import staging now lives on the
 `/data` PVC. Overlays that already set worker CPU/memory continue to merge with
 the chart defaults; no overlay change is required for the new storage keys to
 take effect.
+
+## Synthetic monitoring ingest token (`syntheticMonitoring.ingestTokenSecret`)
+
+The synthetic-monitoring CronJob posts its authoritative journey result to
+`POST /api/telemetry/synthetic-result`. It authenticates with a shared static
+secret (`X-Synthetic-Ingest-Token` header) rather than the monitor account's
+user JWT, so result reports still land during auth or database outages — the
+moments the monitor exists to detect (hriv#1495). The backend validates the
+token with a constant-time compare and no database access; an
+operator-provisioned sliding-window rate limit (`rate:synthetic-ingest`,
+default 30/60s) bounds abuse of a leaked token.
+
+Set `syntheticMonitoring.ingestTokenSecret.name` (and optionally `.key`,
+default `token`) to render `SYNTHETIC_INGEST_TOKEN` from a pre-existing secret
+consumed by both the backend and the CronJob — in bcit-tlu/flux-fleet this is
+the `hriv-synthetic-ingest` VaultStaticSecret. The key reference is
+`optional: true`: a missing key degrades to JWT-only ingestion instead of
+blocking the rollout, and the stale-result metrics alert remains the designed
+detector for that misconfiguration. Leave `name` empty to disable the token
+path entirely (JWT-only, suitable for local dev).
 
 ## Bootstrap admin seed (`bootstrapAdmin.*`)
 

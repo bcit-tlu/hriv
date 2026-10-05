@@ -23,6 +23,8 @@ export interface Category {
   parentId: number | null
   children: Category[]
   images: ImageItem[]
+  /** Collections filed into this category (#1527); `[]` when the flag is off. */
+  collections: CollectionSummary[]
   programIds: number[]
   groupIds: number[]
   status?: string | null
@@ -89,16 +91,17 @@ export type CollectionType = 'synchronized' | 'sequence'
 
 export type CollectionVisibility = 'private' | 'public' | 'restricted'
 
-/** Owner of a collection: a user, a program (after transfer, #1413), or nobody (orphaned). */
+/** One owner of a collection (#1531): a user co-owner or the owning program. */
 export type CollectionOwner =
   | { kind: 'user'; userId: number; name: string }
   | { kind: 'program'; programId: number; name: string }
-  | null
 
 /** UX hints from the API — the backend re-checks authority on every write. */
 export interface CollectionPermissions {
   canEdit: boolean
   canDelete: boolean
+  /** Whether the caller may change visibility/program/group scope (#1531). */
+  canChangeScope: boolean
   canTransfer: boolean
 }
 
@@ -108,10 +111,15 @@ export interface CollectionSummary {
   description: string | null
   type: CollectionType
   visibility: CollectionVisibility
-  owner: CollectionOwner
+  /** User co-owners plus the optional program owner; empty means orphaned (#1531). */
+  owners: CollectionOwner[]
   imageCount: number
   coverThumb: string | null
   version: number
+  /** Category the collection is filed into (null = Browse root). */
+  categoryId: number | null
+  /** Tile-order position inside its category/root scope. */
+  sortOrder: number
   createdAt: string
   updatedAt: string
   permissions: CollectionPermissions
@@ -123,4 +131,8 @@ export interface Collection extends CollectionSummary {
   programIds: number[]
   groupIds: number[]
   viewportState: Record<string, unknown>
+  /** Nominal member count for unfiltered viewers; for students the backend
+   * clamps it to `imageCount + 1` when members are hidden, so it signals
+   * "restricted members exist" without revealing how many (#1529). */
+  memberCount: number
 }

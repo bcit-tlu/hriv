@@ -14,6 +14,7 @@ import logging
 import os
 import struct
 import sys
+import threading
 import time
 import zipfile
 from datetime import datetime, timedelta, timezone
@@ -42,6 +43,7 @@ from app.routers.bulk_import import (
     _process_bulk_import_impl,
     _STALE_BULK_IMPORT_SECONDS,
     _write_source_image_abort_latch,
+    _zip_declared_entry_count,
     _wait_for_source_image_terminal_state,
     bulk_import_images,
     get_bulk_import_job,
@@ -353,11 +355,19 @@ def _make_upload(
     filename: str,
     chunks: list[bytes] | None = None,
 ) -> AsyncMock:
-    """Build a minimal ``UploadFile`` stand-in that returns ``chunks`` on read."""
+    """Build a minimal ``UploadFile`` stand-in that returns ``chunks`` on read.
+
+    ``.file``/``.size`` mirror the real ``UploadFile``: ``file`` is the
+    spooled body (what the zip path hands to ``zipfile``) and ``size`` the
+    parsed byte count.
+    """
     payload = chunks if chunks is not None else [b"some-bytes", b""]
+    body = b"".join(payload)
     upload = AsyncMock()
     upload.filename = filename
     upload.read = AsyncMock(side_effect=payload)
+    upload.file = io.BytesIO(body)
+    upload.size = len(body)
     return upload
 
 
@@ -630,6 +640,348 @@ async def test_bulk_import_images_streams_zip_extraction(tmp_path) -> None:
     assert set(read_sizes) == {1024}
     stored = list(tmp_path.iterdir())
     assert len(stored) == 1 and stored[0].stat().st_size == 5600
+
+
+async def test_bulk_import_images_extracts_zip_off_event_loop(tmp_path) -> None:
+    """ZIP central-directory parsing and extraction run on a worker thread.
+
+    Regression test for #1434: decompressing entries synchronously inside
+    the async endpoint stalled the API worker's event loop for the whole
+    archive.
+    """
+    category = SimpleNamespace(id=1)
+    db = AsyncMock()
+    db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
+    db.get = AsyncMock(return_value=category)
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+
+    async def _refresh(obj) -> None:
+        obj.id = 5
+
+    db.refresh = AsyncMock(side_effect=_refresh)
+    bg = MagicMock()
+    upload = _make_upload("batch.zip", [_zip_bytes({"a.png": b"png-a"}), b""])
+
+    loop_ident = threading.get_ident()
+    worker_idents: list[int] = []
+    real_helper = bulk_import_module._extract_zip_image_entries
+
+    def _recording_helper(*args, **kwargs):
+        worker_idents.append(threading.get_ident())
+        return real_helper(*args, **kwargs)
+
+    with (
+        patch("app.routers.bulk_import.settings") as mock_settings,
+        patch(
+            "app.routers.bulk_import._extract_zip_image_entries",
+            _recording_helper,
+        ),
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        await bulk_import_images(
+            files=[upload],
+            category_id=1,
+            background_tasks=bg,
+            _user=MagicMock(),
+            db=db,
+        )
+
+    assert worker_idents, "zip extraction helper was not invoked"
+    assert worker_idents[0] != loop_ident
+    assert len(list(tmp_path.iterdir())) == 1
+
+
+async def test_bulk_import_images_zip_uses_spooled_upload_file(tmp_path) -> None:
+    """The zip path consumes the multipart spool file in place (#1365).
+
+    A second pod-local archive copy would be exactly the double-buffering
+    the issue removes, so ``tempfile.NamedTemporaryFile`` must never fire
+    and the extractor must receive ``upload.file`` after a rewind.
+    """
+    category = SimpleNamespace(id=1)
+    db = AsyncMock()
+    db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
+    db.get = AsyncMock(return_value=category)
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+
+    async def _refresh(obj) -> None:
+        obj.id = 7
+
+    db.refresh = AsyncMock(side_effect=_refresh)
+    bg = MagicMock()
+    upload = _make_upload("batch.zip", [_zip_bytes({"a.png": b"png-a"}), b""])
+
+    archives: list[object] = []
+    real_helper = bulk_import_module._extract_zip_image_entries
+
+    def _recording_helper(archive, *args, **kwargs):
+        archives.append(archive)
+        return real_helper(archive, *args, **kwargs)
+
+    with (
+        patch("app.routers.bulk_import.settings") as mock_settings,
+        patch(
+            "app.routers.bulk_import._extract_zip_image_entries",
+            _recording_helper,
+        ),
+        patch(
+            "tempfile.NamedTemporaryFile",
+            side_effect=AssertionError("endpoint created a second zip copy"),
+        ),
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        await bulk_import_images(
+            files=[upload],
+            category_id=1,
+            background_tasks=bg,
+            _user=MagicMock(),
+            db=db,
+        )
+
+    upload.seek.assert_awaited_with(0)
+    assert archives == [upload.file]
+    assert len(list(tmp_path.iterdir())) == 1
+
+
+async def test_bulk_import_images_cancelled_extraction_cleans_staged_files(tmp_path) -> None:
+    """A cancelled request still removes paths the worker thread staged.
+
+    ``asyncio.to_thread`` cannot be interrupted once running: when the
+    request is cancelled mid-extraction the endpoint keeps waiting on the
+    worker's ``done`` event for it to finish, then unlinks the paths it
+    appended instead of leaving them as unowned files on the data volume.
+    """
+    category = SimpleNamespace(id=1)
+    db = AsyncMock()
+    db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
+    db.get = AsyncMock(return_value=category)
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+
+    async def _refresh(obj) -> None:
+        obj.id = 6
+
+    db.refresh = AsyncMock(side_effect=_refresh)
+    bg = MagicMock()
+    upload = _make_upload(
+        "batch.zip",
+        [_zip_bytes({"a.png": b"png-a", "b.jpg": b"jpg-b"}), b""],
+    )
+
+    started = threading.Event()
+    release = threading.Event()
+    staged: list[str] = []
+    real_helper = bulk_import_module._extract_zip_image_entries
+
+    def _gated_helper(*args):
+        started.set()
+        release.wait(timeout=10)
+        file_entries = args[2]
+        staged_before = len(file_entries)
+        try:
+            real_helper(*args)
+        finally:
+            staged.extend(path for _, path in file_entries[staged_before:])
+
+    with (
+        patch("app.routers.bulk_import.settings") as mock_settings,
+        patch(
+            "app.routers.bulk_import._extract_zip_image_entries",
+            _gated_helper,
+        ),
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        task = asyncio.create_task(
+            bulk_import_images(
+                files=[upload],
+                category_id=1,
+                background_tasks=bg,
+                _user=MagicMock(),
+                db=db,
+            )
+        )
+        # Block until the worker thread is inside extraction, then cancel.
+        await asyncio.to_thread(started.wait, 10)
+        task.cancel()
+        # Give the event loop a tick so the CancelledError lands on the
+        # shielded await while the worker is still gated.
+        await asyncio.sleep(0.05)
+        release.set()
+
+        with pytest.raises(asyncio.CancelledError):
+            _ = await task
+
+    assert staged, "worker did not stage any files before cancellation"
+    assert all(not os.path.exists(path) for path in staged)
+    assert list(tmp_path.iterdir()) == []
+
+
+async def test_bulk_import_images_rejects_oversized_zip_upload(tmp_path) -> None:
+    """A zip part streamed past BULK_IMPORT_MAX_UPLOAD_BYTES gets a 413 (#1432).
+
+    The raw request body is uncapped at the ingress, so the spool loop
+    itself must bound how much of one uploaded part reaches disk.
+    """
+    category = SimpleNamespace(id=1)
+    db = AsyncMock()
+    db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
+    db.get = AsyncMock(return_value=category)
+    bg = MagicMock()
+
+    zip_payload = _zip_bytes({"a.png": b"png-a"})
+    upload = _make_upload("batch.zip", [zip_payload, b""])
+
+    with (
+        patch("app.routers.bulk_import.settings") as mock_settings,
+        patch(
+            "app.routers.bulk_import._MAX_UPLOAD_BYTES",
+            len(zip_payload) - 1,
+        ),
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        with pytest.raises(HTTPException) as exc:
+            await bulk_import_images(
+                files=[upload],
+                category_id=1,
+                background_tasks=bg,
+                _user=MagicMock(),
+                db=db,
+            )
+    assert exc.value.status_code == 413
+    assert "per-upload limit" in exc.value.detail
+    # Nothing staged or extracted survives the rejection.
+    assert list(tmp_path.iterdir()) == []
+
+
+async def test_bulk_import_images_rejects_oversized_plain_image(tmp_path) -> None:
+    """A plain-image part past the upload cap gets a 413 + cleanup (#1432)."""
+    category = SimpleNamespace(id=1)
+    db = AsyncMock()
+    db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
+    db.get = AsyncMock(return_value=category)
+    bg = MagicMock()
+
+    upload = _make_upload("big.png", [b"aa", b"bb", b"cc", b""])
+
+    with (
+        patch("app.routers.bulk_import.settings") as mock_settings,
+        patch("app.routers.bulk_import._MAX_UPLOAD_BYTES", 4),
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        with pytest.raises(HTTPException) as exc:
+            await bulk_import_images(
+                files=[upload],
+                category_id=1,
+                background_tasks=bg,
+                _user=MagicMock(),
+                db=db,
+            )
+    assert exc.value.status_code == 413
+    # The partially written image is unlinked, not left behind.
+    assert list(tmp_path.iterdir()) == []
+
+
+async def test_bulk_import_images_rejects_archive_over_entry_ceiling(tmp_path) -> None:
+    """An oversized central directory is rejected before extraction (#1432).
+
+    ``BULK_IMPORT_MAX_ENTRIES`` only counts eligible image entries, so an
+    archive of mostly non-image entries would otherwise cost API
+    memory/time proportional to its size. The ceiling is checked from the
+    EOCD record before ``ZipFile`` allocates the ``ZipInfo`` list, and
+    re-checked on the parsed total after open.
+    """
+    category = SimpleNamespace(id=1)
+    db = AsyncMock()
+    db.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=0), all=MagicMock(return_value=[]))
+    db.get = AsyncMock(return_value=category)
+    bg = MagicMock()
+
+    upload = _make_upload(
+        "many.zip",
+        [
+            _zip_bytes({
+                "a.png": b"a",
+                "b.txt": b"b",
+                "c.txt": b"c",
+                "d.txt": b"d",
+            }),
+            b"",
+        ],
+    )
+
+    with (
+        patch("app.routers.bulk_import.settings") as mock_settings,
+        patch("app.routers.bulk_import._ZIP_MAX_ARCHIVE_ENTRIES", 3),
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        with pytest.raises(HTTPException) as exc:
+            await bulk_import_images(
+                files=[upload],
+                category_id=1,
+                background_tasks=bg,
+                _user=MagicMock(),
+                db=db,
+            )
+    assert exc.value.status_code == 413
+    assert "entries" in exc.value.detail
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_zip_declared_entry_count_reads_eocd(tmp_path) -> None:
+    """A normal archive reports its real central-directory count (#1432)."""
+    archive = io.BytesIO(
+        _zip_bytes({"a.png": b"a", "b.txt": b"b", "c.png": b"c"})
+    )
+    assert _zip_declared_entry_count(archive) == 3
+    # The reader must restore the position so the subsequent ZipFile open
+    # sees the archive from byte 0.
+    assert archive.tell() == 0
+
+
+def test_zip_declared_entry_count_reads_zip64_eocd(tmp_path) -> None:
+    """A saturated EOCD falls through to the ZIP64 locator/record (#1432)."""
+    body = b"x" * 10  # stands in for the central directory
+    zip64_offset = len(body)
+    zip64_eocd = struct.pack(
+        "<4sQ2H2L4Q", b"PK\x06\x06", 44, 45, 45, 0, 0, 7, 7, 100, 0
+    )
+    locator = struct.pack("<4sLQL", b"PK\x06\x07", 0, zip64_offset, 1)
+    eocd = struct.pack(
+        "<4s4H2LH",
+        b"PK\x05\x06",
+        0,
+        0,
+        0xFFFF,      # disk entries saturated
+        0xFFFF,      # total entries saturated
+        0xFFFFFFFF,  # cd size saturated
+        0xFFFFFFFF,  # cd offset saturated
+        0,
+    )
+    archive = io.BytesIO(body + zip64_eocd + locator + eocd)
+    assert _zip_declared_entry_count(archive) == 7
+    assert archive.tell() == 0
+
+
+def test_zip_declared_entry_count_returns_none_on_malformed() -> None:
+    """Unreadable/garbled EOCDs defer to ZipFile's BadZipFile handling."""
+    assert _zip_declared_entry_count(io.BytesIO(b"tiny")) is None
+    assert _zip_declared_entry_count(io.BytesIO(b"x" * 200)) is None
+
+
+def test_zip_declared_entry_count_rewinds_unseekable() -> None:
+    """A non-seekable stream yields ``None`` without raising (a spooled
+    ``UploadFile.file`` is always seekable — this guards misuse)."""
+
+    class _Unseekable(io.BytesIO):
+        def tell(self) -> int:
+            raise OSError("not seekable")
+
+        def seek(self, *args) -> int:
+            raise OSError("not seekable")
+
+    assert _zip_declared_entry_count(_Unseekable(b"x" * 100)) is None
 
 
 async def test_bulk_import_images_rejects_corrupt_zip(tmp_path) -> None:
@@ -3278,9 +3630,10 @@ async def test_bulk_import_enospc_zip_extraction(tmp_path) -> None:
 
     zip_data = _zip_bytes({"slide.tiff": b"tiff-content"})
 
-    # zipfile.ZipFile reads the temp file via builtins.open in "rb" mode;
-    # the extraction destination is opened in "wb" mode.  Only fail on
-    # write-mode opens so the zip read succeeds but extraction hits ENOSPC.
+    # zipfile.ZipFile reads the already-spooled upload file object; the
+    # extraction destination is opened via builtins.open in "wb" mode.
+    # Only fail on write-mode opens so the zip parse succeeds but
+    # extraction hits ENOSPC.
     real_open = open
 
     def _open_side_effect(*args, **kwargs):
@@ -3289,10 +3642,8 @@ async def test_bulk_import_enospc_zip_extraction(tmp_path) -> None:
             raise OSError(errno.ENOSPC, "No space left on device")
         return real_open(*args, **kwargs)
 
-    upload = AsyncMock()
-    upload.filename = "archive.zip"
+    upload = _make_upload("archive.zip", [zip_data])
     upload.content_type = "application/zip"
-    upload.read = AsyncMock(side_effect=[zip_data, b""])
 
     with (
         patch("app.routers.bulk_import.settings") as mock_settings,

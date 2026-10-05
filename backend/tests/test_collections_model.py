@@ -11,6 +11,7 @@ from app.models import (
     Collection,
     CollectionImage,
     collection_groups,
+    collection_owners,
     collection_programs,
 )
 
@@ -42,7 +43,9 @@ def test_collection_table_shape() -> None:
     assert c.visibility.nullable is False
     assert c.visibility.server_default.arg.text == "'private'"
     assert c.user_id.nullable is True
-    assert _fk(c.user_id).ondelete == "CASCADE"
+    # Creator-only audit column since #1531: SET NULL so a departing creator
+    # does not delete collections other users co-own.
+    assert _fk(c.user_id).ondelete == "SET NULL"
     assert c.owner_program_id.nullable is True
     assert _fk(c.owner_program_id).ondelete == "SET NULL"
     assert isinstance(c.viewport_state.type, JSONB)
@@ -58,10 +61,9 @@ def test_collection_table_shape() -> None:
         checks["ck_collections_visibility"]
         == "visibility IN ('private', 'public', 'restricted')"
     )
-    assert (
-        checks["ck_collections_single_owner"]
-        == "num_nonnulls(user_id, owner_program_id) <= 1"
-    )
+    # The single-owner check was dropped in #1531 — user owners (via
+    # collection_owners) and a program owner may coexist.
+    assert "ck_collections_single_owner" not in checks
     assert {i.name for i in table.indexes} >= {
         "idx_collections_user",
         "idx_collections_owner_program",
@@ -85,9 +87,11 @@ def test_collection_image_table_shape() -> None:
 def test_collection_scope_junctions() -> None:
     assert Base.metadata.tables["collection_programs"] is collection_programs
     assert Base.metadata.tables["collection_groups"] is collection_groups
+    assert Base.metadata.tables["collection_owners"] is collection_owners
     for table, other in (
         (collection_programs, "program_id"),
         (collection_groups, "group_id"),
+        (collection_owners, "user_id"),
     ):
         assert {col.name for col in table.primary_key.columns} == {
             "collection_id",
@@ -104,3 +108,6 @@ def test_collection_relationships_ordered_and_cascading() -> None:
     assert Collection.__mapper__.relationships["programs"].secondary is collection_programs
     assert Collection.__mapper__.relationships["groups"].secondary is collection_groups
     assert CollectionImage.__mapper__.relationships["image"].lazy == "selectin"
+    owners = Collection.__mapper__.relationships["owners"]
+    assert owners.secondary is collection_owners
+    assert owners.lazy == "selectin"

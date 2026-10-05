@@ -1,0 +1,45 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as MoveCollectionDialogStories from './MoveCollectionDialog.stories'
+
+<Meta of={MoveCollectionDialogStories} />
+
+<Title />
+
+<Subtitle>
+  File a collection into a Browse category — the collection counterpart of Move Image (#1529).
+</Subtitle>
+
+## When to use
+
+The dialog opens from the **Move** affordance on a collection Browse tile, a Collections
+list card, or the collection detail header. Filing is curatorial, so the affordance is
+gated on the admin/instructor role rather than `permissions.canEdit`.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={MoveCollectionDialogStories.Basic} />
+
+## Implementation guidance
+
+- **Destination picker.** Reuses `CategoryPickerSelect`, including its
+  _None (root level)_ option, so a collection can move between any category and the
+  Browse root.
+- **No-op protection.** The picker preselects the collection's current category on
+  open; `useCategoryActions` treats an unchanged destination as a close, not a POST.
+- **Versioned write.** `POST /api/collections/{id}/move` carries `version`; on a 409
+  the conflict's authoritative record replaces the dialog's collection so a retry
+  posts the fresh version.
+- **Undo.** The success snackbar's Undo re-posts the previous category with the move
+  response's (bumped) version.
+
+<Stories of={MoveCollectionDialogStories} />

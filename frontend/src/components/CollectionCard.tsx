@@ -8,9 +8,11 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import CollectionsIcon from '@mui/icons-material/Collections'
 import DeleteIcon from '@mui/icons-material/Delete'
+import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
 import EditIcon from '@mui/icons-material/Edit'
 import LockIcon from '@mui/icons-material/Lock'
 import PublicIcon from '@mui/icons-material/Public'
+import SwapHorizIcon from '@mui/icons-material/SwapHoriz'
 import ViewCarouselIcon from '@mui/icons-material/ViewCarousel'
 import ViewColumnIcon from '@mui/icons-material/ViewColumn'
 import { fetchCollection } from '../api'
@@ -18,7 +20,7 @@ import type { CollectionSummary, CollectionVisibility } from '../types'
 import {
   COLLECTION_TYPE_LABELS,
   COLLECTION_VISIBILITY_LABELS,
-  describeCollectionOwner,
+  describeCollectionOwners,
 } from '../collectionUtils'
 import { getGroupChipColors, getVisibilityColors } from '../theme'
 import { useColorMode } from '../useColorMode'
@@ -31,6 +33,14 @@ export interface CollectionCardProps {
   onEdit?: (collection: CollectionSummary) => void
   /** Rendered only when `collection.permissions.canDelete` (UX gate — the API re-checks). */
   onDelete?: (collection: CollectionSummary) => void
+  /** Owners & transfer dialog (#1531) — gated on `permissions.canTransfer`. */
+  onTransfer?: (collection: CollectionSummary) => void
+  /**
+   * Move/file into a category (#1529). Unlike the other actions this is
+   * role-gated by the caller (any admin/instructor may file — it is
+   * curatorial, not ownership-bound), so it renders whenever provided.
+   */
+  onMove?: (collection: CollectionSummary) => void
 }
 
 /**
@@ -89,12 +99,16 @@ export default function CollectionCard({
   onOpen,
   onEdit,
   onDelete,
+  onTransfer,
+  onMove,
 }: CollectionCardProps) {
   const cover = collection.coverThumb
   const TypeIcon = collection.type === 'synchronized' ? ViewColumnIcon : ViewCarouselIcon
   const imageCountText = `${collection.imageCount} ${collection.imageCount === 1 ? 'image' : 'images'}`
   const showEdit = Boolean(onEdit) && collection.permissions.canEdit
   const showDelete = Boolean(onDelete) && collection.permissions.canDelete
+  const showTransfer = Boolean(onTransfer) && collection.permissions.canTransfer
+  const showMove = Boolean(onMove)
 
   return (
     <Card data-testid="collection-card" elevation={2} sx={{ height: '100%', position: 'relative' }}>
@@ -111,7 +125,7 @@ export default function CollectionCard({
             sx={{
               display: 'block',
               width: '100%',
-              height: 140,
+              height: 160,
               objectFit: 'cover',
               objectPosition: 'center',
             }}
@@ -119,7 +133,7 @@ export default function CollectionCard({
         ) : (
           <Box
             sx={{
-              height: 140,
+              height: 160,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -141,14 +155,14 @@ export default function CollectionCard({
                 WebkitBoxOrient: 'vertical',
                 overflow: 'hidden',
                 wordBreak: 'break-word',
-                pr: showEdit || showDelete ? 8 : 0,
+                pr: showEdit || showDelete || showTransfer || showMove ? 8 : 0,
               }}
             >
               {collection.name}
             </Typography>
           </Tooltip>
           <Typography variant="body2" color="text.secondary">
-            {imageCountText} · {describeCollectionOwner(collection.owner)}
+            {imageCountText} · {describeCollectionOwners(collection.owners)}
           </Typography>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
             <Chip
@@ -163,16 +177,30 @@ export default function CollectionCard({
           </Box>
         </CardContent>
       </CardActionArea>
-      {(showEdit || showDelete) && (
+      {(showEdit || showDelete || showTransfer || showMove) && (
         <Box
           sx={{
             position: 'absolute',
-            top: 148,
+            // 8px below the 160px cover, on the card body — keeps the
+            // controls off the image (they have no scrim, unlike
+            // CategoryTile's cover-overlay actions).
+            top: 168,
             right: 8,
             display: 'flex',
             gap: 0.25,
           }}
         >
+          {showMove && (
+            <Tooltip title="Move to category">
+              <IconButton
+                size="small"
+                aria-label={`Move ${collection.name} to a category`}
+                onClick={() => onMove?.(collection)}
+              >
+                <DriveFileMoveIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
           {showEdit && (
             <Tooltip title="Edit collection">
               <IconButton
@@ -181,6 +209,17 @@ export default function CollectionCard({
                 onClick={() => onEdit?.(collection)}
               >
                 <EditIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+          {showTransfer && (
+            <Tooltip title="Manage owners">
+              <IconButton
+                size="small"
+                aria-label={`Manage owners of ${collection.name}`}
+                onClick={() => onTransfer?.(collection)}
+              >
+                <SwapHorizIcon fontSize="small" />
               </IconButton>
             </Tooltip>
           )}

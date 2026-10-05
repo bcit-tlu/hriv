@@ -72,17 +72,20 @@ const existing: Collection = {
   description: 'Frontal and lateral views side by side.',
   type: 'synchronized',
   visibility: 'restricted',
-  owner: { kind: 'user', userId: 7, name: 'Ada Lovelace' },
+  owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace' }],
   imageCount: 2,
   coverThumb: null,
+  categoryId: null,
+  sortOrder: 0,
   version: 3,
   createdAt: FIXED_AT,
   updatedAt: FIXED_AT,
-  permissions: { canEdit: true, canDelete: true, canTransfer: false },
+  permissions: { canEdit: true, canDelete: true, canChangeScope: true, canTransfer: false },
   images: [],
   programIds: [1],
   groupIds: [10],
   viewportState: {},
+  memberCount: 0,
 }
 
 interface StoryArgs {

@@ -4,7 +4,7 @@ import { MAX_SHARE_OVERLAYS } from './components/imageViewerUtils'
 import { buildNavHistoryState } from './useNavigationHistory'
 import { emitEvent } from './observability'
 import { findImageInTree, resolveCategoryPath } from './treeUtils'
-import { parseCollectionIdParam } from './collectionUtils'
+import { parseCollectionIdParam, parseCollectionItemParam } from './collectionUtils'
 import type { Category, ImageItem } from './types'
 
 interface ParsedShareableUrl {
@@ -14,6 +14,8 @@ interface ParsedShareableUrl {
   catIds: number[] | null
   /** `?collection={id}` deep link (docs/collections.md); wins over image/cat params. */
   collectionId: number | null
+  /** `?item={image_id}` sequence position, only meaningful next to `?collection=`. */
+  collectionItemId: number | null
 }
 
 /**
@@ -29,11 +31,25 @@ export function parseShareableUrlParams(): ParsedShareableUrl {
   let overlays: OverlayRect[] | undefined
   let catIds: number[] | null = null
 
-  // A collection link opens the Collections page, so browse-only params are
-  // ignored. (`?item=` is reserved for the collection viewers, #1416.)
+  // A collection link opens the Collections page; `?item=` selects the
+  // current image inside a sequence collection. `?cat=` may accompany
+  // `?collection=` when the detail was opened from a Browse tile (#1529):
+  // it names the Browse scope the back button should restore, so it is
+  // still parsed (but `?image=`/`?zoom=` etc. stay ignored).
   const collectionId = parseCollectionIdParam(window.location.search)
   if (collectionId != null) {
-    return { imageId, viewport, overlays, catIds, collectionId }
+    const collectionItemId = parseCollectionItemParam(window.location.search)
+    const catStr = params.get('cat')
+    if (catStr) {
+      const ids = catStr
+        .split(',')
+        .map(Number)
+        .filter((n) => !Number.isNaN(n))
+      if (ids.length > 0) {
+        catIds = ids
+      }
+    }
+    return { imageId, viewport, overlays, catIds, collectionId, collectionItemId }
   }
 
   const imgId = params.get('image')
@@ -90,7 +106,7 @@ export function parseShareableUrlParams(): ParsedShareableUrl {
       }
     }
   }
-  return { imageId, viewport, overlays, catIds, collectionId }
+  return { imageId, viewport, overlays, catIds, collectionId, collectionItemId: null }
 }
 
 export interface UseShareableImageStateDeps {
@@ -109,6 +125,16 @@ export interface UseShareableImageStateDeps {
    * (instead of `?page=collections`) so the link re-opens it on refresh.
    */
   collectionId?: number | null
+  /**
+   * Current image inside a sequence collection — written as `&item={id}` so
+   * the link restores the sequence position (#1416).
+   */
+  collectionItemId?: number | null
+  /**
+   * Collection detail opened from a Browse tile (#1529): the URL sync keeps
+   * `?cat=` next to `?collection=` so the deep link restores the Browse scope.
+   */
+  collectionFromBrowse?: boolean
   setPath: React.Dispatch<React.SetStateAction<Category[]>>
   setSelectedImage: React.Dispatch<React.SetStateAction<ImageItem | null>>
   /**
@@ -162,6 +188,8 @@ export function useShareableImageState(
     page,
     path,
     collectionId = null,
+    collectionItemId = null,
+    collectionFromBrowse = false,
     setPath,
     setSelectedImage,
     enableUrlSync = true,
@@ -257,7 +285,13 @@ export function useShareableImageState(
     if (pendingImageId.current !== null) return
     const params = new URLSearchParams()
     if (page === 'collections' && collectionId != null) {
+      // A collection detail opened from Browse keeps `?cat=` so the link
+      // restores the Browse scope behind it (#1529).
+      if (collectionFromBrowse && path.length > 0) {
+        params.set('cat', path.map((c) => c.id).join(','))
+      }
       params.set('collection', String(collectionId))
+      if (collectionItemId != null) params.set('item', String(collectionItemId))
     } else if (page !== 'browse') {
       params.set('page', page)
       // The guide page owns a ?doc= sub-param — preserve it so refreshes and
@@ -292,11 +326,26 @@ export function useShareableImageState(
         page,
         path.map((c) => c.id),
         selectedImage?.id ?? null,
+        undefined,
+        // Preserve the Browse-origin marker on `?collection=` entries — for a
+        // root-scope origin `?cat=` is absent, so history.state is the only
+        // carrier left after this replaceState (#1529).
+        page === 'collections' && collectionId != null ? collectionFromBrowse : undefined,
       ),
       '',
       newUrl,
     )
-  }, [enableUrlSync, page, path, selectedImage, viewportState, overlays, collectionId])
+  }, [
+    enableUrlSync,
+    page,
+    path,
+    selectedImage,
+    viewportState,
+    overlays,
+    collectionId,
+    collectionItemId,
+    collectionFromBrowse,
+  ])
 
   const handleViewportChange = useCallback((state: ViewportState) => {
     setViewportState(state)

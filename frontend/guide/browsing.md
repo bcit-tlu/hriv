@@ -13,9 +13,19 @@ The **Home** tab is the image library — the same view your students get
 - Use the **breadcrumbs** at the top to jump back up, or **Home** to return
   to the top level.
 - The **search icon** in the top bar searches across images by name, note,
-  and other details. Wrap words in `"quotes"` to match an exact phrase
-  instead of each word on its own — `"lung 2"` finds only the string
-  "lung 2", not everything containing "lung" or "2".
+  and other details — plus your collections by name and description. Wrap
+  words in `"quotes"` to match an exact phrase instead of each word on its
+  own — `"lung 2"` finds only the string "lung 2", not everything
+  containing "lung" or "2".
+- Search **chips** narrow the results: the type chips (Categories, Images,
+  Collections, and for staff Programs / People / Guide) keep only that kind
+  and its own fields, and the field chips (Note, Copyright, Annotation, …)
+  keep only matches in that field. A collection result opens it in the
+  Collections tab.
+- To add several images to a collection, click **Select** next to the result
+  count, tick the image rows you want (only images can be selected), then
+  choose **Add to collection** in the footer to pick a target — see
+  [Collections](collections).
 
 ## Viewing an image
 

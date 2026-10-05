@@ -9,7 +9,7 @@ from typing import Annotated
 import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+import jwt
 from pydantic import Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -120,6 +120,14 @@ class _LazyAuthSettings:
 auth_settings = _LazyAuthSettings()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+# Variant that yields ``None`` instead of raising 401 when the request carries
+# no Bearer header — used only by endpoints that accept a second, non-JWT
+# credential class (the synthetic-result ingest token). Do NOT use this to
+# build optional-auth endpoints that resolve a user "just to add detail";
+# see docs/unauthenticated-routes.md rule 1.
+oauth2_scheme_optional = OAuth2PasswordBearer(
+    tokenUrl="/api/auth/login", auto_error=False
+)
 
 
 # ── Password helpers ─────────────────────────────────────
@@ -146,7 +154,7 @@ def create_access_token(user: User) -> str:
     return jwt.encode(payload, auth_settings.jwt_secret, algorithm=auth_settings.jwt_algorithm)
 
 
-async def _get_user_from_token(
+async def get_user_from_token(
     token: str, db: AsyncSession
 ) -> User:
     credentials_exception = HTTPException(
@@ -172,7 +180,7 @@ async def _get_user_from_token(
         if user_id_str is None:
             raise credentials_exception
         user_id = int(user_id_str)
-    except (JWTError, ValueError):
+    except (jwt.PyJWTError, ValueError):
         raise credentials_exception
 
     user = await db.get(User, user_id)
@@ -188,7 +196,7 @@ async def get_current_user(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> User:
     """Dependency: require a valid JWT and return the authenticated User."""
-    return await _get_user_from_token(token, db)
+    return await get_user_from_token(token, db)
 
 
 def require_role(*allowed_roles: str):

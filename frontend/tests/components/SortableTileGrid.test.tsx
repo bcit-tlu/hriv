@@ -3,8 +3,8 @@ import { render, screen, act } from '@testing-library/react'
 import SortableTileGrid from '../../src/components/SortableTileGrid'
 import type { SortableTileGridProps } from '../../src/components/SortableTileGrid'
 import type { Group, Program } from '../../src/types'
-import { DROP_PREFIX } from '../../src/components/sortableTileGridUtils'
-import { makeCategory, makeImage } from '../helpers/fixtures'
+import { DROP_COL_PREFIX, DROP_PREFIX } from '../../src/components/sortableTileGridUtils'
+import { makeCategory, makeCollectionSummary, makeImage } from '../helpers/fixtures'
 import type { TileOrderItemRef } from '../../src/api'
 
 const expectEffectiveOpacity = (element: Element | null, opacity: string) => {
@@ -43,6 +43,9 @@ function sortableSource(id: string, index: number, initialIndex = index) {
 
 let capturedOnDragEnd: DragEndHandler | undefined
 let capturedOnDragStart: DragStartHandler | undefined
+// Per-tile `useSortable` inputs keyed by tile id — lets tests assert the
+// `disabled` config (boolean or granular {draggable, droppable}, #1530).
+const sortableInputs = new Map<string | number, { disabled?: unknown }>()
 
 vi.mock('@dnd-kit/react', async () => {
   const actual = await vi.importActual<typeof import('@dnd-kit/react')>('@dnd-kit/react')
@@ -53,6 +56,18 @@ vi.mock('@dnd-kit/react', async () => {
       capturedOnDragStart = props.onDragStart as DragStartHandler | undefined
       const ActualProvider = actual.DragDropProvider as React.ComponentType<Record<string, unknown>>
       return <ActualProvider {...props} />
+    },
+  }
+})
+
+vi.mock('@dnd-kit/react/sortable', async () => {
+  const actual =
+    await vi.importActual<typeof import('@dnd-kit/react/sortable')>('@dnd-kit/react/sortable')
+  return {
+    ...actual,
+    useSortable: (input: { id: string | number; disabled?: unknown }) => {
+      sortableInputs.set(input.id, { disabled: input.disabled })
+      return actual.useSortable(input)
     },
   }
 })
@@ -114,6 +129,7 @@ describe('SortableTileGrid', () => {
   beforeEach(() => {
     capturedOnDragEnd = undefined
     capturedOnDragStart = undefined
+    sortableInputs.clear()
     tileOrdering = makeTileOrdering()
   })
 
@@ -259,6 +275,7 @@ describe('SortableTileGrid', () => {
 describe('DroppableCategoryZone (rendering + accept)', () => {
   beforeEach(() => {
     capturedOnDragEnd = undefined
+    sortableInputs.clear()
     tileOrdering = makeTileOrdering()
   })
 
@@ -321,9 +338,174 @@ describe('DroppableCategoryZone (rendering + accept)', () => {
   })
 })
 
+describe('DroppableCollectionZone (#1530)', () => {
+  beforeEach(() => {
+    capturedOnDragEnd = undefined
+    sortableInputs.clear()
+    tileOrdering = makeTileOrdering()
+  })
+
+  it('renders an "Add to collection" zone on each editable collection tile', () => {
+    renderGrid({
+      currentCollections: [
+        makeCollectionSummary({ id: 5, name: 'Editable set' }),
+        makeCollectionSummary({ id: 6, name: 'Another set' }),
+      ],
+    })
+
+    expect(screen.getAllByRole('region', { name: 'Add to collection' })).toHaveLength(2)
+  })
+
+  it('does not render a zone for collections without edit permission', () => {
+    renderGrid({
+      currentCollections: [
+        makeCollectionSummary({ id: 5, name: 'Editable' }),
+        makeCollectionSummary({
+          id: 6,
+          name: 'Read only',
+          permissions: { canEdit: false, canDelete: false, canTransfer: false },
+        }),
+      ],
+    })
+
+    expect(screen.getAllByRole('region', { name: 'Add to collection' })).toHaveLength(1)
+  })
+
+  it('renders the zone for collection owners regardless of role (canEditContent=false)', () => {
+    renderGrid({
+      currentCollections: [makeCollectionSummary({ id: 5 })],
+      canEditContent: false,
+    })
+
+    expect(screen.getAllByRole('region', { name: 'Add to collection' })).toHaveLength(1)
+  })
+
+  it('enables drag-only image tiles for non-curators who own a collection', () => {
+    renderGrid({
+      currentImages: [makeImage({ id: 42, sortOrder: 1 })],
+      currentCollections: [makeCollectionSummary({ id: 5 })],
+      canEditContent: false,
+    })
+
+    // The image is draggable toward the add zone but never a reorder
+    // target; the collection sortable stays fully disabled (no reorder).
+    expect(sortableInputs.get('img-42')?.disabled).toEqual({
+      draggable: false,
+      droppable: true,
+    })
+    expect(sortableInputs.get('col-5')?.disabled).toBe(true)
+  })
+
+  it('keeps image tiles fully disabled for non-curators with no editable collection', () => {
+    renderGrid({
+      currentImages: [makeImage({ id: 42, sortOrder: 1 })],
+      currentCollections: [
+        makeCollectionSummary({
+          id: 5,
+          permissions: { canEdit: false, canDelete: false, canTransfer: false },
+        }),
+      ],
+      canEditContent: false,
+    })
+
+    expect(sortableInputs.get('img-42')?.disabled).toBe(true)
+  })
+
+  it('keeps image tiles fully enabled for curators', () => {
+    renderGrid({
+      currentImages: [makeImage({ id: 42, sortOrder: 1 })],
+      currentCollections: [makeCollectionSummary({ id: 5 })],
+      canEditContent: true,
+    })
+
+    expect(sortableInputs.get('img-42')?.disabled).toBe(false)
+  })
+
+  it('dispatches onDropImageOnCollection for a non-curator owner', async () => {
+    const onDropImageOnCollection = vi.fn()
+    renderGrid({
+      currentImages: [makeImage({ id: 42, sortOrder: 1 })],
+      currentCollections: [makeCollectionSummary({ id: 5 })],
+      canEditContent: false,
+      onDropImageOnCollection,
+    })
+
+    await act(async () => {
+      await capturedOnDragEnd!({
+        operation: {
+          source: { id: 'img-42' },
+          target: { id: `${DROP_COL_PREFIX}5` },
+          canceled: false,
+        },
+      })
+    })
+
+    expect(onDropImageOnCollection).toHaveBeenCalledWith(42, 5)
+    expect(tileOrdering.reportOrder).not.toHaveBeenCalled()
+  })
+
+  it('does not show the overlay text when not hovering', () => {
+    renderGrid({
+      currentCollections: [makeCollectionSummary({ id: 5, name: 'Set' })],
+    })
+
+    expect(screen.queryByText('Add to collection')).not.toBeInTheDocument()
+  })
+
+  it('dispatches onDropImageOnCollection for an image dropped on the zone', async () => {
+    const onDropImageOnCollection = vi.fn()
+    renderGrid({
+      currentCollections: [makeCollectionSummary({ id: 5 })],
+      currentImages: [makeImage({ id: 42, sortOrder: 1 })],
+      onDropImageOnCollection,
+    })
+
+    await act(async () => {
+      await capturedOnDragEnd!({
+        operation: {
+          source: { id: 'img-42' },
+          target: { id: `${DROP_COL_PREFIX}5` },
+          canceled: false,
+        },
+      })
+    })
+
+    expect(onDropImageOnCollection).toHaveBeenCalledWith(42, 5)
+    expect(tileOrdering.reportOrder).not.toHaveBeenCalled()
+  })
+
+  it('rejects category and collection sources on the collection zone', async () => {
+    const onDropImageOnCollection = vi.fn()
+    renderGrid({
+      currentCategories: [makeCategory({ id: 1, sortOrder: 0 })],
+      currentCollections: [
+        makeCollectionSummary({ id: 5, sortOrder: 1 }),
+        makeCollectionSummary({ id: 6, sortOrder: 2 }),
+      ],
+      onDropImageOnCollection,
+    })
+
+    for (const sourceId of ['cat-1', 'col-6']) {
+      await act(async () => {
+        await capturedOnDragEnd!({
+          operation: {
+            source: { id: sourceId },
+            target: { id: `${DROP_COL_PREFIX}5` },
+            canceled: false,
+          },
+        })
+      })
+    }
+
+    expect(onDropImageOnCollection).not.toHaveBeenCalled()
+    expect(tileOrdering.reportOrder).not.toHaveBeenCalled()
+  })
+})
+
 describe('handleDragEnd — move guards', () => {
   beforeEach(() => {
     capturedOnDragEnd = undefined
+    sortableInputs.clear()
     tileOrdering = makeTileOrdering()
   })
 
@@ -453,6 +635,7 @@ describe('handleDragEnd — move guards', () => {
 describe('handleDragEnd — reorder branches', () => {
   beforeEach(() => {
     capturedOnDragEnd = undefined
+    sortableInputs.clear()
     tileOrdering = makeTileOrdering()
   })
 
@@ -543,6 +726,32 @@ describe('handleDragEnd — reorder branches', () => {
     )
   })
 
+  it('reorders a collection tile among siblings (#1529)', async () => {
+    renderGrid({
+      currentImages: [makeImage({ id: 10, name: 'A', sortOrder: 0 })],
+      currentCollections: [makeCollectionSummary({ id: 5, sortOrder: 1 })],
+    })
+
+    await act(async () => {
+      await capturedOnDragEnd!({
+        operation: {
+          source: sortableSource('col-5', 0, 1),
+          target: { id: 'img-10' },
+          canceled: false,
+        },
+      })
+    })
+
+    expect(tileOrdering.reportOrder).toHaveBeenCalledWith(
+      [
+        { type: 'collection', id: 5 },
+        { type: 'image', id: 10 },
+      ],
+      expect.any(Number),
+      expect.any(Object),
+    )
+  })
+
   it('renders items in the coordinator display order when provided', () => {
     tileOrdering.displayOrder = [
       { type: 'image', id: 11 },
@@ -570,6 +779,7 @@ describe('handleDragEnd — reorder branches', () => {
 describe('drag-and-drop spec contract (docs/drag-and-drop.md)', () => {
   beforeEach(() => {
     capturedOnDragEnd = undefined
+    sortableInputs.clear()
     tileOrdering = makeTileOrdering()
   })
 
@@ -756,5 +966,80 @@ describe('drag-and-drop spec contract (docs/drag-and-drop.md)', () => {
       unmount()
     })
     expect(onDragActiveChange).toHaveBeenCalledWith(false)
+  })
+})
+
+describe('collection tiles (#1529)', () => {
+  beforeEach(() => {
+    capturedOnDragEnd = undefined
+    sortableInputs.clear()
+    tileOrdering = makeTileOrdering()
+  })
+
+  it('renders collection tiles via CollectionCard with name and count', () => {
+    renderGrid({
+      currentCollections: [makeCollectionSummary({ id: 3, name: 'Epithelium set', imageCount: 4 })],
+    })
+
+    expect(screen.getByText('Epithelium set')).toBeInTheDocument()
+    expect(screen.getByText(/4 images/)).toBeInTheDocument()
+  })
+
+  it('dispatches a col- drop on a category move zone to onDropCollectionOnCategory', async () => {
+    const onDropCollectionOnCategory = vi.fn()
+    const onDropImageOnCategory = vi.fn()
+    renderGrid({
+      currentCategories: [makeCategory({ id: 5, label: 'Target', sortOrder: 0 })],
+      currentCollections: [makeCollectionSummary({ id: 9, sortOrder: 1 })],
+      onDropCollectionOnCategory,
+      onDropImageOnCategory,
+    })
+
+    await act(async () => {
+      await capturedOnDragEnd!({
+        operation: {
+          source: { id: 'col-9' },
+          target: { id: `${DROP_PREFIX}5` },
+          canceled: false,
+        },
+      })
+    })
+
+    expect(onDropCollectionOnCategory).toHaveBeenCalledWith(9, 5)
+    expect(onDropImageOnCategory).not.toHaveBeenCalled()
+    expect(tileOrdering.reportOrder).not.toHaveBeenCalled()
+  })
+
+  it('hides the move affordance from non-editors', () => {
+    renderGrid({
+      currentCollections: [makeCollectionSummary({ id: 3, name: 'Set' })],
+      canEditContent: false,
+      onMoveCollection: vi.fn(),
+    })
+    expect(screen.queryByRole('button', { name: /Move Set to a category/ })).not.toBeInTheDocument()
+  })
+
+  it('invokes onMoveCollection from the card action for editors', () => {
+    const onMoveCollection = vi.fn()
+    const collection = makeCollectionSummary({ id: 3, name: 'Set' })
+    renderGrid({
+      currentCollections: [collection],
+      canEditContent: true,
+      onMoveCollection,
+    })
+    screen.getByRole('button', { name: /Move Set to a category/ }).click()
+    expect(onMoveCollection).toHaveBeenCalledWith(collection)
+  })
+
+  it('invokes onCollectionClick when the card body is clicked', () => {
+    const onCollectionClick = vi.fn()
+    const collection = makeCollectionSummary({ id: 3, name: 'Set' })
+    renderGrid({
+      currentCollections: [collection],
+      canEditContent: false,
+      onCollectionClick,
+    })
+    screen.getByText('Set').click()
+    expect(onCollectionClick).toHaveBeenCalledWith(collection)
   })
 })

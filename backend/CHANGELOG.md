@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.65.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.64.5...backend-v0.65.0) (2026-10-05)
+
+
+### Features
+
+* **collections:** file collections into the Browse hierarchy ([#1527](https://github.com/bcit-tlu/hriv/issues/1527)) ([#1535](https://github.com/bcit-tlu/hriv/issues/1535)) ([d6b274d](https://github.com/bcit-tlu/hriv/commit/d6b274d285913292e45384a903acc895c2bfa4ad))
+* **collections:** make collections tile-order scope members ([#1528](https://github.com/bcit-tlu/hriv/issues/1528)) ([#1538](https://github.com/bcit-tlu/hriv/issues/1538)) ([2f4cf43](https://github.com/bcit-tlu/hriv/commit/2f4cf43b9fb787ad0486e1e4fe35b449a25fa4d7))
+* **collections:** render collections as movable Browse tiles ([#1529](https://github.com/bcit-tlu/hriv/issues/1529)) ([#1539](https://github.com/bcit-tlu/hriv/issues/1539)) ([a8e1a6f](https://github.com/bcit-tlu/hriv/commit/a8e1a6f1910af8d6a5a688943f32ee9cac5d7977))
+
+## [0.64.5](https://github.com/bcit-tlu/hriv/compare/backend-v0.64.4...backend-v0.64.5) (2026-10-04)
+
+
+### Bug Fixes
+
+* **backend:** cap bulk-import and upload request sizes ([#1432](https://github.com/bcit-tlu/hriv/issues/1432)) ([#1513](https://github.com/bcit-tlu/hriv/issues/1513)) ([e804463](https://github.com/bcit-tlu/hriv/commit/e804463a0a9edaaf0a3f5ab7181baf857d5c0ff5))
+* **backend:** extract bulk-import zips on a worker thread ([#1511](https://github.com/bcit-tlu/hriv/issues/1511)) ([828d403](https://github.com/bcit-tlu/hriv/commit/828d4039ac938dee712f933a41ca3de28e5b0c21))
+* **backend:** recreate upload spool dir after filesystem import ([#1365](https://github.com/bcit-tlu/hriv/issues/1365)) ([#1515](https://github.com/bcit-tlu/hriv/issues/1515)) ([f8eb4d6](https://github.com/bcit-tlu/hriv/commit/f8eb4d667e8d356d545fe70e8993deff1b63257f))
+* **backend:** stage bulk-import zip spool on the source-images PVC ([#1365](https://github.com/bcit-tlu/hriv/issues/1365)) ([#1514](https://github.com/bcit-tlu/hriv/issues/1514)) ([940a191](https://github.com/bcit-tlu/hriv/commit/940a191656c76f9d068716a3e038904e6ac8f6f1))
+
+## [0.64.4](https://github.com/bcit-tlu/hriv/compare/backend-v0.64.3...backend-v0.64.4) (2026-10-04)
+
+
+### Bug Fixes
+
+* **backend,monitoring:** report synthetic results without a user session ([#1507](https://github.com/bcit-tlu/hriv/issues/1507)) ([9b2ee92](https://github.com/bcit-tlu/hriv/commit/9b2ee92f62d1e2f2e862afd7a3b41dd0295d8f3f))
+* **backend:** probe readiness with a fresh NullPool connection ([#1506](https://github.com/bcit-tlu/hriv/issues/1506)) ([3958be2](https://github.com/bcit-tlu/hriv/commit/3958be24e1318bb11417903a6f89f2f37aaf5b6d))
+
+## [0.64.3](https://github.com/bcit-tlu/hriv/compare/backend-v0.64.2...backend-v0.64.3) (2026-10-04)
+
+
+### Bug Fixes
+
+* **backend:** migrate python-jose to PyJWT to drop ecdsa ([#1504](https://github.com/bcit-tlu/hriv/issues/1504)) ([b6d3609](https://github.com/bcit-tlu/hriv/commit/b6d3609e244859eb5cdc01de7711b2527bb76ae2))
+
 ## [0.64.2](https://github.com/bcit-tlu/hriv/compare/backend-v0.64.1...backend-v0.64.2) (2026-09-29)
 
 

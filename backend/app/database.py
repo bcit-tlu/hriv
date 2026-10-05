@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase, Session
-from sqlalchemy.pool import Pool
+from sqlalchemy.pool import NullPool, Pool
 
 
 MAX_REBUILD_CHILD_TIMEOUT_SECONDS = 86400
@@ -108,6 +108,23 @@ class Settings(BaseSettings):
     rate_limit_telemetry_user_max: int = 600
     rate_limit_telemetry_window: int = 60  # seconds
 
+    # Shared static credential accepted by POST /api/telemetry/synthetic-result
+    # as an alternative to the monitor account's user JWT. The same secret is
+    # delivered to the synthetic-monitoring CronJob and the backend (flux-fleet
+    # ``hriv-synthetic-ingest`` VaultStaticSecret). Validation is a
+    # constant-time compare requiring no database access, so failure reports
+    # still land during authentication/database outages (#1495) — precisely
+    # when a user JWT cannot be obtained. Empty disables the token path so
+    # only JWT-authenticated synthetic accounts may report (local dev).
+    synthetic_ingest_token: str = ""
+
+    # Sliding-window rate limit for the synthetic-result ingest endpoint,
+    # enforced identically for both credential paths. The monitor posts at
+    # most a few results per CronJob run, so the budget only bounds abuse of
+    # a leaked ingest token or a misbehaving monitor.
+    rate_limit_synthetic_ingest_max: int = 30
+    rate_limit_synthetic_ingest_window: int = 60  # seconds
+
     # OIDC / OAuth settings (Phase 3 — Identity)
     oidc_enabled: bool = False
     oidc_issuer: str = ""
@@ -190,6 +207,38 @@ def get_engine_pool() -> Pool | None:
     resource being observed.
     """
     return _engine.pool if _engine is not None else None
+
+
+_probe_engine = None
+
+
+def get_probe_engine() -> AsyncEngine:
+    """Return the dedicated unpooled engine used by readiness probes.
+
+    ``NullPool`` means every ``connect()`` establishes a brand-new PostgreSQL
+    session and closes it on release. Probes must test *connection
+    establishment* — a pooled checkout can silently reuse a session that
+    authenticated before database credentials were revoked or rotated, which
+    reported pods Ready through the 2026-10-02 dynamic-credential outage
+    while every new connection failed (#1496).
+    """
+    global _probe_engine
+    if _probe_engine is None:
+        _probe_engine = create_async_engine(
+            settings.database_url,
+            echo=False,
+            poolclass=NullPool,
+        )
+    return _probe_engine
+
+
+async def dispose_probe_engine() -> None:
+    """Close the probe engine if it was ever created (app shutdown)."""
+    global _probe_engine
+    if _probe_engine is not None:
+        engine = _probe_engine
+        _probe_engine = None
+        await engine.dispose()
 
 
 def get_async_session() -> async_sessionmaker[AsyncSession]:

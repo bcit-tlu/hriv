@@ -7,16 +7,15 @@ import uuid
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, Request, status as http_status
+from fastapi import FastAPI, HTTPException, Request, status as http_status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.sessions import SessionMiddleware
 
 from .admin_ops import _ensure_tasks_dir
 from .auth import auth_settings
-from .database import get_db, settings
+from .database import dispose_probe_engine, get_probe_engine, settings
 from .logging_config import setup_logging
 from .metrics import render_metrics
 from .queue_metrics import queue_health
@@ -25,7 +24,8 @@ from .reconciliation import run_reconciliation_sweep
 from .schemas import FeaturesOut
 from .worker import TaskQueueUnavailableError, get_pool
 from .maintenance import is_maintenance_mode
-from .middleware import AuditMiddleware, CollectionsFeatureMiddleware, MaintenanceMiddleware
+from .upload_staging import UPLOAD_SPOOL_DIR_NAME
+from .middleware import AuditMiddleware, CollectionsFeatureMiddleware, MaintenanceMiddleware, UploadBodyLimitMiddleware
 from .routers import (
     admin,
     announcement,
@@ -90,6 +90,39 @@ async def _check_storage_ready(timeout: float = 5.0) -> bool:
         logger.warning(
             "Storage health check timed out after %s seconds", timeout,
             extra={"event": "health.storage_timeout"},
+        )
+        return False
+
+
+async def _check_db_ready(timeout: float = 5.0) -> bool:
+    """Open a *fresh* database connection and run ``SELECT 1`` on it.
+
+    The check uses a dedicated unpooled (``NullPool``) engine rather than the
+    request-path session pool: a pooled checkout can reuse a connection that
+    authenticated before Vault revoked or rotated the dynamic PostgreSQL
+    credentials, which reported pods Ready through the 2026-10-02 outage
+    while every new connection failed authentication (#1496). Establishing a
+    new session per probe proves the app can still connect — the property
+    Kubernetes readiness actually needs.
+
+    Scope note: this check deliberately does NOT reflect request-pool
+    saturation — an exhausted pool means the pod is busy, not broken, and
+    flapping readiness under load would cascade failures. Pool occupancy is
+    monitored via the ``hriv_db_pool_*`` metrics instead.
+    """
+    async def _roundtrip() -> None:
+        engine = get_probe_engine()
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+
+    try:
+        await asyncio.wait_for(_roundtrip(), timeout=timeout)
+        return True
+    except Exception:
+        logger.warning(
+            "Database readiness check failed — cannot establish a fresh connection",
+            exc_info=True,
+            extra={"event": "health.db_unready"},
         )
         return False
 
@@ -190,6 +223,22 @@ async def lifespan(app: FastAPI):
                 extra={"event": "worker.queue_unavailable"},
             )
 
+    # .strip() matches the endpoint's compare: a whitespace-only configured
+    # value is effectively unconfigured and must not suppress the warning.
+    if not settings.synthetic_ingest_token.strip():
+        log_missing_token = (
+            logger.warning
+            if settings.task_execution_mode == "required"
+            else logger.info
+        )
+        log_missing_token(
+            "SYNTHETIC_INGEST_TOKEN is not configured — the synthetic monitor "
+            "can only report results with its user JWT, which fails during "
+            "auth/DB outages exactly when the report matters (#1495). "
+            "Configure the shared ingest token for deployed environments.",
+            extra={"event": "synthetic.ingest_token_missing"},
+        )
+
     # In "required" mode a dedicated arq worker pod is guaranteed, so the
     # reconciliation sweep runs there instead (see
     # ``worker.WorkerSettings.cron_jobs``) — periodically, not just once at
@@ -199,6 +248,7 @@ async def lifespan(app: FastAPI):
         await run_reconciliation_sweep()
 
     yield
+    await dispose_probe_engine()
     logger.info("Application shutting down", extra={"event": "app.shutdown"})
 
 
@@ -261,6 +311,11 @@ _cors_origins, _cors_allow_credentials = _resolve_cors_config(
     settings.cors_origins, settings.task_execution_mode
 )
 
+# Innermost custom middleware: caps the streamed upload body on the
+# multipart upload routes before python-multipart's temp-file spool can
+# absorb an oversized request (#1432). Registered first so its 413 still
+# flows back through the audit/CORS layers for logging and headers.
+app.add_middleware(UploadBodyLimitMiddleware)
 # Registered inside MaintenanceMiddleware (Starlette runs the last-added
 # middleware first) so maintenance 503s win over the collections 404.
 app.add_middleware(CollectionsFeatureMiddleware)
@@ -306,6 +361,17 @@ app.include_router(probe.router, prefix="/api")
 # gone; only the directory bootstrap remains.
 os.makedirs(settings.tiles_dir, exist_ok=True)
 
+# The deployment points TMPDIR at this directory so python-multipart's
+# SpooledTemporaryFile and other tempfile artifacts land on the
+# source-images PVC instead of pod-local /tmp (#1365). It must exist
+# before the first tempfile call resolves TMPDIR, so create it at import;
+# the startup reconciliation sweep then removes aged leftovers (a dead
+# request's spool files on the shared RWX volume).
+os.makedirs(
+    os.path.join(settings.source_images_dir, UPLOAD_SPOOL_DIR_NAME),
+    exist_ok=True,
+)
+
 
 @app.get("/api/health")
 async def health():
@@ -331,9 +397,13 @@ async def queue_health_endpoint():
 
 
 @app.get("/api/health/ready")
-async def readiness(db: AsyncSession = Depends(get_db)):
-    """Readiness probe: verifies the database connection and storage are alive."""
-    await db.execute(text("SELECT 1"))
+async def readiness():
+    """Readiness probe: verifies fresh DB connectivity and storage are alive."""
+    if not await _check_db_ready():
+        raise HTTPException(
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database unreachable",
+        )
     if not await _check_storage_ready():
         raise HTTPException(
             status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,

@@ -4,10 +4,17 @@ import {
   addImagesToCollection,
   createCollectionWithImages,
   fitsCollectionCapacity,
+  removeImagesFromCollection,
   useEditableCollections,
+  useVisibleCollections,
 } from '../src/useAddToCollection'
 import { ApiError } from '../src/api'
-import { makeApiCollection, makeApiCollectionSummary } from './helpers/fixtures'
+import {
+  makeApiCollection,
+  makeApiCollectionSummary,
+  makeCollection,
+  makeImage,
+} from './helpers/fixtures'
 
 const apiMocks = vi.hoisted(() => ({
   fetchCollections: vi.fn(),
@@ -118,6 +125,91 @@ describe('addImagesToCollection', () => {
   })
 })
 
+describe('removeImagesFromCollection (#1530)', () => {
+  it('PUTs the member list minus the removed ids with the current version', async () => {
+    apiMocks.fetchCollection.mockResolvedValue(
+      makeApiCollection({
+        id: 5,
+        version: 4,
+        images: [apiImage(1), apiImage(2), apiImage(9)],
+      }),
+    )
+    apiMocks.replaceCollectionImages.mockResolvedValue(
+      makeApiCollection({ id: 5, version: 5, images: [apiImage(1), apiImage(2)] }),
+    )
+
+    const result = await removeImagesFromCollection(5, [9])
+
+    expect(apiMocks.replaceCollectionImages).toHaveBeenCalledWith(5, {
+      image_ids: [1, 2],
+      version: 4,
+    })
+    expect(result.images.map((i) => i.id)).toEqual([1, 2])
+  })
+
+  it('skips the PUT when none of the ids are members', async () => {
+    apiMocks.fetchCollection.mockResolvedValue(
+      makeApiCollection({ id: 5, version: 4, images: [apiImage(1), apiImage(2)] }),
+    )
+
+    const result = await removeImagesFromCollection(5, [9, 10])
+
+    expect(apiMocks.replaceCollectionImages).not.toHaveBeenCalled()
+    expect(result.images.map((i) => i.id)).toEqual([1, 2])
+  })
+
+  it('removes only listed ids, keeping other members', async () => {
+    apiMocks.fetchCollection.mockResolvedValue(
+      makeApiCollection({
+        id: 5,
+        version: 2,
+        images: [apiImage(1), apiImage(2), apiImage(3)],
+      }),
+    )
+    apiMocks.replaceCollectionImages.mockResolvedValue(
+      makeApiCollection({ id: 5, version: 3, images: [apiImage(1), apiImage(3)] }),
+    )
+
+    await removeImagesFromCollection(5, [2])
+
+    expect(apiMocks.replaceCollectionImages).toHaveBeenCalledWith(5, {
+      image_ids: [1, 3],
+      version: 2,
+    })
+  })
+
+  it('pins the undo base record — skips the fetch and PUTs at its version', async () => {
+    // `base` is the record returned by the add being undone: the PUT must
+    // carry its version so another editor's intervening write 409s rather
+    // than being silently overwritten (undo convention).
+    const base = makeCollection({
+      id: 5,
+      version: 6,
+      images: [makeImage({ id: 1 }), makeImage({ id: 42 })],
+    })
+    apiMocks.replaceCollectionImages.mockResolvedValue(
+      makeApiCollection({ id: 5, version: 7, images: [apiImage(1)] }),
+    )
+
+    const result = await removeImagesFromCollection(5, [42], base)
+
+    expect(apiMocks.fetchCollection).not.toHaveBeenCalled()
+    expect(apiMocks.replaceCollectionImages).toHaveBeenCalledWith(5, {
+      image_ids: [1],
+      version: 6,
+    })
+    expect(result.images.map((i) => i.id)).toEqual([1])
+  })
+
+  it('with a base record, an intervening change surfaces as a 409 conflict', async () => {
+    const base = makeCollection({ id: 5, version: 6, images: [makeImage({ id: 42 })] })
+    apiMocks.replaceCollectionImages.mockRejectedValue(new ApiError(409, 'Collection was modified'))
+
+    await expect(removeImagesFromCollection(5, [42], base)).rejects.toMatchObject({ status: 409 })
+    expect(apiMocks.fetchCollection).not.toHaveBeenCalled()
+  })
+})
+
 describe('createCollectionWithImages', () => {
   it('posts the form values with the images preset and only sends scope when restricted', async () => {
     apiMocks.createCollection.mockResolvedValue(makeApiCollection({ id: 8, name: 'New' }))
@@ -161,6 +253,42 @@ describe('createCollectionWithImages', () => {
       program_ids: [1],
       group_ids: [10],
     })
+  })
+})
+
+describe('useVisibleCollections', () => {
+  it('loads on open and keeps every row — visibility is already enforced server-side', async () => {
+    apiMocks.fetchCollections.mockResolvedValue([
+      makeApiCollectionSummary({ id: 1, name: 'Editable' }),
+      makeApiCollectionSummary({
+        id: 2,
+        name: 'Read only',
+        permissions: { can_edit: false, can_delete: false, can_transfer: false },
+      }),
+    ])
+    const { result, rerender } = renderHook(({ enabled }) => useVisibleCollections(enabled), {
+      initialProps: { enabled: false },
+    })
+    expect(apiMocks.fetchCollections).not.toHaveBeenCalled()
+
+    rerender({ enabled: true })
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.collections.map((c) => c.name)).toEqual(['Editable', 'Read only'])
+  })
+
+  it('clears the list when a refresh fails so stale rows are not served', async () => {
+    apiMocks.fetchCollections.mockResolvedValueOnce([
+      makeApiCollectionSummary({ id: 1, name: 'Editable' }),
+    ])
+    const { result } = renderHook(() => useVisibleCollections(true))
+    await waitFor(() => expect(result.current.collections).toHaveLength(1))
+
+    apiMocks.fetchCollections.mockRejectedValueOnce(new ApiError(500, 'boom'))
+    await act(async () => {
+      await result.current.reload()
+    })
+    expect(result.current.collections).toEqual([])
+    expect(result.current.error).toBe('Failed to load collections.')
   })
 })
 

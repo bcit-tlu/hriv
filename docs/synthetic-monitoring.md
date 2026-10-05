@@ -43,7 +43,10 @@ Each step is wrapped in `test.step(...)` and logs a `[synthetic] …` line, so C
 logs and the Playwright report show a readable, timed breakdown and the session
 id used to correlate the run's frontend events in Loki. The runner also records
 bounded step durations and submits the result from `finally`, so failed journeys
-still attempt to publish their last known state before the Job exits.
+still attempt to publish their last known state before the Job exits. The
+submission posts through a standalone Playwright `APIRequestContext` rather
+than `page.request`, so it still runs when Playwright tears the browser context
+down on a hard journey timeout (#1495).
 
 ## Authoritative result schema
 
@@ -90,21 +93,39 @@ Allowed failure codes are fixed:
 - `result_submission_failed`
 - `unexpected_error`
 
-The endpoint only accepts requests from an authenticated user whose
-`metadata_.synthetic` flag is `true`. Stale results older than the currently
-stored latest run are rejected, so out-of-order Job completions cannot roll the
-authoritative gauges backward.
+The endpoint accepts two credential classes, and every caller must present one:
+
+1. **`X-Synthetic-Ingest-Token`** — a shared static secret delivered to the
+   monitor CronJob and the backend from the same secret source (the
+   `hriv-synthetic-ingest` VaultStaticSecret in flux-fleet; env var
+   `SYNTHETIC_INGEST_TOKEN` on both). Validation is a constant-time compare
+   requiring **no database access**, so failure reports still land during
+   auth/DB outages — precisely when the monitor cannot obtain a user JWT
+   (#1495).
+2. **Synthetic-account Bearer JWT** — the monitor account's `hriv_token`, kept
+   for local development and monitor images that predate the ingest token. The
+   account's `metadata_.synthetic` flag must be `true`.
+
+When both are present the ingest token wins; an invalid token is a 401, never
+a silent fallback to the JWT path. Both paths share a sliding-window rate
+limit (`rate:synthetic-ingest`, 30 requests per 60 s) bounding abuse of a
+leaked token, and the stored log records which credential was used
+(`synthetic.credential`: `ingest_token` or `user_jwt`).
+
+Stale results older than the currently stored latest run are rejected, so
+out-of-order Job completions cannot roll the authoritative gauges backward.
 
 ## Configuration
 
-| Variable                      | Default                        | Purpose                                     |
-| ----------------------------- | ------------------------------ | ------------------------------------------- |
-| `BASE_URL`                    | `http://localhost:5173`        | Target environment base URL                 |
-| `SYNTHETIC_EMAIL`             | `synthetic.student@example.ca` | Login email for the monitor account         |
-| `SYNTHETIC_PASSWORD`          | `password`                     | Login password for the monitor account      |
-| `SYNTHETIC_CATEGORY_PATH`     | `Synthetic Monitoring`         | Slash-separated category labels to navigate |
-| `SYNTHETIC_IMAGE_NAME`        | `Synthetic Monitoring Image`   | Exact image name to open                    |
-| `SYNTHETIC_COMPONENT_VERSION` | package version                | Version string attached to logs and results |
+| Variable                      | Default                        | Purpose                                                                                   |
+| ----------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------- |
+| `BASE_URL`                    | `http://localhost:5173`        | Target environment base URL                                                               |
+| `SYNTHETIC_EMAIL`             | `synthetic.student@example.ca` | Login email for the monitor account                                                       |
+| `SYNTHETIC_PASSWORD`          | `password`                     | Login password for the monitor account                                                    |
+| `SYNTHETIC_CATEGORY_PATH`     | `Synthetic Monitoring`         | Slash-separated category labels to navigate                                               |
+| `SYNTHETIC_IMAGE_NAME`        | `Synthetic Monitoring Image`   | Exact image name to open                                                                  |
+| `SYNTHETIC_COMPONENT_VERSION` | package version                | Version string attached to logs and results                                               |
+| `SYNTHETIC_INGEST_TOKEN`      | unset                          | Shared secret for `X-Synthetic-Ingest-Token` result submission; unset → user-JWT fallback |
 
 The monitor account should be a dedicated user whose database `metadata_`
 carries `{"synthetic": true}`. The backend uses that flag to mark the account's
@@ -193,9 +214,11 @@ failure message.
 
 **Deployment prerequisites** (out of scope for this repo — configured in
 `bcit-tlu/flux-fleet`): a scheduler (e.g. a `CronJob`) to run the image on an
-interval, the `BASE_URL` for the target environment, and the monitor account
-credentials delivered as a secret. The monitor account itself must be seeded
-with `metadata_.synthetic = true` in the target database.
+interval, the `BASE_URL` for the target environment, the monitor account
+credentials delivered as a secret, and the `hriv-synthetic-ingest` shared
+result-ingest token delivered to both the CronJob and the backend. The monitor
+account itself must be seeded with `metadata_.synthetic = true` in the target
+database.
 
 ### Creating the synthetic monitor account
 
@@ -237,6 +260,15 @@ WHERE email = 'synthetic.student@example.ca';
 
 Store the credentials in Vault at `apps/data/hriv/<env>/synthetic-monitoring`
 so the CronJob secret (see `bcit-tlu/flux-fleet`) picks them up.
+
+The result-ingest token is a separate Vault entry: populate key `token` at
+`apps/data/hriv/<env>/synthetic-ingest` (e.g. `openssl rand -hex 32`). The
+`hriv-synthetic-ingest` VaultStaticSecret delivers it to both the CronJob
+(`SYNTHETIC_INGEST_TOKEN`) and the backend Deployment via
+`syntheticMonitoring.ingestTokenSecret` — a dedicated secret rather than a key
+on the login-credentials secret, so rotating monitor credentials does not
+restart the backend. Keeping it on its own path also means the backend's
+`rolloutRestartTargets` restart only fires on ingest-token rotation.
 
 ### Provisioning the production test target
 

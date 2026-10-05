@@ -7,7 +7,9 @@ import {
   apiImageToItem,
   canUseRestrictedVisibility,
   describeCollectionOwner,
+  describeCollectionOwners,
   parseCollectionIdParam,
+  parseCollectionItemParam,
 } from '../src/collectionUtils'
 import { makeApiCollection, makeApiCollectionSummary } from './helpers/fixtures'
 
@@ -31,7 +33,7 @@ const API_IMAGE: ApiImage = {
 }
 
 describe('collectionUtils mapping', () => {
-  it('maps a user owner, a program owner, and null', () => {
+  it('maps a user owner and a program owner (#1531)', () => {
     expect(apiCollectionOwnerToOwner({ user_id: 7, name: 'Ada' })).toEqual({
       kind: 'user',
       userId: 7,
@@ -42,7 +44,6 @@ describe('collectionUtils mapping', () => {
       programId: 3,
       name: 'Radiography',
     })
-    expect(apiCollectionOwnerToOwner(null)).toBeNull()
   })
 
   it('maps owners as the backend serialises them, with the unused id present as null', () => {
@@ -60,7 +61,12 @@ describe('collectionUtils mapping', () => {
   it('maps a summary to camelCase including permissions', () => {
     const summary = apiCollectionSummaryToSummary(
       makeApiCollectionSummary({
-        permissions: { can_edit: false, can_delete: true, can_transfer: true },
+        permissions: {
+          can_edit: false,
+          can_delete: true,
+          can_change_scope: false,
+          can_transfer: true,
+        },
       }),
     )
     expect(summary).toMatchObject({
@@ -68,13 +74,20 @@ describe('collectionUtils mapping', () => {
       name: 'Skull comparison',
       type: 'synchronized',
       visibility: 'private',
-      owner: { kind: 'user', userId: 7, name: 'Ada Lovelace' },
+      owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace' }],
       imageCount: 2,
       coverThumb: '/thumbs/skull.jpg?token=abc',
       version: 1,
+      categoryId: null,
+      sortOrder: 0,
       createdAt: '2026-01-01T00:00:00Z',
       updatedAt: '2026-01-02T00:00:00Z',
-      permissions: { canEdit: false, canDelete: true, canTransfer: true },
+      permissions: {
+        canEdit: false,
+        canDelete: true,
+        canChangeScope: false,
+        canTransfer: true,
+      },
     })
   })
 
@@ -114,12 +127,19 @@ describe('collectionUtils mapping', () => {
     expect(full.viewportState).toEqual({ zoom: 2 })
   })
 
-  it('describes owners for display', () => {
+  it('describes owners for display (#1531)', () => {
     expect(describeCollectionOwner({ kind: 'user', userId: 1, name: 'Ada' })).toBe('Ada')
     expect(describeCollectionOwner({ kind: 'program', programId: 1, name: 'Nursing' })).toBe(
       'Nursing (program)',
     )
-    expect(describeCollectionOwner(null)).toBe('No owner')
+    expect(describeCollectionOwners([])).toBe('No owner')
+    expect(describeCollectionOwners([{ kind: 'user', userId: 1, name: 'Ada' }])).toBe('Ada')
+    expect(
+      describeCollectionOwners([
+        { kind: 'user', userId: 1, name: 'Ada' },
+        { kind: 'user', userId: 2, name: 'Bob' },
+      ]),
+    ).toBe('Ada, Bob')
   })
 })
 
@@ -156,5 +176,31 @@ describe('parseCollectionIdParam', () => {
     )
     expect(parseCollectionIdParam('?collection=9007199254740993')).toBeNull()
     expect(parseCollectionIdParam(`?collection=${'9'.repeat(400)}`)).toBeNull()
+  })
+})
+
+describe('parseCollectionItemParam', () => {
+  it('parses the sequence position beside a collection id (#1416)', () => {
+    expect(parseCollectionItemParam('?collection=12&item=99')).toBe(99)
+    expect(parseCollectionItemParam('?item=3&collection=7')).toBe(3)
+  })
+
+  it('requires a valid ?collection= to be meaningful', () => {
+    expect(parseCollectionItemParam('?item=99')).toBeNull()
+    expect(parseCollectionItemParam('?collection=abc&item=99')).toBeNull()
+    expect(parseCollectionItemParam('?page=collections&item=99')).toBeNull()
+  })
+
+  it('rejects missing, non-numeric, negative, zero and decimal values', () => {
+    expect(parseCollectionItemParam('?collection=12')).toBeNull()
+    expect(parseCollectionItemParam('?collection=12&item=')).toBeNull()
+    expect(parseCollectionItemParam('?collection=12&item=abc')).toBeNull()
+    expect(parseCollectionItemParam('?collection=12&item=-1')).toBeNull()
+    expect(parseCollectionItemParam('?collection=12&item=0')).toBeNull()
+    expect(parseCollectionItemParam('?collection=12&item=1.5')).toBeNull()
+  })
+
+  it('rejects integers that cannot be represented exactly', () => {
+    expect(parseCollectionItemParam('?collection=12&item=9007199254740993')).toBeNull()
   })
 })

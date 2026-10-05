@@ -34,6 +34,13 @@ def _patch_browse_bump(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         images_router, "bump_browse_revision", AsyncMock(return_value=1)
     )
+    # image_ids_in_filed_collections queries collection membership (#1527);
+    # default to "not a member" — tests override with their own return set.
+    monkeypatch.setattr(
+        images_router,
+        "image_ids_in_filed_collections",
+        AsyncMock(return_value=set()),
+    )
 
 
 def _make_image(
@@ -928,6 +935,38 @@ async def test_replace_image_normalizes_original_filename(
     assert src.original_filename == "<img src=x> .jpg"
 
 
+async def test_replace_image_rejects_oversized_file(tmp_path) -> None:
+    """A replacement streamed past UPLOAD_MAX_BYTES gets a 413 (#1432).
+
+    Same shared staging cap as the upload route; the partially written
+    staging artifact is discarded.
+    """
+    file = AsyncMock()
+    file.filename = "big.png"
+    file.content_type = "image/png"
+    file.read = AsyncMock(side_effect=[b"aa", b"bb", b"cc", b""])
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=_make_image())
+
+    with (
+        patch("app.routers.images.settings") as mock_settings,
+        patch("app.upload_staging.UPLOAD_MAX_BYTES", 4),
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        with pytest.raises(HTTPException) as exc:
+            await replace_image(
+                image_id=1,
+                file=file,
+                background_tasks=MagicMock(),
+                _user=_make_user(),
+                db=db,
+            )
+    assert exc.value.status_code == 413
+    assert "per-upload size limit" in exc.value.detail
+    assert list(tmp_path.iterdir()) == []
+
+
 @patch("os.path.getsize", return_value=1024)
 @patch("os.replace")
 @patch("os.makedirs")
@@ -1491,3 +1530,93 @@ async def test_replace_image_pre_commit_failure_routes_through_ownership_cleanup
     cleanup.assert_awaited_once()
     # The cleanup received the final stored path of the staged upload.
     assert cleanup.await_args.args[0].endswith(".png")
+
+# ── Filed-collection member invalidation (epic #1525 / #1527) ──
+
+
+async def test_update_image_uncategorized_member_of_filed_collection_bumps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An uncategorized image never appears in the tree itself, but when it
+    belongs to a filed collection its active/thumb feed that tile — an edit
+    must still invalidate the browse ETag."""
+    monkeypatch.setattr(
+        images_router,
+        "image_ids_in_filed_collections",
+        AsyncMock(return_value={1}),
+    )
+    img = _make_image(id=1, category_id=None)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    body = ImageUpdate(active=False)
+    await update_image(1, body, _mock_request(), _make_user(), db)
+    images_router.bump_browse_revision.assert_awaited_once()
+
+
+async def test_update_image_uncategorized_non_member_skips_bump() -> None:
+    img = _make_image(id=1, category_id=None)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    body = ImageUpdate(name="renamed")
+    await update_image(1, body, _mock_request(), _make_user(), db)
+    images_router.bump_browse_revision.assert_not_awaited()
+
+
+async def test_delete_image_member_of_filed_collection_bumps() -> None:
+    """Deleting a member image shrinks a filed collection's image_count /
+    cover — the tree ETag must advance even though the image is
+    uncategorized."""
+    images_router.image_ids_in_filed_collections.return_value = {1}
+    img = _make_image(id=1, category_id=None)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.delete = AsyncMock()
+    db.commit = AsyncMock()
+
+    await delete_image(1, _make_user(), db=db)
+    images_router.bump_browse_revision.assert_awaited_once()
+
+
+async def test_delete_image_member_check_runs_before_delete() -> None:
+    """Ordering regression: the membership SELECT cannot run after the
+    delete autoflushes collection_images rows away."""
+    calls: list[str] = []
+    images_router.image_ids_in_filed_collections.side_effect = (
+        lambda *a, **k: calls.append("member_check") or {1}
+    )
+    img = _make_image(id=1, category_id=None)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.delete = AsyncMock(side_effect=lambda *a: calls.append("delete"))
+    db.commit = AsyncMock()
+
+    await delete_image(1, _make_user(), db=db)
+    assert calls == ["member_check", "delete"]
+
+
+async def test_bulk_delete_images_member_of_filed_collection_bumps() -> None:
+    images_router.image_ids_in_filed_collections.return_value = {2}
+    imgs = [
+        _make_image(id=1, category_id=None),
+        _make_image(id=2, category_id=None),
+    ]
+
+    async def mock_execute(stmt):
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = imgs
+        return mock_result
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=mock_execute)
+    db.delete = AsyncMock()
+    db.commit = AsyncMock()
+
+    body = ImageBulkDelete(image_ids=[1, 2])
+    await bulk_delete_images(body, _make_user(), db=db)
+    images_router.bump_browse_revision.assert_awaited_once()

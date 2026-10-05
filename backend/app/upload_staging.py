@@ -28,10 +28,18 @@ import time
 from sqlalchemy import exists, select
 
 from .database import async_session
-from .image_validation import UPLOAD_CHUNK_SIZE
+from .image_validation import UPLOAD_CHUNK_SIZE, UPLOAD_MAX_BYTES
 from .models import SourceImage
 
 logger = logging.getLogger(__name__)
+
+
+class UploadTooLargeError(Exception):
+    """Raised when a streamed upload exceeds ``UPLOAD_MAX_BYTES`` (#1432)."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail)
+        self.detail = detail
 
 STAGING_PREFIX = ".staging-"
 
@@ -64,10 +72,17 @@ async def write_upload_to_staging(file, staging_path: str) -> int:
     the readiness probe) if run inline.
     """
     with open(staging_path, "wb") as f:
+        written = 0
         while True:
             chunk = await file.read(UPLOAD_CHUNK_SIZE)
             if not chunk:
                 break
+            written += len(chunk)
+            if written > UPLOAD_MAX_BYTES:
+                raise UploadTooLargeError(
+                    "File exceeds the per-upload size limit of "
+                    f"{UPLOAD_MAX_BYTES / (1024 ** 3):g} GiB"
+                )
             await asyncio.to_thread(f.write, chunk)
     return os.path.getsize(staging_path)
 
@@ -121,6 +136,34 @@ async def cleanup_unowned_final(stored_path: str) -> None:
                 "stored_path": stored_path,
             },
         )
+
+
+# Directory under ``source_images_dir`` that the deployment's ``TMPDIR``
+# points at (#1365): python-multipart's ``SpooledTemporaryFile`` and other
+# tempfile consumers land here — on the source-images PVC — instead of the
+# pod's 1 GiB ephemeral-storage budget. Everything inside is a transient
+# artifact owned by a live request or a dead one, never referenced by a
+# committed row, so any aged file in it is safe to remove. Shared RWX
+# mounts mean a sibling pod's in-flight spool can be listed too — the age
+# bound is what keeps the sweep from deleting a live request's file.
+UPLOAD_SPOOL_DIR_NAME = ".staging"
+
+
+def _stale_spool_files(directory: str, cutoff: float) -> list[str]:
+    """Aged files inside the upload spool dir (any name)."""
+    spool_dir = os.path.join(directory, UPLOAD_SPOOL_DIR_NAME)
+    try:
+        entries = os.scandir(spool_dir)
+    except OSError:
+        return []
+    stale = []
+    for entry in entries:
+        try:
+            if entry.is_file() and entry.stat().st_mtime < cutoff:
+                stale.append(entry.path)
+        except OSError:
+            continue
+    return stale
 
 
 def _stale_staging_files(directory: str, cutoff: float) -> list[str]:
@@ -211,12 +254,32 @@ async def reconcile_staging_artifacts(
 ) -> int:
     """Delete ``.staging-*`` files in *directory* older than the bound.
 
+    Also creates ``<directory>/.staging/`` — the upload-spool directory
+    ``TMPDIR`` points at in deployment — and sweeps aged files inside it;
+    the pod's temp dir must exist before the first tempfile call resolves
+    it, and crashed-pod leftovers accumulate on the shared PVC otherwise
+    (#1365).
+
     Staging names are never referenced by committed rows, so an aged
     artifact always belongs to a dead request and is safe to remove.
     Returns the number of files removed.
     """
     cutoff = time.time() - max_age_seconds
+    spool_dir = os.path.join(directory, UPLOAD_SPOOL_DIR_NAME)
+    try:
+        await asyncio.to_thread(os.makedirs, spool_dir, exist_ok=True)
+    except OSError as exc:
+        logger.warning(
+            "Failed to create upload spool directory: %s",
+            exc,
+            extra={
+                "event": "upload.spool_dir_create_failed",
+                "path": spool_dir,
+                "error": str(exc),
+            },
+        )
     stale = await asyncio.to_thread(_stale_staging_files, directory, cutoff)
+    stale += await asyncio.to_thread(_stale_spool_files, directory, cutoff)
     removed = 0
     for path in stale:
         try:

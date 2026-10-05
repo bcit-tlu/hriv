@@ -52,6 +52,15 @@ function countAllImages(cat: Category): number {
   return count
 }
 
+/** Count all collections filed in a category and its descendants (#1529). */
+function countAllCollections(cat: Category): number {
+  let count = cat.collections.length
+  for (const child of cat.children) {
+    count += countAllCollections(child)
+  }
+  return count
+}
+
 interface CategoryTileProps {
   category: Category
   onClick: (category: Category) => void
@@ -93,6 +102,7 @@ function CategoryTile({
 
   const subCategoryCount = useMemo(() => countAllSubcategories(category), [category])
   const imageCount = useMemo(() => countAllImages(category), [category])
+  const collectionCount = useMemo(() => countAllCollections(category), [category])
 
   const detailParts: string[] = []
   if (subCategoryCount > 0) {
@@ -102,6 +112,9 @@ function CategoryTile({
   }
   if (imageCount > 0) {
     detailParts.push(`${imageCount} ${imageCount === 1 ? 'image' : 'images'}`)
+  }
+  if (collectionCount > 0) {
+    detailParts.push(`${collectionCount} ${collectionCount === 1 ? 'collection' : 'collections'}`)
   }
   const detailText = detailParts.length > 0 ? detailParts.join(' \u00b7 ') : 'Empty'
 

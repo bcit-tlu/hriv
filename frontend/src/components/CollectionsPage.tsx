@@ -12,10 +12,6 @@ import Divider from '@mui/material/Divider'
 import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
 import Link from '@mui/material/Link'
-import List from '@mui/material/List'
-import ListItem from '@mui/material/ListItem'
-import ListItemAvatar from '@mui/material/ListItemAvatar'
-import ListItemText from '@mui/material/ListItemText'
 import MenuItem from '@mui/material/MenuItem'
 import Select from '@mui/material/Select'
 import ToggleButton from '@mui/material/ToggleButton'
@@ -25,14 +21,18 @@ import AddIcon from '@mui/icons-material/Add'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import CollectionsIcon from '@mui/icons-material/Collections'
 import DeleteIcon from '@mui/icons-material/Delete'
+import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
 import EditIcon from '@mui/icons-material/Edit'
-import OpenInNewIcon from '@mui/icons-material/OpenInNew'
-import { userMessage } from '../api'
+import SwapHorizIcon from '@mui/icons-material/SwapHoriz'
+import { userMessage, type ApiImage } from '../api'
 import {
   COLLECTION_TYPE_LABELS,
   COLLECTION_VISIBILITY_LABELS,
   describeCollectionOwner,
+  describeCollectionOwners,
 } from '../collectionUtils'
+import { getGroupChipColors } from '../theme'
+import { useColorMode } from '../useColorMode'
 import type { CollectionListFilters, CollectionOwnerFilter } from '../useCollectionsData'
 import type {
   Collection,
@@ -46,7 +46,9 @@ import type {
 } from '../types'
 import CollectionCard, { CollectionVisibilityChip } from './CollectionCard'
 import CollectionEditDialog, { type CollectionFormValues } from './CollectionEditDialog'
-import RenewingThumbnail from './RenewingThumbnail'
+import CollectionOwnersDialog from './CollectionOwnersDialog'
+import SequenceCollectionViewer from './SequenceCollectionViewer'
+import SynchronizedCollectionViewer from './SynchronizedCollectionViewer'
 
 export interface CollectionsPageProps {
   currentUser: User | null
@@ -58,7 +60,7 @@ export interface CollectionsPageProps {
   error: string | null
   filters: CollectionListFilters
   onFiltersChange: (filters: CollectionListFilters) => void
-  ownerOptions: NonNullable<CollectionOwner>[]
+  ownerOptions: CollectionOwner[]
   /** Detail placeholder state; `selectedCollectionId` null renders the list. */
   selectedCollectionId: number | null
   detail: Collection | null
@@ -67,6 +69,14 @@ export interface CollectionsPageProps {
   onOpenCollection: (id: number) => void
   onCloseCollection: () => void
   onOpenImage: (image: ImageItem) => void
+  /** Sequence viewer state (`?item=` position) and mutations (#1416). */
+  selectedCollectionItemId: number | null
+  onSelectCollectionItem: (imageId: number) => void
+  onReorderImages: (id: number, imageIds: number[]) => Promise<unknown>
+  onCollectionImageRenewed: (collectionId: number, image: ApiImage) => void
+  onViewerError: (message: string) => void
+  /** Synchronized viewer mutation — whole-replace `viewport_state` (#1417). */
+  onSaveViewport: (id: number, viewportState: Record<string, unknown>) => Promise<unknown>
   /** Mutations — reject with an ApiError to surface the message in the dialog. */
   loadCollection: (id: number) => Promise<Collection>
   onCreate: (values: CollectionFormValues) => Promise<unknown>
@@ -77,6 +87,21 @@ export interface CollectionsPageProps {
     baseline: Collection | null,
   ) => Promise<unknown>
   onDelete: (id: number) => Promise<void>
+  /** Replace the user-owner set (`PUT …/owners`, #1531) — `canTransfer`-gated. */
+  onSaveOwners: (id: number, userIds: number[]) => Promise<unknown>
+  /** Program-owner reassignment (`POST …/transfer`, #1531) — `canTransfer`-gated. */
+  onTransfer: (id: number, programId: number | null) => Promise<unknown>
+  /**
+   * File into a Browse category (#1529). Role-gated here (any
+   * admin/instructor — filing is curatorial, not ownership-bound); App owns
+   * the dialog + snackbar.
+   */
+  onMoveCollection?: (collection: CollectionSummary) => void
+  /**
+   * Label for the detail view's back button (#1529): `?cat=` context means
+   * "Back to Browse", otherwise "All collections".
+   */
+  detailBackLabel?: string
 }
 
 function ownerFilterKey(owner: CollectionOwnerFilter): string {
@@ -84,23 +109,38 @@ function ownerFilterKey(owner: CollectionOwnerFilter): string {
   return owner.kind === 'user' ? `u${owner.userId}` : `p${owner.programId}`
 }
 
-function CollectionDetailPlaceholder({
+/** Shared header for the collection detail views (placeholder + viewers). */
+function CollectionDetailHeader({
   collection,
+  programs,
+  groups,
   onBack,
-  onOpenImage,
+  backLabel = 'All collections',
   onEdit,
   onDelete,
+  onTransfer,
+  onMove,
 }: {
   collection: Collection
+  programs: Program[]
+  groups: Group[]
   onBack: () => void
-  onOpenImage: (image: ImageItem) => void
+  backLabel?: string
   onEdit?: () => void
   onDelete?: () => void
+  onTransfer?: () => void
+  onMove?: () => void
 }) {
+  const { mode } = useColorMode()
+  const groupColors = getGroupChipColors(mode)
+  const programOwner = collection.owners.find((o) => o.kind === 'program')
+  const ownerText = programOwner
+    ? `Managed by program ${programOwner.name}`
+    : describeCollectionOwners(collection.owners)
   return (
-    <Box data-testid="collection-detail">
+    <>
       <Button startIcon={<ArrowBackIcon />} onClick={onBack} sx={{ mb: 1 }}>
-        All collections
+        {backLabel}
       </Button>
       <Box
         sx={{
@@ -116,9 +156,19 @@ function CollectionDetailPlaceholder({
             {collection.name}
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            {describeCollectionOwner(collection.owner)} · {collection.images.length}{' '}
+            {ownerText} · {collection.images.length}{' '}
             {collection.images.length === 1 ? 'image' : 'images'}
           </Typography>
+          {collection.memberCount > 0 && collection.images.length === 0 && (
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ mt: 0.5, fontStyle: 'italic' }}
+              data-testid="collection-all-restricted"
+            >
+              All images in this collection are currently restricted.
+            </Typography>
+          )}
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
             <Chip
               size="small"
@@ -127,6 +177,29 @@ function CollectionDetailPlaceholder({
               label={COLLECTION_TYPE_LABELS[collection.type]}
             />
             <CollectionVisibilityChip visibility={collection.visibility} />
+            {collection.visibility === 'restricted' && (
+              <>
+                {collection.programIds.map((pid) => (
+                  <Chip
+                    key={`p${pid}`}
+                    size="small"
+                    variant="outlined"
+                    color="primary"
+                    data-testid="detail-program-chip"
+                    label={programs.find((p) => p.id === pid)?.name ?? `Program ${pid}`}
+                  />
+                ))}
+                {collection.groupIds.map((gid) => (
+                  <Chip
+                    key={`g${gid}`}
+                    size="small"
+                    data-testid="detail-group-chip"
+                    label={groups.find((g) => g.id === gid)?.name ?? `Group ${gid}`}
+                    sx={{ bgcolor: groupColors.subtleBg, color: groupColors.subtleText }}
+                  />
+                ))}
+              </>
+            )}
           </Box>
           {collection.description && (
             <Typography variant="body1" sx={{ mt: 2, whiteSpace: 'pre-wrap' }}>
@@ -135,9 +208,29 @@ function CollectionDetailPlaceholder({
           )}
         </Box>
         <Box sx={{ display: 'flex', gap: 1 }}>
+          {onMove && (
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<DriveFileMoveIcon />}
+              onClick={onMove}
+            >
+              Move
+            </Button>
+          )}
           {collection.permissions.canEdit && onEdit && (
             <Button variant="outlined" size="small" startIcon={<EditIcon />} onClick={onEdit}>
               Edit
+            </Button>
+          )}
+          {collection.permissions.canTransfer && onTransfer && (
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<SwapHorizIcon />}
+              onClick={onTransfer}
+            >
+              Owners
             </Button>
           )}
           {collection.permissions.canDelete && onDelete && (
@@ -153,49 +246,7 @@ function CollectionDetailPlaceholder({
           )}
         </Box>
       </Box>
-
-      <Alert severity="info" sx={{ mt: 3 }}>
-        The {COLLECTION_TYPE_LABELS[collection.type].toLowerCase()} viewer is coming soon. Until
-        then, open each image individually below.
-      </Alert>
-
-      {collection.images.length === 0 ? (
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 3 }}>
-          This collection has no images yet.
-        </Typography>
-      ) : (
-        <List dense sx={{ mt: 2 }}>
-          {collection.images.map((img, index) => (
-            <ListItem
-              key={img.id}
-              divider
-              secondaryAction={
-                <Button
-                  size="small"
-                  endIcon={<OpenInNewIcon />}
-                  href={`?image=${img.id}`}
-                  onClick={(e) => {
-                    e.preventDefault()
-                    onOpenImage(img)
-                  }}
-                >
-                  Open image
-                </Button>
-              }
-            >
-              <ListItemAvatar>
-                <RenewingThumbnail
-                  image={img}
-                  alt=""
-                  sx={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 1 }}
-                />
-              </ListItemAvatar>
-              <ListItemText primary={`${index + 1}. ${img.name}`} />
-            </ListItem>
-          ))}
-        </List>
-      )}
-    </Box>
+    </>
   )
 }
 
@@ -216,14 +267,25 @@ export default function CollectionsPage({
   onOpenCollection,
   onCloseCollection,
   onOpenImage,
+  selectedCollectionItemId,
+  onSelectCollectionItem,
+  onReorderImages,
+  onCollectionImageRenewed,
+  onViewerError,
+  onSaveViewport,
   loadCollection,
   onCreate,
   onUpdate,
   onDelete,
+  onSaveOwners,
+  onTransfer,
+  onMoveCollection,
+  detailBackLabel,
 }: CollectionsPageProps) {
   const [editorOpen, setEditorOpen] = useState(false)
   const [editing, setEditing] = useState<Collection | null>(null)
   const [editLoadError, setEditLoadError] = useState<string | null>(null)
+  const [transferTarget, setTransferTarget] = useState<CollectionSummary | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<CollectionSummary | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -232,6 +294,9 @@ export default function CollectionsPage({
 
   const isAdmin = currentUser?.role === 'admin'
   const showOwnerFilter = currentUser != null && currentUser.role !== 'student'
+  // Filing collections into categories is curatorial: any admin/instructor
+  // may move any collection (unlike edit/delete, which are owner-scoped).
+  const canFileCollections = currentUser?.role === 'admin' || currentUser?.role === 'instructor'
 
   const openCreate = () => {
     // Supersede any Edit fetch still in flight so it cannot replace this form.
@@ -327,15 +392,57 @@ export default function CollectionsPage({
           </Alert>
         </Box>
       )
-    } else if (detail) {
+    } else if (detail && detail.type === 'sequence') {
       body = (
-        <CollectionDetailPlaceholder
-          collection={detail}
-          onBack={onCloseCollection}
-          onOpenImage={onOpenImage}
-          onEdit={() => void openEdit(detail)}
-          onDelete={() => requestDelete(detail)}
-        />
+        <Box data-testid="collection-detail">
+          <CollectionDetailHeader
+            collection={detail}
+            programs={programs}
+            groups={groups}
+            onBack={onCloseCollection}
+            backLabel={detailBackLabel}
+            onEdit={() => void openEdit(detail)}
+            onDelete={() => requestDelete(detail)}
+            onTransfer={() => setTransferTarget(detail)}
+            onMove={
+              canFileCollections && onMoveCollection ? () => onMoveCollection(detail) : undefined
+            }
+          />
+          <SequenceCollectionViewer
+            collection={detail}
+            itemId={selectedCollectionItemId}
+            onSelectItem={onSelectCollectionItem}
+            onOpenImage={onOpenImage}
+            onReorder={(imageIds) => onReorderImages(detail.id, imageIds)}
+            onImageRenewed={(image) => onCollectionImageRenewed(detail.id, image)}
+            onError={onViewerError}
+          />
+        </Box>
+      )
+    } else if (detail && detail.type === 'synchronized') {
+      body = (
+        <Box data-testid="collection-detail">
+          <CollectionDetailHeader
+            collection={detail}
+            programs={programs}
+            groups={groups}
+            onBack={onCloseCollection}
+            backLabel={detailBackLabel}
+            onEdit={() => void openEdit(detail)}
+            onDelete={() => requestDelete(detail)}
+            onTransfer={() => setTransferTarget(detail)}
+            onMove={
+              canFileCollections && onMoveCollection ? () => onMoveCollection(detail) : undefined
+            }
+          />
+          <SynchronizedCollectionViewer
+            collection={detail}
+            onSaveViewport={(viewportState) => onSaveViewport(detail.id, viewportState)}
+            onOpenImage={onOpenImage}
+            onImageRenewed={(image) => onCollectionImageRenewed(detail.id, image)}
+            onError={onViewerError}
+          />
+        </Box>
       )
     } else {
       body = null
@@ -443,27 +550,18 @@ export default function CollectionsPage({
             </Typography>
           </Box>
         ) : (
-          <Box
-            data-testid="collections-grid"
-            sx={{
-              display: 'grid',
-              gap: 2,
-              gridTemplateColumns: {
-                xs: '1fr',
-                sm: 'repeat(2, 1fr)',
-                md: 'repeat(3, 1fr)',
-                lg: 'repeat(4, 1fr)',
-              },
-            }}
-          >
+          <Box data-testid="collections-grid" sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
             {collections.map((c) => (
-              <CollectionCard
-                key={c.id}
-                collection={c}
-                onOpen={(col) => onOpenCollection(col.id)}
-                onEdit={(col) => void openEdit(col)}
-                onDelete={requestDelete}
-              />
+              <Box key={c.id} sx={{ width: 300, maxWidth: '100%' }}>
+                <CollectionCard
+                  collection={c}
+                  onOpen={(col) => onOpenCollection(col.id)}
+                  onEdit={(col) => void openEdit(col)}
+                  onDelete={requestDelete}
+                  onTransfer={setTransferTarget}
+                  onMove={canFileCollections ? onMoveCollection : undefined}
+                />
+              </Box>
             ))}
           </Box>
         )}
@@ -487,6 +585,15 @@ export default function CollectionsPage({
         programs={programs}
         groups={groups}
         onSave={handleSave}
+      />
+
+      <CollectionOwnersDialog
+        open={transferTarget != null}
+        onClose={() => setTransferTarget(null)}
+        collection={transferTarget}
+        programs={programs}
+        onSaveOwners={onSaveOwners}
+        onTransfer={onTransfer}
       />
 
       <Dialog

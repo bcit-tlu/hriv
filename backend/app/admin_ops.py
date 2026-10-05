@@ -60,6 +60,7 @@ from .rebuild_fixture import (
     select_rebuild_fixture_rows,
     try_acquire_rebuild_fixture_archive_lock,
 )
+from .upload_staging import UPLOAD_SPOOL_DIR_NAME
 from .rebuild_locks import (
     acquire_rebuild_creation_lock,
     find_active_rebuild,
@@ -552,6 +553,28 @@ def _swap_imported_entries(
                     extra={"event": "admin_task.files_import_backup_orphaned"},
                     exc_info=True,
                 )
+
+    # The export omits the transient upload spool dir, so the restored
+    # source_images tree has none — recreate it or a running API pod whose
+    # TMPDIR still points there fails tempfile rollover (#1365). Transient
+    # filesystem errors get a bounded retry; a persistent failure is logged
+    # loudly but does not fail the import — the restore itself succeeded,
+    # and UploadBodyLimitMiddleware recreates the dir on the next upload
+    # request either way.
+    spool_dir = os.path.join(source_images_dir, UPLOAD_SPOOL_DIR_NAME)
+    for attempt in range(3):
+        try:
+            os.makedirs(spool_dir, exist_ok=True)
+            break
+        except OSError:
+            if attempt == 2:
+                logger.error(
+                    "Failed to recreate upload spool directory after import",
+                    extra={"event": "admin_task.files_import_spool_dir_failed"},
+                    exc_info=True,
+                )
+            else:
+                time.sleep(1)
 
     tiles_path = Path(tiles_dir)
     source_path = Path(source_images_dir)
@@ -1267,8 +1290,13 @@ async def run_db_export(task_id: int) -> None:
                         "description": c.description,
                         "type": c.type,
                         "visibility": c.visibility,
+                        # user_id is creator-only audit (#1531); the owning
+                        # users are the owner_ids list.
                         "user_id": c.user_id,
+                        "owner_ids": [o.id for o in c.owners],
                         "owner_program_id": c.owner_program_id,
+                        "category_id": c.category_id,
+                        "sort_order": c.sort_order,
                         "viewport_state": c.viewport_state,
                         "version": c.version,
                         "image_ids": [
@@ -1446,6 +1474,7 @@ async def run_db_import(task_id: int) -> None:
                 await data_session.execute(text("DELETE FROM collection_images"))
                 await data_session.execute(text("DELETE FROM collection_programs"))
                 await data_session.execute(text("DELETE FROM collection_groups"))
+                await data_session.execute(text("DELETE FROM collection_owners"))
                 await data_session.execute(text("DELETE FROM collections"))
                 await data_session.execute(text("DELETE FROM source_images"))
                 await data_session.execute(text("DELETE FROM images"))
@@ -1684,6 +1713,8 @@ async def run_db_import(task_id: int) -> None:
                         visibility=c.get("visibility", "private"),
                         user_id=c.get("user_id"),
                         owner_program_id=c.get("owner_program_id"),
+                        category_id=c.get("category_id"),
+                        sort_order=c.get("sort_order", 0),
                         viewport_state=c.get("viewport_state") or {},
                         version=c.get("version", 1),
                         created_at=_parse_dt(c.get("created_at")),
@@ -1705,6 +1736,17 @@ async def run_db_import(task_id: int) -> None:
                         CollectionImage(image_id=image_id, sort_order=position)
                         for position, image_id in enumerate(c.get("image_ids", []))
                     ]
+                    # Owner rows (#1531): new-format dumps carry owner_ids;
+                    # older dumps only have the single-owner user_id, which
+                    # backfills one owner row (it also remains the creator).
+                    owner_ids = c.get("owner_ids")
+                    if owner_ids is None:
+                        owner_ids = [c["user_id"]] if c.get("user_id") is not None else []
+                    if owner_ids:
+                        owners = (await data_session.execute(
+                            select(User).where(User.id.in_(owner_ids))
+                        )).scalars().all()
+                        collection.owners = list(owners)
                     data_session.add(collection)
                 await data_session.flush()
 
@@ -2260,9 +2302,11 @@ def _iter_export_entries(
 ) -> Iterator[tuple[str, str, int, bool]]:
     """Yield archive entries for the filesystem export.
 
-    The traversal excludes the generated tile tree under ``tiles/`` and
-    the ``admin_tasks/`` directory so the UI export stays source-only and
-    does not duplicate prior export artefacts.
+    The traversal excludes the generated tile tree under ``tiles/``, the
+    ``admin_tasks/`` directory, and the upload spool dir under
+    ``source_images/`` so the UI export stays source-only, does not
+    duplicate prior export artefacts, and never captures a live request's
+    transient tempfile (#1365).
 
     Each yielded tuple is ``(arcname, absolute_path, size_bytes, is_dir)``.
     ``size_bytes`` is ``0`` for directory entries.  If *cancel_event* is set
@@ -2271,6 +2315,13 @@ def _iter_export_entries(
     tasks_basename = os.path.basename(_TASKS_DIR)
     staging_basename = os.path.basename(_IMPORT_STAGING_DIR)
     tiles_basename = os.path.basename(os.path.normpath(settings.tiles_dir))
+    # The upload spool is nested under source_images_dir — resolve its
+    # path relative to the walk root so it is pruned wherever it sits.
+    spool_rel = os.path.relpath(
+        os.path.join(settings.source_images_dir, UPLOAD_SPOOL_DIR_NAME),
+        data_dir,
+    )
+    spool_parent_rel, spool_name = os.path.split(spool_rel)
 
     def _check_cancel() -> None:
         if cancel_event is not None and cancel_event.is_set():
@@ -2289,6 +2340,10 @@ def _iter_export_entries(
         for excluded in (tasks_basename, staging_basename, tiles_basename):
             if excluded in dirnames:
                 dirnames.remove(excluded)
+        # The upload spool dir lives under source_images/ — same prune,
+        # one level deeper (#1365).
+        if rel == spool_parent_rel and spool_name in dirnames:
+            dirnames.remove(spool_name)
 
         arcname = os.path.join("data", rel) if rel != "." else "data"
         yield arcname, dirpath, 0, True

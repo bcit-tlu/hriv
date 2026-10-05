@@ -54,6 +54,7 @@ const category: Category = {
   label: 'Cat',
   images: [],
   children: [],
+  collections: [],
   programIds: [],
   groupIds: [],
 } as unknown as Category

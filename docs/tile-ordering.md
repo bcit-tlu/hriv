@@ -1,10 +1,11 @@
 # Atomic, revisioned tile ordering
 
 Browse and Manage Categories present one combined visual order of child
-categories and images per scope (the root, or a single parent category).
-Issue #978 (epic #975) introduced a single atomic, revisioned ordering
-contract so a reorder can never partially persist and stale writers get an
-explicit conflict.
+categories, collections, and images per scope (the root, or a single
+parent category). Issue #978 (epic #975) introduced a single atomic,
+revisioned ordering contract so a reorder can never partially persist and
+stale writers get an explicit conflict; issue #1528 (epic #1525) made
+collections first-class scope members alongside categories and images.
 
 ## Data model
 
@@ -14,9 +15,9 @@ explicit conflict.
     (category IDs are serial and start at 1).
   - `revision`: monotonically increasing ordering revision, starting at 1.
     Rows are created lazily on the first write (or by normalization).
-- `categories.sort_order` / `images.sort_order` keep holding positions;
-  after a tile-order write they are contiguous (`0..n-1`) across the
-  combined scope.
+- `categories.sort_order` / `collections.sort_order` /
+  `images.sort_order` keep holding positions; after a tile-order write
+  they are contiguous (`0..n-1`) across the combined scope.
 
 ## Canonical ordering rule
 
@@ -24,7 +25,7 @@ Reads, writes, and normalization all share one deterministic tie-breaker
 (`backend/app/tile_order.py::canonical_sort_key`):
 
 ```text
-sort_order, item_type_priority (category=0, image=1), item_id
+sort_order, item_type_priority (category=0, collection=1, image=2), item_id
 ```
 
 Labels and file names are never used as persistence tie-breakers.
@@ -47,7 +48,8 @@ still contain duplicates or gaps from before normalization:
   "browse_revision": 42,
   "items": [
     { "type": "category", "id": 41, "sort_order": 0 },
-    { "type": "image", "id": 901, "sort_order": 1 }
+    { "type": "collection", "id": 12, "sort_order": 1 },
+    { "type": "image", "id": 901, "sort_order": 2 }
   ]
 }
 ```
@@ -84,16 +86,24 @@ Within **one database transaction** the endpoint:
 
 1. locks the scope's revision row (`INSERT … ON CONFLICT DO NOTHING` +
    `SELECT … FOR UPDATE`), serializing concurrent writers per scope;
-2. loads the scope's member IDs with two set-based queries;
+2. loads the scope's member IDs with three set-based queries (categories,
+   collections, images);
 3. rejects duplicated, foreign-scope, or missing IDs (HTTP 400) — the
    submitted items must be exactly the scope's members. A 400 can also mean
    scope membership changed underneath the client (a tile was moved in or
-   out). Moves through the category/image update endpoints bump the
+   out). Moves through the category/image update endpoints — and
+   `POST /api/collections/{id}/move` (#1527) — bump the
    revision of both the source and destination scopes, so a client holding
    a pre-move revision gets a 409; other membership changes (create,
    delete) do not bump the revision and are caught only by this
    exact-membership check. Clients should therefore treat 400 like 409 and
    refresh via `GET /api/tile-order`;
+
+   When `COLLECTIONS_ENABLED` is off, collections are not scope members:
+   GET omits them and a submitted `collection` ref reads as foreign (400),
+   so flag-off deployments with existing collection data can neither leak
+   collection tiles nor deadlock a reorder on invisible members;
+
 4. compares `expected_revision` with the current revision and returns
    HTTP 409 with the current revision and authoritative order for stale
    requests;
@@ -103,7 +113,7 @@ Within **one database transaction** the endpoint:
    (so the category-tree endpoint can `304` short-circuit unchanged trees)
    and commits.
 
-Any failure rolls back both entity types — partial persistence is
+Any failure rolls back all entity types — partial persistence is
 impossible. Two writers holding the same revision can never both succeed.
 
 Reordering never rewrites membership: `parent_id` / `category_id` are
@@ -177,7 +187,25 @@ failure the newest local intent is retained and retryable. On 409 the
 authoritative order from the conflict body is offered to the user ("Order
 changed elsewhere" → Refresh); a 400 membership rejection is treated the
 same way, with the authoritative order fetched via `GET /api/tile-order`
-(membership changes do not bump the revision). A `beforeunload` guard warns when unsaved
+(membership changes do not bump the revision).
+
+Because not every submitting surface models every member type yet (a grid
+may not render collection tiles, and the manage-categories dialog works
+from its own data), the coordinator tracks each scope's latest
+authoritative member list — captured from every GET/409/PUT response — and
+merges it into each submission via `mergeOrderPreservingPositions`
+(#1528): members the caller submitted keep the local order, members only
+the server knows keep their authoritative slots, and departed members drop
+out. A membership 400 additionally triggers one automatic
+fetch-merge-retry per save so drift the caller cannot see (e.g. a
+collection filed mid-session) self-heals rather than surfacing an
+unresolvable conflict. The retry is deliberately narrow: it runs only
+when the recovered member list shows pure membership drift (the relative
+order of continuing members is unchanged — membership moves bump the
+scope revision just like reorders, so the CAS token alone cannot
+distinguish the two) and the dragged tile still exists; a concurrent
+committed reorder or a deleted dragged tile falls through to the normal
+conflict flow, as does a second 400. A `beforeunload` guard warns when unsaved
 order remains. Stale grid instances are fenced by a per-scope generation
 counter (`claimGeneration`), so callbacks from an unmounted grid cannot
 overwrite a remounted one.
@@ -210,8 +238,8 @@ there is no second independent ordering implementation:
   `manageCategoriesDialogUtils.ts`). Move-vs-reorder stays distinct: parent
   changes persist first through the versioned `PATCH /api/categories/{id}`
   (the same validated move path as Browse, including self/descendant cycle
-  rejection), then the full interleaved category+image order of every
-  changed scope is reported to the shared `tileOrderingCoordinator`, which
+  rejection), then the full interleaved category+collection+image order of
+  every changed scope is reported to the shared `tileOrderingCoordinator`, which
   persists each scope atomically via `PUT /api/tile-order` with CAS
   revisions. Because the parent-move PATCH bumps the tile-order revision of
   both affected scopes server-side, the coordinator's cached revision for
@@ -290,8 +318,9 @@ latest-request-wins sequencing, abort handling, and polling pause/resume
 during pending reorders.
 
 `backend/tests/test_tile_order.py` covers the canonical rule and validation
-(unit) plus PostgreSQL integration tests (atomic commit, rollback of both
-entity types, 400 validation, 409 conflicts, compare-and-set exclusivity,
+(unit) plus PostgreSQL integration tests (atomic commit, rollback of all
+entity types, collection membership under `COLLECTIONS_ENABLED` on/off,
+400 validation, 409 conflicts, compare-and-set exclusivity,
 membership preservation, bounded statement counts on the 600+ image fixture
 gallery, and deterministic normalization). Set
 `REORDER_FIXTURE_DATABASE_URL` to a migrated PostgreSQL database to run the

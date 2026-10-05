@@ -5,6 +5,7 @@ that were previously duplicated across the upload and image-replace
 routers.
 """
 
+import os
 from pathlib import Path
 
 # Recognised image extensions (lowercase, with dot).
@@ -32,6 +33,20 @@ IMAGE_MIME_TYPES = frozenset({
 
 # 1 MiB chunks for streaming large uploads to disk.
 UPLOAD_CHUNK_SIZE = 1024 * 1024
+
+# Per-file streamed-bytes cap for single-image upload and image
+# replacement (#1432). The ingress intentionally accepts unlimited request
+# bodies, so the read loop is the layer that bounds how much of one
+# request can be written to the data volume. Multi-GB histology slides
+# (.svs) are legitimate content, so the default sits well above observed
+# real uploads while still bounding per-file disk usage.
+UPLOAD_MAX_BYTES = int(
+    os.environ.get("UPLOAD_MAX_BYTES", str(20 * 1024 * 1024 * 1024))
+)
+if UPLOAD_MAX_BYTES <= 0:
+    raise ValueError(
+        f"UPLOAD_MAX_BYTES must be a positive integer, got {UPLOAD_MAX_BYTES}"
+    )
 
 
 def is_valid_image(filename: str, content_type: str | None) -> bool:
