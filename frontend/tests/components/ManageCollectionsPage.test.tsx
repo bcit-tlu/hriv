@@ -179,6 +179,33 @@ describe('ManageCollectionsPage', () => {
     expect(screen.getByTestId('manage-collection-row-2')).toBeInTheDocument()
   })
 
+  it('filters rows by ancestor categories like the Images table', async () => {
+    const user = userEvent.setup()
+    const nested = [
+      makeCategory({
+        id: 10,
+        label: 'Anatomy',
+        children: [makeCategory({ id: 20, label: 'Skeletal', parentId: 10 })],
+      }),
+      makeCategory({ id: 11, label: 'Histology' }),
+    ]
+    vi.mocked(fetchCollections).mockResolvedValue([
+      makeApiCollectionSummary({ id: 1, name: 'Nested', category_id: 20 }),
+      makeApiCollectionSummary({ id: 2, name: 'Other', category_id: 11 }),
+    ])
+    renderPage({ categories: nested })
+    await screen.findByTestId('manage-collection-row-2')
+
+    const filterBar = screen.getByLabelText('Filter by')
+    await user.click(within(filterBar).getByRole('button', { name: 'Category' }))
+    // Selecting the parent matches collections filed under its descendants.
+    await user.click(screen.getAllByRole('menuitemcheckbox', { name: /Anatomy/ })[0])
+    await waitFor(() => {
+      expect(screen.queryByTestId('manage-collection-row-2')).not.toBeInTheDocument()
+    })
+    expect(screen.getByTestId('manage-collection-row-1')).toBeInTheDocument()
+  })
+
   it('sorts rows when a column header is clicked', async () => {
     const user = userEvent.setup()
     vi.mocked(fetchCollections).mockResolvedValue([

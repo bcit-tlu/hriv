@@ -532,6 +532,7 @@ export default function CollectionsPage({
         open={editorOpen}
         onClose={() => setEditorOpen(false)}
         collection={editing}
+        defaultType={collectionPageType}
         programs={programs}
         groups={groups}
         onSave={handleSave}

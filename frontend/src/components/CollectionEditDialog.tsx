@@ -43,6 +43,12 @@ export interface CollectionEditDialogProps {
   onClose: () => void
   /** Existing collection to edit (type is locked). Omit / null to create a new one. */
   collection?: Collection | null
+  /**
+   * Initial type for a new collection (#1554) — callers pass the type page /
+   * facet the dialog was opened from so a create lands in the list the user
+   * is looking at. Ignored when editing.
+   */
+  defaultType?: CollectionType
   programs?: Program[]
   groups?: Group[]
   /**
@@ -74,6 +80,7 @@ export default function CollectionEditDialog({
   open,
   onClose,
   collection = null,
+  defaultType = 'sequence',
   programs = EMPTY_PROGRAMS,
   groups = EMPTY_GROUPS,
   onSave,
@@ -107,7 +114,7 @@ export default function CollectionEditDialog({
   const seedFrom = (source: Collection | null) => {
     setName(source?.name ?? '')
     setDescription(source?.description ?? '')
-    setType(source?.type ?? 'sequence')
+    setType(source?.type ?? defaultType)
     setVisibility(source?.visibility ?? 'private')
     setSelectedProgramIds(new Set(source?.programIds ?? []))
     setSelectedGroupIds(new Set(source?.groupIds ?? []))
@@ -126,6 +133,7 @@ export default function CollectionEditDialog({
   useEffect(() => {
     if (open && !prevOpen.current) seedFrom(collection)
     prevOpen.current = open
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seedFrom captures defaultType at open time
   }, [open, collection])
 
   const handleEntered = useCallback(() => {
@@ -170,7 +178,7 @@ export default function CollectionEditDialog({
 
   const restricted = visibility === 'restricted'
   const scopeMissing = restricted && selectedProgramIds.size === 0 && selectedGroupIds.size === 0
-  const canSubmit = name.trim().length > 0 && !scopeMissing && !saving
+  const canSubmit = name.trim().length > 0 && !scopeMissing && !saving && !deleting
 
   const handleSubmit = async () => {
     const trimmed = name.trim()
@@ -225,7 +233,7 @@ export default function CollectionEditDialog({
   return (
     <Dialog
       open={open}
-      onClose={saving ? undefined : onClose}
+      onClose={saving || deleting ? undefined : onClose}
       maxWidth="xs"
       fullWidth
       TransitionProps={{ onEntered: handleEntered }}
@@ -461,7 +469,7 @@ export default function CollectionEditDialog({
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} disabled={saving}>
+        <Button onClick={onClose} disabled={saving || deleting}>
           Cancel
         </Button>
         <Button onClick={handleSubmit} variant="contained" disabled={!canSubmit}>

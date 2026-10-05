@@ -402,12 +402,21 @@ export default function App() {
   }, [collectionPageType, collectionsData.filters, collectionsData.setFilters])
 
   // A collection detail opened via `?collection=` self-corrects the type
-  // page so Back returns to the right list.
+  // page so Back returns to the right list. Only a detail matching the
+  // *current* selection may drive this — a stale detail left over from a
+  // previous selection must not override explicit type-page navigation.
   useEffect(() => {
     const t = collectionsData.detail?.type
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- detail-driven sync, guarded by the inequality
-    if (t != null && t !== collectionPageType) setCollectionPageType(t)
-  }, [collectionsData.detail, collectionPageType])
+    if (
+      selectedCollectionId != null &&
+      collectionsData.detail?.id === selectedCollectionId &&
+      t != null &&
+      t !== collectionPageType
+    ) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- detail-driven sync, guarded by selection + inequality
+      setCollectionPageType(t)
+    }
+  }, [collectionsData.detail, collectionPageType, selectedCollectionId])
 
   // Navigation-safe reorder coordinator for the current Browse scope
   // (epic #975, issue #979).
@@ -740,9 +749,7 @@ export default function App() {
       )
       if (validPage === 'collections') {
         const poppedType = new URLSearchParams(window.location.search).get('type')
-        if (poppedType === 'sequence' || poppedType === 'synchronized') {
-          setCollectionPageType(poppedType)
-        }
+        setCollectionPageType(poppedType === 'synchronized' ? 'synchronized' : 'sequence')
       }
       setSelectedCollectionItemId(
         validPage === 'collections' ? parseCollectionItemParam(window.location.search) : null,

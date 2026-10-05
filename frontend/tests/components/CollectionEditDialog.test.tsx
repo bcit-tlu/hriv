@@ -78,6 +78,7 @@ function renderDialog(
         onClose={onClose}
         onSave={onSave}
         collection={props.collection}
+        defaultType={props.defaultType}
         programs={props.programs ?? PROGRAMS}
         groups={props.groups ?? GROUPS}
         onDelete={props.onDelete}
@@ -98,6 +99,12 @@ describe('CollectionEditDialog', () => {
       expect(screen.getByRole('radio', { name: /Synchronized/ })).not.toBeChecked()
       expect(screen.getByRole('radio', { name: /^Private/ })).toBeChecked()
       expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled()
+    })
+
+    it('seeds the type radio from defaultType (#1554 type pages)', () => {
+      renderDialog({ defaultType: 'synchronized' })
+      expect(screen.getByRole('radio', { name: /Synchronized/ })).toBeChecked()
+      expect(screen.getByRole('radio', { name: /Sequence/ })).not.toBeChecked()
     })
 
     it('submits trimmed values with an empty scope when not restricted', async () => {

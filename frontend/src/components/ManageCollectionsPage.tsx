@@ -291,14 +291,26 @@ export default function ManageCollectionsPage({
             keys.some((k) => selectedOwners.has(k))
           if (!matches) return false
         }
-        if (
-          selectedCategories.size > 0 &&
-          (c.categoryId == null || !selectedCategories.has(c.categoryId))
-        )
-          return false
+        if (selectedCategories.size > 0) {
+          // Ancestor-aware, same as the Images table: selecting a parent
+          // matches collections filed under any of its descendants.
+          if (c.categoryId == null) return false
+          const seg = categoryPaths.get(c.categoryId)
+          if (!seg) return false
+          const candidateIds = new Set<number>([seg.category.id, ...seg.ancestors.map((a) => a.id)])
+          if (![...selectedCategories].some((id) => candidateIds.has(id))) return false
+        }
         return true
       }),
-    [collections, filters, selectedTypes, selectedVisibilities, selectedOwners, selectedCategories],
+    [
+      collections,
+      filters,
+      selectedTypes,
+      selectedVisibilities,
+      selectedOwners,
+      selectedCategories,
+      categoryPaths,
+    ],
   )
 
   const sortedCollections = useMemo(() => {
@@ -483,6 +495,9 @@ export default function ManageCollectionsPage({
           variant="contained"
           startIcon={<AddIcon />}
           onClick={() => {
+            // Cancel any in-flight openEdit fetch so it can't replace the
+            // create form when it resolves.
+            editRequestRef.current++
             setEditing(null)
             setEditorOpen(true)
           }}
@@ -891,6 +906,7 @@ export default function ManageCollectionsPage({
         open={editorOpen}
         onClose={() => setEditorOpen(false)}
         collection={editing}
+        defaultType={selectedTypes.size === 1 ? [...selectedTypes][0] : 'sequence'}
         programs={programs}
         groups={groups}
         onSave={handleSave}
