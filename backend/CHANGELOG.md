@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.64.5](https://github.com/bcit-tlu/hriv/compare/backend-v0.64.4...backend-v0.64.5) (2026-10-04)
+
+
+### Bug Fixes
+
+* **backend:** cap bulk-import and upload request sizes ([#1432](https://github.com/bcit-tlu/hriv/issues/1432)) ([#1513](https://github.com/bcit-tlu/hriv/issues/1513)) ([e804463](https://github.com/bcit-tlu/hriv/commit/e804463a0a9edaaf0a3f5ab7181baf857d5c0ff5))
+* **backend:** extract bulk-import zips on a worker thread ([#1511](https://github.com/bcit-tlu/hriv/issues/1511)) ([828d403](https://github.com/bcit-tlu/hriv/commit/828d4039ac938dee712f933a41ca3de28e5b0c21))
+* **backend:** recreate upload spool dir after filesystem import ([#1365](https://github.com/bcit-tlu/hriv/issues/1365)) ([#1515](https://github.com/bcit-tlu/hriv/issues/1515)) ([f8eb4d6](https://github.com/bcit-tlu/hriv/commit/f8eb4d667e8d356d545fe70e8993deff1b63257f))
+* **backend:** stage bulk-import zip spool on the source-images PVC ([#1365](https://github.com/bcit-tlu/hriv/issues/1365)) ([#1514](https://github.com/bcit-tlu/hriv/issues/1514)) ([940a191](https://github.com/bcit-tlu/hriv/commit/940a191656c76f9d068716a3e038904e6ac8f6f1))
+
 ## [0.64.4](https://github.com/bcit-tlu/hriv/compare/backend-v0.64.3...backend-v0.64.4) (2026-10-04)
 
 
