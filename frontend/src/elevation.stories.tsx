@@ -7,7 +7,8 @@ import Typography from '@mui/material/Typography'
 // props and `boxShadow` tokens. MUI's Paper supports 0–24; these are the ones
 // the app actually uses today.
 //   0 — announcement banner   1 — app bar   2 — cards / image / category tiles
-//   3 — collection viewers / dialogs   4 — filter popover   8 — dragged category tile
+//   3 — collection viewers / dialogs   4 — filter popover
+//   8 — category tile highlighted as an active drop target (file dragged over it)
 const LEVELS = [0, 1, 2, 3, 4, 8]
 
 function Elevation() {
