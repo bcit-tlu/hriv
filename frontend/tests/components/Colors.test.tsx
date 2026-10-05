@@ -3,22 +3,36 @@
  *
  * These are presentation-only helpers defined inside `colors.stories.tsx`, so
  * they are exercised through the composed story (Storybook portable stories).
- * The tests assert the palette structure and that colour values are read from
- * the theme in both light and dark modes.
+ * The tests assert the palette structure and that each colour value is read from
+ * the active theme in both light and dark modes (not hardcoded).
  */
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { composeStories, setProjectAnnotations } from '@storybook/react-vite'
+import type { Theme } from '@mui/material/styles'
 
 import * as previewAnnotations from '../../.storybook/preview'
 import * as stories from '../../src/colors.stories'
+import { buildTheme } from '../../src/theme'
 
 setProjectAnnotations([previewAnnotations])
 
 const { Default } = composeStories(stories)
 const DarkPalette = composeStories(stories, { initialGlobals: { theme: 'dark' } }).Default
 
+const lightTheme = buildTheme('light')
+const darkTheme = buildTheme('dark')
+
 const CHANNELS = ['primary', 'secondary', 'error', 'warning', 'info', 'success']
+
+// Representative tokens whose exact values are rendered as swatch captions.
+const tokenValues = (theme: Theme): string[] => [
+  theme.palette.primary.main,
+  theme.palette.secondary.main,
+  theme.palette.error.main,
+  theme.palette.success.main,
+  theme.palette.background.default,
+]
 
 describe('Foundations/Colors', () => {
   it('renders every palette channel with its four variants', () => {
@@ -40,15 +54,20 @@ describe('Foundations/Colors', () => {
     expect(screen.getByText('divider')).toBeInTheDocument()
   })
 
-  it('reads colour values from the theme — light and dark differ', () => {
-    const light = render(<Default />).container.textContent ?? ''
-    const dark = render(<DarkPalette />).container.textContent ?? ''
+  it('renders each token with its LIGHT-theme value', () => {
+    const view = render(<Default />)
+    for (const value of tokenValues(lightTheme)) {
+      // Exact theme value must appear — a hardcoded swatch would not match.
+      expect(view.getAllByText(value).length).toBeGreaterThan(0)
+    }
+    view.unmount()
+  })
 
-    // Both render the palette...
-    expect(light).toContain('primary')
-    expect(dark).toContain('primary')
-    // ...but the rendered hex/rgb values differ between the two palettes,
-    // proving swatches read live from the theme rather than hardcoded colours.
-    expect(light).not.toEqual(dark)
+  it('renders each token with its DARK-theme value', () => {
+    const view = render(<DarkPalette />)
+    for (const value of tokenValues(darkTheme)) {
+      expect(view.getAllByText(value).length).toBeGreaterThan(0)
+    }
+    view.unmount()
   })
 })
