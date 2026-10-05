@@ -62,16 +62,18 @@ TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
   mount in `CollectionsPage.tsx`):
   `npm test -- SynchronizedCollectionViewer useCollectionsData ImageViewer CollectionsPage App.test`
 - Ownership/admin management UI (#1419, #1531: `CollectionOwnersDialog.tsx`,
-  `transfer` + `saveOwners` in `useCollectionsData.ts`, `transferCollection`
-  - `replaceCollectionOwners` in `api.ts`,
-    detail header + card affordances in `CollectionsPage.tsx` /
-    `CollectionCard.tsx`):
-    `npm test -- CollectionOwnersDialog CollectionsPage CollectionCard useCollectionsData api.test App.test`
+  `transfer` + `saveOwners` in `useCollectionsData.ts`, `transferCollection` +
+  `replaceCollectionOwners` in `api.ts`, detail header + card affordances in
+  `CollectionsPage.tsx` / `CollectionCard.tsx`):
+  `npm test -- CollectionOwnersDialog CollectionsPage CollectionCard useCollectionsData api.test App.test`
 - Browse tile integration (#1529: collection tiles in `SortableTileGrid.tsx`,
   `currentCollections`/`uncategorizedCollections` in `useBrowseData.ts`,
   move handlers in `useCategoryActions.ts`, `MoveCollectionDialog.tsx`,
   `?collection=&cat=` context in `useShareableImageState.ts` /
-  `useNavigationHistory.ts`, `member_count` in `collection_views.py`):
+  `useNavigationHistory.ts`, `member_count` in `collection_views.py`; #1530
+  image→collection drop-add: `drop-col-` zone + `onDropImageOnCollection` in
+  `SortableTileGrid.tsx`, `removeImagesFromCollectionApi` undo in
+  `useCategoryActions.ts`):
   `npm test -- SortableTileGrid useBrowseData useCategoryActions MoveCollectionDialog CollectionsPage CollectionCard CategoryTile useCollectionsData useShareableImageState useNavigationHistory App.test`
 - Storybook (stories + a11y): `npm run test:storybook -- Collection`
 - Collection visibility reuses the category dual gate — if you touched

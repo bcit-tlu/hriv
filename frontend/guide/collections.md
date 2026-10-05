@@ -104,6 +104,36 @@ are added in the order they appeared in your results. Only image results
 can be selected; categories, collections, and other kinds still open when
 you click them.
 
+### Add an image from Browse (drag onto the tile)
+
+On the **Browse** page, an editable collection's tile doubles as a drop
+zone: drag an image tile onto its highlighted half and the image is
+appended. The tile is a drop zone only when you can edit the collection —
+you co-own it or teach in its program — and image dragging itself needs
+admin/instructor rights, so this gesture is for instructors adding to
+collections they manage. The same rules as the dialog above apply (dedupe,
+the four-image cap on synchronized collections). An **Undo** action in the
+message at the bottom removes the image again.
+
+## Collections in Browse
+
+Collection tiles appear on the **Browse** page alongside category and image
+tiles — at the top level or nested inside categories, so a "Lab 2"
+collection can sit inside _Histology → Epithelium_ like any other tile. Open
+a tile to view the collection; Back returns to the same place in Browse.
+
+- Tiles keep a fixed width and can be dragged to reorder them among the
+  images and categories in the same folder; the order is shared for every
+  viewer.
+- Admins and instructors can **file** a collection into a category (or back
+  to the top level) with the card's **Move** button, or by dragging the tile
+  onto a category tile's _Move here_ zone. Filing is curatorial, not
+  ownership-bound — any admin/instructor can file any collection.
+- A category tile's detail line counts the collections inside its subtree
+  (`N collections`).
+- When `COLLECTIONS_ENABLED` is off, collection tiles disappear from Browse
+  entirely — existing placements are kept and return with the flag.
+
 ## Find a collection
 
 Use the filters above the grid:

@@ -3,8 +3,8 @@
 Grouped-image sets for side-by-side comparison (`synchronized`, max 4
 images) and ordered walkthroughs (`sequence`). `COLLECTIONS_ENABLED=true` in
 local compose; every role gets the **Collections** tab. Full behaviour
-contract: `docs/collections.md`; UI manual scenario: `docs/TESTING.md`
-Test Case 11.
+contract: `docs/collections.md`; UI manual scenarios: `docs/TESTING.md`
+Test Case 11 (Collections tab) and Test Case 12 (Browse hierarchy).
 
 ### Quick flow
 
@@ -17,10 +17,18 @@ Test Case 11.
 3. **View:** click a card. `synchronized` shows linked panes (link toggles +
    reset); `sequence` shows a filmstrip with Previous/Next, ←/→ keys, and a
    `?item={image_id}` deep-linkable position.
-4. **Deep links:** `?page=collections`, `?collection={id}`,
+4. **Browse:** collection tiles render beside category/image tiles (fixed
+   300px width), nested inside categories via `category_id`. The seeded
+   **Italian Cathedrals** sequence lives under _Architecture → Italian_.
+   File with the card's **Move** button (admin/instructor) or by dragging
+   the tile onto a category's **Move here** zone; reorder by dragging past
+   any tile's centre; add an image by dropping an `img-` tile on an
+   editable collection tile's near half (**Add to collection** zone).
+5. **Deep links:** `?page=collections`, `?collection={id}`,
    `?collection={id}&item={image_id}` all restore on load and on
-   back/forward.
-5. **Edit/Delete:** pencil/trash on cards and the detail header, gated by
+   back/forward; a Browse-opened collection also carries `?cat=`/`?item=`
+   for its scope.
+6. **Edit/Delete:** pencil/trash on cards and the detail header, gated by
    `permissions.can_edit` / `can_delete`.
 
 ### Filters
@@ -31,18 +39,30 @@ Test Case 11.
   extra **No owner (orphaned)** option → `GET /api/collections?orphaned=true`.
 - Selecting **My collections** clears and disables the Owner select.
 
-### Transfer ownership (`can_transfer`)
+### Owners & transfer (`can_transfer`)
 
-- Entry points: **Transfer** on the detail header and the card's swap icon.
-- **Admin:** _A user_ (autocomplete, active users only) or _A program_.
-- **Instructor:** program picker narrowed to their own `program_ids`.
-- Confirm is disabled while the target equals the current owner; 403 / 409 /
-  422 failures stay inline in the dialog.
-- Orphaned collections (`owner: null`, e.g. after `DELETE /api/programs/{id}`)
-  are admin-only for everything except visibility; the admin finds them via
-  the Owner facet and reassigns with the same transfer dialog.
-- A transferred row that no longer matches the active filters drops out of
-  the list (e.g. assigned while viewing **No owner (orphaned)**).
+- Entry point: **Owners** on the card — opens `CollectionOwnersDialog`
+  (admins + instructors only).
+- A collection has **user owners** (plural, via `PUT /api/collections/{id}/owners`)
+  and/or a **program owner** (via `POST /api/collections/{id}/transfer`).
+- **User owners** Autocomplete is scope-tabbed like the group pickers:
+  _Students_ (default, optional **Filter by program** chips) /
+  _Instructors_ for instructors; admins get an extra _Everyone_ mode that
+  also finds staff/admin accounts.
+- **Owning program** select sits below; picking a program disables the user
+  picker (assigning a program clears user owners server-side). Instructors
+  see only their own `program_ids` in the select.
+- Orphan guard: confirm is disabled while the result would leave no user
+  owner and no program owner (`422` server-side too). 403 / 409 / 422
+  failures stay inline via `owners-error`.
+- Orphaned collections (`owners: []`, e.g. after `DELETE /api/programs/{id}`)
+  are admin-only for everything except viewing; the admin finds them via
+  the Owner facet's **No owner (orphaned)** option and repopulates owners
+  in the same dialog.
+- A saved row that no longer matches the active filters drops out of the
+  list (e.g. re-owned while viewing **No owner (orphaned)**).
+- Deleting a user deletes collections they solely own; co-owned and
+  program-owned collections survive (owner rows cascade).
 
 ### Useful selectors for scripted checks
 
@@ -53,10 +73,15 @@ Test Case 11.
 - Detail: `[data-testid="collection-detail"]`, visibility chip
   `[data-testid="collection-visibility-chip"]`, restricted scope chips
   `detail-program-chip` / `detail-group-chip`.
-- Transfer dialog: `Transfer ownership` title; program Select labelled
-  `New owning program`; user Autocomplete labelled `New owner`;
-  confirm `[data-testid="transfer-confirm"]`; error
-  `[data-testid="transfer-error"]`.
+- Owners dialog: `aria-labelledby="collection-owners-title"`; scope tabs
+  `aria-label="Owner search scope"`; user picker `owners-select` labelled
+  `User owners`; student program filter `owners-program-filter`; program
+  select `owners-program-select` labelled `Owning program`; confirm
+  `owners-confirm`; error `owners-error`.
+- Browse tiles: collection tiles are `SortableTile` items inside
+  `[aria-label="Sortable tile grid"]`; the near-half drop zones are
+  `role="region"` labelled `Move into category` (category tiles) and
+  `Add to collection` (editable collection tiles).
 - Sequence viewer: `[data-testid="sequence-collection-viewer"]`;
   synchronized viewer: `[data-testid="synchronized-collection-viewer"]`.
 

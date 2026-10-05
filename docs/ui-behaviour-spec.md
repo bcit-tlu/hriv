@@ -171,7 +171,7 @@ returned by the API (UX only — the backend re-checks).
 - **Given** a user opens the Collections tab (`?page=collections`), **When**
   `GET /api/collections` resolves, **Then** a fixed-width flex-wrap card grid
   (300px tiles, matching the Browse tile grid) renders one
-  `CollectionCard` per summary (cover, name, image count, owner, type chip,
+  `CollectionCard` per summary (cover, name, image count, owners, type chip,
   visibility chip); an empty result shows the empty state (whose
   **Create a collection** link opens the create dialog when no filters are
   active) and a failed request shows a plain error `Alert` with no action.
@@ -215,23 +215,31 @@ returned by the API (UX only — the backend re-checks).
   **Then** the Collections tab opens on that collection; **Given** the API
   returns **404**, **Then** the not-found `Alert` with **All collections** is
   shown instead.
-- **Given** a collection whose `permissions.can_transfer` is true, **Then** a
-  **Transfer** action appears on its card and in the detail header; **Given**
+- **Given** a collection whose `permissions.can_transfer` is true, **Then** an
+  **Owners** action appears on its card and in the detail header; **Given**
   it is false, **Then** neither affordance renders.
-- **Given** the transfer dialog is open as an **admin**, **Then** _A user_ /
-  _A program_ is offered — the user autocomplete lists active users only,
-  the program select lists all programs; **Given** an **instructor**,
-  **Then** only a program select appears, narrowed to their own programs.
-- **Given** a chosen target equal to the current owner, **Then** the
-  **Transfer** confirm stays disabled; **Given** the API returns **403** /
-  **409** / **422**, **Then** the message stays inline in the open dialog.
+- **Given** the owners dialog is open (`CollectionOwnersDialog`), **Then**
+  the staged state shows the current user owners as chips plus the owning
+  program. The **User owners** autocomplete offers scope tabs — _Students_
+  (default) and _Instructors_ for instructors, plus _Everyone_ for admins;
+  on the _Students_ tab an optional **Filter by program** chip set narrows
+  the search (`GET /api/users/?role=&program_id=`).
+- **Given** a program is selected in **Owning program**, **Then** the user
+  picker disables (assigning a program clears user owners server-side);
+  for instructors the select lists only their own programs.
+- **Given** the staged result would leave no user owner and no program
+  owner, **Then** confirm stays disabled (orphan guard); **Given** the API
+  returns **403** / **409** / **422**, **Then** the message stays inline in
+  the open dialog. On save, changed user owners `PUT` first, then a changed
+  program `POST`s `/transfer`.
 - **Given** an admin viewing the owner facet's _No owner (orphaned)_ list,
-  **When** they open a card's transfer action and assign an owner, **Then**
-  `POST /api/collections/{id}/transfer` is sent and the card leaves the
+  **When** they open a card's **Owners** action and assign an owner, **Then**
+  `PUT /api/collections/{id}/owners` is sent and the card leaves the
   filtered list.
-- **Given** the collection detail, **Then** the header shows the owner as
-  "Managed by program _X_" for program-owned collections, the visibility
-  chip, and — when `restricted` — a chip per attached program and group.
+- **Given** the collection detail, **Then** the header shows owners as a
+  comma-joined list (`describeCollectionOwners` — user names, `_X_ (program)`
+  for a program owner, `No owner` when orphaned), the visibility chip, and —
+  when `restricted` — a chip per attached program and group.
 
 #### Collections in the Browse tile grid (#1529)
 
@@ -420,7 +428,7 @@ re-checks).
   kinds, they are not hidden from students): the modal indexes the caller's
   `GET /api/collections` list, which the backend already access-filters, so a
   student never sees a restricted-failing collection. A collection row shows
-  its type, image count, and owner, and selecting it navigates to
+  its type, image count, and owners, and selecting it navigates to
   `?collection={id}`.
 - Multi-select is image-only: a **Select** toggle appears next to the result
   count when image results exist (or select mode is already active). In

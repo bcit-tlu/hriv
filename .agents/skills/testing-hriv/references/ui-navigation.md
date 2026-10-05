@@ -13,8 +13,17 @@ visibility, not the Images/Manage tabs.)
 
 ### Browse (Home)
 
-- Category tiles + uncategorized image tiles.
-- Click a tile to drill down; click an image tile to open the OpenSeadragon viewer.
+- Category tiles + uncategorized image tiles + collection tiles
+  (`COLLECTIONS_ENABLED` on). All three member types share one reorderable
+  grid — see `references/drag-and-drop.md` for the move/reorder/add contract.
+- Collections can be nested under categories (`collections.category_id`);
+  the seeded **Italian Cathedrals** sequence lives at
+  _Architecture → Italian_. File/unfile via the card **Move** button
+  (`MoveCollectionDialog`, admin/instructor) or by dragging the tile onto a
+  category's near-half **Move here** zone.
+- Click a tile to drill down; click an image tile to open the OpenSeadragon
+  viewer; click a collection tile to open that collection's viewer
+  (`?collection={id}`, Back restores the Browse scope).
 
 ### Navigation edge cases
 
