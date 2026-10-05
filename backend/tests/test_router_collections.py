@@ -387,19 +387,50 @@ async def test_get_collection_detail_shape() -> None:
 async def test_get_collection_member_count_counts_hidden_members(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # member_count is nominal (all members) so the UI can distinguish a truly
-    # empty collection from one whose members are all restricted (#1529).
+    # member_count is nominal (all members) for viewers whose image list is
+    # unfiltered so the UI can distinguish a truly empty collection from one
+    # whose members are all restricted (#1529).
     excluded = AsyncMock(return_value={20})
     monkeypatch.setattr(
         "app.collection_views.get_student_excluded_category_ids", excluded
     )
     images = [_image(1, category_id=20), _image(2, category_id=20), _image(3)]
     col = _collection(1, "public", user_id=10, images=images)
+    instructor = _user("instructor", id=7, programs=[1], groups=[5])
+    out = await get_collection(1, instructor, db=_mock_db(get=col))
+    assert out.image_count == 3
+    assert out.member_count == 3
+
+
+async def test_get_collection_member_count_clamps_restricted_total(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Students must not learn how many members are restricted: member_count
+    # is clamped to len(visible) + 1 — enough to signal that hidden members
+    # exist (which the restricted-members message already reveals) without
+    # disclosing the true nominal total (#1529).
+    excluded = AsyncMock(return_value={20})
+    monkeypatch.setattr(
+        "app.collection_views.get_student_excluded_category_ids", excluded
+    )
+    images = [
+        _image(1, category_id=20),
+        _image(2, category_id=20),
+        _image(3, category_id=20),
+        _image(4),
+    ]
+    col = _collection(1, "public", user_id=10, images=images)
     student = _user("student", id=2, programs=[1], groups=[5])
     out = await get_collection(1, student, db=_mock_db(get=col))
-    assert [i.id for i in out.images] == [3]
+    assert [i.id for i in out.images] == [4]
     assert out.image_count == 1
-    assert out.member_count == 3
+    assert out.member_count == 2  # visible + 1, not the nominal 4
+
+    all_hidden = _collection(2, "public", user_id=10, images=images[:3])
+    out2 = await get_collection(2, student, db=_mock_db(get=all_hidden))
+    assert out2.images == []
+    assert out2.image_count == 0
+    assert out2.member_count == 1  # > 0: all-restricted, nominal still hidden
 
 
 async def test_get_collection_member_count_omitted_from_summaries(

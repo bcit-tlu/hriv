@@ -1,11 +1,13 @@
 import { useState, useCallback, useMemo } from 'react'
 import {
+  collectionConflictCurrent,
   createCategory as apiCreateCategory,
   deleteCategory as apiDeleteCategory,
   updateCategory as apiUpdateCategory,
   updateImage as apiUpdateImage,
   userMessage,
 } from './api'
+import { apiCollectionToCollection } from './collectionUtils'
 import { tileOrderingCoordinator, type ScopeId } from './tileOrdering'
 import type { ParentMove, ScopeOrder } from './components/manageCategoriesDialogUtils'
 import { computeMoveRestrictionChange } from './categoryUtils'
@@ -581,7 +583,7 @@ export function useCategoryActions({
         setMoveCollectionOpen(false)
         setMovingCollection(null)
         await loadCategories()
-        loadUncategorizedCollections?.()
+        await loadUncategorizedCollections?.()
         setMoveSnack({
           message:
             newCategoryId === null
@@ -596,7 +598,7 @@ export function useCategoryActions({
               tileOrderingCoordinator.invalidateRevision(prevCategoryId)
               tileOrderingCoordinator.invalidateRevision(newCategoryId)
               await loadCategories()
-              loadUncategorizedCollections?.()
+              await loadUncategorizedCollections?.()
             } catch (undoErr) {
               setErrorSnack(userMessage(undoErr, 'Failed to undo move.'))
             }
@@ -604,6 +606,11 @@ export function useCategoryActions({
         })
       } catch (err) {
         console.error('Failed to move collection', err)
+        // A 409 carries the authoritative record — refresh the open dialog's
+        // collection so a retry posts the fresh version instead of
+        // re-failing on the stale one captured when it opened (#1529).
+        const conflict = collectionConflictCurrent(err)
+        if (conflict) setMovingCollection(apiCollectionToCollection(conflict))
         setErrorSnack(userMessage(err, 'Failed to move collection.'))
       }
     },

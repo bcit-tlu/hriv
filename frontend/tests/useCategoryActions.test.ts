@@ -4,7 +4,13 @@ import { useCategoryActions } from '../src/useCategoryActions'
 import type { UseCategoryActionsDeps } from '../src/useCategoryActions'
 import * as api from '../src/api'
 import { tileOrderingCoordinator } from '../src/tileOrdering'
-import { makeCategory, makeCollection, makeCollectionSummary, makeImage } from './helpers/fixtures'
+import {
+  makeApiCollection,
+  makeCategory,
+  makeCollection,
+  makeCollectionSummary,
+  makeImage,
+} from './helpers/fixtures'
 
 vi.mock('../src/api', async () => {
   const actual = await vi.importActual<typeof api>('../src/api')
@@ -1116,6 +1122,39 @@ describe('useCategoryActions', () => {
       })
 
       expect(deps.setErrorSnack).toHaveBeenCalled()
+    })
+
+    it('refreshes the open dialog collection from a 409 conflict record', async () => {
+      const col = makeCollectionSummary({ id: 7, categoryId: 1, version: 3 })
+      const cat = makeCategory({ id: 1, collections: [col] })
+      const moveCollectionApi = vi
+        .fn()
+        .mockRejectedValueOnce(
+          new api.ApiError(
+            409,
+            'Stale version',
+            makeApiCollection({ id: 7, version: 9, category_id: 1 }),
+          ),
+        )
+        .mockResolvedValueOnce(makeCollection({ id: 7, categoryId: 2, version: 10 }))
+      const deps = makeDeps({ categories: [cat], moveCollectionApi })
+      const { result } = renderHook(() => useCategoryActions(deps))
+
+      await act(async () => {
+        result.current.handleRequestMoveCollection(col)
+      })
+      await act(async () => {
+        await result.current.handleMoveCollection(2)
+      })
+      // The dialog stays open but the record it would resubmit is now fresh.
+      expect(deps.setErrorSnack).toHaveBeenCalled()
+      expect(result.current.moveCollectionOpen).toBe(true)
+      expect(result.current.movingCollection?.version).toBe(9)
+
+      await act(async () => {
+        await result.current.handleMoveCollection(2)
+      })
+      expect(moveCollectionApi).toHaveBeenLastCalledWith(7, 2, 9)
     })
   })
 

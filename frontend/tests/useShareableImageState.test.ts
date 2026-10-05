@@ -482,6 +482,28 @@ describe('useShareableImageState', () => {
       expect(url).toBe('/?collection=12')
     })
 
+    it('keeps collectionFromBrowse in history state on URL sync (#1529)', () => {
+      // A root-scope Browse origin has no `?cat=` to mark it, so the state
+      // flag is the only carrier — the replaceState must not strip it.
+      renderHook(() =>
+        useShareableImageState(
+          makeDeps({ page: 'collections', collectionId: 12, collectionFromBrowse: true }),
+        ),
+      )
+      const state = replaceStateSpy.mock.calls[replaceStateSpy.mock.calls.length - 1][0] as {
+        collectionFromBrowse?: boolean
+      }
+      expect(state.collectionFromBrowse).toBe(true)
+    })
+
+    it('leaves collectionFromBrowse unset for a Collections-page entry (#1529)', () => {
+      renderHook(() => useShareableImageState(makeDeps({ page: 'collections', collectionId: 12 })))
+      const state = replaceStateSpy.mock.calls[replaceStateSpy.mock.calls.length - 1][0] as {
+        collectionFromBrowse?: boolean
+      }
+      expect(state.collectionFromBrowse).toBeFalsy()
+    })
+
     it('does not leak &item= outside an open collection', () => {
       renderHook(() =>
         useShareableImageState(

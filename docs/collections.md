@@ -199,11 +199,14 @@ below answers `404` while `COLLECTIONS_ENABLED` is off (see
 `version`, `category_id`, `sort_order`, `created_at`, `updated_at`,
 `permissions {can_edit, can_delete, can_transfer}`.
 
-`CollectionOut` adds `member_count` — the nominal member total including
-images the caller cannot see (#1529). It is detail-only so list rows and
-Browse tiles cannot leak that hidden members exist; viewers use it to tell an
-all-restricted collection (`member_count > 0`, no visible `images`) apart
-from a truly empty one (`member_count === 0`).
+`CollectionOut` adds `member_count` (#1529). For non-students it is the
+nominal member total; for students it is clamped to `len(images) + 1` when
+members are hidden, so it signals _that_ restricted members exist — the
+"all images restricted" message intentionally reveals that much — without
+disclosing how many. It is detail-only so list rows and Browse tiles cannot
+leak hidden membership; viewers use it to tell an all-restricted collection
+(`member_count > 0`, no visible `images`) apart from a truly empty one
+(`member_count === 0`).
 
 Each `CategoryTree` node additionally carries `collections:
 CollectionSummaryOut[]` — the collections filed into that category, subject
@@ -494,10 +497,10 @@ Collections list context).
 **Counts and empty states.** Category tiles include descendant collection
 counts in their detail line (`· N collections`), and the Browse empty-state
 guard treats a scope with only collections as non-empty. On the detail side,
-`CollectionOut.member_count` (all members, including restricted ones) lets
-viewers distinguish "no members yet" from "all members restricted" —
-`image_count`/`imageCount` remains visible-only so list rows and tiles never
-leak hidden membership.
+`CollectionOut.member_count` (nominal for staff; clamped to "hidden members
+exist" for students) lets viewers distinguish "no members yet" from "all
+members restricted" — `image_count`/`imageCount` remains visible-only so
+list rows and tiles never leak hidden membership.
 
 ### "Add to Collection" from the image view (#1415)
 

@@ -1285,5 +1285,68 @@ describe('useCollectionsData', () => {
       expect(result.current.detail).toMatchObject({ id: 2, version: 2 })
       expect(result.current.collections[0]).toMatchObject({ id: 1, version: 6, categoryId: null })
     })
+
+    it('serializes moves behind in-flight viewer writes so the queued version wins', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1 })])
+      fetchCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 5, images: [{ id: 10 }, { id: 11 }] as never }),
+      )
+      let resolveReorder!: (value: ReturnType<typeof makeApiCollection>) => void
+      replaceCollectionImagesMock.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveReorder = resolve
+        }),
+      )
+      moveCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 7, category_id: 8 }),
+      )
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.version).toBe(5))
+
+      let movePromise!: Promise<unknown>
+      await act(async () => {
+        // The reorder is in flight with version 5; the move was requested
+        // with the same (now-stale-once-the-reorder-lands) version.
+        void result.current.reorderImages(1, [11, 10])
+        movePromise = result.current.move(1, 8, 5)
+      })
+      await act(async () => {
+        resolveReorder(
+          makeApiCollection({ id: 1, version: 6, images: [{ id: 11 }, { id: 10 }] as never }),
+        )
+        await movePromise
+      })
+      // The queue-carried record (v6) beats the version the dialog captured.
+      expect(moveCollectionMock).toHaveBeenCalledWith(1, { category_id: 8, version: 6 })
+      expect(result.current.detail).toMatchObject({ id: 1, version: 7, categoryId: 8 })
+    })
+
+    it('merges the 409 conflict record so a retry sends the fresh version', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1, version: 3 })])
+      fetchCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 1, version: 3 }))
+      moveCollectionMock
+        .mockRejectedValueOnce(
+          new ApiError(409, 'Stale version', makeApiCollection({ id: 1, version: 7 })),
+        )
+        .mockResolvedValueOnce(makeApiCollection({ id: 1, version: 8, category_id: 8 }))
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.version).toBe(3))
+
+      await act(async () => {
+        await expect(result.current.move(1, 8, 3)).rejects.toBeInstanceOf(ApiError)
+      })
+      // The authoritative record replaced the stale detail and list row.
+      expect(result.current.detail?.version).toBe(7)
+      expect(result.current.collections[0]?.version).toBe(7)
+
+      await act(async () => {
+        await result.current.move(1, 8, result.current.detail!.version)
+      })
+      expect(moveCollectionMock).toHaveBeenLastCalledWith(1, {
+        category_id: 8,
+        version: 7,
+      })
+      expect(result.current.detail).toMatchObject({ id: 1, version: 8, categoryId: 8 })
+    })
   })
 })

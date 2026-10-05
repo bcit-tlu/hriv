@@ -326,6 +326,11 @@ export function useShareableImageState(
         page,
         path.map((c) => c.id),
         selectedImage?.id ?? null,
+        undefined,
+        // Preserve the Browse-origin marker on `?collection=` entries — for a
+        // root-scope origin `?cat=` is absent, so history.state is the only
+        // carrier left after this replaceState (#1529).
+        page === 'collections' && collectionId != null ? collectionFromBrowse : undefined,
       ),
       '',
       newUrl,
