@@ -6,6 +6,7 @@ import {
   replaceCollectionImages,
   userMessage,
 } from './api'
+import type { CollectionFilters } from './api'
 import {
   SYNCHRONIZED_MAX_IMAGES,
   apiCollectionSummaryToSummary,
@@ -82,18 +83,25 @@ export async function createCollectionWithImages(
  * transition (modal open). The list endpoint is already access-filtered by
  * the backend, so no client-side visibility filtering happens here.
  */
-export function useVisibleCollections(enabled: boolean) {
+export function useVisibleCollections(enabled: boolean, filters?: CollectionFilters) {
   const [collections, setCollections] = useState<CollectionSummary[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const loadSeq = useRef(0)
+  // Latest filter set by ref so callers may pass an inline object without
+  // defeating the load callback's memoization; filters don't change across
+  // a single dialog/modal lifecycle.
+  const filtersRef = useRef(filters)
+  useEffect(() => {
+    filtersRef.current = filters
+  }, [filters])
 
   const load = useCallback(async () => {
     const seq = ++loadSeq.current
     setLoading(true)
     setError(null)
     try {
-      const rows = (await fetchCollections()).map(apiCollectionSummaryToSummary)
+      const rows = (await fetchCollections(filtersRef.current)).map(apiCollectionSummaryToSummary)
       if (seq !== loadSeq.current) return
       setCollections(rows)
     } catch (err) {

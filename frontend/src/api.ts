@@ -540,7 +540,7 @@ export function deleteCategory(id: number): Promise<void> {
 // ── Tile order (atomic combined ordering; docs/tile-ordering.md) ──
 
 export interface TileOrderItemRef {
-  type: 'category' | 'image'
+  type: 'category' | 'collection' | 'image'
   id: number
 }
 

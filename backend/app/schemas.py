@@ -352,7 +352,7 @@ class TileOrderScope(BaseModel):
 
 
 class TileOrderItemRef(BaseModel):
-    type: Literal["category", "image"]
+    type: Literal["category", "collection", "image"]
     id: int
 
 

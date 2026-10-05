@@ -1569,6 +1569,15 @@ export default function App() {
     collectionsEnabled && searchOpen && currentUser != null,
   )
 
+  // Root-scope collections for the manage-categories dialog: collections
+  // are tile-order members, so its submitted orders must carry them (issue
+  // #1528). Loaded lazily while the dialog is open; C4 will lift this into
+  // the shared browse data when collection tiles render in the grid.
+  const rootScopeCollections = useVisibleCollections(
+    collectionsEnabled && dialogOpen && currentUser != null,
+    { uncategorized: true },
+  )
+
   const handleSearchAddToCollection = useCallback((imageIds: number[]) => {
     setAddToCollectionImageIds(imageIds)
     setAddToCollectionOpen(true)
@@ -2512,6 +2521,7 @@ export default function App() {
         onClose={() => setDialogOpen(false)}
         categories={categories}
         uncategorizedImages={uncategorizedImages}
+        uncategorizedCollections={rootScopeCollections.collections}
         onCategoryNavigate={handleManageCategoryNavigate}
         onAddCategory={addCategoryInline}
         onDeleteCategory={deleteCategoryInline}

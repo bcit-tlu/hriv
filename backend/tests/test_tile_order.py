@@ -20,7 +20,7 @@ from fastapi import HTTPException, Response
 from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.models import Category, Image, TileOrderRevision
+from app.models import Category, Collection, Image, TileOrderRevision
 from app.reorder_fixture import seed_reorder_fixture
 from app.routers.tile_order import get_tile_order, put_tile_order
 from app.schemas import (
@@ -65,8 +65,10 @@ def test_scope_key_for_root_and_category():
 
 def test_canonical_sort_key_uses_sort_order_type_priority_then_id():
     cat = TileRef(type="category", id=9, sort_order=3)
+    col = TileRef(type="collection", id=6, sort_order=3)
     img = TileRef(type="image", id=1, sort_order=3)
-    assert canonical_sort_key(cat) < canonical_sort_key(img)
+    assert canonical_sort_key(cat) < canonical_sort_key(col)
+    assert canonical_sort_key(col) < canonical_sort_key(img)
     earlier = TileRef(type="image", id=7, sort_order=2)
     assert canonical_sort_key(earlier) < canonical_sort_key(cat)
     same_type = TileRef(type="category", id=2, sort_order=3)
@@ -76,6 +78,7 @@ def test_canonical_sort_key_uses_sort_order_type_priority_then_id():
 def test_canonical_order_is_deterministic_for_duplicate_positions():
     tiles = [
         TileRef(type="image", id=5, sort_order=1),
+        TileRef(type="collection", id=7, sort_order=1),
         TileRef(type="category", id=4, sort_order=1),
         TileRef(type="image", id=2, sort_order=1),
         TileRef(type="category", id=8, sort_order=0),
@@ -84,6 +87,7 @@ def test_canonical_order_is_deterministic_for_duplicate_positions():
     assert [(t.type, t.id) for t in ordered] == [
         ("category", 8),
         ("category", 4),
+        ("collection", 7),
         ("image", 2),
         ("image", 5),
     ]
@@ -93,28 +97,43 @@ def test_canonical_order_is_deterministic_for_duplicate_positions():
 def test_validate_submitted_items_accepts_exact_scope():
     assert (
         validate_submitted_items(
-            [("category", 1), ("image", 10)], {1}, {10}
+            [("category", 1), ("collection", 7), ("image", 10)],
+            {1},
+            {7},
+            {10},
         )
         is None
     )
 
 
 def test_validate_submitted_items_rejects_duplicates():
-    error = validate_submitted_items([("image", 10), ("image", 10)], set(), {10})
+    error = validate_submitted_items(
+        [("image", 10), ("image", 10)], set(), set(), {10}
+    )
     assert error is not None and "Duplicate" in error
 
 
 def test_validate_submitted_items_rejects_foreign_ids():
-    error = validate_submitted_items([("category", 99)], {1}, set())
+    error = validate_submitted_items([("category", 99)], {1}, set(), set())
     assert error is not None and "not in scope" in error
-    error = validate_submitted_items([("category", 1), ("image", 99)], {1}, {10})
+    error = validate_submitted_items(
+        [("category", 1), ("image", 99)], {1}, set(), {10}
+    )
+    assert error is not None and "not in scope" in error
+    error = validate_submitted_items(
+        [("category", 1), ("collection", 99), ("image", 10)], {1}, set(), {10}
+    )
     assert error is not None and "not in scope" in error
 
 
 def test_validate_submitted_items_rejects_missing_ids():
-    error = validate_submitted_items([("category", 1)], {1}, {10})
+    error = validate_submitted_items([("category", 1)], {1}, set(), {10})
     assert error is not None and "Missing" in error
-    error = validate_submitted_items([("image", 10)], {1}, {10})
+    error = validate_submitted_items([("image", 10)], {1}, set(), {10})
+    assert error is not None and "Missing" in error
+    error = validate_submitted_items(
+        [("category", 1), ("image", 10)], {1}, {7}, {10}
+    )
     assert error is not None and "Missing" in error
 
 
@@ -189,7 +208,7 @@ def _request(
 def mocked_helpers(monkeypatch):
     mocks = SimpleNamespace(
         lock=AsyncMock(return_value=1),
-        members=AsyncMock(return_value=({1, 2}, {10})),
+        members=AsyncMock(return_value=({1, 2}, set(), {10})),
         tiles=AsyncMock(return_value=[]),
         apply=AsyncMock(),
         bump=AsyncMock(return_value=2),
@@ -291,10 +310,20 @@ async def _mixed_scope(db_session):
     raise AssertionError("fixture has no mixed scope")
 
 
+_TYPE_RANK = {"category": 0, "collection": 1, "image": 2}
+
+
 async def _scope_order(db_session, parent_id):
     cats = (
         await db_session.execute(
             select(Category.id, Category.sort_order).where(Category.parent_id == parent_id)
+        )
+    ).all()
+    cols = (
+        await db_session.execute(
+            select(Collection.id, Collection.sort_order).where(
+                Collection.category_id == parent_id
+            )
         )
     ).all()
     imgs = (
@@ -302,10 +331,25 @@ async def _scope_order(db_session, parent_id):
             select(Image.id, Image.sort_order).where(Image.category_id == parent_id)
         )
     ).all()
-    tiles = [("category", r.id, r.sort_order) for r in cats] + [
-        ("image", r.id, r.sort_order) for r in imgs
-    ]
-    return sorted(tiles, key=lambda t: (t[2], 0 if t[0] == "category" else 1, t[1]))
+    tiles = (
+        [("category", r.id, r.sort_order) for r in cats]
+        + [("collection", r.id, r.sort_order) for r in cols]
+        + [("image", r.id, r.sort_order) for r in imgs]
+    )
+    return sorted(tiles, key=lambda t: (t[2], _TYPE_RANK[t[0]], t[1]))
+
+
+async def _filed_collection(db_session, parent_id, sort_order):
+    """Insert a minimal collection filed into `parent_id`'s scope (#1528)."""
+    col = Collection(
+        name="scope-member-collection",
+        type="sequence",
+        category_id=parent_id,
+        sort_order=sort_order,
+    )
+    db_session.add(col)
+    await db_session.flush()
+    return col
 
 
 @requires_db
@@ -347,6 +391,70 @@ async def test_put_failure_rolls_back_both_entity_types(db_session, monkeypatch)
     with pytest.raises(RuntimeError):
         await put_tile_order(body, _admin(), db_session)
     assert await _scope_order(db_session, parent_id) == before
+
+
+@requires_db
+async def test_collection_is_a_scope_member_when_enabled(db_session, monkeypatch):
+    """#1528: collections are first-class tile-order members — GET returns
+    them and one PUT reorders categories, collections, and images
+    atomically inside the scope."""
+    from app.database import settings
+
+    monkeypatch.setattr(settings, "collections_enabled", True)
+    parent_id, cats, imgs = await _mixed_scope(db_session)
+    col = await _filed_collection(db_session, parent_id, sort_order=10_000)
+
+    current = await get_tile_order(_admin(), parent_id, db_session)
+    assert ("collection", col.id) in [(i.type, i.id) for i in current.items]
+
+    items = (
+        [("collection", col.id)]
+        + [("image", i) for i in reversed(imgs)]
+        + [("category", c) for c in reversed(cats)]
+    )
+    body = TileOrderRequest(
+        scope=TileOrderScope(parent_category_id=parent_id),
+        expected_revision=current.revision,
+        operation_id=None,
+        items=[TileOrderItemRef(type=t, id=i) for t, i in items],
+    )
+    response = await put_tile_order(body, _admin(), db_session)
+    assert [(i.type, i.id) for i in response.items] == items
+    persisted = await _scope_order(db_session, parent_id)
+    assert [(t, i) for t, i, _ in persisted] == items
+    assert [pos for _, _, pos in persisted] == list(range(len(items)))
+
+
+@requires_db
+async def test_collections_invisible_to_contract_when_disabled(
+    db_session, monkeypatch
+):
+    """Flag-off with data (#1525 kill-switch): filed collections keep their
+    rows but are not scope members — GET omits them and a submitted
+    collection ref reads as foreign, so a reorder can never deadlock on
+    members the caller cannot see."""
+    from app.database import settings
+
+    monkeypatch.setattr(settings, "collections_enabled", False)
+    parent_id, cats, imgs = await _mixed_scope(db_session)
+    col = await _filed_collection(db_session, parent_id, sort_order=10_000)
+
+    current = await get_tile_order(_admin(), parent_id, db_session)
+    assert all(i.type != "collection" for i in current.items)
+
+    items = [("category", c) for c in cats] + [("image", i) for i in imgs] + [
+        ("collection", col.id)
+    ]
+    body = TileOrderRequest(
+        scope=TileOrderScope(parent_category_id=parent_id),
+        expected_revision=current.revision,
+        operation_id=None,
+        items=[TileOrderItemRef(type=t, id=i) for t, i in items],
+    )
+    with pytest.raises(HTTPException) as excinfo:
+        await put_tile_order(body, _admin(), db_session)
+    assert excinfo.value.status_code == 400
+    assert "Collections not in scope" in excinfo.value.detail
 
 
 @requires_db
@@ -470,9 +578,11 @@ async def test_statement_count_is_bounded_by_scope_size(db_engine, db_session):
     # the small mixed scope needs one UPDATE per entity type. Statement
     # count must never grow with item count; the browse_state revision
     # helpers add a constant read+write overhead, so the ceiling is raised
-    # to match (issue #1066).
+    # to match (issue #1066). Collection scope membership (#1528) adds one
+    # more constant query to both the GET (load_scope_tiles) and the PUT
+    # (load_scope_members) halves of each reorder.
     assert large_count <= small_count
-    assert large_count <= 17
+    assert large_count <= 20
 
 
 @requires_db

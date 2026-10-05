@@ -1,7 +1,7 @@
 import { CollisionPriority, CollisionType } from '@dnd-kit/abstract'
 import type { CollisionDetector } from '@dnd-kit/abstract'
 
-import type { Category, ImageItem } from '../types'
+import type { Category, CollectionSummary, ImageItem } from '../types'
 
 // ── Content-addressable memoization for tile lists ────────────
 //
@@ -55,10 +55,9 @@ class LRUCache<K, V> {
 
 const orderTileItemsCache = new LRUCache<string, TileItem[]>(16)
 
-function orderTileItemsContentKey(
-  items: TileItem[],
-  order: Array<{ type: 'category' | 'image'; id: number }>,
-): string {
+type OrderRef = { type: TileItem['type']; id: number }
+
+function orderTileItemsContentKey(items: TileItem[], order: OrderRef[]): string {
   let key = ''
   for (const item of items) key += `${getObjectId(item)},`
   key += '|'
@@ -68,22 +67,40 @@ function orderTileItemsContentKey(
 
 const buildTileItemsCache = new LRUCache<string, TileItem[]>(16)
 
-function buildTileItemsContentKey(categories: Category[], images: ImageItem[]): string {
+function buildTileItemsContentKey(
+  categories: Category[],
+  images: ImageItem[],
+  collections: CollectionSummary[],
+): string {
   let key = ''
   for (const c of categories) key += `${getObjectId(c)},`
   key += '|'
   for (const i of images) key += `${getObjectId(i)},`
+  key += '|'
+  for (const c of collections) key += `${getObjectId(c)},`
   return key
 }
 
 // ── Tile item union type ────────────────────────────────────
 
+// Canonical tile-order member union (epic #1525 / issue #1528): categories
+// navigate, collections present, images are raw material — same priority as
+// the backend's (sort_order, type_priority, id) canonical key.
 export type TileItem =
   | { type: 'category'; sortOrder: number; data: Category }
+  | { type: 'collection'; sortOrder: number; data: CollectionSummary }
   | { type: 'image'; sortOrder: number; data: ImageItem }
 
+const TILE_TYPE_PRIORITY: Record<TileItem['type'], number> = {
+  category: 0,
+  collection: 1,
+  image: 2,
+}
+
 export function tileId(item: TileItem): string {
-  return item.type === 'category' ? `cat-${item.data.id}` : `img-${item.data.id}`
+  if (item.type === 'category') return `cat-${item.data.id}`
+  if (item.type === 'collection') return `col-${item.data.id}`
+  return `img-${item.data.id}`
 }
 
 // Category tile drop target: move into category. Reorder has no id-based
@@ -98,10 +115,7 @@ export const DROP_PREFIX = 'drop-cat-'
  * ignored, so membership changes (uploads, moves, deletions) can never drop
  * or duplicate tiles.
  */
-export function orderTileItems(
-  items: TileItem[],
-  order: Array<{ type: 'category' | 'image'; id: number }>,
-): TileItem[] {
+export function orderTileItems(items: TileItem[], order: OrderRef[]): TileItem[] {
   const key = orderTileItemsContentKey(items, order)
   const cached = orderTileItemsCache.get(key)
   if (cached) return cached
@@ -254,15 +268,29 @@ export function findCategory(cats: Category[], id: number): Category | undefined
   return undefined
 }
 
-/** Build an interleaved, sorted list of categories and images. */
-export function buildTileItems(categories: Category[], images: ImageItem[]): TileItem[] {
-  const key = buildTileItemsContentKey(categories, images)
+/**
+ * Build an interleaved, sorted list of categories, collections, and images.
+ * `collections` defaults to empty so callers that have not loaded them yet
+ * (pre-#1529 Browse wiring) keep today's behavior; ties resolve with the
+ * canonical category < collection < image priority.
+ */
+export function buildTileItems(
+  categories: Category[],
+  images: ImageItem[],
+  collections: CollectionSummary[] = [],
+): TileItem[] {
+  const key = buildTileItemsContentKey(categories, images, collections)
   const cached = buildTileItemsCache.get(key)
   if (cached) return cached
 
   const items: TileItem[] = [
     ...categories.map((c): TileItem => ({
       type: 'category',
+      sortOrder: c.sortOrder,
+      data: c,
+    })),
+    ...collections.map((c): TileItem => ({
+      type: 'collection',
       sortOrder: c.sortOrder,
       data: c,
     })),
@@ -276,7 +304,7 @@ export function buildTileItems(categories: Category[], images: ImageItem[]): Til
   items.sort((a, b) => {
     const d = a.sortOrder - b.sortOrder
     if (d !== 0) return d
-    if (a.type !== b.type) return a.type === 'category' ? -1 : 1
+    if (a.type !== b.type) return TILE_TYPE_PRIORITY[a.type] - TILE_TYPE_PRIORITY[b.type]
     return a.data.id - b.data.id
   })
 
