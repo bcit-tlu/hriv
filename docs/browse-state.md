@@ -40,6 +40,10 @@ The revision is incremented inside the same transaction as the data change for:
 
 - Category create/update/delete (`/api/categories/*`)
 - Image create/update/delete (`/api/images/*`)
+- Collection writes that change tile-visible data (#1525, #1531) — create /
+  update / delete, member-image and viewport replacements, `PUT /owners`
+  (owner names render on tiles), `POST /move`, `POST /transfer`; plus the
+  user/program deletions that alter or delete collections
 - `PUT /api/tile-order` (reorder)
 - Image processing completion (`process_source_image`, `process_replace_image`)
 - Admin restore/import (`admin_ops.py`)
@@ -62,6 +66,21 @@ stale the client's ETag.
 The `PUT /api/tile-order` response includes the new `browse_revision` (both in
 the JSON body and the `X-Browse-Revision` header) so the frontend can decide
 whether a full tree reload is needed.
+
+## Collection tiles in the tree payload (#1529)
+
+Each `CategoryTree` node also carries `collections: CollectionSummaryOut[]` —
+the collections filed into that category — filtered by the same visibility
+rules as `GET /api/collections` (the collection gate AND the category's
+ancestor gate; a hidden ancestor hides its collections even when the
+collection itself would be visible). Collection tiles therefore live inside
+the same ETag/revision contract: any write that changes a tile-visible field
+(name, visibility, owners, membership, placement) bumps the revision and
+invalidates every affected viewer's cached tree.
+
+When `COLLECTIONS_ENABLED` is off, `CategoryTree.collections` is always
+empty and the collections query is skipped entirely — flag-off deployments
+neither leak collection data nor grow the tree query count.
 
 ## Frontend behavior
 

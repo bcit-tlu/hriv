@@ -1,6 +1,6 @@
 ## Testing Drag-and-Drop (Browse Page)
 
-The Browse page supports HTML5 native drag-and-drop for images, categories, and files.
+The Browse page supports HTML5 native drag-and-drop for images, categories, collections, and files.
 All drag interactions are gated behind `canEditContent` — students see no drag affordances.
 
 > **Tile move vs. reorder runs on `@dnd-kit/react` v2 (pointer sensors), not HTML5 native DnD.**
@@ -37,7 +37,10 @@ location.href = '/'
 
 - **Root:** Architecture (cat 1), Panoramas (cat 2)
 - **Architecture scope:** Italian (cat 3), American (cat 4)
-- **Italian scope:** Gothic (cat 5), Duomo di Milano (image 1)
+- **Italian scope:** Gothic (cat 5), Italian Cathedrals (collection 1), Duomo
+  di Milano (image 1) — category/collection/image members interleave in one
+  atomic order; `PUT /api/tile-order` takes `{"type":"collection"}` refs
+  alongside the other two types.
 
 #### Dragging mechanics
 
@@ -166,15 +169,33 @@ curl -sS -X PATCH http://localhost:8000/api/categories/1 \
 
 ### DnD Interactions to Test
 
-| Action                                   | Expected Result                                     |
-| ---------------------------------------- | --------------------------------------------------- |
-| Drag image tile onto category tile       | Image moves to target category                      |
-| Drag category tile onto another category | Category reparented under target                    |
-| Drag category onto itself                | No-op (self-drop guard)                             |
-| Drop files on category tile              | Upload dialog opens with that category pre-selected |
-| Drop files on grid (not on a tile)       | Upload dialog opens with current path category      |
-| Student views any tile                   | `draggable="false"`, no drop handlers               |
-| Drag text/URL onto category tile         | No highlight, drop rejected (MIME filtering)        |
+| Action                                          | Expected Result                                     |
+| ----------------------------------------------- | --------------------------------------------------- |
+| Drag image tile onto category tile              | Image moves to target category                      |
+| Drag category tile onto another category        | Category reparented under target                    |
+| Drag collection tile onto category tile         | Collection filed under target category              |
+| Drag image onto collection tile's **near half** | "Add to collection" overlay; image appended (Undo)  |
+| Drag image onto collection tile's **far half**  | Reorder past the tile (no add)                      |
+| Drag category onto itself                       | No-op (self-drop guard)                             |
+| Drop files on category tile                     | Upload dialog opens with that category pre-selected |
+| Drop files on grid (not on a tile)              | Upload dialog opens with current path category      |
+| Student views any tile                          | `draggable="false"`, no drop handlers               |
+| Drag text/URL onto category tile                | No highlight, drop rejected (MIME filtering)        |
+
+### Collection Drop Zones (#1530)
+
+Editable collection tiles (`permissions.canEdit` — owner/co-owner or owning
+program's instructor) carry a second near-half zone, `role="region"`
+`aria-label="Add to collection"`, id `drop-col-<id>`:
+
+- `accept` admits `img-` sources only — `cat-`/`col-` drags see a dead zone
+  and reorder normally. Drop dedupes existing members and the 4-image cap
+  on synchronized collections applies; success shows an **Undo** snackbar.
+- Collection move targets are the standard `drop-cat-*` zone on category
+  tiles plus `MoveCollectionDialog` (card **Move** button, admin/instructor
+  only — filing is curatorial, not ownership-bound).
+- Non-editable collection tiles expose no zone; `canEditContent=false`
+  viewers get no drag handles at all.
 
 ### Testing the FileDropZone Component
 

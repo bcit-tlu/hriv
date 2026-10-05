@@ -362,7 +362,26 @@ and the ownership-management UI (#1419). Requires `COLLECTIONS_ENABLED=true`
 
 ---
 
-## API Endpoint Reference
+## Test Case 12: Collections in the Browse Hierarchy — Tiles, Filing, Drag-Add (UI)
+
+**Purpose:** Walk the Browse-side collection surface from epic #1525 — tiles
+nested inside categories, move filing, mixed-tile reorder, and the
+image-onto-collection add gesture. Requires `COLLECTIONS_ENABLED=true` and
+the seeded **Italian Cathedrals** sequence collection (filed under
+_Architecture → Italian_, public, instructor-owned). See
+[docs/drag-and-drop.md](drag-and-drop.md) and
+[docs/tile-ordering.md](tile-ordering.md).
+
+1. Login as `instructor@example.ca`, open **Browse** → drill into _Architecture → Italian_. **Assert:** the Italian Cathedrals collection tile renders beside category and image tiles (same size and hover parameters), shows its type chip, owner name, and image count.
+2. Open the collection tile. **Assert:** the sequence viewer loads and the URL carries `?collection={id}`; Back returns to the same Browse scope.
+3. Back on Browse, drag the collection tile past an image tile's centre. **Assert:** the mixed order persists after a reload (`PUT /api/tile-order` with interleaved `collection`/`image` refs — categories sort first, then collections, then images at equal sort_order).
+4. Drag the collection tile onto another category tile's **Move into category** zone (near half). **Assert:** the collection disappears from the current scope and appears inside the target category; undo via the snackbar to restore it.
+5. Drag an image tile onto the collection tile's near half. **Assert:** the **Add to collection** overlay highlights; on drop the image count grows and a snackbar offers **Undo**. The far half still reorders normally.
+6. Click the collection card's **Move** button (rendered for admins/instructors on Browse tiles and on the collection detail header). File the collection back to _Top level_, then into _Italian_ again via the dialog. **Assert:** both directions work and the undo snackbar re-posts the previous category.
+7. Login as `student@example.ca` and browse to _Italian_. **Assert:** the public collection tile is visible and opens, but no **Move** affordance renders on it (filing is curatorial) and no drag handles appear on any tile (all Browse dragging needs `canEditContent`; the add zone also requires `canEdit` on the collection itself).
+8. With `COLLECTIONS_ENABLED=false`, restart and reload Browse. **Assert:** no collection tiles render anywhere, reordering works on categories/images alone, and `GET /api/categories/tree` nodes carry empty `collections` lists.
+
+---
 
 All endpoints except login require a valid JWT bearer token in the `Authorization` header.
 
