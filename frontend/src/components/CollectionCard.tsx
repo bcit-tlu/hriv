@@ -116,7 +116,7 @@ export default function CollectionCard({
             sx={{
               display: 'block',
               width: '100%',
-              height: 140,
+              height: 160,
               objectFit: 'cover',
               objectPosition: 'center',
             }}
@@ -124,7 +124,7 @@ export default function CollectionCard({
         ) : (
           <Box
             sx={{
-              height: 140,
+              height: 160,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',

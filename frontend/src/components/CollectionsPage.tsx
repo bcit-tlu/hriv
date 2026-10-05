@@ -497,28 +497,17 @@ export default function CollectionsPage({
             </Typography>
           </Box>
         ) : (
-          <Box
-            data-testid="collections-grid"
-            sx={{
-              display: 'grid',
-              gap: 2,
-              gridTemplateColumns: {
-                xs: '1fr',
-                sm: 'repeat(2, 1fr)',
-                md: 'repeat(3, 1fr)',
-                lg: 'repeat(4, 1fr)',
-              },
-            }}
-          >
+          <Box data-testid="collections-grid" sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
             {collections.map((c) => (
-              <CollectionCard
-                key={c.id}
-                collection={c}
-                onOpen={(col) => onOpenCollection(col.id)}
-                onEdit={(col) => void openEdit(col)}
-                onDelete={requestDelete}
-                onTransfer={setTransferTarget}
-              />
+              <Box key={c.id} sx={{ width: 300, maxWidth: '100%' }}>
+                <CollectionCard
+                  collection={c}
+                  onOpen={(col) => onOpenCollection(col.id)}
+                  onEdit={(col) => void openEdit(col)}
+                  onDelete={requestDelete}
+                  onTransfer={setTransferTarget}
+                />
+              </Box>
             ))}
           </Box>
         )}
