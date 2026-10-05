@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
+import Typography from '@mui/material/Typography'
 
 // Elevation levels in use across HRIV surfaces (cards, modals, popovers).
 const LEVELS = [0, 1, 2, 4, 8, 16]
@@ -9,7 +10,13 @@ function Elevation() {
   return (
     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3, p: 2 }}>
       {LEVELS.map((level) => (
-        <Paper key={level} elevation={level} sx={{ width: 120, height: 80 }} />
+        <Paper
+          key={level}
+          elevation={level}
+          sx={{ width: 120, height: 80, display: 'grid', placeItems: 'center' }}
+        >
+          <Typography variant="caption">elevation {level}</Typography>
+        </Paper>
       ))}
     </Box>
   )
