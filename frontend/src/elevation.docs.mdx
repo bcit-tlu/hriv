@@ -6,7 +6,8 @@ import * as ElevationStories from './elevation.stories'
 <Title />
 
 <Subtitle>
-  The shadow depths (MUI `Paper` elevation levels) used across HRIV surfaces to convey hierarchy.
+  The shadow depths (MUI `Paper` elevation levels) currently in use across HRIV surfaces to convey
+  hierarchy.
 </Subtitle>
 
 ## How to use this section
@@ -25,13 +26,16 @@ Prefer the documented levels below over arbitrary shadow values so surfaces stay
 
 ## What's included
 
-The elevation levels in use, from flat to most-raised:
+MUI's `Paper` supports elevation `0–24`; this page lists the levels **HRIV currently uses**, from
+flat to most-raised:
 
-- **0** — flush surfaces (no shadow)
-- **1–2** — cards and resting surfaces
-- **4** — raised / hovered surfaces
-- **8** — menus and popovers
-- **16** — modals and dialogs
+- **0** — flush surfaces, e.g. the announcement banner (no shadow)
+- **1** — the app bar
+- **2** — cards and image tiles
+- **3** — collection viewers and raised dialogs
+
+As new surfaces adopt other levels, add them here so the page stays an accurate inventory of
+current usage.
 
 ## Elevation levels
 

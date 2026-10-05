@@ -3,8 +3,11 @@ import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
 
-// Elevation levels in use across HRIV surfaces (cards, modals, popovers).
-const LEVELS = [0, 1, 2, 4, 8, 16]
+// Elevation levels currently in use across HRIV surfaces. MUI's Paper supports
+// 0–24; these are the ones the app actually uses today.
+//   0 — announcement banner  ·  1 — app bar  ·  2 — cards / image tiles
+//   3 — collection viewers / raised dialogs
+const LEVELS = [0, 1, 2, 3]
 
 function Elevation() {
   return (
