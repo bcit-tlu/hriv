@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.66.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.65.0...frontend-v0.66.0) (2026-10-05)
+
+
+### Features
+
+* **collections:** add image tiles to collections via Browse drop zone ([#1530](https://github.com/bcit-tlu/hriv/issues/1530)) ([#1540](https://github.com/bcit-tlu/hriv/issues/1540)) ([bff06ea](https://github.com/bcit-tlu/hriv/commit/bff06eafe7bbd184426b593ad38f54cc31e3533e))
+
 ## [0.65.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.64.0...frontend-v0.65.0) (2026-10-05)
 
 
