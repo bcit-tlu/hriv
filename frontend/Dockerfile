@@ -36,7 +36,7 @@ ENV VITE_API_URL=${VITE_API_URL}
 RUN npm run build
 
 # ── Stage 4: Stable server (nginx) ───────────────────
-FROM nginx:1.30-alpine AS stable
+FROM nginx:1.31-alpine AS stable
 # Pull fresh Alpine package updates on top of the base so the image
 # doesn't wait on the nginx maintainers' base-image tag cadence for
 # published libxml2 / libssl3 / libcrypto3 / libpng / zlib / musl
