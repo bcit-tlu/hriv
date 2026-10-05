@@ -600,7 +600,7 @@ async def test_image_ids_in_filed_collections_real_pg(session_factory) -> None:
             .where(Collection.id == filed_id)
             .values(category_id=category_id)
         )
-        unfiled_id = await _new_collection(
+        await _new_collection(
             session, "sequence", [img_unfiled], owner_id=admin_id
         )
         await session.commit()
