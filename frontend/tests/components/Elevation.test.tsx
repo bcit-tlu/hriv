@@ -16,7 +16,7 @@ setProjectAnnotations([previewAnnotations])
 
 const { Default } = composeStories(stories)
 
-const LEVELS = [0, 1, 2, 3]
+const LEVELS = [0, 1, 2, 3, 4, 8]
 
 describe('Foundations/Elevation', () => {
   it('renders a Paper surface at each elevation level in use', () => {
