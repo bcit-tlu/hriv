@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.65.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.64.0...frontend-v0.65.0) (2026-10-05)
+
+
+### Features
+
+* **collections:** file collections into the Browse hierarchy ([#1527](https://github.com/bcit-tlu/hriv/issues/1527)) ([#1535](https://github.com/bcit-tlu/hriv/issues/1535)) ([d6b274d](https://github.com/bcit-tlu/hriv/commit/d6b274d285913292e45384a903acc895c2bfa4ad))
+* **collections:** make collections tile-order scope members ([#1528](https://github.com/bcit-tlu/hriv/issues/1528)) ([#1538](https://github.com/bcit-tlu/hriv/issues/1538)) ([2f4cf43](https://github.com/bcit-tlu/hriv/commit/2f4cf43b9fb787ad0486e1e4fe35b449a25fa4d7))
+* **collections:** match Collections tab tile grid to Browse parameters ([#1534](https://github.com/bcit-tlu/hriv/issues/1534)) ([be44cfd](https://github.com/bcit-tlu/hriv/commit/be44cfd57a04262fab4854bea319f7a4bbb56120))
+* **collections:** render collections as movable Browse tiles ([#1529](https://github.com/bcit-tlu/hriv/issues/1529)) ([#1539](https://github.com/bcit-tlu/hriv/issues/1539)) ([a8e1a6f](https://github.com/bcit-tlu/hriv/commit/a8e1a6f1910af8d6a5a688943f32ee9cac5d7977))
+
 ## [0.64.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.63.0...frontend-v0.64.0) (2026-10-04)
 
 

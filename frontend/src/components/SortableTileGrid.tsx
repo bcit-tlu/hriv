@@ -3,6 +3,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
+import AddToPhotosIcon from '@mui/icons-material/AddToPhotos'
 import {
   DragDropProvider,
   DragOverlay,
@@ -14,6 +15,7 @@ import { useSortable } from '@dnd-kit/react/sortable'
 import { arrayMove, move } from '@dnd-kit/helpers'
 import { CollisionPriority } from '@dnd-kit/abstract'
 import { PointerActivationConstraints } from '@dnd-kit/dom'
+import type { SortableDisabled } from '@dnd-kit/dom/sortable'
 import type { Draggable } from '@dnd-kit/abstract'
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/react'
 
@@ -30,6 +32,7 @@ import FileDropZone from './FileDropZone'
 import {
   buildDescendantMap,
   buildTileItems,
+  DROP_COL_PREFIX,
   DROP_PREFIX,
   farHalfReorderCollision,
   nearHalfMoveCollision,
@@ -45,9 +48,15 @@ const NO_GROUPS: Group[] = []
 interface SortableTileProps {
   id: string
   index: number
-  disabled: boolean
+  disabled: boolean | SortableDisabled
   children: React.ReactNode
 }
+
+// Drag-only mode for a non-curator's image tile (#1530): an image is
+// draggable toward an editable collection's "Add to collection" zone, but
+// its droppable side stays off so it can never act as a reorder target —
+// reorder and category moves remain `canEditContent`-gated.
+const IMG_DRAG_ONLY: SortableDisabled = { draggable: false, droppable: true }
 
 // Optimistic reflow: each tile is a sortable, so the grid reflows continuously
 // during a drag to preview the resulting order. The dragged source dims and the
@@ -65,6 +74,10 @@ function SortableTile({ id, index, disabled, children }: SortableTileProps) {
     collisionDetector: farHalfReorderCollision,
   })
 
+  // The grab cursor keys off the *draggable* side only — a drag-only tile
+  // (`IMG_DRAG_ONLY`) still reads as grabbable.
+  const dragOff = disabled === true || (typeof disabled === 'object' && disabled.draggable === true)
+
   return (
     <Box
       ref={ref}
@@ -73,7 +86,7 @@ function SortableTile({ id, index, disabled, children }: SortableTileProps) {
         position: 'relative',
         width: 300,
         maxWidth: '100%',
-        cursor: disabled ? undefined : isDragSource ? 'grabbing' : 'grab',
+        cursor: dragOff ? undefined : isDragSource ? 'grabbing' : 'grab',
       }}
       onDragStart={(e) => e.preventDefault()}
     >
@@ -85,7 +98,7 @@ function SortableTile({ id, index, disabled, children }: SortableTileProps) {
 interface GridTileProps {
   item: TileItem
   index: number
-  disabled: boolean
+  disabled: boolean | SortableDisabled
   renderCategoryTile: (cat: Category, wrapDroppable?: boolean) => React.ReactNode
   renderImageTile: (img: ImageItem) => React.ReactNode
   renderCollectionTile: (collection: CollectionSummary) => React.ReactNode
@@ -121,44 +134,42 @@ const GridTile = memo(function GridTile({
   )
 })
 
-interface DroppableCategoryZoneProps {
-  categoryId: number
+interface TileDropZoneProps {
+  droppableId: string
   disabled: boolean
-  blockedIdsMap: Map<number, Set<number>>
+  accept: (source: Draggable) => boolean
+  ariaLabel: string
+  overlayIcon: React.ReactNode
+  overlayLabel: string
   children: React.ReactNode
 }
 
-function DroppableCategoryZone({
-  categoryId,
+// Full-tile near-half move/add zone shared by category and collection tiles.
+// The detector only collides on the entry side of the tile centre; the far
+// half falls through to the sortable's `farHalfReorderCollision`, so this
+// wrapper never changes reorder geometry — see docs/drag-and-drop.md.
+function TileDropZone({
+  droppableId,
   disabled,
-  blockedIdsMap,
+  accept,
+  ariaLabel,
+  overlayIcon,
+  overlayLabel,
   children,
-}: DroppableCategoryZoneProps) {
-  const acceptFilter = useCallback(
-    (source: Draggable) => {
-      const sourceId = String(source.id)
-      if (!sourceId.startsWith('cat-')) return true
-
-      const catId = Number(sourceId.slice(4))
-      const blockedTargets = blockedIdsMap.get(catId)
-      return !blockedTargets?.has(categoryId)
-    },
-    [blockedIdsMap, categoryId],
-  )
-
+}: TileDropZoneProps) {
   const { ref, isDropTarget } = useDroppable({
-    id: `${DROP_PREFIX}${categoryId}`,
+    id: droppableId,
     disabled,
     collisionDetector: nearHalfMoveCollision,
     collisionPriority: CollisionPriority.High,
-    accept: acceptFilter,
+    accept,
   })
 
   return (
     <Box
       ref={ref}
       role="region"
-      aria-label="Move into category"
+      aria-label={ariaLabel}
       sx={{
         position: 'relative',
         outline: '3px dashed',
@@ -198,14 +209,83 @@ function DroppableCategoryZone({
               color: 'primary.contrastText',
             }}
           >
-            <DriveFileMoveIcon sx={{ fontSize: 22 }} />
+            {overlayIcon}
           </Box>
           <Typography variant="caption" sx={{ fontWeight: 600, color: 'primary.main' }}>
-            Move here
+            {overlayLabel}
           </Typography>
         </Box>
       )}
     </Box>
+  )
+}
+
+interface DroppableCategoryZoneProps {
+  categoryId: number
+  disabled: boolean
+  blockedIdsMap: Map<number, Set<number>>
+  children: React.ReactNode
+}
+
+function DroppableCategoryZone({
+  categoryId,
+  disabled,
+  blockedIdsMap,
+  children,
+}: DroppableCategoryZoneProps) {
+  const acceptFilter = useCallback(
+    (source: Draggable) => {
+      const sourceId = String(source.id)
+      if (!sourceId.startsWith('cat-')) return true
+
+      const catId = Number(sourceId.slice(4))
+      const blockedTargets = blockedIdsMap.get(catId)
+      return !blockedTargets?.has(categoryId)
+    },
+    [blockedIdsMap, categoryId],
+  )
+
+  return (
+    <TileDropZone
+      droppableId={`${DROP_PREFIX}${categoryId}`}
+      disabled={disabled}
+      accept={acceptFilter}
+      ariaLabel="Move into category"
+      overlayIcon={<DriveFileMoveIcon sx={{ fontSize: 22 }} />}
+      overlayLabel="Move here"
+    >
+      {children}
+    </TileDropZone>
+  )
+}
+
+interface DroppableCollectionZoneProps {
+  collectionId: number
+  disabled: boolean
+  children: React.ReactNode
+}
+
+// Add-member zone on a collection tile (#1530): accepts image drags only —
+// a `cat-`/`col-` source is rejected here so the far-half sortable keeps
+// reorder ownership of that gesture.
+function DroppableCollectionZone({
+  collectionId,
+  disabled,
+  children,
+}: DroppableCollectionZoneProps) {
+  const acceptFilter = useCallback((source: Draggable) => String(source.id).startsWith('img-'), [])
+
+  return (
+    <TileDropZone
+      droppableId={`${DROP_COL_PREFIX}${collectionId}`}
+      disabled={disabled}
+      accept={acceptFilter}
+      ariaLabel="Add to collection"
+      overlayIcon={<AddToPhotosIcon sx={{ fontSize: 22 }} />}
+      overlayLabel="Add to collection"
+    >
+      {children}
+    </TileDropZone>
   )
 }
 
@@ -240,6 +320,8 @@ export interface SortableTileGridProps {
   onMoveCollection?: (collection: CollectionSummary) => void
   /** A `col-` tile dropped on a category's near-half move zone (#1529). */
   onDropCollectionOnCategory?: (collectionId: number, targetCategoryId: number) => void
+  /** An `img-` tile dropped on a collection's near-half "Add to collection" zone (#1530). */
+  onDropImageOnCollection?: (imageId: number, collectionId: number) => void
 
   onImageClick: (img: ImageItem) => void
   onEditImageDetails?: (img: ImageItem) => void
@@ -291,6 +373,7 @@ export default function SortableTileGrid({
   onCollectionClick,
   onMoveCollection,
   onDropCollectionOnCategory,
+  onDropImageOnCollection,
   onImageClick,
   onEditImageDetails,
   onImageRenewed,
@@ -322,6 +405,17 @@ export default function SortableTileGrid({
         : builtItems,
     [builtItems, tileOrdering.displayOrder],
   )
+
+  // Membership editing is ownership-gated, not curatorial (#1530): a
+  // non-`canEditContent` viewer (e.g. a student owning a collection) still
+  // gets image drag handles — but only toward `drop-col-*` zones on
+  // collections they can edit; every sortable's droppable side stays off,
+  // so no reorder target exists and tile order remains read-only for them.
+  const hasEditableCollection = useMemo(
+    () => builtItems.some((i) => i.type === 'collection' && i.data.permissions.canEdit),
+    [builtItems],
+  )
+  const imageDragOnly = !canEditContent && hasEditableCollection
 
   const [items, setItems] = useState<TileItem[]>(() => orderedItems)
   const [activeItem, setActiveItem] = useState<TileItem | null>(null)
@@ -460,6 +554,22 @@ export default function SortableTileGrid({
           return
         }
 
+        // Add-member zone on a collection tile (#1530). The zone's `accept`
+        // only admits `img-` sources; the prefix check mirrors the category
+        // move zone as a dispatch guard.
+        if (targetId.startsWith(DROP_COL_PREFIX)) {
+          const targetColId = Number(targetId.slice(DROP_COL_PREFIX.length))
+          logDrag('SortableTileGrid.handleDragEnd add-to-collection-zone', {
+            sourceId,
+            targetId,
+            targetColId,
+          })
+          if (sourceId.startsWith('img-')) {
+            onDropImageOnCollection?.(Number(sourceId.slice(4)), targetColId)
+          }
+          return
+        }
+
         // ── Reorder (optimistic sortable reflow) ──
         // The target is the sortable tile the pointer settled on. `move`
         // derives the new order from the source's reflowed sortable index,
@@ -532,6 +642,7 @@ export default function SortableTileGrid({
       onDropCategoryOnCategory,
       onDropImageOnCategory,
       onDropCollectionOnCategory,
+      onDropImageOnCollection,
     ],
   )
 
@@ -601,14 +712,31 @@ export default function SortableTileGrid({
   // width and drag affordance. Move is role-gated by canEditContent — filing
   // is curatorial, not ownership-bound (unlike the card's own permission-
   // gated edit/delete/transfer buttons, which stay off in Browse).
+  // Editable collections also carry the "Add to collection" drop zone
+  // (#1530): rendered only for `permissions.canEdit` — adding members is an
+  // ownership/edit action, unlike the role-gated curatorial move.
   const renderCollectionTile = useCallback(
-    (collection: CollectionSummary) => (
-      <CollectionCard
-        collection={collection}
-        onOpen={onCollectionClick ?? (() => {})}
-        onMove={canEditContent ? onMoveCollection : undefined}
-      />
-    ),
+    (collection: CollectionSummary) => {
+      const tile = (
+        <CollectionCard
+          collection={collection}
+          onOpen={onCollectionClick ?? (() => {})}
+          onMove={canEditContent ? onMoveCollection : undefined}
+        />
+      )
+      if (!collection.permissions.canEdit) return tile
+      return (
+        // Enabled by ownership (`permissions.canEdit`) regardless of role —
+        // membership editing is not curatorial, unlike `canEditContent`-gated
+        // move/reorder (#1530).
+        <DroppableCollectionZone
+          collectionId={collection.id}
+          disabled={!collection.permissions.canEdit}
+        >
+          {tile}
+        </DroppableCollectionZone>
+      )
+    },
     [canEditContent, onCollectionClick, onMoveCollection],
   )
 
@@ -657,7 +785,13 @@ export default function SortableTileGrid({
               key={tileId(item)}
               item={item}
               index={index}
-              disabled={!canEditContent}
+              disabled={
+                canEditContent
+                  ? false
+                  : item.type === 'image' && imageDragOnly
+                    ? IMG_DRAG_ONLY
+                    : true
+              }
               renderCategoryTile={renderCategoryTile}
               renderImageTile={renderImageTile}
               renderCollectionTile={renderCollectionTile}

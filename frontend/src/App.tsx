@@ -1197,6 +1197,7 @@ export default function App() {
     handleRequestMoveCollection,
     handleMoveCollection,
     handleDropCollectionOnCategory,
+    handleDropImageOnCollection,
     handleSetCardImage,
     pendingMoveConfirm,
     confirmPendingMove,
@@ -1209,6 +1210,8 @@ export default function App() {
     loadUncategorizedImages,
     loadUncategorizedCollections,
     moveCollectionApi: collectionsEnabled ? collectionsData.move : undefined,
+    addImagesToCollectionApi: collectionsEnabled ? collectionsData.addImages : undefined,
+    removeImagesFromCollectionApi: collectionsEnabled ? collectionsData.removeImages : undefined,
     currentCategories,
     ancestorProgramIds,
     getPathRestriction,
@@ -1219,6 +1222,7 @@ export default function App() {
     editNameCategory,
     setErrorSnack,
     setWarningSnack: setWarnSnack,
+    setInfoSnack,
     setMoveSnack,
   })
 
@@ -2537,6 +2541,7 @@ export default function App() {
                 onDropImageOnCategory={handleDropImageOnCategory}
                 onDropCategoryOnCategory={handleDropCategoryOnCategory}
                 onDropCollectionOnCategory={handleDropCollectionOnCategory}
+                onDropImageOnCollection={handleDropImageOnCollection}
                 onCollectionClick={(col) => handleOpenCollection(col.id, { fromBrowse: true })}
                 onMoveCollection={handleRequestMoveCollection}
                 onDropFilesOnCategory={handleFilesDropOnCategory}

@@ -108,6 +108,11 @@ export function tileId(item: TileItem): string {
 // reflowed index (see SortableTileGrid handleDragEnd).
 export const DROP_PREFIX = 'drop-cat-'
 
+// Collection tile drop target (#1530): add the dragged image as a member.
+// The zone accepts `img-` sources only — a `cat-`/`col-` drag over a
+// collection tile keeps the far-half reorder behaviour.
+export const DROP_COL_PREFIX = 'drop-col-'
+
 /**
  * Reorder `items` to match a coordinator-provided order of `{type, id}` refs
  * (issue #979). Items missing from `order` keep their relative position and

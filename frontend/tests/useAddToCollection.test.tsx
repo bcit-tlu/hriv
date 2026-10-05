@@ -4,11 +4,17 @@ import {
   addImagesToCollection,
   createCollectionWithImages,
   fitsCollectionCapacity,
+  removeImagesFromCollection,
   useEditableCollections,
   useVisibleCollections,
 } from '../src/useAddToCollection'
 import { ApiError } from '../src/api'
-import { makeApiCollection, makeApiCollectionSummary } from './helpers/fixtures'
+import {
+  makeApiCollection,
+  makeApiCollectionSummary,
+  makeCollection,
+  makeImage,
+} from './helpers/fixtures'
 
 const apiMocks = vi.hoisted(() => ({
   fetchCollections: vi.fn(),
@@ -116,6 +122,91 @@ describe('addImagesToCollection', () => {
     apiMocks.fetchCollection.mockResolvedValue(makeApiCollection({ id: 5, type: 'sequence' }))
     apiMocks.replaceCollectionImages.mockRejectedValue(new ApiError(409, 'stale'))
     await expect(addImagesToCollection(5, [9])).rejects.toBeInstanceOf(ApiError)
+  })
+})
+
+describe('removeImagesFromCollection (#1530)', () => {
+  it('PUTs the member list minus the removed ids with the current version', async () => {
+    apiMocks.fetchCollection.mockResolvedValue(
+      makeApiCollection({
+        id: 5,
+        version: 4,
+        images: [apiImage(1), apiImage(2), apiImage(9)],
+      }),
+    )
+    apiMocks.replaceCollectionImages.mockResolvedValue(
+      makeApiCollection({ id: 5, version: 5, images: [apiImage(1), apiImage(2)] }),
+    )
+
+    const result = await removeImagesFromCollection(5, [9])
+
+    expect(apiMocks.replaceCollectionImages).toHaveBeenCalledWith(5, {
+      image_ids: [1, 2],
+      version: 4,
+    })
+    expect(result.images.map((i) => i.id)).toEqual([1, 2])
+  })
+
+  it('skips the PUT when none of the ids are members', async () => {
+    apiMocks.fetchCollection.mockResolvedValue(
+      makeApiCollection({ id: 5, version: 4, images: [apiImage(1), apiImage(2)] }),
+    )
+
+    const result = await removeImagesFromCollection(5, [9, 10])
+
+    expect(apiMocks.replaceCollectionImages).not.toHaveBeenCalled()
+    expect(result.images.map((i) => i.id)).toEqual([1, 2])
+  })
+
+  it('removes only listed ids, keeping other members', async () => {
+    apiMocks.fetchCollection.mockResolvedValue(
+      makeApiCollection({
+        id: 5,
+        version: 2,
+        images: [apiImage(1), apiImage(2), apiImage(3)],
+      }),
+    )
+    apiMocks.replaceCollectionImages.mockResolvedValue(
+      makeApiCollection({ id: 5, version: 3, images: [apiImage(1), apiImage(3)] }),
+    )
+
+    await removeImagesFromCollection(5, [2])
+
+    expect(apiMocks.replaceCollectionImages).toHaveBeenCalledWith(5, {
+      image_ids: [1, 3],
+      version: 2,
+    })
+  })
+
+  it('pins the undo base record — skips the fetch and PUTs at its version', async () => {
+    // `base` is the record returned by the add being undone: the PUT must
+    // carry its version so another editor's intervening write 409s rather
+    // than being silently overwritten (undo convention).
+    const base = makeCollection({
+      id: 5,
+      version: 6,
+      images: [makeImage({ id: 1 }), makeImage({ id: 42 })],
+    })
+    apiMocks.replaceCollectionImages.mockResolvedValue(
+      makeApiCollection({ id: 5, version: 7, images: [apiImage(1)] }),
+    )
+
+    const result = await removeImagesFromCollection(5, [42], base)
+
+    expect(apiMocks.fetchCollection).not.toHaveBeenCalled()
+    expect(apiMocks.replaceCollectionImages).toHaveBeenCalledWith(5, {
+      image_ids: [1],
+      version: 6,
+    })
+    expect(result.images.map((i) => i.id)).toEqual([1])
+  })
+
+  it('with a base record, an intervening change surfaces as a 409 conflict', async () => {
+    const base = makeCollection({ id: 5, version: 6, images: [makeImage({ id: 42 })] })
+    apiMocks.replaceCollectionImages.mockRejectedValue(new ApiError(409, 'Collection was modified'))
+
+    await expect(removeImagesFromCollection(5, [42], base)).rejects.toMatchObject({ status: 409 })
+    expect(apiMocks.fetchCollection).not.toHaveBeenCalled()
   })
 })
 
