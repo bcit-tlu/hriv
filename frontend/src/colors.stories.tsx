@@ -54,7 +54,18 @@ function Palette() {
 const meta = {
   title: 'Foundations/Colors',
   component: Palette,
-  parameters: { layout: 'padded' },
+  parameters: {
+    layout: 'padded',
+    docs: {
+      description: {
+        component:
+          'Reference for the standard MUI palette: the primary, secondary, and status ' +
+          '(error / warning / info / success) channels with their main / light / dark / ' +
+          'contrastText values, plus the base text, background, and divider colors. Values are ' +
+          'read live from the theme and shown in both light and dark modes.',
+      },
+    },
+  },
 } satisfies Meta<typeof Palette>
 
 export default meta
