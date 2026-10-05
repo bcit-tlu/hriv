@@ -382,6 +382,9 @@ export interface ApiCategory {
 export interface ApiCategoryTree extends ApiCategory {
   children: ApiCategoryTree[]
   images: ApiImage[]
+  /** Collections filed into this category (#1527); `[]` when the
+   *  COLLECTIONS_ENABLED flag is off. */
+  collections: ApiCollectionSummary[]
 }
 
 export interface ApiImage {
@@ -681,6 +684,10 @@ export interface ApiCollectionSummary {
   image_count: number
   cover_thumb: string | null
   version: number
+  /** Category the collection is filed into; `null` = uncategorized (Browse root). */
+  category_id: number | null
+  /** Tile-order position inside its category/root scope. */
+  sort_order: number
   created_at: string
   updated_at: string
   permissions: ApiCollectionPermissions
@@ -701,6 +708,8 @@ export interface CollectionFilters {
   owner_program_id?: number
   /** Admin-only; the API returns 403 for anyone else, so callers must not set it for non-admins. */
   orphaned?: boolean
+  /** Only collections filed at the Browse root (`category_id IS NULL`). */
+  uncategorized?: boolean
 }
 
 export function fetchCollections(filters: CollectionFilters = {}): Promise<ApiCollectionSummary[]> {
@@ -711,6 +720,7 @@ export function fetchCollections(filters: CollectionFilters = {}): Promise<ApiCo
   if (filters.owner_program_id != null)
     params.set('owner_program_id', String(filters.owner_program_id))
   if (filters.orphaned) params.set('orphaned', 'true')
+  if (filters.uncategorized) params.set('uncategorized', 'true')
   const qs = params.toString()
   return request(`/collections${qs ? `?${qs}` : ''}`)
 }
@@ -763,6 +773,18 @@ export function saveCollectionViewport(
   body: { viewport_state: Record<string, unknown>; version: number },
 ): Promise<ApiCollection> {
   return request(`/collections/${id}/viewport`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+/**
+ * File a collection into a Browse category (#1527): `category_id: null`
+ * moves it to the root (uncategorized). Admin/instructor-only — filing is
+ * curatorial like moving images/categories, independent of ownership.
+ */
+export function moveCollection(
+  id: number,
+  body: { category_id: number | null; version: number },
+): Promise<ApiCollection> {
+  return request(`/collections/${id}/move`, { method: 'POST', body: JSON.stringify(body) })
 }
 
 /**

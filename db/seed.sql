@@ -192,3 +192,22 @@ CROSS JOIN programs p
 WHERE u.email = 'synthetic.student@example.ca'
   AND p.name = 'Administration'
 ON CONFLICT (user_id, program_id) DO NOTHING;
+
+
+-- ── Collections ───────────────────────────────────────────
+-- A categorized sequence collection filed under Architecture > Italian so
+-- the Browse tree shows a collection tile (epic #1525). Owned by the seeded
+-- instructor (users.id=2), public so all students can view it.
+
+INSERT INTO collections (id, name, description, type, visibility, user_id, category_id, sort_order, viewport_state, version)
+VALUES
+  (1, 'Italian Cathedrals', 'Seeded sequence tour', 'sequence', 'public', 2, 3, 0, '{}', 1)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO collection_images (collection_id, image_id, sort_order)
+VALUES
+  (1, 1, 0),
+  (1, 2, 1)
+ON CONFLICT (collection_id, image_id) DO NOTHING;
+
+SELECT setval('collections_id_seq', GREATEST((SELECT MAX(id) FROM collections), 1));

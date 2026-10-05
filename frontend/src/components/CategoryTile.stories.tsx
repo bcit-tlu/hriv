@@ -77,6 +77,7 @@ function makeCategory(overrides: Partial<Category> = {}): Category {
     parentId: null,
     children: [],
     images: [],
+    collections: [],
     programIds: [],
     groupIds: [],
     status: null,

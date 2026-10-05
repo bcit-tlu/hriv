@@ -8,6 +8,7 @@ import {
 import type { ApiCategoryTree, ApiImage, CategoryTreeHeaders } from './api'
 import type { Category, Group, ImageItem, Program, User } from './types'
 import { narrowProgramIds, narrowGroupIds, resolvePathNode } from './categoryUtils'
+import { apiCollectionSummaryToSummary } from './collectionUtils'
 import { apiGroupToGroup } from './groupUtils'
 import { tileOrderingCoordinator } from './tileOrdering'
 import { recordBrowseTreePoll } from './dndInstrumentation'
@@ -46,6 +47,7 @@ export function apiTreeToCategory(node: ApiCategoryTree): Category {
     parentId: node.parent_id,
     children: node.children.map(apiTreeToCategory),
     images: node.images.map(apiImageToItem),
+    collections: (node.collections ?? []).map(apiCollectionSummaryToSummary),
     programIds: node.program_ids ?? [],
     groupIds: node.group_ids ?? [],
     status: node.status,
@@ -128,6 +130,9 @@ function categoryIdentityKey(
     [...(node.group_ids ?? [])].sort((a, b) => a - b),
     childKeys,
     imageKeys,
+    // Collection tiles on this node contribute to identity (#1527): a
+    // summary change (membership, name, cover, sort) must rebuild the node.
+    node.collections ?? [],
     node.created_at,
     node.updated_at,
   ])
@@ -184,6 +189,7 @@ function stableApiTreeToCategory(node: ApiCategoryTree, caches: StableCaches): C
       parentId: node.parent_id,
       children: childCategories,
       images: imageItems,
+      collections: (node.collections ?? []).map(apiCollectionSummaryToSummary),
       programIds: [...(node.program_ids ?? [])],
       groupIds: [...(node.group_ids ?? [])],
       status: node.status,

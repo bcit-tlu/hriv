@@ -32,6 +32,69 @@ def _patch_browse_bump(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         categories_router, "bump_browse_revision", AsyncMock(return_value=1)
     )
+    monkeypatch.setattr(categories_router, "bump_scopes", AsyncMock())
+
+
+def _make_collection(
+    id: int,
+    category_id: int | None = None,
+    visibility: str = "public",
+    user_id: int | None = 10,
+    owner_program_id: int | None = None,
+    images: list | None = None,
+    programs: list | None = None,
+    groups: list | None = None,
+    sort_order: int = 0,
+    type: str = "sequence",
+) -> SimpleNamespace:
+    now = datetime.now(timezone.utc)
+    return SimpleNamespace(
+        id=id,
+        name=f"coll{id}",
+        description=None,
+        type=type,
+        visibility=visibility,
+        user_id=user_id,
+        owner_program_id=owner_program_id,
+        owner=SimpleNamespace(id=user_id, name=f"u{user_id}") if user_id else None,
+        owner_program=(
+            SimpleNamespace(id=owner_program_id, name=f"P{owner_program_id}")
+            if owner_program_id
+            else None
+        ),
+        category_id=category_id,
+        sort_order=sort_order,
+        viewport_state={},
+        version=1,
+        created_at=now,
+        updated_at=now,
+        programs=[SimpleNamespace(id=p) for p in (programs or [])],
+        groups=[SimpleNamespace(id=g) for g in (groups or [])],
+        image_links=[
+            SimpleNamespace(sort_order=i, image_id=img.id, image=img)
+            for i, img in enumerate(images or [])
+        ],
+    )
+
+
+def _mock_db3(categories: list, images: list, collections: list) -> AsyncMock:
+    """Three-query mock: categories, images, then collections (flag on)."""
+    db = AsyncMock()
+
+    def _res(rows):
+        r = MagicMock()
+        sc = MagicMock()
+        sc.unique.return_value.all.return_value = rows
+        r.scalars.return_value = sc
+        return r
+
+    responses = iter([_res(categories), _res(images), _res(collections)])
+
+    async def _execute(stmt):
+        return next(responses)
+
+    db.execute = AsyncMock(side_effect=_execute)
+    return db
 
 
 def _make_program(id: int = 1, name: str = "Test Program") -> SimpleNamespace:
@@ -1277,3 +1340,153 @@ async def test_load_tree_student_in_group_sees_category() -> None:
         user_group_ids={50},
     )
     assert [c.label for c in tree] == ["GroupOnly"]
+
+
+# ── Collections in the tree (epic #1525 / #1527) ──────────
+
+
+async def test_load_tree_embeds_collections_when_flag_on(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        categories_router.settings, "collections_enabled", True
+    )
+    cats = [_make_category(1, "Alpha"), _make_category(2, "Beta")]
+    colls = [
+        _make_collection(
+            10, category_id=1, sort_order=0,
+            images=[_make_image(5, "a", 1)],
+        ),
+        _make_collection(11, category_id=1, sort_order=1),
+        _make_collection(12, category_id=2),
+        # Uncategorized collections are not embedded — like uncategorized
+        # images they are fetched separately at the Browse root.
+        _make_collection(13, category_id=None),
+    ]
+    db = _mock_db3(cats, [], colls)
+    tree = await _load_tree(
+        db, None, user=_make_user("admin"), user_role="admin"
+    )
+    assert [c.id for c in tree[0].collections] == [10, 11]
+    assert [c.id for c in tree[1].collections] == [12]
+    s = tree[0].collections[0]
+    assert s.image_count == 1 and s.cover_thumb == "/thumb.jpg"
+    assert s.category_id == 1 and s.sort_order == 0
+    assert s.permissions.can_edit is True
+
+
+async def test_load_tree_flag_off_omits_collections(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        categories_router.settings, "collections_enabled", False
+    )
+    cats = [_make_category(1, "Alpha")]
+    db = _mock_db(cats, [])
+    tree = await _load_tree(
+        db, None, user=_make_user("admin"), user_role="admin"
+    )
+    assert tree[0].collections == []
+    # Exactly the two original queries — no collection SELECT ran.
+    assert db.execute.await_count == 2
+
+
+async def test_load_tree_student_collection_visibility(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        categories_router.settings, "collections_enabled", True
+    )
+    student = _make_user(
+        "student", programs=[_make_program(1)], groups=[SimpleNamespace(id=5)]
+    )
+    cat = _make_category(1, "Visible")
+    colls = [
+        _make_collection(10, 1, "private", user_id=99),      # not theirs
+        _make_collection(11, 1, "private", user_id=1),       # own
+        _make_collection(12, 1, "public", user_id=99),
+        _make_collection(  # dual gate satisfied
+            13, 1, "restricted", user_id=99, programs=[1], groups=[5]
+        ),
+        _make_collection(  # program leg fails
+            14, 1, "restricted", user_id=99, programs=[2], groups=[5]
+        ),
+    ]
+    db = _mock_db3([cat], [], colls)
+    tree = await _load_tree(
+        db, None, user=student, user_role="student",
+        user_program_ids={1}, user_group_ids={5},
+    )
+    assert [c.id for c in tree[0].collections] == [11, 12, 13]
+    perms = tree[0].collections[0].permissions
+    assert perms.can_edit is True and perms.can_transfer is False
+
+
+async def test_load_tree_student_collection_member_filtering(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """image_count/cover reflect only images the student may view."""
+    monkeypatch.setattr(
+        categories_router.settings, "collections_enabled", True
+    )
+    student = _make_user("student")
+    cat = _make_category(1, "Visible")
+    colls = [
+        _make_collection(
+            10, 1, "public",
+            images=[
+                _make_image(5, "on", 1, active=True),
+                _make_image(6, "off", 1, active=False),
+            ],
+        )
+    ]
+    db = _mock_db3([cat], [], colls)
+    tree = await _load_tree(
+        db, None, user=student, user_role="student",
+        user_program_ids=set(), user_group_ids=set(),
+    )
+    [s] = tree[0].collections
+    assert s.image_count == 1 and s.cover_thumb == "/thumb.jpg"
+
+
+async def test_load_tree_collection_in_excluded_category_is_pruned(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A public collection inside a hidden category must not surface: the
+    category ancestor gate applies on top of the collection gate."""
+    monkeypatch.setattr(
+        categories_router.settings, "collections_enabled", True
+    )
+    student = _make_user(
+        "student", programs=[_make_program(1)], groups=[SimpleNamespace(id=5)]
+    )
+    cats = [
+        _make_category(1, "Open"),
+        _make_category(2, "RestrictedCat", programs=[_make_program(9)]),
+    ]
+    colls = [
+        _make_collection(10, 1, "public"),
+        _make_collection(11, 2, "public"),  # inside the hidden category
+    ]
+    db = _mock_db3(cats, [], colls)
+    tree = await _load_tree(
+        db, None, user=student, user_role="student",
+        user_program_ids={1}, user_group_ids={5},
+    )
+    assert [c.label for c in tree] == ["Open"]
+    assert [c.id for c in tree[0].collections] == [10]
+
+
+async def test_delete_category_bumps_parent_and_root_scopes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cat = _make_category(5, "Sub", parent_id=2)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=cat)
+    db.delete = AsyncMock()
+    db.commit = AsyncMock()
+    await delete_category(5, _make_user(), db=db)
+    categories_router.bump_scopes.assert_awaited_once()
+    # Parent scope loses the tile; root gains members reparented by
+    # ON DELETE SET NULL (images and collections in the subtree).
+    assert categories_router.bump_scopes.call_args.args[1] == {2, 0}

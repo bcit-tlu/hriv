@@ -1171,6 +1171,8 @@ async def test_run_db_export_success(tmp_path) -> None:
             visibility="restricted",
             user_id=1,
             owner_program_id=None,
+            category_id=2,
+            sort_order=1,
             viewport_state={"offsets": []},
             version=2,
             # 9_400_000 is a rebuild-fixture image (not exported) → dropped.
@@ -1257,6 +1259,8 @@ async def test_run_db_export_success(tmp_path) -> None:
             "visibility": "restricted",
             "user_id": 1,
             "owner_program_id": None,
+            "category_id": 2,
+            "sort_order": 1,
             "viewport_state": {"offsets": []},
             "version": 2,
             "image_ids": [9_400_005],
@@ -1459,6 +1463,8 @@ def _full_dump() -> dict:
                 "type": "sequence",
                 "visibility": "public",
                 "user_id": 1,
+                "category_id": 2,
+                "sort_order": 4,
                 "image_ids": [2, 1],
                 "program_ids": [1],
                 "group_ids": [],
@@ -1520,10 +1526,12 @@ async def test_run_db_import_happy_path(tmp_path) -> None:
     seq = imported_collections[7]
     assert seq.type == "sequence" and seq.visibility == "public"
     assert seq.user_id == 1 and seq.version == 3
+    assert seq.category_id == 2 and seq.sort_order == 4
     assert [(l.image_id, l.sort_order) for l in seq.image_links] == [(2, 0), (1, 1)]
     orphan = imported_collections[8]
     assert orphan.user_id is None and orphan.owner_program_id is None
     assert orphan.visibility == "private" and orphan.viewport_state == {}
+    assert orphan.category_id is None and orphan.sort_order == 0
     assert orphan.image_links == []
     executed_sql = [
         str(c.args[0]) for c in mock_session.execute.call_args_list

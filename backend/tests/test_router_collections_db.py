@@ -18,7 +18,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import delete, event, select
+from sqlalchemy import delete, event, select, update
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.models import (
+    Category,
     Collection,
     CollectionImage,
     Group,
@@ -35,14 +36,17 @@ from app.models import (
     collection_groups,
     collection_programs,
 )
+from app.routers.categories import delete_category
 from app.routers.collections import (
     delete_collection,
+    move_collection,
     replace_collection_images,
     replace_collection_viewport,
     update_collection,
 )
 from app.schemas import (
     CollectionImagesUpdate,
+    CollectionMove,
     CollectionUpdate,
     CollectionViewportUpdate,
 )
@@ -68,6 +72,9 @@ async def session_factory():
                 await session.execute(
                     delete(model).where(model.name.like(f"{TEST_PREFIX}%"))
                 )
+            await session.execute(
+                delete(Category).where(Category.label.like(f"{TEST_PREFIX}%"))
+            )
             await session.commit()
         await engine.dispose()
 
@@ -441,3 +448,131 @@ async def test_write_after_concurrent_delete_returns_404(session_factory) -> Non
 
     async with session_factory() as check:
         assert await check.get(Collection, collection_id) is None
+
+
+# ── Browse placement (move / category delete, #1527) ──────
+
+
+async def _new_category(
+    session: AsyncSession, suffix: str, parent_id: int | None = None
+) -> int:
+    cat = Category(
+        label=f"{TEST_PREFIX}cat-{suffix}-{uuid4().hex[:8]}",
+        parent_id=parent_id,
+    )
+    session.add(cat)
+    await session.commit()
+    return cat.id
+
+
+async def test_move_collection_persists_category_and_bumps_version(
+    session_factory,
+) -> None:
+    async with session_factory() as session:
+        admin_id = await _new_admin(session, "move")
+        category_id = await _new_category(session, "dst")
+        collection_id = await _new_collection(
+            session, "sequence", [], owner_id=admin_id
+        )
+        admin = await _get_user(session, admin_id)
+
+        out = await move_collection(
+            collection_id,
+            CollectionMove(category_id=category_id, version=1),
+            admin,
+            session,
+        )
+        assert out.category_id == category_id and out.version == 2
+
+    async with session_factory() as check:
+        row = await check.get(Collection, collection_id)
+        assert row is not None and row.category_id == category_id
+
+
+async def test_move_collection_to_root_via_null(session_factory) -> None:
+    async with session_factory() as session:
+        admin_id = await _new_admin(session, "root")
+        category_id = await _new_category(session, "src")
+        collection_id = await _new_collection(
+            session, "sequence", [], owner_id=admin_id
+        )
+        await session.execute(
+            update(Collection)
+            .where(Collection.id == collection_id)
+            .values(category_id=category_id)
+        )
+        await session.commit()
+        admin = await _get_user(session, admin_id)
+
+        out = await move_collection(
+            collection_id, CollectionMove(category_id=None, version=1), admin, session
+        )
+        assert out.category_id is None
+
+    async with session_factory() as check:
+        row = await check.get(Collection, collection_id)
+        assert row is not None and row.category_id is None
+
+
+async def test_move_collection_stale_version_is_409(session_factory) -> None:
+    async with session_factory() as session:
+        admin_id = await _new_admin(session, "occ")
+        category_id = await _new_category(session, "dst")
+        collection_id = await _new_collection(
+            session, "sequence", [], owner_id=admin_id
+        )
+        admin = await _get_user(session, admin_id)
+        with pytest.raises(HTTPException) as exc:
+            await move_collection(
+                collection_id,
+                CollectionMove(category_id=category_id, version=999),
+                admin,
+                session,
+            )
+        assert exc.value.status_code == 409
+        await session.rollback()
+        assert (
+            await session.get(Collection, collection_id)
+        ).category_id is None
+
+
+async def test_move_collection_unknown_category_is_422(session_factory) -> None:
+    async with session_factory() as session:
+        admin_id = await _new_admin(session, "bad")
+        collection_id = await _new_collection(
+            session, "sequence", [], owner_id=admin_id
+        )
+        admin = await _get_user(session, admin_id)
+        with pytest.raises(HTTPException) as exc:
+            await move_collection(
+                collection_id,
+                CollectionMove(category_id=999_999, version=1),
+                admin,
+                session,
+            )
+        assert exc.value.status_code == 422
+
+
+async def test_delete_category_unfiles_collection_via_set_null(
+    session_factory,
+) -> None:
+    """Deleting a category unfiles its collections (category_id → NULL) —
+    the collection itself is preserved, mirroring image semantics."""
+    async with session_factory() as session:
+        admin_id = await _new_admin(session, "cas")
+        category_id = await _new_category(session, "victim")
+        collection_id = await _new_collection(
+            session, "sequence", [], owner_id=admin_id
+        )
+        await session.execute(
+            update(Collection)
+            .where(Collection.id == collection_id)
+            .values(category_id=category_id)
+        )
+        await session.commit()
+        admin = await _get_user(session, admin_id)
+
+        await delete_category(category_id, admin, db=session)
+
+        row = await session.get(Collection, collection_id)
+        assert row is not None and row.category_id is None

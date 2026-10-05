@@ -64,6 +64,8 @@ function makeCollection(images: ImageItem[], canEdit: boolean): Collection {
     owner: { kind: 'user', userId: 7, name: 'Ada Lovelace' },
     imageCount: images.length,
     coverThumb: '/hriv-splash2.jpg',
+    categoryId: null,
+    sortOrder: 0,
     version: 1,
     createdAt: FIXED_AT,
     updatedAt: FIXED_AT,

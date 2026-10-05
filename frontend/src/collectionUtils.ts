@@ -48,6 +48,8 @@ export function apiCollectionSummaryToSummary(api: ApiCollectionSummary): Collec
     imageCount: api.image_count,
     coverThumb: api.cover_thumb,
     version: api.version,
+    categoryId: api.category_id,
+    sortOrder: api.sort_order,
     createdAt: api.created_at,
     updatedAt: api.updated_at,
     permissions: {
