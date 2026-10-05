@@ -80,6 +80,7 @@ function renderDialog(
         collection={props.collection}
         programs={props.programs ?? PROGRAMS}
         groups={props.groups ?? GROUPS}
+        onDelete={props.onDelete}
       />
     </AuthContext.Provider>,
   )
@@ -379,6 +380,41 @@ describe('CollectionEditDialog', () => {
       await user.click(screen.getByRole('button', { name: 'Save' }))
       expect(await screen.findByText('Conflict')).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Reload' })).not.toBeInTheDocument()
+    })
+  })
+
+  // Delete lives inside the edit dialog only (#1554) — the same
+  // click-to-confirm pattern as EditImageModal.
+  describe('delete', () => {
+    it('shows no delete button in create mode', () => {
+      renderDialog({ collection: null, onDelete: vi.fn() })
+      expect(screen.queryByRole('button', { name: 'Delete Collection' })).not.toBeInTheDocument()
+    })
+
+    it('shows no delete button in edit mode without the onDelete prop', () => {
+      renderDialog({ collection: makeCollection({ name: 'Mine' }) })
+      expect(screen.queryByRole('button', { name: 'Delete Collection' })).not.toBeInTheDocument()
+    })
+
+    it('arms on the first click and deletes on the confirm click', async () => {
+      const user = userEvent.setup()
+      const onDelete = vi.fn().mockResolvedValue(undefined)
+      renderDialog({ collection: makeCollection({ name: 'Doomed' }), onDelete })
+      await user.click(screen.getByRole('button', { name: 'Delete Collection' }))
+      expect(onDelete).not.toHaveBeenCalled()
+      expect(screen.getByText(/This action cannot be undone/)).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Confirm Delete Collection' }))
+      await waitFor(() => expect(onDelete).toHaveBeenCalled())
+    })
+
+    it('re-arms and shows the API message when deletion fails', async () => {
+      const user = userEvent.setup()
+      const onDelete = vi.fn().mockRejectedValue(new ApiError(409, 'In use'))
+      renderDialog({ collection: makeCollection({ name: 'Busy' }), onDelete })
+      await user.click(screen.getByRole('button', { name: 'Delete Collection' }))
+      await user.click(screen.getByRole('button', { name: 'Confirm Delete Collection' }))
+      expect(await screen.findByText('In use')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Delete Collection' })).toBeInTheDocument()
     })
   })
 

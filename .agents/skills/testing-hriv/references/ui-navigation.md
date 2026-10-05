@@ -4,12 +4,14 @@
 
 - **admin:** Home, Collections, Images, Manage, People, Admin
 - **instructor:** Home, Collections, Images, Manage
-- **staff:** Home, Collections, People (read-only)
+- **staff:** Home, Collections, Manage (Collections only), People (read-only)
 - **student:** Home, Collections
 
 (Collections appears for every role when `COLLECTIONS_ENABLED=true` — the
-compose default. Staff get Images/Manage-level read access through
-visibility, not the Images/Manage tabs.)
+compose default. The Collections tab opens a sub-menu: **Sequence** and
+**Synchronized**, each a separate page (`?page=collections&type=`). Staff
+get Manage only for its **Collections** item — they keep Images/Manage-level
+read access through visibility, not the Images tab or other Manage items.)
 
 ### Browse (Home)
 
@@ -18,8 +20,8 @@ visibility, not the Images/Manage tabs.)
   grid — see `references/drag-and-drop.md` for the move/reorder/add contract.
 - Collections can be nested under categories (`collections.category_id`);
   the seeded **Italian Cathedrals** sequence lives at
-  _Architecture → Italian_. File/unfile via the card **Move** button
-  (`MoveCollectionDialog`, admin/instructor) or by dragging the tile onto a
+  _Architecture → Italian_. File/unfile via the card **Move** overlay action
+  (top-right cover scrim; `MoveCollectionDialog`, admin/instructor) or by dragging the tile onto a
   category's near-half **Move here** zone.
 - Click a tile to drill down; click an image tile to open the OpenSeadragon
   viewer; click a collection tile to open that collection's viewer
@@ -47,6 +49,28 @@ const label = Array.from(document.querySelectorAll('h6')).find(
 )
 label?.closest('button')?.click()
 ```
+
+### Collections Tab
+
+- Sub-menu items: **Sequence** (`?page=collections&type=sequence`,
+  the default when `type` is missing/invalid) and **Synchronized**
+  (`type=synchronized`). Each is the same `CollectionsPage` locked to one
+  type — header filters are **My collections** + **Owner** (non-students),
+  left of **New collection**.
+- Card layout (#1554): type chip + **Move** + **Owners** in the top-right
+  cover overlay (CategoryTile scrim convention), **Edit** pencil in the
+  metadata area, no Delete on the card — **Delete Collection** lives inside
+  the edit dialog (click to arm, click to confirm).
+
+### Manage → Collections
+
+- Non-students only (`?page=manage-collections`; staff see it as their only
+  Manage item). All-collections table mirroring Manage → Images: filter
+  facets (Name / Type / Visibility / Owner / Category tree), sortable
+  columns, pagination, Category column = Browse breadcrumb links.
+- Row click: editable rows open the edit dialog; read-only rows open the
+  collection detail. Actions: Edit (`canEdit`), Owners (`canTransfer`),
+  Move (admin/instructor); Delete inside the edit dialog.
 
 ### Images Tab
 

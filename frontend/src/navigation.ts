@@ -1,4 +1,5 @@
-export type NavigationPage = 'browse' | 'collections' | 'manage' | 'people' | 'admin'
+export type NavigationPage =
+  'browse' | 'collections' | 'manage' | 'manage-collections' | 'people' | 'admin'
 export type NavigationSection = 'primary' | 'manage' | 'account'
 export type NavigationIcon =
   | 'home'
@@ -17,11 +18,15 @@ export interface NavigationItem {
   section: NavigationSection
   icon: NavigationIcon
   page?: NavigationPage
+  /** For `page: 'collections'` items — which type sub-page the item opens. */
+  collectionType?: 'sequence' | 'synchronized'
   requiresEditContent?: boolean
   requiresManageUsers?: boolean
   requiresViewPeople?: boolean
   /** Hidden unless the deployment's `collections` feature flag is on. */
   requiresCollections?: boolean
+  /** Hidden from students: visible to admins, instructors, and staff. */
+  requiresNonStudent?: boolean
 }
 
 const navigationItems: readonly NavigationItem[] = [
@@ -30,11 +35,21 @@ const navigationItems: readonly NavigationItem[] = [
   // feature, not a management one; the API scopes what each caller can see.
   // Dark-launched: only rendered when the deployment enables collections.
   {
-    id: 'collections',
-    label: 'Collections',
+    id: 'collections-sequence',
+    label: 'Sequence collections',
     section: 'primary',
     icon: 'collections',
     page: 'collections',
+    collectionType: 'sequence',
+    requiresCollections: true,
+  },
+  {
+    id: 'collections-synchronized',
+    label: 'Synchronized collections',
+    section: 'primary',
+    icon: 'collections',
+    page: 'collections',
+    collectionType: 'synchronized',
     requiresCollections: true,
   },
   {
@@ -51,6 +66,18 @@ const navigationItems: readonly NavigationItem[] = [
     section: 'manage',
     icon: 'categories',
     requiresEditContent: true,
+  },
+  // All-collections manage table (#1554). Staff reach it too — mirroring
+  // their read-level access to the image manage surface — so this gates on
+  // "not a student" rather than `requiresEditContent`.
+  {
+    id: 'manage-collections',
+    label: 'Collections',
+    section: 'manage',
+    icon: 'collections',
+    page: 'manage-collections',
+    requiresCollections: true,
+    requiresNonStudent: true,
   },
   {
     id: 'programs',
@@ -108,6 +135,7 @@ export function getNavigationItems({
       (!item.requiresEditContent || canEditContent) &&
       (!item.requiresManageUsers || canManageUsers) &&
       (!item.requiresViewPeople || canViewPeople) &&
-      (!item.requiresCollections || collectionsEnabled),
+      (!item.requiresCollections || collectionsEnabled) &&
+      (!item.requiresNonStudent || canEditContent || canViewPeople),
   )
 }

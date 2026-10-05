@@ -3,7 +3,9 @@
 Collections gather a handful of images into a named set — for example, the
 four views of one specimen, or a sequence that tells a story over time.
 
-Open the **Collections** tab in the app bar. Everyone who is signed in,
+Open the **Collections** tab in the app bar and pick **Sequence** or
+**Synchronized** from the menu — each page lists only collections of that
+type. Everyone who is signed in,
 including students, can see the tab; admins, instructors, staff and students
 can all create their own collections (staff see every collection and, like
 students, edit the ones they own or co-own). (If
@@ -126,7 +128,9 @@ a tile to view the collection; Back returns to the same place in Browse.
   images and categories in the same folder; the order is shared for every
   viewer.
 - Admins and instructors can **file** a collection into a category (or back
-  to the top level) with the card's **Move** button, or by dragging the tile
+  to the top level) with the card's **Move** action (the folder icon in the
+  cover's top-right corner, or the **Move** button on the collection page),
+  or by dragging the tile
   onto a category tile's _Move here_ zone. Filing is curatorial, not
   ownership-bound — any admin/instructor can file any collection.
 - A category tile's detail line counts the collections inside its subtree
@@ -136,15 +140,15 @@ a tile to view the collection; Back returns to the same place in Browse.
 
 ## Find a collection
 
-Use the filters above the grid:
+Pick the type first — **Collections → Sequence** or **Collections →
+Synchronized** in the app bar — then use the filters in the header row:
 
-- **All / Synchronized / Sequence** – narrow by type.
 - **My collections** – just the collections you co-own.
 - **Owner** – collections co-owned by a particular person, or owned by a
   program (not shown to students).
 
-Each card shows the cover image, how many images it holds, its owners, and
-chips for its type and visibility.
+Each card shows the cover image, how many images it holds, its owners, a
+type chip on the cover, and a visibility chip.
 
 Collections also appear in the top-bar **Search** — both name and
 description are searched, and the **Collections** chip narrows results to
@@ -153,15 +157,17 @@ just collections. Choosing a result opens it here.
 ## Edit or delete
 
 If you co-own a collection (or teach in the program that owns it), the card
-and the collection page show **pencil** and **trash** icons. A collection
-can have several user co-owners plus, or instead of, a program owner.
+shows a **pencil** icon and the collection page shows an **Edit** button. A
+collection can have several user co-owners plus, or instead of, a program
+owner.
 
 - **Edit** lets you change the name, description, visibility, and — for
   restricted collections — the programs and groups. Student co-owners can
   change the name, description and images, but the visibility and program /
   group scope stay locked (they can only change those on a collection they
   own alone).
-- **Delete** asks you to confirm first. Deleting a collection never deletes
+- **Delete Collection** lives inside the edit dialog, at the bottom — click
+  once to arm, then again to confirm. Deleting a collection never deletes
   the images in it. Co-owned and program-owned collections can't be deleted
   by a student co-owner — ask an instructor or administrator.
 
@@ -173,8 +179,9 @@ picks up their changes so you can re-apply yours.
 
 ## Manage owners
 
-If a collection shows an **Owners** action (on its card or at the top of the
-collection page), you can manage who owns it — administrators for any
+If a collection shows an **Owners** action (in the card's cover overlay, at
+the top of the collection page, or on its Manage → Collections table row),
+you can manage who owns it — administrators for any
 collection, instructors for collections they co-own or that belong to a
 program they teach:
 
@@ -203,6 +210,16 @@ deleted), the collection becomes _orphaned_. Administrators can find these
 with the **Owner** filter's _No owner (orphaned)_ option and assign owners
 with **Owners**.
 :::
+
+## Manage → Collections (instructors, staff, admins)
+
+The **Manage → Collections** table lists every collection you can see —
+both types together — in sortable columns with filter facets for name,
+type, visibility, owner, and category. The **Category** column links into
+Browse at that location. Rows offer the same actions the cards do where you
+have permission: **Edit**, **Owners**, and (admins/instructors) **Move** —
+while delete stays inside the edit dialog. Clicking a row you can edit opens
+the editor; clicking a read-only row opens the collection itself.
 
 ## Share a link
 

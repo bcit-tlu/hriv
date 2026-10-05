@@ -68,7 +68,10 @@ import {
   getSurfaceVariant,
 } from '../theme'
 
-export type Page = 'browse' | 'collections' | 'manage' | 'people' | 'admin' | 'guide'
+export type Page =
+  'browse' | 'collections' | 'manage' | 'manage-collections' | 'people' | 'admin' | 'guide'
+
+export type CollectionPageType = 'sequence' | 'synchronized'
 
 export interface AppShellProps {
   page: Page
@@ -79,6 +82,10 @@ export interface AppShellProps {
   canViewPeople: boolean
   /** Deployment flag (`GET /api/features`); hides the Collections tab when off. */
   collectionsEnabled: boolean
+  /** Active Collections type page — labels the Sequence/Synchronized menu items. */
+  collectionType: CollectionPageType
+  /** Collections tab sub-menu selection (Sequence / Synchronized). */
+  onCollectionsTypeChange: (type: CollectionPageType) => void
   currentUser: {
     name: string
     email: string
@@ -123,6 +130,8 @@ export default function AppShell(props: AppShellProps) {
     canManageUsers,
     canViewPeople,
     collectionsEnabled,
+    collectionType,
+    onCollectionsTypeChange,
     currentUser,
     announcement,
     annMessage,
@@ -147,6 +156,7 @@ export default function AppShell(props: AppShellProps) {
     children,
   } = props
   const [manageMenuAnchor, setManageMenuAnchor] = useState<HTMLElement | null>(null)
+  const [collectionsMenuAnchor, setCollectionsMenuAnchor] = useState<HTMLElement | null>(null)
   const [navDrawerOpen, setNavDrawerOpen] = useState(false)
   const theme = useTheme()
   // Collapse the nav tabs into a hamburger menu when the viewport is too
@@ -154,10 +164,12 @@ export default function AppShell(props: AppShellProps) {
   // (Home + Collections when enabled — the whole student layout) stay inline
   // instead of hiding behind a lone hamburger.
   const isCompactViewport = useMediaQuery(theme.breakpoints.down('md'))
+  // Staff see the Manage tab only for the Collections table, so it counts
+  // for them just when the flag is on.
   const navTabCount =
     1 +
     (collectionsEnabled ? 1 : 0) +
-    (canEditContent ? 2 : 0) +
+    (canEditContent ? 2 : collectionsEnabled && canViewPeople ? 1 : 0) +
     (canViewPeople ? 1 : 0) +
     (canManageUsers ? 1 : 0)
   const collapseNav = isCompactViewport && navTabCount > 2
@@ -177,6 +189,7 @@ export default function AppShell(props: AppShellProps) {
     if (collapseNav) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- clear stale anchor after viewport collapse
       setManageMenuAnchor(null)
+      setCollectionsMenuAnchor(null)
     } else {
       setNavDrawerOpen(false)
     }
@@ -233,6 +246,8 @@ export default function AppShell(props: AppShellProps) {
           } else {
             onTabChange('browse')
           }
+        } else if (item.collectionType != null) {
+          onCollectionsTypeChange(item.collectionType)
         } else if (item.id === 'images') {
           onTabChange('manage')
         } else if (item.id === 'categories') {
@@ -248,8 +263,12 @@ export default function AppShell(props: AppShellProps) {
         }
       }
 
+      const selected =
+        item.page === page &&
+        (item.collectionType == null || item.collectionType === collectionType)
+
       return (
-        <MenuItem key={item.id} selected={item.page === page} onClick={closeThen(handleClick)}>
+        <MenuItem key={item.id} selected={selected} onClick={closeThen(handleClick)}>
           <ListItemIcon sx={{ minWidth: 36 }}>{iconFor(item.icon)}</ListItemIcon>
           <ListItemText>{item.label}</ListItemText>
         </MenuItem>
@@ -336,8 +355,10 @@ export default function AppShell(props: AppShellProps) {
             <Box sx={{ flexGrow: 1 }} />
           ) : (
             <Tabs
-              // 'guide' has no AppBar tab — it is opened via the notification menu.
-              value={page === 'guide' ? false : page}
+              // 'guide'/'manage-collections' have no AppBar tab — the guide
+              // opens via the notification menu; the collections table opens
+              // via the Manage dropdown.
+              value={page === 'guide' || page === 'manage-collections' ? false : page}
               onChange={(_, v: Page) => {
                 if (
                   v === 'browse' ||
@@ -366,9 +387,15 @@ export default function AppShell(props: AppShellProps) {
                   }
                 }}
               />
-              {collectionsEnabled && <Tab label="Collections" value="collections" />}
+              {collectionsEnabled && (
+                <Tab
+                  label="Collections"
+                  value="collections"
+                  onClick={(e) => setCollectionsMenuAnchor(e.currentTarget)}
+                />
+              )}
               {canEditContent && <Tab label="Images" value="manage" />}
-              {canEditContent && (
+              {(canEditContent || (collectionsEnabled && canViewPeople)) && (
                 <Tab
                   label="Manage"
                   value={false}
@@ -381,18 +408,57 @@ export default function AppShell(props: AppShellProps) {
           )}
           {!collapseNav && (
             <Menu
+              anchorEl={collectionsMenuAnchor}
+              open={Boolean(collectionsMenuAnchor)}
+              onClose={() => setCollectionsMenuAnchor(null)}
+            >
+              <MenuItem
+                selected={page === 'collections' && collectionType === 'sequence'}
+                onClick={() => {
+                  setCollectionsMenuAnchor(null)
+                  onCollectionsTypeChange('sequence')
+                }}
+              >
+                Sequence
+              </MenuItem>
+              <MenuItem
+                selected={page === 'collections' && collectionType === 'synchronized'}
+                onClick={() => {
+                  setCollectionsMenuAnchor(null)
+                  onCollectionsTypeChange('synchronized')
+                }}
+              >
+                Synchronized
+              </MenuItem>
+            </Menu>
+          )}
+          {!collapseNav && (
+            <Menu
               anchorEl={manageMenuAnchor}
               open={Boolean(manageMenuAnchor)}
               onClose={() => setManageMenuAnchor(null)}
             >
-              <MenuItem
-                onClick={() => {
-                  setManageMenuAnchor(null)
-                  onOpenCategories()
-                }}
-              >
-                Categories
-              </MenuItem>
+              {canEditContent && (
+                <MenuItem
+                  onClick={() => {
+                    setManageMenuAnchor(null)
+                    onOpenCategories()
+                  }}
+                >
+                  Categories
+                </MenuItem>
+              )}
+              {collectionsEnabled && (
+                <MenuItem
+                  selected={page === 'manage-collections'}
+                  onClick={() => {
+                    setManageMenuAnchor(null)
+                    onTabChange('manage-collections')
+                  }}
+                >
+                  Collections
+                </MenuItem>
+              )}
               {canManageUsers && (
                 <MenuItem
                   onClick={() => {
@@ -403,22 +469,26 @@ export default function AppShell(props: AppShellProps) {
                   Programs
                 </MenuItem>
               )}
-              <MenuItem
-                onClick={() => {
-                  setManageMenuAnchor(null)
-                  onOpenGroups()
-                }}
-              >
-                Groups
-              </MenuItem>
-              <MenuItem
-                onClick={() => {
-                  setManageMenuAnchor(null)
-                  onOpenAnnouncement()
-                }}
-              >
-                Announcement
-              </MenuItem>
+              {canEditContent && (
+                <MenuItem
+                  onClick={() => {
+                    setManageMenuAnchor(null)
+                    onOpenGroups()
+                  }}
+                >
+                  Groups
+                </MenuItem>
+              )}
+              {canEditContent && (
+                <MenuItem
+                  onClick={() => {
+                    setManageMenuAnchor(null)
+                    onOpenAnnouncement()
+                  }}
+                >
+                  Announcement
+                </MenuItem>
+              )}
             </Menu>
           )}
           {collapseNav && (
