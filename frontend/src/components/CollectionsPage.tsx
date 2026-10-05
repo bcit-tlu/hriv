@@ -21,6 +21,7 @@ import AddIcon from '@mui/icons-material/Add'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import CollectionsIcon from '@mui/icons-material/Collections'
 import DeleteIcon from '@mui/icons-material/Delete'
+import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
 import EditIcon from '@mui/icons-material/Edit'
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz'
 import { userMessage, type ApiImage } from '../api'
@@ -87,6 +88,17 @@ export interface CollectionsPageProps {
   onDelete: (id: number) => Promise<void>
   /** Ownership transfer (#1419) — surfaced only where `canTransfer` allows. */
   onTransfer: (id: number, target: CollectionTransferTarget) => Promise<unknown>
+  /**
+   * File into a Browse category (#1529). Role-gated here (any
+   * admin/instructor — filing is curatorial, not ownership-bound); App owns
+   * the dialog + snackbar.
+   */
+  onMoveCollection?: (collection: CollectionSummary) => void
+  /**
+   * Label for the detail view's back button (#1529): `?cat=` context means
+   * "Back to Browse", otherwise "All collections".
+   */
+  detailBackLabel?: string
 }
 
 function ownerFilterKey(owner: CollectionOwnerFilter): string {
@@ -100,17 +112,21 @@ function CollectionDetailHeader({
   programs,
   groups,
   onBack,
+  backLabel = 'All collections',
   onEdit,
   onDelete,
   onTransfer,
+  onMove,
 }: {
   collection: Collection
   programs: Program[]
   groups: Group[]
   onBack: () => void
+  backLabel?: string
   onEdit?: () => void
   onDelete?: () => void
   onTransfer?: () => void
+  onMove?: () => void
 }) {
   const { mode } = useColorMode()
   const groupColors = getGroupChipColors(mode)
@@ -121,7 +137,7 @@ function CollectionDetailHeader({
   return (
     <>
       <Button startIcon={<ArrowBackIcon />} onClick={onBack} sx={{ mb: 1 }}>
-        All collections
+        {backLabel}
       </Button>
       <Box
         sx={{
@@ -140,6 +156,16 @@ function CollectionDetailHeader({
             {ownerText} · {collection.images.length}{' '}
             {collection.images.length === 1 ? 'image' : 'images'}
           </Typography>
+          {collection.memberCount > 0 && collection.images.length === 0 && (
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ mt: 0.5, fontStyle: 'italic' }}
+              data-testid="collection-all-restricted"
+            >
+              All images in this collection are currently restricted.
+            </Typography>
+          )}
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
             <Chip
               size="small"
@@ -179,6 +205,16 @@ function CollectionDetailHeader({
           )}
         </Box>
         <Box sx={{ display: 'flex', gap: 1 }}>
+          {onMove && (
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<DriveFileMoveIcon />}
+              onClick={onMove}
+            >
+              Move
+            </Button>
+          )}
           {collection.permissions.canEdit && onEdit && (
             <Button variant="outlined" size="small" startIcon={<EditIcon />} onClick={onEdit}>
               Edit
@@ -239,6 +275,8 @@ export default function CollectionsPage({
   onUpdate,
   onDelete,
   onTransfer,
+  onMoveCollection,
+  detailBackLabel,
 }: CollectionsPageProps) {
   const [editorOpen, setEditorOpen] = useState(false)
   const [editing, setEditing] = useState<Collection | null>(null)
@@ -252,6 +290,9 @@ export default function CollectionsPage({
 
   const isAdmin = currentUser?.role === 'admin'
   const showOwnerFilter = currentUser != null && currentUser.role !== 'student'
+  // Filing collections into categories is curatorial: any admin/instructor
+  // may move any collection (unlike edit/delete, which are owner-scoped).
+  const canFileCollections = currentUser?.role === 'admin' || currentUser?.role === 'instructor'
 
   const openCreate = () => {
     // Supersede any Edit fetch still in flight so it cannot replace this form.
@@ -355,9 +396,13 @@ export default function CollectionsPage({
             programs={programs}
             groups={groups}
             onBack={onCloseCollection}
+            backLabel={detailBackLabel}
             onEdit={() => void openEdit(detail)}
             onDelete={() => requestDelete(detail)}
             onTransfer={() => setTransferTarget(detail)}
+            onMove={
+              canFileCollections && onMoveCollection ? () => onMoveCollection(detail) : undefined
+            }
           />
           <SequenceCollectionViewer
             collection={detail}
@@ -378,9 +423,13 @@ export default function CollectionsPage({
             programs={programs}
             groups={groups}
             onBack={onCloseCollection}
+            backLabel={detailBackLabel}
             onEdit={() => void openEdit(detail)}
             onDelete={() => requestDelete(detail)}
             onTransfer={() => setTransferTarget(detail)}
+            onMove={
+              canFileCollections && onMoveCollection ? () => onMoveCollection(detail) : undefined
+            }
           />
           <SynchronizedCollectionViewer
             collection={detail}
@@ -506,6 +555,7 @@ export default function CollectionsPage({
                   onEdit={(col) => void openEdit(col)}
                   onDelete={requestDelete}
                   onTransfer={setTransferTarget}
+                  onMove={canFileCollections ? onMoveCollection : undefined}
                 />
               </Box>
             ))}

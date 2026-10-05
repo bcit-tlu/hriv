@@ -8,6 +8,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import CollectionsIcon from '@mui/icons-material/Collections'
 import DeleteIcon from '@mui/icons-material/Delete'
+import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
 import EditIcon from '@mui/icons-material/Edit'
 import LockIcon from '@mui/icons-material/Lock'
 import PublicIcon from '@mui/icons-material/Public'
@@ -34,6 +35,12 @@ export interface CollectionCardProps {
   onDelete?: (collection: CollectionSummary) => void
   /** Rendered only when `collection.permissions.canTransfer` (UX gate — the API re-checks). */
   onTransfer?: (collection: CollectionSummary) => void
+  /**
+   * Move/file into a category (#1529). Unlike the other actions this is
+   * role-gated by the caller (any admin/instructor may file — it is
+   * curatorial, not ownership-bound), so it renders whenever provided.
+   */
+  onMove?: (collection: CollectionSummary) => void
 }
 
 /**
@@ -93,6 +100,7 @@ export default function CollectionCard({
   onEdit,
   onDelete,
   onTransfer,
+  onMove,
 }: CollectionCardProps) {
   const cover = collection.coverThumb
   const TypeIcon = collection.type === 'synchronized' ? ViewColumnIcon : ViewCarouselIcon
@@ -100,6 +108,7 @@ export default function CollectionCard({
   const showEdit = Boolean(onEdit) && collection.permissions.canEdit
   const showDelete = Boolean(onDelete) && collection.permissions.canDelete
   const showTransfer = Boolean(onTransfer) && collection.permissions.canTransfer
+  const showMove = Boolean(onMove)
 
   return (
     <Card data-testid="collection-card" elevation={2} sx={{ height: '100%', position: 'relative' }}>
@@ -146,7 +155,7 @@ export default function CollectionCard({
                 WebkitBoxOrient: 'vertical',
                 overflow: 'hidden',
                 wordBreak: 'break-word',
-                pr: showEdit || showDelete || showTransfer ? 8 : 0,
+                pr: showEdit || showDelete || showTransfer || showMove ? 8 : 0,
               }}
             >
               {collection.name}
@@ -168,7 +177,7 @@ export default function CollectionCard({
           </Box>
         </CardContent>
       </CardActionArea>
-      {(showEdit || showDelete || showTransfer) && (
+      {(showEdit || showDelete || showTransfer || showMove) && (
         <Box
           sx={{
             position: 'absolute',
@@ -181,6 +190,17 @@ export default function CollectionCard({
             gap: 0.25,
           }}
         >
+          {showMove && (
+            <Tooltip title="Move to category">
+              <IconButton
+                size="small"
+                aria-label={`Move ${collection.name} to a category`}
+                onClick={() => onMove?.(collection)}
+              >
+                <DriveFileMoveIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
           {showEdit && (
             <Tooltip title="Edit collection">
               <IconButton

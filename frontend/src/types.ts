@@ -129,4 +129,7 @@ export interface Collection extends CollectionSummary {
   programIds: number[]
   groupIds: number[]
   viewportState: Record<string, unknown>
+  /** Nominal member count including hidden members (#1529) — `imageCount`
+   * is visible-only, so `memberCount > imageCount` means "all restricted". */
+  memberCount: number
 }

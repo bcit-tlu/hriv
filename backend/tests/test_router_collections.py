@@ -384,6 +384,40 @@ async def test_get_collection_detail_shape() -> None:
     assert dumped["cover_thumb"].startswith("/thumbs/1.jpg")
 
 
+async def test_get_collection_member_count_counts_hidden_members(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # member_count is nominal (all members) so the UI can distinguish a truly
+    # empty collection from one whose members are all restricted (#1529).
+    excluded = AsyncMock(return_value={20})
+    monkeypatch.setattr(
+        "app.collection_views.get_student_excluded_category_ids", excluded
+    )
+    images = [_image(1, category_id=20), _image(2, category_id=20), _image(3)]
+    col = _collection(1, "public", user_id=10, images=images)
+    student = _user("student", id=2, programs=[1], groups=[5])
+    out = await get_collection(1, student, db=_mock_db(get=col))
+    assert [i.id for i in out.images] == [3]
+    assert out.image_count == 1
+    assert out.member_count == 3
+
+
+async def test_get_collection_member_count_omitted_from_summaries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Summaries deliberately omit member_count so list rows and Browse tiles
+    # cannot leak that hidden members exist (#1529).
+    excluded = AsyncMock(return_value={20})
+    monkeypatch.setattr(
+        "app.collection_views.get_student_excluded_category_ids", excluded
+    )
+    col = _collection(1, "public", user_id=10, images=[_image(1, category_id=20)])
+    student = _user("student", id=2, programs=[1], groups=[5])
+    out = await list_collections(student, db=_mock_db([col]))
+    assert out[0].image_count == 0
+    assert not hasattr(out[0], "member_count")
+
+
 async def test_get_collection_missing_is_404() -> None:
     with pytest.raises(HTTPException) as exc:
         await get_collection(99, _user("admin"), db=_mock_db(get=None))

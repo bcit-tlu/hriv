@@ -4,7 +4,7 @@ import { useCategoryActions } from '../src/useCategoryActions'
 import type { UseCategoryActionsDeps } from '../src/useCategoryActions'
 import * as api from '../src/api'
 import { tileOrderingCoordinator } from '../src/tileOrdering'
-import { makeCategory, makeImage } from './helpers/fixtures'
+import { makeCategory, makeCollection, makeCollectionSummary, makeImage } from './helpers/fixtures'
 
 vi.mock('../src/api', async () => {
   const actual = await vi.importActual<typeof api>('../src/api')
@@ -987,6 +987,132 @@ describe('useCategoryActions', () => {
 
       await act(async () => {
         await result.current.handleDropCategoryOnCategory(1, 2)
+      })
+
+      expect(deps.setErrorSnack).toHaveBeenCalled()
+    })
+  })
+
+  describe('collection moves (#1529)', () => {
+    it('handleDropCollectionOnCategory files a tree collection with undo snack', async () => {
+      const col = makeCollectionSummary({ id: 7, name: 'Epithelia', categoryId: 1, version: 3 })
+      const catA = makeCategory({ id: 1, label: 'Source', collections: [col] })
+      const catB = makeCategory({ id: 2, label: 'Target' })
+      const moveCollectionApi = vi
+        .fn()
+        .mockResolvedValue(makeCollection({ id: 7, categoryId: 2, version: 4 }))
+      const loadUncategorizedCollections = vi.fn()
+      const deps = makeDeps({
+        categories: [catA, catB],
+        moveCollectionApi,
+        loadUncategorizedCollections,
+      })
+      const { result } = renderHook(() => useCategoryActions(deps))
+
+      await act(async () => {
+        await result.current.handleDropCollectionOnCategory(7, 2)
+      })
+
+      expect(moveCollectionApi).toHaveBeenCalledWith(7, 2, 3)
+      expect(deps.loadCategories).toHaveBeenCalled()
+      expect(loadUncategorizedCollections).toHaveBeenCalled()
+      expect(deps.setMoveSnack).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('Epithelia'),
+        }),
+      )
+    })
+
+    it('finds root-scope collections in uncategorizedCollections', async () => {
+      const col = makeCollectionSummary({ id: 8, name: 'Root set', categoryId: null, version: 1 })
+      const catB = makeCategory({ id: 2, label: 'Target' })
+      const moveCollectionApi = vi
+        .fn()
+        .mockResolvedValue(makeCollection({ id: 8, categoryId: 2, version: 2 }))
+      const deps = makeDeps({
+        categories: [catB],
+        uncategorizedCollections: [col],
+        moveCollectionApi,
+      })
+      const { result } = renderHook(() => useCategoryActions(deps))
+
+      await act(async () => {
+        await result.current.handleDropCollectionOnCategory(8, 2)
+      })
+
+      expect(moveCollectionApi).toHaveBeenCalledWith(8, 2, 1)
+    })
+
+    it('no-ops when the collection is already in the target category', async () => {
+      const col = makeCollectionSummary({ id: 7, categoryId: 2 })
+      const cat = makeCategory({ id: 2, collections: [col] })
+      const moveCollectionApi = vi.fn()
+      const deps = makeDeps({ categories: [cat], moveCollectionApi })
+      const { result } = renderHook(() => useCategoryActions(deps))
+
+      await act(async () => {
+        await result.current.handleDropCollectionOnCategory(7, 2)
+      })
+
+      expect(moveCollectionApi).not.toHaveBeenCalled()
+    })
+
+    it('dialog move to root sends categoryId null and undoes back', async () => {
+      const col = makeCollectionSummary({ id: 7, name: 'Set', categoryId: 1, version: 3 })
+      const catA = makeCategory({ id: 1, label: 'Source', collections: [col] })
+      const moveCollectionApi = vi
+        .fn()
+        .mockResolvedValueOnce(makeCollection({ id: 7, categoryId: null, version: 4 }))
+        .mockResolvedValueOnce(makeCollection({ id: 7, categoryId: 1, version: 5 }))
+      const deps = makeDeps({ categories: [catA], moveCollectionApi })
+      const { result } = renderHook(() => useCategoryActions(deps))
+
+      await act(async () => {
+        result.current.handleRequestMoveCollection(col)
+      })
+      expect(result.current.moveCollectionOpen).toBe(true)
+      expect(result.current.movingCollection?.id).toBe(7)
+
+      await act(async () => {
+        await result.current.handleMoveCollection(null)
+      })
+
+      expect(moveCollectionApi).toHaveBeenCalledWith(7, null, 3)
+      expect(result.current.moveCollectionOpen).toBe(false)
+      const snackCall = vi.mocked(deps.setMoveSnack).mock.calls[0][0]
+      const onUndo = (snackCall as { message: string; onUndo: () => Promise<void> }).onUndo
+
+      await act(async () => {
+        await onUndo()
+      })
+
+      // Undo re-files at the version the move response returned.
+      expect(moveCollectionApi).toHaveBeenLastCalledWith(7, 1, 4)
+    })
+
+    it('no-ops without moveCollectionApi (flag off)', async () => {
+      const col = makeCollectionSummary({ id: 7, categoryId: 1 })
+      const cat = makeCategory({ id: 1, collections: [col] })
+      const deps = makeDeps({ categories: [cat] })
+      const { result } = renderHook(() => useCategoryActions(deps))
+
+      await act(async () => {
+        await result.current.handleDropCollectionOnCategory(7, 2)
+      })
+
+      expect(deps.setErrorSnack).not.toHaveBeenCalled()
+      expect(deps.loadCategories).not.toHaveBeenCalled()
+    })
+
+    it('shows error snack on move failure', async () => {
+      const col = makeCollectionSummary({ id: 7, categoryId: 1 })
+      const cat = makeCategory({ id: 1, collections: [col] })
+      const moveCollectionApi = vi.fn().mockRejectedValue(new Error('fail'))
+      const deps = makeDeps({ categories: [cat], moveCollectionApi })
+      const { result } = renderHook(() => useCategoryActions(deps))
+
+      await act(async () => {
+        await result.current.handleDropCollectionOnCategory(7, 2)
       })
 
       expect(deps.setErrorSnack).toHaveBeenCalled()

@@ -2,11 +2,12 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import {
   fetchCategoryTree,
   fetchUncategorizedImages,
+  fetchCollections as apiFetchCollections,
   fetchPrograms as apiFetchPrograms,
   fetchGroups as apiFetchGroups,
 } from './api'
-import type { ApiCategoryTree, ApiImage, CategoryTreeHeaders } from './api'
-import type { Category, Group, ImageItem, Program, User } from './types'
+import type { ApiCategoryTree, ApiCollectionSummary, ApiImage, CategoryTreeHeaders } from './api'
+import type { Category, CollectionSummary, Group, ImageItem, Program, User } from './types'
 import { narrowProgramIds, narrowGroupIds, resolvePathNode } from './categoryUtils'
 import { apiCollectionSummaryToSummary } from './collectionUtils'
 import { apiGroupToGroup } from './groupUtils'
@@ -63,7 +64,9 @@ interface StableCaches {
   imageById: Map<number, ImageItem>
   categoryByKey: Map<string, Category>
   categoryById: Map<number, Category>
-  itemToKey: WeakMap<Category | ImageItem, string>
+  collectionByKey: Map<string, CollectionSummary>
+  collectionById: Map<number, CollectionSummary>
+  itemToKey: WeakMap<Category | ImageItem | CollectionSummary, string>
 }
 
 function createStableCaches(): StableCaches {
@@ -72,6 +75,8 @@ function createStableCaches(): StableCaches {
     imageById: new Map(),
     categoryByKey: new Map(),
     categoryById: new Map(),
+    collectionByKey: new Map(),
+    collectionById: new Map(),
     itemToKey: new WeakMap(),
   }
 }
@@ -173,9 +178,51 @@ function stableApiImageToItem(img: ApiImage, caches: StableCaches): ImageItem {
   return item
 }
 
+function collectionIdentityKey(api: ApiCollectionSummary): string {
+  return stableStringify([
+    api.id,
+    api.version,
+    api.sort_order,
+    api.category_id,
+    api.name,
+    api.description,
+    api.type,
+    api.visibility,
+    api.owner,
+    api.image_count,
+    api.cover_thumb,
+    api.permissions,
+    api.created_at,
+    api.updated_at,
+  ])
+}
+
+function stableApiCollectionSummaryToSummary(
+  api: ApiCollectionSummary,
+  caches: StableCaches,
+): CollectionSummary {
+  const key = collectionIdentityKey(api)
+  const cached = caches.collectionByKey.get(key)
+  if (cached) return cached
+
+  const item = apiCollectionSummaryToSummary(api)
+  caches.collectionByKey.set(key, item)
+  const existing = caches.collectionById.get(item.id)
+  if (existing) {
+    const oldKey = caches.itemToKey.get(existing)
+    if (oldKey) caches.collectionByKey.delete(oldKey)
+  }
+  caches.collectionById.set(item.id, item)
+  caches.itemToKey.set(item, key)
+  return item
+}
+
 function stableApiTreeToCategory(node: ApiCategoryTree, caches: StableCaches): Category {
   const childCategories = node.children.map((child) => stableApiTreeToCategory(child, caches))
   const imageItems = node.images.map((img) => stableApiImageToItem(img, caches))
+  const collectionItems = (node.collections ?? []).map((c) =>
+    stableApiCollectionSummaryToSummary(c, caches),
+  )
   const childKeys = childCategories.map((c) => caches.itemToKey.get(c) ?? '')
   const imageKeys = imageItems.map((i) => caches.itemToKey.get(i) ?? '')
 
@@ -189,7 +236,7 @@ function stableApiTreeToCategory(node: ApiCategoryTree, caches: StableCaches): C
       parentId: node.parent_id,
       children: childCategories,
       images: imageItems,
-      collections: (node.collections ?? []).map(apiCollectionSummaryToSummary),
+      collections: collectionItems,
       programIds: [...(node.program_ids ?? [])],
       groupIds: [...(node.group_ids ?? [])],
       status: node.status,
@@ -218,12 +265,20 @@ export interface UseBrowseDataDeps {
   path: Category[]
   currentUser: User | null
   dragActive?: boolean
+  /** Feature flag — root-scope collections only load when on (#1529). */
+  collectionsEnabled?: boolean
 }
 
-export function useBrowseData({ path, currentUser, dragActive = false }: UseBrowseDataDeps) {
+export function useBrowseData({
+  path,
+  currentUser,
+  dragActive = false,
+  collectionsEnabled = false,
+}: UseBrowseDataDeps) {
   const [categories, setCategories] = useState<Category[]>([])
   const [categoriesLoading, setCategoriesLoading] = useState(true)
   const [uncategorizedImages, setUncategorizedImages] = useState<ImageItem[]>([])
+  const [uncategorizedCollections, setUncategorizedCollections] = useState<CollectionSummary[]>([])
   const [programs, setPrograms] = useState<Program[]>([])
   const [groups, setGroups] = useState<Group[]>([])
   const uncategorizedLoaded = useRef(false)
@@ -246,9 +301,11 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
   // request for the same data.
   const categoriesReadGen = useRef(0)
   const uncategorizedReadGen = useRef(0)
+  const collectionsReadGen = useRef(0)
   const visibleCategoriesLoadGen = useRef(0)
   const categoriesAbortRef = useRef<AbortController | null>(null)
   const uncategorizedAbortRef = useRef<AbortController | null>(null)
+  const collectionsAbortRef = useRef<AbortController | null>(null)
   // Authoritative refreshes hold their own controllers: only a NEWER refresh
   // may abort an in-flight refresh. Ordinary foreground loads must not — a
   // refresh's resolved value is used for navigation, so an abort must always
@@ -262,6 +319,7 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
   // resolve with the freshest data instead of rejecting.
   const categoriesRef = useRef<Category[]>([])
   const uncategorizedRef = useRef<ImageItem[]>([])
+  const uncategorizedCollectionsRef = useRef<CollectionSummary[]>([])
   // Newest in-flight authoritative refresh per data type: a superseded
   // refresh chains onto this so its caller receives the data the winning
   // refresh commits, not a possibly pre-mutation mirror.
@@ -292,6 +350,9 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
   useEffect(() => {
     uncategorizedRef.current = uncategorizedImages
   }, [uncategorizedImages])
+  useEffect(() => {
+    uncategorizedCollectionsRef.current = uncategorizedCollections
+  }, [uncategorizedCollections])
 
   // Loaders resolve `true` only when fresh data was actually applied, so
   // callers can gate cache invalidation on authoritative data having landed.
@@ -423,6 +484,49 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
       }
     },
     [],
+  )
+
+  // Root-scope collections (#1529): mirrors the uncategorized-images loader,
+  // minus the refresh-chaining — no caller resolves data from the resolved
+  // value, so a gen+abort-guarded read is sufficient. No-op while the
+  // collections flag is off so a flag-off deployment never calls the API.
+  const loadUncategorizedCollections = useCallback(
+    async (opts?: { signal?: AbortSignal }): Promise<boolean> => {
+      const { signal } = opts ?? {}
+      // Flag off: nothing to fetch; reporting "fresh" keeps the poll's
+      // releaseCleanScopes gate correct (collections aren't scope members).
+      if (!collectionsEnabled) {
+        return true
+      }
+      if (signal?.aborted) return false
+      const gen = ++collectionsReadGen.current
+      let effectiveSignal = signal
+      if (!signal) {
+        collectionsAbortRef.current?.abort()
+        const ac = new AbortController()
+        collectionsAbortRef.current = ac
+        effectiveSignal = ac.signal
+      }
+      try {
+        const rows = await apiFetchCollections({ uncategorized: true }, { signal: effectiveSignal })
+        if (effectiveSignal?.aborted || gen !== collectionsReadGen.current) return false
+        const next = rows.map((row) =>
+          stableApiCollectionSummaryToSummary(row, stableCachesRef.current),
+        )
+        if (!arraysReferentiallyEqual(next, uncategorizedCollectionsRef.current)) {
+          setUncategorizedCollections(next)
+          uncategorizedCollectionsRef.current = next
+        }
+        return true
+      } catch (err) {
+        if (effectiveSignal?.aborted || isAbortError(err) || gen !== collectionsReadGen.current) {
+          return false
+        }
+        console.error('Failed to load uncategorized collections', err)
+        return false
+      }
+    },
+    [collectionsEnabled],
   )
 
   const loadPrograms = useCallback(async () => {
@@ -623,15 +727,16 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
       const marker = tileOrderingCoordinator.marker()
       const categoriesFresh = await loadCategories({ silent: true, signal })
       const imagesFresh = await loadUncategorizedImages({ signal })
+      const collectionsFresh = await loadUncategorizedCollections({ signal })
       // Only when fresh authoritative data actually landed may the
       // coordinator's cached display order be dropped for clean scopes —
       // a failed poll must not make a just-saved order fall back to the
       // stale pre-save tree.
-      if (!signal.aborted && categoriesFresh && imagesFresh) {
+      if (!signal.aborted && categoriesFresh && imagesFresh && collectionsFresh) {
         tileOrderingCoordinator.releaseCleanScopes(marker)
       }
     },
-    [loadCategories, loadUncategorizedImages],
+    [loadCategories, loadUncategorizedImages, loadUncategorizedCollections],
   )
   const invalidateBackground = useBackgroundRefresh(
     backgroundRefresh,
@@ -647,15 +752,27 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
     if (!dragActive) return
     categoriesAbortRef.current?.abort()
     uncategorizedAbortRef.current?.abort()
+    collectionsAbortRef.current?.abort()
     categoriesRefreshAbortRef.current?.abort()
     uncategorizedRefreshAbortRef.current?.abort()
   }, [dragActive])
 
-  // Resolve the live children/images from the categories state tree
-  // so newly added categories appear immediately.
-  const { cats: resolvedCategories, imgs: currentImages } = useMemo(
-    () => resolvePathNode(categories, path),
-    [categories, path],
+  // Resolve the live children/images/collections from the categories state
+  // tree so newly added members appear immediately.
+  const {
+    cats: resolvedCategories,
+    imgs: currentImages,
+    cols: pathCollections,
+  } = useMemo(() => resolvePathNode(categories, path), [categories, path])
+
+  // Root scope merges the separately-loaded uncategorized collections; a
+  // nested scope's collections ride the tree embed. Both are gated on the
+  // feature flag so a mid-session flag-off hides collection tiles even if
+  // stale data lingers in state (#1529 kill-switch).
+  const currentCollections = useMemo(
+    () =>
+      !collectionsEnabled ? [] : path.length === 0 ? uncategorizedCollections : pathCollections,
+    [path.length, collectionsEnabled, uncategorizedCollections, pathCollections],
   )
 
   // Walk the categories tree along the given path segments applying narrowing
@@ -714,11 +831,16 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
     uncategorizedImages,
     uncategorizedLoaded,
     setUncategorizedImages,
+    // Consumers see an empty list while the flag is off even if a stale
+    // fetch result still sits in state (#1529 kill-switch).
+    uncategorizedCollections: collectionsEnabled ? uncategorizedCollections : [],
+    currentCollections,
     programs,
     groups,
     setGroups,
     loadCategories,
     loadUncategorizedImages,
+    loadUncategorizedCollections,
     loadPrograms,
     loadGroups,
     refreshCategories,

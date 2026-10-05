@@ -114,6 +114,7 @@ const detail: Collection = {
   programIds: [],
   groupIds: [],
   viewportState: {},
+  memberCount: 2,
 }
 
 interface StoryArgs {

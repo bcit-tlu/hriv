@@ -444,6 +444,14 @@ describe('SynchronizedCollectionViewer', () => {
     expect(screen.queryByRole('link', { name: 'Open image' })).not.toBeInTheDocument()
   })
 
+  it('says all images are restricted when members exist but none are visible (#1529)', () => {
+    renderViewer({ collection: syncCollection({ images: [], memberCount: 4 }) })
+    expect(screen.getByTestId('synchronized-viewer-fallback')).toHaveTextContent(
+      'All images in this collection are currently restricted.',
+    )
+    expect(screen.queryByRole('link', { name: 'Open image' })).not.toBeInTheDocument()
+  })
+
   it('slides the pair up when a member fails and falls back under two', () => {
     const collection = syncCollection({ images: images(3) })
     const { props } = renderViewer({ collection })

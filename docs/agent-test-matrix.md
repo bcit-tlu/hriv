@@ -64,6 +64,12 @@ TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
   detail header + card affordances in `CollectionsPage.tsx` /
   `CollectionCard.tsx`):
   `npm test -- TransferCollectionDialog CollectionsPage CollectionCard useCollectionsData api.test App.test`
+- Browse tile integration (#1529: collection tiles in `SortableTileGrid.tsx`,
+  `currentCollections`/`uncategorizedCollections` in `useBrowseData.ts`,
+  move handlers in `useCategoryActions.ts`, `MoveCollectionDialog.tsx`,
+  `?collection=&cat=` context in `useShareableImageState.ts` /
+  `useNavigationHistory.ts`, `member_count` in `collection_views.py`):
+  `npm test -- SortableTileGrid useBrowseData useCategoryActions MoveCollectionDialog CollectionsPage CollectionCard CategoryTile useCollectionsData useShareableImageState useNavigationHistory App.test`
 - Storybook (stories + a11y): `npm run test:storybook -- Collection`
 - Collection visibility reuses the category dual gate — if you touched
   `visibility.py` also run the "Changed groups" set above. See

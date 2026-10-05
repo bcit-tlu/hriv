@@ -88,6 +88,7 @@ export function apiCollectionToCollection(api: ApiCollection): Collection {
     programIds: api.program_ids,
     groupIds: api.group_ids,
     viewportState: api.viewport_state,
+    memberCount: api.member_count,
   }
 }
 

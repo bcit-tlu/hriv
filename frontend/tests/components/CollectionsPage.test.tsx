@@ -666,4 +666,76 @@ describe('CollectionsPage', () => {
       await waitFor(() => expect(onTransfer).toHaveBeenCalledWith(5, { programId: 2 }))
     })
   })
+
+  describe('browse integration (#1529)', () => {
+    it('uses the provided label for the detail back button', () => {
+      const onCloseCollection = vi.fn()
+      renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({ id: 9 }),
+        onCloseCollection,
+        detailBackLabel: 'Back to Browse',
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Back to Browse' }))
+      expect(onCloseCollection).toHaveBeenCalled()
+    })
+
+    it('offers Move on the detail header for admins regardless of ownership', async () => {
+      const user = userEvent.setup()
+      const onMoveCollection = vi.fn()
+      const detail = makeCollection({
+        id: 9,
+        name: 'Filed one',
+        // Someone else's collection: filing is curatorial, not owner-scoped.
+        permissions: { canEdit: false, canDelete: false, canTransfer: false },
+      })
+      renderPage({ selectedCollectionId: 9, detail, onMoveCollection })
+      await user.click(screen.getByRole('button', { name: 'Move' }))
+      expect(onMoveCollection).toHaveBeenCalledWith(detail)
+    })
+
+    it('hides the detail Move button for non-curatorial roles', () => {
+      renderPage({
+        currentUser: STUDENT,
+        selectedCollectionId: 9,
+        detail: makeCollection({ id: 9 }),
+        onMoveCollection: vi.fn(),
+      })
+      expect(screen.queryByRole('button', { name: 'Move' })).not.toBeInTheDocument()
+    })
+
+    it('offers Move on list cards for instructors and calls onMoveCollection', async () => {
+      const user = userEvent.setup()
+      const onMoveCollection = vi.fn()
+      const collection = makeCollectionSummary({ id: 7, name: 'Lab 2' })
+      renderPage({ currentUser: INSTRUCTOR, collections: [collection], onMoveCollection })
+      await user.click(screen.getByRole('button', { name: 'Move Lab 2 to a category' }))
+      expect(onMoveCollection).toHaveBeenCalledWith(collection)
+    })
+
+    it('omits the card Move affordance when onMoveCollection is not provided', () => {
+      renderPage({ collections: [makeCollectionSummary({ id: 7, name: 'Lab 2' })] })
+      expect(
+        screen.queryByRole('button', { name: 'Move Lab 2 to a category' }),
+      ).not.toBeInTheDocument()
+    })
+
+    it('shows the all-restricted notice when members exist but none are visible', () => {
+      renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({ id: 9, images: [], memberCount: 3 }),
+      })
+      expect(screen.getByTestId('collection-all-restricted')).toHaveTextContent(
+        'All images in this collection are currently restricted.',
+      )
+    })
+
+    it('omits the all-restricted notice for a truly empty collection', () => {
+      renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({ id: 9, images: [], memberCount: 0 }),
+      })
+      expect(screen.queryByTestId('collection-all-restricted')).not.toBeInTheDocument()
+    })
+  })
 })

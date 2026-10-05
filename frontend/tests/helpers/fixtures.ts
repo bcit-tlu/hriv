@@ -65,12 +65,17 @@ export function makeApiCollectionSummary(
 }
 
 export function makeApiCollection(overrides: Partial<ApiCollection> = {}): ApiCollection {
+  const images = overrides.images ?? []
   return {
     ...makeApiCollectionSummary(),
-    images: [],
+    images,
     program_ids: [],
     group_ids: [],
     viewport_state: {},
+    // Nominal count matches the visible member list by default; pass an
+    // explicit member_count > image_count to exercise the "all members are
+    // restricted" empty state (#1529).
+    member_count: images.length,
     ...overrides,
   }
 }
@@ -98,12 +103,17 @@ export function makeCollectionSummary(
 }
 
 export function makeCollection(overrides: Partial<Collection> = {}): Collection {
+  const images = overrides.images ?? []
   return {
     ...makeCollectionSummary(),
-    images: [],
+    images,
     programIds: [],
     groupIds: [],
     viewportState: {},
+    // Nominal count matches the visible member list by default; pass an
+    // explicit memberCount > imageCount to exercise the "all members are
+    // restricted" empty state (#1529).
+    memberCount: images.length,
     ...overrides,
   }
 }

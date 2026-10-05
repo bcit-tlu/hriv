@@ -6,6 +6,7 @@ import {
   fetchCollection,
   collectionConflictCurrent,
   fetchCollections,
+  moveCollection,
   replaceCollectionImages,
   saveCollectionViewport,
   transferCollection,
@@ -328,6 +329,24 @@ export function useCollectionsData({
   }, [])
 
   /**
+   * File a collection into a Browse category (#1527/#1529). The `POST
+   * /collections/{id}/move` response is the fresh detail record, so an
+   * open detail and the list row update in place — keeping `version`
+   * current so a later edit/reorder doesn't 409 on the bumped version.
+   */
+  const move = useCallback(
+    async (id: number, categoryId: number | null, version: number): Promise<Collection> => {
+      const updated = apiCollectionToCollection(
+        await moveCollection(id, { category_id: categoryId, version }),
+      )
+      setDetail((prev) => (prev?.id === id ? updated : prev))
+      setCollections((prev) => prev.map((c) => (c.id === id ? updated : c)))
+      return updated
+    },
+    [],
+  )
+
+  /**
    * Reorder the open collection's images (#1416 sequence viewer). Applies the
    * new order optimistically to `detail`, persists with the whole-replace
    * `PUT …/images` carrying the loaded `version`, and rolls `detail` back on
@@ -550,6 +569,7 @@ export function useCollectionsData({
     remove,
     reorderImages,
     saveViewport,
+    move,
     transfer,
     renewCollectionImage,
   }

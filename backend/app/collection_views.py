@@ -154,6 +154,7 @@ def collection_out(ctx: _ViewerContext, collection: Collection) -> CollectionOut
         program_ids=[p.id for p in collection.programs],
         group_ids=[g.id for g in collection.groups],
         viewport_state=dict(collection.viewport_state or {}),
+        member_count=len(collection.image_links),
     )
 
 

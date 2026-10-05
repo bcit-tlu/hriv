@@ -10,6 +10,7 @@ import {
   splitDirectAncestorProgramIds,
 } from '../src/categoryUtils'
 import type { Category, ImageItem } from '../src/types'
+import { makeCollectionSummary } from './helpers/fixtures'
 
 describe('narrowProgramIds', () => {
   it('returns empty array for empty ancestors', () => {
@@ -210,12 +211,18 @@ describe('resolvePathNode', () => {
     version: 1,
   })
 
-  const cat = (id: number, children: Category[] = [], images: ImageItem[] = []): Category => ({
+  const cat = (
+    id: number,
+    children: Category[] = [],
+    images: ImageItem[] = [],
+    collections: Category['collections'] = [],
+  ): Category => ({
     id,
     label: `cat-${id}`,
     parentId: null,
     children,
     images,
+    collections,
     programIds: [],
     groupIds: [],
     sortOrder: 0,
@@ -227,30 +234,32 @@ describe('resolvePathNode', () => {
   const root = cat(1, [mid], [img(1)])
   const tree = [root, cat(99)]
 
-  it('returns top-level categories with no images for empty path', () => {
+  it('returns top-level categories with no images or collections for empty path', () => {
     const result = resolvePathNode(tree, [])
-    expect(result).toEqual({ cats: tree, imgs: [] })
+    expect(result).toEqual({ cats: tree, imgs: [], cols: [] })
   })
 
-  it('returns children and images of a single-segment path', () => {
-    const result = resolvePathNode(tree, [root])
-    expect(result).toEqual({ cats: [mid], imgs: [img(1)] })
+  it('returns children, images, and collections of a single-segment path', () => {
+    const col = makeCollectionSummary({ id: 7, categoryId: 1 })
+    const rooted = cat(1, [mid], [img(1)], [col])
+    const result = resolvePathNode([rooted, cat(99)], [rooted])
+    expect(result).toEqual({ cats: [mid], imgs: [img(1)], cols: [col] })
   })
 
   it('walks a multi-level path to the terminal node', () => {
     const result = resolvePathNode(tree, [root, mid, leaf])
-    expect(result).toEqual({ cats: [], imgs: [img(10), img(11)] })
+    expect(result).toEqual({ cats: [], imgs: [img(10), img(11)], cols: [] })
   })
 
   it('returns empty when a path segment is not found', () => {
     const missing = cat(999)
     const result = resolvePathNode(tree, [root, missing])
-    expect(result).toEqual({ cats: [], imgs: [] })
+    expect(result).toEqual({ cats: [], imgs: [], cols: [] })
   })
 
   it('returns empty for non-empty path against empty categories', () => {
     const result = resolvePathNode([], [root])
-    expect(result).toEqual({ cats: [], imgs: [] })
+    expect(result).toEqual({ cats: [], imgs: [], cols: [] })
   })
 })
 

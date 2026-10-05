@@ -26,6 +26,7 @@ vi.mock('../src/api', async (importOriginal) => {
     replaceCollectionImages: vi.fn(),
     saveCollectionViewport: vi.fn(),
     transferCollection: vi.fn(),
+    moveCollection: vi.fn(),
   }
 })
 
@@ -34,6 +35,7 @@ import {
   deleteCollection,
   fetchCollection,
   fetchCollections,
+  moveCollection,
   replaceCollectionImages,
   saveCollectionViewport,
   transferCollection,
@@ -48,6 +50,7 @@ const deleteCollectionMock = vi.mocked(deleteCollection)
 const replaceCollectionImagesMock = vi.mocked(replaceCollectionImages)
 const saveCollectionViewportMock = vi.mocked(saveCollectionViewport)
 const transferCollectionMock = vi.mocked(transferCollection)
+const moveCollectionMock = vi.mocked(moveCollection)
 
 function makeUser(overrides: Partial<User> = {}): User {
   return {
@@ -1240,6 +1243,47 @@ describe('useCollectionsData', () => {
         version: 4,
       })
       expect(result.current.detail?.version).toBe(5)
+    })
+  })
+
+  describe('move (#1529)', () => {
+    it('posts the category with the given version and updates row + open detail', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1, version: 3 })])
+      fetchCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 1, version: 3 }))
+      moveCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 4, category_id: 8 }),
+      )
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.version).toBe(3))
+
+      let moved: unknown
+      await act(async () => {
+        moved = await result.current.move(1, 8, 3)
+      })
+      expect(moveCollectionMock).toHaveBeenCalledWith(1, { category_id: 8, version: 3 })
+      expect(result.current.detail).toMatchObject({ id: 1, version: 4, categoryId: 8 })
+      expect(result.current.collections[0]).toMatchObject({ id: 1, version: 4, categoryId: 8 })
+      expect(moved).toMatchObject({ id: 1, version: 4 })
+    })
+
+    it('moves to the root with a null category and leaves another open detail alone', async () => {
+      fetchCollectionsMock.mockResolvedValue([
+        makeApiCollectionSummary({ id: 1, category_id: 8 }),
+        makeApiCollectionSummary({ id: 2, category_id: 8 }),
+      ])
+      fetchCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 2, version: 2 }))
+      moveCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 6, category_id: null }),
+      )
+      const { result } = renderData({ selectedCollectionId: 2 })
+      await waitFor(() => expect(result.current.detail?.id).toBe(2))
+
+      await act(async () => {
+        await result.current.move(1, null, 5)
+      })
+      expect(moveCollectionMock).toHaveBeenCalledWith(1, { category_id: null, version: 5 })
+      expect(result.current.detail).toMatchObject({ id: 2, version: 2 })
+      expect(result.current.collections[0]).toMatchObject({ id: 1, version: 6, categoryId: null })
     })
   })
 })

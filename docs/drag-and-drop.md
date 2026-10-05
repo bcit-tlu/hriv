@@ -2,6 +2,11 @@
 
 Single source of truth for the **move vs. reorder** behaviour of category/image
 tiles on the Browse page (`frontend/src/components/SortableTileGrid.tsx`).
+Since #1529, collection tiles (`col-<id>`) share the same grid: they are drag
+sources and reorder participants like image tiles. The collision contract
+below is unchanged — `drop-cat-<id>` remains the only move zone, and a `col-`
+source dropped there files the collection into that category
+(`onDropCollectionOnCategory`) instead of reordering.
 
 Read this before changing any collision detection, drop-zone, or activation
 code. The behaviour below thrashed across ~8 PRs because there was no written
@@ -28,10 +33,10 @@ There is exactly one source being dragged (a `tile`) and two kinds of drop
 target. They must never both act on the same pointer position — the directional
 threshold makes them mutually exclusive inside any tile.
 
-| Gesture                | Trigger zone                                                           | Droppable                                           | Collision detector        | Priority                   | Result                                                           |
-| ---------------------- | ---------------------------------------------------------------------- | --------------------------------------------------- | ------------------------- | -------------------------- | ---------------------------------------------------------------- |
-| **Move into category** | Pointer on the **near half** of a category tile (entry side of centre) | `DroppableCategoryZone`, id `drop-cat-<categoryId>` | `nearHalfMoveCollision`   | `CollisionPriority.High`   | `onDropImageOnCategory` / `onDropCategoryOnCategory`             |
-| **Reorder**            | Pointer past a tile's **centre** (far half) along the drag axis        | the sibling tile's `useSortable`                    | `farHalfReorderCollision` | `CollisionPriority.Normal` | coordinator `reportOrder` → `PUT /api/tile-order` (via `move()`) |
+| Gesture                | Trigger zone                                                           | Droppable                                           | Collision detector        | Priority                   | Result                                                                                                      |
+| ---------------------- | ---------------------------------------------------------------------- | --------------------------------------------------- | ------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| **Move into category** | Pointer on the **near half** of a category tile (entry side of centre) | `DroppableCategoryZone`, id `drop-cat-<categoryId>` | `nearHalfMoveCollision`   | `CollisionPriority.High`   | `onDropImageOnCategory` / `onDropCategoryOnCategory` / `onDropCollectionOnCategory` (`col-` sources, #1529) |
+| **Reorder**            | Pointer past a tile's **centre** (far half) along the drag axis        | the sibling tile's `useSortable`                    | `farHalfReorderCollision` | `CollisionPriority.Normal` | coordinator `reportOrder` → `PUT /api/tile-order` (via `move()`)                                            |
 
 Every reorder persists through the shared coordinator
 (`frontend/src/tileOrdering.ts`), which submits the scope's full order

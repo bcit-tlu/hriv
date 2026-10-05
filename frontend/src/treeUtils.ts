@@ -1,4 +1,4 @@
-import type { Category, ImageItem } from './types'
+import type { Category, CollectionSummary, ImageItem } from './types'
 
 /** Search the category tree for an image by ID, returning the image and its category path. */
 export function findImageInTree(
@@ -24,6 +24,27 @@ export function findCategoryPath(
   for (const cat of tree) {
     if (cat.id === categoryId) return [...path, cat]
     const found = findCategoryPath(cat.children, categoryId, [...path, cat])
+    if (found) return found
+  }
+  return null
+}
+
+/**
+ * Search the category tree for a filed collection by ID, returning the
+ * collection summary and the category path it is filed under (#1529).
+ * Root-scope collections are NOT in the tree — callers merge
+ * `uncategorizedCollections` separately.
+ */
+export function findCollectionInTree(
+  tree: Category[],
+  collectionId: number,
+  path: Category[] = [],
+): { collection: CollectionSummary; path: Category[] } | null {
+  for (const cat of tree) {
+    for (const col of cat.collections) {
+      if (col.id === collectionId) return { collection: col, path: [...path, cat] }
+    }
+    const found = findCollectionInTree(cat.children, collectionId, [...path, cat])
     if (found) return found
   }
   return null
