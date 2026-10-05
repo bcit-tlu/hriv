@@ -81,9 +81,10 @@ can co-manage one collection (#1531).
 
 A collection's owners are **any number of users** (`collection_owners` rows)
 **and/or** one program (`owner_program_id`, FK `SET NULL`). The two sets are
-independent in the schema, but assigning a program owner via
-`POST …/transfer` clears the user-owner rows (a program owner is sole);
-`PUT …/owners` manages the user set while no program owns the collection.
+independent in the schema: `PUT …/owners` edits the user set whether or not
+a program owns the collection, while assigning a program owner via
+`POST …/transfer` clears the user-owner rows (a newly assigned program owner
+is sole).
 `collections.user_id` is **creator audit** — it records who created the row,
 survives ownership changes, and goes `NULL` when that user is deleted; it no
 longer participates in authorization.
@@ -338,7 +339,10 @@ wholesale:
   deliberately not role-restricted (an instructor may add a student
   co-owner; that student then edits content per `can_edit_collection` but
   cannot change scope, delete, or manage owners). Unknown or inactive ids
-  are **422**.
+  are **422**. Note the instructor-facing picker is directory-scoped:
+  `GET /api/users/` never exposes staff/admin accounts to instructors, so
+  they can only select students and fellow instructors — an admin must add
+  staff or admin co-owners.
 - The submitted set replaces the rows wholesale — adds and removals happen
   atomically. `collections.user_id` (creator audit) is untouched.
 - The result must not orphan the collection: when `owner_program_id` is

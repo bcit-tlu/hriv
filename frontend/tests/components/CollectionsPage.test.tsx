@@ -252,6 +252,12 @@ describe('CollectionsPage', () => {
       expect(screen.queryByRole('button', { name: 'New collection' })).not.toBeInTheDocument()
     })
 
+    it('offers staff no create affordance in the empty state either', async () => {
+      renderPage({ currentUser: STAFF, collections: [] })
+      expect(await screen.findByTestId('collections-empty')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Create a collection' })).not.toBeInTheDocument()
+    })
+
     it('opens the create dialog and forwards the values to onCreate', async () => {
       const user = userEvent.setup()
       const onCreate = vi.fn().mockResolvedValue(undefined)

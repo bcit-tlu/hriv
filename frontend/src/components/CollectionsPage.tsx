@@ -535,6 +535,8 @@ export default function CollectionsPage({
             <Typography variant="body2" sx={{ mt: 0.5 }}>
               {filters.mine || filters.type !== 'all' || filters.owner !== 'any' ? (
                 'No collections match the current filters.'
+              ) : currentUser?.role === 'staff' ? (
+                'Collections group images for side-by-side comparison or a guided sequence.'
               ) : (
                 <>
                   <Link

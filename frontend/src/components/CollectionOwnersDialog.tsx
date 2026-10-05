@@ -152,9 +152,10 @@ export default function CollectionOwnersDialog({
     const id = collection.id
     const jobs: Array<() => Promise<unknown>> = []
     // Save owners before clearing the program owner so the collection is
-    // never momentarily orphaned; when a program is being assigned the
-    // transfer clears the owner rows itself, so the owners PUT is moot.
-    if (ownersChanged && !programAssigned) {
+    // never momentarily orphaned; when a program is being newly assigned the
+    // transfer clears the owner rows itself, so the owners PUT is moot — but
+    // staging co-owners alongside an unchanged program owner is allowed.
+    if (ownersChanged && !(programAssigned && programChanged)) {
       jobs.push(() =>
         onSaveOwners(
           id,

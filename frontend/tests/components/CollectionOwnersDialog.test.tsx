@@ -221,6 +221,23 @@ describe('CollectionOwnersDialog (#1531)', () => {
     expect(order).toEqual(['owners', 'transfer'])
   })
 
+  it('stages co-owners alongside an unchanged program owner', async () => {
+    const user = userEvent.setup()
+    const props = renderDialog({ collection: PROGRAM_OWNED })
+    // Clear the program to unlock the picker, add a co-owner, then reselect
+    // the same program — the PUT must still run (regression: this used to
+    // silently discard the edit when the program value round-tripped).
+    await user.click(screen.getByLabelText('Owning program'))
+    await user.click(await screen.findByRole('option', { name: /None — owned by users/ }))
+    await pickUser(user, 'Grace Hopper')
+    await user.click(screen.getByLabelText('Owning program'))
+    await user.click(await screen.findByRole('option', { name: 'Radiography' }))
+    await user.click(screen.getByTestId('owners-confirm'))
+    await waitFor(() => expect(props.onSaveOwners).toHaveBeenCalledWith(6, [9]))
+    // The program never changed, so no transfer runs.
+    expect(props.onTransfer).not.toHaveBeenCalled()
+  })
+
   it('narrows the program list to the instructor’s own programs', async () => {
     const user = userEvent.setup()
     renderDialog({}, makeAuth('instructor', 7, [2]))
