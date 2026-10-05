@@ -28,8 +28,7 @@ export function canUseRestrictedVisibility(role: Role | undefined | null): boole
   return role === 'admin' || role === 'instructor'
 }
 
-export function apiCollectionOwnerToOwner(owner: ApiCollectionOwner): CollectionOwner {
-  if (owner == null) return null
+export function apiCollectionOwnerToOwner(owner: ApiCollectionOwner): CollectionOwner | null {
   if (owner.user_id != null) return { kind: 'user', userId: owner.user_id, name: owner.name }
   if (owner.program_id != null) {
     return { kind: 'program', programId: owner.program_id, name: owner.name }
@@ -44,7 +43,9 @@ export function apiCollectionSummaryToSummary(api: ApiCollectionSummary): Collec
     description: api.description,
     type: api.type,
     visibility: api.visibility,
-    owner: apiCollectionOwnerToOwner(api.owner),
+    owners: api.owners
+      .map(apiCollectionOwnerToOwner)
+      .filter((o): o is CollectionOwner => o != null),
     imageCount: api.image_count,
     coverThumb: api.cover_thumb,
     version: api.version,
@@ -55,6 +56,7 @@ export function apiCollectionSummaryToSummary(api: ApiCollectionSummary): Collec
     permissions: {
       canEdit: api.permissions.can_edit,
       canDelete: api.permissions.can_delete,
+      canChangeScope: api.permissions.can_change_scope,
       canTransfer: api.permissions.can_transfer,
     },
   }
@@ -94,8 +96,13 @@ export function apiCollectionToCollection(api: ApiCollection): Collection {
 
 /** Human-readable owner line for cards and the detail header. */
 export function describeCollectionOwner(owner: CollectionOwner): string {
-  if (owner == null) return 'No owner'
   return owner.kind === 'program' ? `${owner.name} (program)` : owner.name
+}
+
+/** Plural owner line (#1531): joins co-owner names; 'No owner' when orphaned. */
+export function describeCollectionOwners(owners: CollectionOwner[]): string {
+  if (owners.length === 0) return 'No owner'
+  return owners.map(describeCollectionOwner).join(', ')
 }
 
 /**

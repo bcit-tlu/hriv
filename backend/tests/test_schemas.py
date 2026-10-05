@@ -17,6 +17,7 @@ from app.schemas import (
     ChangelogEntryUpdate,
     CollectionCreate,
     CollectionImagesUpdate,
+    CollectionOwnersUpdate,
     CollectionTransfer,
     CollectionUpdate,
     CollectionViewportUpdate,
@@ -528,21 +529,28 @@ def test_collection_viewport_update_requires_object_and_version() -> None:
     assert body.viewport_state == {"a": {"zoom": 2}} and body.version == 4
 
 
-def test_collection_transfer_requires_exactly_one_target_and_version() -> None:
-    to_user = CollectionTransfer(user_id=5, version=2)
-    assert to_user.user_id == 5 and to_user.program_id is None and to_user.version == 2
+def test_collection_transfer_program_target_and_version() -> None:
+    """#1531: transfer is program-owner reassignment only — ``program_id``
+    is required (``null`` clears program ownership); user ownership moved to
+    ``PUT /owners`` via ``CollectionOwnersUpdate``."""
     to_program = CollectionTransfer(program_id=3, version=1)
-    assert to_program.program_id == 3 and to_program.user_id is None
-    with pytest.raises(ValidationError, match="exactly one"):
-        CollectionTransfer(version=1)
-    with pytest.raises(ValidationError, match="exactly one"):
-        CollectionTransfer(user_id=5, program_id=3, version=1)
-    with pytest.raises(ValidationError, match="exactly one"):
-        CollectionTransfer(user_id=None, program_id=None, version=1)
+    assert to_program.program_id == 3
+    clear = CollectionTransfer(program_id=None, version=2)
+    assert clear.program_id is None and clear.version == 2
     with pytest.raises(ValidationError):
-        CollectionTransfer(user_id=5)
+        CollectionTransfer(version=1)  # program_id required
     with pytest.raises(ValidationError):
-        CollectionTransfer(user_id="abc", version=1)
+        CollectionTransfer(program_id=3)  # version required
+    with pytest.raises(ValidationError):
+        CollectionTransfer(program_id="abc", version=1)
+
+
+def test_collection_owners_update_dedupes_and_requires_version() -> None:
+    body = CollectionOwnersUpdate(user_ids=[5, 5, 9], version=2)
+    assert body.user_ids == [5, 9] and body.version == 2
+    assert CollectionOwnersUpdate(user_ids=[], version=1).user_ids == []
+    with pytest.raises(ValidationError):
+        CollectionOwnersUpdate(user_ids=[5])
 
 
 def test_collection_name_max_length_matches_column() -> None:

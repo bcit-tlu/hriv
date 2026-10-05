@@ -188,7 +188,7 @@ function collectionIdentityKey(api: ApiCollectionSummary): string {
     api.description,
     api.type,
     api.visibility,
-    api.owner,
+    api.owners,
     api.image_count,
     api.cover_thumb,
     api.permissions,

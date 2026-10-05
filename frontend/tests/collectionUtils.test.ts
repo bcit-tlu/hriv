@@ -7,6 +7,7 @@ import {
   apiImageToItem,
   canUseRestrictedVisibility,
   describeCollectionOwner,
+  describeCollectionOwners,
   parseCollectionIdParam,
   parseCollectionItemParam,
 } from '../src/collectionUtils'
@@ -32,7 +33,7 @@ const API_IMAGE: ApiImage = {
 }
 
 describe('collectionUtils mapping', () => {
-  it('maps a user owner, a program owner, and null', () => {
+  it('maps a user owner and a program owner (#1531)', () => {
     expect(apiCollectionOwnerToOwner({ user_id: 7, name: 'Ada' })).toEqual({
       kind: 'user',
       userId: 7,
@@ -43,7 +44,6 @@ describe('collectionUtils mapping', () => {
       programId: 3,
       name: 'Radiography',
     })
-    expect(apiCollectionOwnerToOwner(null)).toBeNull()
   })
 
   it('maps owners as the backend serialises them, with the unused id present as null', () => {
@@ -61,7 +61,12 @@ describe('collectionUtils mapping', () => {
   it('maps a summary to camelCase including permissions', () => {
     const summary = apiCollectionSummaryToSummary(
       makeApiCollectionSummary({
-        permissions: { can_edit: false, can_delete: true, can_transfer: true },
+        permissions: {
+          can_edit: false,
+          can_delete: true,
+          can_change_scope: false,
+          can_transfer: true,
+        },
       }),
     )
     expect(summary).toMatchObject({
@@ -69,7 +74,7 @@ describe('collectionUtils mapping', () => {
       name: 'Skull comparison',
       type: 'synchronized',
       visibility: 'private',
-      owner: { kind: 'user', userId: 7, name: 'Ada Lovelace' },
+      owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace' }],
       imageCount: 2,
       coverThumb: '/thumbs/skull.jpg?token=abc',
       version: 1,
@@ -77,7 +82,12 @@ describe('collectionUtils mapping', () => {
       sortOrder: 0,
       createdAt: '2026-01-01T00:00:00Z',
       updatedAt: '2026-01-02T00:00:00Z',
-      permissions: { canEdit: false, canDelete: true, canTransfer: true },
+      permissions: {
+        canEdit: false,
+        canDelete: true,
+        canChangeScope: false,
+        canTransfer: true,
+      },
     })
   })
 
@@ -117,12 +127,19 @@ describe('collectionUtils mapping', () => {
     expect(full.viewportState).toEqual({ zoom: 2 })
   })
 
-  it('describes owners for display', () => {
+  it('describes owners for display (#1531)', () => {
     expect(describeCollectionOwner({ kind: 'user', userId: 1, name: 'Ada' })).toBe('Ada')
     expect(describeCollectionOwner({ kind: 'program', programId: 1, name: 'Nursing' })).toBe(
       'Nursing (program)',
     )
-    expect(describeCollectionOwner(null)).toBe('No owner')
+    expect(describeCollectionOwners([])).toBe('No owner')
+    expect(describeCollectionOwners([{ kind: 'user', userId: 1, name: 'Ada' }])).toBe('Ada')
+    expect(
+      describeCollectionOwners([
+        { kind: 'user', userId: 1, name: 'Ada' },
+        { kind: 'user', userId: 2, name: 'Bob' },
+      ]),
+    ).toBe('Ada, Bob')
   })
 })
 

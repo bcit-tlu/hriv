@@ -54,7 +54,7 @@ from app.admin_ops import (
     run_rebuild_tiles,
 )
 from app.database import settings
-from app.models import AdminTask
+from app.models import AdminTask, User
 from app.worker import EnqueueResult, TaskQueueUnavailableError
 
 # ── Helper unit tests ──────────────────────────────────────
@@ -1175,6 +1175,7 @@ async def test_run_db_export_success(tmp_path) -> None:
             sort_order=1,
             viewport_state={"offsets": []},
             version=2,
+            owners=[SimpleNamespace(id=1), SimpleNamespace(id=2)],
             # 9_400_000 is a rebuild-fixture image (not exported) → dropped.
             image_links=[
                 SimpleNamespace(image_id=9_400_005, sort_order=0),
@@ -1263,6 +1264,7 @@ async def test_run_db_export_success(tmp_path) -> None:
             "sort_order": 1,
             "viewport_state": {"offsets": []},
             "version": 2,
+            "owner_ids": [1, 2],
             "image_ids": [9_400_005],
             "program_ids": [2],
             "group_ids": [],
@@ -1463,6 +1465,7 @@ def _full_dump() -> dict:
                 "type": "sequence",
                 "visibility": "public",
                 "user_id": 1,
+                "owner_ids": [1, 2],
                 "category_id": 2,
                 "sort_order": 4,
                 "image_ids": [2, 1],
@@ -1476,6 +1479,14 @@ def _full_dump() -> dict:
                 "id": 8,
                 "name": "Orphan",
                 "type": "synchronized",
+                "image_ids": [],
+            },
+            {
+                # Legacy dump shape: user_id only → backfills one owner row.
+                "id": 9,
+                "name": "Legacy",
+                "type": "sequence",
+                "user_id": 2,
                 "image_ids": [],
             },
         ],
@@ -1500,6 +1511,34 @@ async def test_run_db_import_happy_path(tmp_path) -> None:
     task = _make_import_task(str(input_file))
 
     mock_session, factory = _make_import_session(task)
+    # The owner-rows rebuild selects User rows — answer with the imported
+    # users; every other SELECT resolves to an empty set (#1531).
+    imported = {
+        u["id"]: User(
+            id=u["id"],
+            name=u["name"],
+            email=u["email"],
+            role=u.get("role", "student"),
+        )
+        for u in _full_dump()["users"]
+    }
+
+    async def _exec(stmt, *_args, **_kwargs):
+        result = MagicMock()
+        entity = getattr(stmt, "column_descriptions", [{}])[0].get("entity")
+        rows = []
+        if entity is User:
+            # Honour the ``id IN (...)`` bound values so each collection's
+            # owner_ids resolves to exactly its own owners.
+            wanted: set = set()
+            for value in stmt.compile().params.values():
+                if isinstance(value, (list, tuple)):
+                    wanted.update(value)
+            rows = [u for u in imported.values() if u.id in wanted]
+        result.scalars.return_value.all.return_value = rows
+        return result
+
+    mock_session.execute = AsyncMock(side_effect=_exec)
 
     with patch("app.admin_ops.get_async_session", return_value=factory):
         await run_db_import(1)
@@ -1522,20 +1561,28 @@ async def test_run_db_import_happy_path(tmp_path) -> None:
     imported_collections = {
         obj.id: obj for obj in add_calls if type(obj).__name__ == "Collection"
     }
-    assert set(imported_collections) == {7, 8}
+    assert set(imported_collections) == {7, 8, 9}
     seq = imported_collections[7]
     assert seq.type == "sequence" and seq.visibility == "public"
     assert seq.user_id == 1 and seq.version == 3
     assert seq.category_id == 2 and seq.sort_order == 4
     assert [(l.image_id, l.sort_order) for l in seq.image_links] == [(2, 0), (1, 1)]
+    # owner_ids [1, 2] → two owner rows on the collection (#1531).
+    assert sorted(o.id for o in seq.owners) == [1, 2]
     orphan = imported_collections[8]
     assert orphan.user_id is None and orphan.owner_program_id is None
     assert orphan.visibility == "private" and orphan.viewport_state == {}
     assert orphan.category_id is None and orphan.sort_order == 0
-    assert orphan.image_links == []
+    assert orphan.image_links == [] and list(orphan.owners) == []
+    legacy = imported_collections[9]
+    # Legacy dump: user_id doubles as the sole owner row.
+    assert legacy.user_id == 2 and [o.id for o in legacy.owners] == [2]
     executed_sql = [
         str(c.args[0]) for c in mock_session.execute.call_args_list
     ]
+    assert executed_sql.index(
+        "DELETE FROM collection_owners"
+    ) < executed_sql.index("DELETE FROM collections")
     assert executed_sql.index("DELETE FROM collection_images") < executed_sql.index(
         "DELETE FROM images"
     )

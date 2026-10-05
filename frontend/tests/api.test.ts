@@ -63,6 +63,7 @@ import {
   replaceCollectionImages,
   saveCollectionViewport,
   moveCollection,
+  replaceCollectionOwners,
   transferCollection,
   collectionConflictCurrent,
   fetchOidcEnabled,
@@ -1085,18 +1086,28 @@ describe('Collections API', () => {
     expect(JSON.parse(init.body)).toEqual({ category_id: null, version: 5 })
   })
 
-  it('transferCollection POSTs exactly one owner target with version', async () => {
+  it('transferCollection POSTs the program owner with version (#1531)', async () => {
     mockFetch.mockReturnValue(jsonResponse(makeApiCollection()))
-    await transferCollection(5, { user_id: 9, version: 4 })
+    await transferCollection(5, { program_id: 3, version: 4 })
     let [url, init] = mockFetch.mock.calls[0]
     expect(url).toBe('/api/collections/5/transfer')
     expect(init.method).toBe('POST')
-    expect(JSON.parse(init.body)).toEqual({ user_id: 9, version: 4 })
+    expect(JSON.parse(init.body)).toEqual({ program_id: 3, version: 4 })
 
-    await transferCollection(5, { program_id: 3, version: 4 })
+    // `null` clears the program owner back to user ownership.
+    await transferCollection(5, { program_id: null, version: 5 })
     ;[url, init] = mockFetch.mock.calls[1]
     expect(url).toBe('/api/collections/5/transfer')
-    expect(JSON.parse(init.body)).toEqual({ program_id: 3, version: 4 })
+    expect(JSON.parse(init.body)).toEqual({ program_id: null, version: 5 })
+  })
+
+  it('replaceCollectionOwners PUTs the user-owner set with version (#1531)', async () => {
+    mockFetch.mockReturnValue(jsonResponse(makeApiCollection()))
+    await replaceCollectionOwners(5, { user_ids: [7, 9], version: 4 })
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/collections/5/owners')
+    expect(init.method).toBe('PUT')
+    expect(JSON.parse(init.body)).toEqual({ user_ids: [7, 9], version: 4 })
   })
 
   it('a stale-version 409 exposes the current CollectionOut via collectionConflictCurrent', async () => {

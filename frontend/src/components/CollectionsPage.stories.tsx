@@ -52,7 +52,7 @@ function makeSummary(overrides: Partial<CollectionSummary> = {}): CollectionSumm
     description: null,
     type: 'synchronized',
     visibility: 'private',
-    owner: { kind: 'user', userId: 7, name: 'Ada Lovelace' },
+    owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace' }],
     imageCount: 2,
     coverThumb: '/hriv-splash2.jpg',
     categoryId: null,
@@ -60,7 +60,7 @@ function makeSummary(overrides: Partial<CollectionSummary> = {}): CollectionSumm
     version: 1,
     createdAt: FIXED_AT,
     updatedAt: FIXED_AT,
-    permissions: { canEdit: true, canDelete: true, canTransfer: false },
+    permissions: { canEdit: true, canDelete: true, canChangeScope: true, canTransfer: false },
     ...overrides,
   }
 }
@@ -87,16 +87,16 @@ const summaries: CollectionSummary[] = [
     type: 'sequence',
     visibility: 'public',
     imageCount: 6,
-    owner: { kind: 'program', programId: 1, name: 'Radiography' },
-    permissions: { canEdit: false, canDelete: false, canTransfer: false },
+    owners: [{ kind: 'program', programId: 1, name: 'Radiography' }],
+    permissions: { canEdit: false, canDelete: false, canChangeScope: false, canTransfer: false },
   }),
   makeSummary({
     id: 3,
     name: 'Cohort 2026A review set',
     visibility: 'restricted',
     imageCount: 4,
-    owner: { kind: 'user', userId: 8, name: 'Grace Hopper' },
-    permissions: { canEdit: false, canDelete: false, canTransfer: false },
+    owners: [{ kind: 'user', userId: 8, name: 'Grace Hopper' }],
+    permissions: { canEdit: false, canDelete: false, canChangeScope: false, canTransfer: false },
   }),
   makeSummary({
     id: 4,
@@ -173,6 +173,7 @@ function CollectionsPageExample(args: StoryArgs) {
           onCreate={async () => undefined}
           onUpdate={async () => undefined}
           onDelete={async () => undefined}
+          onSaveOwners={async () => undefined}
           onTransfer={async () => undefined}
         />
       </Box>

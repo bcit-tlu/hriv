@@ -26,7 +26,7 @@ import SearchIcon from '@mui/icons-material/Search'
 import TextFieldsIcon from '@mui/icons-material/TextFields'
 import type { Category, CollectionSummary, ImageItem, Program } from '../types'
 import type { ApiImage, ApiUser } from '../api'
-import { describeCollectionOwner } from '../collectionUtils'
+import { describeCollectionOwners } from '../collectionUtils'
 import { buildGuideIndex, type GuideSearchSection } from '../guideSearch'
 import { parseSearchQuery } from '../searchQuery'
 import RenewingThumbnail from './RenewingThumbnail'
@@ -1139,7 +1139,7 @@ export default function SearchModal({
                             : 'Sequence'}{' '}
                           · {result.payload.collection.imageCount}{' '}
                           {result.payload.collection.imageCount === 1 ? 'image' : 'images'} ·{' '}
-                          {describeCollectionOwner(result.payload.collection.owner)}
+                          {describeCollectionOwners(result.payload.collection.owners)}
                         </Typography>
                       )}
                     </Box>

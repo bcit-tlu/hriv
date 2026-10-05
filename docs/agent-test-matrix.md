@@ -37,9 +37,11 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
 - Feature flag (`COLLECTIONS_ENABLED`, `GET /api/features`, `useFeatures`): add
   `tests/test_database.py tests/test_main.py` (backend) and
   `npm test -- useFeatures` (frontend); chart: `bash scripts/test-helm-chart-regressions.sh`.
-- Ownership transfer / program-deletion orphaning (#1413) also runs
+- Ownership transfer / program-deletion orphaning (#1413, #1531) also runs
   `tests/test_router_programs.py` (the real `DELETE /api/programs/{id}` →
-  orphan test needs `REORDER_FIXTURE_DATABASE_URL`, otherwise it skips).
+  orphan test needs `REORDER_FIXTURE_DATABASE_URL`, otherwise it skips) and
+  `tests/test_router_users.py` (user deletion: sole-owned collections die,
+  co-owned survive).
 - `tests/test_router_collections_db.py` is the PostgreSQL-backed write-API
   persistence suite — it runs when `TEST_DATABASE_URL` is set (CI sets it;
   locally `docker compose up -d db migrate` then `export
@@ -59,11 +61,12 @@ TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
   `imageViewerUtils.ts`, `saveViewport` in `useCollectionsData.ts`, detail
   mount in `CollectionsPage.tsx`):
   `npm test -- SynchronizedCollectionViewer useCollectionsData ImageViewer CollectionsPage App.test`
-- Ownership/admin management UI (#1419: `TransferCollectionDialog.tsx`,
-  `transfer` in `useCollectionsData.ts`, `transferCollection` in `api.ts`,
-  detail header + card affordances in `CollectionsPage.tsx` /
-  `CollectionCard.tsx`):
-  `npm test -- TransferCollectionDialog CollectionsPage CollectionCard useCollectionsData api.test App.test`
+- Ownership/admin management UI (#1419, #1531: `CollectionOwnersDialog.tsx`,
+  `transfer` + `saveOwners` in `useCollectionsData.ts`, `transferCollection`
+  - `replaceCollectionOwners` in `api.ts`,
+    detail header + card affordances in `CollectionsPage.tsx` /
+    `CollectionCard.tsx`):
+    `npm test -- CollectionOwnersDialog CollectionsPage CollectionCard useCollectionsData api.test App.test`
 - Browse tile integration (#1529: collection tiles in `SortableTileGrid.tsx`,
   `currentCollections`/`uncategorizedCollections` in `useBrowseData.ts`,
   move handlers in `useCategoryActions.ts`, `MoveCollectionDialog.tsx`,

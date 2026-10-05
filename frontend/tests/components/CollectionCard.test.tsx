@@ -29,7 +29,7 @@ describe('CollectionCard', () => {
   it('pluralises the image count and falls back to a placeholder cover', () => {
     render(
       <CollectionCard
-        collection={makeCollectionSummary({ imageCount: 3, coverThumb: null, owner: null })}
+        collection={makeCollectionSummary({ imageCount: 3, coverThumb: null, owners: [] })}
         onOpen={vi.fn()}
       />,
     )
@@ -87,7 +87,7 @@ describe('CollectionCard', () => {
     expect(screen.queryByRole('button', { name: /^Delete/ })).not.toBeInTheDocument()
   })
 
-  it('shows a transfer affordance only when canTransfer grants it', () => {
+  it('shows an owners affordance only when canTransfer grants it', () => {
     const onTransfer = vi.fn()
     const collection = makeCollectionSummary({
       name: 'Mine',
@@ -96,7 +96,7 @@ describe('CollectionCard', () => {
     const { unmount } = render(
       <CollectionCard collection={collection} onOpen={vi.fn()} onTransfer={onTransfer} />,
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Transfer Mine' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Manage owners of Mine' }))
     expect(onTransfer).toHaveBeenCalledWith(collection)
     unmount()
 
@@ -110,7 +110,9 @@ describe('CollectionCard', () => {
         onTransfer={onTransfer}
       />,
     )
-    expect(screen.queryByRole('button', { name: 'Transfer Shared' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Manage owners of Shared' }),
+    ).not.toBeInTheDocument()
   })
 
   it('shows a move affordance whenever onMove is supplied (#1529 — role-gated, not permission-gated)', () => {

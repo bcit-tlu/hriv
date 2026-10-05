@@ -685,7 +685,9 @@ class UserOut(UserBase):
 # ── Collection ────────────────────────────────────────────
 
 class CollectionOwnerOut(BaseModel):
-    """Owner of a collection: exactly one of ``user_id`` / ``program_id``."""
+    """One owner of a collection: a user (``user_id``) or the owning program
+    (``program_id``). Exactly one of the two ids is set.
+    """
 
     user_id: int | None = None
     program_id: int | None = None
@@ -698,6 +700,7 @@ class CollectionPermissionsOut(BaseModel):
     """
 
     can_edit: bool = False
+    can_change_scope: bool = False
     can_delete: bool = False
     can_transfer: bool = False
 
@@ -708,7 +711,9 @@ class CollectionSummaryOut(BaseModel):
     description: str | None = None
     type: str
     visibility: str
-    owner: CollectionOwnerOut | None = None
+    # Co-owners (#1531): one entry per ``collection_owners`` row, plus an
+    # entry for the owning program when set. Empty = orphaned (admin-managed).
+    owners: list[CollectionOwnerOut] = []
     image_count: int = 0
     cover_thumb: str | None = None
     version: int = 1
@@ -865,20 +870,34 @@ class CollectionViewportUpdate(BaseModel):
     version: int
 
 
-class CollectionTransfer(BaseModel):
-    """POST ``…/transfer`` body: the new owner is exactly one of ``user_id``
-    / ``program_id``; ``version`` is the optimistic concurrency token.
+class CollectionOwnersUpdate(BaseModel):
+    """PUT ``…/owners`` body (#1531): replace the whole user-owner set.
+    Targets may be any active user; ``version`` is the optimistic
+    concurrency token. The router 422s when the result would orphan the
+    collection (empty owner set with no program owner).
     """
 
-    user_id: int | None = None
-    program_id: int | None = None
+    user_ids: list[int]
     version: int
 
-    @model_validator(mode="after")
-    def _exactly_one_owner(self) -> "CollectionTransfer":
-        if (self.user_id is None) == (self.program_id is None):
-            raise ValueError("Provide exactly one of user_id or program_id")
-        return self
+    @field_validator("user_ids")
+    @classmethod
+    def _dedupe(cls, v: list[int]) -> list[int]:
+        return list(dict.fromkeys(v))
+
+
+class CollectionTransfer(BaseModel):
+    """POST ``…/transfer`` body (#1531): reassign *program* ownership.
+
+    ``program_id`` is required but nullable — an explicit ``null`` clears
+    the program owner (mirroring ``CollectionMove.category_id``), which the
+    router 422s unless user-owners remain. Setting a program clears the
+    user-owner rows; user ownership is managed wholesale through
+    ``PUT /owners`` instead.
+    """
+
+    program_id: int | None
+    version: int
 
 
 class FeaturesOut(BaseModel):

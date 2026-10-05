@@ -60,16 +60,36 @@ def can_attach_group_to_category(user, group_instructor_ids: Iterable[int]) -> b
 
 # ── Collections ───────────────────────────────────────────
 #
-# Collections are owned by a user (``user_id``) or a program
-# (``owner_program_id``); both ``NULL`` means the owning program was deleted
-# and the collection is orphaned (admin-managed until reassigned). Admins,
-# instructors, and staff see every collection; students see their own,
-# ``public`` ones, and ``restricted`` ones that pass the same program AND
-# group dual gate used for categories.
+# Collections are co-owned by users (``collection_owners`` rows) and/or a
+# program (``owner_program_id``); ``collections.user_id`` is creator-only
+# audit, not ownership (#1531). A collection with no owner rows AND no
+# program owner is orphaned — admin-managed until reassigned.
+#
+# Capability matrix (issue #1531):
+#
+#   view    — admin/instructor/staff: all; student: own ∪ co-owned ∪
+#             public ∪ restricted-dual-gate.
+#   edit    — admin: all; instructor: own ∪ program-owned ∪ co-owned;
+#             student and staff: own ∪ co-owned.
+#   scope   — as edit, but students and staff only when they are the sole
+#             owner (no co-owners, no program owner).
+#   delete  — as scope.
+#   transfer / PUT /owners — admin: all; instructor: own ∪ program-owned ∪
+#             co-owned; staff and students: never.
 
 
 def _is_collection_owner(user, collection) -> bool:
-    return collection.user_id is not None and collection.user_id == user.id
+    """True when *user* holds an owner row (sole or shared) on *collection*."""
+    return any(owner.id == user.id for owner in collection.owners)
+
+
+def _is_sole_collection_owner(user, collection) -> bool:
+    """True when *user* is the collection's only user-owner and no program
+    owns it — the student's authority level for scope/delete (#1531)."""
+    if collection.owner_program_id is not None:
+        return False
+    owners = collection.owners
+    return len(owners) == 1 and owners[0].id == user.id
 
 
 def _manages_owner_program(user, collection) -> bool:
@@ -87,10 +107,11 @@ def can_view_collection(
 ) -> bool:
     """Return True when *user* may read *collection*.
 
-    Non-students see everything. Students pass when they own the collection,
-    when it is ``public``, or when it is ``restricted`` and both the program
-    gate and the group gate admit them (an empty scope on a dimension is
-    unrestricted on that dimension). ``private`` collections are owner-only.
+    Non-students see everything. Students pass when they own or co-own the
+    collection, when it is ``public``, or when it is ``restricted`` and both
+    the program gate and the group gate admit them (an empty scope on a
+    dimension is unrestricted on that dimension). ``private`` collections
+    are owner-only.
     """
     if user.role in ("admin", "instructor", "staff"):
         return True
@@ -110,23 +131,49 @@ def can_view_collection(
 
 
 def can_edit_collection(user, collection) -> bool:
-    """Owner, admin, or an instructor in the owning program may edit."""
+    """Content edit (name/description/images/viewport): admins always;
+    instructors when they own, co-own, or belong to the owning program;
+    students and staff when they own or co-own.
+    """
     if user.role == "admin":
         return True
-    return _is_collection_owner(user, collection) or _manages_owner_program(
+    if user.role == "instructor":
+        return _is_collection_owner(
+            user, collection
+        ) or _manages_owner_program(user, collection)
+    return user.role in ("student", "staff") and _is_collection_owner(
+        user, collection
+    )
+
+
+def can_change_collection_scope(user, collection) -> bool:
+    """Visibility/program/group scope changes: same as edit for admins and
+    instructors; students and staff only when they are the sole owner
+    (co-owners may not widen visibility on shared collections).
+    """
+    if user.role == "admin":
+        return True
+    if user.role == "instructor":
+        return _is_collection_owner(
+            user, collection
+        ) or _manages_owner_program(user, collection)
+    return user.role in ("student", "staff") and _is_sole_collection_owner(
         user, collection
     )
 
 
 def can_delete_collection(user, collection) -> bool:
-    """Deletion authority mirrors edit authority (admins may delete any)."""
-    return can_edit_collection(user, collection)
+    """Deletion authority: admins always; instructors when they own, co-own,
+    or belong to the owning program; students and staff only when sole
+    owner.
+    """
+    return can_change_collection_scope(user, collection)
 
 
 def can_transfer_collection(user, collection) -> bool:
     """Admins transfer any collection; instructors transfer collections they
-    own or that belong to one of their programs. Students and staff cannot
-    transfer ownership.
+    own, co-own, or that belong to one of their programs. Students and staff
+    can never transfer ownership or modify the owner set (``PUT /owners``).
     """
     if user.role == "admin":
         return True

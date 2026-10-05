@@ -51,7 +51,7 @@ export function makeApiCollectionSummary(
     description: 'Frontal vs lateral',
     type: 'synchronized',
     visibility: 'private',
-    owner: { user_id: 7, name: 'Ada Lovelace' },
+    owners: [{ user_id: 7, name: 'Ada Lovelace' }],
     image_count: 2,
     cover_thumb: '/thumbs/skull.jpg?token=abc',
     version: 1,
@@ -59,7 +59,12 @@ export function makeApiCollectionSummary(
     sort_order: 0,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-02T00:00:00Z',
-    permissions: { can_edit: true, can_delete: true, can_transfer: false },
+    permissions: {
+      can_edit: true,
+      can_delete: true,
+      can_change_scope: true,
+      can_transfer: false,
+    },
     ...overrides,
   }
 }
@@ -89,7 +94,7 @@ export function makeCollectionSummary(
     description: 'Frontal vs lateral',
     type: 'synchronized',
     visibility: 'private',
-    owner: { kind: 'user', userId: 7, name: 'Ada Lovelace' },
+    owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace' }],
     imageCount: 2,
     coverThumb: '/thumbs/skull.jpg?token=abc',
     version: 1,
@@ -97,7 +102,12 @@ export function makeCollectionSummary(
     sortOrder: 0,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-02T00:00:00Z',
-    permissions: { canEdit: true, canDelete: true, canTransfer: false },
+    permissions: {
+      canEdit: true,
+      canDelete: true,
+      canChangeScope: true,
+      canTransfer: false,
+    },
     ...overrides,
   }
 }

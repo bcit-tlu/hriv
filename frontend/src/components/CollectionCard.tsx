@@ -20,7 +20,7 @@ import type { CollectionSummary, CollectionVisibility } from '../types'
 import {
   COLLECTION_TYPE_LABELS,
   COLLECTION_VISIBILITY_LABELS,
-  describeCollectionOwner,
+  describeCollectionOwners,
 } from '../collectionUtils'
 import { getGroupChipColors, getVisibilityColors } from '../theme'
 import { useColorMode } from '../useColorMode'
@@ -33,7 +33,7 @@ export interface CollectionCardProps {
   onEdit?: (collection: CollectionSummary) => void
   /** Rendered only when `collection.permissions.canDelete` (UX gate — the API re-checks). */
   onDelete?: (collection: CollectionSummary) => void
-  /** Rendered only when `collection.permissions.canTransfer` (UX gate — the API re-checks). */
+  /** Owners & transfer dialog (#1531) — gated on `permissions.canTransfer`. */
   onTransfer?: (collection: CollectionSummary) => void
   /**
    * Move/file into a category (#1529). Unlike the other actions this is
@@ -162,7 +162,7 @@ export default function CollectionCard({
             </Typography>
           </Tooltip>
           <Typography variant="body2" color="text.secondary">
-            {imageCountText} · {describeCollectionOwner(collection.owner)}
+            {imageCountText} · {describeCollectionOwners(collection.owners)}
           </Typography>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
             <Chip
@@ -213,10 +213,10 @@ export default function CollectionCard({
             </Tooltip>
           )}
           {showTransfer && (
-            <Tooltip title="Transfer ownership">
+            <Tooltip title="Manage owners">
               <IconButton
                 size="small"
-                aria-label={`Transfer ${collection.name}`}
+                aria-label={`Manage owners of ${collection.name}`}
                 onClick={() => onTransfer?.(collection)}
               >
                 <SwapHorizIcon fontSize="small" />

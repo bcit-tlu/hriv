@@ -15,11 +15,17 @@ probed); a caller who can view but not edit gets 403. PATCH / images /
 viewport carry a ``version`` token; a stale token yields 409 whose ``detail``
 is the current ``CollectionOut`` so the client can rebase.
 
-Ownership transfer (``POST …/transfer``) is gated by
-``authz.can_transfer_collection``: admins may hand any collection to any
-active user or any program; instructors may move collections they own or
-that belong to one of their programs, but only onto a program they belong
-to. Collections orphaned by a program delete are admin-only until reassigned.
+Ownership is the ``collection_owners`` user set plus the optional
+``owner_program_id`` program (#1531). ``PUT …/owners`` wholesale-replaces
+the user-owner set and ``POST …/transfer`` reassigns program ownership
+(setting a program clears the user-owner rows; ``program_id: null`` clears
+it and 422s when that would orphan). Both are gated by
+``authz.can_transfer_collection``: admins may manage owners of any
+collection; instructors only collections they own/co-own or that belong to
+one of their programs — and transfer targets limited to their own programs.
+Owner targets for ``PUT /owners`` may be any active user. Collections with
+no owner rows AND no program owner are orphaned (admin-only until
+reassigned); ``collections.user_id`` is creator audit, not ownership.
 
 Browse placement (epic #1525 / #1527): ``category_id`` files a collection
 into the category tree (``None`` = Browse root). ``POST …/{id}/move`` is
@@ -42,6 +48,7 @@ from ..auth import get_current_user, require_role
 from ..authz import (
     can_attach_group_to_collection,
     can_attach_program_to_collection,
+    can_change_collection_scope,
     can_delete_collection,
     can_edit_collection,
     can_transfer_collection,
@@ -70,6 +77,7 @@ from ..schemas import (
     CollectionImagesUpdate,
     CollectionMove,
     CollectionOut,
+    CollectionOwnersUpdate,
     CollectionSummaryOut,
     CollectionTransfer,
     CollectionUpdate,
@@ -109,8 +117,10 @@ async def list_collections(
 ):
     """List collections visible to the caller (server-side filtered).
 
-    ``orphaned=true`` (collections whose owning program was deleted) is an
-    admin-only filter; other roles receive 403.
+    ``orphaned=true`` (collections with no user-owner rows and no program
+    owner — e.g. after a program delete) is an admin-only filter; other
+    roles receive 403. ``mine`` / ``owner_user_id`` match
+    ``collection_owners`` membership (#1531).
     """
     if type is not None and type not in COLLECTION_TYPES:
         raise HTTPException(
@@ -126,14 +136,14 @@ async def list_collections(
     if type is not None:
         stmt = stmt.where(Collection.type == type)
     if mine:
-        stmt = stmt.where(Collection.user_id == user.id)
+        stmt = stmt.where(Collection.owners.any(User.id == user.id))
     if owner_user_id is not None:
-        stmt = stmt.where(Collection.user_id == owner_user_id)
+        stmt = stmt.where(Collection.owners.any(User.id == owner_user_id))
     if owner_program_id is not None:
         stmt = stmt.where(Collection.owner_program_id == owner_program_id)
     if orphaned:
         stmt = stmt.where(
-            Collection.user_id.is_(None), Collection.owner_program_id.is_(None)
+            ~Collection.owners.any(), Collection.owner_program_id.is_(None)
         )
     if uncategorized:
         stmt = stmt.where(Collection.category_id.is_(None))
@@ -371,8 +381,10 @@ async def create_collection(
     db: AsyncSession = Depends(get_db),
 ):
     """Create a collection owned by the caller. Any authenticated role may
-    create; ``restricted`` visibility needs admin/instructor and attach
-    authority over every program/group id.
+    create — the caller becomes the first user owner and is recorded as
+    creator (``collections.user_id`` audit). ``restricted`` visibility
+    additionally needs attach authority over every program/group id, so only
+    admins and instructors may use it.
     """
     ctx = await _ViewerContext.build(db, user)
     progs: list[Program] = []
@@ -388,11 +400,14 @@ async def create_collection(
         description=body.description,
         type=body.type,
         visibility=body.visibility,
+        # user_id is the creator audit column (#1531); ownership is the
+        # ``owners`` row added below.
         user_id=user.id,
         sort_order=0,
         viewport_state={},
         version=1,
     )
+    collection.owners = [user]
     collection.programs = progs
     collection.groups = grps
     _replace_image_links(collection, images)
@@ -415,15 +430,39 @@ async def update_collection(
 ):
     """Update name / description / visibility / scope. ``type`` is immutable.
 
+    Field-level authority (#1531): content fields (``name`` / ``description``
+    / ``type`` echo) require ``can_edit_collection``; scope fields
+    (``visibility`` / ``program_ids`` / ``group_ids``) require
+    ``can_change_collection_scope`` — a student or staff co-owner may edit
+    content but not scope, while a sole owner holds both. A
+    ``version``-only PATCH counts as a content write.
+
     Leaving ``restricted`` clears the program/group scope; sending a
     non-empty scope for a non-restricted collection is 422. Newly attached
     programs/groups re-check attach authority (403).
     """
-    ctx, collection = await get_editable_collection_or_error(db, user, collection_id)
+    ctx, collection = await get_visible_collection_or_404(db, user, collection_id)
+    fields = body.model_dump(exclude_unset=True)
+    scope_touched = (
+        body.visibility is not None
+        or body.program_ids is not None
+        or body.group_ids is not None
+    )
+    if scope_touched:
+        # Scope rights imply content rights for every role (a student sole
+        # owner is still an owner), so one check covers mixed bodies.
+        if not can_change_collection_scope(user, collection):
+            raise HTTPException(
+                status_code=403,
+                detail="You may not change this collection's scope",
+            )
+    elif not can_edit_collection(user, collection):
+        raise HTTPException(
+            status_code=403, detail="You may not edit this collection"
+        )
     if body.type is not None and body.type != collection.type:
         raise HTTPException(422, "Collection type is immutable")
 
-    fields = body.model_dump(exclude_unset=True)
     visibility = body.visibility or collection.visibility
 
     new_programs: list[Program] | None = None
@@ -588,44 +627,71 @@ async def move_collection(
     return collection_out(ctx, collection)
 
 
-# ── Ownership transfer ────────────────────────────────────────────────────
+# ── Ownership (#1531) ─────────────────────────────────────────────────────
 
 
-async def _resolve_transfer_target(
-    db: AsyncSession, user: User, body: CollectionTransfer,
-) -> tuple[User | None, Program | None]:
-    """Resolve the new owner named by *body* as ``(user, None)`` or
-    ``(None, program)``.
+async def _resolve_owner_users(
+    db: AsyncSession, user_ids: list[int]
+) -> list[User]:
+    """Resolve the target user-owner set for ``PUT /owners``.
 
-    Only admins may assign a user owner (403 otherwise), and that user must
-    exist and be active (422). A program owner must exist (422) and pass
-    ``can_attach_program_to_collection`` (403): admins any program,
-    instructors only programs they belong to.
+    Targets may be any *active* user — co-ownership is deliberately not
+    role-restricted (an instructor may add students as co-owners). Unknown
+    or deactivated ids are 422.
     """
-    if body.user_id is not None:
-        if user.role != "admin":
-            raise HTTPException(
-                status_code=403,
-                detail="Only admins may transfer a collection to a user",
-            )
-        new_owner = await db.get(User, body.user_id)
-        if new_owner is None:
-            raise HTTPException(422, f"Invalid user ID: {body.user_id}")
-        if not new_owner.active:
-            raise HTTPException(
-                422, "Collections cannot be transferred to a deactivated user"
-            )
-        return new_owner, None
-
-    new_program = await db.get(Program, body.program_id)
-    if new_program is None:
-        raise HTTPException(422, f"Invalid program ID: {body.program_id}")
-    if not can_attach_program_to_collection(user, new_program.id):
+    if not user_ids:
+        return []
+    users = (
+        await db.execute(select(User).where(User.id.in_(user_ids)))
+    ).scalars().all()
+    by_id = {u.id: u for u in users}
+    missing = set(user_ids) - set(by_id)
+    if missing:
+        raise HTTPException(422, f"Invalid user IDs: {sorted(missing)}")
+    inactive = sorted(u.id for u in users if not u.active)
+    if inactive:
         raise HTTPException(
-            403,
-            f"You may only transfer to programs you belong to ({new_program.name})",
+            422,
+            "Collections cannot be owned by deactivated users: "
+            f"{inactive}",
         )
-    return None, new_program
+    return [by_id[uid] for uid in user_ids]
+
+
+@router.put("/{collection_id}/owners", response_model=CollectionOut)
+async def replace_collection_owners(
+    collection_id: int,
+    body: CollectionOwnersUpdate,
+    user: Annotated[User, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_db),
+):
+    """Replace the user-owner set wholesale (add/remove co-owners).
+
+    404 when the caller cannot view the collection, 403 when they can view
+    it but fail ``can_transfer_collection`` (staff and students always —
+    even sole-owner students). 422 when the resulting set is empty and no
+    program owns the collection (would orphan). ``version`` advances under
+    the same optimistic-concurrency rule as PATCH.
+    """
+    ctx, collection = await get_visible_collection_or_404(db, user, collection_id)
+    if not can_transfer_collection(user, collection):
+        raise HTTPException(
+            status_code=403, detail="You may not manage this collection's owners"
+        )
+    owners = await _resolve_owner_users(db, body.user_ids)
+    if not owners and collection.owner_program_id is None:
+        raise HTTPException(
+            status_code=422,
+            detail="A collection must have at least one user owner or an "
+            "owning program",
+        )
+    await _bump_version_or_409(db, ctx, collection, body.version)
+    collection.owners = owners
+    # The owner name/chip is rendered on the Browse tile.
+    await bump_browse_revision(db)
+    await db.commit()
+    await db.refresh(collection)
+    return collection_out(ctx, collection)
 
 
 @router.post("/{collection_id}/transfer", response_model=CollectionOut)
@@ -635,26 +701,48 @@ async def transfer_collection(
     user: Annotated[User, Depends(get_current_user)],
     db: AsyncSession = Depends(get_db),
 ):
-    """Reassign ownership to exactly one of ``user_id`` / ``program_id``.
+    """Reassign *program* ownership; user ownership moved to ``PUT /owners``.
+
+    ``program_id`` set: the program becomes the owning program and the
+    user-owner rows are cleared (422 unknown id, 403 when the caller may
+    not attach that program — admins any, instructors only their own).
+    ``program_id: null``: clears the program owner, keeping the user-owner
+    rows; 422 when no user-owner rows exist (would orphan).
 
     404 when the caller cannot view the collection, 403 when they can view
     it but fail ``can_transfer_collection`` (students and staff always;
-    instructors unless they own it or belong to its owning program;
-    orphaned collections are admin-only). The other owner column is cleared
-    and ``version`` advances under the same optimistic-concurrency rule as
-    PATCH.
+    instructors unless they own/co-own it or belong to its owning program;
+    orphaned collections are admin-only). ``version`` advances under the
+    same optimistic-concurrency rule as PATCH.
     """
     ctx, collection = await get_visible_collection_or_404(db, user, collection_id)
     if not can_transfer_collection(user, collection):
         raise HTTPException(
             status_code=403, detail="You may not transfer this collection"
         )
-    new_owner, new_program = await _resolve_transfer_target(db, user, body)
+    if body.program_id is None:
+        if not collection.owners:
+            raise HTTPException(
+                status_code=422,
+                detail="Cannot clear the program owner while the collection "
+                "has no user owners",
+            )
+        new_program = None
+    else:
+        new_program = await db.get(Program, body.program_id)
+        if new_program is None:
+            raise HTTPException(422, f"Invalid program ID: {body.program_id}")
+        if not can_attach_program_to_collection(user, new_program.id):
+            raise HTTPException(
+                403,
+                f"You may only transfer to programs you belong to ({new_program.name})",
+            )
     await _bump_version_or_409(db, ctx, collection, body.version)
-    collection.user_id = new_owner.id if new_owner is not None else None
-    collection.owner = new_owner
-    collection.owner_program_id = new_program.id if new_program is not None else None
+    collection.owner_program_id = body.program_id
     collection.owner_program = new_program
+    if new_program is not None:
+        # Transfer-to-program makes the program the sole owner (#1531).
+        collection.owners = []
     # The owner name/chip is rendered on the Browse tile.
     await bump_browse_revision(db)
     await db.commit()

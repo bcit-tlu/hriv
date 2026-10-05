@@ -23,6 +23,7 @@ from app.routers.users import (
 )
 from fastapi import Response
 
+from app.models import User
 from app.schemas import (
     UserCreate,
     UserUpdate,
@@ -751,15 +752,41 @@ async def test_bulk_update_active_self_deactivate_rejected() -> None:
 # ── Bulk Delete ──────────────────────────────────────────
 
 
+def _collection_for_delete(
+    owner_ids: list[int],
+    category_id: int | None = None,
+    owner_program_id: int | None = None,
+) -> MagicMock:
+    """A collection row as ``_delete_sole_owned_collections`` inspects it."""
+    col = MagicMock()
+    col.category_id = category_id
+    col.owner_program_id = owner_program_id
+    col.owners = [SimpleNamespace(id=i) for i in owner_ids]
+    return col
+
+
+def _execute_for_delete(users: list, collections: list | None = None):
+    """Dispatch ``db.execute`` by selected entity — the user fetch first,
+    then the affected-collections query inside
+    ``_delete_sole_owned_collections`` (#1531)."""
+    async def mock_execute(stmt):
+        entity = getattr(stmt, "column_descriptions", [{}])[0].get("entity")
+        rows = users if entity is User else (collections or [])
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.unique.return_value.all.return_value = rows
+        mock_result.scalars.return_value.all.return_value = rows
+        return mock_result
+
+    return mock_execute
+
+
 async def test_bulk_delete_users_success() -> None:
     users = [_make_user(id=1), _make_user(id=2, email="two@example.com")]
-    mock_result = MagicMock()
-    mock_result.scalars.return_value.unique.return_value.all.return_value = users
 
     admin = _make_user(id=99, role="admin")
 
     db = AsyncMock()
-    db.execute = AsyncMock(return_value=mock_result)
+    db.execute = AsyncMock(side_effect=_execute_for_delete(users))
     db.delete = AsyncMock()
     db.commit = AsyncMock()
 
@@ -767,6 +794,32 @@ async def test_bulk_delete_users_success() -> None:
     await bulk_delete_users(body, admin, db)
 
     assert db.delete.await_count == 2
+
+
+async def test_bulk_delete_co_owned_collection_survives() -> None:
+    """A collection survives bulk user deletion while another owner row or a
+    program owner remains (#1531); only the departing owner rows cascade."""
+    users = [_make_user(id=1), _make_user(id=2, email="two@example.com")]
+    co_owned = _collection_for_delete([1, 5], category_id=7)
+    program_owned = _collection_for_delete([2], category_id=7, owner_program_id=3)
+    dying = _collection_for_delete([1, 2], category_id=7)
+
+    db = AsyncMock()
+    db.execute = AsyncMock(
+        side_effect=_execute_for_delete(users, [co_owned, program_owned, dying])
+    )
+    db.delete = AsyncMock()
+    db.commit = AsyncMock()
+
+    await bulk_delete_users(
+        UserBulkDelete(user_ids=[1, 2]), _make_user(id=99, role="admin"), db
+    )
+
+    deleted = [c.args[0] for c in db.delete.await_args_list]
+    assert dying in deleted
+    assert co_owned not in deleted and program_owned not in deleted
+    # Filed collections were affected → the tree ETag advances.
+    users_router.bump_browse_revision.assert_awaited_once()
 
 
 async def test_bulk_delete_users_self() -> None:
@@ -824,30 +877,70 @@ async def test_update_user_non_name_change_skips_browse_bump() -> None:
 
 
 async def test_delete_user_owning_filed_collection_bumps() -> None:
-    """Deleting a user cascade-deletes their owned collections — a filed
-    collection disappears from the tree, so the ETag must advance."""
+    """A sole-owned filed collection dies with the user (#1531) — it
+    disappears from the tree, so the ETag must advance."""
     admin = _make_user(id=99, role="admin")
     user = _make_user(id=1)
-    owns = MagicMock()
-    owns.first.return_value = MagicMock()  # owns ≥1 filed collection
+    col = _collection_for_delete([1], category_id=7)
     db = AsyncMock()
     db.get = AsyncMock(return_value=user)
-    db.execute = AsyncMock(return_value=owns)
+    db.execute = AsyncMock(side_effect=_execute_for_delete([user], [col]))
     db.delete = AsyncMock()
     db.commit = AsyncMock()
 
     await delete_user(1, admin, db)
     users_router.bump_browse_revision.assert_awaited_once()
+    deleted = [c.args[0] for c in db.delete.await_args_list]
+    assert col in deleted and user in deleted
+
+
+async def test_delete_user_co_owned_collection_survives() -> None:
+    """A co-owned filed collection survives: the departing owner's row
+    cascades away but the collection (and its tile) remain (#1531). The
+    ETag still advances — the tile's owner display changed."""
+    admin = _make_user(id=99, role="admin")
+    user = _make_user(id=1)
+    co_owned = _collection_for_delete([1, 5], category_id=7)
+    program_owned = _collection_for_delete([1], category_id=7, owner_program_id=3)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=user)
+    db.execute = AsyncMock(
+        side_effect=_execute_for_delete([user], [co_owned, program_owned])
+    )
+    db.delete = AsyncMock()
+    db.commit = AsyncMock()
+
+    await delete_user(1, admin, db)
+    users_router.bump_browse_revision.assert_awaited_once()
+    deleted = [c.args[0] for c in db.delete.await_args_list]
+    assert co_owned not in deleted and program_owned not in deleted
+    assert user in deleted
+
+
+async def test_delete_user_unfiled_sole_owned_dies_without_bump() -> None:
+    """An unfiled sole-owned collection still dies, but no Browse tile is
+    affected so the ETag stays put."""
+    admin = _make_user(id=99, role="admin")
+    user = _make_user(id=1)
+    col = _collection_for_delete([1], category_id=None)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=user)
+    db.execute = AsyncMock(side_effect=_execute_for_delete([user], [col]))
+    db.delete = AsyncMock()
+    db.commit = AsyncMock()
+
+    await delete_user(1, admin, db)
+    users_router.bump_browse_revision.assert_not_awaited()
+    deleted = [c.args[0] for c in db.delete.await_args_list]
+    assert col in deleted and user in deleted
 
 
 async def test_delete_user_without_filed_collections_skips_bump() -> None:
     admin = _make_user(id=99, role="admin")
     user = _make_user(id=1)
-    owns = MagicMock()
-    owns.first.return_value = None
     db = AsyncMock()
     db.get = AsyncMock(return_value=user)
-    db.execute = AsyncMock(return_value=owns)
+    db.execute = AsyncMock(side_effect=_execute_for_delete([user]))
     db.delete = AsyncMock()
     db.commit = AsyncMock()
 

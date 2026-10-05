@@ -1290,7 +1290,10 @@ async def run_db_export(task_id: int) -> None:
                         "description": c.description,
                         "type": c.type,
                         "visibility": c.visibility,
+                        # user_id is creator-only audit (#1531); the owning
+                        # users are the owner_ids list.
                         "user_id": c.user_id,
+                        "owner_ids": [o.id for o in c.owners],
                         "owner_program_id": c.owner_program_id,
                         "category_id": c.category_id,
                         "sort_order": c.sort_order,
@@ -1471,6 +1474,7 @@ async def run_db_import(task_id: int) -> None:
                 await data_session.execute(text("DELETE FROM collection_images"))
                 await data_session.execute(text("DELETE FROM collection_programs"))
                 await data_session.execute(text("DELETE FROM collection_groups"))
+                await data_session.execute(text("DELETE FROM collection_owners"))
                 await data_session.execute(text("DELETE FROM collections"))
                 await data_session.execute(text("DELETE FROM source_images"))
                 await data_session.execute(text("DELETE FROM images"))
@@ -1732,6 +1736,17 @@ async def run_db_import(task_id: int) -> None:
                         CollectionImage(image_id=image_id, sort_order=position)
                         for position, image_id in enumerate(c.get("image_ids", []))
                     ]
+                    # Owner rows (#1531): new-format dumps carry owner_ids;
+                    # older dumps only have the single-owner user_id, which
+                    # backfills one owner row (it also remains the creator).
+                    owner_ids = c.get("owner_ids")
+                    if owner_ids is None:
+                        owner_ids = [c["user_id"]] if c.get("user_id") is not None else []
+                    if owner_ids:
+                        owners = (await data_session.execute(
+                            select(User).where(User.id.in_(owner_ids))
+                        )).scalars().all()
+                        collection.owners = list(owners)
                     data_session.add(collection)
                 await data_session.flush()
 

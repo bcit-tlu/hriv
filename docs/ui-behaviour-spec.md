@@ -161,7 +161,7 @@ images> / Empty` format used on category tiles.
   arbitration for the next gesture. Covered by `measurement.test.ts`
   (`pinchRotationDeltaDegrees`, `createPinchRotationTracker`).
 
-### Collections tab (`CollectionsPage.test.tsx`, `CollectionCard.test.tsx`, `CollectionEditDialog.test.tsx`, `TransferCollectionDialog.test.tsx`, `App.test.tsx`)
+### Collections tab (`CollectionsPage.test.tsx`, `CollectionCard.test.tsx`, `CollectionEditDialog.test.tsx`, `CollectionOwnersDialog.test.tsx`, `App.test.tsx`)
 
 See [collections.md](collections.md#frontend-behaviour) for the full contract.
 All roles, including students, can list, open, and create collections;

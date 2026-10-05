@@ -82,10 +82,13 @@ This means a mid-import failure rolls back _all_ data changes (via
 `changelog_entries`, and the `announcement`.
 
 Each exported **collection** carries `name`, `description`, `type`,
-`visibility`, `user_id` / `owner_program_id` (both `null` for an orphaned
-collection), `viewport_state`, `version`, ordered `image_ids`, `program_ids`
-and `group_ids`. Links to rebuild-fixture images are dropped because those
-images are not part of the export. See [Collections](collections.md).
+`visibility`, `user_id` (creator audit — may be `null`),
+`owner_program_id`, `owner_ids` (the user-owner id list; both empty for an
+orphaned collection), `viewport_state`, `version`, ordered `image_ids`,
+`program_ids` and `group_ids`. Legacy dumps carrying only `user_id` import
+that creator as the sole owner. Links to rebuild-fixture images are dropped
+because those images are not part of the export. See
+[Collections](collections.md).
 
 Each exported **group** carries `name`, `description`, `created_by_user_id`,
 `member_ids`, and `instructor_ids`.
@@ -101,7 +104,8 @@ matters because of foreign keys.
 - **Delete order** (junctions before parents):
 
   ```
-  collection_images → collection_programs → collection_groups → collections →
+  collection_images → collection_programs → collection_groups →
+  collection_owners → collections →
   source_images → images → category_groups → category_programs → categories →
   group_members → group_instructors → groups → user_programs → users →
   changelog_entries → announcements → programs
@@ -113,8 +117,8 @@ matters because of foreign keys.
   ```
   programs → users → groups → categories (restoring category↔program and
   category↔group links) → images → source_images → collections (with
-  collection_images / collection_programs / collection_groups) →
-  changelog_entries → announcement
+  collection_images / collection_owners / collection_programs /
+  collection_groups) → changelog_entries → announcement
   ```
 
 - **Sequence reset.** After import, PostgreSQL sequences are reset to
