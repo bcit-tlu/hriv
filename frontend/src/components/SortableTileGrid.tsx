@@ -111,7 +111,11 @@ const GridTile = memo(function GridTile({
     <SortableTile id={tileId(item)} index={index} disabled={disabled}>
       {item.type === 'category'
         ? renderCategoryTile(item.data, true)
-        : renderImageTile(item.data as ImageItem)}
+        : item.type === 'image'
+          ? renderImageTile(item.data)
+          : // Collection tiles render with the Browse UI in #1529 (C4); the
+            // member type exists in the order contract already (#1528).
+            null}
     </SortableTile>
   )
 })
@@ -481,7 +485,11 @@ export default function SortableTileGrid({
           // Drag detail rides along so lifecycle telemetry keeps per-drag
           // context (which tile moved, from/to index) on this surface.
           {
-            itemType: sourceId.startsWith('img-') ? 'image' : 'category',
+            itemType: sourceId.startsWith('img-')
+              ? 'image'
+              : sourceId.startsWith('col-')
+                ? 'collection'
+                : 'category',
             itemId: Number(sourceId.slice(4)),
             fromIndex,
             toIndex,
@@ -627,7 +635,9 @@ export default function SortableTileGrid({
             >
               {activeItem.type === 'category'
                 ? renderCategoryTile(activeItem.data)
-                : renderImageTile(activeItem.data)}
+                : activeItem.type === 'image'
+                  ? renderImageTile(activeItem.data)
+                  : null}
             </Box>
           ) : null}
         </DragOverlay>

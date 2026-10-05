@@ -5,7 +5,8 @@ combined visual order of child categories and images. This module owns:
 
 - the canonical deterministic ordering rule shared by reads, writes, and
   normalization: ``(sort_order, item_type_priority, item_id)`` with
-  categories before images on ties — never labels or file names;
+  categories, then collections, then images on ties — never labels or file
+  names;
 - set-based position updates (one ``UPDATE ... FROM (VALUES ...)`` statement
   per entity type, regardless of item count);
 - an administrative normalization routine that rewrites every scope to a
@@ -26,7 +27,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from .models import Category, Image, TileOrderRevision
+from .database import settings
+from .models import Category, Collection, Image, TileOrderRevision
 
 # ``scope_key`` for the root scope (``parent_category_id`` is NULL). Real
 # category IDs are serial and start at 1, so 0 can never collide.
@@ -47,14 +49,16 @@ ROOT_SCOPE_KEY = 0
 # survive a restore and silently overwrite the restored order.
 INITIAL_SCOPE_REVISION = 1
 
-_TYPE_PRIORITY = {"category": 0, "image": 1}
+# Navigation (categories) before presentation (collections) before raw
+# material (images) — collections joined the contract in #1528 (epic #1525).
+_TYPE_PRIORITY = {"category": 0, "collection": 1, "image": 2}
 
 
 @dataclass(frozen=True)
 class TileRef:
     """One orderable tile in a scope."""
 
-    type: str  # "category" | "image"
+    type: str  # "category" | "collection" | "image"
     id: int
     sort_order: int
 
@@ -75,13 +79,16 @@ def canonical_order(refs: list[TileRef]) -> list[TileRef]:
 def validate_submitted_items(
     submitted: list[tuple[str, int]],
     scope_category_ids: set[int],
+    scope_collection_ids: set[int],
     scope_image_ids: set[int],
 ) -> str | None:
     """Return an error description for an invalid submission, or ``None``.
 
     The submitted items must be exactly the scope's members: duplicates,
     IDs from other scopes, and omissions are all rejected so a stale or
-    corrupted client can never partially rewrite a scope.
+    corrupted client can never partially rewrite a scope. When
+    ``COLLECTIONS_ENABLED`` is off ``scope_collection_ids`` is empty, so a
+    submitted ``collection`` item reads as foreign and is rejected.
     """
     seen: set[tuple[str, int]] = set()
     for item_type, item_id in submitted:
@@ -89,31 +96,53 @@ def validate_submitted_items(
             return f"Duplicate item {item_type}:{item_id}"
         seen.add((item_type, item_id))
     submitted_categories = {i for t, i in submitted if t == "category"}
+    submitted_collections = {i for t, i in submitted if t == "collection"}
     submitted_images = {i for t, i in submitted if t == "image"}
     foreign_categories = submitted_categories - scope_category_ids
     if foreign_categories:
         return f"Categories not in scope: {sorted(foreign_categories)}"
+    foreign_collections = submitted_collections - scope_collection_ids
+    if foreign_collections:
+        return f"Collections not in scope: {sorted(foreign_collections)}"
     foreign_images = submitted_images - scope_image_ids
     if foreign_images:
         return f"Images not in scope: {sorted(foreign_images)}"
     missing_categories = scope_category_ids - submitted_categories
     if missing_categories:
         return f"Missing scope categories: {sorted(missing_categories)}"
+    missing_collections = scope_collection_ids - submitted_collections
+    if missing_collections:
+        return f"Missing scope collections: {sorted(missing_collections)}"
     missing_images = scope_image_ids - submitted_images
     if missing_images:
         return f"Missing scope images: {sorted(missing_images)}"
     return None
 
 
+def _collections_enabled() -> bool:
+    """Kill-switch check for collection scope membership.
+
+    When ``COLLECTIONS_ENABLED`` is off, filed collections keep their
+    ``category_id``/``sort_order`` columns but are NOT tile-order members —
+    reads exclude them and writes reject them as foreign — so flag-off
+    deployments with existing data can never leak collection tiles into a
+    scope or deadlock a reorder against invisible members (epic #1525).
+    """
+    return settings.collections_enabled
+
+
+def _collection_scope_where(parent_category_id: int | None):
+    return (
+        Collection.category_id.is_(None)
+        if parent_category_id is None
+        else Collection.category_id == parent_category_id
+    )
+
+
 async def load_scope_members(
     db: AsyncSession, parent_category_id: int | None
-) -> tuple[set[int], set[int]]:
-    """Load member category/image IDs for a scope in two bounded queries.
-
-    Collections join the member contract in #1528 (epic #1525 C3): until
-    then ``collections.sort_order``/``category_id`` exist and move bumps
-    scope revisions, but collection rows are intentionally not members here.
-    """
+) -> tuple[set[int], set[int], set[int]]:
+    """Load member category/collection/image IDs for a scope (≤3 queries)."""
     cat_where = (
         Category.parent_id.is_(None)
         if parent_category_id is None
@@ -125,12 +154,23 @@ async def load_scope_members(
         else Image.category_id == parent_category_id
     )
     category_ids = set((await db.execute(sa.select(Category.id).where(cat_where))).scalars())
+    collection_ids: set[int] = set()
+    if _collections_enabled():
+        collection_ids = set(
+            (
+                await db.execute(
+                    sa.select(Collection.id).where(
+                        _collection_scope_where(parent_category_id)
+                    )
+                )
+            ).scalars()
+        )
     image_ids = set((await db.execute(sa.select(Image.id).where(img_where))).scalars())
-    return category_ids, image_ids
+    return category_ids, collection_ids, image_ids
 
 
 async def load_scope_tiles(db: AsyncSession, parent_category_id: int | None) -> list[TileRef]:
-    """Load the scope's tiles (two bounded queries) in canonical order."""
+    """Load the scope's tiles (≤3 bounded queries) in canonical order."""
     cat_where = (
         Category.parent_id.is_(None)
         if parent_category_id is None
@@ -145,6 +185,17 @@ async def load_scope_tiles(db: AsyncSession, parent_category_id: int | None) -> 
         TileRef(type="category", id=row.id, sort_order=row.sort_order)
         for row in (await db.execute(sa.select(Category.id, Category.sort_order).where(cat_where)))
     ]
+    if _collections_enabled():
+        refs += [
+            TileRef(type="collection", id=row.id, sort_order=row.sort_order)
+            for row in (
+                await db.execute(
+                    sa.select(Collection.id, Collection.sort_order).where(
+                        _collection_scope_where(parent_category_id)
+                    )
+                )
+            )
+        ]
     refs += [
         TileRef(type="image", id=row.id, sort_order=row.sort_order)
         for row in (await db.execute(sa.select(Image.id, Image.sort_order).where(img_where)))
@@ -184,26 +235,31 @@ async def apply_positions(
 ) -> None:
     """Write contiguous positions with one set-based UPDATE per entity type.
 
-    The statement count is constant (at most two UPDATEs) regardless of how
-    many tiles the scope contains.
+    The statement count is constant (at most three UPDATEs) regardless of
+    how many tiles the scope contains.
     """
-    category_rows = [(item_id, pos) for pos, (t, item_id) in enumerate(ordered) if t == "category"]
-    image_rows = [(item_id, pos) for pos, (t, item_id) in enumerate(ordered) if t == "image"]
-    if category_rows:
+    rows_by_type: dict[str, list[tuple[int, int]]] = {
+        "category": [],
+        "collection": [],
+        "image": [],
+    }
+    for pos, (item_type, item_id) in enumerate(ordered):
+        if item_type in rows_by_type:
+            rows_by_type[item_type].append((item_id, pos))
+    for model, rows in (
+        (Category, rows_by_type["category"]),
+        (Collection, rows_by_type["collection"]),
+        (Image, rows_by_type["image"]),
+    ):
+        if not rows:
+            continue
         values = sa.values(
             sa.column("id", sa.Integer), sa.column("sort_order", sa.Integer), name="new_order"
-        ).data(category_rows)
+        ).data(rows)
         await db.execute(
-            sa.update(Category)
-            .where(Category.id == values.c.id)
+            sa.update(model)
+            .where(model.id == values.c.id)
             .values(sort_order=values.c.sort_order)
-        )
-    if image_rows:
-        values = sa.values(
-            sa.column("id", sa.Integer), sa.column("sort_order", sa.Integer), name="new_order"
-        ).data(image_rows)
-        await db.execute(
-            sa.update(Image).where(Image.id == values.c.id).values(sort_order=values.c.sort_order)
         )
 
 

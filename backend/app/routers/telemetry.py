@@ -113,7 +113,7 @@ _FILE_TYPES = frozenset({
 # Client-side reorder lifecycle states; kept in lockstep with
 # ``frontend/src/reorderDiagnostics.ts`` and ``app.reorder_metrics``.
 _REORDER_STATES = REORDER_CLIENT_STATES
-_REORDER_ITEM_TYPES = frozenset({"category", "image", "mixed", "other"})
+_REORDER_ITEM_TYPES = frozenset({"category", "collection", "image", "mixed", "other"})
 _ERROR_CODES = frozenset({
     "api_http_4xx",
     "api_http_5xx",
@@ -212,6 +212,7 @@ class TelemetryEvent(BaseModel):
     from_index: int | None = None
     to_index: int | None = None
     category_count: int | None = None
+    collection_count: int | None = None
     image_count: int | None = None
     queue_depth: int | None = None
     local_revision: int | None = None
@@ -402,6 +403,8 @@ async def ingest_telemetry_events(
                 extra["reorder.to_index"] = event.to_index
             if event.category_count is not None:
                 extra["reorder.category_count"] = event.category_count
+            if event.collection_count is not None:
+                extra["reorder.collection_count"] = event.collection_count
             if event.image_count is not None:
                 extra["reorder.image_count"] = event.image_count
             if event.queue_depth is not None:

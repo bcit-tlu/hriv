@@ -1,12 +1,13 @@
 """Atomic, revisioned tile-order API (epic #975, issue #978).
 
-``PUT /api/tile-order`` persists one combined category+image visual order for
-a single root/category scope in ONE database transaction, guarded by a
-compare-and-set scope revision. ``GET /api/tile-order`` returns the current
-authoritative order and revision so clients can seed ``expected_revision``.
+``PUT /api/tile-order`` persists one combined category+collection+image
+visual order for a single root/category scope in ONE database transaction,
+guarded by a compare-and-set scope revision. ``GET /api/tile-order``
+returns the current authoritative order and revision so clients can seed
+``expected_revision``.
 
-Reordering never rewrites membership (``parent_id`` / ``category_id``) — move
-operations stay on the existing category/image endpoints.
+Reordering never rewrites membership (``parent_id`` / ``category_id``) —
+move operations stay on the existing category/image/collection endpoints.
 """
 
 import logging
@@ -124,9 +125,14 @@ async def put_tile_order(
             await _require_scope_exists(db, parent_category_id)
             scope_key = scope_key_for(parent_category_id)
             current_revision = await lock_scope_revision(db, scope_key)
-            category_ids, image_ids = await load_scope_members(db, parent_category_id)
+            category_ids, collection_ids, image_ids = await load_scope_members(
+                db, parent_category_id
+            )
             error = validate_submitted_items(
-                [(item.type, item.id) for item in body.items], category_ids, image_ids
+                [(item.type, item.id) for item in body.items],
+                category_ids,
+                collection_ids,
+                image_ids,
             )
             if error is not None:
                 raise HTTPException(status_code=400, detail=error)

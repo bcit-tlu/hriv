@@ -113,11 +113,12 @@ interface TelemetryEventBase {
   // vocabulary is kept in lockstep with backend/app/reorder_metrics.py.
   operation_id?: string
   state?: string
-  item_type?: 'category' | 'image' | 'mixed'
+  item_type?: 'category' | 'collection' | 'image' | 'mixed'
   item_id?: number
   from_index?: number
   to_index?: number
   category_count?: number
+  collection_count?: number
   image_count?: number
   queue_depth?: number
   local_revision?: number
