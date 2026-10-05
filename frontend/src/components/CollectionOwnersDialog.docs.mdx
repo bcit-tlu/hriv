@@ -1,0 +1,74 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as CollectionOwnersDialogStories from './CollectionOwnersDialog.stories'
+
+<Meta of={CollectionOwnersDialogStories} />
+
+<Title />
+
+<Subtitle>
+  Manage a collection's user co-owners and program ownership, within the role's authority (#1531).
+</Subtitle>
+
+## When to use
+
+`CollectionsPage` opens this dialog from the **Owners** action on a card or the detail
+header — both gated on `collection.permissions.canTransfer`. It is also the admin flow for
+reassigning an **orphaned** collection found via the owner filter's _No owner (orphaned)_
+option.
+
+## Interactive example
+
+Use the `role` control to compare the admin and instructor pickers.
+
+<Primary />
+
+<Controls of={CollectionOwnersDialogStories.Basic} />
+
+## Implementation guidance
+
+- **Two endpoints, one dialog.** `PUT /api/collections/{id}/owners` wholesale-replaces the
+  user-owner set (`user_ids` + `version`); `POST …/transfer` reassigns program ownership
+  (`program_id` + `version`, `null` clears). When both change in one save, owners land
+  first so the collection is never momentarily orphaned.
+- **Programs clear users.** Assigning a program owner clears the `collection_owners` rows
+  server-side, so the user picker disables while a program is selected. Clearing the
+  program back to user ownership requires picking at least one user owner first — the
+  backend orphan-guard 422s otherwise.
+- **Users come from `GET /api/users`.** The picker debounces a `fetchUsersPaged` search, so
+  instructors automatically get the minimal projection (students + instructors only).
+  Inactive accounts are filtered out — the backend 422s them anyway.
+- **Errors stay in the dialog.** 403 (outside your authority), 409 (stale `version`), and
+  422 (unknown/inactive/orphan targets) surface via `userMessage`; the dialog stays open
+  so a retry sends the conflict-merged fresh version.
+- **Orphaned collections** show an info hint — assigning an owner restores normal
+  management.
+
+## Examples
+
+### Instructor program list narrowed
+
+<Canvas of={CollectionOwnersDialogStories.InstructorProgramsOnly} />
+
+### Orphaned reassign
+
+<Canvas of={CollectionOwnersDialogStories.OrphanedReassign} />
+
+### Program-owned
+
+<Canvas of={CollectionOwnersDialogStories.ProgramOwned} />
+
+### Conflict error
+
+<Canvas of={CollectionOwnersDialogStories.ConflictError} />
+
+## Stories
+
+<Stories includePrimary={false} />

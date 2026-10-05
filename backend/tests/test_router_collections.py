@@ -22,6 +22,7 @@ from app.routers.collections import (
     list_collections,
     move_collection,
     replace_collection_images,
+    replace_collection_owners,
     replace_collection_viewport,
     require_collections_enabled,
     transfer_collection,
@@ -31,6 +32,7 @@ from app.schemas import (
     CollectionCreate,
     CollectionImagesUpdate,
     CollectionMove,
+    CollectionOwnersUpdate,
     CollectionTransfer,
     CollectionUpdate,
     CollectionViewportUpdate,
@@ -44,15 +46,17 @@ def _user(
     id: int = 1,
     programs: list[int] | None = None,
     groups: list[int] | None = None,
-) -> SimpleNamespace:
-    return SimpleNamespace(
-        id=id,
-        role=role,
-        name=f"user{id}",
-        email=f"u{id}@e.com",
-        programs=[SimpleNamespace(id=p, name=f"P{p}") for p in (programs or [])],
-        groups=[SimpleNamespace(id=g) for g in (groups or [])],
+    active: bool = True,
+) -> User:
+    """A real (transient) ORM user — ``create_collection`` assigns it to the
+    ``Collection.owners`` relationship, which rejects plain namespaces.
+    """
+    u = User(
+        id=id, role=role, name=f"user{id}", email=f"u{id}@e.com", active=active
     )
+    u.programs = [Program(id=p, name=f"P{p}") for p in (programs or [])]
+    u.groups = [Group(id=g, name=f"G{g}") for g in (groups or [])]
+    return u
 
 
 def _image(id: int, category_id: int | None = None, active: bool = True) -> SimpleNamespace:
@@ -80,6 +84,7 @@ def _collection(
     id: int = 1,
     visibility: str = "private",
     user_id: int | None = 10,
+    owner_ids: list[int] | None = None,
     owner_program_id: int | None = None,
     images: list | None = None,
     programs: list[int] | None = None,
@@ -88,7 +93,13 @@ def _collection(
     category_id: int | None = None,
     sort_order: int = 0,
 ) -> SimpleNamespace:
-    owner = SimpleNamespace(id=user_id, name=f"user{user_id}") if user_id else None
+    # ``user_id`` is the creator audit column; ownership is the ``owners``
+    # list (``collection_owners`` rows), defaulting to the creator like the
+    # 0032 backfill. Pass ``owner_ids`` explicitly for co-owned / orphaned /
+    # program-only states.
+    if owner_ids is None:
+        owner_ids = [user_id] if user_id is not None else []
+    owners = [SimpleNamespace(id=uid, name=f"user{uid}") for uid in owner_ids]
     owner_program = (
         SimpleNamespace(id=owner_program_id, name=f"P{owner_program_id}")
         if owner_program_id
@@ -102,7 +113,8 @@ def _collection(
         visibility=visibility,
         user_id=user_id,
         owner_program_id=owner_program_id,
-        owner=owner,
+        creator=SimpleNamespace(id=user_id, name=f"user{user_id}") if user_id else None,
+        owners=owners,
         owner_program=owner_program,
         category_id=category_id,
         sort_order=sort_order,
@@ -150,14 +162,15 @@ def _write_db(
     images: list | None = None,
     programs: list | None = None,
     groups: list | None = None,
+    users: list | None = None,
     cas_rowcount: int = 1,
 ) -> AsyncMock:
     """Mock session for the write API.
 
-    ``execute`` answers ``SELECT`` by entity (Image / Program / Group) with the
-    supplied rows and answers the optimistic-concurrency ``UPDATE`` with
-    ``cas_rowcount``. ``refresh`` fills server-generated columns on freshly
-    created ORM instances so ``collection_out`` can serialize them.
+    ``execute`` answers ``SELECT`` by entity (Image / Program / Group / User)
+    with the supplied rows and answers the optimistic-concurrency ``UPDATE``
+    with ``cas_rowcount``. ``refresh`` fills server-generated columns on
+    freshly created ORM instances so ``collection_out`` can serialize them.
     """
     db = AsyncMock()
     db.add = MagicMock()
@@ -166,6 +179,7 @@ def _write_db(
         Image: images or [],
         Program: programs or [],
         Group: groups or [],
+        User: users or [],
     }
 
     async def _execute(stmt):
@@ -274,12 +288,45 @@ async def test_list_summary_fields_and_permissions_for_owner() -> None:
     summary = out[0]
     assert summary.image_count == 2
     assert summary.cover_thumb == "/thumbs/1.jpg"
-    assert summary.owner.user_id == 2 and summary.owner.name == "user2"
-    assert summary.owner.program_id is None
+    assert [(o.user_id, o.name) for o in summary.owners] == [(2, "user2")]
+    assert summary.owners[0].program_id is None
     assert summary.permissions.can_edit is True
+    # Student sole owner: scope + delete allowed; transfer never (#1531).
+    assert summary.permissions.can_change_scope is True
     assert summary.permissions.can_delete is True
-    assert summary.permissions.can_transfer is False  # students cannot transfer
+    assert summary.permissions.can_transfer is False
     assert summary.version == 3
+
+
+async def test_list_co_owned_permissions_for_student_co_owner() -> None:
+    """A student co-owner edits content but not scope/delete/owners (#1531)."""
+    col = _collection(1, "private", owner_ids=[10, 2])
+    out = await list_collections(_user("student", id=2), db=_mock_db([col]))
+    perms = out[0].permissions
+    assert perms.can_edit is True
+    assert perms.can_change_scope is False
+    assert perms.can_delete is False
+    assert perms.can_transfer is False
+
+
+async def test_list_co_owned_collection_is_visible_to_co_owner_student() -> None:
+    """A private co-owned collection is visible to every user-owner."""
+    col = _collection(1, "private", owner_ids=[10, 2])
+    out = await list_collections(_user("student", id=2), db=_mock_db([col]))
+    assert [c.id for c in out] == [1]
+    assert sorted(o.user_id for o in out[0].owners) == [2, 10]
+
+
+async def test_list_staff_owner_is_view_only() -> None:
+    """Staff see everything but hold no edit/scope/delete/transfer rights —
+    even on collections they own (#1531)."""
+    col = _collection(1, "private", user_id=3)
+    out = await list_collections(_user("staff", id=3), db=_mock_db([col]))
+    perms = out[0].permissions
+    assert perms.can_edit is False
+    assert perms.can_change_scope is False
+    assert perms.can_delete is False
+    assert perms.can_transfer is False
 
 
 async def test_list_program_owned_owner_and_instructor_permissions() -> None:
@@ -287,8 +334,10 @@ async def test_list_program_owned_owner_and_instructor_permissions() -> None:
     out = await list_collections(
         _user("instructor", id=7, programs=[3]), db=_mock_db([col])
     )
-    assert out[0].owner.program_id == 3 and out[0].owner.name == "P3"
+    assert len(out[0].owners) == 1
+    assert out[0].owners[0].program_id == 3 and out[0].owners[0].name == "P3"
     assert out[0].permissions.can_edit is True
+    assert out[0].permissions.can_change_scope is True
     assert out[0].permissions.can_transfer is True
     other = await list_collections(
         _user("instructor", id=8, programs=[4]), db=_mock_db([col])
@@ -296,10 +345,20 @@ async def test_list_program_owned_owner_and_instructor_permissions() -> None:
     assert other[0].permissions.can_edit is False
 
 
+async def test_list_user_and_program_owners_serialize_together() -> None:
+    """A program-owned collection with user co-owners lists both kinds."""
+    col = _collection(1, "public", owner_ids=[10, 4], owner_program_id=3)
+    out = await list_collections(_user("admin"), db=_mock_db([col]))
+    kinds = [(o.user_id, o.program_id) for o in out[0].owners]
+    # User owners sort by name ("user10" < "user4" lexicographically);
+    # the program entry follows.
+    assert kinds == [(10, None), (4, None), (None, 3)]
+
+
 async def test_list_orphaned_owner_is_none() -> None:
     col = _collection(1, "public", user_id=None, owner_program_id=None)
     out = await list_collections(_user("admin"), db=_mock_db([col]), orphaned=True)
-    assert out[0].owner is None
+    assert out[0].owners == []
     assert out[0].permissions.can_edit is True
 
 
@@ -329,9 +388,11 @@ async def test_list_applies_query_filters_to_statement() -> None:
     )
     sql = str(db.execute.call_args.args[0])
     assert "collections.type =" in sql
-    assert "collections.user_id =" in sql
+    # mine / owner_user_id resolve through collection_owners membership
+    # (#1531); orphaned = no owner rows AND no program owner.
+    assert "collection_owners" in sql and "users.id =" in sql
     assert "collections.owner_program_id =" in sql
-    assert "collections.user_id IS NULL" in sql
+    assert "NOT" in sql and "EXISTS" in sql
     assert "collections.owner_program_id IS NULL" in sql
     assert "ORDER BY collections.updated_at DESC" in sql
 
@@ -492,7 +553,7 @@ async def test_get_collection_skips_dangling_links() -> None:
 # ── create ────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("role", ["admin", "instructor", "staff", "student"])
+@pytest.mark.parametrize("role", ["admin", "instructor", "student"])
 async def test_create_private_collection_any_role_owner_is_caller(role: str) -> None:
     db = _write_db(images=[_image(1), _image(2)])
     body = CollectionCreate(name="  Mine ", type="sequence", image_ids=[2, 1])
@@ -500,6 +561,7 @@ async def test_create_private_collection_any_role_owner_is_caller(role: str) -> 
     created = db.add.call_args.args[0]
     assert isinstance(created, Collection)
     assert created.user_id == 42 and created.owner_program_id is None
+    assert [o.id for o in created.owners] == [42]
     assert created.name == "Mine"
     assert created.visibility == "private"
     assert created.version == 1
@@ -507,6 +569,15 @@ async def test_create_private_collection_any_role_owner_is_caller(role: str) -> 
     assert _links(created) == [(2, 0), (1, 1)]
     assert out.version == 1 and out.type == "sequence"
     db.commit.assert_awaited_once()
+
+
+async def test_create_private_collection_staff_is_403() -> None:
+    """Staff are view-only: a staff-created collection could never be
+    edited or owned-managed by them, so create itself is rejected."""
+    body = CollectionCreate(name="Mine", type="sequence")
+    with pytest.raises(HTTPException) as exc:
+        await create_collection(body, _user("staff", id=42), db=_write_db())
+    assert exc.value.status_code == 403
 
 
 async def test_create_restricted_admin_attaches_any_program_and_group() -> None:
@@ -601,7 +672,7 @@ async def test_create_student_invisible_image_is_422(
 async def test_create_non_student_may_add_inactive_image() -> None:
     db = _write_db(images=[_image(3, active=False)])
     body = CollectionCreate(name="C", type="sequence", image_ids=[3])
-    await create_collection(body, _user("staff", id=3), db=db)
+    await create_collection(body, _user("instructor", id=3), db=db)
     assert _links(db.add.call_args.args[0]) == [(3, 0)]
 
 
@@ -633,12 +704,57 @@ async def test_update_viewable_but_not_editable_is_403() -> None:
         assert exc.value.status_code == 403
 
 
-@pytest.mark.parametrize("role", ["admin", "instructor", "staff", "student"])
+@pytest.mark.parametrize("role", ["admin", "instructor", "student"])
 async def test_owner_or_admin_may_update(role: str) -> None:
     col = _collection(1, "private", user_id=2)
     user = _user(role, id=2 if role != "admin" else 1)
     out = await update_collection(1, _patch(name="New"), user, db=_write_db(get=col))
     assert out.name == "New"
+
+
+async def test_staff_owner_cannot_update() -> None:
+    """Staff are view-only for collections — even ones they own (#1531)."""
+    col = _collection(1, "private", user_id=2)
+    with pytest.raises(HTTPException) as exc:
+        await update_collection(
+            1, _patch(name="New"), _user("staff", id=2), db=_write_db(get=col)
+        )
+    assert exc.value.status_code == 403
+
+
+async def test_student_co_owner_edits_content_but_not_scope() -> None:
+    """Field-level PATCH authority (#1531): a co-owning student may change
+    name/description but not visibility/program/group scope."""
+    col = _collection(1, "private", owner_ids=[10, 2])
+    student = _user("student", id=2)
+    out = await update_collection(
+        1, _patch(name="New", description="d"), student, db=_write_db(get=col)
+    )
+    assert out.name == "New"
+    for body in (
+        _patch(visibility="public"),
+        _patch(program_ids=[1]),
+        _patch(group_ids=[5]),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await update_collection(1, body, student, db=_write_db(get=col))
+        assert exc.value.status_code == 403
+
+
+async def test_student_sole_owner_may_change_scope() -> None:
+    col = _collection(1, "private", user_id=2)
+    out = await update_collection(
+        1, _patch(visibility="public"), _user("student", id=2), db=_write_db(get=col)
+    )
+    assert out.visibility == "public"
+
+
+async def test_student_co_owner_cannot_delete() -> None:
+    """Delete follows the scope rule: students need sole ownership (#1531)."""
+    col = _collection(1, "public", owner_ids=[10, 2])
+    with pytest.raises(HTTPException) as exc:
+        await delete_collection(1, _user("student", id=2), db=_write_db(get=col))
+    assert exc.value.status_code == 403
 
 
 async def test_instructor_of_owning_program_may_update_and_delete() -> None:
@@ -1057,7 +1173,7 @@ async def test_replace_viewport_authority() -> None:
     assert exc.value.status_code == 404
 
 
-# ── ownership transfer ───────────────────────────────────
+# ── ownership (PUT /owners + program transfer, #1531) ─────
 
 
 def _target_user(id: int, active: bool = True) -> SimpleNamespace:
@@ -1070,9 +1186,10 @@ def _transfer_db(
     programs: list | None = None,
     cas_rowcount: int = 1,
 ) -> AsyncMock:
-    """``_write_db`` whose ``get`` dispatches on the entity: the collection,
-    the candidate owner users, or the candidate owner programs."""
-    db = _write_db(get=collection, cas_rowcount=cas_rowcount)
+    """``_write_db`` whose ``get`` dispatches on the entity (Collection /
+    Program) and whose ``execute`` answers ``SELECT User`` — the owner
+    resolver — with the supplied rows."""
+    db = _write_db(get=collection, users=users, cas_rowcount=cas_rowcount)
     by_entity: dict[type, dict[int, object]] = {
         Collection: {collection.id: collection} if collection else {},
         User: {u.id: u for u in (users or [])},
@@ -1086,23 +1203,25 @@ def _transfer_db(
     return db
 
 
-def _to_user(user_id: int, version: int = 3) -> CollectionTransfer:
-    return CollectionTransfer(user_id=user_id, version=version)
+def _owners_body(user_ids: list[int], version: int = 3) -> CollectionOwnersUpdate:
+    return CollectionOwnersUpdate(user_ids=user_ids, version=version)
 
 
-def _to_program(program_id: int, version: int = 3) -> CollectionTransfer:
+def _to_program(program_id: int | None, version: int = 3) -> CollectionTransfer:
     return CollectionTransfer(program_id=program_id, version=version)
 
 
-async def test_transfer_admin_to_user_sets_owner_and_clears_program() -> None:
-    col = _collection(1, "public", user_id=None, owner_program_id=3)
-    target = _target_user(20)
-    db = _transfer_db(col, users=[target])
-    out = await transfer_collection(1, _to_user(20), _user("admin"), db=db)
-    assert col.user_id == 20 and col.owner is target
-    assert col.owner_program_id is None and col.owner_program is None
-    assert out.owner.user_id == 20 and out.owner.program_id is None
-    assert out.owner.name == "user20"
+async def test_owners_admin_replaces_user_owner_set() -> None:
+    col = _collection(1, "private", user_id=10)
+    targets = [_target_user(20), _target_user(30)]
+    db = _transfer_db(col, users=targets)
+    out = await replace_collection_owners(
+        1, _owners_body([20, 30]), _user("admin"), db=db
+    )
+    assert [o.id for o in col.owners] == [20, 30]
+    # The creator audit column is untouched by ownership changes.
+    assert col.user_id == 10
+    assert [o.user_id for o in out.owners] == [20, 30]
     assert col.version == 4 and out.version == 4
     cas = db.execute.call_args.args[0]
     assert isinstance(cas, Update)
@@ -1110,54 +1229,174 @@ async def test_transfer_admin_to_user_sets_owner_and_clears_program() -> None:
     db.refresh.assert_awaited_once_with(col)
 
 
-async def test_transfer_admin_to_program_sets_program_and_clears_user() -> None:
+async def test_owners_admin_may_target_any_active_role() -> None:
+    """Co-ownership is not role-restricted — students may be added (#1531)."""
+    col = _collection(1, "private", user_id=10)
+    student = _target_user(30)
+    student.role = "student"
+    db = _transfer_db(col, users=[student])
+    out = await replace_collection_owners(
+        1, _owners_body([30]), _user("admin"), db=db
+    )
+    assert [o.user_id for o in out.owners] == [30]
+
+
+async def test_owners_dedupes_submitted_ids() -> None:
+    assert _owners_body([20, 20, 30]).user_ids == [20, 30]
+
+
+async def test_owners_unknown_and_inactive_targets_are_422() -> None:
+    col = _collection(1, "private", user_id=10)
+    db = _transfer_db(col, users=[_target_user(20)])
+    with pytest.raises(HTTPException) as exc:
+        await replace_collection_owners(1, _owners_body([20, 99]), _user("admin"), db=db)
+    assert exc.value.status_code == 422 and "99" in exc.value.detail
+
+    db = _transfer_db(col, users=[_target_user(20, active=False)])
+    with pytest.raises(HTTPException) as exc:
+        await replace_collection_owners(1, _owners_body([20]), _user("admin"), db=db)
+    assert exc.value.status_code == 422 and "deactivated" in exc.value.detail
+    assert [o.id for o in col.owners] == [10] and col.version == 3
+    db.commit.assert_not_awaited()
+
+
+async def test_owners_empty_set_orphan_guard() -> None:
+    """Emptying user owners is 422 unless a program owner remains."""
+    col = _collection(1, "private", user_id=10)
+    with pytest.raises(HTTPException) as exc:
+        await replace_collection_owners(
+            1, _owners_body([]), _user("admin"), db=_transfer_db(col)
+        )
+    assert exc.value.status_code == 422
+    assert [o.id for o in col.owners] == [10] and col.version == 3
+
+    # With a program owner the same request succeeds (program still owns it).
+    program_owned = _collection(2, "public", owner_ids=[10], owner_program_id=3)
+    out = await replace_collection_owners(
+        2, _owners_body([]), _user("admin"), db=_transfer_db(program_owned)
+    )
+    assert program_owned.owners == [] and out.owners[0].program_id == 3
+
+
+async def test_owners_instructor_manages_own_and_program_collections() -> None:
+    own = _collection(1, "private", user_id=7)
+    instructor = _user("instructor", id=7, programs=[3])
+    out = await replace_collection_owners(
+        1,
+        _owners_body([7, 20]),
+        instructor,
+        db=_transfer_db(own, users=[_target_user(7), _target_user(20)]),
+    )
+    assert sorted(o.user_id for o in out.owners) == [7, 20]
+
+    program_owned = _collection(2, "public", owner_ids=[9], owner_program_id=3)
+    out = await replace_collection_owners(
+        2,
+        _owners_body([9, 21]),
+        instructor,
+        db=_transfer_db(program_owned, users=[_target_user(9), _target_user(21)]),
+    )
+    assert sorted(o.user_id for o in out.owners if o.user_id) == [9, 21]
+
+
+async def test_owners_instructor_unrelated_collection_is_403() -> None:
+    col = _collection(1, "public", user_id=10)
+    outsider = _user("instructor", id=7, programs=[3])
+    with pytest.raises(HTTPException) as exc:
+        await replace_collection_owners(
+            1, _owners_body([7]), outsider, db=_transfer_db(col)
+        )
+    assert exc.value.status_code == 403
+    db_unused = _transfer_db(col)
+    db_unused.commit.assert_not_awaited()
+
+
+@pytest.mark.parametrize("role", ["staff", "student"])
+async def test_owners_staff_and_student_are_403_even_as_owner(role: str) -> None:
+    """Students and staff can never manage owners — even sole owners (#1531)."""
+    col = _collection(1, "private", user_id=2)
+    with pytest.raises(HTTPException) as exc:
+        await replace_collection_owners(
+            1, _owners_body([2, 20]), _user(role, id=2), db=_transfer_db(col)
+        )
+    assert exc.value.status_code == 403
+    assert [o.id for o in col.owners] == [2] and col.version == 3
+
+
+async def test_owners_hidden_collection_is_404_not_403() -> None:
+    col = _collection(1, "private", user_id=10)
+    with pytest.raises(HTTPException) as exc:
+        await replace_collection_owners(
+            1, _owners_body([2]), _user("student", id=2), db=_transfer_db(col)
+        )
+    assert exc.value.status_code == 404
+
+
+async def test_owners_missing_collection_is_404() -> None:
+    with pytest.raises(HTTPException) as exc:
+        await replace_collection_owners(
+            9, _owners_body([20]), _user("admin"), db=_transfer_db(None)
+        )
+    assert exc.value.status_code == 404
+
+
+async def test_owners_stale_version_is_409_with_current_collection() -> None:
+    col = _collection(1, "private", user_id=10)
+    db = _transfer_db(col, users=[_target_user(20)])
+    with pytest.raises(HTTPException) as exc:
+        await replace_collection_owners(
+            1, _owners_body([20], version=2), _user("admin"), db=db
+        )
+    assert exc.value.status_code == 409
+    assert exc.value.detail["version"] == 3
+    assert exc.value.detail["owners"] == [
+        {"user_id": 10, "program_id": None, "name": "user10"}
+    ]
+    assert [o.id for o in col.owners] == [10]
+    db.commit.assert_not_awaited()
+
+
+async def test_transfer_admin_to_program_sets_program_and_clears_user_owners() -> None:
     col = _collection(1, "private", user_id=10)
     prog = _program(5)
     out = await transfer_collection(
         1, _to_program(5), _user("admin"), db=_transfer_db(col, programs=[prog])
     )
     assert col.owner_program_id == 5 and col.owner_program is prog
-    assert col.user_id is None and col.owner is None
-    assert out.owner.program_id == 5 and out.owner.user_id is None
-    assert out.owner.name == "P5"
+    # Transfer-to-program makes the program the sole owner (#1531); the
+    # creator audit column is untouched.
+    assert col.owners == [] and col.user_id == 10
+    assert [o.model_dump() for o in out.owners] == [
+        {"user_id": None, "program_id": 5, "name": "P5"}
+    ]
     assert out.version == 4
 
 
-async def test_transfer_admin_may_target_any_program_and_any_role() -> None:
-    col = _collection(1, "private", user_id=10)
-    admin = _user("admin", programs=[])  # not a member of program 9
-    out = await transfer_collection(
-        1, _to_program(9), admin, db=_transfer_db(col, programs=[_program(9)])
-    )
-    assert out.owner.program_id == 9
-    student = SimpleNamespace(id=30, name="user30", role="student", active=True)
-    out = await transfer_collection(
-        1, _to_user(30, version=4), admin, db=_transfer_db(col, users=[student])
-    )
-    assert out.owner.user_id == 30 and out.version == 5
+async def test_transfer_clear_program_keeps_user_owners() -> None:
+    """``program_id: null`` clears program ownership; user owners remain."""
+    col = _collection(1, "public", owner_ids=[10, 4], owner_program_id=3)
+    db = _transfer_db(col, programs=[_program(3)])
+    out = await transfer_collection(1, _to_program(None), _user("admin"), db=db)
+    assert col.owner_program_id is None and col.owner_program is None
+    assert sorted(o.id for o in col.owners) == [4, 10]
+    assert all(o.program_id is None for o in out.owners)
 
 
-async def test_transfer_admin_unknown_target_is_422() -> None:
+async def test_transfer_clear_program_with_no_user_owners_is_422() -> None:
+    col = _collection(1, "public", user_id=None, owner_program_id=3)
+    with pytest.raises(HTTPException) as exc:
+        await transfer_collection(1, _to_program(None), _user("admin"), db=_transfer_db(col))
+    assert exc.value.status_code == 422
+    assert col.owner_program_id == 3 and col.version == 3
+
+
+async def test_transfer_admin_unknown_program_is_422() -> None:
     col = _collection(1, "private", user_id=10)
     db = _transfer_db(col)
     with pytest.raises(HTTPException) as exc:
-        await transfer_collection(1, _to_user(99), _user("admin"), db=db)
-    assert exc.value.status_code == 422 and "99" in exc.value.detail
-    with pytest.raises(HTTPException) as exc:
         await transfer_collection(1, _to_program(99), _user("admin"), db=db)
     assert exc.value.status_code == 422 and "99" in exc.value.detail
-    assert col.user_id == 10 and col.version == 3
-    db.commit.assert_not_awaited()
-
-
-async def test_transfer_to_deactivated_user_is_422() -> None:
-    col = _collection(1, "private", user_id=10)
-    db = _transfer_db(col, users=[_target_user(20, active=False)])
-    with pytest.raises(HTTPException) as exc:
-        await transfer_collection(1, _to_user(20), _user("admin"), db=db)
-    assert exc.value.status_code == 422
-    assert "deactivated" in exc.value.detail
-    assert col.user_id == 10 and col.version == 3
+    assert col.owner_program_id is None and col.version == 3
     db.commit.assert_not_awaited()
 
 
@@ -1167,8 +1406,8 @@ async def test_transfer_instructor_own_collection_to_own_program() -> None:
     out = await transfer_collection(
         1, _to_program(3), instructor, db=_transfer_db(col, programs=[_program(3)])
     )
-    assert col.user_id is None and col.owner_program_id == 3
-    assert out.owner.program_id == 3 and out.version == 4
+    assert col.owners == [] and col.owner_program_id == 3
+    assert out.owners[0].program_id == 3 and out.version == 4
     # Still an instructor in the owning program, so still an editor.
     assert out.permissions.can_edit and out.permissions.can_transfer
 
@@ -1180,19 +1419,9 @@ async def test_transfer_instructor_own_collection_to_foreign_program_is_403() ->
         await transfer_collection(1, _to_program(4), _user("instructor", id=7, programs=[3]), db=db)
     assert exc.value.status_code == 403
     assert "P4" in exc.value.detail
-    assert col.user_id == 7 and col.owner_program_id is None and col.version == 3
+    assert [o.id for o in col.owners] == [7] and col.owner_program_id is None
+    assert col.version == 3
     db.commit.assert_not_awaited()
-
-
-async def test_transfer_instructor_to_user_is_403_even_for_own_collection() -> None:
-    col = _collection(1, "private", user_id=7)
-    db = _transfer_db(col, users=[_target_user(20)])
-    with pytest.raises(HTTPException) as exc:
-        await transfer_collection(1, _to_user(20), _user("instructor", id=7, programs=[3]), db=db)
-    assert exc.value.status_code == 403
-    # The user lookup never happens, so user existence is not leaked.
-    db.get.assert_awaited_once_with(Collection, 1)
-    assert col.user_id == 7 and col.version == 3
 
 
 async def test_transfer_instructor_in_owning_program_to_other_own_program() -> None:
@@ -1201,8 +1430,8 @@ async def test_transfer_instructor_in_owning_program_to_other_own_program() -> N
     out = await transfer_collection(
         1, _to_program(4), instructor, db=_transfer_db(col, programs=[_program(4)])
     )
-    assert col.owner_program_id == 4 and col.user_id is None
-    assert out.owner.program_id == 4 and out.version == 4
+    assert col.owner_program_id == 4
+    assert out.owners[0].program_id == 4 and out.version == 4
 
 
 async def test_transfer_instructor_in_owning_program_to_foreign_program_is_403() -> None:
@@ -1238,14 +1467,12 @@ async def test_transfer_instructor_not_owner_of_user_collection_is_403() -> None
 @pytest.mark.parametrize("role", ["staff", "student"])
 async def test_transfer_staff_and_student_are_403_even_as_owner(role: str) -> None:
     col = _collection(1, "public", user_id=2)
-    owner = _user(role, id=2, programs=[3])
-    for body in (_to_program(3), _to_user(20)):
-        db = _transfer_db(col, users=[_target_user(20)], programs=[_program(3)])
-        with pytest.raises(HTTPException) as exc:
-            await transfer_collection(1, body, owner, db=db)
-        assert exc.value.status_code == 403
-        db.commit.assert_not_awaited()
-    assert col.user_id == 2 and col.version == 3
+    db = _transfer_db(col, programs=[_program(3)])
+    with pytest.raises(HTTPException) as exc:
+        await transfer_collection(1, _to_program(3), _user(role, id=2), db=db)
+    assert exc.value.status_code == 403
+    db.commit.assert_not_awaited()
+    assert [o.id for o in col.owners] == [2] and col.version == 3
 
 
 async def test_transfer_hidden_collection_is_404_not_403() -> None:
@@ -1260,40 +1487,44 @@ async def test_transfer_hidden_collection_is_404_not_403() -> None:
 
 async def test_transfer_missing_collection_is_404() -> None:
     with pytest.raises(HTTPException) as exc:
-        await transfer_collection(9, _to_user(20), _user("admin"), db=_transfer_db(None))
+        await transfer_collection(
+            9, _to_program(3), _user("admin"), db=_transfer_db(None)
+        )
     assert exc.value.status_code == 404
 
 
 async def test_transfer_stale_version_is_409_with_current_collection() -> None:
     col = _collection(1, "private", user_id=10)
-    db = _transfer_db(col, users=[_target_user(20)])
+    db = _transfer_db(col, programs=[_program(3)])
     with pytest.raises(HTTPException) as exc:
-        await transfer_collection(1, _to_user(20, version=2), _user("admin"), db=db)
+        await transfer_collection(
+            1, _to_program(3, version=2), _user("admin"), db=db
+        )
     assert exc.value.status_code == 409
     assert exc.value.detail["version"] == 3
-    assert exc.value.detail["owner"] == {"user_id": 10, "program_id": None, "name": "user10"}
-    assert col.user_id == 10
+    assert exc.value.detail["owners"] == [
+        {"user_id": 10, "program_id": None, "name": "user10"}
+    ]
+    assert [o.id for o in col.owners] == [10]
     db.commit.assert_not_awaited()
 
 
 async def test_transfer_lost_cas_race_is_409() -> None:
     col = _collection(1, "private", user_id=10)
-    db = _transfer_db(col, users=[_target_user(20)], cas_rowcount=0)
+    db = _transfer_db(col, programs=[_program(3)], cas_rowcount=0)
     with pytest.raises(HTTPException) as exc:
-        await transfer_collection(1, _to_user(20), _user("admin"), db=db)
+        await transfer_collection(1, _to_program(3), _user("admin"), db=db)
     assert exc.value.status_code == 409
-    assert col.user_id == 10 and col.version == 3
+    assert [o.id for o in col.owners] == [10] and col.version == 3
 
 
-async def test_transfer_body_requires_exactly_one_target() -> None:
-    with pytest.raises(ValueError):
-        CollectionTransfer(version=1)
-    with pytest.raises(ValueError):
-        CollectionTransfer(user_id=1, program_id=2, version=1)
-    with pytest.raises(ValueError):
-        CollectionTransfer(user_id=1)
-    assert CollectionTransfer(user_id=1, version=1).program_id is None
-    assert CollectionTransfer(program_id=2, version=1).user_id is None
+async def test_transfer_body_program_id_nullable_but_required() -> None:
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        CollectionTransfer(version=1)  # program_id missing
+    assert CollectionTransfer(program_id=None, version=1).program_id is None
+    assert CollectionTransfer(program_id=2, version=1).program_id == 2
 
 
 # ── orphaned collections (program deleted) ────────────────────
@@ -1303,18 +1534,18 @@ def _orphan(id: int = 1, visibility: str = "public", **kwargs) -> SimpleNamespac
     return _collection(id, visibility, user_id=None, owner_program_id=None, **kwargs)
 
 
-async def test_orphan_admin_reassigns_via_transfer() -> None:
+async def test_orphan_admin_reassigns_via_transfer_or_owners() -> None:
     col = _orphan(programs=[3])  # restricted scope row may outlive its program
     prog = _program(4)
     out = await transfer_collection(
         1, _to_program(4), _user("admin"), db=_transfer_db(col, programs=[prog])
     )
-    assert col.owner_program_id == 4 and out.owner.program_id == 4
+    assert col.owner_program_id == 4 and out.owners[0].program_id == 4
     col2 = _orphan(2)
-    out = await transfer_collection(
-        2, _to_user(20), _user("admin"), db=_transfer_db(col2, users=[_target_user(20)])
+    out = await replace_collection_owners(
+        2, _owners_body([20]), _user("admin"), db=_transfer_db(col2, users=[_target_user(20)])
     )
-    assert col2.user_id == 20 and out.owner.user_id == 20
+    assert [o.user_id for o in out.owners] == [20]
 
 
 async def test_orphan_transfer_is_admin_only() -> None:
@@ -1329,7 +1560,12 @@ async def test_orphan_transfer_is_admin_only() -> None:
             await transfer_collection(1, _to_program(3), user, db=db)
         assert exc.value.status_code == 403
         db.commit.assert_not_awaited()
-    assert col.owner_program_id is None and col.user_id is None
+        with pytest.raises(HTTPException) as exc:
+            await replace_collection_owners(
+                1, _owners_body([3]), user, db=_transfer_db(col)
+            )
+        assert exc.value.status_code == 403
+    assert col.owner_program_id is None and col.owners == []
 
 
 async def test_orphan_edit_and_delete_403_for_instructor_owning_nothing() -> None:
@@ -1356,7 +1592,7 @@ async def test_orphan_public_collection_visible_to_students() -> None:
     col = _orphan(1, "public", images=[_image(1)])
     student = _user("student", id=2)
     out = await get_collection(1, student, db=_mock_db(get=col))
-    assert out.id == 1 and out.owner is None and out.image_count == 1
+    assert out.id == 1 and out.owners == [] and out.image_count == 1
     assert out.permissions.can_edit is False
     assert out.permissions.can_transfer is False
     listed = await list_collections(student, db=_mock_db([col]))
@@ -1390,7 +1626,7 @@ async def test_orphan_restricted_scope_still_gates_students() -> None:
 async def test_orphan_admin_list_filter_and_permissions() -> None:
     col = _orphan(1, "public")
     out = await list_collections(_user("admin"), orphaned=True, db=_mock_db([col]))
-    assert out[0].owner is None
+    assert out[0].owners == []
     assert out[0].permissions.can_edit and out[0].permissions.can_transfer
 
 

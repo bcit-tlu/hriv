@@ -29,6 +29,7 @@ import {
   COLLECTION_TYPE_LABELS,
   COLLECTION_VISIBILITY_LABELS,
   describeCollectionOwner,
+  describeCollectionOwners,
 } from '../collectionUtils'
 import { getGroupChipColors } from '../theme'
 import { useColorMode } from '../useColorMode'
@@ -45,9 +46,9 @@ import type {
 } from '../types'
 import CollectionCard, { CollectionVisibilityChip } from './CollectionCard'
 import CollectionEditDialog, { type CollectionFormValues } from './CollectionEditDialog'
+import CollectionOwnersDialog from './CollectionOwnersDialog'
 import SequenceCollectionViewer from './SequenceCollectionViewer'
 import SynchronizedCollectionViewer from './SynchronizedCollectionViewer'
-import TransferCollectionDialog, { type CollectionTransferTarget } from './TransferCollectionDialog'
 
 export interface CollectionsPageProps {
   currentUser: User | null
@@ -59,7 +60,7 @@ export interface CollectionsPageProps {
   error: string | null
   filters: CollectionListFilters
   onFiltersChange: (filters: CollectionListFilters) => void
-  ownerOptions: NonNullable<CollectionOwner>[]
+  ownerOptions: CollectionOwner[]
   /** Detail placeholder state; `selectedCollectionId` null renders the list. */
   selectedCollectionId: number | null
   detail: Collection | null
@@ -86,8 +87,10 @@ export interface CollectionsPageProps {
     baseline: Collection | null,
   ) => Promise<unknown>
   onDelete: (id: number) => Promise<void>
-  /** Ownership transfer (#1419) — surfaced only where `canTransfer` allows. */
-  onTransfer: (id: number, target: CollectionTransferTarget) => Promise<unknown>
+  /** Replace the user-owner set (`PUT …/owners`, #1531) — `canTransfer`-gated. */
+  onSaveOwners: (id: number, userIds: number[]) => Promise<unknown>
+  /** Program-owner reassignment (`POST …/transfer`, #1531) — `canTransfer`-gated. */
+  onTransfer: (id: number, programId: number | null) => Promise<unknown>
   /**
    * File into a Browse category (#1529). Role-gated here (any
    * admin/instructor — filing is curatorial, not ownership-bound); App owns
@@ -130,10 +133,10 @@ function CollectionDetailHeader({
 }) {
   const { mode } = useColorMode()
   const groupColors = getGroupChipColors(mode)
-  const ownerText =
-    collection.owner?.kind === 'program'
-      ? `Managed by program ${collection.owner.name}`
-      : describeCollectionOwner(collection.owner)
+  const programOwner = collection.owners.find((o) => o.kind === 'program')
+  const ownerText = programOwner
+    ? `Managed by program ${programOwner.name}`
+    : describeCollectionOwners(collection.owners)
   return (
     <>
       <Button startIcon={<ArrowBackIcon />} onClick={onBack} sx={{ mb: 1 }}>
@@ -227,7 +230,7 @@ function CollectionDetailHeader({
               startIcon={<SwapHorizIcon />}
               onClick={onTransfer}
             >
-              Transfer
+              Owners
             </Button>
           )}
           {collection.permissions.canDelete && onDelete && (
@@ -274,6 +277,7 @@ export default function CollectionsPage({
   onCreate,
   onUpdate,
   onDelete,
+  onSaveOwners,
   onTransfer,
   onMoveCollection,
   detailBackLabel,
@@ -459,9 +463,11 @@ export default function CollectionsPage({
           <Typography variant="h5" component="h1">
             Collections
           </Typography>
-          <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
-            New collection
-          </Button>
+          {currentUser?.role !== 'staff' && (
+            <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
+              New collection
+            </Button>
+          )}
         </Box>
 
         <Box
@@ -583,11 +589,12 @@ export default function CollectionsPage({
         onSave={handleSave}
       />
 
-      <TransferCollectionDialog
+      <CollectionOwnersDialog
         open={transferTarget != null}
         onClose={() => setTransferTarget(null)}
         collection={transferTarget}
         programs={programs}
+        onSaveOwners={onSaveOwners}
         onTransfer={onTransfer}
       />
 

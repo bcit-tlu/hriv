@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .authz import (
+    can_change_collection_scope,
     can_delete_collection,
     can_edit_collection,
     can_transfer_collection,
@@ -99,19 +100,30 @@ class _ViewerContext:
         ]
 
 
-def _owner_out(collection: Collection) -> CollectionOwnerOut | None:
-    if collection.user_id is not None and collection.owner is not None:
-        return CollectionOwnerOut(user_id=collection.user_id, name=collection.owner.name)
-    if collection.owner_program_id is not None and collection.owner_program is not None:
-        return CollectionOwnerOut(
-            program_id=collection.owner_program_id, name=collection.owner_program.name
+def _owners_out(collection: Collection) -> list[CollectionOwnerOut]:
+    """User co-owners (name-sorted for stable display) followed by the
+    owning program's entry when set. Empty means orphaned (#1531).
+    """
+    owners = [
+        CollectionOwnerOut(user_id=o.id, name=o.name)
+        for o in sorted(
+            collection.owners, key=lambda u: (u.name.casefold(), u.id)
         )
-    return None
+    ]
+    if collection.owner_program_id is not None and collection.owner_program is not None:
+        owners.append(
+            CollectionOwnerOut(
+                program_id=collection.owner_program_id,
+                name=collection.owner_program.name,
+            )
+        )
+    return owners
 
 
 def _permissions_for(user: User, collection: Collection) -> CollectionPermissionsOut:
     return CollectionPermissionsOut(
         can_edit=can_edit_collection(user, collection),
+        can_change_scope=can_change_collection_scope(user, collection),
         can_delete=can_delete_collection(user, collection),
         can_transfer=can_transfer_collection(user, collection),
     )
@@ -126,7 +138,7 @@ def _summary_fields(
         "description": collection.description,
         "type": collection.type,
         "visibility": collection.visibility,
-        "owner": _owner_out(collection),
+        "owners": _owners_out(collection),
         "image_count": len(images),
         "cover_thumb": images[0].thumb if images else None,
         "version": collection.version,

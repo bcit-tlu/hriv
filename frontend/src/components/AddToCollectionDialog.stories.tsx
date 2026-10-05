@@ -52,7 +52,7 @@ function makeSummary(overrides: Partial<CollectionSummary> = {}): CollectionSumm
     description: null,
     type: 'synchronized',
     visibility: 'private',
-    owner: { kind: 'user', userId: 7, name: 'Ada Lovelace' },
+    owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace' }],
     imageCount: 2,
     coverThumb: null,
     categoryId: null,
@@ -60,7 +60,7 @@ function makeSummary(overrides: Partial<CollectionSummary> = {}): CollectionSumm
     version: 1,
     createdAt: FIXED_AT,
     updatedAt: FIXED_AT,
-    permissions: { canEdit: true, canDelete: true, canTransfer: false },
+    permissions: { canEdit: true, canDelete: true, canChangeScope: true, canTransfer: false },
     ...overrides,
   }
 }
@@ -79,14 +79,14 @@ const populated: CollectionSummary[] = [
     name: 'Radiography — chest positioning',
     type: 'sequence',
     visibility: 'restricted',
-    owner: { kind: 'program', programId: 1, name: 'Radiography' },
+    owners: [{ kind: 'program', programId: 1, name: 'Radiography' }],
     imageCount: 4,
   }),
   makeSummary({
     id: 4,
     name: 'Dental panoramic pairs',
     type: 'synchronized',
-    owner: { kind: 'program', programId: 1, name: 'Radiography' },
+    owners: [{ kind: 'program', programId: 1, name: 'Radiography' }],
     imageCount: 1,
   }),
 ]

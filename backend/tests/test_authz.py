@@ -7,6 +7,7 @@ from app.authz import (
     can_attach_group_to_collection,
     can_attach_program_to_category,
     can_attach_program_to_collection,
+    can_change_collection_scope,
     can_delete_collection,
     can_edit_category,
     can_edit_collection,
@@ -114,13 +115,19 @@ def test_user_has_admin_program_false_when_no_programs() -> None:
 def _collection(
     visibility: str = "private",
     user_id: int | None = 10,
+    owner_ids: list[int] | None = None,
     owner_program_id: int | None = None,
     programs: list | None = None,
     groups: list | None = None,
 ) -> SimpleNamespace:
+    # ``user_id`` is creator-only audit (#1531); ownership is the ``owners``
+    # list, defaulting to the creator like the migration backfill.
+    if owner_ids is None:
+        owner_ids = [user_id] if user_id is not None else []
     return SimpleNamespace(
         visibility=visibility,
         user_id=user_id,
+        owners=[SimpleNamespace(id=uid, name=f"user{uid}") for uid in owner_ids],
         owner_program_id=owner_program_id,
         programs=[SimpleNamespace(id=p) for p in (programs or [])],
         groups=[SimpleNamespace(id=g) for g in (groups or [])],
@@ -156,36 +163,77 @@ def test_can_view_collection_student_restricted_dual_gate() -> None:
 
 def test_can_edit_and_delete_collection() -> None:
     owned = _collection(user_id=10)
+    co_owned = _collection(user_id=10, owner_ids=[10, 11])
     program_owned = _collection(user_id=None, owner_program_id=3)
     orphaned = _collection(user_id=None, owner_program_id=None)
 
     assert can_edit_collection(_user("admin", id=1), orphaned) is True
     assert can_delete_collection(_user("admin", id=1), owned) is True
 
+    # Students: sole and co-owners edit content; strangers do not.
     assert can_edit_collection(_user("student", id=10), owned) is True
-    assert can_edit_collection(_user("student", id=11), owned) is False
-    assert can_edit_collection(_user("staff", id=10), owned) is True
+    assert can_edit_collection(_user("student", id=11), co_owned) is True
+    assert can_edit_collection(_user("student", id=12), co_owned) is False
+    # Staff never edit — not even collections they own (#1531).
+    assert can_edit_collection(_user("staff", id=10), owned) is False
     assert can_edit_collection(_user("staff", id=11), owned) is False
 
     assert can_edit_collection(_user("instructor", id=7, programs=[3]), program_owned) is True
     assert can_edit_collection(_user("instructor", id=7, programs=[4]), program_owned) is False
     assert can_edit_collection(_user("student", id=7, programs=[3]), program_owned) is False
     assert can_edit_collection(_user("instructor", id=7, programs=[3]), orphaned) is False
+    assert can_edit_collection(_user("instructor", id=11), co_owned) is True
     assert can_delete_collection(_user("instructor", id=7, programs=[3]), program_owned) is True
+
+
+def test_can_change_scope_and_delete_collection() -> None:
+    """Scope changes and deletion: admins/instructors mirror edit; students
+    need sole ownership (no co-owners, no program owner); staff never."""
+    owned = _collection(user_id=10)
+    co_owned = _collection(user_id=10, owner_ids=[10, 11])
+    program_owned = _collection(user_id=None, owner_program_id=3)
+    # A student may be the sole *user* owner of a program-owned collection —
+    # that is still not "sole owner" for scope authority.
+    program_plus_user = _collection(owner_ids=[10], owner_program_id=3)
+    orphaned = _collection(user_id=None, owner_program_id=None)
+
+    assert can_change_collection_scope(_user("admin", id=1), orphaned) is True
+    assert can_delete_collection(_user("admin", id=1), orphaned) is True
+
+    assert can_change_collection_scope(_user("instructor", id=11), co_owned) is True
+    assert can_change_collection_scope(
+        _user("instructor", id=7, programs=[3]), program_owned
+    ) is True
+    assert can_change_collection_scope(
+        _user("instructor", id=7, programs=[4]), program_owned
+    ) is False
+
+    assert can_change_collection_scope(_user("student", id=10), owned) is True
+    assert can_delete_collection(_user("student", id=10), owned) is True
+    assert can_change_collection_scope(_user("student", id=10), co_owned) is False
+    assert can_delete_collection(_user("student", id=10), co_owned) is False
+    assert can_change_collection_scope(_user("student", id=10), program_plus_user) is False
+    assert can_change_collection_scope(_user("student", id=11), co_owned) is False
+
+    assert can_change_collection_scope(_user("staff", id=10), owned) is False
+    assert can_delete_collection(_user("staff", id=10), owned) is False
 
 
 def test_can_transfer_collection() -> None:
     owned = _collection(user_id=10)
+    co_owned = _collection(user_id=10, owner_ids=[10, 11])
     program_owned = _collection(user_id=None, owner_program_id=3)
     orphaned = _collection(user_id=None, owner_program_id=None)
 
     assert can_transfer_collection(_user("admin", id=1), orphaned) is True
     assert can_transfer_collection(_user("instructor", id=10), owned) is True
-    assert can_transfer_collection(_user("instructor", id=11), owned) is False
+    assert can_transfer_collection(_user("instructor", id=11), co_owned) is True
+    assert can_transfer_collection(_user("instructor", id=12), co_owned) is False
     assert can_transfer_collection(_user("instructor", id=11, programs=[3]), program_owned) is True
     assert can_transfer_collection(_user("instructor", id=11, programs=[3]), orphaned) is False
-    # Students and staff own collections but cannot transfer them.
+    # Students and staff hold owner rows but can never manage ownership.
     assert can_transfer_collection(_user("student", id=10), owned) is False
+    assert can_transfer_collection(_user("student", id=10), co_owned) is False
     assert can_transfer_collection(_user("staff", id=10), owned) is False
 
 

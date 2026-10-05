@@ -9,6 +9,7 @@ from ..authz import ADMIN_PROGRAM_NAME
 from ..browse_state import bump_browse_revision
 from ..database import get_db
 from ..models import Collection, Program, User
+from ..tile_order import bump_scopes, scope_key_for
 from ..schemas import (
     UserCreate,
     UserUpdate,
@@ -28,6 +29,51 @@ _admin = require_role("admin")
 _people_viewer = require_role("admin", "instructor", "staff")
 
 VALID_ROLES = {"admin", "instructor", "staff", "student"}
+
+
+async def _delete_sole_owned_collections(
+    db: AsyncSession, departing_ids: set[int]
+) -> bool:
+    """Apply the multi-owner user-deletion rule (#1531): a collection dies
+    when every owner row belongs to a departing user AND it has no program
+    owner; otherwise the departing users' owner rows cascade away with the
+    ``collection_owners`` FK and the collection survives for its remaining
+    owners. ``collections.user_id`` is creator-only audit (SET NULL), so it
+    plays no part in this decision.
+
+    Runs *before* the user rows are deleted (the ``collection_owners`` FK
+    cascade would otherwise erase the owner rows first and hide which
+    collections were sole-owned). Returns True when any affected collection
+    was filed into a category so the caller can invalidate the tree ETag —
+    whether it died or merely lost an owner, its Browse tile changes.
+    """
+    if not departing_ids:
+        return False
+    affected = (
+        (
+            await db.execute(
+                select(Collection).where(
+                    Collection.owners.any(User.id.in_(departing_ids))
+                )
+            )
+        )
+        .scalars()
+        .unique()
+        .all()
+    )
+    dying = [
+        c
+        for c in affected
+        if c.owner_program_id is None
+        and all(o.id in departing_ids for o in c.owners)
+    ]
+    if dying:
+        await bump_scopes(
+            db, {scope_key_for(c.category_id) for c in dying}
+        )
+        for collection in dying:
+            await db.delete(collection)
+    return any(c.category_id is not None for c in affected)
 
 
 async def _set_user_programs(
@@ -244,22 +290,10 @@ async def bulk_delete_users(
     users = result.scalars().unique().all()
     if len(users) != len(set(body.user_ids)):
         raise HTTPException(status_code=404, detail="One or more users not found")
-    # Owned filed collections are cascade-deleted with the user — read the
-    # link before the deletes (autoflush would erase it first) so the tree
-    # ETag invalidates (#1527).
-    owns_filed = (
-        await db.execute(
-            select(Collection.id)
-            .where(
-                Collection.user_id.in_(body.user_ids),
-                Collection.category_id.isnot(None),
-            )
-            .limit(1)
-        )
-    ).first() is not None
+    filed_affected = await _delete_sole_owned_collections(db, set(body.user_ids))
     for user in users:
         await db.delete(user)
-    if owns_filed:
+    if filed_affected:
         await bump_browse_revision(db)
     await db.commit()
 
@@ -329,20 +363,8 @@ async def delete_user(
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    # Owned filed collections are cascade-deleted with the user — read the
-    # link before the delete (autoflush would erase it) so the tree ETag
-    # invalidates (#1527).
-    owns_filed = (
-        await db.execute(
-            select(Collection.id)
-            .where(
-                Collection.user_id == user_id,
-                Collection.category_id.isnot(None),
-            )
-            .limit(1)
-        )
-    ).first() is not None
+    filed_affected = await _delete_sole_owned_collections(db, {user_id})
     await db.delete(user)
-    if owns_filed:
+    if filed_affected:
         await bump_browse_revision(db)
     await db.commit()

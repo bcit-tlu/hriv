@@ -122,7 +122,7 @@ const testCollections: CollectionSummary[] = [
     description: 'Liver histology basics',
     type: 'sequence',
     imageCount: 6,
-    owner: { kind: 'program', programId: 1, name: 'Medical Lab Science' },
+    owners: [{ kind: 'program', programId: 1, name: 'Medical Lab Science' }],
   }),
 ]
 

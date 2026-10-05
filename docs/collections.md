@@ -65,28 +65,39 @@ one child issue at a time on `main`.
 Migration `0030_collections` (`backend/app/models.py`: `Collection`,
 `CollectionImage`, `collection_programs`, `collection_groups`); migration
 `0031_collection_categories` adds `collections.category_id` +
-`collections.sort_order` so collections file into the Browse hierarchy.
+`collections.sort_order` so collections file into the Browse hierarchy;
+migration `0032_collection_owners` adds `collection_owners` so several users
+can co-manage one collection (#1531).
 
-| Table                 | Purpose                                                                                                                                                                                                                                                                                                                                         |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `collections`         | `name`, `description`, `type` (`synchronized` / `sequence`, CHECK), `visibility` (`private` / `public` / `restricted`, CHECK, default `private`), `user_id`, `owner_program_id`, `category_id` (nullable FK → `categories`, `SET NULL` on delete; #1527), `sort_order` (tile-order position), `viewport_state` (JSONB, default `{}`), `version` |
-| `collection_images`   | Ordered membership: PK `(collection_id, image_id)`, `sort_order`; index `idx_collection_images_order (collection_id, sort_order)`                                                                                                                                                                                                               |
-| `collection_programs` | Program scope for `visibility = restricted`                                                                                                                                                                                                                                                                                                     |
-| `collection_groups`   | Group scope for `visibility = restricted`                                                                                                                                                                                                                                                                                                       |
+| Table                 | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `collections`         | `name`, `description`, `type` (`synchronized` / `sequence`, CHECK), `visibility` (`private` / `public` / `restricted`, CHECK, default `private`), `user_id` (**creator audit only** — nullable FK → `users`, `SET NULL` on delete; not ownership), `owner_program_id`, `category_id` (nullable FK → `categories`, `SET NULL` on delete; #1527), `sort_order` (tile-order position), `viewport_state` (JSONB, default `{}`), `version` |
+| `collection_owners`   | User co-owners: PK `(collection_id, user_id)`, both FKs `CASCADE` on delete; index `idx_collection_owners_user (user_id)`                                                                                                                                                                                                                                                                                                             |
+| `collection_images`   | Ordered membership: PK `(collection_id, image_id)`, `sort_order`; index `idx_collection_images_order (collection_id, sort_order)`                                                                                                                                                                                                                                                                                                     |
+| `collection_programs` | Program scope for `visibility = restricted`                                                                                                                                                                                                                                                                                                                                                                                           |
+| `collection_groups`   | Group scope for `visibility = restricted`                                                                                                                                                                                                                                                                                                                                                                                             |
 
-### Ownership
+### Ownership (#1531)
 
-A collection is owned by **either** a user (`user_id`, FK `CASCADE`) **or** a
-program (`owner_program_id`, FK `SET NULL`) — enforced by
-`ck_collections_single_owner` (`num_nonnulls(user_id, owner_program_id) <= 1`).
+A collection's owners are **any number of users** (`collection_owners` rows)
+**and/or** one program (`owner_program_id`, FK `SET NULL`). The two sets are
+independent in the schema, but assigning a program owner via
+`POST …/transfer` clears the user-owner rows (a program owner is sole);
+`PUT …/owners` manages the user set while no program owns the collection.
+`collections.user_id` is **creator audit** — it records who created the row,
+survives ownership changes, and goes `NULL` when that user is deleted; it no
+longer participates in authorization.
 
-- Deleting a **user** deletes the collections they own.
+- Deleting a **user** removes their `collection_owners` rows (`CASCADE`) and
+  deletes every collection for which they were the **sole** owner (no other
+  user owners, no program owner). Co-owned and program-owned collections
+  survive — the remaining owners keep managing them.
 - Deleting an **image** silently removes it from every collection
   (`collection_images.image_id` `CASCADE`).
 - Deleting a **program** does _not_ delete its collections: `owner_program_id`
-  becomes `NULL` and the collection is **orphaned** (both owner columns
-  `NULL`). Orphaned collections keep their declared visibility but are
-  manageable only by admins until reassigned.
+  becomes `NULL`. If the collection also has no user owners it is
+  **orphaned** — it keeps its declared visibility but is manageable only by
+  admins until reassigned.
 - Deleting a **group** removes its `collection_groups` rows; unlike categories,
   a group attached to a collection does not block group deletion.
 - Deleting a **category** does _not_ delete its collections:
@@ -111,7 +122,9 @@ tree ETag invalidates. `visibility` still gates _who sees_ the tile;
 placement only gates _where_ it sits.
 
 Collections are included in the admin database export/import round-trip
-(`collections` key with ordered `image_ids`, `program_ids`, `group_ids`); see
+(`collections` key with ordered `image_ids`, `program_ids`, `group_ids`, and
+`owner_ids` — the user-owner id list; legacy dumps carrying only `user_id`
+import that creator as the sole owner). See
 [admin-import-export.md](admin-import-export.md).
 
 `viewport_state` is written as a whole-column replacement (never a partial
@@ -156,22 +169,36 @@ referenced image, including inactive ones. Omitted members survive a student's
 `PUT …/images` (see **Image list** below), so a hidden image is never removed
 by someone who cannot see it.
 
-### Who can manage a collection
+### Who can manage a collection (#1531)
 
-| Predicate                 | admin | owner (any role) | instructor in `owner_program_id` | others |
-| ------------------------- | ----- | ---------------- | -------------------------------- | ------ |
-| `can_edit_collection`     | yes   | yes              | yes                              | no     |
-| `can_delete_collection`   | yes   | yes              | yes                              | no     |
-| `can_transfer_collection` | yes   | instructors only | yes                              | no     |
+"Owner" below means holding a `collection_owners` row; "program instructor"
+means an instructor who belongs to the collection's `owner_program_id`.
+**Staff are view-only** — even on collections they co-own.
 
-Orphaned collections (both owner columns `NULL`) satisfy none of the
-owner/program branches, so only admins may edit, delete or reassign them.
+| Predicate                     | admin | instructor (owner / program) | student — sole owner | student — co-owner | staff / others |
+| ----------------------------- | ----- | ---------------------------- | -------------------- | ------------------ | -------------- |
+| `can_edit_collection`         | yes   | yes                          | yes                  | yes                | no             |
+| `can_change_collection_scope` | yes   | yes                          | yes                  | no                 | no             |
+| `can_delete_collection`       | yes   | yes                          | yes                  | no                 | no             |
+| `can_transfer_collection`     | yes   | yes                          | no                   | no                 | no             |
+
+Scope changes (visibility + restricted `program_ids`/`group_ids`) and
+deletion deliberately require the stricter predicate: a co-owner may edit
+content but cannot widen visibility on a shared collection or delete it out
+from under the other owners. Orphaned collections (no `collection_owners`
+rows and `owner_program_id` `NULL`) satisfy none of the owner/program
+branches, so only admins may edit, delete or reassign them.
 
 Attaching `restricted` scope follows the category rules:
 `can_attach_program_to_collection` (admins any program; instructors only
 programs they belong to) and `can_attach_group_to_collection` (admins any
 group; instructors only groups they manage). Students and staff cannot use
 `restricted` visibility.
+
+PATCH is **field-level authorized**: `name`/`description` only require
+`can_edit_collection`, while `visibility`/`program_ids`/`group_ids` require
+`can_change_collection_scope` — a co-owner may rename a shared collection but
+gets **403** if the body touches scope.
 
 ## API surface
 
@@ -181,23 +208,27 @@ All endpoints require a JWT bearer token — there is no unauthenticated variant
 below answers `404` while `COLLECTIONS_ENABLED` is off (see
 [Feature flag](#feature-flag-collections_enabled)).
 
-| Method | Endpoint                         | Min role                                                               | Notes                                                                                                                                                                                                                                                                                                                                 |
-| ------ | -------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/collections`               | student                                                                | Visible collections as `CollectionSummaryOut[]`. Query: `type`, `mine`, `owner_user_id`, `owner_program_id`, `orphaned` (**admin only**, others **403**), `uncategorized` (only collections filed at the Browse root, `category_id IS NULL`). Ordered by `updated_at` desc.                                                           |
-| GET    | `/api/collections/{id}`          | student                                                                | `CollectionOut` (summary + ordered `images: ImageOut[]`, `program_ids`, `group_ids`, `viewport_state`). **404** when missing _or_ not visible (no existence leak).                                                                                                                                                                    |
-| POST   | `/api/collections`               | student                                                                | Create; owner = caller (`user_id`). Body `CollectionCreate`: `name`, `description?`, `type`, `visibility` (default `private`), ordered `image_ids`, `program_ids` / `group_ids` (restricted only). **201** `CollectionOut`.                                                                                                           |
-| PATCH  | `/api/collections/{id}`          | student (must pass `can_edit_collection`)                              | Body `CollectionUpdate`: any of `name`, `description`, `visibility`, `program_ids`, `group_ids` + required `version`. `type` is immutable (**422** if changed). Returns fresh `CollectionOut`.                                                                                                                                        |
-| DELETE | `/api/collections/{id}`          | student (must pass `can_delete_collection`)                            | **204**.                                                                                                                                                                                                                                                                                                                              |
-| PUT    | `/api/collections/{id}/images`   | student (must pass `can_edit_collection`)                              | Replace the whole ordered image list (add / remove / reorder in one call). Body `CollectionImagesUpdate`: `image_ids`, `version`. `sort_order` is rewritten to `0..n-1`. Returns fresh `CollectionOut`.                                                                                                                               |
-| PUT    | `/api/collections/{id}/viewport` | student (must pass `can_edit_collection`)                              | Replace `viewport_state` wholesale. Body `CollectionViewportUpdate`: `viewport_state` (JSON object), `version`. Returns fresh `CollectionOut`.                                                                                                                                                                                        |
-| POST   | `/api/collections/{id}/move`     | admin / instructor (any — filing is curatorial, not ownership-bound)   | File the collection into a category. Body `CollectionMove`: `category_id` (required, `null` = Browse root) + `version`. **404** missing collection, **422** unknown category, **409** stale version. Keeps `sort_order`; bumps source+destination scope revisions and the browse revision. Returns fresh `CollectionOut`.             |
-| POST   | `/api/collections/{id}/transfer` | instructor (must pass `can_transfer_collection`; to a user: **admin**) | Reassign ownership. Body `CollectionTransfer`: exactly one of `user_id` / `program_id` (**422** otherwise) + required `version`. **404** if not visible, **403** if not transferable, **422** unknown / deactivated target, **409** stale version. Returns fresh `CollectionOut` with the new `owner` and re-evaluated `permissions`. |
+| Method | Endpoint                         | Min role                                                             | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ------ | -------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| GET    | `/api/collections`               | student                                                              | Visible collections as `CollectionSummaryOut[]`. Query: `type`, `mine`, `owner_user_id`, `owner_program_id`, `orphaned` (**admin only**, others **403**), `uncategorized` (only collections filed at the Browse root, `category_id IS NULL`). Ordered by `updated_at` desc.                                                                                                                                                                                                          |
+| GET    | `/api/collections/{id}`          | student                                                              | `CollectionOut` (summary + ordered `images: ImageOut[]`, `program_ids`, `group_ids`, `viewport_state`). **404** when missing _or_ not visible (no existence leak).                                                                                                                                                                                                                                                                                                                   |
+| POST   | `/api/collections`               | student                                                              | Create; owner = caller (`user_id`). Body `CollectionCreate`: `name`, `description?`, `type`, `visibility` (default `private`), ordered `image_ids`, `program_ids` / `group_ids` (restricted only). **201** `CollectionOut`.                                                                                                                                                                                                                                                          |
+| PATCH  | `/api/collections/{id}`          | student (must pass `can_edit_collection`)                            | Body `CollectionUpdate`: any of `name`, `description`, `visibility`, `program_ids`, `group_ids` + required `version`. `type` is immutable (**422** if changed). Returns fresh `CollectionOut`.                                                                                                                                                                                                                                                                                       |
+| DELETE | `/api/collections/{id}`          | student (must pass `can_delete_collection`)                          | **204**.                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| PUT    | `/api/collections/{id}/images`   | student (must pass `can_edit_collection`)                            | Replace the whole ordered image list (add / remove / reorder in one call). Body `CollectionImagesUpdate`: `image_ids`, `version`. `sort_order` is rewritten to `0..n-1`. Returns fresh `CollectionOut`.                                                                                                                                                                                                                                                                              |
+| PUT    | `/api/collections/{id}/viewport` | student (must pass `can_edit_collection`)                            | Replace `viewport_state` wholesale. Body `CollectionViewportUpdate`: `viewport_state` (JSON object), `version`. Returns fresh `CollectionOut`.                                                                                                                                                                                                                                                                                                                                       |
+| POST   | `/api/collections/{id}/move`     | admin / instructor (any — filing is curatorial, not ownership-bound) | File the collection into a category. Body `CollectionMove`: `category_id` (required, `null` = Browse root) + `version`. **404** missing collection, **422** unknown category, **409** stale version. Keeps `sort_order`; bumps source+destination scope revisions and the browse revision. Returns fresh `CollectionOut`.                                                                                                                                                            |
+| PUT    | `/api/collections/{id}/owners`   | instructor (must pass `can_transfer_collection`)                     | Replace the **user-owner set** wholesale (`CollectionOwnersUpdate`: `user_ids` + `version`). Targets must be active users (**422**); removing every user owner while no program owns the collection is **422** (orphan guard). **404** if not visible, **403** if not transferable, **409** stale version. Returns fresh `CollectionOut`.                                                                                                                                            |
+| POST   | `/api/collections/{id}/transfer` | instructor (must pass `can_transfer_collection`)                     | Reassign **program** ownership (#1531). Body `CollectionTransfer`: `program_id` (required, `null` = back to the user owners) + `version`. Setting a program clears the `collection_owners` rows — a program owner is sole. **404** if not visible, **403** if not transferable or the program is outside the instructor's memberships, **422** unknown program / clearing a program owner with no user owners to fall back on, **409** stale version. Returns fresh `CollectionOut`. |
 
 `CollectionSummaryOut`: `id`, `name`, `description`, `type`, `visibility`,
-`owner` (`{user_id, name}` | `{program_id, name}` | `null` when orphaned),
-`image_count` (visible-to-caller), `cover_thumb` (first visible image thumb),
-`version`, `category_id`, `sort_order`, `created_at`, `updated_at`,
-`permissions {can_edit, can_delete, can_transfer}`.
+`owners` (`[{user_id, program_id, name}]` — user entries carry `user_id`,
+the program entry carries `program_id`, the unused id is `null`; `[]` when
+orphaned), `image_count` (visible-to-caller), `cover_thumb`
+(first visible image thumb), `version`, `category_id`, `sort_order`,
+`created_at`, `updated_at`,
+`permissions {can_edit, can_delete, can_change_scope, can_transfer}`.
+(`collections.user_id` is creator-audit only and is not serialized.)
 
 `CollectionOut` adds `member_count` (#1529). For non-students it is the
 nominal member total; for students it is clamped to `len(images) + 1` when
@@ -230,8 +261,12 @@ responses is a UX hint only.
 probed. A caller who can view it but fails `can_edit_collection` (PATCH,
 images, viewport) or `can_delete_collection` (DELETE) gets **403**.
 
-**Creating.** Any authenticated role may `POST`; the caller becomes the owner
-(`user_id`; program ownership is only reachable via transfer, #1413).
+**Creating.** Admin, instructor, and student roles may `POST`; the caller
+becomes the first user owner (a `collection_owners` row) and is recorded as
+creator (`collections.user_id` audit). Staff are view-only and get **403** —
+a staff-created collection could never be edited by them and is unreachable
+by instructors. Program ownership is only reachable via `POST …/transfer`
+(#1531).
 
 **Restricted visibility & scope.**
 
@@ -279,77 +314,93 @@ retry. Every successful mutation increments `version` and returns the fresh
 `CollectionOut`. Unlike images/categories, the token is in the body rather
 than an `If-Match` header and is required, not optional.
 
-### Ownership transfer (#1413)
+### Owner management (#1531)
 
-`POST /api/collections/{id}/transfer` moves a collection to a new owner. The
-body names **exactly one** destination (`user_id` _or_ `program_id`; both or
-neither is **422**) plus the `version` token, and follows the same
-optimistic-concurrency rule as PATCH (**409** with the current `CollectionOut`
-on a stale `version`; success increments it).
+User co-ownership and program ownership are managed by two endpoints, both
+gated on `can_transfer_collection` and carrying the `version` token (same
+optimistic-concurrency rule as PATCH — **409** with the current
+`CollectionOut` on a stale `version`; success increments it).
 
 Authority is checked in this order, and every rule is enforced server-side:
 
 1. The caller must be able to **view** the collection, else **404** (no
    existence leak — same as every other write).
 2. The caller must pass `can_transfer_collection`, else **403**: admins for
-   any collection; instructors only for a collection they own (`user_id` =
-   self) or one owned by a program they belong to. Staff and students can
-   never transfer, not even their own collections. Orphaned collections fail
-   both instructor branches, so only admins can reassign them.
-3. The destination is resolved:
-   - `user_id` — **admins only** (instructors get **403** even for their own
-     collection). The user must exist (**422**) and be active; a deactivated
-     user cannot become an owner (**422**). Any role may be assigned as owner;
-     the new owner's own authority then follows the normal predicates (a
-     student owner can edit and delete but still cannot transfer).
-   - `program_id` — the program must exist (**422**) and pass
-     `can_attach_program_to_collection` (**403**): admins may pick any
-     program, instructors only a program they belong to.
-4. Exactly one of `user_id` / `owner_program_id` is set and the other cleared,
-   `version` advances, and the fresh `CollectionOut` is returned with the new
-   `owner` and `permissions` re-evaluated for the caller — an instructor who
-   moves their own collection onto a program they teach keeps `can_edit`;
-   an admin always keeps everything.
+   any collection; instructors only for a collection they co-own or one
+   owned by a program they belong to. Staff and students can never manage
+   owners — not even on collections they own. Orphaned collections satisfy
+   neither instructor branch, so only admins can reassign them.
 
-A transfer only changes the owner columns; `visibility`, scope rows
-(`collection_programs` / `collection_groups`), images and `viewport_state`
-are untouched. Moving a collection onto a program does **not** add that
-program to its restricted scope, and moving it off a program does not remove
-it.
+`PUT /api/collections/{id}/owners` replaces the **user-owner set**
+wholesale:
+
+- `user_ids` may contain any **active** user in any role — co-ownership is
+  deliberately not role-restricted (an instructor may add a student
+  co-owner; that student then edits content per `can_edit_collection` but
+  cannot change scope, delete, or manage owners). Unknown or inactive ids
+  are **422**.
+- The submitted set replaces the rows wholesale — adds and removals happen
+  atomically. `collections.user_id` (creator audit) is untouched.
+- The result must not orphan the collection: when `owner_program_id` is
+  `NULL`, an empty `user_ids` is **422**. When a program owns the
+  collection the endpoint is still available (admins can pre-stage user
+  owners for a later program-clearing transfer).
+
+`POST /api/collections/{id}/transfer` reassigns the **program** owner:
+
+- `program_id` must exist (**422**) and pass
+  `can_attach_program_to_collection` (**403**): admins any program,
+  instructors only a program they belong to.
+- Setting a program makes it the **sole** owner — the `collection_owners`
+  rows are deleted in the same write (user owners are re-added via
+  `PUT /owners` after clearing the program).
+- `program_id: null` clears the program owner. The collection must have at
+  least one user-owner row to fall back on — clearing the last program owner
+  of a collection with no user owners is **422** (add a user owner first).
+- `collections.user_id` (creator audit) is untouched either way.
+
+Neither endpoint changes `visibility`, scope rows (`collection_programs` /
+`collection_groups`), images, or `viewport_state`. Moving a collection onto
+a program does **not** add that program to its restricted scope, and
+clearing it does not remove it.
 
 ### Ownership & lifecycle
 
-What happens to collections when the rows they reference go away (all enforced
-by FK actions in migration `0030_collections`, not by router code):
+What happens to collections when the rows they reference go away:
 
-- **User deleted** — every collection they own is deleted
-  (`collections.user_id` `ON DELETE CASCADE`), along with its
-  `collection_images` and scope rows. Transfer a collection first if it should
-  survive its owner.
+- **User deleted** — their `collection_owners` rows are removed
+  (`ON DELETE CASCADE`) and `collections.user_id` (creator audit) is set to
+  `NULL` (`SET NULL`). Then the router deletes every collection for which
+  they were the **sole** owner — no remaining user owners and no program
+  owner — along with its `collection_images` and scope rows (filed
+  collections also bump their scope's tile-order revision). **Co-owned and
+  program-owned collections survive**: the remaining owners keep managing
+  them. Add a co-owner or assign a program first if a collection should
+  outlive its owner.
 - **User deactivated** — nothing changes: the collections stay, keep their
-  owner and visibility, and remain manageable by admins / instructors of the
-  owning program. A deactivated user cannot sign in, and cannot be named as
-  the destination of a transfer (**422**) until reactivated.
+  owners and visibility, and remain manageable by admins, the co-owners, and
+  instructors of the owning program. A deactivated user cannot sign in, and
+  cannot be added as an owner (`PUT /owners` **422**) until reactivated.
 - **Image deleted** — its `collection_images` links are dropped (`CASCADE`);
   the collection stays, `image_count` shrinks and `sort_order` gaps are
   harmless (the next `PUT …/images` rewrites them).
 - **Program deleted** — `DELETE /api/programs/{id}` never inspects
   collections. Collections **owned** by the program survive with
-  `owner_program_id = NULL`: they become **orphaned** (both owner columns
-  `NULL`, `owner: null`, admin-only until reassigned via transfer). The
-  program's `collection_programs` rows are removed (`CASCADE`).
-  **Scope caveat:** a `restricted` collection whose only program scope was the
-  deleted program becomes _unrestricted on the program dimension_ (the group
-  gate still applies), so it may become visible to more students than before.
-  After deleting a program, review `GET /api/collections?orphaned=true` and
-  any restricted collection that referenced it.
+  `owner_program_id = NULL`: those that also have no `collection_owners`
+  rows become **orphaned** (admin-only until reassigned via the Owners
+  dialog). The program's `collection_programs` rows are removed (`CASCADE`).
+  **Scope caveat:** a `restricted` collection whose only program scope was
+  the deleted program becomes _unrestricted on the program dimension_ (the
+  group gate still applies), so it may become visible to more students than
+  before. After deleting a program, review `GET /api/collections?orphaned=true`
+  and any restricted collection that referenced it.
 - **Group deleted** — its `collection_groups` rows are removed (`CASCADE`);
   the same scope caveat applies on the group dimension. Unlike categories,
   collections never block group deletion.
 
 Admins find and repair orphans with the list filters that already exist on
 `GET /api/collections` (`orphaned=true`, `owner_user_id`, `owner_program_id`)
-followed by `POST …/transfer`.
+followed by `PUT …/owners` or `POST …/transfer`.
 
 ## Frontend behaviour
 
@@ -381,7 +432,8 @@ cards do not stretch with the viewport). Each `CollectionCard` shows the
 cover (`RenewingThumbnail` with a collection-scoped renewer that refreshes the
 token via `GET /api/collections/{id}`; a renewed cover that loads and later
 expires again is renewed once more, while a cover that never loads is renewed
-only once), name, image count, owner, a type chip
+only once), name, image count, the co-owner names joined by `describeCollectionOwners`
+(`No owner` when orphaned), a type chip
 and a visibility chip that reuses the category restriction palette. Filters:
 type toggle (All / Synchronized / Sequence), **My collections** (`mine=true`;
 clears and disables the owner facet), and — for admin, instructor and staff
@@ -403,9 +455,10 @@ completion, and a second **Edit** click (or **New collection**) supersedes an
 earlier Edit whose record fetch is still in flight. When the account changes,
 the previous user's cards and owner options are cleared as the new user's
 first load starts, so a failed load never leaves another account's rows on
-screen. The `owner` wire object always carries both `user_id` and
+screen. Each `owners` wire entry always carries both `user_id` and
 `program_id` (the unused one `null`), so the mapper picks the non-null id
-rather than testing key presence.
+rather than testing key presence; an empty array means the collection is
+orphaned.
 Loading spinner, a plain error `Alert`
 (notification only — no Retry action), and filter-aware empty copy follow the
 existing page patterns; the unfiltered empty state's "Create a collection" is
@@ -421,14 +474,26 @@ attach logic: instructors can only select programs they belong to
 stays enabled so it can be removed. At least one program or group is required
 for `restricted`; `program_ids` / `group_ids` are sent as `[]` for any other
 visibility. Create from the Collections tab posts `image_ids: []`; create from
-the image view (#1415, below) posts the selected image id(s).
+the image view (#1415, below) posts the selected image id(s). The **New
+collection** button and unfiltered empty-state link hide for staff (the API
+403s staff create — #1531).
 Edit sends the collection `version` in the PATCH body; a **409** shows the
 standard "modified by another user" message with a **Reload** action that
 re-seeds the form from the authoritative `CollectionOut` in `detail`.
+On an existing collection the dialog also honours
+`permissions.can_change_scope` (#1531): when it is false (e.g. a student
+co-owner, or any editor on a program-owned collection they don't direct)
+the visibility radio and the program/group pickers render read-only while
+name and description stay editable; the backend field-level split enforces
+the same boundary regardless.
 
 **Delete.** Confirmation dialog (existing delete-dialog pattern) →
 `DELETE /api/collections/{id}`; failures stay in the dialog with the API
 message. Deleting the open collection returns to the list.
+
+**Owners (`CollectionOwnersDialog`, #1531).** An **Owners** action on cards
+and the detail header (gated on `permissions.canTransfer`) manages the
+user-owner set and the program owner — see "Ownership management UI" below.
 
 **Permissions are UX gates only.** Edit/delete controls render when
 `permissions.can_edit` / `can_delete` from the API are true; the backend
@@ -725,34 +790,49 @@ search-driven adds work with no image open.
 
 ### Ownership management UI (#1419)
 
-The write API's `POST /api/collections/{id}/transfer` endpoint (#1413) is
-surfaced on the Collections tab — there is no separate Admin section.
+The write API's owner endpoints — `PUT /api/collections/{id}/owners` and
+`POST /api/collections/{id}/transfer` (#1531) — are surfaced on the
+Collections tab — there is no separate Admin section.
 
-**Entry points.** A **Transfer** button appears on the detail header and a
-transfer icon on each `CollectionCard`, both gated on
+**Entry points.** An **Owners** button appears on the detail header and an
+owners icon on each `CollectionCard`, both gated on
 `permissions.can_transfer` (the API re-checks regardless). On an orphaned
 collection — found via the admin-only _No owner (orphaned)_ owner facet —
 the card action is the reassignment flow.
 
-**`TransferCollectionDialog`.** Admins choose _A user_ or _A program_; the
-user picker is an autocomplete over `auth.users` (loaded at login, refreshed
-on open) with inactive accounts filtered out, and the program select lists
-every program. Instructors go straight to a program select narrowed to their
-own `program_ids` — the same boundary the backend 403s across. The confirm
-stays disabled until a target different from the current owner is chosen.
-Rejections surface inline via `userMessage`: 403 (outside your authority),
-409 (stale `version` — "modified by another user"), 422 (invalid or
-inactive target). The version is resolved by `useCollectionsData.transfer`,
-which serializes with reorder/viewport saves through the shared mutation
-queue and fetches the freshest record first when the collection is not the
-open detail (e.g. card-level reassignment). A transferred row that no longer
-matches the current filters — transferred away under **My collections**, or
-assigned out of **No owner (orphaned)** — leaves the list.
+**`CollectionOwnersDialog`.** One dialog covers both ownership surfaces:
 
-**Detail header.** Shows the owner as "Managed by program _X_" for
-program-owned collections (user owners show their name, orphans _No
-owner_), the visibility chip, and — for `restricted` — a chip per attached
-program and group using the shared group-chip palette.
+- The **user-owner picker** is a debounced `fetchUsersPaged` autocomplete
+  (active accounts only; instructors automatically get the mini user
+  projection). Selected owners render as MUI chips; any active user is a
+  valid target.
+- The **program-owner select** lists every program for admins and only the
+  instructor's own `program_ids` for instructors — the same boundary the
+  backend 403s across.
+- Selecting a program owner disables the user picker with a hint that the
+  program becomes the sole owner (assigning a program clears the
+  `collection_owners` rows server-side). Clearing a program is only offered
+  when at least one user owner is selected — the backend's orphan guard
+  would 422 otherwise.
+- When both surfaces change in one save, the `PUT /owners` lands before the
+  `POST /transfer` so the collection is never momentarily orphaned. The
+  confirm stays disabled until something differs from the current owners.
+- Rejections surface inline via `userMessage`: 403 (outside your
+  authority), 409 (stale `version` — "modified by another user"), 422
+  (invalid/inactive target or orphaning).
+
+Versions are resolved by `useCollectionsData.saveOwners` / `.transfer`,
+which serialize with reorder/viewport saves through the shared mutation
+queue and fetch the freshest record first when the collection is not the
+open detail (e.g. card-level reassignment). A saved row that no longer
+matches the current filters — reassigned away under **My collections**, or
+adopted out of **No owner (orphaned)** — leaves the list.
+
+**Detail header.** Shows the owners via `describeCollectionOwners` —
+co-owner names joined with commas, "Managed by program _X_" for
+program-owned collections, _No owner_ for orphans — plus the visibility
+chip and — for `restricted` — a chip per attached program and group using
+the shared group-chip palette.
 
 ## Tests
 
@@ -847,13 +927,14 @@ program and group using the shared group-chip palette.
   toggle gating (image results + handler only), image-only checkboxes,
   result-order payload, Clear/close reset, `useVisibleCollections` keeping
   non-editable rows, dialog plumbing with the multi-selected ids.
-- `frontend/tests/components/TransferCollectionDialog.test.tsx`,
+- `frontend/tests/components/CollectionOwnersDialog.test.tsx`,
   `CollectionsPage.test.tsx`, `CollectionCard.test.tsx`,
-  `useCollectionsData.test.ts`, `api.test.ts`, `App.test.tsx` (#1419) —
-  admin user/program pick, instructor program narrowing, inactive-user and
-  unchanged-owner gating, orphaned hint, 403/409 inline errors; `canTransfer`
-  affordances on cards and the detail header, "Managed by program" hint,
-  restricted scope chips, admin orphan reassignment; the `transfer` hook's
-  version resolution (open detail vs fetched), mutation-queue serialization
-  behind a reorder, filtered-list removal, and error propagation; and the
-  `POST /transfer` request body.
+  `useCollectionsData.test.ts`, `api.test.ts`, `App.test.tsx` (#1419, #1531) —
+  user-owner autocomplete + chip removal, program select narrowing for
+  instructors, program-select disabling the user picker, orphan-guard and
+  403/409/422 inline errors; `canTransfer` affordances on cards and the
+  detail header, plural "Managed by program _X_" / `No owner` descriptions,
+  restricted scope chips, admin orphan reassignment; the `saveOwners` /
+  `transfer` hooks' version resolution (open detail vs fetched),
+  mutation-queue serialization behind a reorder, filtered-list removal, and
+  error propagation; and the `PUT /owners` + `POST /transfer` request bodies.

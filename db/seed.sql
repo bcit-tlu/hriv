@@ -206,6 +206,12 @@ JOIN categories parent ON parent.id = cat.parent_id
 WHERE cat.label = 'Italian' AND parent.label = 'Architecture'
 ON CONFLICT (id) DO NOTHING;
 
+-- Owner rows: the owning user lives in collection_owners; collections.user_id
+-- is creator-only audit (#1531).
+INSERT INTO collection_owners (collection_id, user_id)
+SELECT id, user_id FROM collections WHERE user_id IS NOT NULL
+ON CONFLICT (collection_id, user_id) DO NOTHING;
+
 INSERT INTO collection_images (collection_id, image_id, sort_order)
 SELECT c.id, v.image_id, v.sort_order
 FROM collections c

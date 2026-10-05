@@ -75,6 +75,10 @@ export default function CollectionEditDialog({
   const auth = useContext(AuthContext)
   const currentUser = auth?.currentUser ?? null
   const canRestrict = canUseRestrictedVisibility(currentUser?.role)
+  // Field-level authz (#1531): editing metadata is owner/editor-level, but
+  // changing visibility scope requires `can_change_scope`. On create the
+  // creator always sets the initial scope.
+  const canChangeScope = !isEdit || (collection?.permissions.canChangeScope ?? false)
   const attachableProgramIds = getAttachableProgramIds(currentUser)
 
   const [name, setName] = useState('')
@@ -140,13 +144,15 @@ export default function CollectionEditDialog({
   const currentProgramIds = baseline?.programIds ?? []
   const currentGroupIds = baseline?.groupIds ?? []
   const isProgramDisabled = (programId: number) =>
-    attachableProgramIds != null &&
-    !attachableProgramIds.includes(programId) &&
-    !currentProgramIds.includes(programId)
+    !canChangeScope ||
+    (attachableProgramIds != null &&
+      !attachableProgramIds.includes(programId) &&
+      !currentProgramIds.includes(programId))
   const isGroupDisabled = (group: Group) =>
-    currentUser?.role === 'instructor' &&
-    !group.instructorIds.includes(currentUser.id) &&
-    !currentGroupIds.includes(group.id)
+    !canChangeScope ||
+    (currentUser?.role === 'instructor' &&
+      !group.instructorIds.includes(currentUser.id) &&
+      !currentGroupIds.includes(group.id))
   const membershipRestrictedProgram = programs.some((p) => isProgramDisabled(p.id))
   const managementRestrictedGroup = groups.some((g) => isGroupDisabled(g))
 
@@ -279,20 +285,28 @@ export default function CollectionEditDialog({
               value="private"
               control={<Radio size="small" />}
               label={`${COLLECTION_VISIBILITY_LABELS.private} — only you`}
+              disabled={!canChangeScope}
             />
             <FormControlLabel
               value="public"
               control={<Radio size="small" />}
               label={`${COLLECTION_VISIBILITY_LABELS.public} — everyone who can sign in`}
+              disabled={!canChangeScope}
             />
             {canRestrict && (
               <FormControlLabel
                 value="restricted"
                 control={<Radio size="small" />}
                 label={`${COLLECTION_VISIBILITY_LABELS.restricted} — specific programs and/or groups`}
+                disabled={!canChangeScope}
               />
             )}
           </RadioGroup>
+          {!canChangeScope && (
+            <Typography variant="caption" color="text.secondary">
+              Only an owner can change who this collection is visible to.
+            </Typography>
+          )}
         </Box>
 
         {restricted && canRestrict && (

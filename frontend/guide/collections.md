@@ -4,7 +4,8 @@ Collections gather a handful of images into a named set — for example, the
 four views of one specimen, or a sequence that tells a story over time.
 
 Open the **Collections** tab in the app bar. Everyone who is signed in,
-including students, can see the tab and create their own collections. (If
+including students, can see the tab; admins, instructors, and students can
+create their own collections (staff accounts are view-only). (If
 your HRIV instance doesn't show a Collections tab yet, the feature hasn't
 been switched on there — ask your administrator.)
 
@@ -107,11 +108,11 @@ you click them.
 Use the filters above the grid:
 
 - **All / Synchronized / Sequence** – narrow by type.
-- **My collections** – just the collections you own.
-- **Owner** – collections owned by a particular person or program (not shown
-  to students).
+- **My collections** – just the collections you co-own.
+- **Owner** – collections co-owned by a particular person, or owned by a
+  program (not shown to students).
 
-Each card shows the cover image, how many images it holds, who owns it, and
+Each card shows the cover image, how many images it holds, its owners, and
 chips for its type and visibility.
 
 Collections also appear in the top-bar **Search** — both name and
@@ -120,13 +121,18 @@ just collections. Choosing a result opens it here.
 
 ## Edit or delete
 
-If you own a collection (or teach in the program that owns it), the card and
-the collection page show **pencil** and **trash** icons.
+If you co-own a collection (or teach in the program that owns it), the card
+and the collection page show **pencil** and **trash** icons. A collection
+can have several user co-owners plus, or instead of, a program owner.
 
 - **Edit** lets you change the name, description, visibility, and — for
-  restricted collections — the programs and groups.
+  restricted collections — the programs and groups. Student co-owners can
+  change the name, description and images, but the visibility and program /
+  group scope stay locked (they can only change those on a collection they
+  own alone).
 - **Delete** asks you to confirm first. Deleting a collection never deletes
-  the images in it.
+  the images in it. Co-owned and program-owned collections can't be deleted
+  by a student co-owner — ask an instructor or administrator.
 
 ::: tip Changed elsewhere?
 If someone else edited the collection while your dialog was open, saving
@@ -134,23 +140,32 @@ shows a "modified by another user" message with a **Reload** button. Reload
 picks up their changes so you can re-apply yours.
 :::
 
-## Transfer ownership
+## Manage owners
 
-If a collection shows a **Transfer** action (on its card or at the top of the
-collection page), you can hand it to a new owner:
+If a collection shows an **Owners** action (on its card or at the top of the
+collection page), you can manage who owns it — administrators for any
+collection, instructors for collections they co-own or that belong to a
+program they teach:
 
-- **Administrators** can give it to any active user or to any program.
-- **Instructors** can give it to a program they belong to.
+- **User owners** — pick any active users from the list; a collection can
+  have several co-owners (any role, including students). The last user owner
+  can't be removed unless a program owns the collection.
+- **Program owner** — administrators can pick any program; instructors only
+  a program they belong to. Assigning a program makes it the sole owner —
+  the user-owner list clears, and picking a program disables the user list
+  to say so. Clearing a program hands the collection back to its user
+  owners, so there must be at least one first.
 
-Pick the new owner and confirm — the collection keeps its images and
-visibility; only who manages it changes. If the collection was edited by
-someone else while the dialog was open, you'll see the "modified by another
-user" message — reopen the dialog and try again.
+Confirm to save — the collection keeps its images and visibility; only who
+manages it changes. If the collection was edited by someone else while the
+dialog was open, you'll see the "modified by another user" message — reopen
+the dialog and try again.
 
 ::: tip Orphaned collections
-When a collection's owner user or program is deleted, the collection becomes
-_orphaned_. Administrators can find these with the **Owner** filter's
-_No owner (orphaned)_ option and give them a new owner with **Transfer**.
+When a collection's last user owner and its program owner are gone (both
+deleted), the collection becomes _orphaned_. Administrators can find these
+with the **Owner** filter's _No owner (orphaned)_ option and assign owners
+with **Owners**.
 :::
 
 ## Share a link

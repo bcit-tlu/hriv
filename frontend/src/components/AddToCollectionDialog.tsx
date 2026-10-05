@@ -90,8 +90,8 @@ export default function AddToCollectionDialog({
     const program: CollectionSummary[] = []
     const other: CollectionSummary[] = []
     for (const c of matching) {
-      if (c.owner?.kind === 'user' && c.owner.userId === currentUser?.id) mine.push(c)
-      else if (c.owner?.kind === 'program') program.push(c)
+      if (c.owners.some((o) => o.kind === 'user' && o.userId === currentUser?.id)) mine.push(c)
+      else if (c.owners.some((o) => o.kind === 'program')) program.push(c)
       else other.push(c)
     }
     return [

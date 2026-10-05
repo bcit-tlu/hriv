@@ -10,6 +10,7 @@ import {
   fetchCollections,
   moveCollection,
   replaceCollectionImages,
+  replaceCollectionOwners,
   saveCollectionViewport,
   transferCollection,
   updateCollection,
@@ -26,7 +27,7 @@ import type { CollectionFormValues } from './components/CollectionEditDialog'
 import type { Collection, CollectionOwner, CollectionSummary, CollectionType, User } from './types'
 
 /** Owner facet of the Collections list filter bar. */
-export type CollectionOwnerFilter = 'any' | 'orphaned' | NonNullable<CollectionOwner>
+export type CollectionOwnerFilter = 'any' | 'orphaned' | CollectionOwner
 
 export interface CollectionListFilters {
   type: CollectionType | 'all'
@@ -132,23 +133,27 @@ export function matchesCollectionFilters(
   user: Pick<User, 'id'> | null,
 ): boolean {
   if (filters.type !== 'all' && row.type !== filters.type) return false
-  if (filters.mine) return row.owner?.kind === 'user' && row.owner.userId === user?.id
+  // Owner filters match membership in the co-owner set (#1531); orphaned
+  // means no user owners and no program owner (an empty owners list).
+  if (filters.mine) return row.owners.some((o) => o.kind === 'user' && o.userId === user?.id)
   if (filters.owner === 'any') return true
-  if (filters.owner === 'orphaned') return row.owner == null
+  if (filters.owner === 'orphaned') return row.owners.length === 0
   const owner = filters.owner
-  if (owner.kind === 'user') return row.owner?.kind === 'user' && row.owner.userId === owner.userId
-  return row.owner?.kind === 'program' && row.owner.programId === owner.programId
+  if (owner.kind === 'user')
+    return row.owners.some((o) => o.kind === 'user' && o.userId === owner.userId)
+  return row.owners.some((o) => o.kind === 'program' && o.programId === owner.programId)
 }
 
-function uniqueOwners(collections: CollectionSummary[]): NonNullable<CollectionOwner>[] {
+function uniqueOwners(collections: CollectionSummary[]): CollectionOwner[] {
   const seen = new Set<string>()
-  const owners: NonNullable<CollectionOwner>[] = []
+  const owners: CollectionOwner[] = []
   for (const c of collections) {
-    if (c.owner == null) continue
-    const key = c.owner.kind === 'user' ? `u${c.owner.userId}` : `p${c.owner.programId}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    owners.push(c.owner)
+    for (const owner of c.owners) {
+      const key = owner.kind === 'user' ? `u${owner.userId}` : `p${owner.programId}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      owners.push(owner)
+    }
   }
   return owners.sort((a, b) => a.name.localeCompare(b.name))
 }
@@ -182,7 +187,7 @@ export function useCollectionsData({
     (next: CollectionListFilters) => setFilterState({ userId, filters: next }),
     [userId],
   )
-  const [ownerOptions, setOwnerOptions] = useState<NonNullable<CollectionOwner>[]>([])
+  const [ownerOptions, setOwnerOptions] = useState<CollectionOwner[]>([])
   const [detail, setDetail] = useState<Collection | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
@@ -454,7 +459,9 @@ export function useCollectionsData({
   )
 
   /**
-   * Transfer ownership (#1419) via `POST …/transfer`. Serialized with
+   * Reassign *program* ownership (#1531) via `POST …/transfer` —
+   * `programId` sets the owning program (the API clears the user-owner rows)
+   * and `null` clears it, leaving the user owners in place. Serialized with
    * reorder/viewport saves through `mutationQueue` because it carries the
    * same `version`. When the target collection is not the open detail (e.g.
    * an admin reassigning an orphan from the card list), the freshest record
@@ -462,65 +469,119 @@ export function useCollectionsData({
    * leave the visible list (transferred away under `mine`, or assigned out
    * of `orphaned`) — `matchesCollectionFilters` decides list membership.
    */
-  const transfer = useCallback(
-    (id: number, target: { userId: number } | { programId: number }): Promise<Collection> => {
-      const run = async (prior: Collection | null): Promise<Collection> => {
-        let baseline = baselineFor(id, prior)
-        if (!baseline || baseline.id !== id) {
-          baseline = apiCollectionToCollection(await fetchCollection(id))
-        }
-        try {
-          const updated = apiCollectionToCollection(
-            await transferCollection(id, {
-              ...('userId' in target
-                ? { user_id: target.userId }
-                : { program_id: target.programId }),
-              version: baseline.version,
-            }),
+  const transfer = useCallback((id: number, programId: number | null): Promise<Collection> => {
+    const run = async (prior: Collection | null): Promise<Collection> => {
+      let baseline = baselineFor(id, prior)
+      if (!baseline || baseline.id !== id) {
+        baseline = apiCollectionToCollection(await fetchCollection(id))
+      }
+      try {
+        const updated = apiCollectionToCollection(
+          await transferCollection(id, {
+            program_id: programId,
+            version: baseline.version,
+          }),
+        )
+        setDetail((prev) => (prev?.id === id ? updated : prev))
+        setCollections((prev) => {
+          const rest = prev.filter((c) => c.id !== id)
+          return matchesCollectionFilters(
+            updated,
+            latest.current.filters,
+            latest.current.currentUser,
           )
-          setDetail((prev) => (prev?.id === id ? updated : prev))
+            ? [updated, ...rest]
+            : rest
+        })
+        void latest.current.load()
+        return updated
+      } catch (err) {
+        // A 409 carries the authoritative record — merge it so the next
+        // attempt sends the fresh version instead of failing again.
+        const conflict = collectionConflictCurrent(err)
+        if (conflict) {
+          const current = apiCollectionToCollection(conflict)
+          setDetail((prev) => (prev?.id === id ? current : prev))
           setCollections((prev) => {
             const rest = prev.filter((c) => c.id !== id)
             return matchesCollectionFilters(
-              updated,
+              current,
               latest.current.filters,
               latest.current.currentUser,
             )
-              ? [updated, ...rest]
+              ? [current, ...rest]
               : rest
           })
-          void latest.current.load()
-          return updated
-        } catch (err) {
-          // A 409 carries the authoritative record — merge it so the next
-          // attempt sends the fresh version instead of failing again.
-          const conflict = collectionConflictCurrent(err)
-          if (conflict) {
-            const current = apiCollectionToCollection(conflict)
-            setDetail((prev) => (prev?.id === id ? current : prev))
-            setCollections((prev) => {
-              const rest = prev.filter((c) => c.id !== id)
-              return matchesCollectionFilters(
-                current,
-                latest.current.filters,
-                latest.current.currentUser,
-              )
-                ? [current, ...rest]
-                : rest
-            })
-          }
-          throw err
         }
+        throw err
       }
-      const queued = mutationQueue.current.then(run, () => run(null))
-      mutationQueue.current = queued.then(
-        (updated) => updated,
-        () => null,
-      )
-      return queued
-    },
-    [],
-  )
+    }
+    const queued = mutationQueue.current.then(run, () => run(null))
+    mutationQueue.current = queued.then(
+      (updated) => updated,
+      () => null,
+    )
+    return queued
+  }, [])
+
+  /**
+   * Replace the whole user-owner set (#1531) via `PUT …/owners`. Same queue
+   * and conflict-merge conventions as `transfer` — the two endpoints race
+   * the same `version`, so a save posted behind a transfer must not send a
+   * token the transfer has already consumed.
+   */
+  const saveOwners = useCallback((id: number, userIds: number[]): Promise<Collection> => {
+    const run = async (prior: Collection | null): Promise<Collection> => {
+      let baseline = baselineFor(id, prior)
+      if (!baseline || baseline.id !== id) {
+        baseline = apiCollectionToCollection(await fetchCollection(id))
+      }
+      try {
+        const updated = apiCollectionToCollection(
+          await replaceCollectionOwners(id, {
+            user_ids: userIds,
+            version: baseline.version,
+          }),
+        )
+        setDetail((prev) => (prev?.id === id ? updated : prev))
+        setCollections((prev) => {
+          const rest = prev.filter((c) => c.id !== id)
+          return matchesCollectionFilters(
+            updated,
+            latest.current.filters,
+            latest.current.currentUser,
+          )
+            ? [updated, ...rest]
+            : rest
+        })
+        void latest.current.load()
+        return updated
+      } catch (err) {
+        const conflict = collectionConflictCurrent(err)
+        if (conflict) {
+          const current = apiCollectionToCollection(conflict)
+          setDetail((prev) => (prev?.id === id ? current : prev))
+          setCollections((prev) => {
+            const rest = prev.filter((c) => c.id !== id)
+            return matchesCollectionFilters(
+              current,
+              latest.current.filters,
+              latest.current.currentUser,
+            )
+              ? [current, ...rest]
+              : rest
+          })
+        }
+        throw err
+      }
+    }
+    const queued = mutationQueue.current.then(run, () => run(null))
+    mutationQueue.current = queued.then(
+      (updated) => updated,
+      () => null,
+    )
+    return queued
+  }, [])
 
   /**
    * File a collection into a Browse category (#1527/#1529). Serialized with
@@ -682,6 +743,7 @@ export function useCollectionsData({
     saveViewport,
     move,
     transfer,
+    saveOwners,
     addImages,
     removeImages,
     renewCollectionImage,

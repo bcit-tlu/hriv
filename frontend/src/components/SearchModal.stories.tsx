@@ -82,7 +82,7 @@ function makeSummary(overrides: Partial<CollectionSummary> = {}): CollectionSumm
     description: 'Frontal vs lateral',
     type: 'synchronized',
     visibility: 'private',
-    owner: { kind: 'user', userId: 7, name: 'Ada Lovelace' },
+    owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace' }],
     imageCount: 2,
     coverThumb: null,
     categoryId: null,
@@ -90,7 +90,7 @@ function makeSummary(overrides: Partial<CollectionSummary> = {}): CollectionSumm
     version: 1,
     createdAt: FIXED_AT,
     updatedAt: FIXED_AT,
-    permissions: { canEdit: true, canDelete: true, canTransfer: false },
+    permissions: { canEdit: true, canDelete: true, canChangeScope: true, canTransfer: false },
     ...overrides,
   }
 }
@@ -103,7 +103,7 @@ const collections: CollectionSummary[] = [
     description: 'Liver histology basics',
     type: 'sequence',
     imageCount: 6,
-    owner: { kind: 'program', programId: 1, name: 'Radiography' },
+    owners: [{ kind: 'program', programId: 1, name: 'Radiography' }],
   }),
 ]
 

@@ -1846,6 +1846,7 @@ export default function App() {
               onCreate={collectionsData.create}
               onUpdate={collectionsData.update}
               onDelete={collectionsData.remove}
+              onSaveOwners={collectionsData.saveOwners}
               onTransfer={collectionsData.transfer}
               onMoveCollection={canEditContent ? handleRequestMoveCollection : undefined}
               detailBackLabel={collectionFromBrowse ? 'Back to Browse' : undefined}

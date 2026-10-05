@@ -13,7 +13,7 @@ function makeSummary(overrides: Partial<CollectionSummary> = {}): CollectionSumm
     description: 'Frontal and lateral views side by side.',
     type: 'synchronized',
     visibility: 'private',
-    owner: { kind: 'user', userId: 7, name: 'Ada Lovelace' },
+    owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace' }],
     imageCount: 2,
     coverThumb: '/hriv-splash2.jpg',
     categoryId: null,
@@ -21,7 +21,7 @@ function makeSummary(overrides: Partial<CollectionSummary> = {}): CollectionSumm
     version: 1,
     createdAt: FIXED_AT,
     updatedAt: FIXED_AT,
-    permissions: { canEdit: true, canDelete: true, canTransfer: false },
+    permissions: { canEdit: true, canDelete: true, canChangeScope: true, canTransfer: false },
     ...overrides,
   }
 }
@@ -82,7 +82,7 @@ export const Sequence: Story = {
       type: 'sequence',
       visibility: 'public',
       imageCount: 6,
-      owner: { kind: 'program', programId: 3, name: 'Radiography' },
+      owners: [{ kind: 'program', programId: 3, name: 'Radiography' }],
     }),
   },
   parameters: {
@@ -112,7 +112,7 @@ export const ReadOnly: Story = {
       id: 4,
       name: 'Shared by an instructor',
       visibility: 'public',
-      permissions: { canEdit: false, canDelete: false, canTransfer: false },
+      permissions: { canEdit: false, canDelete: false, canChangeScope: false, canTransfer: false },
     }),
   },
   play: async ({ canvasElement }) => {
@@ -130,7 +130,7 @@ export const NoCover: Story = {
       name: 'Empty collection',
       imageCount: 0,
       coverThumb: null,
-      owner: null,
+      owners: [],
     }),
   },
   parameters: {

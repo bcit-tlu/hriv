@@ -12,7 +12,12 @@ import { makeCollection, makeCollectionSummary, makeImage } from '../helpers/fix
 
 vi.mock('../../src/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api')>()
-  return { ...actual, fetchCollection: vi.fn(), fetchImage: vi.fn() }
+  return {
+    ...actual,
+    fetchCollection: vi.fn(),
+    fetchImage: vi.fn(),
+    fetchUsersPaged: vi.fn().mockResolvedValue({ items: [], total: 0 }),
+  }
 })
 
 // Sequence and synchronized details mount the real OpenSeadragon viewer,
@@ -95,6 +100,7 @@ function makeProps(overrides: Partial<CollectionsPageProps> = {}): CollectionsPa
     onCreate: vi.fn().mockResolvedValue(undefined),
     onUpdate: vi.fn().mockResolvedValue(undefined),
     onDelete: vi.fn().mockResolvedValue(undefined),
+    onSaveOwners: vi.fn().mockResolvedValue(undefined),
     onTransfer: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   }
@@ -241,6 +247,11 @@ describe('CollectionsPage', () => {
   })
 
   describe('create / edit', () => {
+    it('hides New collection for staff (view-only; staff cannot create)', () => {
+      renderPage({ currentUser: STAFF })
+      expect(screen.queryByRole('button', { name: 'New collection' })).not.toBeInTheDocument()
+    })
+
     it('opens the create dialog and forwards the values to onCreate', async () => {
       const user = userEvent.setup()
       const onCreate = vi.fn().mockResolvedValue(undefined)
@@ -553,7 +564,7 @@ describe('CollectionsPage', () => {
         selectedCollectionId: 9,
         detail: makeCollection({
           id: 9,
-          owner: { kind: 'program', programId: 1, name: 'Radiography' },
+          owners: [{ kind: 'program', programId: 1, name: 'Radiography' }],
         }),
       })
       expect(screen.getByText(/Managed by program Radiography/)).toBeInTheDocument()
@@ -587,7 +598,7 @@ describe('CollectionsPage', () => {
       expect(screen.getByTestId('detail-group-chip')).toHaveTextContent('Cohort A')
     })
 
-    it('gates the detail Transfer button on canTransfer', async () => {
+    it('gates the detail Owners button on canTransfer', async () => {
       const user = userEvent.setup()
       const onTransfer = vi.fn().mockResolvedValue(undefined)
       const { unmount } = renderPage({
@@ -598,7 +609,7 @@ describe('CollectionsPage', () => {
         }),
         onTransfer,
       })
-      expect(screen.queryByRole('button', { name: 'Transfer' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Owners' })).not.toBeInTheDocument()
       unmount()
 
       renderPage({
@@ -609,15 +620,14 @@ describe('CollectionsPage', () => {
         }),
         onTransfer,
       })
-      await user.click(screen.getByRole('button', { name: 'Transfer' }))
+      await user.click(screen.getByRole('button', { name: 'Owners' }))
       const dialog = await screen.findByRole('dialog')
-      expect(within(dialog).getByText('Transfer ownership')).toBeInTheDocument()
-      await user.click(within(dialog).getByLabelText('New owning program'))
-      // No programs passed → confirm stays disabled; the affordance itself is what is gated here.
-      expect(within(dialog).getByTestId('transfer-confirm')).toBeDisabled()
+      expect(within(dialog).getByRole('heading', { name: 'Owners' })).toBeInTheDocument()
+      // Nothing changed → confirm stays disabled; the affordance itself is what is gated here.
+      expect(within(dialog).getByTestId('owners-confirm')).toBeDisabled()
     })
 
-    it('shows a card Transfer affordance only when canTransfer', async () => {
+    it('shows a card owners affordance only when canTransfer', async () => {
       const user = userEvent.setup()
       renderPage({
         collections: [
@@ -633,11 +643,15 @@ describe('CollectionsPage', () => {
           }),
         ],
       })
-      expect(screen.getByRole('button', { name: 'Transfer Ownable' })).toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: 'Transfer Shared' })).not.toBeInTheDocument()
-      await user.click(screen.getByRole('button', { name: 'Transfer Ownable' }))
+      expect(screen.getByRole('button', { name: 'Manage owners of Ownable' })).toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: 'Manage owners of Shared' }),
+      ).not.toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Manage owners of Ownable' }))
       expect(await screen.findByRole('dialog')).toBeInTheDocument()
-      expect(within(screen.getByRole('dialog')).getByText('Transfer ownership')).toBeInTheDocument()
+      expect(
+        within(screen.getByRole('dialog')).getByRole('heading', { name: 'Owners' }),
+      ).toBeInTheDocument()
     })
 
     it('lets an admin reassign an orphaned collection from the card grid', async () => {
@@ -650,20 +664,20 @@ describe('CollectionsPage', () => {
           makeCollectionSummary({
             id: 5,
             name: 'Orphaned set',
-            owner: null,
+            owners: [],
             permissions: { canEdit: false, canDelete: true, canTransfer: true },
           }),
         ],
         onTransfer,
       })
       expect(screen.getByText(/No owner/)).toBeInTheDocument()
-      await user.click(screen.getByRole('button', { name: 'Transfer Orphaned set' }))
+      await user.click(screen.getByRole('button', { name: 'Manage owners of Orphaned set' }))
       const dialog = await screen.findByRole('dialog')
       expect(within(dialog).getByText(/This collection is orphaned/)).toBeInTheDocument()
-      await user.click(within(dialog).getByLabelText('New owning program'))
+      await user.click(within(dialog).getByLabelText('Owning program'))
       await user.click(within(await screen.findByRole('listbox')).getByText('Ultrasound'))
-      await user.click(within(dialog).getByTestId('transfer-confirm'))
-      await waitFor(() => expect(onTransfer).toHaveBeenCalledWith(5, { programId: 2 }))
+      await user.click(within(dialog).getByTestId('owners-confirm'))
+      await waitFor(() => expect(onTransfer).toHaveBeenCalledWith(5, 2))
     })
   })
 

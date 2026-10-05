@@ -29,6 +29,7 @@ vi.mock('../src/api', async (importOriginal) => {
     updateCollection: vi.fn(),
     deleteCollection: vi.fn(),
     replaceCollectionImages: vi.fn(),
+    replaceCollectionOwners: vi.fn(),
     saveCollectionViewport: vi.fn(),
     transferCollection: vi.fn(),
     moveCollection: vi.fn(),
@@ -42,6 +43,7 @@ import {
   fetchCollections,
   moveCollection,
   replaceCollectionImages,
+  replaceCollectionOwners,
   saveCollectionViewport,
   transferCollection,
   updateCollection,
@@ -55,6 +57,7 @@ const deleteCollectionMock = vi.mocked(deleteCollection)
 const replaceCollectionImagesMock = vi.mocked(replaceCollectionImages)
 const saveCollectionViewportMock = vi.mocked(saveCollectionViewport)
 const transferCollectionMock = vi.mocked(transferCollection)
+const replaceCollectionOwnersMock = vi.mocked(replaceCollectionOwners)
 const moveCollectionMock = vi.mocked(moveCollection)
 
 function makeUser(overrides: Partial<User> = {}): User {
@@ -190,10 +193,10 @@ describe('toCollectionApiFilters', () => {
 })
 
 describe('matchesCollectionFilters', () => {
-  const mine = makeCollection({ owner: { kind: 'user', userId: 7, name: 'Ada' } })
-  const theirs = makeCollection({ owner: { kind: 'user', userId: 8, name: 'Bob' } })
-  const program = makeCollection({ owner: { kind: 'program', programId: 2, name: 'P' } })
-  const orphan = makeCollection({ owner: null })
+  const mine = makeCollection({ owners: [{ kind: 'user', userId: 7, name: 'Ada' }] })
+  const theirs = makeCollection({ owners: [{ kind: 'user', userId: 8, name: 'Bob' }] })
+  const program = makeCollection({ owners: [{ kind: 'program', programId: 2, name: 'P' }] })
+  const orphan = makeCollection({ owners: [] })
   const user = makeUser()
 
   it('accepts everything for the defaults', () => {
@@ -216,12 +219,38 @@ describe('matchesCollectionFilters', () => {
     const orphaned = { ...DEFAULT_COLLECTION_FILTERS, owner: 'orphaned' as const }
     expect(matchesCollectionFilters(orphan, orphaned, user)).toBe(true)
     expect(matchesCollectionFilters(mine, orphaned, user)).toBe(false)
-    const byUser = { ...DEFAULT_COLLECTION_FILTERS, owner: theirs.owner! }
+    const byUser = { ...DEFAULT_COLLECTION_FILTERS, owner: theirs.owners[0] }
     expect(matchesCollectionFilters(theirs, byUser, user)).toBe(true)
     expect(matchesCollectionFilters(mine, byUser, user)).toBe(false)
-    const byProgram = { ...DEFAULT_COLLECTION_FILTERS, owner: program.owner! }
+    const byProgram = { ...DEFAULT_COLLECTION_FILTERS, owner: program.owners[0] }
     expect(matchesCollectionFilters(program, byProgram, user)).toBe(true)
     expect(matchesCollectionFilters(orphan, byProgram, user)).toBe(false)
+  })
+
+  it('matches a co-owned collection on any of its owners (#1531)', () => {
+    const shared = makeCollection({
+      owners: [
+        { kind: 'user', userId: 7, name: 'Ada' },
+        { kind: 'user', userId: 8, name: 'Bob' },
+      ],
+    })
+    expect(
+      matchesCollectionFilters(shared, { ...DEFAULT_COLLECTION_FILTERS, mine: true }, user),
+    ).toBe(true)
+    expect(
+      matchesCollectionFilters(
+        shared,
+        { ...DEFAULT_COLLECTION_FILTERS, owner: { kind: 'user', userId: 8, name: 'Bob' } },
+        user,
+      ),
+    ).toBe(true)
+    expect(
+      matchesCollectionFilters(
+        shared,
+        { ...DEFAULT_COLLECTION_FILTERS, owner: 'orphaned' as const },
+        user,
+      ),
+    ).toBe(false)
   })
 })
 
@@ -322,16 +351,16 @@ describe('useCollectionsData', () => {
 
   it('loads and maps the list, deriving owner options', async () => {
     fetchCollectionsMock.mockResolvedValue([
-      makeApiCollectionSummary({ id: 1, owner: { user_id: 7, name: 'Zed' } }),
-      makeApiCollectionSummary({ id: 2, owner: { program_id: 3, name: 'Anatomy' } }),
-      makeApiCollectionSummary({ id: 3, owner: { user_id: 7, name: 'Zed' } }),
-      makeApiCollectionSummary({ id: 4, owner: null }),
+      makeApiCollectionSummary({ id: 1, owners: [{ user_id: 7, name: 'Zed' }] }),
+      makeApiCollectionSummary({ id: 2, owners: [{ program_id: 3, name: 'Anatomy' }] }),
+      makeApiCollectionSummary({ id: 3, owners: [{ user_id: 7, name: 'Zed' }] }),
+      makeApiCollectionSummary({ id: 4, owners: [] }),
     ])
     const { result } = renderData()
     expect(result.current.loading).toBe(true)
     await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.collections.map((c) => c.id)).toEqual([1, 2, 3, 4])
-    expect(result.current.collections[0].owner).toEqual({ kind: 'user', userId: 7, name: 'Zed' })
+    expect(result.current.collections[0].owners).toEqual([{ kind: 'user', userId: 7, name: 'Zed' }])
     expect(result.current.ownerOptions).toEqual([
       { kind: 'program', programId: 3, name: 'Anatomy' },
       { kind: 'user', userId: 7, name: 'Zed' },
@@ -365,7 +394,7 @@ describe('useCollectionsData', () => {
 
     // A collection the student saves must not be hidden by the admin's leftover owner selection.
     createCollectionMock.mockResolvedValueOnce(
-      makeApiCollection({ id: 42, owner: { user_id: 2, name: 'Student' } }),
+      makeApiCollection({ id: 42, owners: [{ user_id: 2, name: 'Student' }] }),
     )
     fetchCollectionsMock.mockRejectedValueOnce(new ApiError(403, 'Refresh failed'))
     await act(async () => {
@@ -405,7 +434,7 @@ describe('useCollectionsData', () => {
     const admin = makeUser({ id: 1, role: 'admin' })
     const student = makeUser({ id: 2, role: 'student' })
     fetchCollectionsMock.mockResolvedValueOnce([
-      makeApiCollectionSummary({ id: 1, owner: { user_id: 9, name: 'Zed' } }),
+      makeApiCollectionSummary({ id: 1, owners: [{ user_id: 9, name: 'Zed' }] }),
     ])
     const { result, rerender } = renderData({}, admin)
     await waitFor(() => expect(result.current.collections.map((c) => c.id)).toEqual([1]))
@@ -479,13 +508,13 @@ describe('useCollectionsData', () => {
 
   it('keeps owner options from the unfiltered result while an owner filter is active', async () => {
     fetchCollectionsMock.mockResolvedValueOnce([
-      makeApiCollectionSummary({ id: 1, owner: { user_id: 7, name: 'Ada' } }),
-      makeApiCollectionSummary({ id: 2, owner: { user_id: 8, name: 'Bob' } }),
+      makeApiCollectionSummary({ id: 1, owners: [{ user_id: 7, name: 'Ada' }] }),
+      makeApiCollectionSummary({ id: 2, owners: [{ user_id: 8, name: 'Bob' }] }),
     ])
     const { result } = renderData()
     await waitFor(() => expect(result.current.ownerOptions).toHaveLength(2))
     fetchCollectionsMock.mockResolvedValueOnce([
-      makeApiCollectionSummary({ id: 2, owner: { user_id: 8, name: 'Bob' } }),
+      makeApiCollectionSummary({ id: 2, owners: [{ user_id: 8, name: 'Bob' }] }),
     ])
     act(() =>
       result.current.setFilters({
@@ -1076,14 +1105,14 @@ describe('useCollectionsData', () => {
       expect(result.current.detail?.images[0].id).toBe(10)
     })
 
-    it('transfer posts the target with the detail version and updates row + detail (#1419)', async () => {
+    it('transfer posts the program id with the detail version and updates row + detail (#1531)', async () => {
       fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1, version: 3 })])
       fetchCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 1, version: 3 }))
       transferCollectionMock.mockResolvedValueOnce(
         makeApiCollection({
           id: 1,
           version: 4,
-          owner: { program_id: 2, name: 'Ultrasound' },
+          owners: [{ program_id: 2, name: 'Ultrasound' }],
         }),
       )
       const { result } = renderData({ selectedCollectionId: 1 })
@@ -1091,37 +1120,41 @@ describe('useCollectionsData', () => {
       fetchCollectionsMock.mockImplementationOnce(() => new Promise(() => {}))
 
       await act(async () => {
-        await result.current.transfer(1, { programId: 2 })
+        await result.current.transfer(1, 2)
       })
       expect(transferCollectionMock).toHaveBeenCalledWith(1, { program_id: 2, version: 3 })
       expect(result.current.detail).toMatchObject({
         id: 1,
         version: 4,
-        owner: { kind: 'program', programId: 2, name: 'Ultrasound' },
+        owners: [{ kind: 'program', programId: 2, name: 'Ultrasound' }],
       })
-      expect(result.current.collections[0].owner).toMatchObject({ kind: 'program', programId: 2 })
+      expect(result.current.collections[0].owners).toEqual([
+        { kind: 'program', programId: 2, name: 'Ultrasound' },
+      ])
     })
 
     it('transfer fetches the record for its version when the collection is not open', async () => {
       // Card-level reassignment (e.g. an orphaned row): no detail is loaded, so
       // the hook fetches the freshest record before posting.
-      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 5, owner: null })])
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 5, owners: [] })])
       fetchCollectionMock.mockResolvedValueOnce(
-        makeApiCollection({ id: 5, owner: null, version: 7 }),
+        makeApiCollection({ id: 5, owners: [], version: 7 }),
       )
       transferCollectionMock.mockResolvedValueOnce(
-        makeApiCollection({ id: 5, version: 8, owner: { user_id: 9, name: 'New owner' } }),
+        makeApiCollection({ id: 5, version: 8, owners: [{ program_id: 3, name: 'Anatomy' }] }),
       )
       const { result } = renderData()
       await waitFor(() => expect(result.current.collections).toHaveLength(1))
       fetchCollectionsMock.mockImplementationOnce(() => new Promise(() => {}))
 
       await act(async () => {
-        await result.current.transfer(5, { userId: 9 })
+        await result.current.transfer(5, 3)
       })
       expect(fetchCollectionMock).toHaveBeenCalledWith(5)
-      expect(transferCollectionMock).toHaveBeenCalledWith(5, { user_id: 9, version: 7 })
-      expect(result.current.collections[0].owner).toMatchObject({ kind: 'user', userId: 9 })
+      expect(transferCollectionMock).toHaveBeenCalledWith(5, { program_id: 3, version: 7 })
+      expect(result.current.collections[0].owners).toEqual([
+        { kind: 'program', programId: 3, name: 'Anatomy' },
+      ])
       expect(result.current.detail).toBeNull()
     })
 
@@ -1130,7 +1163,7 @@ describe('useCollectionsData', () => {
       fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1 })])
       fetchCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 1, version: 1 }))
       transferCollectionMock.mockResolvedValueOnce(
-        makeApiCollection({ id: 1, owner: { program_id: 2, name: 'Ultrasound' } }),
+        makeApiCollection({ id: 1, owners: [{ program_id: 2, name: 'Ultrasound' }] }),
       )
       const { result } = renderData()
       await waitFor(() => expect(result.current.collections).toHaveLength(1))
@@ -1143,19 +1176,19 @@ describe('useCollectionsData', () => {
       fetchCollectionsMock.mockImplementationOnce(() => new Promise(() => {}))
 
       await act(async () => {
-        await result.current.transfer(1, { programId: 2 })
+        await result.current.transfer(1, 2)
       })
       expect(result.current.collections).toHaveLength(0)
     })
 
-    it('transfer keeps an assigned row in the orphaned-filtered list out of view', async () => {
-      // Under the admin `orphaned` facet, assigning an owner removes the row.
-      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 5, owner: null })])
+    it('saveOwners drops an assigned row from the orphaned-filtered list', async () => {
+      // Under the admin `orphaned` facet, assigning a user owner removes the row.
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 5, owners: [] })])
       fetchCollectionMock.mockResolvedValueOnce(
-        makeApiCollection({ id: 5, owner: null, version: 1 }),
+        makeApiCollection({ id: 5, owners: [], version: 1 }),
       )
-      transferCollectionMock.mockResolvedValueOnce(
-        makeApiCollection({ id: 5, version: 2, owner: { user_id: 9, name: 'New owner' } }),
+      replaceCollectionOwnersMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 5, version: 2, owners: [{ user_id: 9, name: 'New owner' }] }),
       )
       const { result } = renderData({}, makeUser({ role: 'admin' }))
       await waitFor(() => expect(result.current.collections).toHaveLength(1))
@@ -1165,7 +1198,11 @@ describe('useCollectionsData', () => {
       fetchCollectionsMock.mockImplementationOnce(() => new Promise(() => {}))
 
       await act(async () => {
-        await result.current.transfer(5, { userId: 9 })
+        await result.current.saveOwners(5, [9])
+      })
+      expect(replaceCollectionOwnersMock).toHaveBeenCalledWith(5, {
+        user_ids: [9],
+        version: 1,
       })
       expect(result.current.collections).toHaveLength(0)
     })
@@ -1183,7 +1220,7 @@ describe('useCollectionsData', () => {
           }),
       )
       transferCollectionMock.mockResolvedValueOnce(
-        makeApiCollection({ id: 1, version: 3, owner: { program_id: 2, name: 'Ultrasound' } }),
+        makeApiCollection({ id: 1, version: 3, owners: [{ program_id: 2, name: 'Ultrasound' }] }),
       )
       const { result } = renderData({ selectedCollectionId: 1 })
       await waitFor(() => expect(result.current.detail?.version).toBe(1))
@@ -1192,7 +1229,7 @@ describe('useCollectionsData', () => {
       let transferPromise!: Promise<unknown>
       await act(async () => {
         reorderPromise = result.current.reorderImages(1, [11, 10])
-        transferPromise = result.current.transfer(1, { programId: 2 })
+        transferPromise = result.current.transfer(1, 2)
       })
       // The transfer must not post until the reorder's version bump lands.
       expect(transferCollectionMock).not.toHaveBeenCalled()
@@ -1211,8 +1248,10 @@ describe('useCollectionsData', () => {
       const { result } = renderData({ selectedCollectionId: 1 })
       await waitFor(() => expect(result.current.detail?.id).toBe(1))
 
-      await expect(result.current.transfer(1, { userId: 9 })).rejects.toBeInstanceOf(ApiError)
-      expect(result.current.collections[0].owner).toMatchObject({ kind: 'user', userId: 7 })
+      await expect(result.current.transfer(1, 2)).rejects.toBeInstanceOf(ApiError)
+      expect(result.current.collections[0].owners).toEqual([
+        { kind: 'user', userId: 7, name: 'Ada Lovelace' },
+      ])
     })
 
     it('transfer merges the 409 conflict record so a retry sends the fresh version', async () => {
@@ -1227,7 +1266,7 @@ describe('useCollectionsData', () => {
           makeApiCollection({
             id: 1,
             version: 5,
-            owner: { program_id: 2, name: 'Ultrasound' },
+            owners: [{ program_id: 2, name: 'Ultrasound' }],
           }),
         )
       const { result } = renderData({ selectedCollectionId: 1 })
@@ -1235,19 +1274,91 @@ describe('useCollectionsData', () => {
       fetchCollectionsMock.mockImplementationOnce(() => new Promise(() => {}))
 
       await act(async () => {
-        await expect(result.current.transfer(1, { programId: 2 })).rejects.toBeInstanceOf(ApiError)
+        await expect(result.current.transfer(1, 2)).rejects.toBeInstanceOf(ApiError)
       })
       expect(result.current.detail?.version).toBe(4)
       expect(result.current.collections[0].version).toBe(4)
 
       await act(async () => {
-        await result.current.transfer(1, { programId: 2 })
+        await result.current.transfer(1, 2)
       })
       expect(transferCollectionMock).toHaveBeenLastCalledWith(1, {
         program_id: 2,
         version: 4,
       })
       expect(result.current.detail?.version).toBe(5)
+    })
+
+    it('saveOwners PUTs the user-owner set with the resolved version (#1531)', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1, version: 3 })])
+      fetchCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 1, version: 3 }))
+      replaceCollectionOwnersMock.mockResolvedValueOnce(
+        makeApiCollection({
+          id: 1,
+          version: 4,
+          owners: [
+            { user_id: 7, name: 'Ada Lovelace' },
+            { user_id: 9, name: 'New co-owner' },
+          ],
+        }),
+      )
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.version).toBe(3))
+      fetchCollectionsMock.mockImplementationOnce(() => new Promise(() => {}))
+
+      await act(async () => {
+        await result.current.saveOwners(1, [7, 9])
+      })
+      expect(replaceCollectionOwnersMock).toHaveBeenCalledWith(1, {
+        user_ids: [7, 9],
+        version: 3,
+      })
+      expect(result.current.detail?.owners).toEqual([
+        { kind: 'user', userId: 7, name: 'Ada Lovelace' },
+        { kind: 'user', userId: 9, name: 'New co-owner' },
+      ])
+      expect(result.current.collections[0].owners).toHaveLength(2)
+    })
+
+    it('saveOwners merges the 409 conflict record so a retry sends the fresh version', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1, version: 3 })])
+      fetchCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 1, version: 3 }))
+      replaceCollectionOwnersMock
+        .mockRejectedValueOnce(new ApiError(409, 'Stale', makeApiCollection({ id: 1, version: 4 })))
+        .mockResolvedValueOnce(
+          makeApiCollection({ id: 1, version: 5, owners: [{ user_id: 9, name: 'New' }] }),
+        )
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.version).toBe(3))
+      fetchCollectionsMock.mockImplementationOnce(() => new Promise(() => {}))
+
+      await act(async () => {
+        await expect(result.current.saveOwners(1, [9])).rejects.toBeInstanceOf(ApiError)
+      })
+      expect(result.current.detail?.version).toBe(4)
+
+      await act(async () => {
+        await result.current.saveOwners(1, [9])
+      })
+      expect(replaceCollectionOwnersMock).toHaveBeenLastCalledWith(1, {
+        user_ids: [9],
+        version: 4,
+      })
+    })
+
+    it('saveOwners propagates the orphan guard without touching state', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1 })])
+      fetchCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 1, version: 1 }))
+      replaceCollectionOwnersMock.mockRejectedValueOnce(
+        new ApiError(422, 'A collection must keep at least one owner'),
+      )
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.id).toBe(1))
+
+      await expect(result.current.saveOwners(1, [])).rejects.toBeInstanceOf(ApiError)
+      expect(result.current.collections[0].owners).toEqual([
+        { kind: 'user', userId: 7, name: 'Ada Lovelace' },
+      ])
     })
   })
 

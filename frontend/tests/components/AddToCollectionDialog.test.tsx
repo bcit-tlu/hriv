@@ -43,13 +43,13 @@ const PROGRAM_OWNED = makeCollectionSummary({
   id: 2,
   name: 'Chest positioning',
   type: 'sequence',
-  owner: { kind: 'program', programId: 1, name: 'Radiography' },
+  owners: [{ kind: 'program', programId: 1, name: 'Radiography' }],
   imageCount: 9,
 })
 const SOMEONE_ELSES = makeCollectionSummary({
   id: 3,
   name: 'Orphaned pairs',
-  owner: null,
+  owners: [],
   imageCount: 0,
 })
 

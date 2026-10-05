@@ -318,25 +318,27 @@ curl -s http://localhost:8000/api/categories/ -H "Authorization: Bearer $TOKEN"
 
 **Purpose:** Verify that deleting a program leaves its collections in place as
 orphans (admin-only), and that an admin can reassign them with
-`POST /api/collections/{id}/transfer`. See [collections.md](collections.md)
-("Ownership & lifecycle").
+`PUT /api/collections/{id}/owners`. See [collections.md](collections.md)
+("Owner management", "Ownership & lifecycle").
 
 1. Obtain tokens for `admin@example.ca` and `instructor@example.ca` (Test Case 4b).
 2. As admin, create a throw-away program: `POST /api/programs {"name": "Orphan Test"}` → note its `id` as `$PID`, and add the instructor to it (`PATCH /api/users/{instructor_id}` with `program_ids` including `$PID`).
 3. As the instructor, create a collection: `POST /api/collections {"name": "Orphan me", "type": "sequence", "visibility": "public", "image_ids": [1]}` → note `id` as `$CID` and `version`.
 4. As the instructor, move it onto the program: `POST /api/collections/$CID/transfer {"program_id": $PID, "version": <version>}`.
-   **Assert:** `200`, `owner` is `{"program_id": $PID, "name": "Orphan Test"}`, `version` incremented, `permissions.can_edit` is `true`.
-5. As the instructor, try to hand it to a user: `POST /api/collections/$CID/transfer {"user_id": <own id>, "version": <version>}`.
-   **Assert:** `403` (only admins may transfer to a user).
+   **Assert:** `200`, `owners` is `[{"user_id": null, "program_id": $PID, "name": "Orphan Test"}]` (the program becomes the sole owner — user-owner rows are cleared), `version` incremented, `permissions.can_edit` is `true`.
+5. As the instructor, stage a co-owner on the program-owned collection: `PUT /api/collections/$CID/owners {"user_ids": [<instructor id>], "version": <version>}`.
+   **Assert:** `200` — instructors of the owning program may manage user owners; `owners` lists the instructor first (user owners sort by name) then the program entry.
 6. As admin, delete the program: `DELETE /api/programs/$PID`.
-   **Assert:** `204`.
-7. As admin, `GET /api/collections?orphaned=true`.
-   **Assert:** `$CID` is listed with `owner: null`; `GET /api/collections/$CID` still returns the collection and its image.
-8. As the instructor, `PATCH /api/collections/$CID {"name": "x", "version": <version>}` and `POST /api/collections/$CID/transfer {"program_id": <another program>, "version": <version>}`.
-   **Assert:** both `403` — the orphan is admin-only even though the instructor created it. As a student, `GET /api/collections/$CID` still returns `200` (public visibility survives orphaning).
-9. As admin, reassign it: `POST /api/collections/$CID/transfer {"user_id": <instructor id>, "version": <version>}`.
-   **Assert:** `200`, `owner` is `{"user_id": <instructor id>, "name": ...}`, `version` incremented; the instructor can PATCH it again (`200`).
-10. Optional: repeat step 9 with a stale `version` → `409` whose `detail` is the current collection; with a deactivated user's id → `422`; with an unknown id → `422`; with both `user_id` and `program_id` → `422`.
+   **Assert:** `204`. The staged instructor owner keeps the collection un-orphaned — `GET /api/collections/$CID` still shows the instructor in `owners` and the instructor can PATCH it (`200`).
+7. As the instructor, empty the owner set on the now-user-owned collection: `PUT /api/collections/$CID/owners {"user_ids": [], "version": <version>}`.
+   **Assert:** `422` — a collection with no program owner may not lose its last user owner.
+8. As admin, create a second throw-away program (`POST /api/programs {"name": "Orphan Test 2"}` → `$PID2`), then a collection (`POST /api/collections` → `$CID2`) and `POST /api/collections/$CID2/transfer {"program_id": $PID2, ...}` so `$PID2` is its sole owner. Delete `$PID2` without staging any user owners.
+   **Assert:** `GET /api/collections?orphaned=true` lists `$CID2` with `owners: []`; `GET /api/collections/$CID2` still returns the collection and its image.
+9. As the instructor, `PATCH /api/collections/$CID2 {"name": "x", "version": <version>}`, `PUT /api/collections/$CID2/owners {"user_ids": [<instructor id>], "version": <version>}`, and `POST /api/collections/$CID2/transfer {"program_id": <another program>, "version": <version>}`.
+   **Assert:** all `403` — the orphan is admin-only even though the instructor created it. As a student, `GET /api/collections/$CID2` still returns `200` (public visibility survives orphaning).
+10. As admin, reassign it: `PUT /api/collections/$CID2/owners {"user_ids": [<instructor id>], "version": <version>}`.
+    **Assert:** `200`, `owners` is `[{"user_id": <instructor id>, "program_id": null, "name": ...}]`, `version` incremented; the instructor can PATCH it again (`200`).
+11. Optional: repeat step 10 with a stale `version` → `409` whose `detail` is the current collection; with a deactivated user's id → `422`; with an unknown id → `422`. As admin, `POST /api/collections/$CID2/transfer {"program_id": $PID3}` then `{"program_id": null}` → `200` (clears the program, user owners retained); on a program-owned collection with no user owners, `{"program_id": null}` → `422`.
 
 ---
 
@@ -351,10 +353,10 @@ and the ownership-management UI (#1419). Requires `COLLECTIONS_ENABLED=true`
 3. Open the collection; add images via an image's **Add to Collection** viewer action (or select images in **Search** → **Add to collection**). **Assert:** the synchronized viewer shows the panes with the link/reset controls.
 4. Switch to the library and copy the address bar (`?collection={id}`); open the URL in an incognito window logged in as a student. **Assert:** the public collection opens directly on the same view.
 5. Back as the instructor, open the collection's **Edit** → change the description and save. **Assert:** the detail header updates.
-6. Click **Transfer** in the detail header. **Assert:** only a program picker is offered, narrowed to programs the instructor belongs to; pick one and confirm. **Assert:** the header now reads "Managed by program _X_".
-7. Attempt a transfer to a user — **Assert:** there is no "A user" option for instructors (the API would 403 anyway).
+6. Click **Owners** in the detail header. **Assert:** the dialog shows the instructor in the user-owner autocomplete and a program select narrowed to programs the instructor belongs to. Type a second user's name in the user-owner autocomplete and pick them. **Assert:** the card/detail header now lists both owners, and the new co-owner can edit the collection.
+7. With both user owners in place, pick a program in the same dialog. **Assert:** the user-owner autocomplete disables with the "clears the user owners" hint; save. **Assert:** the header now shows the program as sole owner.
 8. As `admin@example.ca`, delete that program (People → Programs). Reopen the Collections tab and pick **Owner → No owner (orphaned)**. **Assert:** the collection is listed with "No owner" and its public visibility still lets a student open it.
-9. From the orphaned card's transfer icon, assign it to a user (radio **A user** → pick an active account) — **Assert:** the card leaves the orphaned list and the new owner can edit it again.
+9. From the orphaned card's **Owners** action, pick an active account in the user-owner autocomplete and save — **Assert:** the card leaves the orphaned list and the new owner can edit it again.
 10. **Tablet check:** repeat steps 3–4 at a tablet viewport (~768px) for both a synchronized and a sequence collection; **Assert:** panes/thumbnails stay usable, the **Open image** action and viewer controls remain reachable, and no horizontal overflow appears.
 
 ---
@@ -419,13 +421,14 @@ All endpoints except login require a valid JWT bearer token in the `Authorizatio
 | DELETE | /api/groups/{id}/instructors/{user_id}                                                                    | Yes           | instructor †                                                                                                  |
 | GET    | /api/collections                                                                                          | Yes           | student (`orphaned=true` filter: admin) — all `/api/collections*` routes 404 when `COLLECTIONS_ENABLED=false` |
 | GET    | /api/collections/{id}                                                                                     | Yes           | student (404 if not visible)                                                                                  |
-| POST   | /api/collections                                                                                          | Yes           | student (`visibility=restricted`: instructor, with attach authority)                                          |
-| PATCH  | /api/collections/{id}                                                                                     | Yes           | student (owner / instructor of owning program / admin; 404 if not visible)                                    |
-| DELETE | /api/collections/{id}                                                                                     | Yes           | student (owner / instructor of owning program / admin; 404 if not visible)                                    |
+| POST   | /api/collections                                                                                          | Yes           | student (staff: 403; `visibility=restricted`: instructor, with attach authority)                              |
+| PATCH  | /api/collections/{id}                                                                                     | Yes           | student (co-owner for content fields; scope fields need admin / instructor / sole student owner)              |
+| DELETE | /api/collections/{id}                                                                                     | Yes           | student (sole user-owner, no program owner / instructor of owning program / admin; 404 if not visible)        |
 | PUT    | /api/collections/{id}/images                                                                              | Yes           | student (owner / instructor of owning program / admin; 404 if not visible)                                    |
 | PUT    | /api/collections/{id}/viewport                                                                            | Yes           | student (owner / instructor of owning program / admin; 404 if not visible)                                    |
 | POST   | /api/collections/{id}/move                                                                                | Yes           | admin / instructor (any — filing is curatorial, not ownership-bound)                                          |
-| POST   | /api/collections/{id}/transfer                                                                            | Yes           | instructor (owner / in owning program, to own program; to user: admin) ¤                                      |
+| PUT    | /api/collections/{id}/owners                                                                              | Yes           | admin / instructor (co-owner or in owning program) — replaces the user-owner set ¤                            |
+| POST   | /api/collections/{id}/transfer                                                                            | Yes           | admin / instructor (co-owner or in owning program, to own program) — program owner only ¤                     |
 | GET    | /api/changelog/                                                                                           | Yes           | instructor                                                                                                    |
 | POST   | /api/changelog/                                                                                           | Yes           | admin                                                                                                         |
 | POST   | /api/changelog/mark-read                                                                                  | Yes           | instructor                                                                                                    |
@@ -487,15 +490,21 @@ Rows marked **‡** return minimal health status; they return **503** when the
 queue is degraded in required task-execution mode. Detailed queue state is
 available from `/api/metrics`.
 
-The row marked **¤** (`POST /api/collections/{id}/transfer`) is
-visibility-first: a caller who cannot view the collection gets **404**, one who
-can view it but fails `can_transfer_collection` gets **403**. Instructors may
-transfer only a collection they own or one owned by a program they belong to,
-and only onto a program they belong to (never to a user — **403**). Admins may
-transfer any collection to any program or any active user (unknown or
-deactivated target → **422**). Collections **orphaned** by a program deletion
-(both owner columns `NULL`) can only be transferred, edited or deleted by
-admins. See [collections.md](collections.md) and Test Case 10.
+The rows marked **¤** (`PUT /api/collections/{id}/owners` and
+`POST /api/collections/{id}/transfer`) are visibility-first: a caller who
+cannot view the collection gets **404**, one who can view it but fails
+`can_transfer_collection` gets **403**. `PUT /owners` replaces the
+**user-owner set** — admins and instructors (co-owners, or members of the
+owning program) may set it to any list of active users (unknown or
+deactivated ids → **422**); emptying it while no program owns the collection
+→ **422** (orphan guard). `POST /transfer` reassigns the **program** owner:
+instructors may pick only a program they belong to, admins any program;
+assigning a program deletes the user-owner rows (the program becomes the
+sole owner), and `program_id: null` clears it — but only when at least one
+user-owner row remains (**422** otherwise). Collections **orphaned** by a
+program deletion (no user owners and no program owner) can only be managed,
+edited or deleted by admins. See [collections.md](collections.md) and Test
+Case 10.
 
 Filesystem-import uploads use raw request bodies only. `PUT /api/admin/tasks/{task_id}/upload` streams an `application/octet-stream` body directly to disk, rejects multipart form uploads with 415, and preflights declared `Content-Length` against the admin-tasks volume so a full archive can fail fast with 507 before streaming begins.
 

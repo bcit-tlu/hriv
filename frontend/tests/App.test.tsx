@@ -606,7 +606,11 @@ vi.mock('../src/components/CollectionsPage', () => ({
     )
   },
 }))
-const collectionsDataMocks = vi.hoisted(() => ({ transfer: vi.fn(), move: vi.fn() }))
+const collectionsDataMocks = vi.hoisted(() => ({
+  transfer: vi.fn(),
+  move: vi.fn(),
+  saveOwners: vi.fn(),
+}))
 vi.mock('../src/useCollectionsData', () => ({
   useCollectionsData: () => ({
     collections: [],
@@ -626,6 +630,7 @@ vi.mock('../src/useCollectionsData', () => ({
     reorderImages: vi.fn(),
     saveViewport: vi.fn(),
     transfer: collectionsDataMocks.transfer,
+    saveOwners: collectionsDataMocks.saveOwners,
     move: collectionsDataMocks.move,
     renewCollectionImage: vi.fn(),
   }),
@@ -1877,17 +1882,30 @@ describe('App collections deep links (#1414)', () => {
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', '99')
   })
 
-  it('forwards collection transfer calls to collectionsData.transfer (#1419)', async () => {
+  it('forwards collection transfer calls to collectionsData.transfer (#1531)', async () => {
     window.history.replaceState(null, '', '/?page=collections')
     await renderWithCollectionsEnabled()
     const onTransfer = collectionsPageProps.current?.onTransfer as (
       id: number,
-      target: unknown,
+      programId: number | null,
     ) => Promise<unknown>
     await act(async () => {
-      await onTransfer(5, { programId: 2 })
+      await onTransfer(5, 2)
     })
-    expect(collectionsDataMocks.transfer).toHaveBeenCalledWith(5, { programId: 2 })
+    expect(collectionsDataMocks.transfer).toHaveBeenCalledWith(5, 2)
+  })
+
+  it('forwards owner saves to collectionsData.saveOwners (#1531)', async () => {
+    window.history.replaceState(null, '', '/?page=collections')
+    await renderWithCollectionsEnabled()
+    const onSaveOwners = collectionsPageProps.current?.onSaveOwners as (
+      id: number,
+      userIds: number[],
+    ) => Promise<unknown>
+    await act(async () => {
+      await onSaveOwners(5, [7, 9])
+    })
+    expect(collectionsDataMocks.saveOwners).toHaveBeenCalledWith(5, [7, 9])
   })
 
   it('ignores ?item= without a collection param', async () => {

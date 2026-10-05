@@ -34,6 +34,7 @@ from app.models import (
     Program,
     User,
     collection_groups,
+    collection_owners,
     collection_programs,
 )
 from app.routers.categories import delete_category
@@ -124,12 +125,20 @@ async def _new_collection(
         name=f"{TEST_PREFIX}coll-{uuid4().hex[:8]}",
         type=type_,
         visibility="private",
+        # Creator audit column (#1531); authority flows from ``owners``.
         user_id=owner_id,
         viewport_state={},
         version=1,
     )
     session.add(collection)
     await session.flush()
+    # Direct junction insert: assigning ``collection.owners`` would lazy-load
+    # the empty set first and hit MissingGreenlet under async.
+    await session.execute(
+        collection_owners.insert().values(
+            collection_id=collection.id, user_id=owner_id
+        )
+    )
     for position, image_id in enumerate(image_ids):
         session.add(
             CollectionImage(

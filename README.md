@@ -32,10 +32,11 @@ All seed users share the password `password`.
 | ---------------------------------------- | ----- | ---------- | ----- | ------- |
 | Browse categories & view images          | Yes   | Yes        | Yes   | Yes†    |
 | View collections (API)                   | Yes   | Yes        | Yes   | Yes¶    |
-| Create collections                       | Yes   | Yes        | Yes   | Yes     |
-| Edit/delete own collections‖             | Yes   | Yes        | Yes   | Yes     |
+| Create collections                       | Yes   | Yes        | No    | Yes     |
+| Edit co-owned collections‖               | Yes   | Yes        | No    | Yes     |
+| Delete own collections‖                  | Yes   | Yes        | No    | Yes\*   |
 | Restrict collections to programs/groups‖ | Yes   | Yes\*      | No    | No      |
-| Transfer collection ownership‖           | Yes   | Yes\*      | No    | No      |
+| Manage collection owners‖                | Yes   | Yes\*      | No    | No      |
 | Manage any collection (incl. orphaned)‖  | Yes   | No         | No    | No      |
 | Create/update categories                 | Yes   | Yes        | No    | No      |
 | Delete categories                        | Yes   | Yes        | No    | No      |
@@ -61,21 +62,28 @@ authority. See [docs/groups.md](docs/groups.md).
 
 † Students are subject to the program/group dual-gate visibility filter.
 
-¶ Students see their own collections, public collections, and restricted
+¶ Students see collections they co-own, public collections, and restricted
 collections that pass both the program and group gates; images they cannot
 open are omitted from collection responses. Admins, instructors and staff see
-every collection. Edit/delete/transfer authority (admin, owner, or instructor in
-the owning program) is described in [docs/collections.md](docs/collections.md).
+every collection. Edit/delete/owner-management authority (admin, co-owner, or
+instructor in the owning program) is described in
+[docs/collections.md](docs/collections.md).
 
-‖ Any role may create collections and edit/delete the ones it owns. Instructor
-collection authority is program-bound (the `*` rows): an instructor may
-restrict a collection to programs/groups only when they belong to the program
-or manage the group, and may transfer only a collection they own or one owned
-by a program they belong to — and only **onto a program they belong to**, never
-to a user. Only admins can transfer a collection to a user (any active user;
-deactivated users are rejected), transfer to any program, or edit / delete /
-reassign collections **orphaned** by a program deletion (both owner columns
-`NULL`). Staff and students can never transfer ownership, even of their own
+‖ Collections support multiple user co-owners plus, or instead of, a program
+owner. Admin, instructor, and student roles may create collections (the
+creator becomes the first user owner); staff are view-only and cannot create.
+Admins and instructors may edit/delete collections they co-own or
+whose owning program they belong to; students may edit collections they
+co-own, but may change scope or delete only when they are the sole user
+owner and no program owns the collection (`*` on the student delete cell).
+Staff are view-only — they cannot edit, delete, or manage owners even on
+collections they own. Instructor authority is program-bound (the `*` rows):
+an instructor may restrict a collection to programs/groups only when they
+belong to the program or manage the group, and may manage owners only for a
+collection they co-own or one owned by a program they belong to — and may
+assign only a program they belong to. Only admins can reassign collections
+**orphaned** by a program deletion (no user owners and no program owner).
+Staff and students can never manage the owner set, even on their own
 collections. See [docs/collections.md](docs/collections.md).
 
 ‡ Staff are a view-only role for authenticated non-students. They see all

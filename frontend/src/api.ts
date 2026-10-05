@@ -661,16 +661,21 @@ export function bulkDeleteImages(body: { image_ids: number[] }): Promise<void> {
 export type ApiCollectionType = 'synchronized' | 'sequence'
 export type ApiCollectionVisibility = 'private' | 'public' | 'restricted'
 
-/** Exactly one of `user_id` / `program_id` is set; the other key is present but `null`. */
+/**
+ * One owner entry in `owners` (#1531): a user (`user_id` set) or the owning
+ * program (`program_id` set) — exactly one id is non-null. An empty `owners`
+ * array means the collection is orphaned.
+ */
 export type ApiCollectionOwner = {
   user_id?: number | null
   program_id?: number | null
   name: string
-} | null
+}
 
 export interface ApiCollectionPermissions {
   can_edit: boolean
   can_delete: boolean
+  can_change_scope: boolean
   can_transfer: boolean
 }
 
@@ -680,7 +685,7 @@ export interface ApiCollectionSummary {
   description: string | null
   type: ApiCollectionType
   visibility: ApiCollectionVisibility
-  owner: ApiCollectionOwner
+  owners: ApiCollectionOwner[]
   image_count: number
   cover_thumb: string | null
   version: number
@@ -798,17 +803,29 @@ export function moveCollection(
 }
 
 /**
- * Transfer ownership (#1419). Exactly one of `user_id` / `program_id` must be
- * set (422 otherwise). Authorization lives on the server: admins may assign
- * any user or program, instructors only programs they belong to (403).
+ * Reassign *program* ownership (#1531): `program_id` sets the owning program
+ * (which clears the user-owner rows) and `null` clears it. Authorization
+ * lives on the server: admins may assign any program, instructors only
+ * programs they belong to (403); user co-ownership is managed through
+ * `replaceCollectionOwners` instead.
  */
 export function transferCollection(
   id: number,
-  body:
-    | { user_id: number; program_id?: null; version: number }
-    | { program_id: number; user_id?: null; version: number },
+  body: { program_id: number | null; version: number },
 ): Promise<ApiCollection> {
   return request(`/collections/${id}/transfer`, { method: 'POST', body: JSON.stringify(body) })
+}
+
+/**
+ * Replace the whole user-owner set (#1531). Targets must be active users
+ * (422 otherwise); the result must not orphan the collection — at least one
+ * owner row or a program owner is required. Admin / owning-instructor only.
+ */
+export function replaceCollectionOwners(
+  id: number,
+  body: { user_ids: number[]; version: number },
+): Promise<ApiCollection> {
+  return request(`/collections/${id}/owners`, { method: 'PUT', body: JSON.stringify(body) })
 }
 
 /**
