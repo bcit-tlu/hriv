@@ -111,12 +111,6 @@ export function collectImagesByParent(
 }
 
 /**
- * Collect collections per ordering scope from the category tree plus the
- * root (uncategorized) list (epic #1525). Collections are tile-order
- * members like images: filed collections ride on `Category.collections`,
- * root collections come from `GET /api/collections?uncategorized=true`.
- */
-/**
  * Category ID → tile-order `sort_order`, walked from the Category tree.
  * `FlatCategoryOption` drops sortOrder; the template reconstruction in
  * `interleavedTileOrders` needs real category positions to resolve member
@@ -134,6 +128,12 @@ export function collectCategorySortOrders(cats: Category[]): Map<number, number>
   return map
 }
 
+/**
+ * Collect collections per ordering scope from the category tree plus the
+ * root (uncategorized) list (epic #1525). Collections are tile-order
+ * members like images: filed collections ride on `Category.collections`,
+ * root collections come from `GET /api/collections?uncategorized=true`.
+ */
 export function collectCollectionsByParent(
   cats: Category[],
   uncategorized: CollectionSummary[],

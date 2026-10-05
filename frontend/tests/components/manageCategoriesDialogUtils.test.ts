@@ -11,6 +11,7 @@
 
 import { describe, it, expect } from 'vitest'
 import {
+  collectCategorySortOrders,
   collectCollectionsByParent,
   collectImagesByParent,
   diffParentMoves,
@@ -119,6 +120,40 @@ describe('collectCollectionsByParent', () => {
     const result = collectCollectionsByParent(cats, [])
     expect(result.get('1')!.map((c) => c.id)).toEqual([30])
     expect(result.get('2')!.map((c) => c.id)).toEqual([32, 31])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// collectCategorySortOrders
+// ---------------------------------------------------------------------------
+
+describe('collectCategorySortOrders', () => {
+  it('maps every category id to its sortOrder across a nested tree', () => {
+    const cats = [
+      makeCategory({
+        id: 1,
+        sortOrder: 0,
+        children: [
+          makeCategory({
+            id: 3,
+            parentId: 1,
+            sortOrder: 7,
+            children: [makeCategory({ id: 4, parentId: 3, sortOrder: 2 })],
+          }),
+        ],
+      }),
+      makeCategory({ id: 2, sortOrder: 5 }),
+    ]
+    const result = collectCategorySortOrders(cats)
+    expect(result.get(1)).toBe(0)
+    expect(result.get(2)).toBe(5)
+    expect(result.get(3)).toBe(7)
+    expect(result.get(4)).toBe(2)
+    expect(result.size).toBe(4)
+  })
+
+  it('returns an empty map for an empty tree', () => {
+    expect(collectCategorySortOrders([]).size).toBe(0)
   })
 })
 
