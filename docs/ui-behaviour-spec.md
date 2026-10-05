@@ -38,10 +38,14 @@ Three capability flags in `AuthContext.tsx` drive all gating:
 
 - **Given** a student is logged in, **When** the app bar renders, **Then** only
   Home and **Collections** are shown (no Images, Manage, People, or Admin).
-- **Given** the Collections tab, **When** clicked, **Then** a sub-menu (same
-  `Tab` → `Menu` pattern as Manage) offers **Sequence** and **Synchronized**
-  (#1554); each opens `?page=collections&type=` and a missing/invalid `type`
-  defaults to Sequence. The compact drawer shows both items flattened in.
+- **Given** the Collections tab, **When** clicked, **Then** it opens a
+  sub-menu (same `Tab` → `Menu` pattern as Manage) offering **Sequence** and
+  **Synchronized** _without_ navigating — the tab's `value` is filtered out
+  of Tabs' onChange so it is a menu trigger only (#1559); each menu item
+  opens `?page=collections&type=` and a missing/invalid `type`
+  defaults to Sequence. On a collections page the tab stays highlighted and
+  the matching menu item renders `selected`. The compact drawer shows both
+  items flattened in.
 - **Given** a staff user, **Then** the Manage dropdown renders with only the
   **Collections** item (Categories/Groups/Announcement stay
   edit-content-only); **Given** a student, **Then** no Manage surface at all.
@@ -270,6 +274,21 @@ returned by the API (UX only — the backend re-checks).
   comma-joined list (`describeCollectionOwners` — user names, `_X_ (program)`
   for a program owner, `No owner` when orphaned), the visibility chip, and —
   when `restricted` — a chip per attached program and group.
+- **Given** a collection detail is open (#1559), **Then** the header leads
+  with a `MuiBreadcrumbs` of its filed location (Home icon + category
+  ancestors, or just **Home** at the root — there is no "All collections"
+  back link); each breadcrumb link navigates Browse to that spot. **Then**
+  the top-right row orders: visibility chip (Public/Private/Restricted) —
+  with a `Hidden` chip beside the title when `hidden` — then **Hide
+  collection** / **Show collection** (`canHide` — admins and instructors
+  only; PATCHes `hidden` with the OCC version), **Move** (admin/instructor),
+  **Reorder** (sequence + `canEdit` — the viewer's strip goes into drag mode
+  while pressed), **Edit** (`canEdit`), and **Owners** (`canTransfer`).
+- **Given** a curatorially hidden collection, **Then** non-students see it
+  everywhere with the desaturated card treatment and a `VisibilityOff`
+  marker (card name, Manage → Collections Name cell, `Hidden` chip on the
+  detail); students see it only if they own it — for everyone else it is
+  absent from lists/Browse/search and `GET` answers **404**.
 
 #### Collections in the Browse tile grid (#1529)
 
@@ -293,8 +312,9 @@ returned by the API (UX only — the backend re-checks).
   refresh, both scopes' tile-order revisions invalidate, and an undo snackbar
   re-posts the previous category with the version from the move response.
 - **Given** a collection opened from a Browse tile, **Then** the URL carries
-  `?collection={id}&cat={path}`, the detail back button reads **Back to
-  Browse**, and closing it returns to the originating scope; **Given** a
+  `?collection={id}&cat={path}`, and the error-state close action returns to
+  the originating scope; the detail breadcrumb always shows the collection's
+  _filed_ location (#1559). **Given** a
   `?collection={id}` link without `?cat=`, **Then** the detail opens in the
   Collections list context as before.
 - **Given** a category containing collections, **Then** its tile detail line

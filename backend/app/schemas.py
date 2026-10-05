@@ -703,6 +703,7 @@ class CollectionPermissionsOut(BaseModel):
     can_change_scope: bool = False
     can_delete: bool = False
     can_transfer: bool = False
+    can_hide: bool = False
 
 
 class CollectionSummaryOut(BaseModel):
@@ -711,6 +712,9 @@ class CollectionSummaryOut(BaseModel):
     description: str | None = None
     type: str
     visibility: str
+    # Curatorial hide (#1559): hidden collections are invisible to students
+    # who don't own them; owners keep access.
+    hidden: bool = False
     # Co-owners (#1531): one entry per ``collection_owners`` row, plus an
     # entry for the owning program when set. Empty = orphaned (admin-managed).
     owners: list[CollectionOwnerOut] = []
@@ -826,6 +830,7 @@ class CollectionUpdate(BaseModel):
     visibility: CollectionVisibility | None = None
     program_ids: list[int] | None = None
     group_ids: list[int] | None = None
+    hidden: bool | None = None
     version: int
 
     _validate_name = field_validator("name", mode="before")(normalize_optional_nonblank_value)

@@ -338,6 +338,27 @@ async def test_update_persists_and_clears_restricted_scope(session_factory) -> N
             assert rows == []
 
 
+async def test_update_persists_hidden_flag(session_factory) -> None:
+    """``hidden`` round-trips through a real session (#1559)."""
+    async with session_factory() as session:
+        admin_id = await _new_admin(session, "hid")
+        collection_id = await _new_collection(session, "sequence", [], owner_id=admin_id)
+
+    async with session_factory() as session:
+        admin = await _get_user(session, admin_id)
+        out = await update_collection(
+            collection_id,
+            CollectionUpdate(hidden=True, version=1),
+            admin,
+            session,
+        )
+        assert out.hidden is True
+
+    async with session_factory() as check:
+        row = await check.get(Collection, collection_id)
+        assert row is not None and row.hidden is True
+
+
 # ---------------------------------------------------------------------------
 # Optimistic concurrency across separate sessions
 # ---------------------------------------------------------------------------

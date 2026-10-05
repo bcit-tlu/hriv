@@ -47,6 +47,7 @@ function makeApiSummary(overrides: Partial<ApiCollectionSummary> = {}): ApiColle
     description: 'Frontal vs lateral',
     type: 'synchronized',
     visibility: 'private',
+    hidden: false,
     owners: [{ user_id: 7, name: 'Ada Lovelace' }],
     image_count: 2,
     cover_thumb: '/hriv-splash2.jpg',
@@ -55,7 +56,13 @@ function makeApiSummary(overrides: Partial<ApiCollectionSummary> = {}): ApiColle
     sort_order: 0,
     created_at: FIXED_AT,
     updated_at: FIXED_AT,
-    permissions: { can_edit: true, can_delete: true, can_change_scope: true, can_transfer: true },
+    permissions: {
+      can_edit: true,
+      can_delete: true,
+      can_change_scope: true,
+      can_transfer: true,
+      can_hide: false,
+    },
     ...overrides,
   }
 }
@@ -67,6 +74,7 @@ const rows: ApiCollectionSummary[] = [
     name: 'Fracture healing timeline',
     type: 'sequence',
     visibility: 'public',
+    hidden: false,
     image_count: 6,
     owners: [{ program_id: 1, name: 'Radiography' }],
     category_id: null,
@@ -75,12 +83,14 @@ const rows: ApiCollectionSummary[] = [
       can_delete: false,
       can_change_scope: false,
       can_transfer: false,
+      can_hide: false,
     },
   }),
   makeApiSummary({
     id: 3,
     name: 'Cohort 2026A review set',
     visibility: 'restricted',
+    hidden: false,
     image_count: 4,
     owners: [
       { user_id: 8, name: 'Grace Hopper' },
@@ -88,7 +98,13 @@ const rows: ApiCollectionSummary[] = [
     ],
     category_id: 3,
     cover_thumb: null,
-    permissions: { can_edit: true, can_delete: false, can_change_scope: false, can_transfer: true },
+    permissions: {
+      can_edit: true,
+      can_delete: false,
+      can_change_scope: false,
+      can_transfer: true,
+      can_hide: false,
+    },
   }),
 ]
 

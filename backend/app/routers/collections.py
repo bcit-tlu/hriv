@@ -51,6 +51,7 @@ from ..authz import (
     can_change_collection_scope,
     can_delete_collection,
     can_edit_collection,
+    can_hide_collection,
     can_transfer_collection,
 )
 from ..browse_state import bump_browse_revision
@@ -448,6 +449,16 @@ async def update_collection(
         or body.program_ids is not None
         or body.group_ids is not None
     )
+    # Hide is curatorial (#1559): admins/instructors may hide any collection
+    # regardless of ownership — a hidden-only PATCH skips the owner-edit
+    # gate below, while owners themselves may not unhide.
+    hidden_touched = body.hidden is not None and body.hidden != collection.hidden
+    hidden_only = set(fields) <= {"hidden", "version"}
+    if hidden_touched and not can_hide_collection(user, collection):
+        raise HTTPException(
+            status_code=403,
+            detail="Only admins and instructors may hide collections",
+        )
     if scope_touched:
         # Scope rights imply content rights for every role (a student sole
         # owner is still an owner), so one check covers mixed bodies.
@@ -456,7 +467,9 @@ async def update_collection(
                 status_code=403,
                 detail="You may not change this collection's scope",
             )
-    elif not can_edit_collection(user, collection):
+    elif not can_edit_collection(user, collection) and not (
+        hidden_touched and hidden_only
+    ):
         raise HTTPException(
             status_code=403, detail="You may not edit this collection"
         )
@@ -497,6 +510,8 @@ async def update_collection(
         collection.description = body.description
     if body.visibility is not None:
         collection.visibility = body.visibility
+    if body.hidden is not None:
+        collection.hidden = body.hidden
     if new_programs is not None:
         collection.programs = new_programs
     if new_groups is not None:

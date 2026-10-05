@@ -4,7 +4,15 @@ import { expect, fn, userEvent, within } from 'storybook/test'
 import Box from '@mui/material/Box'
 import { AuthContext, type AuthContextValue } from '../authContextValue'
 import { matchesCollectionFilters, type CollectionListFilters } from '../useCollectionsData'
-import type { Collection, CollectionSummary, ImageItem, Program, Role, User } from '../types'
+import type {
+  Category,
+  Collection,
+  CollectionSummary,
+  ImageItem,
+  Program,
+  Role,
+  User,
+} from '../types'
 import CollectionsPage from './CollectionsPage'
 
 const FIXED_AT = '2026-09-01T09:00:00Z'
@@ -52,6 +60,7 @@ function makeSummary(overrides: Partial<CollectionSummary> = {}): CollectionSumm
     description: null,
     type: 'synchronized',
     visibility: 'private',
+    hidden: false,
     owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace' }],
     imageCount: 2,
     coverThumb: '/hriv-splash2.jpg',
@@ -60,7 +69,13 @@ function makeSummary(overrides: Partial<CollectionSummary> = {}): CollectionSumm
     version: 1,
     createdAt: FIXED_AT,
     updatedAt: FIXED_AT,
-    permissions: { canEdit: true, canDelete: true, canChangeScope: true, canTransfer: false },
+    permissions: {
+      canEdit: true,
+      canDelete: true,
+      canChangeScope: true,
+      canTransfer: false,
+      canHide: false,
+    },
     ...overrides,
   }
 }
@@ -86,17 +101,31 @@ const summaries: CollectionSummary[] = [
     name: 'Fracture healing timeline',
     type: 'sequence',
     visibility: 'public',
+    hidden: false,
     imageCount: 6,
     owners: [{ kind: 'program', programId: 1, name: 'Radiography' }],
-    permissions: { canEdit: false, canDelete: false, canChangeScope: false, canTransfer: false },
+    permissions: {
+      canEdit: false,
+      canDelete: false,
+      canChangeScope: false,
+      canTransfer: false,
+      canHide: false,
+    },
   }),
   makeSummary({
     id: 3,
     name: 'Cohort 2026A review set',
     visibility: 'restricted',
+    hidden: false,
     imageCount: 4,
     owners: [{ kind: 'user', userId: 8, name: 'Grace Hopper' }],
-    permissions: { canEdit: false, canDelete: false, canChangeScope: false, canTransfer: false },
+    permissions: {
+      canEdit: false,
+      canDelete: false,
+      canChangeScope: false,
+      canTransfer: false,
+      canHide: false,
+    },
   }),
   makeSummary({
     id: 4,
@@ -117,9 +146,61 @@ const detail: Collection = {
   memberCount: 2,
 }
 
+function makeCategory(overrides: Partial<Category> = {}): Category {
+  return {
+    id: 1,
+    label: 'Category',
+    parentId: null,
+    children: [],
+    images: [],
+    collections: [],
+    programIds: [],
+    groupIds: [],
+    status: null,
+    sortOrder: 0,
+    version: 1,
+    cardImageId: null,
+    ...overrides,
+  }
+}
+
+// Hematology → MLSC-3200 → Lab 3 — the filed-detail breadcrumb fixture.
+const lab3 = makeCategory({ id: 30, label: 'Lab 3', parentId: 20 })
+const mlsc3200 = makeCategory({ id: 20, label: 'MLSC-3200', parentId: 10, children: [lab3] })
+const hematology = makeCategory({ id: 10, label: 'Hematology', children: [mlsc3200] })
+const browseTree: Category[] = [hematology]
+
+const filedDetail: Collection = {
+  ...makeSummary({
+    id: 5,
+    name: 'Lab 3 slides',
+    type: 'sequence',
+    visibility: 'public',
+    categoryId: 30,
+    permissions: {
+      canEdit: true,
+      canDelete: true,
+      canChangeScope: true,
+      canTransfer: true,
+      canHide: true,
+    },
+  }),
+  description: 'Filed deep inside the Hematology hierarchy.',
+  images: [
+    makeImage(101, 'Smear — low power'),
+    makeImage(102, 'Smear — high power'),
+    makeImage(103, 'Marrow core'),
+  ],
+  programIds: [],
+  groupIds: [],
+  viewportState: {},
+  memberCount: 3,
+}
+
 interface StoryArgs {
   role: Role
   collectionPageType?: 'sequence' | 'synchronized'
+  categories?: Category[]
   collections: CollectionSummary[]
   loading: boolean
   error: string | null
@@ -177,6 +258,9 @@ function CollectionsPageExample(args: StoryArgs) {
           onDelete={async () => undefined}
           onSaveOwners={async () => undefined}
           onTransfer={async () => undefined}
+          categories={args.categories ?? []}
+          onNavigateCategory={() => undefined}
+          onToggleHidden={async () => undefined}
         />
       </Box>
     </AuthContext.Provider>
@@ -284,6 +368,38 @@ export const Detail: Story = {
     await expect(buttons).toHaveLength(2)
     await userEvent.click(buttons[0])
     await expect(args.onOpenImage).toHaveBeenCalledWith(detail.images[0])
+  },
+}
+
+export const DetailFiled: Story = {
+  name: 'Detail (filed in a category)',
+  // Sequence detail filed in Hematology → MLSC-3200 → Lab 3 (#1559): the
+  // header leads with the category breadcrumb, and the action row shows
+  // visibility chip → Move → Reorder → Edit → Owners → Hide collection.
+  args: {
+    collectionPageType: 'sequence',
+    categories: browseTree,
+    selectedCollectionId: 5,
+    detail: filedDetail,
+  },
+  parameters: {
+    a11y: { test: 'todo' },
+    chromatic: { pauseAnimationAtEnd: true, delay: 300 },
+  },
+}
+
+export const DetailHidden: Story = {
+  name: 'Detail (hidden)',
+  // Curator view of a hidden collection (#1559): Hidden chip beside the
+  // visibility chip and the action reads "Show collection".
+  args: {
+    collectionPageType: 'sequence',
+    selectedCollectionId: 5,
+    detail: { ...filedDetail, hidden: true },
+  },
+  parameters: {
+    a11y: { test: 'todo' },
+    chromatic: { pauseAnimationAtEnd: true, delay: 300 },
   },
 }
 

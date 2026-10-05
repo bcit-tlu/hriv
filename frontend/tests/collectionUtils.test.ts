@@ -66,6 +66,7 @@ describe('collectionUtils mapping', () => {
           can_delete: true,
           can_change_scope: false,
           can_transfer: true,
+          can_hide: false,
         },
       }),
     )
@@ -74,6 +75,7 @@ describe('collectionUtils mapping', () => {
       name: 'Skull comparison',
       type: 'synchronized',
       visibility: 'private',
+      hidden: false,
       owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace' }],
       imageCount: 2,
       coverThumb: '/thumbs/skull.jpg?token=abc',
@@ -87,6 +89,7 @@ describe('collectionUtils mapping', () => {
         canDelete: true,
         canChangeScope: false,
         canTransfer: true,
+        canHide: false,
       },
     })
   })

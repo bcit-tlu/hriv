@@ -73,6 +73,8 @@ function renderViewer(overrides: Partial<SequenceCollectionViewerProps> = {}) {
     onReorder: vi.fn().mockResolvedValue(undefined),
     onImageRenewed: vi.fn(),
     onError: vi.fn(),
+    reordering: false,
+    onReorderingChange: vi.fn(),
     ...overrides,
   }
   return { ...render(<SequenceCollectionViewer {...props} />), props }
@@ -227,30 +229,23 @@ describe('SequenceCollectionViewer', () => {
   })
 
   it('resets failures and reorder mode when a different collection opens', () => {
-    const { props, rerender } = renderViewer()
-    fireEvent.click(screen.getByTestId('sequence-reorder-toggle'))
+    const { props, rerender } = renderViewer({ reordering: true })
     act(() => {
       ;(lastViewerProps!.onError as (m: string) => void)('gone')
     })
     const next = seqCollection({ id: 77, images: [makeImage({ id: 100, name: 'Slice 1' })] })
-    rerender(<SequenceCollectionViewer {...props} collection={next} itemId={100} />)
-    // Reorder mode exited and the shared image id is no longer failed.
-    expect(screen.queryByTestId('sequence-reorder-toggle')).toBeInTheDocument()
+    rerender(
+      <SequenceCollectionViewer {...props} collection={next} itemId={100} reordering={false} />,
+    )
+    // The controlled reorder mode is exited by the collection-change effect
+    // and the shared image id is no longer failed.
+    expect(props.onReorderingChange).toHaveBeenCalledWith(false)
     expect(screen.getByRole('button', { name: 'Go to Slice 1' })).toBeEnabled()
   })
 
-  it('hides the reorder toggle from non-editors', () => {
-    const collection = seqCollection({
-      permissions: { canEdit: false, canDelete: false, canTransfer: false },
-    })
-    renderViewer({ collection })
-    expect(screen.queryByTestId('sequence-reorder-toggle')).not.toBeInTheDocument()
-  })
-
-  it('offers reorder mode to editors and persists a drag reorder', async () => {
+  it('offers reorder mode via the controlled prop and persists a drag reorder', async () => {
     const collection = seqCollection()
-    const { props } = renderViewer({ collection })
-    fireEvent.click(screen.getByTestId('sequence-reorder-toggle'))
+    const { props } = renderViewer({ collection, reordering: true })
     expect(capturedOnDragEnd).toBeDefined()
     // Drag the first item onto the third: move() commits source.index.
     capturedOnDragEnd!({
@@ -266,8 +261,7 @@ describe('SequenceCollectionViewer', () => {
   it('reports a reorder failure through onError', async () => {
     const err = new Error('stale version')
     const onReorder = vi.fn().mockRejectedValue(err)
-    const { props } = renderViewer({ onReorder })
-    fireEvent.click(screen.getByTestId('sequence-reorder-toggle'))
+    const { props } = renderViewer({ onReorder, reordering: true })
     capturedOnDragEnd!({
       operation: {
         source: { id: 'seq-100', index: 2, initialIndex: 0, group: 'strip' },
@@ -281,8 +275,7 @@ describe('SequenceCollectionViewer', () => {
   })
 
   it('ignores a canceled drag and a drop that changes nothing', () => {
-    const { props } = renderViewer()
-    fireEvent.click(screen.getByTestId('sequence-reorder-toggle'))
+    const { props } = renderViewer({ reordering: true })
     capturedOnDragEnd!({
       operation: {
         source: { id: 'seq-100', index: 0, initialIndex: 0, group: 'strip' },

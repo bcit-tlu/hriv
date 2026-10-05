@@ -677,6 +677,7 @@ export interface ApiCollectionPermissions {
   can_delete: boolean
   can_change_scope: boolean
   can_transfer: boolean
+  can_hide: boolean
 }
 
 export interface ApiCollectionSummary {
@@ -685,6 +686,8 @@ export interface ApiCollectionSummary {
   description: string | null
   type: ApiCollectionType
   visibility: ApiCollectionVisibility
+  /** Curatorial hide (#1559): invisible to students who don't own it. */
+  hidden: boolean
   owners: ApiCollectionOwner[]
   image_count: number
   cover_thumb: string | null
@@ -765,6 +768,7 @@ export function updateCollection(
     visibility?: ApiCollectionVisibility
     program_ids?: number[]
     group_ids?: number[]
+    hidden?: boolean
     version: number
   },
 ): Promise<ApiCollection> {

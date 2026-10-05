@@ -635,6 +635,7 @@ vi.mock('../src/useCollectionsData', () => ({
     transfer: collectionsDataMocks.transfer,
     saveOwners: collectionsDataMocks.saveOwners,
     move: collectionsDataMocks.move,
+    setHidden: vi.fn(),
     renewCollectionImage: vi.fn(),
   }),
 }))
@@ -2047,14 +2048,15 @@ describe('App collection browse context (#1529)', () => {
         collectionFromBrowse: true,
       },
     )
-    expect(collectionsPageProps.current?.detailBackLabel).toBe('Back to Browse')
+    // The detail breadcrumb handler jumps to the filed Browse scope (#1559).
+    expect(collectionsPageProps.current?.onNavigateCategory).toBeTypeOf('function')
 
     fireEvent.click(screen.getByRole('button', { name: 'Close collection' }))
     expect(pushNavStateMock).toHaveBeenLastCalledWith('browse', [1])
     await waitFor(() => expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument())
   })
 
-  it('uses the default collections label when opened from the list page', async () => {
+  it('wires breadcrumb navigation and hide/show props for the detail header (#1559)', async () => {
     window.history.replaceState(null, '', '/?page=collections')
     await renderWithCollectionsEnabled()
     fireEvent.click(screen.getByRole('button', { name: 'Open collection 5' }))
@@ -2067,7 +2069,9 @@ describe('App collection browse context (#1529)', () => {
         collectionFromBrowse: false,
       },
     )
-    expect(collectionsPageProps.current?.detailBackLabel).toBeUndefined()
+    expect(collectionsPageProps.current?.onNavigateCategory).toBeTypeOf('function')
+    expect(collectionsPageProps.current?.onToggleHidden).toBeTypeOf('function')
+    expect(collectionsPageProps.current?.categories).toBeDefined()
   })
 
   it('restores the browse context for a collection entry on back/forward', async () => {
@@ -2079,7 +2083,15 @@ describe('App collection browse context (#1529)', () => {
       popStateHandler!('collections', [1], null, { collectionFromBrowse: true })
     })
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '12')
-    expect(collectionsPageProps.current?.detailBackLabel).toBe('Back to Browse')
+
+    // The detail breadcrumb clears the detail and navigates Browse to the
+    // collection's filed location (#1559).
+    const onNavigateCategory = collectionsPageProps.current?.onNavigateCategory as (
+      p: MockCategory[],
+    ) => void
+    act(() => onNavigateCategory([{ ...mockCategories[0], id: 7 }]))
+    expect(pushNavStateMock).toHaveBeenLastCalledWith('browse', [7])
+    await waitFor(() => expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument())
   })
 })
 

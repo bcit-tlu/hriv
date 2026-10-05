@@ -8,8 +8,6 @@ import Typography from '@mui/material/Typography'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
-import ReorderIcon from '@mui/icons-material/Reorder'
-import DoneIcon from '@mui/icons-material/Done'
 import { DragDropProvider, KeyboardSensor, PointerSensor } from '@dnd-kit/react'
 import { useSortable } from '@dnd-kit/react/sortable'
 import { move } from '@dnd-kit/helpers'
@@ -39,6 +37,13 @@ export interface SequenceCollectionViewerProps {
   /** Refresh a member's tokenized URLs after the viewer's tile-token renewal. */
   onImageRenewed: (image: ApiImage) => void
   onError: (message: string) => void
+  /**
+   * Reorder mode — controlled by the parent (#1559): the Reorder/Done
+   * toggle lives in the detail header between Move and Edit. The viewer
+   * still drops out of reorder when the collection changes.
+   */
+  reordering: boolean
+  onReorderingChange: (reordering: boolean) => void
 }
 
 const stripItemId = (imageId: number) => `seq-${imageId}`
@@ -111,10 +116,10 @@ export default function SequenceCollectionViewer({
   onReorder,
   onImageRenewed,
   onError,
+  reordering,
+  onReorderingChange,
 }: SequenceCollectionViewerProps) {
   const images = collection.images
-  const canEdit = collection.permissions.canEdit
-  const [reordering, setReordering] = useState(false)
   // Images whose tiles failed mid-session (deleted / access lost / expired
   // renewal) are skipped by navigation and dimmed in the strip.
   const [failedIds, setFailedIds] = useState<ReadonlySet<number>>(() => new Set())
@@ -126,8 +131,8 @@ export default function SequenceCollectionViewer({
     if (previousCollectionId.current === collectionId) return
     previousCollectionId.current = collectionId
     setFailedIds(new Set())
-    setReordering(false)
-  }, [collectionId])
+    onReorderingChange(false)
+  }, [collectionId, onReorderingChange])
 
   const available = useMemo(
     () => images.filter((img) => !failedIds.has(img.id)),
@@ -311,18 +316,8 @@ export default function SequenceCollectionViewer({
         >
           Open image
         </Button>
-        {canEdit && (
-          <Button
-            size="small"
-            variant={reordering ? 'contained' : 'outlined'}
-            startIcon={reordering ? <DoneIcon /> : <ReorderIcon />}
-            onClick={() => setReordering((v) => !v)}
-            aria-pressed={reordering}
-            data-testid="sequence-reorder-toggle"
-          >
-            {reordering ? 'Done' : 'Reorder'}
-          </Button>
-        )}
+        {/* The Reorder/Done toggle lives in the detail header between Move
+            and Edit (#1559); `reordering` is a controlled prop. */}
       </Box>
 
       <Paper elevation={3} sx={{ borderRadius: 2, overflow: 'hidden' }}>
