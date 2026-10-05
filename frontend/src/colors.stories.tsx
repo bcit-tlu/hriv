@@ -32,7 +32,7 @@ function Palette() {
         return (
           <Box key={channel}>
             <Typography variant="overline">{channel}</Typography>
-            <Stack direction="row" spacing={3}>
+            <Stack direction="row" spacing={3} sx={{ flexWrap: 'wrap' }}>
               <Swatch name="main" color={c.main} />
               <Swatch name="light" color={c.light} />
               <Swatch name="dark" color={c.dark} />
@@ -62,6 +62,15 @@ const meta = {
   component: Palette,
   parameters: {
     layout: 'padded',
+    // Chromatic snapshots only the default theme; capture light AND dark so a
+    // palette regression in either mode is caught. (The toolbar theme toggle is
+    // interactive-only and is not snapshotted.)
+    chromatic: {
+      modes: {
+        light: { theme: 'light' },
+        dark: { theme: 'dark' },
+      },
+    },
     docs: {
       description: {
         component:
