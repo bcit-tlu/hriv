@@ -1,11 +1,13 @@
 # Drag-and-Drop Spec (Browse grid tiles)
 
-Single source of truth for the **move vs. reorder** behaviour of category/image
-tiles on the Browse page (`frontend/src/components/SortableTileGrid.tsx`).
-Since #1529, collection tiles (`col-<id>`) share the same grid: they are drag
-sources and reorder participants like image tiles. The collision contract
-below is unchanged — `drop-cat-<id>` remains the only move zone, and a `col-`
-source dropped there files the collection into that category
+Single source of truth for the **move/add vs. reorder** behaviour of
+category/image/collection tiles on the Browse page
+(`frontend/src/components/SortableTileGrid.tsx`). Since #1529, collection
+tiles (`col-<id>`) share the same grid: they are drag sources and reorder
+participants like image tiles. Since #1530, an editable collection tile also
+carries a second near-half zone, `drop-col-<id>` — an **add-member** target
+that accepts `img-` sources only. `drop-cat-<id>` remains the only move zone,
+and a `col-` source dropped there files the collection into that category
 (`onDropCollectionOnCategory`) instead of reordering.
 
 Read this before changing any collision detection, drop-zone, or activation
@@ -22,21 +24,23 @@ PR if you intentionally change the behaviour.
 > Tiles are sortables and reflow live during a drag, but reorder fires only once
 > the pointer crosses a tile's centre along the drag direction (the **far
 > half**). The **near half** — the side the pointer entered from — is a
-> dead-zone where move wins on a category tile ("Move here") and the drag sits
-> still on an image tile. This keeps "move always wins inside a category tile"
-> while leaving category↔category reorder reachable (push past the neighbour's
-> centre).
+> dead-zone where move wins on a category tile ("Move here"), add-member wins
+> on an editable collection tile ("Add to collection", #1530), and the drag
+> sits still on an image tile. This keeps "move/add always wins inside a tile's
+> near half" while leaving tile↔tile reorder reachable (push past the
+> neighbour's centre).
 
-## The two gestures
+## The gestures
 
-There is exactly one source being dragged (a `tile`) and two kinds of drop
+There is exactly one source being dragged (a `tile`) and three kinds of drop
 target. They must never both act on the same pointer position — the directional
 threshold makes them mutually exclusive inside any tile.
 
-| Gesture                | Trigger zone                                                           | Droppable                                           | Collision detector        | Priority                   | Result                                                                                                      |
-| ---------------------- | ---------------------------------------------------------------------- | --------------------------------------------------- | ------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| **Move into category** | Pointer on the **near half** of a category tile (entry side of centre) | `DroppableCategoryZone`, id `drop-cat-<categoryId>` | `nearHalfMoveCollision`   | `CollisionPriority.High`   | `onDropImageOnCategory` / `onDropCategoryOnCategory` / `onDropCollectionOnCategory` (`col-` sources, #1529) |
-| **Reorder**            | Pointer past a tile's **centre** (far half) along the drag axis        | the sibling tile's `useSortable`                    | `farHalfReorderCollision` | `CollisionPriority.Normal` | coordinator `reportOrder` → `PUT /api/tile-order` (via `move()`)                                            |
+| Gesture                       | Trigger zone                                                            | Droppable                                               | Collision detector        | Priority                   | Result                                                                                                       |
+| ----------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------- | ------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| **Move into category**        | Pointer on the **near half** of a category tile (entry side of centre)  | `DroppableCategoryZone`, id `drop-cat-<categoryId>`     | `nearHalfMoveCollision`   | `CollisionPriority.High`   | `onDropImageOnCategory` / `onDropCategoryOnCategory` / `onDropCollectionOnCategory` (`col-` sources, #1529)  |
+| **Add to collection** (#1530) | Pointer on the **near half** of an editable (`canEdit`) collection tile | `DroppableCollectionZone`, id `drop-col-<collectionId>` | `nearHalfMoveCollision`   | `CollisionPriority.High`   | `onDropImageOnCollection` — `accept` admits `img-` sources only; dedupe + capacity checks run in the handler |
+| **Reorder**                   | Pointer past a tile's **centre** (far half) along the drag axis         | the sibling tile's `useSortable`                        | `farHalfReorderCollision` | `CollisionPriority.Normal` | coordinator `reportOrder` → `PUT /api/tile-order` (via `move()`)                                             |
 
 Every reorder persists through the shared coordinator
 (`frontend/src/tileOrdering.ts`), which submits the scope's full order
@@ -47,13 +51,17 @@ never discarded. See `docs/tile-ordering.md` for the save-state lifecycle.
 
 The two detectors share one predicate, `isPastTileCenterAlongDrag`, and are
 exact complements inside a tile: for any pointer inside a tile, **exactly one**
-fires. Move has higher priority, so on the near half of a category tile move
-always wins; reorder can only win once the pointer crosses the centre.
+fires. Move/add have higher priority, so on the near half of a category or
+editable collection tile the zone always wins; reorder can only win once the
+pointer crosses the centre.
 
 ### Invariants (enforced by unit tests — see `tests/components/SortableTileGrid.test.tsx`)
 
 1. `handleDragEnd` performs a **move** only when the target id starts with
-   `drop-cat-` (`DROP_PREFIX`).
+   `drop-cat-` (`DROP_PREFIX`), and an **add-member** dispatch only when it
+   starts with `drop-col-` (`DROP_COL_PREFIX`, #1530). The collection zone's
+   `accept` filter admits `img-` sources only, and the dispatch guard mirrors
+   it — a `cat-`/`col-` drop on `drop-col-*` is a no-op, never a reorder.
 2. Any other target is treated as a **reorder**, committed via
    `move(ids, event)` which reads the source's reflowed sortable index, so the
    committed order matches the on-screen preview.
@@ -86,7 +94,8 @@ dnd-kit's `direction` is recomputed frame-to-frame and flips on the tiniest
 jitter; cumulative delta is stable. The dominant axis of the delta selects the
 axis to test, so the same rule covers horizontal neighbours and the vertical
 neighbours of a wrapped grid. Before any travel (`delta` ≈ 0) nothing is past
-centre, so a category tile reads as all near-half and move is the default.
+centre, so a tile reads as all near-half and the zone gesture (move/add) is the
+default.
 
 ### Activation
 
@@ -134,12 +143,21 @@ keyed on `isPastTileCenterAlongDrag(pointer, center, delta)`:
   original drag start. The far-half rule would then reject the source and clear
   `operation.target`, so the source always collides while the pointer is inside
   it, regardless of which half the pointer is on.
-- `nearHalfMoveCollision` (passed to `DroppableCategoryZone`'s full-rect
-  `useDroppable`, `High` priority): the exact complement — collides only on the
-  near half, so "Move here" owns the entry side of a category tile. The source
-  category's own move zone is explicitly excluded, because a category tile is
-  both a sortable and a move-zone droppable and the two detectors would otherwise
-  overlap on the dragged tile.
+- `nearHalfMoveCollision` (passed to the full-rect `useDroppable` inside the
+  shared `TileDropZone` — `DroppableCategoryZone` "Move here" and
+  `DroppableCollectionZone` "Add to collection", `High` priority): the exact
+  complement — collides only on the near half, so the zone owns the entry side
+  of a tile. The source category's own move zone is explicitly excluded,
+  because a category tile is both a sortable and a move-zone droppable and the
+  two detectors would otherwise overlap on the dragged tile. The collection
+  zone adds a source-type `accept` filter (`img-` only) — it renders only for
+  `permissions.canEdit` collections, so read-only collection tiles behave like
+  image tiles (near-half dead-zone, far-half reorder). Membership editing is
+  ownership-gated, not curatorial: when the grid contains an editable
+  collection, a non-`canEditContent` viewer's image sortables run
+  `{ draggable: false, droppable: true }` — draggable toward `drop-col-*`
+  zones but never reorder targets, so move/reorder/category filing stay
+  `canEditContent`-gated while owners of any role can drop-add.
 
 `DroppableCategoryZone` wraps the **full tile rect** (no inset), so the move-zone
 shape is the whole tile and "Move here" detection works.
@@ -147,10 +165,13 @@ shape is the whole tile and "Move here" detection works.
 **Resulting behaviour (every tile type):**
 
 - **Near half (entry side)** → reorder suppressed. Category tile → "Move here"
-  (move wins); image tile → calm dead-zone.
+  (move wins); editable collection tile → "Add to collection" for image drags
+  (add wins, #1530); image tile and non-editable collection tile → calm
+  dead-zone.
 - **Far half (past centre in the drag direction)** → optimistic reflow.
   Category↔category reorder stays possible (push past the neighbour's centre);
-  nesting an image into a category requires settling on its near half.
+  nesting an image into a category or adding it to a collection requires
+  settling on the near half.
 - **Inter-tile gap** → no tile contains the pointer → dead-zone (reorder only
   ever fires _inside_ a tile's far half).
 

@@ -59,6 +59,31 @@ export async function addImagesToCollection(
   }
 }
 
+/**
+ * Remove `imageIds` from a collection's member list — the undo path for the
+ * Browse drop-add gesture (#1530). When `base` (the record returned by the
+ * add being undone) is supplied, the whole-replace `PUT /images` carries its
+ * `version`, so any intervening write to the collection — membership or
+ * otherwise — 409s instead of silently rebasing over it (the undo surfaces
+ * an error snackbar), matching the move-undo convention.
+ * Without `base` the current record is fetched first, giving lenient
+ * "remove from latest" semantics. Ids that are not members are ignored;
+ * when nothing is removed the PUT is skipped.
+ */
+export async function removeImagesFromCollection(
+  collectionId: number,
+  imageIds: readonly number[],
+  base?: Collection,
+): Promise<Collection> {
+  const current = base ?? apiCollectionToCollection(await fetchCollection(collectionId))
+  const drop = new Set(imageIds)
+  const keep = current.images.filter((img) => !drop.has(img.id)).map((img) => img.id)
+  if (keep.length === current.images.length) return current
+  return apiCollectionToCollection(
+    await replaceCollectionImages(collectionId, { image_ids: keep, version: current.version }),
+  )
+}
+
 /** Create a collection that starts with `imageIds` (in order, de-duplicated). */
 export async function createCollectionWithImages(
   values: CollectionFormValues,
