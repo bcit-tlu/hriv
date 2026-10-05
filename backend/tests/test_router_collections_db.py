@@ -576,3 +576,38 @@ async def test_delete_category_unfiles_collection_via_set_null(
 
         row = await session.get(Collection, collection_id)
         assert row is not None and row.category_id is None
+
+
+async def test_image_ids_in_filed_collections_real_pg(session_factory) -> None:
+    """The member-image invalidation helper: only members of *filed*
+    collections count — uncategorized-collection members and non-members do
+    not force a browse bump."""
+    from app.collection_views import image_ids_in_filed_collections
+
+    async with session_factory() as session:
+        admin_id = await _new_admin(session, "filed")
+        category_id = await _new_category(session, "filed")
+        img_filed = await _new_image(session, "filed")
+        img_unfiled = await _new_image(session, "unfiled")
+        img_orphan = await _new_image(session, "orphan")
+        await session.commit()
+
+        filed_id = await _new_collection(
+            session, "sequence", [img_filed], owner_id=admin_id
+        )
+        await session.execute(
+            update(Collection)
+            .where(Collection.id == filed_id)
+            .values(category_id=category_id)
+        )
+        unfiled_id = await _new_collection(
+            session, "sequence", [img_unfiled], owner_id=admin_id
+        )
+        await session.commit()
+
+        found = await image_ids_in_filed_collections(
+            session, {img_filed, img_unfiled, img_orphan}
+        )
+        assert found == {img_filed}
+        # Empty input short-circuits without a query.
+        assert await image_ids_in_filed_collections(session, set()) == set()

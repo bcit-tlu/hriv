@@ -623,12 +623,14 @@ async def delete_category(
     category_label = cat.label
     # Deleting a category removes its tile from the parent scope, and every
     # image/collection in the deleted subtree reparents to root via
-    # ON DELETE SET NULL — bump both scopes (revision-then-rows lock order).
+    # ON DELETE SET NULL — bump both scopes first (revision-then-rows lock
+    # order), then delete the row, then bump the browse revision last so
+    # the row lock precedes browse_state as in PATCH /categories.
     await bump_scopes(
         db, {scope_key_for(cat.parent_id), scope_key_for(None)}
     )
-    await bump_browse_revision(db)
     await db.delete(cat)
+    await bump_browse_revision(db)
     await db.commit()
     logger.info(
         "Category deleted",

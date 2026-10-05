@@ -1548,6 +1548,49 @@ async def test_move_does_not_change_sort_order() -> None:
     assert col.sort_order == 4 and out.sort_order == 4
 
 
+async def test_move_lock_order_scopes_then_row_then_browse() -> None:
+    """Deadlock guard (epic #1525): move must lock scope revisions, then the
+    collection row (via the version CAS), then browse_state — the same
+    row-before-browse order as PATCH, so concurrent move+PATCH cannot
+    deadlock."""
+    order: list[str] = []
+    collections_router.bump_scopes.side_effect = lambda *a, **k: order.append(
+        "scopes"
+    )
+    collections_router.bump_browse_revision.side_effect = (
+        lambda *a, **k: order.append("browse")
+    )
+    col = _collection(1, "public", user_id=10, category_id=7)
+    db = _move_db(collection=col, category=SimpleNamespace(id=3))
+    inner = db.execute
+
+    async def _record(stmt):
+        order.append("row")
+        return await inner(stmt)
+
+    db.execute = AsyncMock(side_effect=_record)
+    await move_collection(1, _move(3), _user("admin"), db=db)
+    assert order == ["scopes", "row", "browse"]
+
+
+async def test_delete_lock_order_scopes_then_row_then_browse() -> None:
+    order: list[str] = []
+    collections_router.bump_scopes.side_effect = lambda *a, **k: order.append(
+        "scopes"
+    )
+    collections_router.bump_browse_revision.side_effect = (
+        lambda *a, **k: order.append("browse")
+    )
+    col = _collection(1, "public", user_id=10, category_id=7)
+    owner = _user("instructor", id=10)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=col)
+    db.delete = AsyncMock(side_effect=lambda *a: order.append("row"))
+    db.commit = AsyncMock()
+    await delete_collection(1, owner, db=db)
+    assert order == ["scopes", "row", "browse"]
+
+
 async def test_list_uncategorized_filter() -> None:
     cols = [_collection(1, "public", user_id=10)]
     db = _mock_db(cols)

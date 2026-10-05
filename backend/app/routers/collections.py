@@ -481,11 +481,13 @@ async def delete_collection(
         raise HTTPException(
             status_code=403, detail="You may not delete this collection"
         )
-    # The deleted tile leaves its scope (category or root) — bump the scope
-    # revision and the browse revision before removing the row.
+    # Lock order: scope revision(s) first (tile-order convention), then the
+    # collection row, then the browse revision last — matching PATCH, which
+    # locks the collection row via its CAS before browse_state. Taking
+    # browse_state before the row would deadlock against a concurrent PATCH.
     await bump_scopes(db, {scope_key_for(collection.category_id)})
-    await bump_browse_revision(db)
     await db.delete(collection)
+    await bump_browse_revision(db)
     await db.commit()
     return Response(status_code=204)
 
@@ -554,11 +556,12 @@ async def move_collection(
     (``PUT /api/tile-order`` re-normalizes the destination scope) and
     carries the same ``version`` optimistic-concurrency token as PATCH.
 
-    Scope revisions for the source and destination scopes are bumped
-    *before* the row mutation — the same revision-then-rows lock order as
-    ``PUT /api/tile-order`` — and the browse revision is bumped so the
-    category-tree ETag invalidates. A no-op move (same category) skips both
-    bumps.
+    Lock order: scope revisions first (the same revision-then-rows
+    convention as ``PUT /api/tile-order``), then the collection row via the
+    version CAS, then the browse revision — matching PATCH's
+    row-then-browse order so a concurrent PATCH cannot deadlock against a
+    move. A no-op move (same category) skips both revision bumps while
+    still running the CAS.
     """
     collection = await db.get(Collection, collection_id)
     if collection is None:
@@ -575,9 +578,10 @@ async def move_collection(
             db,
             {scope_key_for(collection.category_id), scope_key_for(body.category_id)},
         )
-        await bump_browse_revision(db)
     ctx = await _ViewerContext.build(db, user)
     await _bump_version_or_409(db, ctx, collection, body.version)
+    if moved:
+        await bump_browse_revision(db)
     collection.category_id = body.category_id
     await db.commit()
     await db.refresh(collection)

@@ -14,7 +14,10 @@ collections into categories, only when the collection's category (if any)
 passes the student's category subtree exclusion as well.
 """
 
+from collections.abc import Iterable
+
 from fastapi import HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .authz import (
@@ -23,7 +26,7 @@ from .authz import (
     can_transfer_collection,
     can_view_collection,
 )
-from .models import Collection, Image, User
+from .models import Collection, CollectionImage, Image, User
 from .schemas import (
     CollectionOut,
     CollectionOwnerOut,
@@ -152,6 +155,34 @@ def collection_out(ctx: _ViewerContext, collection: Collection) -> CollectionOut
         group_ids=[g.id for g in collection.groups],
         viewport_state=dict(collection.viewport_state or {}),
     )
+
+
+async def image_ids_in_filed_collections(
+    db: AsyncSession, image_ids: Iterable[int]
+) -> set[int]:
+    """Subset of *image_ids* that belong to a collection filed into a
+    category (``category_id IS NOT NULL``).
+
+    Such an image's ``thumb``/``active``/membership renders on that
+    collection's Browse tile via ``cover_thumb``/``image_count``, so writes
+    to it must bump the browse revision even when the image itself is
+    uncategorized — the image routers historically skip the bump for
+    uncategorized images because they never appeared in the tree (epic
+    #1525 / #1527).
+    """
+    ids = {i for i in image_ids}
+    if not ids:
+        return set()
+    result = await db.execute(
+        select(CollectionImage.image_id)
+        .join(Collection, Collection.id == CollectionImage.collection_id)
+        .where(
+            CollectionImage.image_id.in_(ids),
+            Collection.category_id.isnot(None),
+        )
+        .distinct()
+    )
+    return set(result.scalars().all())
 
 
 async def get_visible_collection_or_404(

@@ -200,14 +200,17 @@ ON CONFLICT (user_id, program_id) DO NOTHING;
 -- instructor (users.id=2), public so all students can view it.
 
 INSERT INTO collections (id, name, description, type, visibility, user_id, category_id, sort_order, viewport_state, version)
-VALUES
-  (1, 'Italian Cathedrals', 'Seeded sequence tour', 'sequence', 'public', 2, 3, 0, '{}', 1)
+SELECT 1, 'Italian Cathedrals', 'Seeded sequence tour', 'sequence', 'public', 2, cat.id, 0, '{}', 1
+FROM categories cat
+JOIN categories parent ON parent.id = cat.parent_id
+WHERE cat.label = 'Italian' AND parent.label = 'Architecture'
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO collection_images (collection_id, image_id, sort_order)
-VALUES
-  (1, 1, 0),
-  (1, 2, 1)
+SELECT c.id, v.image_id, v.sort_order
+FROM collections c
+CROSS JOIN (VALUES (1, 0), (2, 1)) AS v(image_id, sort_order)
+WHERE c.name = 'Italian Cathedrals' AND c.user_id = 2
 ON CONFLICT (collection_id, image_id) DO NOTHING;
 
 SELECT setval('collections_id_seq', GREATEST((SELECT MAX(id) FROM collections), 1));

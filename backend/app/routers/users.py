@@ -6,8 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import require_role, hash_password
 from ..authz import ADMIN_PROGRAM_NAME
+from ..browse_state import bump_browse_revision
 from ..database import get_db
-from ..models import Program, User
+from ..models import Collection, Program, User
 from ..schemas import (
     UserCreate,
     UserUpdate,
@@ -243,8 +244,23 @@ async def bulk_delete_users(
     users = result.scalars().unique().all()
     if len(users) != len(set(body.user_ids)):
         raise HTTPException(status_code=404, detail="One or more users not found")
+    # Owned filed collections are cascade-deleted with the user — read the
+    # link before the deletes (autoflush would erase it first) so the tree
+    # ETag invalidates (#1527).
+    owns_filed = (
+        await db.execute(
+            select(Collection.id)
+            .where(
+                Collection.user_id.in_(body.user_ids),
+                Collection.category_id.isnot(None),
+            )
+            .limit(1)
+        )
+    ).first() is not None
     for user in users:
         await db.delete(user)
+    if owns_filed:
+        await bump_browse_revision(db)
     await db.commit()
 
 
@@ -288,10 +304,15 @@ async def update_user(
             update_data["password_hash"] = hash_password(pwd)
     if "email" in update_data and update_data["email"] is not None:
         update_data["email"] = update_data["email"].lower()
+    # The owner's name renders on filed collection tiles — capture the
+    # rename before setattr so the tree ETag can be invalidated (#1527).
+    name_changed = "name" in update_data and update_data["name"] != user.name
     for key, value in update_data.items():
         setattr(user, key, value)
     if program_ids is not None:
         await _set_user_programs(db, user, program_ids)
+    if name_changed:
+        await bump_browse_revision(db)
     await db.commit()
     await db.refresh(user)
     return user_to_out(user)
@@ -308,5 +329,20 @@ async def delete_user(
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    # Owned filed collections are cascade-deleted with the user — read the
+    # link before the delete (autoflush would erase it) so the tree ETag
+    # invalidates (#1527).
+    owns_filed = (
+        await db.execute(
+            select(Collection.id)
+            .where(
+                Collection.user_id == user_id,
+                Collection.category_id.isnot(None),
+            )
+            .limit(1)
+        )
+    ).first() is not None
     await db.delete(user)
+    if owns_filed:
+        await bump_browse_revision(db)
     await db.commit()
