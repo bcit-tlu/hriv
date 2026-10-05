@@ -7,6 +7,7 @@ import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
+import Divider from '@mui/material/Divider'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import Radio from '@mui/material/Radio'
 import RadioGroup from '@mui/material/RadioGroup'
@@ -42,6 +43,12 @@ export interface CollectionEditDialogProps {
   onClose: () => void
   /** Existing collection to edit (type is locked). Omit / null to create a new one. */
   collection?: Collection | null
+  /**
+   * Initial type for a new collection (#1554) — callers pass the type page /
+   * facet the dialog was opened from so a create lands in the list the user
+   * is looking at. Ignored when editing.
+   */
+  defaultType?: CollectionType
   programs?: Program[]
   groups?: Group[]
   /**
@@ -56,6 +63,12 @@ export interface CollectionEditDialogProps {
     version: number | null,
     baseline: Collection | null,
   ) => Promise<void>
+  /**
+   * Delete affordance inside the dialog (#1554) — mirrors EditImageModal's
+   * click-to-confirm button. Callers close the dialog on success; rejections
+   * surface in the dialog's error alert.
+   */
+  onDelete?: () => Promise<void>
 }
 
 const TYPE_HELP: Record<CollectionType, string> = {
@@ -67,9 +80,11 @@ export default function CollectionEditDialog({
   open,
   onClose,
   collection = null,
+  defaultType = 'sequence',
   programs = EMPTY_PROGRAMS,
   groups = EMPTY_GROUPS,
   onSave,
+  onDelete,
 }: CollectionEditDialogProps) {
   const isEdit = collection != null
   const auth = useContext(AuthContext)
@@ -92,12 +107,14 @@ export default function CollectionEditDialog({
   const [error, setError] = useState<string | null>(null)
   const [conflict, setConflict] = useState<Collection | null>(null)
   const [saving, setSaving] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const seedFrom = (source: Collection | null) => {
     setName(source?.name ?? '')
     setDescription(source?.description ?? '')
-    setType(source?.type ?? 'sequence')
+    setType(source?.type ?? defaultType)
     setVisibility(source?.visibility ?? 'private')
     setSelectedProgramIds(new Set(source?.programIds ?? []))
     setSelectedGroupIds(new Set(source?.groupIds ?? []))
@@ -106,6 +123,8 @@ export default function CollectionEditDialog({
     setError(null)
     setConflict(null)
     setSaving(false)
+    setConfirmDelete(false)
+    setDeleting(false)
   }
 
   // Populate state from props when dialog opens (false → true transition only),
@@ -114,6 +133,7 @@ export default function CollectionEditDialog({
   useEffect(() => {
     if (open && !prevOpen.current) seedFrom(collection)
     prevOpen.current = open
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seedFrom captures defaultType at open time
   }, [open, collection])
 
   const handleEntered = useCallback(() => {
@@ -158,7 +178,7 @@ export default function CollectionEditDialog({
 
   const restricted = visibility === 'restricted'
   const scopeMissing = restricted && selectedProgramIds.size === 0 && selectedGroupIds.size === 0
-  const canSubmit = name.trim().length > 0 && !scopeMissing && !saving
+  const canSubmit = name.trim().length > 0 && !scopeMissing && !saving && !deleting
 
   const handleSubmit = async () => {
     const trimmed = name.trim()
@@ -192,10 +212,28 @@ export default function CollectionEditDialog({
     if (conflict) seedFrom(conflict)
   }
 
+  // Same click-to-confirm delete as EditImageModal: first click arms, second
+  // fires; the caller closes the dialog on success.
+  const handleDelete = async () => {
+    if (!onDelete) return
+    if (!confirmDelete) {
+      setConfirmDelete(true)
+      return
+    }
+    setDeleting(true)
+    try {
+      await onDelete()
+    } catch (err) {
+      setDeleting(false)
+      setConfirmDelete(false)
+      setError(userMessage(err, 'Failed to delete collection.'))
+    }
+  }
+
   return (
     <Dialog
       open={open}
-      onClose={saving ? undefined : onClose}
+      onClose={saving || deleting ? undefined : onClose}
       maxWidth="xs"
       fullWidth
       TransitionProps={{ onEntered: handleEntered }}
@@ -403,9 +441,35 @@ export default function CollectionEditDialog({
             {error}
           </Alert>
         )}
+
+        {isEdit && onDelete && (
+          <>
+            <Divider sx={{ my: 2 }} />
+            <Box>
+              <Button
+                color="error"
+                variant={confirmDelete ? 'contained' : 'outlined'}
+                onClick={() => void handleDelete()}
+                disabled={saving || deleting}
+                fullWidth
+              >
+                {confirmDelete ? 'Confirm Delete Collection' : 'Delete Collection'}
+              </Button>
+              {confirmDelete && (
+                <Typography
+                  variant="caption"
+                  color="error"
+                  sx={{ display: 'block', mt: 0.5, textAlign: 'center' }}
+                >
+                  The images it references are not deleted. This action cannot be undone.
+                </Typography>
+              )}
+            </Box>
+          </>
+        )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} disabled={saving}>
+        <Button onClick={onClose} disabled={saving || deleting}>
           Cancel
         </Button>
         <Button onClick={handleSubmit} variant="contained" disabled={!canSubmit}>

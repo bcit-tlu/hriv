@@ -4,11 +4,13 @@ Grouped-image sets for side-by-side comparison (`synchronized`, max 4
 images) and ordered walkthroughs (`sequence`). `COLLECTIONS_ENABLED=true` in
 local compose; every role gets the **Collections** tab. Full behaviour
 contract: `docs/collections.md`; UI manual scenarios: `docs/TESTING.md`
-Test Case 11 (Collections tab) and Test Case 12 (Browse hierarchy).
+Test Case 11 (Collections pages + manage table) and Test Case 12 (Browse hierarchy).
 
 ### Quick flow
 
-1. **Create:** Collections tab → **New collection** → name, type, visibility
+1. **Create:** Collections tab → **Sequence** or **Synchronized** sub-menu
+   item (each opens the same page locked to a type) → **New collection** →
+   name, type, visibility
    (Restricted offers program/group chips; instructors only see options they
    could attach).
 2. **Fill:** open an image → **Add to Collection** in the viewer action bar
@@ -20,20 +22,27 @@ Test Case 11 (Collections tab) and Test Case 12 (Browse hierarchy).
 4. **Browse:** collection tiles render beside category/image tiles (fixed
    300px width), nested inside categories via `category_id`. The seeded
    **Italian Cathedrals** sequence lives under _Architecture → Italian_.
-   File with the card's **Move** button (admin/instructor) or by dragging
+   File with the card's **Move** overlay action (admin/instructor) or by dragging
    the tile onto a category's **Move here** zone; reorder by dragging past
    any tile's centre; add an image by dropping an `img-` tile on an
    editable collection tile's near half (**Add to collection** zone).
-5. **Deep links:** `?page=collections`, `?collection={id}`,
+5. **Deep links:** `?page=collections&type=sequence|synchronized` (missing
+   `type` → sequence), `?collection={id}`,
    `?collection={id}&item={image_id}` all restore on load and on
    back/forward; a Browse-opened collection also carries `?cat=`/`?item=`
-   for its scope.
-6. **Edit/Delete:** pencil/trash on cards and the detail header, gated by
-   `permissions.can_edit` / `can_delete`.
+   for its scope. **Manage → Collections** (`?page=manage-collections`) is
+   the non-student table view — mirrors Manage → Images; rows offer Edit
+   (where `canEdit`), Owners (where `canTransfer`), Move (admin/instructor);
+   staff see all rows but no Move/Owners/Delete.
+6. **Edit/Delete:** pencil on the card's metadata area, Edit button on the
+   detail header, gated by `permissions.can_edit`. Delete lives inside the
+   edit dialog only (#1554 — **Delete Collection** at the bottom, click to
+   arm then click to confirm), gated by `permissions.can_delete`.
 
 ### Filters
 
-- **All / Synchronized / Sequence** type toggle and **My collections** chip
+- The collection **type is the page** (nav sub-menu), not a filter; the
+  header row holds **My collections** chip
   for every role.
 - **Owner** select for admin/instructor/staff (never students). Admins get an
   extra **No owner (orphaned)** option → `GET /api/collections?orphaned=true`.
@@ -41,7 +50,8 @@ Test Case 11 (Collections tab) and Test Case 12 (Browse hierarchy).
 
 ### Owners & transfer (`can_transfer`)
 
-- Entry point: **Owners** on the card — opens `CollectionOwnersDialog`
+- Entry point: **Owners** in the card's cover overlay, the detail header, or
+  a manage-table row — opens `CollectionOwnersDialog`
   (admins + instructors only).
 - A collection has **user owners** (plural, via `PUT /api/collections/{id}/owners`)
   and/or a **program owner** (via `POST /api/collections/{id}/transfer`).
@@ -67,9 +77,13 @@ Test Case 11 (Collections tab) and Test Case 12 (Browse hierarchy).
 ### Useful selectors for scripted checks
 
 - Grid rows: `[data-testid="collection-card"]`; open via
-  `[data-testid="collection-card-action-area"]`.
+  `[data-testid="collection-card-action-area"]`; cover overlay chip
+  `[data-testid="collection-type-chip"]`.
 - Filter bar: `[data-testid="collection-filters"]`; the Owner Select is the
   combobox labelled `Owner`.
+- Manage table: `[data-testid="manage-collections-table"]`, rows
+  `manage-collection-row-{id}`; filter facets labelled Name / Type /
+  Visibility / Owner / Category.
 - Detail: `[data-testid="collection-detail"]`, visibility chip
   `[data-testid="collection-visibility-chip"]`, restricted scope chips
   `detail-program-chip` / `detail-group-chip`.

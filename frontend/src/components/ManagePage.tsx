@@ -9,7 +9,6 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
-import Link from '@mui/material/Link'
 import ListItemIcon from '@mui/material/ListItemIcon'
 import ListItemText from '@mui/material/ListItemText'
 import Menu from '@mui/material/Menu'
@@ -34,7 +33,6 @@ import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
 import InfoIcon from '@mui/icons-material/Info'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import VisibilityIcon from '@mui/icons-material/Visibility'
-import VisibilityOffIcon from '@mui/icons-material/VisibilityOff'
 import ViewColumnIcon from '@mui/icons-material/ViewColumn'
 import {
   fetchImages,
@@ -62,6 +60,7 @@ import FailedUploadsDialog from './FailedUploadsDialog'
 import EditImageModal from './EditImageModal'
 import type { ImageFormData, ReplaceImageData } from './EditImageModal'
 import FilterBar from './FilterBar'
+import CategoryBreadcrumb, { buildCategoryPaths } from './CategoryBreadcrumb'
 import CategoryFilterTreePanel from './CategoryFilterTreePanel'
 import FilterOptionPanel from './FilterOptionPanel'
 import FilterPopoverButton, { filterSurfaceBg } from './FilterPopoverButton'
@@ -83,93 +82,6 @@ import {
   loadStoredTableFilters,
   useTableFilterPreferences,
 } from '../useTableFilterPreferences'
-
-interface CategoryPathSegment {
-  category: Category
-  ancestors: Category[]
-}
-
-function buildCategoryPaths(
-  nodes: Category[],
-  ancestors: Category[] = [],
-): Map<number, CategoryPathSegment> {
-  const map = new Map<number, CategoryPathSegment>()
-  for (const node of nodes) {
-    map.set(node.id, { category: node, ancestors })
-    const childMap = buildCategoryPaths(node.children, [...ancestors, node])
-    for (const [id, seg] of childMap) {
-      map.set(id, seg)
-    }
-  }
-  return map
-}
-
-function CategoryBreadcrumb({
-  categoryId,
-  categoryPaths,
-  onNavigate,
-  hiddenColor,
-}: {
-  categoryId: number | null
-  categoryPaths: Map<number, CategoryPathSegment>
-  onNavigate?: (categoryPath: Category[]) => void
-  hiddenColor?: string
-}) {
-  if (categoryId == null) return <>—</>
-  const seg = categoryPaths.get(categoryId)
-  if (!seg) return <>{categoryId}</>
-
-  const fullPath = [...seg.ancestors, seg.category]
-  const hiddenState = getCategoryHiddenStateFromPath(fullPath)
-
-  return (
-    <Box component="span" sx={{ display: 'inline-flex', flexWrap: 'wrap', alignItems: 'center' }}>
-      {fullPath.map((cat, i) => (
-        <Box component="span" key={cat.id}>
-          {i > 0 && (
-            <Typography component="span" variant="body2" color="text.secondary" sx={{ mx: 0.25 }}>
-              :
-            </Typography>
-          )}
-          <Link
-            component="button"
-            variant="body2"
-            underline="hover"
-            onClick={(e: React.MouseEvent) => {
-              e.stopPropagation()
-              if (onNavigate) {
-                onNavigate(fullPath.slice(0, i + 1))
-              }
-            }}
-            sx={{ verticalAlign: 'baseline' }}
-          >
-            {cat.label}
-          </Link>
-        </Box>
-      ))}
-      {hiddenState.hidden && hiddenColor && (
-        <Tooltip title="Hidden by category">
-          <span
-            role="img"
-            aria-label={
-              hiddenState.hiddenByAncestor && !hiddenState.directlyHidden
-                ? 'Category hidden from students by ancestor'
-                : 'Category hidden from students'
-            }
-            style={{ display: 'inline-flex', marginLeft: 4, verticalAlign: 'middle' }}
-          >
-            <VisibilityOffIcon
-              sx={{
-                fontSize: 14,
-                color: hiddenColor,
-              }}
-            />
-          </span>
-        </Tooltip>
-      )}
-    </Box>
-  )
-}
 
 type SortableColumn =
   | 'id'

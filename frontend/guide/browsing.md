@@ -20,8 +20,8 @@ The **Home** tab is the image library — the same view your students get
 - Search **chips** narrow the results: the type chips (Categories, Images,
   Collections, and for staff Programs / People / Guide) keep only that kind
   and its own fields, and the field chips (Note, Copyright, Annotation, …)
-  keep only matches in that field. A collection result opens it in the
-  Collections tab.
+  keep only matches in that field. A collection result opens it on its
+  collections page (Sequence or Synchronized).
 - To add several images to a collection, click **Select** next to the result
   count, tick the image rows you want (only images can be selected), then
   choose **Add to collection** in the footer to pick a target — see
