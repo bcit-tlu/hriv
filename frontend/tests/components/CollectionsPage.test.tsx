@@ -247,15 +247,18 @@ describe('CollectionsPage', () => {
   })
 
   describe('create / edit', () => {
-    it('hides New collection for staff (view-only; staff cannot create)', () => {
+    it('shows New collection for staff (staff create with student parity)', () => {
       renderPage({ currentUser: STAFF })
-      expect(screen.queryByRole('button', { name: 'New collection' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'New collection' })).toBeInTheDocument()
     })
 
-    it('offers staff no create affordance in the empty state either', async () => {
-      renderPage({ currentUser: STAFF, collections: [] })
-      expect(await screen.findByTestId('collections-empty')).toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: 'Create a collection' })).not.toBeInTheDocument()
+    it('offers staff the empty-state create affordance too', async () => {
+      const user = userEvent.setup()
+      const onCreate = vi.fn().mockResolvedValue(undefined)
+      renderPage({ currentUser: STAFF, collections: [], onCreate })
+      const link = await screen.findByRole('button', { name: 'Create a collection' })
+      await user.click(link)
+      expect(await screen.findByText('New Collection')).toBeInTheDocument()
     })
 
     it('opens the create dialog and forwards the values to onCreate', async () => {

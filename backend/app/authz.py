@@ -70,8 +70,9 @@ def can_attach_group_to_category(user, group_instructor_ids: Iterable[int]) -> b
 #   view    — admin/instructor/staff: all; student: own ∪ co-owned ∪
 #             public ∪ restricted-dual-gate.
 #   edit    — admin: all; instructor: own ∪ program-owned ∪ co-owned;
-#             student: own ∪ co-owned; staff: none (view-only).
-#   scope   — as edit, but students only when they are the sole owner.
+#             student and staff: own ∪ co-owned.
+#   scope   — as edit, but students and staff only when they are the sole
+#             owner (no co-owners, no program owner).
 #   delete  — as scope.
 #   transfer / PUT /owners — admin: all; instructor: own ∪ program-owned ∪
 #             co-owned; staff and students: never.
@@ -132,8 +133,7 @@ def can_view_collection(
 def can_edit_collection(user, collection) -> bool:
     """Content edit (name/description/images/viewport): admins always;
     instructors when they own, co-own, or belong to the owning program;
-    students when they own or co-own. Staff never edit — even collections
-    they own.
+    students and staff when they own or co-own.
     """
     if user.role == "admin":
         return True
@@ -141,13 +141,15 @@ def can_edit_collection(user, collection) -> bool:
         return _is_collection_owner(
             user, collection
         ) or _manages_owner_program(user, collection)
-    return user.role == "student" and _is_collection_owner(user, collection)
+    return user.role in ("student", "staff") and _is_collection_owner(
+        user, collection
+    )
 
 
 def can_change_collection_scope(user, collection) -> bool:
     """Visibility/program/group scope changes: same as edit for admins and
-    instructors; students only when they are the sole owner (co-owners may
-    not widen visibility on shared collections); staff never.
+    instructors; students and staff only when they are the sole owner
+    (co-owners may not widen visibility on shared collections).
     """
     if user.role == "admin":
         return True
@@ -155,15 +157,15 @@ def can_change_collection_scope(user, collection) -> bool:
         return _is_collection_owner(
             user, collection
         ) or _manages_owner_program(user, collection)
-    return user.role == "student" and _is_sole_collection_owner(
+    return user.role in ("student", "staff") and _is_sole_collection_owner(
         user, collection
     )
 
 
 def can_delete_collection(user, collection) -> bool:
     """Deletion authority: admins always; instructors when they own, co-own,
-    or belong to the owning program; students only when sole owner; staff
-    never.
+    or belong to the owning program; students and staff only when sole
+    owner.
     """
     return can_change_collection_scope(user, collection)
 

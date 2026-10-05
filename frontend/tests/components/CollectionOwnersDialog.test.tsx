@@ -174,6 +174,57 @@ describe('CollectionOwnersDialog (#1531)', () => {
     expect(screen.queryByRole('option', { name: /Inactive Ian/ })).not.toBeInTheDocument()
   })
 
+  it('defaults admin searches to the Everyone mode (no role param)', async () => {
+    renderDialog()
+    await waitFor(() => expect(fetchUsersPagedMock).toHaveBeenCalled())
+    expect(fetchUsersPagedMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ role: undefined }),
+    )
+  })
+
+  it('scopes instructor searches like the group picker (students, then instructors)', async () => {
+    const user = userEvent.setup()
+    renderDialog({}, makeAuth('instructor', 7, [1]))
+    await waitFor(() => expect(fetchUsersPagedMock).toHaveBeenCalled())
+    // Same default as the group member picker: the students tab.
+    expect(fetchUsersPagedMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ role: 'student', programIds: undefined }),
+    )
+    await user.click(screen.getByRole('button', { name: 'Instructors' }))
+    await waitFor(() =>
+      expect(fetchUsersPagedMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ role: 'instructor' }),
+      ),
+    )
+    // Instructors never see admin/staff/Admin-program accounts — the
+    // role-scoped endpoint enforces that; the picker mirrors the group tabs.
+    expect(screen.queryByRole('button', { name: 'Everyone' })).not.toBeInTheDocument()
+  })
+
+  it('narrows only the student search by the optional program filter', async () => {
+    const user = userEvent.setup()
+    renderDialog({}, makeAuth('instructor', 7, [1]))
+    await waitFor(() => expect(fetchUsersPagedMock).toHaveBeenCalled())
+    // Program chips appear only on the Students tab (group-picker parity).
+    const filterInput = screen.getByLabelText('Filter by program')
+    await user.click(filterInput)
+    await user.click(await screen.findByRole('option', { name: 'Radiography' }))
+    await waitFor(() =>
+      expect(fetchUsersPagedMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ role: 'student', programIds: [1] }),
+      ),
+    )
+    // Switching to the Instructors tab ignores the program filter — exactly
+    // like the group co-instructor search.
+    await user.click(screen.getByRole('button', { name: 'Instructors' }))
+    expect(screen.queryByLabelText('Filter by program')).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(fetchUsersPagedMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ role: 'instructor', programIds: undefined }),
+      ),
+    )
+  })
+
   it('blocks saving an empty owner set with no program (orphan guard)', async () => {
     const user = userEvent.setup()
     renderDialog()

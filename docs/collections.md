@@ -174,14 +174,16 @@ by someone who cannot see it.
 
 "Owner" below means holding a `collection_owners` row; "program instructor"
 means an instructor who belongs to the collection's `owner_program_id`.
-**Staff are view-only** — even on collections they co-own.
+**Staff hold full student parity on owned collections** — they share the
+student columns below (viewing remains unrestricted for them, like
+instructors).
 
-| Predicate                     | admin | instructor (owner / program) | student — sole owner | student — co-owner | staff / others |
-| ----------------------------- | ----- | ---------------------------- | -------------------- | ------------------ | -------------- |
-| `can_edit_collection`         | yes   | yes                          | yes                  | yes                | no             |
-| `can_change_collection_scope` | yes   | yes                          | yes                  | no                 | no             |
-| `can_delete_collection`       | yes   | yes                          | yes                  | no                 | no             |
-| `can_transfer_collection`     | yes   | yes                          | no                   | no                 | no             |
+| Predicate                     | admin | instructor (owner / program) | student/staff — sole owner | student/staff — co-owner | non-owner |
+| ----------------------------- | ----- | ---------------------------- | -------------------------- | ------------------------ | --------- |
+| `can_edit_collection`         | yes   | yes                          | yes                        | yes                      | no        |
+| `can_change_collection_scope` | yes   | yes                          | yes                        | no                       | no        |
+| `can_delete_collection`       | yes   | yes                          | yes                        | no                       | no        |
+| `can_transfer_collection`     | yes   | yes                          | no                         | no                       | no        |
 
 Scope changes (visibility + restricted `program_ids`/`group_ids`) and
 deletion deliberately require the stricter predicate: a co-owner may edit
@@ -262,12 +264,11 @@ responses is a UX hint only.
 probed. A caller who can view it but fails `can_edit_collection` (PATCH,
 images, viewport) or `can_delete_collection` (DELETE) gets **403**.
 
-**Creating.** Admin, instructor, and student roles may `POST`; the caller
-becomes the first user owner (a `collection_owners` row) and is recorded as
-creator (`collections.user_id` audit). Staff are view-only and get **403** —
-a staff-created collection could never be edited by them and is unreachable
-by instructors. Program ownership is only reachable via `POST …/transfer`
-(#1531).
+**Creating.** Every role may `POST`; the caller becomes the first user
+owner (a `collection_owners` row) and is recorded as creator
+(`collections.user_id` audit). Staff get the same create →
+sole-owner lifecycle as students. Program ownership is only reachable via
+`POST …/transfer` (#1531).
 
 **Restricted visibility & scope.**
 
@@ -340,9 +341,9 @@ wholesale:
   co-owner; that student then edits content per `can_edit_collection` but
   cannot change scope, delete, or manage owners). Unknown or inactive ids
   are **422**. Note the instructor-facing picker is directory-scoped:
-  `GET /api/users/` never exposes staff/admin accounts to instructors, so
-  they can only select students and fellow instructors — an admin must add
-  staff or admin co-owners.
+  `GET /api/users/` never exposes staff/admin or `Admin`-program accounts to
+  instructors, so they can only select students and fellow instructors —
+  an admin must add staff or admin co-owners.
 - The submitted set replaces the rows wholesale — adds and removals happen
   atomically. `collections.user_id` (creator audit) is untouched.
 - The result must not orphan the collection: when `owner_program_id` is
@@ -478,15 +479,15 @@ attach logic: instructors can only select programs they belong to
 stays enabled so it can be removed. At least one program or group is required
 for `restricted`; `program_ids` / `group_ids` are sent as `[]` for any other
 visibility. Create from the Collections tab posts `image_ids: []`; create from
-the image view (#1415, below) posts the selected image id(s). The **New
-collection** button and unfiltered empty-state link hide for staff (the API
-403s staff create — #1531).
+the image view (#1415, below) posts the selected image id(s). Every role —
+staff included — gets the **New collection** button and the unfiltered
+empty-state create link (#1531).
 Edit sends the collection `version` in the PATCH body; a **409** shows the
 standard "modified by another user" message with a **Reload** action that
 re-seeds the form from the authoritative `CollectionOut` in `detail`.
 On an existing collection the dialog also honours
-`permissions.can_change_scope` (#1531): when it is false (e.g. a student
-co-owner, or any editor on a program-owned collection they don't direct)
+`permissions.can_change_scope` (#1531): when it is false (e.g. a student or
+staff co-owner, or any editor on a program-owned collection they don't direct)
 the visibility radio and the program/group pickers render read-only while
 name and description stay editable; the backend field-level split enforces
 the same boundary regardless.
@@ -806,9 +807,15 @@ the card action is the reassignment flow.
 
 **`CollectionOwnersDialog`.** One dialog covers both ownership surfaces:
 
-- The **user-owner picker** is a debounced `fetchUsersPaged` autocomplete
-  (active accounts only; instructors automatically get the mini user
-  projection). Selected owners render as MUI chips; any active user is a
+- The **user-owner picker** mirrors the group-membership picker in
+  `GroupManagementModal`: **Students / Instructors** role tabs drive a
+  debounced `fetchUsersPaged` autocomplete (admins get a third **Everyone**
+  mode with no `role` param), and an optional **Filter by program** chip
+  autocomplete narrows the Students search (`program_id=`) — ignored on the
+  Instructors tab, matching group co-instructor selection. Instructors
+  automatically get the mini user projection: students and instructors
+  only, with admins, staff and `Admin`-program users excluded by the
+  endpoint. Selected owners render as MUI chips; any active user is a
   valid target.
 - The **program-owner select** lists every program for admins and only the
   instructor's own `program_ids` for instructors — the same boundary the
@@ -852,7 +859,9 @@ the shared group-chip palette.
   transfer matrix (admin → user / program, instructor own → own program OK /
   other program 403 / user 403, instructor in owning program → own program,
   staff + student 403, non-viewer 404, unknown / deactivated target 422,
-  stale version 409, version increment) and orphan handling (admin reassign
+  stale version 409, version increment), staff student-parity (owner edit /
+  sole-owner scope + delete / co-owner and owner-management 403s) and
+  orphan handling (admin reassign
   via transfer, instructor edit / delete / transfer 403, public orphan still
   visible to students, cascaded scope rows).
 - `backend/tests/test_router_programs.py` — the real `DELETE /api/programs/{id}`

@@ -380,16 +380,12 @@ async def create_collection(
     user: Annotated[User, Depends(get_current_user)],
     db: AsyncSession = Depends(get_db),
 ):
-    """Create a collection owned by the caller. Admin, instructor and student
-    roles may create; ``restricted`` visibility additionally needs attach
-    authority over every program/group id. Staff are view-only — a collection
-    they created could never be edited by them (staff cannot edit or manage
-    owners), so create is 403 for staff.
+    """Create a collection owned by the caller. Any authenticated role may
+    create — the caller becomes the first user owner and is recorded as
+    creator (``collections.user_id`` audit). ``restricted`` visibility
+    additionally needs attach authority over every program/group id, so only
+    admins and instructors may use it.
     """
-    if user.role == "staff":
-        raise HTTPException(
-            status_code=403, detail="Staff cannot create collections"
-        )
     ctx = await _ViewerContext.build(db, user)
     progs: list[Program] = []
     grps: list[Group] = []

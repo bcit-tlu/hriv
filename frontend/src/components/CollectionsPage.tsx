@@ -463,11 +463,9 @@ export default function CollectionsPage({
           <Typography variant="h5" component="h1">
             Collections
           </Typography>
-          {currentUser?.role !== 'staff' && (
-            <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
-              New collection
-            </Button>
-          )}
+          <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
+            New collection
+          </Button>
         </Box>
 
         <Box
@@ -535,8 +533,6 @@ export default function CollectionsPage({
             <Typography variant="body2" sx={{ mt: 0.5 }}>
               {filters.mine || filters.type !== 'all' || filters.owner !== 'any' ? (
                 'No collections match the current filters.'
-              ) : currentUser?.role === 'staff' ? (
-                'Collections group images for side-by-side comparison or a guided sequence.'
               ) : (
                 <>
                   <Link

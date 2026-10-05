@@ -32,9 +32,9 @@ All seed users share the password `password`.
 | ---------------------------------------- | ----- | ---------- | ----- | ------- |
 | Browse categories & view images          | Yes   | Yes        | Yes   | Yes†    |
 | View collections (API)                   | Yes   | Yes        | Yes   | Yes¶    |
-| Create collections                       | Yes   | Yes        | No    | Yes     |
-| Edit co-owned collections‖               | Yes   | Yes        | No    | Yes     |
-| Delete own collections‖                  | Yes   | Yes        | No    | Yes\*   |
+| Create collections                       | Yes   | Yes        | Yes   | Yes     |
+| Edit co-owned collections‖               | Yes   | Yes        | Yes   | Yes     |
+| Delete own collections‖                  | Yes   | Yes        | Yes\* | Yes\*   |
 | Restrict collections to programs/groups‖ | Yes   | Yes\*      | No    | No      |
 | Manage collection owners‖                | Yes   | Yes\*      | No    | No      |
 | Manage any collection (incl. orphaned)‖  | Yes   | No         | No    | No      |
@@ -70,14 +70,14 @@ instructor in the owning program) is described in
 [docs/collections.md](docs/collections.md).
 
 ‖ Collections support multiple user co-owners plus, or instead of, a program
-owner. Admin, instructor, and student roles may create collections (the
-creator becomes the first user owner); staff are view-only and cannot create.
-Admins and instructors may edit/delete collections they co-own or
-whose owning program they belong to; students may edit collections they
-co-own, but may change scope or delete only when they are the sole user
-owner and no program owns the collection (`*` on the student delete cell).
-Staff are view-only — they cannot edit, delete, or manage owners even on
-collections they own. Instructor authority is program-bound (the `*` rows):
+owner. Every role may create collections (the creator becomes the first user
+owner). Admins and instructors may edit/delete collections they co-own or
+whose owning program they belong to; students and staff share one rule —
+they may edit collections they co-own, but may change scope or delete only
+when they are the sole user owner and no program owns the collection (`*`
+on the student delete cell; staff follow the same rule). Staff also see
+every collection like instructors, and create collections like students.
+Instructor authority is program-bound (the `*` rows):
 an instructor may restrict a collection to programs/groups only when they
 belong to the program or manage the group, and may manage owners only for a
 collection they co-own or one owned by a program they belong to — and may
@@ -86,10 +86,12 @@ assign only a program they belong to. Only admins can reassign collections
 Staff and students can never manage the owner set, even on their own
 collections. See [docs/collections.md](docs/collections.md).
 
-‡ Staff are a view-only role for authenticated non-students. They see all
-content (no program/group visibility filter) and get a **read-only** People
-tab — the full user list with filters, but no add/edit/delete, bulk actions,
-or selection controls. They cannot be group members or group instructors.
+‡ Staff are a mostly view-only role for authenticated non-students. They see
+all content (no program/group visibility filter) and get a **read-only**
+People tab — the full user list with filters, but no add/edit/delete, bulk
+actions, or selection controls. They cannot be group members or group
+instructors. Collections are the exception: staff create them and hold the
+same owner rights as students (see ‖).
 
 § Instructors list only students and other instructors, with a minimal
 projection (no metadata/last_access) — enough to populate group pickers.

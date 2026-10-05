@@ -42,9 +42,13 @@ Use the `role` control to compare the admin and instructor pickers.
   server-side, so the user picker disables while a program is selected. Clearing the
   program back to user ownership requires picking at least one user owner first — the
   backend orphan-guard 422s otherwise.
-- **Users come from `GET /api/users`.** The picker debounces a `fetchUsersPaged` search, so
-  instructors automatically get the minimal projection (students + instructors only).
-  Inactive accounts are filtered out — the backend 422s them anyway.
+- **Users come from `GET /api/users`.** The picker mirrors `GroupManagementModal`:
+  **Students / Instructors** role tabs drive the debounced `fetchUsersPaged` search
+  (admins get a third **Everyone** mode), and an optional **Filter by program**
+  narrows the Students tab only. Instructors automatically get the minimal
+  projection — students and instructors, with admin/staff/`Admin`-program accounts
+  excluded by the endpoint. Inactive accounts are filtered out — the backend 422s
+  them anyway.
 - **Errors stay in the dialog.** 403 (outside your authority), 409 (stale `version`), and
   422 (unknown/inactive/orphan targets) surface via `userMessage`; the dialog stays open
   so a retry sends the conflict-merged fresh version.

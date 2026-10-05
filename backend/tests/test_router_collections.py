@@ -317,13 +317,26 @@ async def test_list_co_owned_collection_is_visible_to_co_owner_student() -> None
     assert sorted(o.user_id for o in out[0].owners) == [2, 10]
 
 
-async def test_list_staff_owner_is_view_only() -> None:
-    """Staff see everything but hold no edit/scope/delete/transfer rights —
-    even on collections they own (#1531)."""
+async def test_list_staff_owner_has_student_parity_rights() -> None:
+    """Staff see everything like instructors, and hold student-parity rights
+    on collections they own (#1531): a sole-owner staff member may edit,
+    change scope, and delete — but can never manage owners or transfer."""
     col = _collection(1, "private", user_id=3)
     out = await list_collections(_user("staff", id=3), db=_mock_db([col]))
     perms = out[0].permissions
-    assert perms.can_edit is False
+    assert perms.can_edit is True
+    assert perms.can_change_scope is True
+    assert perms.can_delete is True
+    assert perms.can_transfer is False
+
+
+async def test_list_staff_co_owner_cannot_scope_or_delete() -> None:
+    """A staff member who is one of several co-owners may edit content but
+    not scope/delete — the same co-owner rule students get (#1531)."""
+    col = _collection(1, "private", owner_ids=[3, 4])
+    out = await list_collections(_user("staff", id=3), db=_mock_db([col]))
+    perms = out[0].permissions
+    assert perms.can_edit is True
     assert perms.can_change_scope is False
     assert perms.can_delete is False
     assert perms.can_transfer is False
@@ -553,7 +566,7 @@ async def test_get_collection_skips_dangling_links() -> None:
 # ── create ────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("role", ["admin", "instructor", "student"])
+@pytest.mark.parametrize("role", ["admin", "instructor", "staff", "student"])
 async def test_create_private_collection_any_role_owner_is_caller(role: str) -> None:
     db = _write_db(images=[_image(1), _image(2)])
     body = CollectionCreate(name="  Mine ", type="sequence", image_ids=[2, 1])
@@ -569,15 +582,6 @@ async def test_create_private_collection_any_role_owner_is_caller(role: str) -> 
     assert _links(created) == [(2, 0), (1, 1)]
     assert out.version == 1 and out.type == "sequence"
     db.commit.assert_awaited_once()
-
-
-async def test_create_private_collection_staff_is_403() -> None:
-    """Staff are view-only: a staff-created collection could never be
-    edited or owned-managed by them, so create itself is rejected."""
-    body = CollectionCreate(name="Mine", type="sequence")
-    with pytest.raises(HTTPException) as exc:
-        await create_collection(body, _user("staff", id=42), db=_write_db())
-    assert exc.value.status_code == 403
 
 
 async def test_create_restricted_admin_attaches_any_program_and_group() -> None:
@@ -669,10 +673,11 @@ async def test_create_student_invisible_image_is_422(
     assert excluded.await_args.args[1:] == ({1}, {5})
 
 
-async def test_create_non_student_may_add_inactive_image() -> None:
+@pytest.mark.parametrize("role", ["instructor", "staff"])
+async def test_create_non_student_may_add_inactive_image(role: str) -> None:
     db = _write_db(images=[_image(3, active=False)])
     body = CollectionCreate(name="C", type="sequence", image_ids=[3])
-    await create_collection(body, _user("instructor", id=3), db=db)
+    await create_collection(body, _user(role, id=3), db=db)
     assert _links(db.add.call_args.args[0]) == [(3, 0)]
 
 
@@ -712,23 +717,24 @@ async def test_owner_or_admin_may_update(role: str) -> None:
     assert out.name == "New"
 
 
-async def test_staff_owner_cannot_update() -> None:
-    """Staff are view-only for collections — even ones they own (#1531)."""
+async def test_staff_owner_may_update() -> None:
+    """Staff hold student-parity rights on collections they own (#1531)."""
     col = _collection(1, "private", user_id=2)
-    with pytest.raises(HTTPException) as exc:
-        await update_collection(
-            1, _patch(name="New"), _user("staff", id=2), db=_write_db(get=col)
-        )
-    assert exc.value.status_code == 403
-
-
-async def test_student_co_owner_edits_content_but_not_scope() -> None:
-    """Field-level PATCH authority (#1531): a co-owning student may change
-    name/description but not visibility/program/group scope."""
-    col = _collection(1, "private", owner_ids=[10, 2])
-    student = _user("student", id=2)
     out = await update_collection(
-        1, _patch(name="New", description="d"), student, db=_write_db(get=col)
+        1, _patch(name="New"), _user("staff", id=2), db=_write_db(get=col)
+    )
+    assert out.name == "New"
+
+
+@pytest.mark.parametrize("role", ["student", "staff"])
+async def test_co_owner_edits_content_but_not_scope(role: str) -> None:
+    """Field-level PATCH authority (#1531): a co-owning student or staff
+    member may change name/description but not visibility/program/group
+    scope."""
+    col = _collection(1, "private", owner_ids=[10, 2])
+    user = _user(role, id=2)
+    out = await update_collection(
+        1, _patch(name="New", description="d"), user, db=_write_db(get=col)
     )
     assert out.name == "New"
     for body in (
@@ -737,23 +743,26 @@ async def test_student_co_owner_edits_content_but_not_scope() -> None:
         _patch(group_ids=[5]),
     ):
         with pytest.raises(HTTPException) as exc:
-            await update_collection(1, body, student, db=_write_db(get=col))
+            await update_collection(1, body, user, db=_write_db(get=col))
         assert exc.value.status_code == 403
 
 
-async def test_student_sole_owner_may_change_scope() -> None:
+@pytest.mark.parametrize("role", ["student", "staff"])
+async def test_sole_owner_may_change_scope(role: str) -> None:
     col = _collection(1, "private", user_id=2)
     out = await update_collection(
-        1, _patch(visibility="public"), _user("student", id=2), db=_write_db(get=col)
+        1, _patch(visibility="public"), _user(role, id=2), db=_write_db(get=col)
     )
     assert out.visibility == "public"
 
 
-async def test_student_co_owner_cannot_delete() -> None:
-    """Delete follows the scope rule: students need sole ownership (#1531)."""
+@pytest.mark.parametrize("role", ["student", "staff"])
+async def test_co_owner_cannot_delete(role: str) -> None:
+    """Delete follows the scope rule: students and staff need sole
+    ownership (#1531)."""
     col = _collection(1, "public", owner_ids=[10, 2])
     with pytest.raises(HTTPException) as exc:
-        await delete_collection(1, _user("student", id=2), db=_write_db(get=col))
+        await delete_collection(1, _user(role, id=2), db=_write_db(get=col))
     assert exc.value.status_code == 403
 
 

@@ -174,9 +174,11 @@ def test_can_edit_and_delete_collection() -> None:
     assert can_edit_collection(_user("student", id=10), owned) is True
     assert can_edit_collection(_user("student", id=11), co_owned) is True
     assert can_edit_collection(_user("student", id=12), co_owned) is False
-    # Staff never edit — not even collections they own (#1531).
-    assert can_edit_collection(_user("staff", id=10), owned) is False
-    assert can_edit_collection(_user("staff", id=11), owned) is False
+    # Staff hold the same ownership-based rights as students (#1531):
+    # they edit collections they own or co-own, not strangers'.
+    assert can_edit_collection(_user("staff", id=10), owned) is True
+    assert can_edit_collection(_user("staff", id=11), co_owned) is True
+    assert can_edit_collection(_user("staff", id=12), co_owned) is False
 
     assert can_edit_collection(_user("instructor", id=7, programs=[3]), program_owned) is True
     assert can_edit_collection(_user("instructor", id=7, programs=[4]), program_owned) is False
@@ -188,7 +190,7 @@ def test_can_edit_and_delete_collection() -> None:
 
 def test_can_change_scope_and_delete_collection() -> None:
     """Scope changes and deletion: admins/instructors mirror edit; students
-    need sole ownership (no co-owners, no program owner); staff never."""
+    and staff need sole ownership (no co-owners, no program owner)."""
     owned = _collection(user_id=10)
     co_owned = _collection(user_id=10, owner_ids=[10, 11])
     program_owned = _collection(user_id=None, owner_program_id=3)
@@ -215,8 +217,13 @@ def test_can_change_scope_and_delete_collection() -> None:
     assert can_change_collection_scope(_user("student", id=10), program_plus_user) is False
     assert can_change_collection_scope(_user("student", id=11), co_owned) is False
 
-    assert can_change_collection_scope(_user("staff", id=10), owned) is False
-    assert can_delete_collection(_user("staff", id=10), owned) is False
+    assert can_change_collection_scope(_user("staff", id=10), owned) is True
+    assert can_delete_collection(_user("staff", id=10), owned) is True
+    assert can_change_collection_scope(_user("staff", id=10), co_owned) is False
+    assert can_delete_collection(_user("staff", id=10), co_owned) is False
+    assert can_change_collection_scope(
+        _user("staff", id=10), program_plus_user
+    ) is False
 
 
 def test_can_transfer_collection() -> None:

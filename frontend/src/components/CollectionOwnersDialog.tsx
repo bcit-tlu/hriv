@@ -11,6 +11,8 @@ import InputLabel from '@mui/material/InputLabel'
 import MenuItem from '@mui/material/MenuItem'
 import Select from '@mui/material/Select'
 import TextField from '@mui/material/TextField'
+import ToggleButton from '@mui/material/ToggleButton'
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
 import { fetchUsersPaged, userMessage } from '../api'
 import { AuthContext } from '../authContextValue'
@@ -84,6 +86,15 @@ export default function CollectionOwnersDialog({
   const [selectedOwners, setSelectedOwners] = useState<OwnerOption[]>([])
   const [userOptions, setUserOptions] = useState<OwnerOption[]>([])
   const [query, setQuery] = useState('')
+  // Role-scoped directory search mirroring GroupManagementModal: instructors
+  // choose between Students and Instructors (admins and staff are never
+  // listed to them); admins additionally get an unscoped "Everyone" mode.
+  const [roleTab, setRoleTab] = useState<'student' | 'instructor' | 'all'>(
+    isAdmin ? 'all' : 'student',
+  )
+  // Optional program narrowing — applies to the Students search only,
+  // exactly like the group member picker (co-instructors stay global).
+  const [programFilterIds, setProgramFilterIds] = useState<number[]>([])
   // `''` = "no program owner" (MUI Select needs a concrete value, not null).
   const [selectedProgramId, setSelectedProgramId] = useState<number | ''>('')
   const [error, setError] = useState<string | null>(null)
@@ -100,20 +111,30 @@ export default function CollectionOwnersDialog({
       )
       setUserOptions([])
       setQuery('')
+      setRoleTab(isAdmin ? 'all' : 'student')
+      setProgramFilterIds([])
       setSelectedProgramId(collection?.owners.find((o) => o.kind === 'program')?.programId ?? '')
       setError(null)
       setSaving(false)
     }
     prevOpen.current = open
-  }, [open, collection])
+  }, [open, collection, isAdmin])
 
   // Debounced people search — the same endpoint the group-membership picker
   // uses, so instructors see the scoped mini-projection automatically.
+  // Program narrowing applies to the Students search only (group parity);
+  // "Everyone" (admins only) sends no role param.
   useEffect(() => {
     if (!open) return
     let cancelled = false
     const timer = setTimeout(() => {
-      fetchUsersPaged({ q: query || undefined, pageSize: 50 })
+      fetchUsersPaged({
+        role: roleTab === 'all' ? undefined : roleTab,
+        programIds:
+          roleTab === 'student' && programFilterIds.length > 0 ? programFilterIds : undefined,
+        q: query || undefined,
+        pageSize: 50,
+      })
         .then(({ items }) => {
           if (cancelled) return
           // Inactive accounts cannot hold owner rows (backend 422s them).
@@ -129,7 +150,7 @@ export default function CollectionOwnersDialog({
       cancelled = true
       clearTimeout(timer)
     }
-  }, [open, query])
+  }, [open, query, roleTab, programFilterIds])
 
   // A program owner clears the user-owner rows on transfer, so the owner
   // picker only makes sense while no program is being assigned.
@@ -189,6 +210,27 @@ export default function CollectionOwnersDialog({
           </Typography>
         )}
 
+        <ToggleButtonGroup
+          size="small"
+          exclusive
+          value={roleTab}
+          onChange={(_e, v: 'student' | 'instructor' | 'all' | null) => {
+            if (v != null) setRoleTab(v)
+          }}
+          aria-label="Owner search scope"
+          disabled={saving || programAssigned}
+          sx={{ mt: 1 }}
+        >
+          <ToggleButton value="student">Students</ToggleButton>
+          <ToggleButton value="instructor">Instructors</ToggleButton>
+          {isAdmin && <ToggleButton value="all">Everyone</ToggleButton>}
+        </ToggleButtonGroup>
+        {!isAdmin && (
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+            The directory lists students and instructors; admin and staff accounts are not shown.
+          </Typography>
+        )}
+
         <Autocomplete
           multiple
           data-testid="owners-select"
@@ -213,6 +255,28 @@ export default function CollectionOwnersDialog({
             />
           )}
         />
+
+        {roleTab === 'student' && (
+          <Autocomplete
+            multiple
+            data-testid="owners-program-filter"
+            options={programs}
+            value={programs.filter((p) => programFilterIds.includes(p.id))}
+            filterSelectedOptions
+            getOptionLabel={(p) => p.name}
+            isOptionEqualToValue={(a, b) => a.id === b.id}
+            onChange={(_e, ps) => setProgramFilterIds(ps.map((p) => p.id))}
+            disabled={saving || programAssigned}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="Filter by program"
+                margin="normal"
+                helperText="Optional — narrow the student search to selected programs."
+              />
+            )}
+          />
+        )}
 
         <FormControl fullWidth margin="normal">
           <InputLabel id="owners-program-label">Owning program</InputLabel>

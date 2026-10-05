@@ -4,8 +4,9 @@ Collections gather a handful of images into a named set — for example, the
 four views of one specimen, or a sequence that tells a story over time.
 
 Open the **Collections** tab in the app bar. Everyone who is signed in,
-including students, can see the tab; admins, instructors, and students can
-create their own collections (staff accounts are view-only). (If
+including students, can see the tab; admins, instructors, staff and students
+can all create their own collections (staff see every collection and, like
+students, edit the ones they own or co-own). (If
 your HRIV instance doesn't show a Collections tab yet, the feature hasn't
 been switched on there — ask your administrator.)
 
@@ -147,9 +148,14 @@ collection page), you can manage who owns it — administrators for any
 collection, instructors for collections they co-own or that belong to a
 program they teach:
 
-- **User owners** — pick any active users from the list; a collection can
-  have several co-owners (any role, including students). The last user owner
-  can't be removed unless a program owns the collection.
+- **User owners** — pick co-owners from the **Students** or **Instructors**
+  tabs (administrators also get **Everyone**). The student tab offers an
+  optional **Filter by program** to narrow the search — the same people
+  picker used when managing groups. Instructors only ever see students and
+  fellow instructors; administrator and staff accounts can only be added by
+  an administrator. A collection can have several co-owners of any role,
+  including students. The last user owner can't be removed unless a program
+  owns the collection.
 - **Program owner** — administrators can pick any program; instructors only
   a program they belong to. Assigning a program makes it the sole owner —
   the user-owner list clears, and picking a program disables the user list
