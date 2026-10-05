@@ -267,6 +267,15 @@ returned by the API (UX only — the backend re-checks).
   the "All images in this collection are currently restricted." notice;
   **Given** `member_count` is `0`, **Then** the ordinary empty-collection
   copy renders instead.
+- **Given** an image dragged onto an editable collection tile's near half
+  (#1530), **Then** an "Add to collection" overlay appears and the drop adds
+  the image as a member with a snackbar offering **Undo**; **Given** the
+  image is already a member, **Then** an informational snackbar reports it;
+  **Given** the add would exceed the synchronized 4-image cap, **Then** an
+  error snackbar names the limit. **Given** the collection is not editable
+  (`permissions.can_edit` false) or the drag source is a category or
+  collection tile, **Then** no add zone is offered — the far-half reorder
+  behaviour is unchanged.
 
 ### Sequence collection viewer (`SequenceCollectionViewer.test.tsx`, `useCollectionsData.test.ts`, `useShareableImageState.test.ts`)
 

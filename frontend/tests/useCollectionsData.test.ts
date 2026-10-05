@@ -1349,4 +1349,125 @@ describe('useCollectionsData', () => {
       expect(result.current.detail).toMatchObject({ id: 1, version: 8, categoryId: 8 })
     })
   })
+
+  describe('addImages / removeImages (#1530)', () => {
+    it('addImages PUTs existing + new ids and merges the record into detail and the list row', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1, version: 3 })])
+      fetchCollectionMock.mockResolvedValue(
+        makeApiCollection({ id: 1, version: 3, images: [{ id: 10 } as never] }),
+      )
+      replaceCollectionImagesMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 4, images: [{ id: 10 }, { id: 42 }] as never }),
+      )
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.version).toBe(3))
+
+      let added: { status: string } | undefined
+      await act(async () => {
+        added = await result.current.addImages(1, [42])
+      })
+
+      expect(added?.status).toBe('added')
+      expect(replaceCollectionImagesMock).toHaveBeenCalledWith(1, {
+        image_ids: [10, 42],
+        version: 3,
+      })
+      expect(result.current.detail).toMatchObject({ id: 1, version: 4 })
+      expect(result.current.collections[0]).toMatchObject({ id: 1, version: 4 })
+    })
+
+    it('addImages returns already/full without a PUT and still refreshes the record', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1, version: 3 })])
+      fetchCollectionMock.mockResolvedValue(
+        makeApiCollection({ id: 1, version: 3, images: [{ id: 42 } as never] }),
+      )
+      const { result } = renderData()
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      let status: string | undefined
+      await act(async () => {
+        status = (await result.current.addImages(1, [42])).status
+      })
+
+      expect(status).toBe('already')
+      expect(replaceCollectionImagesMock).not.toHaveBeenCalled()
+      // The fetched record still replaces the stale summary row.
+      expect(result.current.collections[0]).toMatchObject({ id: 1, version: 3 })
+    })
+
+    it('removeImages PUTs the list minus removed ids (drop-add undo)', async () => {
+      fetchCollectionMock.mockResolvedValue(
+        makeApiCollection({
+          id: 1,
+          version: 4,
+          images: [{ id: 10 }, { id: 42 }] as never[],
+        }),
+      )
+      replaceCollectionImagesMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 5, images: [{ id: 10 }] as never[] }),
+      )
+      const { result } = renderData()
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      let updated: unknown
+      await act(async () => {
+        updated = await result.current.removeImages(1, [42])
+      })
+
+      expect(replaceCollectionImagesMock).toHaveBeenCalledWith(1, {
+        image_ids: [10],
+        version: 4,
+      })
+      expect(updated).toMatchObject({ id: 1, version: 5 })
+    })
+
+    it('serializes a drop-add behind an in-flight reorder so the add sees the post-write state', async () => {
+      fetchCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 5, images: [{ id: 10 }, { id: 11 }] as never }),
+      )
+      let resolveReorder!: (value: ReturnType<typeof makeApiCollection>) => void
+      replaceCollectionImagesMock.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveReorder = resolve
+        }),
+      )
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.version).toBe(5))
+
+      let addPromise!: Promise<{ status: string }>
+      await act(async () => {
+        void result.current.reorderImages(1, [11, 10])
+        addPromise = result.current.addImages(1, [42])
+      })
+      // The add's internal fetch must not have run yet — it waits on the queue.
+      expect(fetchCollectionMock).toHaveBeenCalledTimes(1)
+
+      fetchCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({
+          id: 1,
+          version: 6,
+          images: [{ id: 11 }, { id: 10 }] as never[],
+        }),
+      )
+      replaceCollectionImagesMock.mockResolvedValueOnce(
+        makeApiCollection({
+          id: 1,
+          version: 7,
+          images: [{ id: 11 }, { id: 10 }, { id: 42 }] as never[],
+        }),
+      )
+      await act(async () => {
+        resolveReorder(
+          makeApiCollection({ id: 1, version: 6, images: [{ id: 11 }, { id: 10 }] as never }),
+        )
+        await addPromise
+      })
+      // The queued add fetched the post-reorder record (v6) and PUTed on it.
+      expect(replaceCollectionImagesMock).toHaveBeenLastCalledWith(1, {
+        image_ids: [11, 10, 42],
+        version: 6,
+      })
+      expect(result.current.detail).toMatchObject({ id: 1, version: 7 })
+    })
+  })
 })

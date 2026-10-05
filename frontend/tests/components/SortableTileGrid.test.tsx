@@ -3,7 +3,7 @@ import { render, screen, act } from '@testing-library/react'
 import SortableTileGrid from '../../src/components/SortableTileGrid'
 import type { SortableTileGridProps } from '../../src/components/SortableTileGrid'
 import type { Group, Program } from '../../src/types'
-import { DROP_PREFIX } from '../../src/components/sortableTileGridUtils'
+import { DROP_COL_PREFIX, DROP_PREFIX } from '../../src/components/sortableTileGridUtils'
 import { makeCategory, makeCollectionSummary, makeImage } from '../helpers/fixtures'
 import type { TileOrderItemRef } from '../../src/api'
 
@@ -318,6 +318,105 @@ describe('DroppableCategoryZone (rendering + accept)', () => {
     })
 
     expect(screen.getAllByRole('region', { name: 'Move into category' })).toHaveLength(2)
+  })
+})
+
+describe('DroppableCollectionZone (#1530)', () => {
+  beforeEach(() => {
+    capturedOnDragEnd = undefined
+    tileOrdering = makeTileOrdering()
+  })
+
+  it('renders an "Add to collection" zone on each editable collection tile', () => {
+    renderGrid({
+      currentCollections: [
+        makeCollectionSummary({ id: 5, name: 'Editable set' }),
+        makeCollectionSummary({ id: 6, name: 'Another set' }),
+      ],
+    })
+
+    expect(screen.getAllByRole('region', { name: 'Add to collection' })).toHaveLength(2)
+  })
+
+  it('does not render a zone for collections without edit permission', () => {
+    renderGrid({
+      currentCollections: [
+        makeCollectionSummary({ id: 5, name: 'Editable' }),
+        makeCollectionSummary({
+          id: 6,
+          name: 'Read only',
+          permissions: { canEdit: false, canDelete: false, canTransfer: false },
+        }),
+      ],
+    })
+
+    expect(screen.getAllByRole('region', { name: 'Add to collection' })).toHaveLength(1)
+  })
+
+  it('still renders the zone for non-editors (disabled state)', () => {
+    renderGrid({
+      currentCollections: [makeCollectionSummary({ id: 5 })],
+      canEditContent: false,
+    })
+
+    expect(screen.getAllByRole('region', { name: 'Add to collection' })).toHaveLength(1)
+  })
+
+  it('does not show the overlay text when not hovering', () => {
+    renderGrid({
+      currentCollections: [makeCollectionSummary({ id: 5, name: 'Set' })],
+    })
+
+    expect(screen.queryByText('Add to collection')).not.toBeInTheDocument()
+  })
+
+  it('dispatches onDropImageOnCollection for an image dropped on the zone', async () => {
+    const onDropImageOnCollection = vi.fn()
+    renderGrid({
+      currentCollections: [makeCollectionSummary({ id: 5 })],
+      currentImages: [makeImage({ id: 42, sortOrder: 1 })],
+      onDropImageOnCollection,
+    })
+
+    await act(async () => {
+      await capturedOnDragEnd!({
+        operation: {
+          source: { id: 'img-42' },
+          target: { id: `${DROP_COL_PREFIX}5` },
+          canceled: false,
+        },
+      })
+    })
+
+    expect(onDropImageOnCollection).toHaveBeenCalledWith(42, 5)
+    expect(tileOrdering.reportOrder).not.toHaveBeenCalled()
+  })
+
+  it('rejects category and collection sources on the collection zone', async () => {
+    const onDropImageOnCollection = vi.fn()
+    renderGrid({
+      currentCategories: [makeCategory({ id: 1, sortOrder: 0 })],
+      currentCollections: [
+        makeCollectionSummary({ id: 5, sortOrder: 1 }),
+        makeCollectionSummary({ id: 6, sortOrder: 2 }),
+      ],
+      onDropImageOnCollection,
+    })
+
+    for (const sourceId of ['cat-1', 'col-6']) {
+      await act(async () => {
+        await capturedOnDragEnd!({
+          operation: {
+            source: { id: sourceId },
+            target: { id: `${DROP_COL_PREFIX}5` },
+            canceled: false,
+          },
+        })
+      })
+    }
+
+    expect(onDropImageOnCollection).not.toHaveBeenCalled()
+    expect(tileOrdering.reportOrder).not.toHaveBeenCalled()
   })
 })
 

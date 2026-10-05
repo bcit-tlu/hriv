@@ -7,7 +7,8 @@ import {
   updateImage as apiUpdateImage,
   userMessage,
 } from './api'
-import { apiCollectionToCollection } from './collectionUtils'
+import { apiCollectionToCollection, SYNCHRONIZED_MAX_IMAGES } from './collectionUtils'
+import type { AddToCollectionResult } from './useAddToCollection'
 import { tileOrderingCoordinator, type ScopeId } from './tileOrdering'
 import type { ParentMove, ScopeOrder } from './components/manageCategoriesDialogUtils'
 import { computeMoveRestrictionChange } from './categoryUtils'
@@ -55,6 +56,20 @@ export interface UseCategoryActionsDeps {
     categoryId: number | null,
     version: number,
   ) => Promise<Collection>
+  /**
+   * Adds member images to a collection with dedupe + synchronized-capacity
+   * checks (`useCollectionsData.addImages`; #1530). Absent while collections
+   * are disabled — the drop-add handler no-ops then.
+   */
+  addImagesToCollectionApi?: (
+    collectionId: number,
+    imageIds: number[],
+  ) => Promise<AddToCollectionResult>
+  /**
+   * Removes member images from a collection — the undo path for the Browse
+   * drop-add gesture (`useCollectionsData.removeImages`; #1530).
+   */
+  removeImagesFromCollectionApi?: (collectionId: number, imageIds: number[]) => Promise<Collection>
   currentCategories: Category[]
   ancestorProgramIds: number[]
   getPathRestriction: (depth?: number) => number[]
@@ -66,6 +81,8 @@ export interface UseCategoryActionsDeps {
   setErrorSnack: React.Dispatch<React.SetStateAction<string | null>>
   /** Surfaces non-blocking category advisories (e.g. program/group intersection). */
   setWarningSnack?: React.Dispatch<React.SetStateAction<string | null>>
+  /** Surfaces informational notices (e.g. image already a collection member). */
+  setInfoSnack?: React.Dispatch<React.SetStateAction<string | null>>
   setMoveSnack: React.Dispatch<React.SetStateAction<{ message: string; onUndo: () => void } | null>>
 }
 
@@ -79,6 +96,8 @@ export function useCategoryActions({
   loadUncategorizedImages,
   loadUncategorizedCollections,
   moveCollectionApi,
+  addImagesToCollectionApi,
+  removeImagesFromCollectionApi,
   currentCategories,
   ancestorProgramIds,
   getPathRestriction,
@@ -89,6 +108,7 @@ export function useCategoryActions({
   editNameCategory,
   setErrorSnack,
   setWarningSnack,
+  setInfoSnack,
   setMoveSnack,
 }: UseCategoryActionsDeps) {
   const getAncestorPathForParent = useCallback(
@@ -652,6 +672,73 @@ export function useCategoryActions({
     [categories, uncategorizedCollections, doMoveCollection],
   )
 
+  /**
+   * Browse-grid drop-add (issue #1530): an `img-` tile dropped on a
+   * collection tile's near-half "Add to collection" zone lands here. The
+   * injected API fetches the fresh record, dedupes, and enforces the
+   * synchronized cap; membership adds change the tile's `imageCount`, so the
+   * containing scope's tree/root lists refresh after a successful add. Undo
+   * removes just the added member via the whole-replace `PUT /images`.
+   */
+  const handleDropImageOnCollection = useCallback(
+    async (imageId: number, collectionId: number) => {
+      if (!addImagesToCollectionApi || !removeImagesFromCollectionApi) return
+      const col =
+        findCollectionInTree(categories, collectionId)?.collection ??
+        uncategorizedCollections.find((c) => c.id === collectionId)
+      // The drop zone only renders for `permissions.canEdit`; this guard
+      // covers the stale-list window before that summary refreshes.
+      if (!col || !col.permissions.canEdit) return
+      try {
+        const result = await addImagesToCollectionApi(collectionId, [imageId])
+        if (result.status === 'already') {
+          setInfoSnack?.(`This image is already in "${result.collection.name}".`)
+          return
+        }
+        if (result.status === 'full') {
+          setErrorSnack(
+            `Adding this image to "${result.collection.name}" would exceed the ${SYNCHRONIZED_MAX_IMAGES}-image limit for synchronized collections.`,
+          )
+          return
+        }
+        const imgName =
+          findImageInTree(categories, imageId)?.image.name ??
+          uncategorizedImages.find((i) => i.id === imageId)?.name ??
+          'image'
+        await loadCategories()
+        await loadUncategorizedCollections?.()
+        setMoveSnack({
+          message: `Added “${imgName}” to “${result.collection.name}”.`,
+          onUndo: async () => {
+            try {
+              setMoveSnack(null)
+              await removeImagesFromCollectionApi(collectionId, [imageId])
+              await loadCategories()
+              await loadUncategorizedCollections?.()
+            } catch (undoErr) {
+              setErrorSnack(userMessage(undoErr, 'Failed to undo add to collection.'))
+            }
+          },
+        })
+      } catch (err) {
+        console.error('Failed to add image to collection via drag-and-drop', err)
+        setErrorSnack(userMessage(err, 'Failed to add to collection.'))
+      }
+    },
+    [
+      categories,
+      uncategorizedCollections,
+      uncategorizedImages,
+      addImagesToCollectionApi,
+      removeImagesFromCollectionApi,
+      loadCategories,
+      loadUncategorizedCollections,
+      setInfoSnack,
+      setMoveSnack,
+      setErrorSnack,
+    ],
+  )
+
   const handleSetCardImage = useCallback(
     async (categoryId: number, imageId: number | null) => {
       try {
@@ -752,6 +839,7 @@ export function useCategoryActions({
     handleRequestMoveCollection,
     handleMoveCollection,
     handleDropCollectionOnCategory,
+    handleDropImageOnCollection,
     handleSetCardImage,
   }
 }

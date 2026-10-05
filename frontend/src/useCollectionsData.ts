@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { addImagesToCollection, removeImagesFromCollection } from './useAddToCollection'
+import type { AddToCollectionResult } from './useAddToCollection'
 import {
   ApiError,
   createCollection,
@@ -584,6 +586,67 @@ export function useCollectionsData({
   )
 
   /**
+   * Merge an authoritative collection record into the open detail and the
+   * Collections-page list row (`matchesCollectionFilters` decides list
+   * membership, as in `move`). No list reload: the response record is
+   * already authoritative for the fields membership changes touch.
+   */
+  const mergeUpdated = useCallback((updated: Collection) => {
+    setDetail((prev) => (prev?.id === updated.id ? updated : prev))
+    setCollections((prev) => {
+      const rest = prev.filter((c) => c.id !== updated.id)
+      return matchesCollectionFilters(updated, latest.current.filters, latest.current.currentUser)
+        ? [updated, ...rest]
+        : rest
+    })
+  }, [])
+
+  /**
+   * Add member images to a collection — the Browse drop-add gesture (#1530).
+   * `addImagesToCollection` fetches the current record itself, so running it
+   * inside `mutationQueue` means its fetch post-dates any queued write and
+   * the PUT always carries a fresh `version`. The returned record (fresh on
+   * every status, even `already`/`full`) is merged into detail/list state.
+   */
+  const addImages = useCallback(
+    (id: number, imageIds: number[]): Promise<AddToCollectionResult> => {
+      const run = async (): Promise<AddToCollectionResult> => {
+        const result = await addImagesToCollection(id, imageIds)
+        mergeUpdated(result.collection)
+        return result
+      }
+      const queued = mutationQueue.current.then(run, () => run())
+      mutationQueue.current = queued.then(
+        (result) => result.collection,
+        () => null,
+      )
+      return queued
+    },
+    [mergeUpdated],
+  )
+
+  /**
+   * Remove member images — the undo path for the drop-add gesture (#1530),
+   * serialized through `mutationQueue` like the other versioned writes.
+   */
+  const removeImages = useCallback(
+    (id: number, imageIds: number[]): Promise<Collection> => {
+      const run = async (): Promise<Collection> => {
+        const updated = await removeImagesFromCollection(id, imageIds)
+        mergeUpdated(updated)
+        return updated
+      }
+      const queued = mutationQueue.current.then(run, () => run())
+      mutationQueue.current = queued.then(
+        (updated) => updated,
+        () => null,
+      )
+      return queued
+    },
+    [mergeUpdated],
+  )
+
+  /**
    * Refresh a member's tokenized tile/thumb URLs inside the open collection
    * after the viewer's tile-token renewal (#1416), so a later remount does
    * not start from an expired source.
@@ -616,6 +679,8 @@ export function useCollectionsData({
     saveViewport,
     move,
     transfer,
+    addImages,
+    removeImages,
     renewCollectionImage,
   }
 }

@@ -502,6 +502,22 @@ exist" for students) lets viewers distinguish "no members yet" from "all
 members restricted" — `image_count`/`imageCount` remains visible-only so
 list rows and tiles never leak hidden membership.
 
+**Drop-add (#1530).** Dragging an image tile onto an editable collection
+tile's **near half** shows an "Add to collection" overlay and, on drop,
+adds the image as a member via `useCollectionsData.addImages` →
+`addImagesToCollection` (dedupe + synchronized-capacity enforced; the call
+is serialized through the collection mutation queue so it never sends a
+stale `version`). The `drop-col-<id>` zone renders only when the
+collection's `permissions.canEdit` is set — unlike filing, which is
+curatorial — and accepts `img-` drags only; category/collection drags fall
+through to the far-half reorder contract unchanged. A successful add
+refreshes the scope (the tile's `imageCount`/`coverThumb` come from the
+summary row) and offers an undo snackbar that removes the member via
+`removeImagesFromCollection` (the same whole-replace `PUT …/images`).
+Already-member drops surface an info snackbar; a full synchronized
+collection surfaces the 4-image limit error. See `docs/drag-and-drop.md`
+for the collision contract.
+
 ### "Add to Collection" from the image view (#1415)
 
 **Where.** `App.tsx` (button + snackbars), `components/AddToCollectionDialog.tsx`,

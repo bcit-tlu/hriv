@@ -59,6 +59,26 @@ export async function addImagesToCollection(
   }
 }
 
+/**
+ * Remove `imageIds` from a collection's member list — the undo path for the
+ * Browse drop-add gesture (#1530). Like `addImagesToCollection` the member
+ * list is fetched first so the whole-replace `PUT /images` carries a fresh
+ * `version` and never drops images added by someone else. Ids that are not
+ * members are ignored; when nothing is removed the PUT is skipped.
+ */
+export async function removeImagesFromCollection(
+  collectionId: number,
+  imageIds: readonly number[],
+): Promise<Collection> {
+  const current = apiCollectionToCollection(await fetchCollection(collectionId))
+  const drop = new Set(imageIds)
+  const keep = current.images.filter((img) => !drop.has(img.id)).map((img) => img.id)
+  if (keep.length === current.images.length) return current
+  return apiCollectionToCollection(
+    await replaceCollectionImages(collectionId, { image_ids: keep, version: current.version }),
+  )
+}
+
 /** Create a collection that starts with `imageIds` (in order, de-duplicated). */
 export async function createCollectionWithImages(
   values: CollectionFormValues,

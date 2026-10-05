@@ -4,6 +4,7 @@ import {
   addImagesToCollection,
   createCollectionWithImages,
   fitsCollectionCapacity,
+  removeImagesFromCollection,
   useEditableCollections,
   useVisibleCollections,
 } from '../src/useAddToCollection'
@@ -116,6 +117,60 @@ describe('addImagesToCollection', () => {
     apiMocks.fetchCollection.mockResolvedValue(makeApiCollection({ id: 5, type: 'sequence' }))
     apiMocks.replaceCollectionImages.mockRejectedValue(new ApiError(409, 'stale'))
     await expect(addImagesToCollection(5, [9])).rejects.toBeInstanceOf(ApiError)
+  })
+})
+
+describe('removeImagesFromCollection (#1530)', () => {
+  it('PUTs the member list minus the removed ids with the current version', async () => {
+    apiMocks.fetchCollection.mockResolvedValue(
+      makeApiCollection({
+        id: 5,
+        version: 4,
+        images: [apiImage(1), apiImage(2), apiImage(9)],
+      }),
+    )
+    apiMocks.replaceCollectionImages.mockResolvedValue(
+      makeApiCollection({ id: 5, version: 5, images: [apiImage(1), apiImage(2)] }),
+    )
+
+    const result = await removeImagesFromCollection(5, [9])
+
+    expect(apiMocks.replaceCollectionImages).toHaveBeenCalledWith(5, {
+      image_ids: [1, 2],
+      version: 4,
+    })
+    expect(result.images.map((i) => i.id)).toEqual([1, 2])
+  })
+
+  it('skips the PUT when none of the ids are members', async () => {
+    apiMocks.fetchCollection.mockResolvedValue(
+      makeApiCollection({ id: 5, version: 4, images: [apiImage(1), apiImage(2)] }),
+    )
+
+    const result = await removeImagesFromCollection(5, [9, 10])
+
+    expect(apiMocks.replaceCollectionImages).not.toHaveBeenCalled()
+    expect(result.images.map((i) => i.id)).toEqual([1, 2])
+  })
+
+  it('removes only listed ids, keeping other members', async () => {
+    apiMocks.fetchCollection.mockResolvedValue(
+      makeApiCollection({
+        id: 5,
+        version: 2,
+        images: [apiImage(1), apiImage(2), apiImage(3)],
+      }),
+    )
+    apiMocks.replaceCollectionImages.mockResolvedValue(
+      makeApiCollection({ id: 5, version: 3, images: [apiImage(1), apiImage(3)] }),
+    )
+
+    await removeImagesFromCollection(5, [2])
+
+    expect(apiMocks.replaceCollectionImages).toHaveBeenCalledWith(5, {
+      image_ids: [1, 3],
+      version: 2,
+    })
   })
 })
 
