@@ -7,7 +7,6 @@ import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import CollectionsIcon from '@mui/icons-material/Collections'
-import DeleteIcon from '@mui/icons-material/Delete'
 import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
 import EditIcon from '@mui/icons-material/Edit'
 import LockIcon from '@mui/icons-material/Lock'
@@ -31,8 +30,6 @@ export interface CollectionCardProps {
   onOpen: (collection: CollectionSummary) => void
   /** Rendered only when `collection.permissions.canEdit` (UX gate — the API re-checks). */
   onEdit?: (collection: CollectionSummary) => void
-  /** Rendered only when `collection.permissions.canDelete` (UX gate — the API re-checks). */
-  onDelete?: (collection: CollectionSummary) => void
   /** Owners & transfer dialog (#1531) — gated on `permissions.canTransfer`. */
   onTransfer?: (collection: CollectionSummary) => void
   /**
@@ -98,7 +95,6 @@ export default function CollectionCard({
   collection,
   onOpen,
   onEdit,
-  onDelete,
   onTransfer,
   onMove,
 }: CollectionCardProps) {
@@ -106,7 +102,6 @@ export default function CollectionCard({
   const TypeIcon = collection.type === 'synchronized' ? ViewColumnIcon : ViewCarouselIcon
   const imageCountText = `${collection.imageCount} ${collection.imageCount === 1 ? 'image' : 'images'}`
   const showEdit = Boolean(onEdit) && collection.permissions.canEdit
-  const showDelete = Boolean(onDelete) && collection.permissions.canDelete
   const showTransfer = Boolean(onTransfer) && collection.permissions.canTransfer
   const showMove = Boolean(onMove)
 
@@ -155,7 +150,7 @@ export default function CollectionCard({
                 WebkitBoxOrient: 'vertical',
                 overflow: 'hidden',
                 wordBreak: 'break-word',
-                pr: showEdit || showDelete || showTransfer || showMove ? 8 : 0,
+                pr: showEdit ? 8 : 0,
               }}
             >
               {collection.name}
@@ -165,76 +160,83 @@ export default function CollectionCard({
             {imageCountText} · {describeCollectionOwners(collection.owners)}
           </Typography>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
-            <Chip
-              data-testid="collection-type-chip"
-              label={COLLECTION_TYPE_LABELS[collection.type]}
-              size="small"
-              variant="outlined"
-              color="primary"
-              icon={<TypeIcon />}
-            />
             <CollectionVisibilityChip visibility={collection.visibility} />
           </Box>
         </CardContent>
       </CardActionArea>
-      {(showEdit || showDelete || showTransfer || showMove) && (
-        <Box
+      {/* Cover-overlay controls (#1554): type pill + curatorial actions,
+          same top-right scrim convention as CategoryTile. */}
+      <Box
+        sx={{
+          position: 'absolute',
+          top: 4,
+          right: 4,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 0.5,
+        }}
+      >
+        <Chip
+          data-testid="collection-type-chip"
+          label={COLLECTION_TYPE_LABELS[collection.type]}
+          size="small"
+          icon={<TypeIcon />}
           sx={{
-            position: 'absolute',
-            // 8px below the 160px cover, on the card body — keeps the
-            // controls off the image (they have no scrim, unlike
-            // CategoryTile's cover-overlay actions).
-            top: 168,
-            right: 8,
-            display: 'flex',
-            gap: 0.25,
+            bgcolor: 'rgba(0,0,0,0.25)',
+            color: 'white',
+            '& .MuiChip-icon': { color: 'white' },
           }}
+        />
+        {showMove && (
+          <Tooltip title="Move to category">
+            <IconButton
+              size="small"
+              sx={{
+                color: 'white',
+                bgcolor: 'rgba(0,0,0,0.25)',
+                '&:hover': { bgcolor: 'rgba(0,0,0,0.45)' },
+              }}
+              aria-label={`Move ${collection.name} to a category`}
+              onClick={(e) => {
+                e.stopPropagation()
+                e.preventDefault()
+                onMove?.(collection)
+              }}
+            >
+              <DriveFileMoveIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        )}
+        {showTransfer && (
+          <Tooltip title="Manage owners">
+            <IconButton
+              size="small"
+              sx={{
+                color: 'white',
+                bgcolor: 'rgba(0,0,0,0.25)',
+                '&:hover': { bgcolor: 'rgba(0,0,0,0.45)' },
+              }}
+              aria-label={`Manage owners of ${collection.name}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                e.preventDefault()
+                onTransfer?.(collection)
+              }}
+            >
+              <SwapHorizIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        )}
+      </Box>
+      {showEdit && (
+        <IconButton
+          size="small"
+          aria-label={`Edit ${collection.name}`}
+          onClick={() => onEdit?.(collection)}
+          sx={{ position: 'absolute', top: 168, right: 8 }}
         >
-          {showMove && (
-            <Tooltip title="Move to category">
-              <IconButton
-                size="small"
-                aria-label={`Move ${collection.name} to a category`}
-                onClick={() => onMove?.(collection)}
-              >
-                <DriveFileMoveIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          )}
-          {showEdit && (
-            <Tooltip title="Edit collection">
-              <IconButton
-                size="small"
-                aria-label={`Edit ${collection.name}`}
-                onClick={() => onEdit?.(collection)}
-              >
-                <EditIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          )}
-          {showTransfer && (
-            <Tooltip title="Manage owners">
-              <IconButton
-                size="small"
-                aria-label={`Manage owners of ${collection.name}`}
-                onClick={() => onTransfer?.(collection)}
-              >
-                <SwapHorizIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          )}
-          {showDelete && (
-            <Tooltip title="Delete collection">
-              <IconButton
-                size="small"
-                aria-label={`Delete ${collection.name}`}
-                onClick={() => onDelete?.(collection)}
-              >
-                <DeleteIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          )}
-        </Box>
+          <EditIcon fontSize="small" />
+        </IconButton>
       )}
     </Card>
   )

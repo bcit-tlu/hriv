@@ -119,6 +119,7 @@ const detail: Collection = {
 
 interface StoryArgs {
   role: Role
+  collectionPageType?: 'sequence' | 'synchronized'
   collections: CollectionSummary[]
   loading: boolean
   error: string | null
@@ -132,7 +133,7 @@ interface StoryArgs {
 
 function CollectionsPageExample(args: StoryArgs) {
   const [filters, setFilters] = useState<CollectionListFilters>({
-    type: 'all',
+    type: args.collectionPageType ?? 'sequence',
     mine: false,
     owner: 'any',
   })
@@ -143,6 +144,7 @@ function CollectionsPageExample(args: StoryArgs) {
     <AuthContext.Provider value={makeAuth(user)}>
       <Box sx={{ p: 3 }}>
         <CollectionsPage
+          collectionPageType={args.collectionPageType ?? 'sequence'}
           currentUser={user}
           programs={programs}
           groups={[]}
@@ -191,7 +193,7 @@ const meta = {
     docs: {
       description: {
         component:
-          'The Collections tab: filter bar (type, My collections, owner — the owner select is hidden for students), responsive card grid, create button, and the detail view — the sequence viewer for sequence collections (#1416) and the synchronized viewer for synchronized collections (#1417).',
+          'A typed Collections page (Sequence or Synchronized, chosen by the nav sub-menu): header filters (My collections chip + Owner select, hidden for students), responsive card grid, create button, and the detail view — the sequence viewer for sequence collections (#1416) and the synchronized viewer for synchronized collections (#1417).',
       },
     },
   },
@@ -228,8 +230,9 @@ export const Basic: Story = {
   },
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getAllByTestId('collection-card')).toHaveLength(4)
-    await userEvent.click(canvas.getAllByTestId('collection-card-action-area')[1])
+    // The Sequence page shows only the two sequence-typed fixtures.
+    await expect(canvas.getAllByTestId('collection-card')).toHaveLength(2)
+    await userEvent.click(canvas.getAllByTestId('collection-card-action-area')[0])
     await expect(args.onOpenCollection).toHaveBeenCalledWith(2)
   },
 }
@@ -240,9 +243,8 @@ export const Filtered: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(canvas.getByRole('button', { name: 'Sequence' }))
     await userEvent.click(canvas.getByRole('button', { name: 'My collections' }))
-    await expect(canvas.getByRole('button', { name: 'Sequence' })).toHaveAttribute(
+    await expect(canvas.getByRole('button', { name: 'My collections' })).toHaveAttribute(
       'aria-pressed',
       'true',
     )
@@ -269,7 +271,7 @@ export const LoadError: Story = {
 }
 
 export const Detail: Story = {
-  args: { selectedCollectionId: 1, detail },
+  args: { collectionPageType: 'synchronized', selectedCollectionId: 1, detail },
   parameters: {
     a11y: { test: 'todo' },
     // The synchronized detail mounts real OpenSeadragon viewers whose tile

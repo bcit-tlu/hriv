@@ -135,6 +135,11 @@ export interface UseShareableImageStateDeps {
    * `?cat=` next to `?collection=` so the deep link restores the Browse scope.
    */
   collectionFromBrowse?: boolean
+  /**
+   * Active Collections type page (#1554) — written as `?type=` next to
+   * `?page=collections` so the link restores the right sub-page.
+   */
+  collectionPageType?: 'sequence' | 'synchronized'
   setPath: React.Dispatch<React.SetStateAction<Category[]>>
   setSelectedImage: React.Dispatch<React.SetStateAction<ImageItem | null>>
   /**
@@ -190,6 +195,7 @@ export function useShareableImageState(
     collectionId = null,
     collectionItemId = null,
     collectionFromBrowse = false,
+    collectionPageType,
     setPath,
     setSelectedImage,
     enableUrlSync = true,
@@ -294,6 +300,9 @@ export function useShareableImageState(
       if (collectionItemId != null) params.set('item', String(collectionItemId))
     } else if (page !== 'browse') {
       params.set('page', page)
+      if (page === 'collections' && collectionPageType != null) {
+        params.set('type', collectionPageType)
+      }
       // The guide page owns a ?doc= sub-param — preserve it so refreshes and
       // shared links keep the current document.
       const doc = new URLSearchParams(window.location.search).get('doc')
@@ -345,6 +354,7 @@ export function useShareableImageState(
     collectionId,
     collectionItemId,
     collectionFromBrowse,
+    collectionPageType,
   ])
 
   const handleViewportChange = useCallback((state: ViewportState) => {

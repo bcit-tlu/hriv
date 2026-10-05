@@ -1,0 +1,75 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as ManageCollectionsPageStories from './ManageCollectionsPage.stories'
+
+<Meta of={ManageCollectionsPageStories} />
+
+<Title />
+
+<Subtitle>
+  Manage → Collections: the all-collections table for non-students, mirroring Manage → Images —
+  filter facets, sortable columns, pagination, browse-location breadcrumbs, and permission-gated row
+  actions.
+</Subtitle>
+
+## When to use
+
+`App` renders `ManageCollectionsPage` when the active page is `manage-collections` (the **Manage →
+Collections** sub-menu item). It is reachable by admins, instructors, and staff
+(`canEditContent || canViewPeople`) — students never see the Manage tab. The API scopes which rows
+each role receives; the table itself renders every returned row and gates only the action buttons.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={ManageCollectionsPageStories.Basic} />
+
+## Implementation guidance
+
+- **Data.** The page fetches `GET /api/collections/` with no API filters on mount (and after any
+  mutation, or when the `categories` prop changes — the signal that a Move or undo landed). All
+  facets are client-side, matching `ManagePage`; `loadCollections` is injectable for stories/tests.
+- **Columns.** Thumbnail, ID, Name, Type, Visibility, Owners, image count, Category
+  (`CategoryBreadcrumb` links into Browse), Modified, and the action cell. Every column except the
+  thumbnail and actions sorts via `TableSortLabel`.
+- **Facets.** Name (text), Type, Visibility, Owner, and Category (tree panel) persist under the
+  `manage-collections` table-preferences key, alongside rows-per-page.
+- **Row click.** Editable rows fetch the full record (summaries omit the restricted scope) and
+  open `CollectionEditDialog`; read-only rows call `onOpenCollection` — the collection detail view.
+- **Actions.** Edit requires `permissions.canEdit`; Owners requires `permissions.canTransfer`;
+  Move requires `canFileCollections` (admin/instructor) plus the `onMoveCollection` handler, which
+  opens the shared `MoveCollectionDialog`. Staff therefore see Edit/Owners only where the API
+  grants them and never see Move. Delete lives inside the edit dialog only — same convention as
+  `EditImageModal` and the collection tiles (#1554).
+- **Owners/transfer.** `CollectionOwnersDialog` handles both; the page refetches a fresh record for
+  its `version` before PUT/POST so a concurrent edit can't be clobbered.
+
+## Examples
+
+### Staff view
+
+<Canvas of={ManageCollectionsPageStories.StaffView} />
+
+### Loading
+
+<Canvas of={ManageCollectionsPageStories.Loading} />
+
+### Empty
+
+<Canvas of={ManageCollectionsPageStories.Empty} />
+
+### Load error
+
+<Canvas of={ManageCollectionsPageStories.LoadError} />
+
+## Stories
+
+<Stories includePrimary={false} />

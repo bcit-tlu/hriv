@@ -14,15 +14,16 @@ import * as CollectionCardStories from './CollectionCard.stories'
 <Title />
 
 <Subtitle>
-  Collections-tab card: cover thumbnail, name, image count, owner, type chip and visibility chip,
-  with permission-gated edit/delete actions.
+  Collections-page card: cover thumbnail, name, image count, owners and visibility chip — with the
+  type chip, Move and Owners actions in a top-right cover overlay and Edit in the metadata area.
 </Subtitle>
 
 ## When to use
 
-Use `CollectionCard` inside the Collections tab grid (`CollectionsPage`) to represent one
-`CollectionSummary`. Clicking the card body opens the collection (`?collection={id}`); the icon
-buttons in the corner call `onEdit` / `onDelete`.
+Use `CollectionCard` inside the collections-page grids (`CollectionsPage`) and the Browse tile
+grid to represent one `CollectionSummary`. Clicking the card body opens the collection
+(`?collection={id}`); the overlay icons call `onMove` / `onTransfer` and the metadata pencil calls
+`onEdit`. There is no card-level delete — Delete Collection lives inside the edit dialog (#1554).
 
 ## Interactive example
 
@@ -34,12 +35,16 @@ buttons in the corner call `onEdit` / `onDelete`.
 
 - The cover is rendered through `RenewingThumbnail` with a collection-specific renewer, so an
   expired thumbnail token is refreshed via `GET /api/collections/{id}` rather than the image route.
-- The type chip is outlined primary (`Synchronized` / `Sequence`); the visibility chip reuses the
+- The type chip sits in the cover overlay beside the action icons — the same `top: 4, right: 4`
+  white-on-`rgba(0,0,0,0.25)` scrim convention as `CategoryTile` (#1554). The visibility chip lives
+  in the metadata area and reuses the
   category restriction palette — `Restricted` borrows the group-chip colours, `Public` is neutral
   outlined, `Private` uses the muted visibility grey.
-- Edit/delete icons are a UX gate only: they render when `permissions.canEdit` /
-  `permissions.canDelete` is true **and** a handler is supplied. The backend re-checks authority on
-  every call.
+- Action icons are a UX gate only: Owners renders when `permissions.canTransfer` is true **and**
+  `onTransfer` is supplied, Edit when `permissions.canEdit` **and** `onEdit`, and Move whenever
+  `onMove` is supplied (filing is curatorial — the caller role-gates to admin/instructor). The
+  backend re-checks authority on
+  every call. Overlay clicks stop propagation so they never open the card.
 - Without a cover the card shows the collections icon on a primary-coloured block.
 
 ## Examples

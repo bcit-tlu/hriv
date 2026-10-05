@@ -31,7 +31,7 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
   `tests/test_router_images.py`** — the images router is a separate caller that
   must pass `user_group_ids` (regression fixed in #604). See [groups.md](groups.md).
 
-### Changed collections (model, authorization, read/write API, ownership transfer, Collections tab)
+### Changed collections (model, authorization, read/write API, ownership transfer, Collections pages / manage table)
 
 - backend: `poetry run pytest tests/test_collections_model.py tests/test_router_collections.py tests/test_schemas.py tests/test_authz.py tests/test_visibility.py`
 - Feature flag (`COLLECTIONS_ENABLED`, `GET /api/features`, `useFeatures`): add
@@ -47,7 +47,9 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
   locally `docker compose up -d db migrate` then `export
 TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
   otherwise it skips.
-- frontend: `npm test -- CollectionsPage CollectionCard CollectionEditDialog collectionUtils useCollectionsData api.test navigation AppShell useShareableImageState useNavigationHistory App.test`
+- frontend: `npm test -- CollectionsPage ManageCollectionsPage CollectionCard CollectionEditDialog collectionUtils useCollectionsData api.test navigation AppShell useShareableImageState useNavigationHistory App.test`
+- Per-type pages / card overlay / manage table / dialog delete (#1554):
+  `npm test -- CollectionsPage ManageCollectionsPage CollectionCard CollectionEditDialog navigation AppShell App.test`
 - "Add to Collection" from the image view (#1415: `AddToCollectionDialog.tsx`,
   `useAddToCollection.ts`, the viewer action bar in `App.tsx`):
   `npm test -- AddToCollectionDialog useAddToCollection App.test`
