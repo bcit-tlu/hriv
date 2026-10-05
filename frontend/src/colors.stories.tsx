@@ -42,11 +42,17 @@ function Palette() {
         )
       })}
 
-      <Stack spacing={3} direction="row">
-        <Swatch name="text" color={theme.palette.text.primary} />
-        <Swatch name="background" color={theme.palette.background.default} />
-        <Swatch name="divider" color={theme.palette.divider} />
-      </Stack>
+      <Box>
+        <Typography variant="overline">text / background / divider</Typography>
+        <Stack direction="row" spacing={3} sx={{ flexWrap: 'wrap' }}>
+          <Swatch name="text.primary" color={theme.palette.text.primary} />
+          <Swatch name="text.secondary" color={theme.palette.text.secondary} />
+          <Swatch name="text.disabled" color={theme.palette.text.disabled} />
+          <Swatch name="background.default" color={theme.palette.background.default} />
+          <Swatch name="background.paper" color={theme.palette.background.paper} />
+          <Swatch name="divider" color={theme.palette.divider} />
+        </Stack>
+      </Box>
     </Stack>
   )
 }
