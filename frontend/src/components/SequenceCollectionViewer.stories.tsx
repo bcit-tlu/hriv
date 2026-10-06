@@ -149,7 +149,7 @@ const meta = {
     docs: {
       description: {
         component:
-          'Read-only one-image-at-a-time viewer for sequence collections: Previous/Next toolbar, position readout, Open image link, thumbnail strip navigation, arrow-key support, and an editor-only reorder mode backed by the collection images endpoint.',
+          'Read-only one-image-at-a-time viewer for sequence collections: lightbox-style Previous/Next edge buttons that appear on pointer activity, position readout, Open image link, thumbnail strip navigation, arrow-key support, and an editor-only reorder mode backed by the collection images endpoint.',
       },
     },
   },
@@ -173,6 +173,9 @@ export const Basic: Story = {
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(canvas.getByTestId('sequence-position')).toHaveTextContent('1 of 6')
+    // The edge-overlay nav only becomes interactive on pointer activity
+    // (#1561) — hover the frame the way a real user would before clicking.
+    await userEvent.hover(canvas.getByTestId('sequence-viewer-frame'))
     await userEvent.click(canvas.getByRole('button', { name: 'Next image' }))
     await expect(canvas.getByTestId('sequence-position')).toHaveTextContent('2 of 6')
     await expect(args.onSelectItem).toHaveBeenCalledWith(102)

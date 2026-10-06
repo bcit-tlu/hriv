@@ -119,6 +119,53 @@ describe('SequenceCollectionViewer', () => {
     expect(screen.getByRole('button', { name: 'Previous image' })).toBeEnabled()
   })
 
+  it('keeps the edge nav hidden until pointer activity, then fades it out (#1561)', () => {
+    vi.useFakeTimers()
+    try {
+      renderViewer()
+      const frame = screen.getByTestId('sequence-viewer-frame')
+      const overlay = screen.getByTestId('sequence-nav-overlay')
+      const next = screen.getByRole('button', { name: 'Next image' })
+      expect(overlay).toHaveStyle({ opacity: '0' })
+      expect(next).toHaveStyle({ pointerEvents: 'none' })
+
+      fireEvent.pointerEnter(frame)
+      expect(overlay).toHaveStyle({ opacity: '1' })
+      expect(next).toHaveStyle({ pointerEvents: 'auto' })
+
+      // Pointer activity keeps the nav alive…
+      act(() => vi.advanceTimersByTime(1500))
+      fireEvent.pointerMove(frame)
+      act(() => vi.advanceTimersByTime(1500))
+      expect(overlay).toHaveStyle({ opacity: '1' })
+      // …then it fades back out once the pointer has been idle.
+      act(() => vi.advanceTimersByTime(2000))
+      expect(overlay).toHaveStyle({ opacity: '0' })
+      expect(next).toHaveStyle({ pointerEvents: 'none' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('hides the edge nav immediately when the pointer leaves the frame', () => {
+    renderViewer()
+    const frame = screen.getByTestId('sequence-viewer-frame')
+    const overlay = screen.getByTestId('sequence-nav-overlay')
+    fireEvent.pointerEnter(frame)
+    expect(overlay).toHaveStyle({ opacity: '1' })
+    fireEvent.pointerLeave(frame)
+    expect(overlay).toHaveStyle({ opacity: '0' })
+  })
+
+  it('reveals the edge nav when a button receives keyboard focus', () => {
+    renderViewer()
+    const overlay = screen.getByTestId('sequence-nav-overlay')
+    const next = screen.getByRole('button', { name: 'Next image' })
+    fireEvent.focus(next)
+    expect(overlay).toHaveStyle({ opacity: '1' })
+    expect(next).toHaveStyle({ pointerEvents: 'auto' })
+  })
+
   it('navigates with ArrowLeft/ArrowRight from inside the viewer region', () => {
     const { props } = renderViewer({ itemId: 101 })
     const region = screen.getByTestId('sequence-collection-viewer')

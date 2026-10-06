@@ -5,9 +5,9 @@ reusable viewing resource without duplicating image or category records. Two
 types exist:
 
 - **`sequence`** — an ordered set of images stepped through one at a time.
-- **`synchronized`** — up to four stored images (the initial UI renders the
-  first two) whose viewports are linked; the relative viewport positions can be
-  saved with the collection.
+- **`synchronized`** — up to four stored images whose viewports are linked
+  (rendered side by side for two, in a 2×2 grid for three or four); the
+  relative viewport positions can be saved with the collection.
 
 Epic: [#1409](https://github.com/bcit-tlu/hriv/issues/1409). This page is
 extended as each child issue lands; sections marked _planned_ are not yet
@@ -130,11 +130,11 @@ import that creator as the sole owner). See
 [admin-import-export.md](admin-import-export.md).
 
 `viewport_state` is written as a whole-column replacement (never a partial
-JSONB merge). The synchronized viewer (#1417) stores it as
+JSONB merge). The synchronized viewer (#1417, #1561) stores it as
 `{ "<image_id>": { "zoom": number, "x": number, "y": number,
 "rotation": number } }` — each member pane's absolute viewport position; the
-relative offset between panes is implicit in the pair. Keys the stored JSONB
-does not recognise are ignored by the frontend validator.
+relative offsets between panes are implicit across the saved entries. Keys
+the stored JSONB does not recognise are ignored by the frontend validator.
 
 ## Authorization
 
@@ -779,21 +779,30 @@ render read-only via `canvasAnnotationsFromMetadata` /
 (`components/imageViewerUtils.ts`). **Open image** navigates to the normal
 `?image={id}` view where annotations can be edited.
 
-**Toolbar.** A MUI `ButtonGroup` above the viewer (outside the OSD control
-bar): **Previous** / **Next**, an `n of N` live region, and **Open image**.
-The **Reorder** toggle moved to the detail header between **Move** and
-**Edit** (#1559) — `CollectionsPage` owns the `reordering` state and passes
-it down as a controlled prop.
+**Toolbar.** A small row above the viewer (outside the OSD control bar):
+an `n of N` live region and **Open image**. The **Reorder** toggle moved to
+the detail header between **Move** and **Edit** (#1559) —
+`CollectionsPage` owns the `reordering` state and passes it down as a
+controlled prop.
 
-**Navigation.** Buttons, strip thumbnails (`Go to {name}`) and ←/→ arrow
-keys all change the current item. Arrows are handled on keydown-capture at
-the sequence container so OpenSeadragon's own keyboard panning never sees
-them; editable targets (inputs, textareas, selects, `[role="textbox"]`,
-contenteditable) are skipped, and while reorder mode is on the keys belong
-to dnd-kit's `KeyboardSensor` instead.
+**Navigation.** Lightbox-style **Previous** / **Next** chevron buttons
+overlay the viewport's left and right edges (#1561); like the OSD toolbar's
+`autoHideControls`, they fade in on pointer activity over the viewer frame
+and fade back out after ~2 s idle or on pointer leave (keyboard focus also
+reveals them). The buttons stay mounted — only opacity and pointer-events
+toggle — so screen readers and tab focus still reach them. Strip
+thumbnails (`Go to {name}`) and ←/→ arrow keys change the current item
+too. Arrows are handled on keydown-capture at the sequence container so
+OpenSeadragon's own keyboard panning never sees them; editable targets
+(inputs, textareas, selects, `[role="textbox"]`, contenteditable) are
+skipped, and while reorder mode is on the keys belong to dnd-kit's
+`KeyboardSensor` instead.
 
 **Thumbnail strip.** `RenewingThumbnail` buttons under the viewer; the
-current item is outlined (`aria-current`). `onTileSourceRenewed` and the
+current item is marked `aria-current` and framed by a 3 px primary ring
+drawn _inside_ the thumbnail (`::after` border — an `outline` would be
+clipped asymmetrically by the strip's `overflow-x` scroll port, which is
+what cropped the highlight before #1561). `onTileSourceRenewed` and the
 thumbnails' renewal callback flow through `onImageRenewed` →
 `useCollectionsData.renewCollectionImage`, which swaps the refreshed
 `ApiImage` into `detail` so short-lived tile/thumb tokens keep working.
@@ -823,42 +832,47 @@ truth — the strip and any subsequent edits see the same member order.
 `CollectionsPage` for `type === 'synchronized'` below the shared detail
 header.
 
-**Panes.** The first two visible members render side by side, each a
-read-only `ImageViewer` with the same prop set as the sequence viewer
-(`canEditContent={false}`; stored annotations, locked overlays and
-measurement metadata pass through from `metadataExtra`). A caption under
-each pane shows the member name (plus an _inactive_ marker) and an
-**Open image** action → `?image={id}`. More than two stored members produce
-a "Showing 2 of _N_" note — three/four-pane layouts are future work. Fewer
-than two visible (or surviving) members shows a fallback alert with the
-ordered member list and per-row **Open image** links; members whose tiles
-fail mid-session are skipped, so the pair slides forward.
+**Panes.** Up to `SYNCHRONIZED_COLLECTION_MAX_IMAGES` (4) visible members
+render as panes — a side-by-side row for two, a 2×2 grid for three or four
+(#1561) — each a read-only `ImageViewer` with the same prop set as the
+sequence viewer (`canEditContent={false}`; stored annotations, locked
+overlays and measurement metadata pass through from `metadataExtra`). A
+caption under each pane shows the member name (plus an _inactive_ marker)
+and an **Open image** action → `?image={id}`. A member count above the pane
+cap produces a "Showing _N_ of _M_" note. Fewer than two visible (or
+surviving) members shows a fallback alert with the ordered member list and
+per-row **Open image** links; members whose tiles fail mid-session are
+skipped, so the panes slide forward.
 
 **Linked navigation.** `ImageViewer` exposes the OSD instance through a new
 `onViewerReady(viewer | null)` prop; the component attaches raw
-`viewport-change` handlers and mirrors zoom, center and rotation onto the
-other pane with `immediately=true` so the follower tracks during the
+`viewport-change` handlers and mirrors zoom, center and rotation onto every
+other pane with `immediately=true` so the followers track during the
 leader's spring animation. A `syncingRef` guard makes every programmatic
 write a follower write — mirrored events never lead the sync, and viewer
-changes before both `open` events complete are ignored.
+changes before a pane's `open` event completes are ignored. Any pane can
+lead; the leader's displacement is applied to all followers.
 
-**Offset.** The pair keeps a _relative offset_ — B's viewport relative to
-A's, captured once both panes have opened — as a multiplicative zoom ratio,
-an additive centre delta and an additive rotation delta. Saved positions
-around different highlights therefore stay aligned while navigation mirrors.
-Toggling the **Link views** switch off lets either side move independently;
-switching it back on re-captures the current alignment (it does not snap).
+**Baselines.** The panes keep an armed _baseline_ — every opened pane's
+viewport snapshotted when the pane joins, when the link is re-enabled, or
+on reset (#1561). A leader's move applies its displacement from its own
+baseline — a multiplicative zoom ratio and additive centre/rotation deltas —
+onto each follower's baseline, so saved positions around different
+highlights stay aligned while navigation mirrors. For two panes this is
+the pairwise offset the viewer originally captured. Toggling the **Link
+views** switch off lets each pane move independently; switching it back on
+re-captures the current alignment (it does not snap).
 
 **Persisted view.** **Save view** (editors only,
-`permissions.can_edit`) writes both panes' current viewports as
+`permissions.can_edit`) writes every pane's current viewport as
 `{ "<image_id>": {zoom, x, y, rotation} }` through
 `useCollectionsData.saveViewport` → `PUT …/viewport` (whole-replace +
-`version`), so the pair restores exactly after a reload or via a
+`version`), so the layout restores exactly after a reload or via a
 `?collection={id}` share link. `saveViewport` is serialized with
 `reorderImages` through the same mutation queue so the two writes can never
 consume each other's version. **Reset view** (everyone) re-applies the saved
 positions — or each viewer's home when nothing is saved — then re-arms the
-offset. Saved entries that do not match the shape are ignored by
+baselines. Saved entries that do not match the shape are ignored by
 `viewportStateFromSaved` (`imageViewerUtils.ts`).
 
 **Orientation.** `(orientation: portrait)` covers the pane area with a
@@ -1058,11 +1072,13 @@ the shared group-chip palette.
   reorder prop (toggle lives in the detail header, #1559), `move()` reorder → `PUT` with version, optimistic order in
   `detail`, rollback on error, `renewCollectionImage` member swap.
 - `frontend/tests/components/SynchronizedCollectionViewer.test.tsx`,
-  `useCollectionsData.test.ts` (#1417) — two-pane render with read-only
-  props, `viewport-change` mirroring with the saved offset in both
-  directions, no write-back/oscillation, Link views toggle + re-arm, Save
-  view payload, Reset to saved/home, portrait hint, `< 2` fallback +
-  "Showing 2 of _N_", member failure slide-up, editor-only Save;
+  `useCollectionsData.test.ts` (#1417, #1561) — two-pane render with
+  read-only props, `viewport-change` mirroring with the saved offset in both
+  directions, no write-back/oscillation, leader→followers mirroring and
+  per-pane offsets for three/four panes, Link views toggle + re-arm, Save
+  view payload for all panes, Reset to saved/home, portrait hint, `< 2`
+  fallback + "Showing _N_ of _M_" over the four-pane cap, member failure
+  slide-up, editor-only Save;
   `saveViewport` whole-replace `PUT` with `version`, queue sharing with
   `reorderImages`, cross-collection detail guard;
   `ImageViewer.test.tsx` — `onViewerReady` mount/unmount contract.
