@@ -276,8 +276,10 @@ returned by the API (UX only — the backend re-checks).
   when `restricted` — a chip per attached program and group.
 - **Given** a collection detail is open (#1559), **Then** the header leads
   with a `MuiBreadcrumbs` of its filed location (Home icon + category
-  ancestors, or just **Home** at the root — there is no "All collections"
-  back link); each breadcrumb link navigates Browse to that spot. **Then**
+  ancestors + the collection name as the current item — matching the image
+  viewer, which renders **Home / ‹image name›** at the root — and there is
+  no "All collections" back link); each breadcrumb link navigates Browse to
+  that spot. **Then**
   the top-right row orders: visibility chip (Public/Private/Restricted) —
   with a `Hidden` chip beside the title when `hidden` — then **Hide
   collection** / **Show collection** (`canHide` — admins and instructors

@@ -1290,6 +1290,7 @@ async def run_db_export(task_id: int) -> None:
                         "description": c.description,
                         "type": c.type,
                         "visibility": c.visibility,
+                        "hidden": c.hidden,
                         # user_id is creator-only audit (#1531); the owning
                         # users are the owner_ids list.
                         "user_id": c.user_id,
@@ -1711,6 +1712,8 @@ async def run_db_import(task_id: int) -> None:
                         description=c.get("description"),
                         type=c["type"],
                         visibility=c.get("visibility", "private"),
+                        # Older dumps predate curatorial hide (#1559).
+                        hidden=c.get("hidden", False),
                         user_id=c.get("user_id"),
                         owner_program_id=c.get("owner_program_id"),
                         category_id=c.get("category_id"),

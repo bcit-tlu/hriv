@@ -994,13 +994,36 @@ async def test_update_hidden_curators_may_hide_any_collection(role: str) -> None
     assert out.hidden is True
 
 
+async def test_update_hidden_noop_repeat_still_allowed_for_curator() -> None:
+    """A hidden-only PATCH whose value matches the current flag is still a
+    curator action — the gate keys on the field being supplied, not on the
+    value changing (Devin Review on #1560)."""
+    col = _collection(1, "private", user_id=10, hidden=True)
+    out = await update_collection(
+        1, _patch(hidden=True), _user("instructor", id=7), db=_write_db(get=col)
+    )
+    assert out.hidden is True
+
+
 @pytest.mark.parametrize("role", ["student", "staff"])
 async def test_update_hidden_noncurator_owner_is_403(role: str) -> None:
-    """Owners may not hide — the toggle belongs to admins and instructors."""
+    """Owners may not hide — the toggle belongs to admins and instructors.
+    Supplying `hidden` at all requires curatorial rights, even a no-op."""
     col = _collection(1, "private", user_id=2)
     with pytest.raises(HTTPException) as exc:
         await update_collection(
             1, _patch(hidden=True), _user(role, id=2), db=_write_db(get=col)
+        )
+    assert exc.value.status_code == 403
+
+
+async def test_update_hidden_noop_value_from_owner_is_403() -> None:
+    """An owner supplying `hidden` — even the current value — is still a
+    hide/show request and requires curatorial rights."""
+    col = _collection(1, "private", user_id=2, hidden=True)
+    with pytest.raises(HTTPException) as exc:
+        await update_collection(
+            1, _patch(hidden=True), _user("student", id=2), db=_write_db(get=col)
         )
     assert exc.value.status_code == 403
 

@@ -1966,7 +1966,15 @@ export default function App() {
               categories={categories}
               onNavigateCategory={handleNavigateBrowseFromCollection}
               onToggleHidden={(collection) =>
-                collectionsData.setHidden(collection.id, !collection.hidden)
+                collectionsData.setHidden(collection.id, !collection.hidden).then((updated) => {
+                  // The collection's Browse tile lives in useBrowseData's
+                  // tree/uncategorized state, not in the collections-page
+                  // list — refresh both so the hidden marker (or the tile
+                  // dropping out for students) isn't stale.
+                  refreshCategories()
+                  void loadUncategorizedCollections()
+                  return updated
+                })
               }
             />
           ) : page === 'manage-collections' &&

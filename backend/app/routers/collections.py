@@ -451,10 +451,11 @@ async def update_collection(
     )
     # Hide is curatorial (#1559): admins/instructors may hide any collection
     # regardless of ownership — a hidden-only PATCH skips the owner-edit
-    # gate below, while owners themselves may not unhide.
-    hidden_touched = body.hidden is not None and body.hidden != collection.hidden
+    # gate below, while owners themselves may not unhide. Keyed on whether
+    # the field was supplied so a curator's repeat/no-op hide succeeds too.
+    hidden_supplied = body.hidden is not None
     hidden_only = set(fields) <= {"hidden", "version"}
-    if hidden_touched and not can_hide_collection(user, collection):
+    if hidden_supplied and not can_hide_collection(user, collection):
         raise HTTPException(
             status_code=403,
             detail="Only admins and instructors may hide collections",
@@ -468,7 +469,7 @@ async def update_collection(
                 detail="You may not change this collection's scope",
             )
     elif not can_edit_collection(user, collection) and not (
-        hidden_touched and hidden_only
+        hidden_supplied and hidden_only
     ):
         raise HTTPException(
             status_code=403, detail="You may not edit this collection"

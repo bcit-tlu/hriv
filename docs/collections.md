@@ -563,11 +563,13 @@ re-checks authority on every call.
 
 **Detail view.** Selecting a card sets `?collection={id}` and renders the
 collection header. In place of the old "All collections" back link, the
-header leads with a `CategoryBreadcrumb` matching the collection's filed
+header leads with a `MuiBreadcrumbs` matching the collection's filed
 location (#1559): the category ancestor chain resolved from
 `detail.categoryId` (each link navigates Browse to that category, or the
-root for **Home** — the same convention as the image viewer breadcrumb; a
-collection has exactly one category location). Trailing the title row are
+root for **Home**), with the collection name trailing as the current item —
+the same convention as the image viewer breadcrumb, which renders
+**Home / ‹image name›** at the root (a collection has exactly one category
+location). Trailing the title row are
 the visibility chip (Public/Private/Restricted — left of the action buttons,
 mirroring the restricted program/group chips on category/image headers),
 then **Hide collection** / **Show collection** (`canHide` — curatorial;

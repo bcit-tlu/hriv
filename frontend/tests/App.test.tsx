@@ -613,6 +613,7 @@ const collectionsDataMocks = vi.hoisted(() => ({
   transfer: vi.fn(),
   move: vi.fn(),
   saveOwners: vi.fn(),
+  setHidden: vi.fn(),
 }))
 vi.mock('../src/useCollectionsData', () => ({
   useCollectionsData: () => ({
@@ -635,7 +636,7 @@ vi.mock('../src/useCollectionsData', () => ({
     transfer: collectionsDataMocks.transfer,
     saveOwners: collectionsDataMocks.saveOwners,
     move: collectionsDataMocks.move,
-    setHidden: vi.fn(),
+    setHidden: collectionsDataMocks.setHidden,
     renewCollectionImage: vi.fn(),
   }),
 }))
@@ -2072,6 +2073,25 @@ describe('App collection browse context (#1529)', () => {
     expect(collectionsPageProps.current?.onNavigateCategory).toBeTypeOf('function')
     expect(collectionsPageProps.current?.onToggleHidden).toBeTypeOf('function')
     expect(collectionsPageProps.current?.categories).toBeDefined()
+  })
+
+  it('refreshes Browse data after a hide/show toggle so tiles are not stale (#1559)', async () => {
+    window.history.replaceState(null, '', '/?page=collections')
+    await renderWithCollectionsEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Open collection 5' }))
+
+    collectionsDataMocks.setHidden.mockResolvedValue({ id: 5 })
+    browseDataFns.refreshCategories.mockClear()
+    browseDataFns.loadUncategorizedCollections.mockClear()
+
+    const onToggleHidden = collectionsPageProps.current?.onToggleHidden as (c: {
+      id: number
+      hidden: boolean
+    }) => Promise<unknown>
+    await act(() => onToggleHidden({ id: 5, hidden: false }))
+    expect(collectionsDataMocks.setHidden).toHaveBeenCalledWith(5, true)
+    expect(browseDataFns.refreshCategories).toHaveBeenCalled()
+    expect(browseDataFns.loadUncategorizedCollections).toHaveBeenCalled()
   })
 
   it('restores the browse context for a collection entry on back/forward', async () => {
