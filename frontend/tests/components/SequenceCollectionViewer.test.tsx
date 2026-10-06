@@ -187,6 +187,12 @@ describe('SequenceCollectionViewer', () => {
       act(() => vi.advanceTimersByTime(5000))
       expect(overlay).toHaveStyle({ opacity: '1' })
 
+      // Pointer activity or leaving the frame can't hide nav while focused…
+      fireEvent.pointerMove(screen.getByTestId('sequence-viewer-frame'))
+      fireEvent.pointerLeave(screen.getByTestId('sequence-viewer-frame'))
+      act(() => vi.advanceTimersByTime(5000))
+      expect(overlay).toHaveStyle({ opacity: '1' })
+
       // …and only after focus leaves the overlay does the idle fade begin.
       fireEvent.blur(prev, { relatedTarget: null })
       act(() => vi.advanceTimersByTime(2000))

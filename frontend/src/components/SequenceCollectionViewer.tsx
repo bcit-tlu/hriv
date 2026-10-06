@@ -74,6 +74,14 @@ const stripThumbRing = (isCurrent: boolean) =>
     outline: isCurrent ? '3px solid' : '1px solid',
     outlineColor: isCurrent ? 'primary.main' : 'divider',
     outlineOffset: isCurrent ? -3 : -1,
+    // Keyboard focus needs its own cue — the selection outline overrides the
+    // UA focus ring, so focus-visible swaps to a distinct info ring (the
+    // selection cue returns on blur).
+    '&:focus-visible': {
+      outline: '3px solid',
+      outlineColor: 'info.main',
+      outlineOffset: -3,
+    },
   }) as const
 
 const navEdgeButton = {
@@ -168,6 +176,8 @@ export default function SequenceCollectionViewer({
   // pointer-events only) so keyboard focus can reveal them.
   const [navVisible, setNavVisible] = useState(false)
   const navHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Focus inside the nav holds it open regardless of pointer idle/leave.
+  const navFocusedRef = useRef(false)
   const cancelNavHide = useCallback(() => {
     if (navHideTimer.current) clearTimeout(navHideTimer.current)
     navHideTimer.current = null
@@ -178,21 +188,25 @@ export default function SequenceCollectionViewer({
   }, [cancelNavHide])
   const showNav = useCallback(() => {
     setNavVisible(true)
-    scheduleNavHide()
+    // Pointer idle only fades the nav when no button holds keyboard focus.
+    if (!navFocusedRef.current) scheduleNavHide()
   }, [scheduleNavHide])
   const hideNav = useCallback(() => {
+    if (navFocusedRef.current) return
     cancelNavHide()
     setNavVisible(false)
   }, [cancelNavHide])
   // Keyboard focus holds the nav open without a hide clock; focus moving
   // between the two edge buttons must not start one either.
   const holdNavForFocus = useCallback(() => {
+    navFocusedRef.current = true
     cancelNavHide()
     setNavVisible(true)
   }, [cancelNavHide])
   const releaseNavForBlur = useCallback(
     (event: FocusEvent<HTMLElement>) => {
       if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+        navFocusedRef.current = false
         scheduleNavHide()
       }
     },
